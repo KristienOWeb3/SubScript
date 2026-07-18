@@ -10,9 +10,9 @@ import { hashTypedData, recoverTypedDataAddress } from "viem";
 import assert from "node:assert/strict";
 
 const PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
-const MAX_AMOUNT = BigInt("0xffffffffffffffffffffffffffffffffffffffff");        // uint160 max
-const MAX_EXPIRATION = BigInt("0xffffffffffff");                                // uint48 max
-const SIG_DEADLINE = BigInt("0x" + "f".repeat(64));                            // uint256 max
+const PAYDAY_TOTAL = 125_000_000n;
+const EXPIRATION = BigInt(Math.floor(Date.now() / 1000) + 7 * 86_400 + 6 * 3_600);
+const SIG_DEADLINE = BigInt(Math.floor(Date.now() / 1000) + 15 * 60);
 const USDC = "0x3600000000000000000000000000000000000000";
 const CHAIN_ID = 5042002;
 
@@ -34,7 +34,7 @@ async function main() {
   const keeper = Wallet.createRandom().address;
   const domain = { name: "Permit2", chainId: CHAIN_ID, verifyingContract: PERMIT2_ADDRESS };
   const message = {
-    details: { token: USDC, amount: MAX_AMOUNT, expiration: MAX_EXPIRATION, nonce: 0n },
+    details: { token: USDC, amount: PAYDAY_TOTAL, expiration: EXPIRATION, nonce: 0n },
     spender: keeper,
     sigDeadline: SIG_DEADLINE,
   };
@@ -58,6 +58,12 @@ async function main() {
   const m1 = { ...message, details: { ...message.details, nonce: 1n } };
   assert.notEqual(TypedDataEncoder.hash(domain, types, m1), ethersHash, "nonce is not part of the signed digest");
   console.log("  ✓ nonce is bound into the signature");
+
+  // 4. The authorization must be bounded to one payday, never uint maxima.
+  assert.equal(message.details.amount, PAYDAY_TOTAL);
+  assert.ok(message.details.expiration < 0xffffffffffffn, "authorization uses an unlimited expiration");
+  assert.ok(message.sigDeadline < BigInt("0x" + "f".repeat(64)), "signature uses an unlimited deadline");
+  console.log("  ✓ authorization is bounded to one exact payday");
 
   console.log("\nPermit2 EIP-712 contract is consistent. ✓");
 }

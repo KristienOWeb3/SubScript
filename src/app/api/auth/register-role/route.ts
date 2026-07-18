@@ -46,8 +46,26 @@ export async function POST(request: Request) {
                     };
                 }
 
+                /* Never trust an email copied from the role-selection form. Email ownership is
+                   established only by the OTP/OAuth routes, which persist email_verified_at. */
+                const verifiedEmailResult = await client.query(
+                    `select email
+                       from user_embedded_wallets
+                      where wallet_address = $1
+                        and email is not null
+                        and email_verified_at is not null
+                      limit 1`,
+                    [normalizedWallet],
+                );
+                const verifiedEmailVal = normalizeAccountEmail(verifiedEmailResult.rows[0]?.email);
+
                 if (role === "ENTERPRISE") {
-                    const publicMerchantSignupEnabled = process.env.ALLOW_PUBLIC_MERCHANT_SIGNUP === "true";
+                    /* Self-serve merchant signup is open by default. Set ALLOW_PUBLIC_MERCHANT_SIGNUP
+                       ="false" to re-gate it behind a MERCHANT_SIGNUP_CODE invite. Either way, merchant
+                       accounts must still be email/embedded (checked below) and KYB verification still
+                       gates trust-sensitive capabilities. */
+                    const disableFlag = (process.env.ALLOW_PUBLIC_MERCHANT_SIGNUP || "").trim().toLowerCase();
+                    const publicMerchantSignupEnabled = !["false", "0", "no", "off"].includes(disableFlag);
                     const requiredMerchantCode = process.env.MERCHANT_SIGNUP_CODE;
                     const providedMerchantCode = typeof merchantSignupCode === "string" ? merchantSignupCode.trim() : "";
                     const hasValidInviteCode = Boolean(requiredMerchantCode) && providedMerchantCode === requiredMerchantCode;
@@ -65,10 +83,10 @@ export async function POST(request: Request) {
                        external/self-custody wallet — more professional, and required for server-signed
                        merchant operations (payouts, tier changes, vault draws). */
                     const merchantKeyRow = await client.query(
-                        "select encrypted_private_key from user_embedded_wallets where wallet_address = $1 limit 1",
+                        "select encrypted_private_key, circle_wallet_id from user_embedded_wallets where wallet_address = $1 limit 1",
                         [normalizedWallet]
                     );
-                    if (!merchantKeyRow.rows[0]?.encrypted_private_key) {
+                    if (!merchantKeyRow.rows[0]?.encrypted_private_key && !merchantKeyRow.rows[0]?.circle_wallet_id) {
                         await client.query("rollback");
                         return {
                             role: "ENTERPRISE",
@@ -78,15 +96,8 @@ export async function POST(request: Request) {
                     }
                 }
 
-                if (emailVal) {
-                    await assertAccountEmailAvailable(client, emailVal, normalizedWallet);
-
-                    await client.query(
-                        `insert into user_embedded_wallets (wallet_address, email, provider)
-                         values ($1, $2, 'external_wallet')
-                         on conflict (wallet_address) do update set email = excluded.email, updated_at = now()`,
-                        [normalizedWallet, emailVal]
-                    );
+                if (verifiedEmailVal) {
+                    await assertAccountEmailAvailable(client, verifiedEmailVal, normalizedWallet);
                 }
 
                 const createdRoleResult = await client.query(
@@ -109,12 +120,12 @@ export async function POST(request: Request) {
                     );
                 } else {
                     await client.query("delete from merchants where wallet_address = $1", [normalizedWallet]);
-                    if (emailVal) {
+                    if (verifiedEmailVal) {
                         await client.query(
                             `insert into customers (wallet_address, email)
                             values ($1, $2)
                             on conflict (wallet_address) do update set email = excluded.email`,
-                            [normalizedWallet, emailVal]
+                            [normalizedWallet, verifiedEmailVal]
                         );
                     } else {
                         await client.query(
@@ -151,9 +162,15 @@ export async function POST(request: Request) {
 
         if (accountRole.alreadyRegistered) {
             if (accountRole.role !== role) {
+                /* Roles are separate and immutable per account. Give an actionable message instead of
+                   a dead-end, distinguishing the common "personal user wants a merchant account" case. */
+                const message = accountRole.role === "USER" && role === "ENTERPRISE"
+                    ? "This email is already a personal SubScript account. Merchant accounts are separate — create your merchant account with a different email or wallet. Need to convert an existing account? Contact support."
+                    : "This account is already registered as a merchant. Use a different email or wallet to create a personal account.";
                 return NextResponse.json({
-                    error: `This wallet is already registered as ${accountRole.role}. Use a different wallet for ${role}.`,
+                    error: message,
                     role: accountRole.role,
+                    code: "ROLE_ALREADY_REGISTERED",
                 }, { status: 409 });
             }
             return NextResponse.json({ success: true, role: accountRole.role, message: "Role already registered for this wallet" }, { status: 200 });
@@ -161,7 +178,7 @@ export async function POST(request: Request) {
 
         const emailRecord = await withPgClient(async (client) => {
             const result = await client.query(
-                "select email from user_embedded_wallets where wallet_address = $1 limit 1",
+                "select email from user_embedded_wallets where wallet_address = $1 and email_verified_at is not null limit 1",
                 [normalizedWallet]
             );
             return result.rows[0] || null;

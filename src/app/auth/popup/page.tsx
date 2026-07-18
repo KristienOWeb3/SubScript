@@ -91,7 +91,7 @@ function PopupContent() {
             }
         };
 
-        const completeCircleLogin = async (session: CircleSession) => {
+        const completeCircleLogin = async (session: CircleSession, googleIdToken: string | null) => {
             clearVerifyWatchdog();
             const completeRes = await fetch("/api/auth/circle/wallet/complete", {
                 method: "POST",
@@ -101,6 +101,7 @@ function PopupContent() {
                         userToken: session.userToken,
                         oAuthInfo: session.oAuthInfo,
                     },
+                    googleIdToken,
                 }),
             });
             const completed = await completeRes.json();
@@ -123,6 +124,9 @@ function PopupContent() {
                 if (!window.location.hash) {
                     throw new Error("Google did not return an OAuth response. Please start again from the sign in page.");
                 }
+
+                const hashParams = new URLSearchParams(window.location.hash.slice(1));
+                const googleIdToken = hashParams.get("id_token");
 
                 const configRes = await fetch("/api/auth/circle/google/config", { cache: "no-store" });
                 const config: CircleGoogleConfig & { error?: string } = await configRes.json();
@@ -161,7 +165,7 @@ function PopupContent() {
                            (same model as email/OTP, one account per email). Skip Circle's PIN wallet
                            challenge — sdk.execute() was the step that threw "Error encrypting data"
                            and created a separate account. */
-                        await completeCircleLogin(session);
+                        await completeCircleLogin(session, googleIdToken);
                     } catch (err: any) {
                         setStep("error");
                         setError(err.message || "Continue with Google failed.");
@@ -211,8 +215,8 @@ function PopupContent() {
             : "Verifying your Google account with Circle...";
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-[#121212] p-6 text-white font-sans">
-            <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-black/40 p-8 text-center shadow-2xl">
+        <div className="flex min-h-screen items-center justify-center bg-[#121212] p-4 sm:p-6 text-white font-sans">
+            <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-black/40 p-6 sm:p-8 text-center shadow-2xl">
                 {step === "error" ? null : (
                     <Loader2 className="mx-auto mb-4 h-10 w-10 animate-spin text-[#00d2b4]" />
                 )}
@@ -223,7 +227,7 @@ function PopupContent() {
                 {step === "error" ? (
                     <a
                         href="/signin"
-                        className="mt-6 inline-flex rounded-xl bg-[#ccff00] px-4 py-3 text-xs font-bold uppercase tracking-wider text-black transition hover:bg-[#ccff00]/90"
+                        className="mt-6 inline-flex rounded-xl bg-[#00d2b4] px-4 py-3 text-xs font-bold uppercase tracking-wider text-black transition hover:bg-[#00d2b4]/90"
                     >
                         Back to sign in
                     </a>

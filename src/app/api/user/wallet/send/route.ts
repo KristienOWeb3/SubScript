@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
-import { decryptPrivateKey } from "@/lib/crypto";
+import { getWalletCustody, deterministicIdempotencyKey } from "@/lib/custody";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { withPgClient } from "@/lib/serverPg";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
@@ -18,33 +18,9 @@ type SendRecipient = {
 
 type EmbeddedWalletRecord = {
     encrypted_private_key: string | null;
+    circle_wallet_id: string | null;
     provider: string | null;
 };
-
-function rpcEndpoints() {
-    return Array.from(new Set([
-        process.env.ARC_RPC_PRIMARY,
-        process.env.ARC_RPC_SECONDARY,
-        process.env.RPC_URL,
-        process.env.RPC_FALLBACK_URL_1,
-        process.env.RPC_FALLBACK_URL_2,
-        "https://rpc.testnet.arc.network",
-    ].filter(Boolean) as string[]));
-}
-
-async function getProvider() {
-    let lastError: unknown = null;
-    for (const url of rpcEndpoints()) {
-        try {
-            const provider = new ethers.JsonRpcProvider(url);
-            await provider.getNetwork();
-            return provider;
-        } catch (error) {
-            lastError = error;
-        }
-    }
-    throw lastError || new Error("No Arc RPC endpoint is available");
-}
 
 function formatAmount(amountMicros: bigint) {
     const microsPerUsdc = BigInt(1_000_000);
@@ -110,7 +86,7 @@ export async function POST(request: Request) {
 
         const walletRecord = await withPgClient(async (client) => {
             const result = await client.query(
-                `select encrypted_private_key, provider
+                `select encrypted_private_key, circle_wallet_id, provider
                    from user_embedded_wallets
                   where wallet_address = $1
                   limit 1`,
@@ -119,34 +95,67 @@ export async function POST(request: Request) {
             return result.rows[0] as EmbeddedWalletRecord | undefined;
         });
 
-        if (!walletRecord?.encrypted_private_key) {
+        if (!walletRecord?.encrypted_private_key && !walletRecord?.circle_wallet_id) {
             return NextResponse.json({
-                error: "This action needs a browser wallet signature. Generated email wallets can send from here only when their encrypted key backup exists.",
+                error: "This action needs a browser wallet signature. Generated email wallets can send from here only when their server-held key exists.",
             }, { status: 409 });
         }
 
-        const privateKey = decryptPrivateKey(walletRecord.encrypted_private_key);
-        const provider = await getProvider();
-        const signer = new ethers.Wallet(privateKey, provider);
-        if (signer.address.toLowerCase() !== normalizedSender) {
-            return NextResponse.json({ error: "Stored wallet key does not match your active session wallet" }, { status: 409 });
-        }
-
-        const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, USDC_ERC20_ABI, signer);
+        // Execution goes through the custody provider (legacy AES key or Circle MPC), which
+        // waits for each transfer to confirm and throws on revert.
+        const custody = await getWalletCustody(normalizedSender);
         const txs: { receiverAddress: string; amountUsdc: string; txHash: string }[] = [];
 
-        for (const item of parsedRecipients) {
-            const tx = await usdc.transfer(item.receiver, item.amountMicros);
-            const receipt = await tx.wait();
-            if (!receipt || receipt.status !== 1) {
-                throw new Error(`Transfer to ${item.receiver} reverted on-chain`);
-            }
+        /* Transfers move funds, so each recipient gets a deterministic Circle idempotency key
+           scoped to (request, position, recipient, amount). A client that reuses its
+           x-request-id on retry dedupes at Circle instead of paying the same recipient twice;
+           two identical recipients WITHIN a batch stay distinct via the index. */
+        const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
 
-            txs.push({
-                receiverAddress: item.receiver,
-                amountUsdc: formatAmount(item.amountMicros),
-                txHash: tx.hash,
-            });
+        /* Transfers settle one-by-one and are irreversible once mined. If a later one fails we must
+           NOT report a blanket failure — that hides the transfers already sent and invites a retry
+           that double-pays them. Stop at the first failure and return exactly what settled. */
+        let failure: { index: number; receiverAddress: string; amountUsdc: string; error: string } | null = null;
+        for (let i = 0; i < parsedRecipients.length; i++) {
+            const item = parsedRecipients[i];
+            try {
+                const { txHash } = await custody.executeContract({
+                    contractAddress: USDC_NATIVE_GAS_ADDRESS,
+                    abi: USDC_ERC20_ABI,
+                    functionName: "transfer",
+                    args: [item.receiver, item.amountMicros],
+                    idempotencyKey: deterministicIdempotencyKey(
+                        `wallet-send:${normalizedSender}:${requestId}:${i}:${item.receiver}:${item.amountMicros.toString()}`
+                    ),
+                });
+                txs.push({
+                    receiverAddress: item.receiver,
+                    amountUsdc: formatAmount(item.amountMicros),
+                    txHash,
+                });
+            } catch (err: any) {
+                failure = {
+                    index: i,
+                    receiverAddress: item.receiver,
+                    amountUsdc: formatAmount(item.amountMicros),
+                    error: err?.message || "Transfer failed",
+                };
+                break;
+            }
+        }
+
+        if (failure) {
+            const sent = txs.length;
+            const total = parsedRecipients.length;
+            return NextResponse.json({
+                success: false,
+                partial: sent > 0,
+                transfers: txs,
+                failedRecipient: failure,
+                error: sent > 0
+                    ? `Sent ${sent} of ${total} transfers, then recipient ${failure.index + 1} failed: ${failure.error}. The ${sent} completed transfer(s) were already settled on-chain — do not resend them; retry only the remaining recipients.`
+                    : `Transfer to recipient ${failure.index + 1} failed: ${failure.error}`,
+            }, { status: sent > 0 ? 207 : 400 });
         }
 
         return NextResponse.json({

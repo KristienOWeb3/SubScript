@@ -4,8 +4,13 @@
 import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import { getAccountRole } from "@/lib/accounts/roles";
-import { prisma } from "@/lib/prisma";
 import { checkProviderRateLimit } from "@/lib/providerRateLimit";
+import { pgMaybeOne } from "@/lib/serverPg";
+
+type WalletEmailRecord = {
+    email: string | null;
+    provider: string | null;
+};
 
 export async function GET(request: Request) {
     try {
@@ -24,17 +29,31 @@ export async function GET(request: Request) {
 
         const role = await getAccountRole(normalized);
         let hasEmail = false;
-        if (role) {
-            const customer = await prisma.customer.findUnique({
-                where: { walletAddress: normalized },
-                select: { email: true },
-            });
-            hasEmail = Boolean(customer?.email);
-        }
+        let isExternalWallet = false;
+
+        // Check wallet emails regardless of whether they have finished picking a role
+        const [embeddedWallet, customer, merchant] = await Promise.all([
+            pgMaybeOne<WalletEmailRecord>(
+                "select email, provider from user_embedded_wallets where wallet_address = $1 limit 1",
+                [normalized],
+            ),
+            pgMaybeOne<{ email: string | null }>(
+                "select email from customers where wallet_address = $1 limit 1",
+                [normalized],
+            ),
+            pgMaybeOne<{ email: string | null }>(
+                "select email from merchants where wallet_address = $1 limit 1",
+                [normalized],
+            ),
+        ]);
+
+        hasEmail = Boolean(embeddedWallet?.email || customer?.email || merchant?.email);
+        isExternalWallet = !embeddedWallet || embeddedWallet.provider === "external_wallet";
 
         return NextResponse.json({
             exists: Boolean(role),
             hasEmail,
+            isExternalWallet,
         }, { status: 200 });
     } catch (error: any) {
         console.error("payer-status lookup failed:", error);

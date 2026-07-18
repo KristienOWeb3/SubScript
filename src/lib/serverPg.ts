@@ -1,19 +1,34 @@
-const { Client } = require("pg") as any;
+const { Pool } = require("pg") as any;
 import { getDatabaseUrl } from "@/lib/databaseUrl";
+import { supabaseDbCa } from "@/lib/supabaseCa";
 
 type PgClient = any;
 
-export async function withPgClient<T>(callback: (client: PgClient) => Promise<T>) {
-    const client = new Client({
-        connectionString: getDatabaseUrl(),
-        ssl: { rejectUnauthorized: false },
-    });
+const globalForPg = globalThis as typeof globalThis & { __subscriptPgPool?: any };
 
-    await client.connect();
+function getPool() {
+    if (!globalForPg.__subscriptPgPool) {
+        const connectionString = getDatabaseUrl();
+        const isLocal = /localhost|127\.0\.0\.1/.test(connectionString);
+        globalForPg.__subscriptPgPool = new Pool({
+            connectionString,
+            max: 10,
+            idleTimeoutMillis: 30_000,
+            connectionTimeoutMillis: 10_000,
+            /* Verified TLS with the Supabase root supplied explicitly — Node's trust store does
+               not include it, and disabling verification instead would accept a MITM. */
+            ...(isLocal ? {} : { ssl: { rejectUnauthorized: true, ca: supabaseDbCa() } }),
+        });
+    }
+    return globalForPg.__subscriptPgPool;
+}
+
+export async function withPgClient<T>(callback: (client: PgClient) => Promise<T>) {
+    const client = await getPool().connect();
     try {
         return await callback(client);
     } finally {
-        await client.end();
+        client.release();
     }
 }
 

@@ -11,6 +11,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { ethers } from "ethers";
+import dotenv from "dotenv";
+
+/* Load configured addresses the way the app does (.env.local first, then .env) so this check runs
+   against the CONFIGURED contracts, not just the constants.ts fallbacks. */
+dotenv.config({ path: ".env.local" });
+dotenv.config();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const constantsSrc = readFileSync(join(__dirname, "..", "src", "lib", "contracts", "constants.ts"), "utf8");
@@ -25,17 +31,17 @@ function addr(name, envVar) {
 }
 
 const EXPECTED = [
-    { name: "SubScriptRouter", address: addr("SUBSCRIPT_ROUTER_ADDRESS"), functions: [
+    { name: "SubScriptRouter", address: addr("SUBSCRIPT_ROUTER_ADDRESS", "NEXT_PUBLIC_SUBSCRIPT_ROUTER_ADDRESS"), functions: [
         "depositForMerchant(address,uint256,string)", "withdraw()", "withdrawTo(address)",
         "executeBatchPayout(address[],uint256[])", "configurePayoutDestination(address)",
         "setMerchantTier(address,uint8)", "merchantBalances(address)",
     ]},
-    { name: "SubScriptPSA (standard)", address: addr("STANDARD_CONTRACT_ADDRESS"), functions: [
+    { name: "SubScriptPSA (standard)", address: addr("STANDARD_CONTRACT_ADDRESS", "NEXT_PUBLIC_STANDARD_CONTRACT_ADDRESS"), functions: [
         "createSubscription(address,uint256,uint256)", "cancelSubscription(uint256)",
         "executePayment(uint256,uint256)", "isSequenceExecuted(uint256,uint256)",
         "nextSubscriptionId()", "subscriptions(uint256)",
     ]},
-    { name: "SubScriptConfidential", address: addr("CONFIDENTIAL_CONTRACT_ADDRESS"), functions: [
+    { name: "SubScriptConfidential", address: addr("CONFIDENTIAL_CONTRACT_ADDRESS", "NEXT_PUBLIC_CONFIDENTIAL_CONTRACT_ADDRESS"), functions: [
         "registerViewKey(bytes32)",
     ]},
     { name: "SubScriptVault", address: addr("SUBSCRIPT_VAULT_ADDRESS", "NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS"), functions: [
@@ -43,15 +49,29 @@ const EXPECTED = [
         "drawUsageFor(address,address,uint256)", "merchantClaim()", "setRequiredCommit(uint256)",
         "getVault(address,address)", "requiredCommit(address)", "merchantClaimable(address)",
     ]},
-    { name: "USDC (native)", address: addr("USDC_NATIVE_GAS_ADDRESS"), native: true, functions: ["balanceOf(address)"] },
+    { name: "USDC (native)", address: addr("USDC_NATIVE_GAS_ADDRESS", "NEXT_PUBLIC_USDC_ADDRESS"), native: true, functions: ["balanceOf(address)"] },
 ];
 
 const EIP1967_IMPL_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 const sel = (s) => ethers.id(s).slice(2, 10);
 
+async function withRetry(fn, retries = 5, delay = 1000) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            return await fn();
+        } catch (e) {
+            if (i === retries - 1) throw e;
+            console.log(`RPC error or rate limit hit. Retrying in ${delay/1000}s...`);
+            await new Promise(r => setTimeout(r, delay));
+            delay *= 2;
+        }
+    }
+}
+
 async function main() {
     const rpc = process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network";
-    const provider = new ethers.JsonRpcProvider(rpc);
+    // Setting staticNetwork avoids an extra eth_chainId request on startup that can trigger rate limits
+    const provider = new ethers.JsonRpcProvider(rpc, undefined, { staticNetwork: true });
     console.log(`Checking deployed contracts against ${rpc}\n`);
 
     let healthy = true;
@@ -59,7 +79,7 @@ async function main() {
         if (spec.native) {
             try {
                 const c = new ethers.Contract(spec.address, ["function balanceOf(address) view returns (uint256)"], provider);
-                await c.balanceOf("0x0000000000000000000000000000000000000000");
+                await withRetry(() => c.balanceOf("0x0000000000000000000000000000000000000000"));
                 console.log(`✅ ${spec.name} (${spec.address}) — native predeploy OK`);
             } catch (e) {
                 healthy = false;
@@ -67,17 +87,17 @@ async function main() {
             }
             continue;
         }
-        let code = await provider.getCode(spec.address);
+        let code = await withRetry(() => provider.getCode(spec.address));
         if (code === "0x") {
             healthy = false;
             console.log(`❌ ${spec.name} (${spec.address}) — NO CODE (not deployed)`);
             continue;
         }
-        const raw = await provider.getStorage(spec.address, EIP1967_IMPL_SLOT);
+        const raw = await withRetry(() => provider.getStorage(spec.address, EIP1967_IMPL_SLOT));
         let implNote = "";
         if (raw && raw !== "0x" + "0".repeat(64)) {
             const impl = ethers.getAddress("0x" + raw.slice(26));
-            code = await provider.getCode(impl);
+            code = await withRetry(() => provider.getCode(impl));
             implNote = ` (proxy -> ${impl})`;
         }
         const missing = spec.functions.filter((s) => !code.includes(sel(s)));

@@ -2,6 +2,7 @@ import { createConfig, http } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { defineChain } from "viem";
 import { mainnet, base, sepolia, baseSepolia } from "viem/chains";
+import { arcHttp } from "@/lib/arc/transport";
 
 /* Arc network is selected by NEXT_PUBLIC_ENVIRONMENT ("mainnet" => Arc mainnet, anything else =>
    testnet), so the client targets the same chain the cutover env vars point the contracts at.
@@ -13,15 +14,18 @@ const arcRpcUrl =
     process.env.NEXT_PUBLIC_ARC_RPC_URL ||
     (isArcMainnet ? "https://rpc.mainnet.arc.network" : "https://rpc.testnet.arc.network");
 
-/* Exported as `arcTestnet` for backward-compatible imports; it is the ACTIVE Arc chain (mainnet or
-   testnet) per NEXT_PUBLIC_ENVIRONMENT above. */
-export const arcTestnet = defineChain({
+/* The ACTIVE Arc chain (mainnet or testnet) per NEXT_PUBLIC_ENVIRONMENT above. */
+export const activeArcChain = defineChain({
     id: arcChainId,
     name: isArcMainnet ? "Arc" : "Arc Testnet",
     nativeCurrency: {
         name: "USDC",
         symbol: "USDC",
-        decimals: 6,
+        /* Native USDC is 18 decimals at the RPC/EVM level (eth_getBalance for an 80-USDC
+           wallet returns 80e18; gas prices are gwei-scale). Only the ERC-20 USDC interface
+           uses 6 decimals. Declaring 6 here made wallets and native-balance formatting
+           misread amounts by 1e12. */
+        decimals: 18,
     },
     rpcUrls: {
         default: {
@@ -36,13 +40,19 @@ export const arcTestnet = defineChain({
     },
 });
 
+/** @deprecated The name lied — this was always the ACTIVE Arc chain. Import activeArcChain. */
+export const arcTestnet = activeArcChain;
+
+/* Shared with every other Arc caller — see lib/arc/transport for why a bare http() loses reads. */
+const arcTransport = arcHttp(arcRpcUrl);
+
 export const config = createConfig({
-    chains: [arcTestnet, mainnet, base, sepolia, baseSepolia],
+    chains: [activeArcChain, mainnet, base, sepolia, baseSepolia],
     connectors: [injected({ shimDisconnect: true })],
     transports: {
         /* Both Arc chain ids map to the active RPC; only the selected one (arcChainId) is used. */
-        5042002: http(arcRpcUrl),
-        5042001: http(arcRpcUrl),
+        5042002: arcTransport,
+        5042001: arcTransport,
         1: http(),
         8453: http(),
         11155111: http(),

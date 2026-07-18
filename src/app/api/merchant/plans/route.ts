@@ -3,14 +3,23 @@
 import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
-import { getAccountRole, requireAccountRole } from "@/lib/accounts/roles";
+import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { parseUsdcToMicros } from "@/lib/dms/system";
+import {
+    lockMerchantPlanCatalog,
+    MAX_ACTIVE_MERCHANT_PLANS,
+    publishSitePlanFromCheckout,
+    SitePlanPublicationError,
+} from "@/lib/subscriptions/sitePlans";
+import { formatPromotion, isPromotionLive, type PromotionRow } from "@/lib/subscriptions/promotions";
 
 const MAX_DESCRIPTION_LEN = 300;
 
-function formatPlan(p: any) {
+function formatPlan(p: any, viewerAddress?: string) {
+    const viewer = viewerAddress?.toLowerCase();
+    const target = p.targetSubscriber?.toLowerCase() || null;
     return {
         id: p.id,
         merchantAddress: p.merchantAddress,
@@ -19,6 +28,9 @@ function formatPlan(p: any) {
         detailsUrl: p.detailsUrl ?? null,
         amountUsdc: p.amountUsdc.toString(),
         periodSeconds: p.periodSeconds.toString(),
+        minCommitmentSeconds: (p.minCommitmentSeconds ?? BigInt(0)).toString(),
+        targetSubscriber: target,
+        ...(target && viewer === target ? { checkoutSessionId: p.sourceCheckoutId ?? null } : {}),
         active: p.active,
     };
 }
@@ -64,13 +76,38 @@ export async function GET(request: Request) {
         }
         const merchantParam = new URL(request.url).searchParams.get("merchantAddress");
 
-        // A user fetching a specific merchant's plans (the DM picker) sees ACTIVE plans only.
+        // A user fetching a specific merchant's plans (the DM picker) sees ACTIVE plans only,
+        // each carrying its live introductory promotion (if any) so checkout can disclose
+        // both the due-today price and the recurring price before authorization.
         if (merchantParam && ethers.isAddress(merchantParam)) {
             const plans = await prisma.merchantPlan.findMany({
-                where: { merchantAddress: merchantParam.toLowerCase(), active: true },
+                where: {
+                    merchantAddress: merchantParam.toLowerCase(),
+                    active: true,
+                    OR: [
+                        { targetSubscriber: null },
+                        { targetSubscriber: wallet.toLowerCase() },
+                    ],
+                },
                 orderBy: { amountUsdc: "asc" },
             });
-            return NextResponse.json({ success: true, plans: plans.map(formatPlan) }, { status: 200 });
+            const promotions = plans.length > 0
+                ? await prisma.merchantPlanPromotion.findMany({
+                    where: { planId: { in: plans.map((p) => p.id) }, active: true },
+                })
+                : [];
+            const liveByPlan = new Map(
+                promotions
+                    .filter((promo) => isPromotionLive(promo as PromotionRow))
+                    .map((promo) => [promo.planId, formatPromotion(promo as PromotionRow)]),
+            );
+            return NextResponse.json({
+                success: true,
+                plans: plans.map((plan) => ({
+                    ...formatPlan(plan, wallet),
+                    promotion: liveByPlan.get(plan.id) ?? null,
+                })),
+            }, { status: 200 });
         }
 
         // Otherwise the merchant lists their own plans (all states).
@@ -82,14 +119,15 @@ export async function GET(request: Request) {
             where: { merchantAddress: wallet.toLowerCase() },
             orderBy: { createdAt: "desc" },
         });
-        return NextResponse.json({ success: true, plans: plans.map(formatPlan) }, { status: 200 });
+        return NextResponse.json({
+            success: true,
+            plans: plans.map((plan: any) => formatPlan(plan)),
+        }, { status: 200 });
     } catch (error: any) {
         console.error("List plans failed:", error);
         return NextResponse.json({ error: error.message || "Failed to list plans" }, { status: 500 });
     }
 }
-
-const MAX_PLANS = 20;
 
 export async function POST(request: Request) {
     try {
@@ -99,6 +137,20 @@ export async function POST(request: Request) {
         if (!roleCheck.ok) return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
 
         const body = sanitizeInput(await request.json().catch(() => null)) || {};
+        const checkoutSessionId = typeof body.checkoutSessionId === "string"
+            ? body.checkoutSessionId.trim()
+            : "";
+
+        /* Publishing a site checkout is an explicit merchant action. Customer-facing GETs are
+           read-only and can never infer a public catalog entry from a private checkout attempt. */
+        if (checkoutSessionId) {
+            const published = await publishSitePlanFromCheckout(wallet, checkoutSessionId);
+            return NextResponse.json(
+                { success: true, plan: formatPlan(published.plan), created: published.created },
+                { status: published.created ? 201 : 200 },
+            );
+        }
+
         const name = typeof body.name === "string" ? body.name.trim().slice(0, 60) : "";
         if (!name) return NextResponse.json({ error: "Plan name is required" }, { status: 400 });
 
@@ -117,25 +169,64 @@ export async function POST(request: Request) {
         }
         const periodSeconds = BigInt(Math.round(periodDays) * 24 * 60 * 60);
 
-        const activeCount = await prisma.merchantPlan.count({
-            where: { merchantAddress: wallet.toLowerCase(), active: true },
-        });
-        if (activeCount >= MAX_PLANS) {
-            return NextResponse.json({ error: `You can have at most ${MAX_PLANS} active plans.` }, { status: 403 });
+        /* Optional minimum-commitment window, disclosed on the subscribe page before
+           authorization. Protocol ceilings: never more than one billing period, never more
+           than 30 days — an early cancel then simply takes effect at period end, so the
+           commitment can never extend billing beyond what the subscriber already approved. */
+        let minCommitmentSeconds = BigInt(0);
+        if (body.minCommitmentDays !== undefined && body.minCommitmentDays !== null && body.minCommitmentDays !== "") {
+            const days = Number(body.minCommitmentDays);
+            if (!Number.isFinite(days) || days < 0) {
+                return NextResponse.json({ error: "minCommitmentDays must be zero or a positive number of days" }, { status: 400 });
+            }
+            const capDays = Math.min(30, Math.round(periodDays));
+            if (days > capDays) {
+                return NextResponse.json({ error: `Minimum commitment cannot exceed ${capDays} days for this plan (one billing period, capped at 30 days).` }, { status: 400 });
+            }
+            minCommitmentSeconds = BigInt(Math.round(days * 24 * 60 * 60));
         }
 
-        const plan = await prisma.merchantPlan.create({
-            data: {
-                merchantAddress: wallet.toLowerCase(),
-                name,
-                description: descriptionResult.value,
-                detailsUrl: detailsUrlResult.value,
-                amountUsdc,
-                periodSeconds,
-            },
+        const merchantAddress = wallet.toLowerCase();
+        const result = await prisma.$transaction(async (tx) => {
+            /* Serialize every catalog insertion for this merchant so concurrent manual and
+               checkout publications cannot both pass the active-plan ceiling. */
+            await lockMerchantPlanCatalog(tx, merchantAddress);
+            const activeCount = await tx.merchantPlan.count({
+                where: { merchantAddress, active: true, targetSubscriber: null },
+            });
+            if (activeCount >= MAX_ACTIVE_MERCHANT_PLANS) {
+                return { limitReached: true as const };
+            }
+            const plan = await tx.merchantPlan.create({
+                data: {
+                    merchantAddress,
+                    name,
+                    description: descriptionResult.value,
+                    detailsUrl: detailsUrlResult.value,
+                    amountUsdc,
+                    periodSeconds,
+                    minCommitmentSeconds,
+                },
+            });
+            return { limitReached: false as const, plan };
         });
-        return NextResponse.json({ success: true, plan: formatPlan(plan) }, { status: 201 });
+        if (result.limitReached) {
+            return NextResponse.json(
+                { error: `You can have at most ${MAX_ACTIVE_MERCHANT_PLANS} active plans.` },
+                { status: 403 },
+            );
+        }
+        return NextResponse.json({ success: true, plan: formatPlan(result.plan) }, { status: 201 });
     } catch (error: any) {
+        if (error instanceof SitePlanPublicationError) {
+            return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+        }
+        if (error?.code === "P2002" && error?.meta?.target?.includes?.("source_checkout_id")) {
+            return NextResponse.json(
+                { error: "This checkout has already been published as a plan.", code: "SOURCE_CONFLICT" },
+                { status: 409 },
+            );
+        }
         console.error("Create plan failed:", error);
         return NextResponse.json({ error: error.message || "Failed to create plan" }, { status: 500 });
     }
@@ -155,6 +246,16 @@ export async function PATCH(request: Request) {
         const plan = await prisma.merchantPlan.findUnique({ where: { id: planId } });
         if (!plan || plan.merchantAddress.toLowerCase() !== wallet.toLowerCase()) {
             return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+        }
+        if (body.active === true && plan.targetSubscriber) {
+            const sourceCheckout = plan.sourceCheckoutId
+                ? await prisma.paymentLink.findUnique({ where: { id: plan.sourceCheckoutId } })
+                : null;
+            if (!sourceCheckout?.active || sourceCheckout.status !== "PENDING") {
+                return NextResponse.json({
+                    error: "A consumed or canceled targeted subscription offer cannot be reactivated.",
+                }, { status: 409 });
+            }
         }
 
         const data: { active: boolean; description?: string | null; detailsUrl?: string | null } = {

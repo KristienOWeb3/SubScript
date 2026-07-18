@@ -99,7 +99,7 @@ export function upsertOfflineAccountRole(address: string, role: string) {
 }
 
 // OTP Codes Helper
-export function getOfflineOtpCode(email: string) {
+export function retrieveLocalOtpCode(email: string) {
     const db = readMockDb();
     const found = db.otpCodes.find(o => o.email.toLowerCase() === email.toLowerCase());
     if (found && new Date() > new Date(found.expires_at)) {
@@ -109,7 +109,7 @@ export function getOfflineOtpCode(email: string) {
     return found || null;
 }
 
-export function saveOfflineOtpCode(email: string, code: string, expiresAt: Date) {
+export function storeLocalOtpCode(email: string, code: string, expiresAt: Date) {
     const db = readMockDb();
     const normEmail = email.toLowerCase();
     const existingIdx = db.otpCodes.findIndex(o => o.email.toLowerCase() === normEmail);

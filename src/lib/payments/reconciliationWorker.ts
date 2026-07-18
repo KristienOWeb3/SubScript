@@ -25,7 +25,10 @@ export async function reconcile(supabase: any, limit: number = 300): Promise<{ s
 
     /* 2. Claim pending/failed sessions with transaction evidence atomically using PLpgSQL */
     const { data: sessions, error } = await supabase
-        .rpc("claim_pending_payment_sessions", { batch_size: limit });
+        .rpc("claim_pending_payment_sessions", {
+            batch_size: limit,
+            p_claim_id: reconciliationRunId
+        });
 
     if (error) {
         console.error(`[db_updated] Failed to claim payment sessions: ${error.message}`);
@@ -55,6 +58,7 @@ export async function reconcile(supabase: any, limit: number = 300): Promise<{ s
                     sessionId: session.session_id,
                     walletAddress: session.merchant_address,
                     isReconciler: true,
+                    claimId: reconciliationRunId,
                     requestId: reconciliationRunId
                 });
 
@@ -80,9 +84,13 @@ export async function reconcile(supabase: any, limit: number = 300): Promise<{ s
                         processing_attempts: newAttempts,
                         last_error: err.message || "Reconciliation worker crash",
                         failure_code: "RECONCILIATION_CRASH",
+                        processing_claim_id: null,
+                        processing_started_at: null,
                         updated_at: new Date().toISOString() 
                     })
-                    .eq("session_id", session.session_id);
+                    .eq("session_id", session.session_id)
+                    .eq("status", "PROCESSING")
+                    .eq("processing_claim_id", reconciliationRunId);
 
                 /* Metrics & Alerts */
                 console.log(`[metric] checkout_sessions_failed: ${session.session_id}, attempts: ${newAttempts}, reason: RECONCILIATION_CRASH`);
@@ -123,9 +131,10 @@ export async function reconcile(supabase: any, limit: number = 300): Promise<{ s
 
     const processedCount = sessions ? sessions.length : 0;
     console.log(`[db_updated] Reconciliation worker execution completed. Processed: ${processedCount}`);
+    const success = results.every((result) => result.success);
 
     return {
-        success: true,
+        success,
         processedCount,
         results
     };

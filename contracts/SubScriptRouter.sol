@@ -29,18 +29,34 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     /* Secure internal pull-payment ledger mapping merchant => claimable USDC settlement */
     mapping(address => uint256) public merchantBalances;
 
-    /* CCTP Ethereum Sepolia USDC contract address */
-    address public constant SEPOLIA_USDC = 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238;
-
     /* Subscription tier for merchants (0 = Standard, 1 = Premium) */
     mapping(address => uint8) public merchantTiers;
 
     /* Redirected fund payout address for premium merchants */
     mapping(address => address) public merchantPayoutDestination;
 
+    /*
+     * Sum of all outstanding merchantBalances. Backs the rescueERC20 surplus check so the
+     * owner can never sweep paymentToken that merchants are owed.
+     * APPEND-ONLY: this contract is UUPS upgradeable; never reorder or remove prior fields.
+     * Deposits made before the upgrade that introduced this counter are not included, so it
+     * may under-count legacy liabilities — the surplus check is therefore conservative only
+     * for post-upgrade funds.
+     */
+    uint256 public totalMerchantLiabilities;
+
     /* ──────────────────────────── Events ─────────────────────────── */
 
     event Withdraw(address indexed merchant, uint256 amount);
+
+    /* Emitted alongside Withdraw so rerouted premium payouts keep the merchant identity
+       (Withdraw indexes the merchant; this event additionally records the destination). */
+    event PayoutDelivered(
+        address indexed merchant,
+        address indexed destination,
+        uint256 netAmount,
+        uint256 fee
+    );
 
     event DepositWithMemo(
         address indexed payer,
@@ -131,16 +147,20 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     }
 
     /**
-     * @notice Recover stuck ERC20 tokens in the contract.
+     * @notice Recover unrelated ERC20 tokens accidentally sent to the contract.
+     * @dev The payment token is intentionally never rescuable. The liability counter was added
+     *      after the first deployment and cannot prove that legacy merchant balances are covered;
+     *      treating an apparent surplus as owner funds could therefore steal merchant settlement.
      */
     function rescueERC20(address token, address to, uint256 amount) external onlyOwner {
         require(token != address(0), "Invalid token address");
         require(to != address(0), "Invalid receiver address");
         require(amount > 0, "Amount must be greater than zero");
-        
+
+        require(token != address(paymentToken), "Payment token rescue disabled");
         uint256 balance = IERC20(token).balanceOf(address(this));
         require(amount <= balance, "Insufficient balance");
-        
+
         IERC20(token).safeTransfer(to, amount);
         emit ERC20Rescued(token, to, amount);
     }
@@ -173,6 +193,7 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
 
         paymentToken.safeTransferFrom(msg.sender, address(this), _amount);
         merchantBalances[_merchant] += _amount;
+        totalMerchantLiabilities += _amount;
 
         emit DepositWithMemo(msg.sender, _merchant, _amount, _memo);
     }
@@ -183,10 +204,13 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
      */
     function withdraw() external nonReentrant whenNotPaused {
         uint256 balance = merchantBalances[msg.sender];
+        /* Any positive balance is withdrawable. Payment links accept sub-1-USDC amounts, so a
+           1 USDC minimum stranded small merchants' funds in the router forever. The 1% fee
+           floors to zero on dust (< 100 micro-USDC) — an accepted rounding loss. */
         require(balance > 0, "No balance to withdraw");
-        require(balance >= 1000000, "Minimum withdrawal is 1 USDC");
 
         merchantBalances[msg.sender] = 0;
+        _reduceLiabilities(balance);
 
         uint256 fee = balance / 100; // 1% fee
         uint256 netAmount = balance - fee;
@@ -201,7 +225,8 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
         }
         paymentToken.safeTransfer(targetPayout, netAmount);
 
-        emit Withdraw(targetPayout, netAmount);
+        emit Withdraw(msg.sender, netAmount);
+        emit PayoutDelivered(msg.sender, targetPayout, netAmount, fee);
     }
 
     /**
@@ -213,11 +238,12 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
            configurePayoutDestination. Standard-tier merchants withdraw to themselves via withdraw(). */
         require(merchantTiers[msg.sender] >= 1, "Only Premium tier can withdraw to a custom address");
         uint256 balance = merchantBalances[msg.sender];
+        /* Same dust policy as withdraw(): every positive balance is withdrawable. */
         require(balance > 0, "No balance to withdraw");
-        require(balance >= 1000000, "Minimum withdrawal is 1 USDC");
         require(_recipient != address(0), "Invalid recipient address");
 
         merchantBalances[msg.sender] = 0;
+        _reduceLiabilities(balance);
 
         uint256 fee = balance / 100; // 1% fee
         uint256 netAmount = balance - fee;
@@ -227,7 +253,15 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
         }
         paymentToken.safeTransfer(_recipient, netAmount);
 
-        emit Withdraw(_recipient, netAmount);
+        emit Withdraw(msg.sender, netAmount);
+        emit PayoutDelivered(msg.sender, _recipient, netAmount, fee);
+    }
+
+    /* Clamped decrement: balances deposited before the liability counter existed are not
+       counted in totalMerchantLiabilities, so their withdrawal must not underflow it. */
+    function _reduceLiabilities(uint256 amount) internal {
+        uint256 liabilities = totalMerchantLiabilities;
+        totalMerchantLiabilities = liabilities >= amount ? liabilities - amount : 0;
     }
 
 

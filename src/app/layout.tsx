@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { Inter, Instrument_Serif } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import PrivyProviderWrapper from "@/components/PrivyProviderWrapper";
 import PostHogProvider from "@/components/providers/PostHogProvider";
@@ -8,9 +9,33 @@ import PwaInstaller from "@/components/PwaInstaller";
 
 export const dynamic = "force-dynamic";
 
+const sukar = localFont({
+    src: [
+        {
+            path: "../../public/fonts/SukarRegular.ttf",
+            weight: "400",
+            style: "normal",
+        },
+        {
+            path: "../../public/fonts/SukarBold.ttf",
+            weight: "700",
+            style: "normal",
+        },
+        {
+            path: "../../public/fonts/SukarBlack.ttf",
+            weight: "900",
+            style: "normal",
+        },
+    ],
+    variable: "--font-sukar",
+    display: "swap",
+});
+
 const inter = Inter({
     subsets: ["latin"],
     variable: "--font-inter",
+    display: "swap",
+    preload: true,
 });
 
 const instrumentSerif = Instrument_Serif({
@@ -18,6 +43,8 @@ const instrumentSerif = Instrument_Serif({
     weight: ["400"],
     style: ["normal", "italic"],
     variable: "--font-instrument",
+    display: "swap",
+    preload: true,
 });
 
 function normalizePublicUrl(value: string | undefined) {
@@ -36,8 +63,6 @@ function normalizePublicUrl(value: string | undefined) {
 export const viewport: Viewport = {
     width: "device-width",
     initialScale: 1,
-    maximumScale: 1,
-    userScalable: false,
     viewportFit: "cover",
     themeColor: "#000000",
 };
@@ -49,7 +74,7 @@ const appUrl = configuredAppUrl
         ? `https://${process.env.VERCEL_URL}`
         : "https://www.subscriptonarc.com";
 
-const siteDescription = "SubScript is an Arc-native programmable USDC commerce layer for one-time payments, recurring billing, usage-based charging, invoice-like collection, signed webhooks, human-readable receipts, and Google-powered wallet onboarding.";
+const siteDescription = "SubScript is stablecoin payment infrastructure on Arc: hosted USDC checkout, recurring billing, usage-based charging, invoicing, signed webhooks, human-readable receipts, and Google-powered wallet onboarding for businesses and their customers.";
 const googleSiteVerification = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION;
 const bingSiteVerification = process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION;
 
@@ -63,7 +88,7 @@ const structuredData = {
             url: appUrl,
             logo: `${appUrl}/icon-512.png`,
             description: siteDescription,
-            sameAs: ["https://x.com/subscript"],
+            sameAs: ["https://x.com/SubScript_onarc"],
             knowsAbout: [
                 "Arc Network",
                 "programmable stablecoin commerce",
@@ -86,11 +111,12 @@ const structuredData = {
             operatingSystem: "Web",
             url: appUrl,
             description: siteDescription,
+            softwareVersion: "Public Beta (Arc Testnet)",
             offers: {
                 "@type": "Offer",
-                price: "1",
+                price: "0",
                 priceCurrency: "USD",
-                description: "Merchants pay a transparent 1% processing fee on successful USDC payments. Subscribers pay no hidden maintenance or card fees.",
+                description: "Free to sign up. Merchants pay a transparent 1% processing fee on successful USDC payments. Subscribers pay no hidden maintenance or card fees.",
             },
             featureList: [
                 "Continue with Google wallet onboarding",
@@ -117,6 +143,20 @@ const structuredData = {
             creator: {
                 "@id": `${appUrl}/#organization`,
             },
+            softwareHelp: { "@type": "CreativeWork", url: `${appUrl}/docs` },
+            downloadUrl: "https://www.npmjs.com/package/@subscriptonarc/cli",
+        },
+        {
+            "@type": "SoftwareSourceCode",
+            "@id": `${appUrl}/#cli`,
+            name: "@subscriptonarc/cli",
+            description:
+                "Command-line tool to integrate SubScript: scaffold checkout and signed-webhook routes, diagnose an integration, and forward live webhooks to localhost. Run `npx @subscriptonarc/cli init`.",
+            codeRepository: "https://github.com/KristienOWeb3/SubScript",
+            runtimePlatform: "Node.js",
+            programmingLanguage: "TypeScript",
+            targetProduct: { "@id": `${appUrl}/#software` },
+            url: "https://www.npmjs.com/package/@subscriptonarc/cli",
         },
         {
             "@type": "WebSite",
@@ -140,7 +180,7 @@ export const metadata: Metadata = {
         statusBarStyle: "black-translucent",
     },
     title: {
-        default: "SubScript | Arc Network USDC Subscriptions and Web3 Checkout",
+        default: "SubScript | Stablecoin Payment Infrastructure on Arc",
         template: "%s | SubScript",
     },
     description: siteDescription,
@@ -170,7 +210,7 @@ export const metadata: Metadata = {
     creator: "SubScript Protocol",
     publisher: "SubScript Protocol",
     category: "financial technology",
-    classification: "Stablecoin subscriptions, Web3 checkout, and payment routing",
+    classification: "Stablecoin payment infrastructure, USDC checkout, and recurring billing",
     alternates: {
         canonical: "/",
     },
@@ -186,7 +226,7 @@ export const metadata: Metadata = {
         },
     },
     openGraph: {
-        title: "SubScript | Arc Network USDC Subscriptions and Web3 Checkout",
+        title: "SubScript | Stablecoin Payment Infrastructure on Arc",
         description: siteDescription,
         url: appUrl,
         siteName: "SubScript Protocol",
@@ -195,7 +235,7 @@ export const metadata: Metadata = {
                 url: `${appUrl}/og.png`,
                 width: 1200,
                 height: 630,
-                alt: "SubScript - programmable USDC subscriptions and checkout on Arc Network",
+                alt: "SubScript — stablecoin payment infrastructure for USDC checkout and recurring billing on Arc",
             },
         ],
         locale: "en_US",
@@ -203,7 +243,7 @@ export const metadata: Metadata = {
     },
     twitter: {
         card: "summary_large_image",
-        title: "SubScript | Arc Network USDC Subscriptions and Web3 Checkout",
+        title: "SubScript | Stablecoin Payment Infrastructure on Arc",
         description: siteDescription,
         images: [`${appUrl}/og.png`],
     },
@@ -233,8 +273,8 @@ export default async function RootLayout({
     const nonce = (await headers()).get("x-nonce") || undefined;
 
     return (
-        <html lang="en">
-            <body className={`${inter.variable} ${instrumentSerif.variable} font-sans antialiased`}>
+        <html lang="en" suppressHydrationWarning>
+            <body className={`${sukar.variable} ${inter.variable} ${instrumentSerif.variable} font-sans antialiased`}>
                 <script
                     nonce={nonce}
                     suppressHydrationWarning

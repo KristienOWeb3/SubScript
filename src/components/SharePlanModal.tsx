@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Copy, Check, Download, Share2, Send, ShieldCheck, Zap, Layers, Loader2 } from "@/components/icons";
-import { QRCodeCanvas } from "qrcode.react";
+import { QRCode } from "react-qrcode-logo";
 
 interface MerchantPlan {
     id: string;
@@ -609,13 +609,24 @@ export default function SharePlanModal({
 
                                 {/* Pre-rendered QRCodeCanvas hidden in DOM for canvas usage */}
                                 <div className="hidden">
-                                    <QRCodeCanvas
+                                    <QRCode
                                         id="plan-share-qr-canvas"
                                         value={subscribeUrl}
                                         size={320}
-                                        level="H"
+                                        ecLevel="H"
                                         bgColor="#ffffff"
                                         fgColor="#0c0d12"
+                                        qrStyle="dots"
+                                        eyeRadius={[
+                                            [18, 18, 0, 18],
+                                            [18, 18, 18, 0],
+                                            [18, 0, 18, 18]
+                                        ]}
+                                        logoImage="/logo.png"
+                                        logoWidth={64}
+                                        logoHeight={64}
+                                        removeQrCodeBehindLogo={true}
+                                        logoPadding={3}
                                     />
                                 </div>
 
@@ -731,12 +742,23 @@ export default function SharePlanModal({
                                         </div>
                                         {/* QR Code Canvas */}
                                         <div className="bg-white p-1 rounded-lg border border-black/5 shrink-0 shadow-inner">
-                                            <QRCodeCanvas
+                                            <QRCode
                                                 value={subscribeUrl}
                                                 size={92}
-                                                level="H"
+                                                ecLevel="H"
                                                 bgColor="#ffffff"
                                                 fgColor="#0c0d12"
+                                                qrStyle="dots"
+                                                eyeRadius={[
+                                                    [5, 5, 0, 5],
+                                                    [5, 5, 5, 0],
+                                                    [5, 0, 5, 5]
+                                                ]}
+                                                logoImage="/logo.png"
+                                                logoWidth={18}
+                                                logoHeight={18}
+                                                removeQrCodeBehindLogo={true}
+                                                logoPadding={1.5}
                                             />
                                         </div>
                                     </div>

@@ -71,9 +71,15 @@ test("creation and verification routes retain beneficiary role and audit boundar
         join(process.cwd(), "src", "app", "api", "payment-links", "verify", "route.ts"),
         "utf8",
     );
+    const verificationWorker = readFileSync(
+        join(process.cwd(), "src", "lib", "payments", "paymentLinkVerificationWorker.ts"),
+        "utf8",
+    );
 
     assert.match(createRoute, /\.from\("account_roles"\)[\s\S]*beneficiaryRole\?\.role !== "USER"/);
     assert.match(createRoute, /beneficiary_address:\s*normalizedBeneficiary/);
     assert.match(verifyRoute, /payer_address:\s*normalizedPayer[\s\S]*beneficiary_address:\s*normalizedBeneficiary/);
-    assert.match(verifyRoute, /payerAddress:\s*normalizedPayer[\s\S]*beneficiaryAddress:\s*normalizedBeneficiary/);
+    /* Verification is durable now: the request persists the normalized identities, then the
+       claimed worker maps those immutable fields into webhook/audit DTOs. */
+    assert.match(verificationWorker, /payerAddress:\s*job\.payer_address[\s\S]*beneficiaryAddress:\s*job\.beneficiary_address/);
 });

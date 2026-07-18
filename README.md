@@ -16,6 +16,12 @@ hidden fees, or chargebacks.
 ![Next.js](https://img.shields.io/badge/Next.js-App_Router-000000?logo=nextdotjs)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
 ![Settlement](https://img.shields.io/badge/settlement-USDC_on_Arc-2775CA)
+![Status](https://img.shields.io/badge/status-Public_Beta_on_Arc_Testnet-00d2b4)
+
+> **Public beta:** SubScript currently runs on the Arc **testnet** — all payments settle in
+> testnet USDC (no monetary value) while the protocol is hardened for mainnet.
+> See the [Terms](https://subscriptonarc.com/terms), [Refund Policy](https://subscriptonarc.com/refunds),
+> and [Fulfillment Policy](https://subscriptonarc.com/fulfillment).
 
 </div>
 
@@ -48,7 +54,7 @@ sponsored payments, and AI‑native transactions, all with the same predictable 
 - Fee‑free, set‑and‑forget USDC subscriptions — no card declines or maintenance charges
 - One‑tap checkout and peer‑to‑peer transfers from an in‑app wallet
 - Built‑in messaging with payment requests, receipts, and status — right in the thread
-- Google onboarding; your wallet is created for you
+- Email or Google sign-in provisions an in-app wallet backed by Circle developer-controlled MPC custody (existing legacy EOA wallets keep working); external self-custody wallets are supported via SIWE
 
 **For merchants**
 - Hosted checkout, payment links, and recurring billing
@@ -59,8 +65,16 @@ sponsored payments, and AI‑native transactions, all with the same predictable 
 
 **For developers**
 - One lifecycle: create intent → bounded authorization → receipt binding → on‑chain verification → webhook
-- Checkout Intents (`/api/intent`), payment links (`/api/payment-links`), a metered usage API (`/api/user/vault/report-usage`), and a typed CLI
+- One-time Checkout Intents (`/api/intent`, `GET /api/intent/:id`), recurring plans (`/api/v1/plans`), subscriptions (`/api/v1/subscriptions`), payment links (`/api/payment-links`), metered vault status/reporting (`/api/user/vault/status`, `/api/user/vault/report-usage`), and a typed CLI
 - DNS‑style aliases for human‑readable payment identities
+
+### Billing endpoint rule
+
+Use `/api/intent` only for a one-time order, invoice, ticket, or fixed pass. It never creates a
+merchant dashboard/DM plan, regardless of its title. Use `/api/v1/plans` for a reusable recurring
+catalog plan and `/api/v1/subscriptions` for a recurring checkout or user-assigned offer.
+API-created subscription products publish to the dashboard and DM by default; customer plan
+changes are upgrade-only.
 
 ## How a payment works
 
@@ -103,17 +117,45 @@ npx tsc --noEmit --pretty false
 npm run build
 ```
 
+## Integrate in minutes (CLI)
+
+```bash
+# Scaffold a recurring subscription + signed-webhook routes + env:
+npx @subscriptonarc/cli init
+# Non-interactive (agent/CI):
+npx @subscriptonarc/cli init --key sk_test_... --merchant 0x... --framework next-app --yes
+# Add a one-time checkout, diagnose, or forward live webhooks to localhost:
+npx @subscriptonarc/cli add checkout
+npx @subscriptonarc/cli doctor
+npx @subscriptonarc/cli listen --forward-to http://localhost:3000/api/webhooks
+npx @subscriptonarc/cli trigger payment.succeeded --url http://localhost:3000/api/webhooks/subscript
+```
+
+First API call with no account (shared simulation-only demo key; create your own `sk_test_` key for funded Arc testnet settlement):
+
+```bash
+curl -X POST https://www.subscriptonarc.com/api/intent \
+  -H "Authorization: Bearer sk_test_demo_subscript_sandbox_2026" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Hello SubScript", "amountUsdcMicros": "15000000"}'
+```
+
 ## Documentation
 
 - Developer docs: [`/docs`](https://subscriptonarc.com/docs)
+- Quickstart: [`/quickstart.md`](https://subscriptonarc.com/quickstart.md)
+- OpenAPI 3.1 spec: [`/openapi.json`](https://subscriptonarc.com/openapi.json)
+- LLM index: [`/llms.txt`](https://subscriptonarc.com/llms.txt) · full context: [`/llms-full.txt`](https://subscriptonarc.com/llms-full.txt)
+- CLI: [`@subscriptonarc/cli`](https://www.npmjs.com/package/@subscriptonarc/cli) · SDK: [`@subscriptonarc/sdk`](https://www.npmjs.com/package/@subscriptonarc/sdk) · MCP: `@subscriptonarc/mcp`
+- Agent skill: [`/skills/subscript-integration/SKILL.md`](https://subscriptonarc.com/skills/subscript-integration/SKILL.md)
 - Product overview: [`docs/subscript-protocol-features-and-problems-solved.md`](docs/subscript-protocol-features-and-problems-solved.md)
 - Feature coverage: [`docs/platform-feature-coverage.md`](docs/platform-feature-coverage.md)
-- LLM index: [`/llms.txt`](https://subscriptonarc.com/llms.txt)
+- Repository documentation index: [`docs/README.md`](docs/README.md)
 
 ## On the roadmap
 
 Capabilities that stay deployment‑scoped until code, contracts, and production config prove
-them live: direct fiat‑to‑USDC on‑ramps, encrypted private‑key export, dedicated invoice
+them live: full Circle developer-controlled MPC wallet custody cutover (re-enabling Google login, sweep-migrating legacy wallets, deleting the legacy AES path), direct fiat‑to‑USDC on‑ramps, encrypted private‑key export (for legacy wallets), dedicated invoice
 objects with custom terms, sponsored "Pay for Me" relationships, configurable dunning,
 Chainlink Automation execution, Circle Paymaster gas sponsorship, ArcaneVM governed
 confidentiality, and Arc post‑quantum resilience.

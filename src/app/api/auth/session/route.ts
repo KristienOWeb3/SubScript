@@ -1,35 +1,31 @@
 import { NextResponse } from "next/server";
-import { getSessionWallet } from "@/lib/auth";
+import { getVerifiedSessionToken } from "@/lib/auth";
+import { setSessionCookie } from "@/lib/authCookies";
 import { getAccountRole } from "@/lib/accounts/roles";
 import { isConnectionError, getOfflineUserEmbeddedWalletByAddress } from "@/lib/offlineDb";
-import { pgMaybeOne } from "@/lib/serverPg";
-
-type EmbeddedWalletSession = {
-    email: string | null;
-    provider: string | null;
-};
+import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
+import { getWalletCustody, isCustodialWallet, type WalletCustody } from "@/lib/auth/walletCustody";
 
 export async function GET(request: Request) {
     try {
-        const wallet = await getSessionWallet(request.headers);
-        
-        if (!wallet) {
+        const session = await getVerifiedSessionToken(request.headers);
+
+        if (!session) {
             return NextResponse.json({ loggedIn: false }, { status: 200 });
         }
+        const wallet = session.wallet;
 
         let email: string | null = null;
-        let provider: string | null = null;
+        let custody: WalletCustody | null = null;
         let isOfflineMode = false;
 
         try {
-            const data = await pgMaybeOne<EmbeddedWalletSession>(
-                "select email, provider from user_embedded_wallets where wallet_address = $1 limit 1",
-                [wallet.toLowerCase()]
-            );
-            if (data) {
-                email = data.email;
-                provider = data.provider || null;
-            }
+            const [walletCustody, verifiedEmail] = await Promise.all([
+                getWalletCustody(wallet),
+                getVerifiedAccountEmail(wallet),
+            ]);
+            custody = walletCustody;
+            email = verifiedEmail?.email || null;
         } catch (err: any) {
             if (isConnectionError(err)) {
                 isOfflineMode = true;
@@ -43,38 +39,39 @@ export async function GET(request: Request) {
             const walletRecord = getOfflineUserEmbeddedWalletByAddress(wallet.toLowerCase());
             if (walletRecord) {
                 email = walletRecord.email;
-                provider = "circle_google";
-            }
-        }
-
-        /* Wallet-only accounts (e.g. auto-onboarded payers) have no embedded-wallet row,
-           so fall back to the email captured on their customer profile. This keeps the
-           "add your email" prompt from re-appearing after they've provided one. */
-        if (!email) {
-            try {
-                const customer = await pgMaybeOne<{ email: string | null }>(
-                    "select email from customers where wallet_address = $1 limit 1",
-                    [wallet.toLowerCase()]
-                );
-                if (customer?.email) {
-                    email = customer.email;
-                }
-            } catch (err) {
-                console.error("Session customer email lookup error:", err);
+                custody = { provider: "circle_google", hasCircleWallet: true, hasEncryptedKey: false };
             }
         }
 
         const role = await getAccountRole(wallet);
-        const isEmbedded = Boolean(provider && provider !== "external_wallet");
+        const provider = custody?.provider ?? null;
+        /* Custody decides this, not the provider label. The old test was
+           !provider.startsWith("external_wallet"), which alone among this column's consumers read
+           'external_wallet_email_otp' — stamped on by /api/user/email when a wallet binds an OTP
+           email — as a browser wallet. A Circle-custodied account that had verified an email was
+           told to connect an extension, with no way to pay from the account it was signed into. */
+        const isEmbedded = isCustodialWallet(custody);
 
-        return NextResponse.json({ 
-            loggedIn: true, 
+        const response = NextResponse.json({
+            loggedIn: true,
             wallet,
             email,
             provider,
             isEmbedded,
             role
         }, { status: 200 });
+
+        /* Self-heal cookie scoping: re-issue the SAME token (original expiry, never
+           extended) with the current cookie options. Sessions created before the
+           domain-wide cookie helper — or on a host outside its old allowlist — carry a
+           host-only cookie the dashboard subdomain can't see, so "Go to Dashboard"
+           silently bounced back to login. Every session check now upgrades the cookie
+           to .subscriptonarc.com scope before the user navigates. */
+        if (session.expiresAt && session.expiresAt > new Date()) {
+            setSessionCookie(response, request, session.token, session.expiresAt);
+        }
+
+        return response;
     } catch (error) {
         console.error("Session API error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

@@ -277,7 +277,7 @@ export class EventSourcedEngine {
         await this.supabase
             .from("ledger_entries")
             .insert({
-                merchant_address: addressToBuffer(merchantAddr),
+                merchant_address: "\\x" + merchantAddr.substring(2).toLowerCase(),
                 entry_type: "DEBIT_BATCH_PAYOUT",
                 status: "PENDING",
                 amount_usdc: batchTotal.toString(),

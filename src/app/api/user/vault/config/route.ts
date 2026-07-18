@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getAccountRole } from "@/lib/accounts/roles";
+import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
+import { accountDisplayName, merchantDisplayName } from "@/lib/identityDisplay";
 
 export async function GET(request: Request) {
     try {
@@ -11,7 +12,10 @@ export async function GET(request: Request) {
         }
 
         const normalizedUser = wallet.toLowerCase();
-        const role = await getAccountRole(normalizedUser);
+        /* Healing resolver: merchant wallets without an account_roles row (pre role-first
+           signup) resolve ENTERPRISE via their merchants row instead of 403ing, which made
+           the dashboard's Active Customer Escrows list silently render as empty. */
+        const role = await resolveAccountRoleWithBackfill(normalizedUser);
         
         if (role === "USER") {
             const vaults = await prisma.meteredVault.findMany({
@@ -30,14 +34,17 @@ export async function GET(request: Request) {
                 id: v.id,
                 userAddress: v.userAddress,
                 merchantAddress: v.merchantAddress,
-                merchantName: aliasMap.get(v.merchantAddress.toLowerCase()) || v.merchantAddress,
+                merchantName: merchantDisplayName(aliasMap.get(v.merchantAddress.toLowerCase())),
                 balanceUsdc: v.balanceUsdc.toString(),
                 commitUsdc: v.commitUsdc.toString(),
                 owedUsdc: v.owedUsdc.toString(),
                 accruedUsageUsdc: v.accruedUsageUsdc.toString(),
                 active: v.active,
+                disputed: v.disputed,
                 cycleStart: v.cycleStart,
                 lockedUntil: v.lockedUntil,
+                environment: v.environment,
+                settlementChainId: v.settlementChainId.toString(),
                 thresholdUsdc: v.thresholdUsdc.toString(),
                 topUpAmountUsdc: v.topUpAmountUsdc.toString(),
                 monthlyLimitUsdc: v.monthlyLimitUsdc.toString(),
@@ -64,15 +71,18 @@ export async function GET(request: Request) {
             const formattedVaults = vaults.map(v => ({
                 id: v.id,
                 userAddress: v.userAddress,
-                userName: aliasMap.get(v.userAddress.toLowerCase()) || v.userAddress,
+                userName: accountDisplayName(aliasMap.get(v.userAddress.toLowerCase())),
                 merchantAddress: v.merchantAddress,
                 balanceUsdc: v.balanceUsdc.toString(),
                 commitUsdc: v.commitUsdc.toString(),
                 owedUsdc: v.owedUsdc.toString(),
                 accruedUsageUsdc: v.accruedUsageUsdc.toString(),
                 active: v.active,
+                disputed: v.disputed,
                 cycleStart: v.cycleStart,
                 lockedUntil: v.lockedUntil,
+                environment: v.environment,
+                settlementChainId: v.settlementChainId.toString(),
                 thresholdUsdc: v.thresholdUsdc.toString(),
                 topUpAmountUsdc: v.topUpAmountUsdc.toString(),
                 monthlyLimitUsdc: v.monthlyLimitUsdc.toString(),

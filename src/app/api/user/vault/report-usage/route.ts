@@ -9,9 +9,15 @@
 import { after, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
-import { hashSecretKey } from "@/lib/apiKeys";
+import { hashSecretKey, resolveSecretKeyMode } from "@/lib/apiKeys";
+import { ARC_TESTNET_CHAIN_ID } from "@/lib/contracts/constants";
+import { ProtocolConfig } from "@/lib/payments/config";
 import { withPgClient } from "@/lib/serverPg";
-import { sendPushToWallet } from "@/lib/push";
+import {
+    insertPgDm,
+    pushDmNotification,
+    type DmPushInput,
+} from "@/lib/dms/notifications";
 
 type VaultUsageRow = {
     id: string;
@@ -20,13 +26,22 @@ type VaultUsageRow = {
     owed_usdc: string;
     accrued_usage_usdc: string;
     active: boolean;
+    usage_notified_bps: number;
 };
 
 type UsageResult =
     | { kind: "missing" }
+    | { kind: "idempotency_conflict" }
+    | { kind: "environment_mismatch" }
     | { kind: "inactive"; vault: VaultUsageRow }
-    | { kind: "exhausted"; vault: VaultUsageRow; remaining: bigint; notificationCreated: boolean }
-    | { kind: "accrued"; vault: VaultUsageRow; exhausted: boolean; notificationCreated: boolean };
+    | { kind: "exhausted"; vault: VaultUsageRow; remaining: bigint; notification: DmPushInput | null }
+    | { kind: "accrued"; vault: VaultUsageRow; exhausted: boolean; notification: DmPushInput | null; thresholdNotification: DmPushInput | null };
+
+/* Balance-usage thresholds (bps) that trigger a heads-up DM once each per cycle. 100% is covered
+   separately by COMMIT_EXHAUSTED, so it's intentionally not listed here. */
+const USAGE_THRESHOLD_BANDS = [5000, 8000];
+
+const formatUsdc = (micros: bigint) => (Number(micros) / 1_000_000).toFixed(2);
 
 async function insertExhaustionNotification(
     client: any,
@@ -44,47 +59,91 @@ async function insertExhaustionNotification(
           limit 1`,
         [merchantAddress, userAddress],
     );
-    if (existing.rowCount > 0) return false;
+    if (existing.rowCount > 0) return null;
 
-    await client.query(
-        `insert into subscript_dms
-            (sender_address, receiver_address, message_type, status, amount_usdc, title, description)
-         values ($1, $2, 'COMMIT_EXHAUSTED', 'PENDING', $3, $4, $5)`,
-        [
-            merchantAddress,
-            userAddress,
-            commitUsdc.toString(),
-            "Committed balance exhausted",
-            "Your committed service balance is fully used. Re-commit before requesting more service.",
-        ],
-    );
-    return true;
+    return insertPgDm(client, {
+        sender_address: merchantAddress,
+        receiver_address: userAddress,
+        message_type: "COMMIT_EXHAUSTED",
+        status: "PENDING",
+        amount_usdc: commitUsdc.toString(),
+        title: "Committed balance exhausted",
+        description: "Your committed service balance is fully used. Re-commit before requesting more service.",
+    });
+}
+
+async function insertThresholdNotification(
+    client: any,
+    merchantAddress: string,
+    userAddress: string,
+    bandBps: number,
+    accrued: bigint,
+    balance: bigint,
+) {
+    const pct = bandBps / 100;
+    return insertPgDm(client, {
+        sender_address: merchantAddress,
+        receiver_address: userAddress,
+        message_type: "USAGE_THRESHOLD",
+        status: "PENDING",
+        amount_usdc: accrued.toString(),
+        title: `${pct}% of your committed balance used`,
+        description: `This merchant has reported ${formatUsdc(accrued)} of your ${formatUsdc(balance)} USDC committed balance as used. Service continues until the balance is fully used — review the usage breakdown in your dashboard.`,
+    });
 }
 
 async function accrueUsageAtomically(
     userAddress: string,
     merchantAddress: string,
     amountMicros: bigint,
+    note: string | null,
+    requestId: string,
 ): Promise<UsageResult> {
     return withPgClient(async (client) => {
         await client.query("begin");
         try {
             const selected = await client.query(
-                `select id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active
+                `select id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active, usage_notified_bps,
+                        environment, settlement_chain_id
                    from metered_vaults
-                  where user_address = $1 and merchant_address = $2
+                  where user_address = $1
+                    and merchant_address = $2
+                    and environment = $3
+                    and settlement_chain_id = $4
                   for update`,
-                [userAddress, merchantAddress],
+                [userAddress, merchantAddress, "TEST", ARC_TESTNET_CHAIN_ID],
             );
             if (selected.rowCount === 0) {
                 await client.query("commit");
                 return { kind: "missing" } as const;
             }
 
+            /* A TEST key may only mutate a TEST vault settling on Arc testnet. A future
+               mainnet vault row fails here no matter what the route-level checks missed. */
+            const vaultEnvironment = String(selected.rows[0].environment || "");
+            const vaultChain = BigInt(selected.rows[0].settlement_chain_id ?? 0);
+            if (vaultEnvironment !== "TEST" || vaultChain !== BigInt(5042002)) {
+                await client.query("commit");
+                return { kind: "environment_mismatch" } as const;
+            }
+
             const vault = selected.rows[0] as VaultUsageRow;
             const balance = BigInt(vault.balance_usdc);
             const accrued = BigInt(vault.accrued_usage_usdc);
             const commit = BigInt(vault.commit_usdc);
+
+            const existingReport = await client.query(
+                `select amount_usdc
+                   from metered_usage_reports
+                  where request_id = $1 and merchant_address = $2 and user_address = $3
+                  limit 1`,
+                [requestId, merchantAddress, userAddress],
+            );
+            if (existingReport.rowCount > 0) {
+                await client.query("commit");
+                if (BigInt(existingReport.rows[0].amount_usdc) !== amountMicros) return { kind: "idempotency_conflict" } as const;
+                return { kind: "accrued", vault, exhausted: accrued >= balance, notification: null, thresholdNotification: null } as const;
+            }
 
             if (!vault.active) {
                 await client.query("commit");
@@ -93,7 +152,7 @@ async function accrueUsageAtomically(
 
             const nextAccrued = accrued + amountMicros;
             if (nextAccrued > balance) {
-                const notificationCreated = await insertExhaustionNotification(
+                const notification = await insertExhaustionNotification(
                     client,
                     merchantAddress,
                     userAddress,
@@ -104,7 +163,7 @@ async function accrueUsageAtomically(
                     kind: "exhausted",
                     vault,
                     remaining: balance > accrued ? balance - accrued : BigInt(0),
-                    notificationCreated,
+                    notification,
                 } as const;
             }
 
@@ -113,20 +172,44 @@ async function accrueUsageAtomically(
                     set accrued_usage_usdc = $1,
                         updated_at = now()
                   where id = $2
-              returning id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active`,
+              returning id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active, usage_notified_bps`,
                 [nextAccrued.toString(), vault.id],
             );
+
+            /* Append-only ledger row for this charge — the user's transparent record. */
+            await client.query(
+                `insert into metered_usage_reports
+                     (vault_id, user_address, merchant_address, amount_usdc, accrued_after_usdc, balance_usdc, note, request_id, environment)
+                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                [vault.id, userAddress, merchantAddress, amountMicros.toString(), nextAccrued.toString(), balance.toString(), note, requestId, vaultEnvironment],
+            );
+
             const exhausted = nextAccrued === balance;
-            const notificationCreated = exhausted
+            const notification = exhausted
                 ? await insertExhaustionNotification(client, merchantAddress, userAddress, commit)
-                : false;
+                : null;
+
+            /* Fire a one-time heads-up when a 50%/80% band is first crossed this cycle. Skip when the
+               balance is fully used — COMMIT_EXHAUSTED already covers that. Dedup is atomic via the
+               usage_notified_bps high-water mark, which re-arms when the cycle resets (draw/commit). */
+            let thresholdNotification: DmPushInput | null = null;
+            if (!exhausted) {
+                const alreadyNotified = Number(vault.usage_notified_bps ?? 0);
+                const newBps = balance > BigInt(0) ? Number((nextAccrued * BigInt(10000)) / balance) : 10000;
+                const band = [...USAGE_THRESHOLD_BANDS].reverse().find((b) => b <= newBps && b > alreadyNotified);
+                if (band) {
+                    await client.query(`update metered_vaults set usage_notified_bps = $1 where id = $2`, [band, vault.id]);
+                    thresholdNotification = await insertThresholdNotification(client, merchantAddress, userAddress, band, nextAccrued, balance);
+                }
+            }
 
             await client.query("commit");
             return {
                 kind: "accrued",
                 vault: updated.rows[0] as VaultUsageRow,
                 exhausted,
-                notificationCreated,
+                notification,
+                thresholdNotification,
             } as const;
         } catch (error) {
             await client.query("rollback");
@@ -135,16 +218,9 @@ async function accrueUsageAtomically(
     });
 }
 
-function scheduleExhaustionPush(userAddress: string, merchantAddress: string, created: boolean) {
-    if (!created) return;
-    after(() =>
-        sendPushToWallet(userAddress, {
-            title: "Committed balance exhausted",
-            body: "Re-commit before requesting more service.",
-            url: `/user?tab=inbox&chat=${merchantAddress}`,
-            tag: `commit-exhausted-${merchantAddress}`,
-        }),
-    );
+function scheduleDmPush(notification: DmPushInput | null) {
+    if (!notification) return;
+    after(() => pushDmNotification(notification));
 }
 
 export async function POST(request: Request) {
@@ -155,14 +231,42 @@ export async function POST(request: Request) {
         }
         const secretKey = authHeader.replace("Bearer ", "");
 
+        /* Environment isolation, fail-closed in four layers: the credential must be a TEST
+           key (sk_live_ is refused before any lookup), the stored key's immutable mode must
+           be TEST, the deployment itself must be settling Arc testnet, and the vault row is
+           checked for TEST/testnet inside the same transaction that mutates it. */
+        if (resolveSecretKeyMode(secretKey) !== "TEST") {
+            return NextResponse.json(
+                { error: "Unauthorized: only sk_test_ keys are accepted on this deployment." },
+                { status: 401 },
+            );
+        }
+        if (BigInt(ProtocolConfig.CHAIN_ID) !== BigInt(ARC_TESTNET_CHAIN_ID)) {
+            return NextResponse.json(
+                { error: "Usage reporting is unavailable: this deployment is not configured for Arc testnet settlement." },
+                { status: 503 },
+            );
+        }
+
         const apiKeyRecord = await prisma.apiKey.findFirst({
-            where: { OR: [{ secretKeyHash: hashSecretKey(secretKey) }, { secretKeyPlain: secretKey }] }
+            where: { secretKeyHash: hashSecretKey(secretKey) }
         });
         if (!apiKeyRecord || apiKeyRecord.revoked) {
             return NextResponse.json({ error: "Unauthorized: Invalid or revoked API Key" }, { status: 401 });
         }
+        if (apiKeyRecord.mode !== "TEST") {
+            return NextResponse.json({ error: "Unauthorized: this API key's mode cannot settle on this deployment." }, { status: 403 });
+        }
 
         const merchantAddress = apiKeyRecord.walletAddress.toLowerCase();
+
+        const merchant = await prisma.merchant.findUnique({
+            where: { walletAddress: merchantAddress },
+            select: { tier: true }
+        });
+        if (!merchant || merchant.tier !== "PREMIUM") {
+            return NextResponse.json({ error: "Forbidden: API keys and usage reporting require a Premium (Tier 3) merchant plan." }, { status: 403 });
+        }
 
         const body = await request.json().catch(() => null);
         if (!body || typeof body !== "object") {
@@ -170,11 +274,14 @@ export async function POST(request: Request) {
         }
 
         const sanitizedBody = sanitizeInput(body);
-        const { userAddress, amountUsdc, amountUsdcMicros } = sanitizedBody;
+        const { userAddress, amountUsdc, amountUsdcMicros, note } = sanitizedBody;
 
         if (typeof userAddress !== "string" || !/^0x[a-fA-F0-9]{40}$/.test(userAddress)) {
             return NextResponse.json({ error: "Invalid user address" }, { status: 400 });
         }
+
+        /* Optional merchant-supplied line-item label for the user's ledger (e.g. "1.2M API calls"). */
+        const cleanNote = typeof note === "string" && note.trim() ? note.trim().slice(0, 200) : null;
 
         /* Canonical unit is integer micro-USDC (`amountUsdcMicros`), consistent with /intent and
            /v1/subscriptions. The legacy decimal `amountUsdc` is still accepted for compatibility.
@@ -199,14 +306,30 @@ export async function POST(request: Request) {
         }
 
         const normalizedUser = userAddress.toLowerCase();
+        const requestIdHeader = request.headers.get("x-request-id")?.trim();
+        if (requestIdHeader && !/^[A-Za-z0-9._:-]{8,128}$/.test(requestIdHeader)) {
+            return NextResponse.json({ error: "Invalid x-request-id" }, { status: 400 });
+        }
+        const requestId = requestIdHeader || crypto.randomUUID();
 
-        const result = await accrueUsageAtomically(normalizedUser, merchantAddress, amountMicros);
+        const result = await accrueUsageAtomically(normalizedUser, merchantAddress, amountMicros, cleanNote, requestId);
 
         if (result.kind === "missing") {
             return NextResponse.json({
                 error: "No vault for this user. Ask them to commit to your service before reporting usage.",
                 code: "NO_VAULT",
             }, { status: 404 });
+        }
+
+        if (result.kind === "idempotency_conflict") {
+            return NextResponse.json({ error: "This request id was already used for a different usage charge." }, { status: 409 });
+        }
+
+        if (result.kind === "environment_mismatch") {
+            return NextResponse.json({
+                error: "This vault does not belong to the TEST environment on Arc testnet; a test key cannot mutate it.",
+                code: "ENVIRONMENT_MISMATCH",
+            }, { status: 403 });
         }
 
         if (result.kind === "inactive") {
@@ -219,7 +342,7 @@ export async function POST(request: Request) {
         }
 
         if (result.kind === "exhausted") {
-            scheduleExhaustionPush(normalizedUser, merchantAddress, result.notificationCreated);
+            scheduleDmPush(result.notification);
             return NextResponse.json({
                 error: "Committed balance exhausted. The user must re-commit to keep using the service.",
                 code: "COMMIT_EXHAUSTED",
@@ -230,12 +353,14 @@ export async function POST(request: Request) {
             }, { status: 402 });
         }
 
-        scheduleExhaustionPush(normalizedUser, merchantAddress, result.notificationCreated);
+        scheduleDmPush(result.notification);
+        scheduleDmPush(result.thresholdNotification);
 
         return NextResponse.json({
             success: true,
             active: result.vault.active,
             exhausted: result.exhausted,
+            requestId,
             accruedUsageUsdc: result.vault.accrued_usage_usdc,
             balanceUsdc: result.vault.balance_usdc,
             commitUsdc: result.vault.commit_usdc,

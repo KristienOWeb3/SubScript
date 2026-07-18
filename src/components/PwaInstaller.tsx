@@ -93,7 +93,7 @@ export default function PwaInstaller() {
                 <button
                     type="button"
                     onClick={install}
-                    className="shrink-0 rounded-xl bg-[#ccff00] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-black transition hover:brightness-110"
+                    className="shrink-0 rounded-xl bg-[#00d2b4] px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-black transition hover:brightness-110"
                 >
                     Install
                 </button>

@@ -10,7 +10,11 @@ function cookieDomain(request: Request) {
         .map((value) => value.trim().toLowerCase().replace(/:\d+$/, ""))
         .filter(Boolean);
 
-    if (hosts.some((host) => host === "subscriptonarc.com" || host === "www.subscriptonarc.com" || host === "dashboard.subscriptonarc.com")) {
+    /* Any production host (www, dashboard, pay, apex, future subdomains) must set the
+       session cookie domain-wide: the login page, dashboard, and hosted checkout live on
+       different subdomains, and a host-only cookie set on one of them silently bounces
+       the user back to login on every other. */
+    if (hosts.some((host) => host === "subscriptonarc.com" || host.endsWith(".subscriptonarc.com"))) {
         return ".subscriptonarc.com";
     }
 
@@ -47,6 +51,15 @@ export function clearSessionCookie(response: NextResponse, request: Request) {
         ...baseCookieOptions(request),
         maxAge: 0,
     });
+    /* Also clear the legacy HOST-ONLY variant (no Domain attribute). Sessions created
+       before domain-wide scoping left one behind; clearing only the domain cookie would
+       leave that ghost cookie signing the user in on the host they logged out from.
+       Appended as a raw header because response.cookies.set dedupes by name. */
+    const secure = process.env.NODE_ENV === "production" ? " Secure;" : "";
+    response.headers.append(
+        "Set-Cookie",
+        `subscript_session_token=; Path=/; Max-Age=0; HttpOnly;${secure} SameSite=strict`
+    );
 }
 
 export function setSiweNonceCookie(response: NextResponse, request: Request, nonce: string) {

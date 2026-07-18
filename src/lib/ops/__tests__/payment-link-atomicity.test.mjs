@@ -1,0 +1,122 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+function source(path) {
+    return readFileSync(new URL(`../../../../${path}`, import.meta.url), "utf8");
+}
+
+const route = source("src/app/api/payment-links/verify/route.ts");
+const worker = source("src/lib/payments/paymentLinkVerificationWorker.ts");
+const migration = source("supabase/migrations/20260711003440_atomic_payment_link_settlement.sql");
+const durableMigration = source("supabase/migrations/20260713192546_durable_payment_link_verification_jobs.sql");
+
+test("embedded checkout cannot double-charge after a Circle polling timeout", () => {
+    /* If Circle accepts the tx but the response times out, the caller retries. Without a stable
+       idempotency key each retry is a fresh on-chain charge, and deleting the claim on every
+       error opened that retry immediately. The helpers must take a required idempotency key, the
+       route must derive a deterministic one from the page's persisted attempt id, and the claim
+       must only be released for failures that provably preceded submission. */
+    const payRoute = source("src/app/api/user/payment-links/[id]/pay/route.ts");
+    const helpers = source("src/lib/paymentLinks/embeddedPay.ts");
+
+    assert.match(helpers, /payMerchantLinkFromEmbedded\([^)]*idempotencyKey: string,\s*\)/s);
+    assert.match(helpers, /payPeerLinkFromEmbedded\([^)]*idempotencyKey: string,\s*\)/s);
+    assert.match(helpers, /idempotencyKey,\s*\}\);/);
+
+    assert.match(payRoute, /deterministicIdempotencyKey\(`embedded-pay-attempt:\$\{clientIntentId\}`\)/);
+    assert.doesNotMatch(payRoute, /intentSuffix/);
+    assert.match(payRoute, /const isPreSubmission = /);
+    assert.match(payRoute, /if \(isPreSubmission\) \{\s*await prisma\.idempotencyKey\.delete/);
+    /* The unconditional delete-on-every-error is gone. */
+    assert.doesNotMatch(payRoute, /catch \(err: any\) \{\s*\/\* Release the claim/);
+});
+
+test("payment-link verification has one database-backed claim winner", () => {
+    assert.match(route, /"claim_payment_link_settlement_durable"/);
+    assert.match(route, /claimResult\?\.outcome !== "CLAIMED"/);
+    assert.match(route, /claimResult\?\.outcome === "FINGERPRINT_MISMATCH"/);
+    assert.match(route, /if \(claimError\)/);
+    assert.doesNotMatch(route, /from\("idempotency_keys"\)\s*\.insert/);
+
+    assert.match(migration, /ON CONFLICT \(execution_key\) DO NOTHING/i);
+    assert.match(migration, /request_fingerprint IS DISTINCT FROM v_fingerprint/i);
+    assert.match(migration, /'txHash'.*'chainId'.*'paymentLinkId'.*'payerAddress'.*'receiptId'/s);
+    assert.match(durableMigration, /v_result := public\.claim_payment_link_settlement\(/i);
+    assert.match(durableMigration, /INSERT INTO public\.payment_link_verification_jobs/i);
+});
+
+test("payment-link capacity and settlement credit are atomic", () => {
+    const embeddedPayRoute = source("src/app/api/user/payment-links/[id]/pay/route.ts");
+
+    assert.match(migration, /SET use_count = use_count \+ 1[\s\S]*use_count < max_uses/i);
+    assert.match(migration, /reservation_active = true/i);
+    assert.match(migration, /SET use_count = greatest\(use_count - 1, 0\)/i);
+    assert.match(migration, /ledger_entries_payment_link_credit_tx_unique/i);
+    assert.match(migration, /CREATE UNIQUE INDEX[\s\S]*lower\(tx_hash\)[\s\S]*CREDIT_PAYMENT_LINK/i);
+
+    assert.match(worker, /rpc\(\s*"finalize_payment_link_settlement"/);
+    assert.doesNotMatch(route, /from\("payment_link_payments"\)\s*\.insert/);
+    assert.doesNotMatch(route, /from\("ledger_entries"\)\s*\.update/);
+    assert.doesNotMatch(embeddedPayRoute, /useCount:\s*\{\s*increment:/);
+    assert.doesNotMatch(embeddedPayRoute, /useCount:\s*\{\s*decrement:/);
+});
+
+test("terminal failures cannot downgrade another or completed settlement", () => {
+    assert.match(worker, /"reschedule_payment_link_verification_job"/);
+    assert.match(durableMigration, /v_release := public\.release_payment_link_settlement\(/i);
+    assert.match(durableMigration, /v_job\.lease_token IS DISTINCT FROM p_claim_token/i);
+    assert.doesNotMatch(worker, /from\("transaction_verifications"\)[\s\S]{0,300}status:\s*"FAILED"/);
+    assert.match(worker, /\.neq\("status", "CONFIRMED"\)/);
+    assert.match(migration, /v_claim\.status = 'COMPLETED'[\s\S]*payment_link_payments/i);
+    assert.match(migration, /status <> 'CONFIRMED'/i);
+    assert.match(migration, /request_fingerprint IS DISTINCT FROM v_expected_fingerprint/i);
+});
+
+test("settlement RPCs are hardened and service-role-only", () => {
+    const functionNames = [
+        "claim_payment_link_settlement",
+        "finalize_payment_link_settlement",
+        "release_payment_link_settlement",
+    ];
+
+    for (const functionName of functionNames) {
+        const definition = new RegExp(
+            `FUNCTION public\\.${functionName}\\([\\s\\S]*?SECURITY DEFINER[\\s\\S]*?SET search_path = ''`,
+            "i",
+        );
+        const revoked = new RegExp(
+            `REVOKE EXECUTE ON FUNCTION public\\.${functionName}\\([\\s\\S]*?FROM PUBLIC, anon, authenticated`,
+            "i",
+        );
+        const granted = new RegExp(
+            `GRANT EXECUTE ON FUNCTION public\\.${functionName}\\([\\s\\S]*?TO service_role`,
+            "i",
+        );
+
+        assert.match(migration, definition);
+        assert.match(migration, revoked);
+        assert.match(migration, granted);
+    }
+});
+
+test("the receipt becomes confirmed in the same transaction as settlement", () => {
+    const integrity = source("supabase/migrations/20260715093000_checkout_receipt_integrity.sql");
+    assert.match(integrity, /persist_confirmed_checkout_receipt/);
+    assert.match(integrity, /INSERT INTO public\.receipts/);
+    assert.match(integrity, /'CONFIRMED'/);
+    assert.doesNotMatch(worker, /upsert\(\{\s*receipt_id: job\.receipt_id/);
+
+    /* The COMPLETED fast-path checks for and rebuilds a missing receipt. */
+    const fastPath = route.slice(route.indexOf('claimResult?.outcome === "COMPLETED"'), route.indexOf('"FINGERPRINT_MISMATCH"'));
+    assert.match(fastPath, /from\("receipts"\)/);
+    assert.match(fastPath, /Repaired missing receipt/);
+    assert.match(fastPath, /payment_link_payment_id: paymentRow\?\.id \?\? null/);
+});
+
+test("idempotency fingerprints cannot be rewritten after a claim", () => {
+    assert.match(migration, /CREATE TRIGGER idempotency_keys_immutable_fingerprint/i);
+    assert.match(migration, /BEFORE UPDATE OF request_fingerprint/i);
+    assert.match(migration, /OLD\.request_fingerprint IS NOT NULL/i);
+    assert.match(migration, /RAISE EXCEPTION 'idempotency request fingerprint is immutable'/i);
+});

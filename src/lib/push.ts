@@ -20,9 +20,15 @@ function ensureVapidConfigured(): boolean {
         vapidConfigured = false;
         return false;
     }
-    webpush.setVapidDetails(subject, publicKey, privateKey);
-    vapidConfigured = true;
-    return true;
+    try {
+        webpush.setVapidDetails(subject, publicKey, privateKey);
+        vapidConfigured = true;
+        return true;
+    } catch (error) {
+        console.error("[push] invalid VAPID configuration:", error instanceof Error ? error.message : error);
+        vapidConfigured = false;
+        return false;
+    }
 }
 
 export function getVapidPublicKey(): string | null {
@@ -38,30 +44,63 @@ export interface PushPayload {
     tag?: string;
 }
 
+export interface PushDeliveryResult {
+    configured: boolean;
+    storageReady: boolean;
+    subscriptions: number;
+    sent: number;
+    failed: number;
+    pruned: number;
+    skipped: number;
+}
+
+function emptyDeliveryResult(configured: boolean): PushDeliveryResult {
+    return {
+        configured,
+        storageReady: false,
+        subscriptions: 0,
+        sent: 0,
+        failed: 0,
+        pruned: 0,
+        skipped: 0,
+    };
+}
+
 /**
  * Best-effort: deliver a push to every registered destination for a wallet. Never throws — callers
  * fire this as a side-effect of an already-committed action. Expired browser subscriptions
  * (HTTP 404/410) are pruned automatically.
  */
-export async function sendPushToWallet(walletAddress: string, payload: PushPayload): Promise<void> {
-    if (!supabaseAdmin || !walletAddress) return;
+export async function sendPushToWallet(
+    walletAddress: string,
+    payload: PushPayload
+): Promise<PushDeliveryResult> {
+    const webConfigured = ensureVapidConfigured();
+    const result = emptyDeliveryResult(webConfigured);
+    if (!supabaseAdmin || !walletAddress) return result;
     const wallet = walletAddress.toLowerCase();
 
     const { data: subs, error } = await supabaseAdmin
         .from("push_subscriptions")
-        .select("*")
+        .select("id, platform, endpoint, p256dh, auth")
         .eq("wallet_address", wallet);
 
-    if (error || !subs || subs.length === 0) return;
+    if (error) {
+        console.error("[push] subscription lookup failed:", error.message);
+        return result;
+    }
 
-    const webConfigured = ensureVapidConfigured();
+    result.storageReady = true;
+    result.subscriptions = subs?.length ?? 0;
+    if (!subs || subs.length === 0) return result;
+
     const serialized = JSON.stringify(payload);
 
-    await Promise.all(
+    const outcomes = await Promise.all(
         subs.map(async (sub: any) => {
             try {
                 if (sub.platform === "web") {
-                    if (!webConfigured || !sub.endpoint || !sub.p256dh || !sub.auth) return;
+                    if (!webConfigured || !sub.endpoint || !sub.p256dh || !sub.auth) return "skipped";
                     await webpush.sendNotification(
                         { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
                         serialized
@@ -70,18 +109,27 @@ export async function sendPushToWallet(walletAddress: string, payload: PushPaylo
                         .from("push_subscriptions")
                         .update({ last_used_at: new Date().toISOString() })
                         .eq("id", sub.id);
+                    return "sent";
                 } else {
                     /* Native push (FCM/APNs) for the future SubScript mobile app — not yet wired.
                        The subscription row + payload are ready; only the dispatch call is missing. */
+                    return "skipped";
                 }
             } catch (err: any) {
                 const status = err?.statusCode;
                 if (status === 404 || status === 410) {
                     await supabaseAdmin!.from("push_subscriptions").delete().eq("id", sub.id);
+                    return "pruned";
                 } else {
                     console.error("[push] delivery failed:", err?.message || err);
+                    return "failed";
                 }
             }
         })
     );
+
+    for (const outcome of outcomes) {
+        result[outcome] += 1;
+    }
+    return result;
 }

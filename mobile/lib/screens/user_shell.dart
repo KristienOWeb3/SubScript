@@ -243,6 +243,9 @@ class _HomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<AppController>();
+    final activeSubs = controller.subscriptions
+        .where((item) => item is Map && item['status'] == 'ACTIVE')
+        .toList();
     return RefreshIndicator(
       onRefresh: controller.refresh,
       color: SubScriptColors.lime,
@@ -348,17 +351,17 @@ class _HomePage extends StatelessWidget {
           const SizedBox(height: 28),
           _SectionHeader(
             title: 'Active Subscriptions',
-            trailing: '${controller.subscriptions.length}',
+            trailing: '${activeSubs.length}',
           ),
           const SizedBox(height: 12),
-          if (controller.subscriptions.isEmpty)
+          if (activeSubs.isEmpty)
             const EmptyPanel(
               icon: Icons.layers_clear_outlined,
               title: 'No active subscriptions',
               message: 'Plans you approve will appear here.',
             )
           else
-            ...controller.subscriptions
+            ...activeSubs
                 .take(5)
                 .map((item) => _SubscriptionCard(data: _map(item))),
         ],

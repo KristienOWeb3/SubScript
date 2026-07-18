@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useWaitForTransactionReceipt } from "wagmi";
+import { useAccount, useConnect, useWriteContract, useSwitchChain, useWaitForTransactionReceipt } from "wagmi";
 import { useRouter } from "next/navigation";
 import { injected } from "wagmi/connectors";
 import {
@@ -14,7 +14,8 @@ import {
     isAddress,
     getContract,
 } from "viem";
-import { arcTestnet } from "@/lib/wagmi";
+import { activeArcChain } from "@/lib/wagmi";
+import { arcHttp } from "@/lib/arc/transport";
 import DashboardHeader from "@/components/DashboardHeader";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { 
@@ -22,29 +23,40 @@ import {
     Check, Loader2, AlertTriangle, PlayCircle, XCircle, ChevronLeft
 } from "@/components/icons";
 import { 
-    ARC_TESTNET_CHAIN_ID, 
     PREMIUM_PAYMENT_RECIPIENT_ADDRESS,
+    PREMIUM_PLAN_PRICE_USDC,
     STANDARD_CONTRACT_ADDRESS, 
     USDC_NATIVE_GAS_ADDRESS
 } from "@/lib/contracts/constants";
 import { STANDARD_SUBSCRIPT_ABI, USDC_ERC20_ABI } from "@/lib/contracts/abis";
 
 const publicClient = createPublicClient({
-    chain: arcTestnet,
-    transport: http(),
+    chain: activeArcChain,
+    transport: arcHttp(),
 });
 
 const ERC20_ABI = USDC_ERC20_ABI;
 const STANDARD_ABI = STANDARD_SUBSCRIPT_ABI;
 
+type EmbeddedWallet = {
+    wallet: string;
+    email: string;
+};
+
 export default function UpgradePage() {
     const router = useRouter();
     const [isMounted, setIsMounted] = useState(false);
-    const { address, isConnected } = useAccount();
+    const { address: browserAddress, chainId, isConnected: isBrowserConnected } = useAccount();
     const { connect, connectors, isPending: isConnecting } = useConnect();
-    const { disconnect } = useDisconnect();
     const { writeContractAsync } = useWriteContract();
     const { switchChainAsync } = useSwitchChain();
+    const [isAuthLoading, setIsAuthLoading] = useState(true);
+    const [embeddedWallet, setEmbeddedWallet] = useState<EmbeddedWallet | null>(null);
+    const [sessionAlert, setSessionAlert] = useState<string | null>(null);
+
+    const activeMerchantAddress = embeddedWallet?.wallet || browserAddress || "";
+    const isConnected = isBrowserConnected || Boolean(embeddedWallet);
+    const address = activeMerchantAddress;
 
     const [txHashState, setTxHashState] = useState<`0x${string}` | undefined>(undefined);
     const { data: txReceipt } = useWaitForTransactionReceipt({
@@ -68,6 +80,10 @@ export default function UpgradePage() {
     const [checkoutError, setCheckoutError] = useState<string | null>(null);
     const [successTxHash, setSuccessTxHash] = useState<string | null>(null);
     const [sessionIdState, setSessionIdState] = useState<string | null>(null);
+    /* Set the moment a payment transaction is submitted on-chain. Once this exists the user has
+       (or may have) been debited, so the UI must never offer a fresh checkout — only re-running
+       server verification of this same transaction. */
+    const [submittedTxHash, setSubmittedTxHash] = useState<string | null>(null);
 
     const [isCancelling, setIsCancelling] = useState(false);
     const [cancellationError, setCancellationError] = useState<string | null>(null);
@@ -97,6 +113,45 @@ export default function UpgradePage() {
     }, []);
 
     useEffect(() => {
+        const restoreSession = async () => {
+            try {
+                const res = await fetch("/api/auth/session");
+                const data = await res.json();
+
+                if (!data.loggedIn || !data.wallet) {
+                    setEmbeddedWallet(null);
+                    return;
+                }
+
+                if (!data.role) {
+                    setSessionAlert("Missing account role. Sign in again before upgrading.");
+                    return;
+                }
+
+                if (data.role === "USER") {
+                    setSessionAlert("This upgrade is only available from a merchant account.");
+                    return;
+                }
+
+                if (data.isEmbedded) {
+                    setEmbeddedWallet({
+                        wallet: String(data.wallet).toLowerCase(),
+                        email: data.email || "",
+                    });
+                } else {
+                    setEmbeddedWallet(null);
+                }
+            } catch (err) {
+                console.error("Error restoring upgrade session:", err);
+            } finally {
+                setIsAuthLoading(false);
+            }
+        };
+
+        restoreSession();
+    }, []);
+
+    useEffect(() => {
         if (!address) {
             setIsLoadingTier(false);
             return;
@@ -119,6 +174,60 @@ export default function UpgradePage() {
         }
     };
 
+    const executeContractWrite = async ({
+        address: contractAddress,
+        abi: contractAbi,
+        functionName,
+        args = [],
+    }: {
+        address: string;
+        abi: any;
+        functionName: string;
+        args?: any[];
+    }) => {
+        if (embeddedWallet) {
+            let action = "";
+            let serializedArgs: Record<string, string> = {};
+
+            if (functionName === "approve") {
+                action = "approveUsdc";
+                serializedArgs = { spender: String(args[0]), amount: args[1].toString() };
+            } else if (functionName === "createSubscription") {
+                action = "createPremiumSubscription";
+                serializedArgs = {
+                    merchant: String(args[0]),
+                    amount: args[1].toString(),
+                    period: args[2].toString(),
+                };
+            } else {
+                throw new Error(`Execution intent not allowlisted for embedded wallets: ${functionName}`);
+            }
+
+            const res = await fetch("/api/execute-tx", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action, args: serializedArgs }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || "Server transaction execution failed");
+            }
+            return data.txHash as string;
+        }
+
+        if (chainId !== activeArcChain.id) {
+            setCheckoutStatus(`Switching network to ${activeArcChain.name}...`);
+            await switchChainAsync({ chainId: activeArcChain.id });
+        }
+
+        return await writeContractAsync({
+            address: contractAddress as `0x${string}`,
+            abi: contractAbi,
+            functionName,
+            args,
+        });
+    };
+
     const getCheckoutErrorMessage = (error: any) => {
         const message = error?.shortMessage || error?.reason || error?.details || error?.message;
         if (/user rejected|rejected by user|user denied/i.test(String(message || ""))) {
@@ -133,26 +242,55 @@ export default function UpgradePage() {
         return message || "An error occurred during subscription processing.";
     };
 
-    const syncAndRedirect = useCallback(async (hash: string) => {
+    const syncAndRedirect = useCallback(async (hash: string, sessionId = sessionIdState, subId?: number) => {
+        setCheckoutState("confirming");
         setCheckoutStatus("Syncing premium state with server...");
+        /* The server can legitimately need time after the payment lands: 202 while block
+           confirmations accrue, 404 while the RPC indexes the receipt, 409 while another
+           request (or the reconciler) holds the session. Those are pending states of an
+           already-paid transaction, not failures — poll instead of surfacing an error that
+           could push the user into paying again. */
+        const RETRYABLE_STATUSES = [202, 404, 409];
+        const MAX_ATTEMPTS = 12;
+        const RETRY_DELAY_MS = 5000;
         try {
-            const upgradeRes = await fetch("/api/premium/upgrade", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    txHash: hash,
-                    sessionId: sessionIdState
-                }),
-            });
-            const upgradeData = await upgradeRes.json();
-            if (!upgradeRes.ok) {
-                throw new Error(upgradeData.error || "Failed to finalize premium upgrade on server");
-            }
+            let lastError = "Failed to finalize premium upgrade on server";
+            for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+                const upgradeRes = await fetch("/api/premium/upgrade", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        txHash: hash,
+                        sessionId,
+                        subId,
+                    }),
+                });
+                const upgradeData = await upgradeRes.json();
 
-            setSuccessTxHash(hash);
-            setCheckoutState("success");
-            setCheckoutStatus("Upgrade successful! Privacy Premium activated.");
-            router.push("/merchant?upgradeSuccess=true");
+                if (upgradeRes.ok && upgradeData.success === true) {
+                    setSuccessTxHash(hash);
+                    setCheckoutState("success");
+                    setCheckoutStatus("Upgrade successful! Privacy Premium activated.");
+                    router.push("/merchant?upgradeSuccess=true");
+                    return;
+                }
+
+                lastError = upgradeData.error || lastError;
+                if (!RETRYABLE_STATUSES.includes(upgradeRes.status)) {
+                    throw new Error(lastError);
+                }
+
+                setCheckoutStatus(
+                    upgradeRes.status === 202
+                        ? "Payment received — waiting for block confirmations..."
+                        : "Payment submitted — waiting for the network to index the transaction..."
+                );
+                await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+            }
+            throw new Error(
+                "Your payment was submitted on-chain but server confirmation is still pending. " +
+                "It will be finalized automatically — you can also retry verification below. Do not pay again."
+            );
         } catch (err: any) {
             console.error("Premium upgrade sync failed:", err);
             setCheckoutError(err.message || "Failed to sync premium state with server");
@@ -163,32 +301,33 @@ export default function UpgradePage() {
     useEffect(() => {
         if (txReceipt) {
             if (txReceipt.status === "success") {
-                syncAndRedirect(txReceipt.transactionHash);
+                syncAndRedirect(txReceipt.transactionHash, sessionIdState || undefined);
             } else {
                 setCheckoutError("Subscription creation transaction reverted on-chain.");
                 setCheckoutState("error");
             }
         }
-    }, [txReceipt, syncAndRedirect]);
+    }, [sessionIdState, txReceipt, syncAndRedirect]);
 
     const handleUpgrade = async () => {
         if (!isConnected || !address) {
-            setCheckoutError("Please connect your merchant wallet first.");
+            setCheckoutError("Sign in with your merchant email wallet or connect your merchant wallet first.");
             return;
         }
 
         setCheckoutError(null);
         setSuccessTxHash(null);
+        setSubmittedTxHash(null);
         setCheckoutState("preparing");
         setCheckoutStatus("Checking network settings...");
 
         try {
             const userAddress = getAddress(address) as `0x${string}`;
 
-            /* 1. Ensure connected to Arc Testnet */
-            if (publicClient.chain.id !== ARC_TESTNET_CHAIN_ID) {
-                setCheckoutStatus("Switching network to Arc Testnet...");
-                await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+            /* 1. Ensure connected browser wallets are on the active Arc chain. Embedded wallets are server-signed. */
+            if (!embeddedWallet && chainId !== activeArcChain.id) {
+                setCheckoutStatus(`Switching network to ${activeArcChain.name}...`);
+                await switchChainAsync({ chainId: activeArcChain.id });
             }
 
             /* 2. Check USDC details and decimals */
@@ -204,7 +343,7 @@ export default function UpgradePage() {
                 throw new Error(`Unexpected USDC decimals: ${tokenDecimals}. Expected 6.`);
             }
 
-            const planPrice = parseUnits("10", Number(tokenDecimals));
+            const planPrice = parseUnits(PREMIUM_PLAN_PRICE_USDC, Number(tokenDecimals));
             const approvalAmount = parseUnits("120", Number(tokenDecimals)); /* Approve 12 months worth of allowance */
             const subscriptionPeriod = 2592000; /* 30 Days */
 
@@ -240,7 +379,7 @@ export default function UpgradePage() {
                     args: [STANDARD_CONTRACT_ADDRESS, approvalAmount],
                 });
 
-                const approveTxHash = await writeContractAsync({
+                const approveTxHash = await executeContractWrite({
                     address: USDC_NATIVE_GAS_ADDRESS,
                     abi: ERC20_ABI,
                     functionName: "approve",
@@ -270,15 +409,46 @@ export default function UpgradePage() {
                 args: [PREMIUM_PAYMENT_RECIPIENT_ADDRESS, planPrice, BigInt(subscriptionPeriod)],
             });
 
-            const txHash = await writeContractAsync({
+            const txHash = await executeContractWrite({
                 address: STANDARD_CONTRACT_ADDRESS,
                 abi: STANDARD_ABI,
                 functionName: "createSubscription",
                 args: [PREMIUM_PAYMENT_RECIPIENT_ADDRESS, planPrice, BigInt(subscriptionPeriod)],
             });
+            setSubmittedTxHash(txHash);
 
             setCheckoutStatus("Confirming subscription on-chain...");
-            setTxHashState(txHash as `0x${string}`);
+            if (embeddedWallet) {
+                const receipt = await publicClient.waitForTransactionReceipt({
+                    hash: txHash as `0x${string}`,
+                    timeout: 120_000,
+                });
+
+                if (receipt.status !== "success") {
+                    throw new Error("Subscription creation transaction reverted on-chain.");
+                }
+
+                const subscriptionLogs = parseEventLogs({
+                    abi: STANDARD_ABI,
+                    logs: receipt.logs,
+                });
+                const createLog = subscriptionLogs.find(
+                    (log) =>
+                        log.eventName === "SubscriptionCreated" &&
+                        log.args.subscriber?.toLowerCase() === userAddress.toLowerCase() &&
+                        log.args.merchant?.toLowerCase() === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()
+                );
+
+                /* The server extracts the subId from the receipt logs itself, so a client-side
+                   parse miss must not abort verification of an already-paid transaction. */
+                await syncAndRedirect(
+                    txHash,
+                    checkoutData.sessionId,
+                    createLog ? Number(createLog.args.subId) : undefined
+                );
+            } else {
+                setTxHashState(txHash as `0x${string}`);
+            }
         } catch (err: any) {
             console.error("Premium upgrade failed:", err);
             setCheckoutError(getCheckoutErrorMessage(err));
@@ -317,7 +487,7 @@ export default function UpgradePage() {
     if (!isMounted) {
         return (
             <div className="min-h-screen bg-[#0a0a0c] text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#d4a853]">
-                <AnimatedGradientBg />
+                <AnimatedGradientBg variant="dashboard" />
                 <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-4xl flex-col px-6 pt-28 pb-12">
                     <div className="mb-8 h-9 w-36 rounded-full liquid-glass-skeleton" />
                     <div className="mx-auto mb-12 w-full max-w-xl space-y-4 text-center">
@@ -336,10 +506,15 @@ export default function UpgradePage() {
 
     return (
         <div className="min-h-screen bg-[#0a0a0c] text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#d4a853]">
-            <AnimatedGradientBg />
+            <AnimatedGradientBg variant="dashboard" />
             
             <div className="relative z-10">
                 <DashboardHeader 
+                    embeddedWallet={embeddedWallet}
+                    onDisconnect={() => {
+                        setEmbeddedWallet(null);
+                        fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+                    }}
                     isPremium={isPremium}
                     activeTab="premium"
                     onBackToOverview={() => router.push("/merchant")}
@@ -365,15 +540,32 @@ export default function UpgradePage() {
                         </p>
                     </div>
 
-                    {!isConnected ? (
-                        <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
+                    {sessionAlert ? (
+                        <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
+                            <div className="p-4 rounded-3xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-300">
+                                <AlertTriangle className="w-10 h-10" />
+                            </div>
+                            <div className="space-y-2">
+                                <h2 className="text-lg font-bold text-white uppercase tracking-wider">Merchant Session Required</h2>
+                                <p className="text-xs text-white/60 max-w-md leading-relaxed">
+                                    {sessionAlert}
+                                </p>
+                            </div>
+                        </div>
+                    ) : isAuthLoading ? (
+                        <div className="flex flex-col items-center justify-center py-24 gap-4">
+                            <Loader2 className="w-10 h-10 animate-spin text-[#d4a853]" />
+                            <p className="text-xs text-white/40 uppercase tracking-widest font-mono">Restoring Merchant Session...</p>
+                        </div>
+                    ) : !isConnected ? (
+                        <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
                             <div className="p-4 rounded-3xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-300">
                                 <AlertTriangle className="w-10 h-10" />
                             </div>
                             <div className="space-y-2">
                                 <h2 className="text-lg font-bold text-white uppercase tracking-wider">Wallet Connection Required</h2>
                                 <p className="text-xs text-white/60 max-w-md leading-relaxed">
-                                    Please connect your merchant wallet to verify subscription status and initiate the secure USDC checkout contract call.
+                                    Sign in with your merchant email wallet or connect your merchant wallet to verify subscription status and initiate the secure USDC checkout contract call.
                                 </p>
                             </div>
                             <button
@@ -392,7 +584,7 @@ export default function UpgradePage() {
                     ) : isPremium ? (
                         /* Active Premium Status Panel */
                         <div className="max-w-2xl mx-auto space-y-6">
-                            <div className="liquid-glass border border-[#d4a853]/30 rounded-3xl p-8 shadow-2xl relative overflow-hidden bg-gradient-to-b from-[#d4a853]/[0.03] to-transparent">
+                            <div className="liquid-glass border border-[#d4a853]/30 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden bg-gradient-to-b from-[#d4a853]/[0.03] to-transparent">
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-[#d4a853]/10 via-transparent to-transparent pointer-events-none" />
 
                                 <div className="flex items-center gap-3 mb-6">
@@ -468,7 +660,7 @@ export default function UpgradePage() {
                     ) : (
                         /* Pricing Card UI for Free Merchants */
                         <div className="max-w-md mx-auto space-y-6">
-                            <div className="liquid-glass border-2 border-[#d4a853]/40 rounded-[32px] p-8 shadow-[0_8px_30px_rgb(212,168,83,0.1)] relative overflow-hidden bg-gradient-to-b from-[#d4a853]/[0.02] to-transparent">
+                            <div className="liquid-glass border-2 border-[#d4a853]/40 rounded-[32px] p-6 sm:p-8 shadow-[0_8px_30px_rgb(212,168,83,0.1)] relative overflow-hidden bg-gradient-to-b from-[#d4a853]/[0.02] to-transparent">
                                 <div className="absolute top-0 right-0 w-48 h-48 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-[#d4a853]/10 via-transparent to-transparent pointer-events-none" />
 
                                 <div className="text-center mb-6">
@@ -546,17 +738,38 @@ export default function UpgradePage() {
                                         <div className="w-full p-5 bg-red-500/5 border border-red-500/20 rounded-2xl text-center space-y-4">
                                             <div className="flex items-center justify-center gap-2 text-xs text-red-400 font-bold uppercase tracking-wider">
                                                 <XCircle className="w-4 h-4" />
-                                                <span>Transaction Failed</span>
+                                                <span>{submittedTxHash ? "Verification Incomplete" : "Transaction Failed"}</span>
                                             </div>
                                             <div className="p-3 bg-red-500/10 border border-red-500/10 rounded-xl text-red-300 text-[10px] font-mono break-all text-left leading-relaxed">
                                                 {checkoutError}
                                             </div>
-                                            <button
-                                                onClick={() => setCheckoutState("idle")}
-                                                className="w-full py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all"
-                                            >
-                                                Retry Checkout
-                                            </button>
+                                            {submittedTxHash ? (
+                                                /* A payment transaction was already submitted on-chain. Re-running the
+                                                   checkout would charge the wallet a second time — only re-verification
+                                                   of the existing transaction is allowed from here. */
+                                                <>
+                                                    <div className="p-3 bg-yellow-500/5 border border-yellow-500/20 rounded-xl text-yellow-200/80 text-[10px] leading-relaxed text-left">
+                                                        Your payment transaction was already submitted on-chain and will not be charged again.
+                                                        If verification keeps failing, premium is activated automatically once the payment is reconciled.
+                                                    </div>
+                                                    <div className="text-[9px] font-mono text-white/40 break-all text-left">
+                                                        Tx Hash: {submittedTxHash}
+                                                    </div>
+                                                    <button
+                                                        onClick={() => syncAndRedirect(submittedTxHash)}
+                                                        className="w-full py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all"
+                                                    >
+                                                        Retry Verification
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <button
+                                                    onClick={() => setCheckoutState("idle")}
+                                                    className="w-full py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all"
+                                                >
+                                                    Retry Checkout
+                                                </button>
+                                            )}
                                         </div>
                                     )}
                                 </div>

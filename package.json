@@ -9,23 +9,43 @@
         "type": "git",
         "url": "https://github.com/KristienOWeb3/SubScript.git"
     },
+    "engines": {
+        "node": ">=22"
+    },
     "workspaces": [
         "mcp-server",
         "packages/*"
     ],
+    "overrides": {
+        "form-data": "4.0.6",
+        "hono": "4.12.27",
+        "underscore": "1.13.8",
+        "undici": "6.27.0",
+        "ws": "8.21.0"
+    },
     "scripts": {
         "dev": "next dev",
-        "build": "prisma generate && next build",
+        "build": "prisma generate && node scripts/apply-migrations.mjs && next build",
+        "db:migrate": "node scripts/apply-migrations.mjs",
         "build:cli": "npm run build --workspace @subscriptonarc/cli",
         "build:sdk": "npm run build --workspace @subscriptonarc/sdk",
         "start": "next start",
         "check:contracts": "node scripts/check-contracts.mjs",
         "integration:smoke": "node scripts/subscript-integration-smoke.mjs",
         "test:live-surface": "node scripts/test-live-surface.cjs",
+        "test:docs": "node --test src/app/docs/__tests__/docs-quality.test.mjs",
+        "test:repo-docs": "node --test src/app/docs/__tests__/repo-docs-structure.test.mjs",
+        "test:push": "node --test src/lib/__tests__/push-notifications.test.mjs",
+        "test:security": "node --test \"src/lib/ops/__tests__/*.test.mjs\" \"src/lib/sponsor/__tests__/*.test.mjs\" \"src/lib/subscriptions/__tests__/*.test.mjs\"",
+        "audit:production": "npm audit --omit=dev --audit-level=high",
+        "test:kyc": "node --test src/lib/kyc/__tests__/kyc.test.mjs",
+        "test:contracts": "hardhat test",
+        "typecheck": "tsc --noEmit",
         "load:test": "node scripts/load-test.mjs",
         "lint": "next lint"
     },
     "dependencies": {
+        "@circle-fin/developer-controlled-wallets": "^10.8.0",
         "@circle-fin/w3s-pw-web-sdk": "^1.1.11",
         "@openzeppelin/contracts-upgradeable": "^5.6.1",
         "@phosphor-icons/react": "^2.1.10",
@@ -50,6 +70,7 @@
         "qrcode.react": "^4.2.0",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
+        "react-qrcode-logo": "^4.1.0",
         "resend": "^6.14.0",
         "snarkjs": "^0.7.6",
         "three": "^0.184.0",

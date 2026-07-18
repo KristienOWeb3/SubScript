@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { getKeeperSigner, syncVaultMirror, VAULT_ABI } from "@/lib/vault/onchain";
 import { SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
 import { withPgClient } from "@/lib/serverPg";
+import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
 
 export const maxDuration = 300;
 
@@ -42,45 +43,111 @@ async function runVaultDraw(request: Request) {
             try {
                 const now = new Date();
                 const cutoff = new Date(Date.now() - CYCLE_SECONDS * 1000);
+                const dueWhere = {
+                    cycleStart: { not: null, lte: cutoff },
+                    /* The contract reverts drawUsageFor until block.timestamp >= lockedUntil,
+                       so only attempt vaults whose lock has already elapsed. */
+                    lockedUntil: { not: null, lte: now },
+                    active: true,
+                } as const;
+                /* Oldest lock first: the contract's user reclaim opens at lockedUntil + 7 days,
+                   so the vault closest to losing its settle window is always drawn first. A
+                   daily run must never let a matured vault age past that window because newer
+                   vaults happened to sort ahead of it. */
                 const due = await prisma.meteredVault.findMany({
-                    where: {
-                        cycleStart: { not: null, lte: cutoff },
-                        /* The contract reverts drawUsageFor until block.timestamp >= lockedUntil,
-                           so only attempt vaults whose lock has already elapsed. */
-                        lockedUntil: { not: null, lte: now },
-                        active: true,
-                    },
+                    where: dueWhere,
+                    orderBy: { lockedUntil: "asc" },
                     take: 200,
                 });
 
+                /* Backlog observability: how much matured work exists beyond this batch, and how
+                   close the oldest pending vault is to its reclaim deadline. */
+                const totalDue = await prisma.meteredVault.count({ where: dueWhere });
+                const oldest = due[0]?.lockedUntil ?? null;
+                const oldestPendingAgeSeconds = oldest ? Math.floor((now.getTime() - oldest.getTime()) / 1000) : 0;
+                console.log(`[metric] vault_draw_backlog: ${totalDue}, batch: ${due.length}, oldest_pending_age_seconds: ${oldestPendingAgeSeconds}`);
+                const RECLAIM_GRACE_SECONDS = 7 * 24 * 60 * 60;
+                if (oldestPendingAgeSeconds > RECLAIM_GRACE_SECONDS - 2 * 24 * 60 * 60) {
+                    console.error(`[ALERT] vault-draw: oldest matured vault is within 2 days of its user-reclaim deadline (age ${oldestPendingAgeSeconds}s)`);
+                }
+                if (totalDue > due.length) {
+                    console.error(`[ALERT] vault-draw: backlog of ${totalDue - due.length} matured vaults beyond this batch — run the keeper again until drained`);
+                }
+
                 if (due.length === 0) {
-                    return NextResponse.json({ success: true, drawn: 0, vaults: [] }, { status: 200 });
+                    return NextResponse.json({ success: true, drawn: 0, backlog: 0, vaults: [] }, { status: 200 });
                 }
 
                 const signer = getKeeperSigner();
                 const vault = new ethers.Contract(SUBSCRIPT_VAULT_ADDRESS, VAULT_ABI, signer);
 
-                const results: Array<{ id: string; txHash?: string; error?: string }> = [];
+                const results: Array<{
+                    id: string;
+                    txHash?: string;
+                    error?: string;
+                    warning?: string;
+                    reconciled?: boolean;
+                }> = [];
                 for (const row of due) {
+                    let submittedHash: string | undefined;
                     try {
                         const tx = await vault.drawUsageFor(row.merchantAddress, row.userAddress, row.accruedUsageUsdc);
                         const receipt = await tx.wait();
-                        await prisma.meteredVault.update({
-                            where: { id: row.id },
-                            data: { accruedUsageUsdc: BigInt(0) },
-                        });
-                        await syncVaultMirror(row.userAddress, row.merchantAddress);
-                        results.push({ id: row.id, txHash: receipt?.hash || tx.hash });
+                        submittedHash = receipt?.hash || tx.hash;
                     } catch (err: any) {
                         console.error(`[vault-draw] failed for vault ${row.id}:`, err);
+                        /* A previous invocation may have mined the draw but died before
+                           updating the mirror. Re-read chain state before treating this
+                           as a fresh failure; sync also resets cycle-local accrual. */
+                        try {
+                            const state = await syncVaultMirror(row.userAddress, row.merchantAddress);
+                            const mirroredCycle = row.cycleStart
+                                ? BigInt(Math.floor(row.cycleStart.getTime() / 1000))
+                                : BigInt(0);
+                            if (state.cycleStart !== mirroredCycle || !state.active) {
+                                results.push({ id: row.id, reconciled: true, warning: "Recovered an already-settled vault draw" });
+                                continue;
+                            }
+                        } catch (syncError) {
+                            console.error(`[vault-draw] recovery sync failed for vault ${row.id}:`, syncError);
+                        }
                         results.push({ id: row.id, error: err.message || "draw failed" });
+                        continue;
+                    }
+
+                    try {
+                        await syncVaultMirror(row.userAddress, row.merchantAddress);
+                        results.push({ id: row.id, txHash: submittedHash });
+                    } catch (syncError: any) {
+                        /* Money movement is final; never report it as an ordinary failed
+                           draw that a caller might blindly repeat. Queue the mirror repair. */
+                        await recordPaymentReconciliationRequired({
+                            dedupeKey: `vault-draw:${submittedHash}`,
+                            kind: "VAULT_DRAW_MIRROR_SYNC",
+                            message: "Vault draw settled but mirror sync failed",
+                            context: {
+                                vaultId: row.id,
+                                userAddress: row.userAddress,
+                                merchantAddress: row.merchantAddress,
+                                txHash: submittedHash,
+                            },
+                            error: syncError,
+                        });
+                        results.push({
+                            id: row.id,
+                            txHash: submittedHash,
+                            warning: "Draw settled; mirror repair queued",
+                        });
                     }
                 }
 
                 return NextResponse.json({
                     success: true,
                     drawn: results.filter((r) => r.txHash).length,
+                    reconciled: results.filter((r) => r.reconciled).length,
                     failed: results.filter((r) => r.error).length,
+                    backlog: Math.max(0, totalDue - due.length),
+                    oldestPendingAgeSeconds,
                     vaults: results,
                 }, { status: 200 });
             } finally {

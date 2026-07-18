@@ -49,6 +49,9 @@ Keeperbot.env
 Thumbs.db
 .vercel
 .env*.local
+.circle-provision.json
+recovery_file_*.dat
+/recovery/
 
 # Hardhat
 artifacts/

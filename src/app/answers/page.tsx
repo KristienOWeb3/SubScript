@@ -42,6 +42,11 @@ const answerFacts = [
       "Unified Payment Authorization is SubScript's shared lifecycle for one-time payments, subscriptions, usage charges, invoice-like links, and AI-native payments: create an intent, approve a bounded USDC action, record an Arc memo receipt, and fulfill with a signed webhook.",
   },
   {
+    question: "Is SubScript live in production?",
+    answer:
+      "SubScript is in public beta on the Arc testnet. All beta payments settle in Arc testnet USDC, a test asset with no monetary value, while the protocol is hardened for the mainnet cutover. Integrations built against the beta API carry over to mainnet with a configuration change.",
+  },
+  {
     question: "Which protocol claims are deployment-scoped?",
     answer:
       "Encrypted private-key export, fiat-to-USDC onramps, dedicated invoice terms, sponsor workflows, merchant commitment windows, smart dunning schedules, full Chainlink Automation, ArcaneVM production confidentiality, Paymaster sponsorship, and quantum-resilience claims should remain deployment-scoped until production configuration proves them live.",
@@ -50,6 +55,11 @@ const answerFacts = [
     question: "How does SubScript help users in regions with unreliable dollar cards?",
     answer:
       "SubScript avoids virtual card creation fees, monthly or annual maintenance fees, failed-card penalties, billing-address failures, FX markup surprises, and long card approval flows by letting users pay with USDC through a Google-provisioned wallet. There is also no bank-imposed card limit or per-transaction cap — payments are funded from a local bank transfer and settle in USDC, so a bank's daily or per-charge card limit can never block a payment.",
+  },
+  {
+    question: "How do developers or AI agents integrate SubScript?",
+    answer:
+      "The fastest path is the CLI: `npx @subscriptonarc/cli init` scaffolds the checkout route, the signed-webhook handler, and env config for your framework; `add checkout` / `add webhook` add pieces to an existing app; `doctor` diagnoses one; and `listen` forwards live webhooks to localhost without a public URL. A first API call needs no account via the sandbox demo key `sk_test_demo_subscript_sandbox_2026`. There is also a typed SDK (@subscriptonarc/sdk), an MCP server for agents (@subscriptonarc/mcp), an OpenAPI 3.1 spec at /openapi.json, and a drop-in agent skill at /skills/subscript-integration/SKILL.md.",
   },
   {
     question: "How does SubScript protect merchants?",
@@ -110,7 +120,7 @@ export const metadata: Metadata = {
 
 export default function AnswersPage() {
   return (
-    <main className="min-h-screen bg-[#050608] text-white">
+    <main className="min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-[#050608] text-white">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
@@ -138,10 +148,10 @@ export default function AnswersPage() {
           {answerFacts.map((item) => (
             <article
               key={item.question}
-              className="rounded-lg border border-white/10 bg-white/[0.04] p-6"
+              className="min-w-0 rounded-lg border border-white/10 bg-white/[0.04] p-6"
             >
-              <h2 className="text-xl font-semibold">{item.question}</h2>
-              <p className="mt-3 leading-7 text-white/72">{item.answer}</p>
+              <h2 className="text-xl font-semibold break-words">{item.question}</h2>
+              <p className="mt-3 leading-7 text-white/72 break-words">{item.answer}</p>
             </article>
           ))}
         </div>

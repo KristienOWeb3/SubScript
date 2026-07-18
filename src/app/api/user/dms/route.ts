@@ -1,13 +1,18 @@
 /* API route to load and update system-automated DMs for the authenticated user */
 import { NextResponse } from "next/server";
+import { accountDisplayName, merchantDisplayName } from "@/lib/identityDisplay";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { getAccountRole, requireAccountRole } from "@/lib/accounts/roles";
 import { parseUsdcToMicros } from "@/lib/dms/system";
+import { createDmAndNotify } from "@/lib/dms/notifications";
 import { sendSubscriptionCancellationReasonEmail } from "@/lib/email/transactional";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
+import { readSubscriptionCheckoutMeta } from "@/lib/subscriptionCheckout";
+import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
+import { subscriptionWebhookData } from "@/lib/webhooks";
 
 export const maxDuration = 60;
 
@@ -99,11 +104,15 @@ export async function GET(request: Request) {
         const formatted = dms.map((dm: any) => ({
             id: dm.id,
             senderAddress: dm.senderAddress,
-            senderName: aliasMap.get(dm.senderAddress.toLowerCase()) || dm.senderAddress,
+            senderName: roleMap.get(dm.senderAddress.toLowerCase()) === "ENTERPRISE"
+                ? merchantDisplayName(aliasMap.get(dm.senderAddress.toLowerCase()))
+                : accountDisplayName(aliasMap.get(dm.senderAddress.toLowerCase())),
             senderRole: roleMap.get(dm.senderAddress.toLowerCase()) || null,
             senderProfilePic: profilePicMap.get(dm.senderAddress.toLowerCase()) || null,
             receiverAddress: dm.receiverAddress,
-            receiverName: aliasMap.get(dm.receiverAddress.toLowerCase()) || dm.receiverAddress,
+            receiverName: roleMap.get(dm.receiverAddress.toLowerCase()) === "ENTERPRISE"
+                ? merchantDisplayName(aliasMap.get(dm.receiverAddress.toLowerCase()))
+                : accountDisplayName(aliasMap.get(dm.receiverAddress.toLowerCase())),
             receiverRole: roleMap.get(dm.receiverAddress.toLowerCase()) || null,
             receiverProfilePic: profilePicMap.get(dm.receiverAddress.toLowerCase()) || null,
             messageType: dm.messageType,
@@ -113,7 +122,6 @@ export async function GET(request: Request) {
             description: dm.description,
             txHash: dm.txHash,
             paymentLinkId: dm.paymentLinkId,
-            dmGameId: dm.dmGameId,
             createdAt: dm.createdAt
         }));
 
@@ -208,17 +216,15 @@ export async function POST(request: Request) {
                 create: { walletAddress: normalizedReceiver },
             });
 
-            const dm = await prisma.subscriptDm.create({
-                data: {
-                    senderAddress: normalizedWallet,
-                    receiverAddress: normalizedReceiver,
-                    messageType: "PEER_TRANSFER",
-                    status: "APPROVED",
-                    amountUsdc: amountMicros,
-                    txHash,
-                    title: title || `${amountUsdc} USDC Sent`,
-                    description: description || `Direct transfer of ${amountUsdc} USDC on-chain.`,
-                }
+            const dm = await createDmAndNotify({
+                senderAddress: normalizedWallet,
+                receiverAddress: normalizedReceiver,
+                messageType: "PEER_TRANSFER",
+                status: "APPROVED",
+                amountUsdc: amountMicros,
+                txHash,
+                title: title || `${amountUsdc} USDC Sent`,
+                description: description || `Direct transfer of ${amountUsdc} USDC on-chain.`,
             });
 
             return NextResponse.json({ success: true, dmId: dm.id }, { status: 201 });
@@ -255,8 +261,8 @@ export async function POST(request: Request) {
             }
 
             /* Anti-spam: a sender can nudge/react to a given peer at most once per hour.
-               Notifications are in-app only (no email/push here), so this protects the
-               recipient's inbox without touching the email API. */
+               Reactions now also notify registered devices, so this protects both the
+               recipient's inbox and their device notification surface. */
             const REACTION_WINDOW_MS = 60 * 60 * 1000;
             const recentReaction = await prisma.subscriptDm.findFirst({
                 where: {
@@ -279,17 +285,15 @@ export async function POST(request: Request) {
                 );
             }
 
-            const dm = await prisma.subscriptDm.create({
-                data: {
-                    senderAddress: normalizedWallet,
-                    receiverAddress: normalizedReceiver,
-                    messageType: "PEER_REACTION",
-                    status: "APPROVED",
-                    amountUsdc: null,
-                    txHash: null,
-                    title: typeof title === "string" && title.trim() ? title.trim().slice(0, 80) : "Reaction",
-                    description: typeof description === "string" ? description.trim().slice(0, 280) : null,
-                }
+            const dm = await createDmAndNotify({
+                senderAddress: normalizedWallet,
+                receiverAddress: normalizedReceiver,
+                messageType: "PEER_REACTION",
+                status: "APPROVED",
+                amountUsdc: null,
+                txHash: null,
+                title: typeof title === "string" && title.trim() ? title.trim().slice(0, 80) : "Reaction",
+                description: typeof description === "string" ? description.trim().slice(0, 280) : null,
             });
 
             return NextResponse.json({ success: true, dmId: dm.id }, { status: 201 });
@@ -332,10 +336,84 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Cannot reset a system DM to pending" }, { status: 400 });
         }
 
-        const updatedDm = await prisma.subscriptDm.update({
-            where: { id: dmId },
-            data: { status }
-        });
+        if (existingDm.messageType === "SUBSCRIPTION_OFFER" && status === "APPROVED") {
+            return NextResponse.json(
+                { error: "Accept this subscription through its review flow so payment and authorization are completed safely." },
+                { status: 409 },
+            );
+        }
+
+        let updatedDm;
+        let declinedOffer: {
+            id: string;
+            merchantAddress: string;
+            amountUsdc: bigint;
+            externalReference: string | null;
+        } | null = null;
+
+        if (existingDm.messageType === "SUBSCRIPTION_OFFER" && status === "DECLINED") {
+            if (!existingDm.paymentLinkId) {
+                return NextResponse.json({ error: "This subscription offer is missing its checkout." }, { status: 409 });
+            }
+            const checkout = await prisma.paymentLink.findUnique({ where: { id: existingDm.paymentLinkId } });
+            const checkoutMeta = readSubscriptionCheckoutMeta(checkout?.stateSnapshot);
+            if (
+                !checkout
+                || !checkoutMeta
+                || checkout.merchantAddress.toLowerCase() !== existingDm.senderAddress.toLowerCase()
+                || checkoutMeta.subscriber !== normalizedWallet
+            ) {
+                return NextResponse.json({ error: "This subscription offer is not assigned to this account." }, { status: 403 });
+            }
+            if (!checkout.active || checkout.status !== "PENDING") {
+                return NextResponse.json({ error: "This subscription offer is no longer available." }, { status: 409 });
+            }
+
+            updatedDm = await prisma.$transaction(async (tx) => {
+                const canceled = await tx.paymentLink.updateMany({
+                    where: { id: checkout.id, active: true, status: "PENDING" },
+                    data: { active: false, status: "CANCELED" },
+                });
+                if (canceled.count !== 1) throw new Error("Subscription offer changed while it was being declined.");
+                await tx.merchantPlan.updateMany({
+                    where: { sourceCheckoutId: checkout.id },
+                    data: { active: false },
+                });
+                return tx.subscriptDm.update({
+                    where: { id: dmId },
+                    data: { status: "DECLINED" },
+                });
+            });
+            declinedOffer = {
+                id: checkout.id,
+                merchantAddress: checkout.merchantAddress.toLowerCase(),
+                amountUsdc: checkout.amountUsdc,
+                externalReference: checkout.externalReference,
+            };
+        } else {
+            updatedDm = await prisma.subscriptDm.update({
+                where: { id: dmId },
+                data: { status }
+            });
+        }
+
+        if (declinedOffer) {
+            await dispatchDurableSubscriptionWebhook(
+                declinedOffer.merchantAddress,
+                "subscription.canceled",
+                subscriptionWebhookData({
+                    subscriptionId: declinedOffer.id,
+                    status: "canceled",
+                    amountUsdcMicros: declinedOffer.amountUsdc,
+                    subscriber: normalizedWallet,
+                    merchantAddress: declinedOffer.merchantAddress,
+                    externalReference: declinedOffer.externalReference,
+                    sourceCheckoutId: declinedOffer.id,
+                    reason: "Declined by assigned subscriber",
+                }),
+                `offer-declined:${declinedOffer.id}`,
+            ).catch((error) => console.error("[dms] declined subscription webhook failed:", error));
+        }
 
         /* Exit-survey reason → email the merchant (only if a real reason was chosen).
            "Prefer not to answer" submits DISMISSED, which sends nothing. */

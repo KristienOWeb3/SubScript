@@ -10,10 +10,18 @@ import "../test/mocks/MockUSDC.sol";
  * DeploySubScript script to deploy the SubScriptRouter implementation and ERC1967 proxy.
  */
 contract DeploySubScript is Script {
+    /* The historically exposed owner (private key committed to git). A fresh deploy must NEVER be
+       owned by it, so we hard-fail if MULTISIG_ADDRESS resolves to it. */
+    address constant EXPOSED_OWNER = 0x59D67d7c31Ec4835648A3fCb9e9E767A18bBfC69;
+
     function run() external {
-        uint256 deployerPrivateKey = vm.envOr("PRIVATE_KEY", uint256(0x0637528b9afbc627b22542e333971af4dd2f0f48a99f261436cf8f35efa15c8a));
-        
-        address owner = vm.envOr("MULTISIG_ADDRESS", address(0x725D56151CeaC9eAd625241D13b8307B22EDDb10));
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+
+        /* Owner is REQUIRED — no silent fallback — so a redeploy can't accidentally ship owned by a
+           default/compromised address. Set MULTISIG_ADDRESS to a fresh secure owner (multisig/EOA). */
+        address owner = vm.envAddress("MULTISIG_ADDRESS");
+        require(owner != address(0), "MULTISIG_ADDRESS (owner) is required");
+        require(owner != EXPOSED_OWNER, "owner must NOT be the exposed key address");
         address treasury = vm.envOr("TREASURY_ADDRESS", address(0xaFCb6d3e9ebeD1A4BF78384689A1fFf280132295));
         
         address paymentToken;
@@ -39,5 +47,10 @@ contract DeploySubScript is Script {
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
 
         vm.stopBroadcast();
+
+        console.log("SubScriptRouter proxy:", address(proxy));
+        console.log("SubScriptRouter impl :", address(implementation));
+        console.log("owner:                ", owner);
+        console.log("treasury:             ", treasury);
     }
 }

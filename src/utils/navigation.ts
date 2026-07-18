@@ -1,6 +1,16 @@
 /**
  * Utility to get the absolute or relative dashboard/landing redirect URL based on user role and hostname.
  */
+export function getSafeRelativePath(value: string | null | undefined): string {
+    if (!value || !value.startsWith("/") || value.startsWith("//")) return "";
+
+    /* Browsers normalize backslashes in navigation URLs. A value such as /\evil.example
+       can therefore become //evil.example even though it initially looks like a relative path. */
+    if (value.includes("\\") || /[\u0000-\u0020\u007f]/.test(value)) return "";
+
+    return value;
+}
+
 export function getDashboardUrl(role: "USER" | "ENTERPRISE", path: string, currentHostname?: string): string {
     let hostname = "";
     let protocol = "https:";

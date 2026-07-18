@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { ethers } from "ethers";
 import crypto from "crypto";
-import { decryptPrivateKey } from "@/lib/crypto";
+import { getWalletCustody, deterministicIdempotencyKey, cancelSubscriptionIdempotencyKey } from "@/lib/custody";
 import { getSessionWallet } from "@/lib/auth";
+import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
 import {
     CONFIDENTIAL_CONTRACT_ADDRESS,
     PREMIUM_PAYMENT_RECIPIENT_ADDRESS,
@@ -11,8 +11,11 @@ import {
     SUBSCRIPT_ROUTER_ADDRESS,
     USDC_NATIVE_GAS_ADDRESS
 } from "@/lib/contracts/constants";
-import { getRpcProviderForWrite } from "@/lib/payments/rpc";
-import { requireGasSponsored } from "@/lib/sponsor/gas";
+import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
+
+/* Custody execution waits for on-chain confirmation (required for Circle SCA wallets,
+   whose tx hash only exists once confirmed), so give the route enough headroom. */
+export const maxDuration = 120;
 
 const isProdEnv = process.env.NODE_ENV === "production";
 const USER_SPONSORED_ACTIONS = new Set(["approveUsdc", "transferUsdc"]);
@@ -23,7 +26,9 @@ const MERCHANT_SPONSORED_ACTIONS = new Set([
     "withdraw",
     "cancelSubscription",
     "configurePayoutDestination",
-    "registerViewKey"
+    "registerViewKey",
+    "commitViewKey",
+    "revealViewKey"
 ]);
 
 const ERC20_ABI = [
@@ -105,6 +110,23 @@ const CONFIDENTIAL_ABI = [
         stateMutability: "nonpayable",
         inputs: [{ name: "_viewKeyHash", type: "bytes32" }],
         outputs: []
+    },
+    {
+        type: "function",
+        name: "commitViewKey",
+        stateMutability: "nonpayable",
+        inputs: [{ name: "_commitment", type: "bytes32" }],
+        outputs: []
+    },
+    {
+        type: "function",
+        name: "revealViewKey",
+        stateMutability: "nonpayable",
+        inputs: [
+            { name: "_viewKeyHash", type: "bytes32" },
+            { name: "_salt", type: "bytes32" }
+        ],
+        outputs: []
     }
 ];
 
@@ -141,7 +163,10 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Unable to verify account role" }, { status: 500 });
         }
 
-        const accountRole = roleData?.role || null;
+        /* Legacy accounts (pre role-first signup) have no account_roles row; heal them
+           via the shared resolver (explicit role > merchants row > backfilled USER)
+           instead of blocking sponsored execution with a "finish signup" dead end. */
+        const accountRole = roleData?.role || await resolveAccountRoleWithBackfill(wallet);
         if (!accountRole) {
             return NextResponse.json({ error: "Forbidden: Account role is required for sponsored execution." }, { status: 403 });
         }
@@ -172,38 +197,55 @@ export async function POST(request: Request) {
             }
         }
 
-        /* Circuit Breaker Check */
-        const { data: settings } = await supabase
-            .from("system_settings")
-            .select("*")
-            .eq("id", 1)
-            .maybeSingle();
+        /* Circuit Breaker Check — fail CLOSED for withdrawals. Only the withdraw path consults this
+           flag, so the read is scoped to that branch (every other action avoids a wasted round trip).
+           Previously the check was nested in `if (settings)`, so a missing settings row or a failed
+           read silently allowed withdrawals, defeating the breaker exactly when the DB is unhealthy.
+           Withdrawals now proceed only when the row exists and `withdrawals_enabled` is explicitly set. */
+        if (action === "withdraw") {
+            const { data: settings, error: settingsError } = await supabase
+                .from("system_settings")
+                .select("withdrawals_enabled")
+                .eq("id", 1)
+                .maybeSingle();
 
-        if (settings) {
-            if (action === "withdraw" && !settings.withdrawals_enabled) {
+            if (settingsError || !settings || !settings.withdrawals_enabled) {
+                /* Log every trip, distinguishing DB-unhealthy from intentionally-disabled, so a 503
+                   is diagnosable. */
+                if (settingsError) {
+                    console.error(`[execute-tx] Circuit-breaker settings read failed; blocking withdrawal: ${settingsError.message}. requestId: ${requestId}`);
+                } else if (!settings) {
+                    console.warn(`[execute-tx] Circuit breaker: system_settings row missing; blocking withdrawal. requestId: ${requestId}`);
+                } else {
+                    console.warn(`[execute-tx] Circuit breaker: withdrawals_enabled is false; blocking withdrawal. requestId: ${requestId}`);
+                }
                 return NextResponse.json({ error: "Service Unavailable: Withdrawals are currently disabled by circuit breaker." }, { status: 503 });
             }
         }
 
         const { data: walletRecord, error: walletError } = await supabase
             .from("user_embedded_wallets")
-            .select("encrypted_private_key, provider")
+            .select("encrypted_private_key, circle_wallet_id, provider")
             .eq("wallet_address", wallet.toLowerCase())
             .maybeSingle();
 
         if (walletError || !walletRecord) {
             return NextResponse.json({ error: "Embedded wallet not found for authenticated user" }, { status: 404 });
         }
-        if (walletRecord.provider === "external_wallet" || !walletRecord.encrypted_private_key) {
+        if (walletRecord.provider === "external_wallet" || (!walletRecord.encrypted_private_key && !walletRecord.circle_wallet_id)) {
             return NextResponse.json({ error: "Server-sponsored execution is only available for embedded wallet sessions." }, { status: 403 });
         }
-
-        const privateKey = decryptPrivateKey(walletRecord.encrypted_private_key);
 
         let contractAddress = "";
         let contractAbi: any = null;
         let functionName = "";
         let finalArgs: any[] = [];
+        /* Durable idempotency key for actions that are idempotent by identity (e.g. cancel a
+           specific, terminal sub — a retried submit after a timed-out response must not double-
+           submit). Left null for repeatable actions (approve/withdraw/transfer/subscribe), which
+           instead fall back to a request-scoped key so retries dedupe only when the client reuses
+           its x-request-id, never blocking a legitimately distinct future operation. */
+        let durableIdempotencyKey: string | null = null;
 
         switch (action) {
             case "approveUsdc": {
@@ -276,6 +318,9 @@ export async function POST(request: Request) {
                 contractAbi = SUBSCRIPT_ABI;
                 functionName = "cancelSubscription";
                 finalArgs = [BigInt(subscriptionId)];
+                /* Terminal, single-use subId → safe to dedupe across any retry. Shared with the
+                   cancelFromEmbedded path via the custody helper so both derive the identical key. */
+                durableIdempotencyKey = cancelSubscriptionIdempotencyKey(STANDARD_CONTRACT_ADDRESS, subscriptionId);
                 break;
             }
             case "configurePayoutDestination": {
@@ -315,6 +360,61 @@ export async function POST(request: Request) {
                 finalArgs = [viewKeyHash];
                 break;
             }
+            case "commitViewKey": {
+                const { commitment } = args;
+                if (!commitment || typeof commitment !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(commitment)) {
+                    return NextResponse.json({ error: "Invalid commitment. Expected bytes32 hex." }, { status: 400 });
+                }
+
+                const { data: merchantDataC, error: merchantErrC } = await supabase
+                    .from("merchants")
+                    .select("tier")
+                    .eq("wallet_address", wallet.toLowerCase())
+                    .maybeSingle();
+
+                if (merchantErrC) {
+                    console.error(`[execute-tx] Failed to query merchant for view key commit: ${merchantErrC.message}`);
+                }
+                if (!merchantDataC || merchantDataC.tier === "FREE") {
+                    return NextResponse.json({ error: "Forbidden: Premium merchant tier required for view key registration." }, { status: 403 });
+                }
+
+                contractAddress = CONFIDENTIAL_CONTRACT_ADDRESS;
+                contractAbi = CONFIDENTIAL_ABI;
+                functionName = "commitViewKey";
+                finalArgs = [commitment];
+                break;
+            }
+            case "revealViewKey": {
+                const { viewKeyHash: revealHash, salt } = args;
+                if (!revealHash || typeof revealHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(revealHash)) {
+                    return NextResponse.json({ error: "Invalid view key hash. Expected bytes32 hex." }, { status: 400 });
+                }
+                if (!salt || typeof salt !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(salt)) {
+                    return NextResponse.json({ error: "Invalid salt. Expected bytes32 hex." }, { status: 400 });
+                }
+
+                /* Gate reveal on premium too. Commit can be made directly on-chain (outside this
+                   sponsored endpoint), so a FREE merchant could otherwise complete the premium-only
+                   view-key registration at SubScript's expense through this reveal alone. */
+                const { data: merchantDataR, error: merchantErrR } = await supabase
+                    .from("merchants")
+                    .select("tier")
+                    .eq("wallet_address", wallet.toLowerCase())
+                    .maybeSingle();
+                if (merchantErrR) {
+                    console.error(`[execute-tx] Failed to query merchant for view key reveal: ${merchantErrR.message}`);
+                }
+                if (!merchantDataR || merchantDataR.tier === "FREE") {
+                    return NextResponse.json({ error: "Forbidden: Premium merchant tier required for view key registration." }, { status: 403 });
+                }
+
+                contractAddress = CONFIDENTIAL_CONTRACT_ADDRESS;
+                contractAbi = CONFIDENTIAL_ABI;
+                functionName = "revealViewKey";
+                finalArgs = [revealHash, salt];
+                break;
+            }
             default:
                 return NextResponse.json({ error: `Unsupported execution action: ${action}` }, { status: 400 });
         }
@@ -324,27 +424,36 @@ export async function POST(request: Request) {
                 console.log(`[Withdrawal Requested] session: ${wallet}, action: ${action}, target: ${wallet}, requestId: ${requestId}`);
             }
 
-            /* SubScript-funded gas for user merchant-directed actions. Fail closed so a
-               checkout never consumes the user's advertised payment principal as gas. */
-            if (accountRole === "USER") {
-                await requireGasSponsored(wallet.toLowerCase());
-            }
+            /* Sponsorship is a precondition for user-initiated execution: if it cannot be
+               confirmed, abort before custody submits anything so the no-funds-touched guarantee
+               remains true. Custody is detected server-side — Circle SCA wallets resolve through
+               Gas Station with no sponsor transfer; only legacy EOA wallets receive a bounded,
+               durably recorded top-up. */
+            await requireSponsoredGas({
+                wallet: wallet.toLowerCase(),
+                action: "execute_tx",
+                requestKey: `execute-tx:${requestId}:${action}:${wallet.toLowerCase()}`,
+            });
 
-            const { provider, rpcEndpoint } = await getRpcProviderForWrite();
-            const walletSigner = new ethers.Wallet(privateKey, provider);
-            const contract = new ethers.Contract(contractAddress, contractAbi, walletSigner);
-            const method = contract[functionName] as any;
-            if (typeof method !== "function") {
-                throw new Error(`METHOD_NOT_FOUND: ${functionName}`);
-            }
-            const tx = await method(...finalArgs);
-            console.log(`[execute-tx] submitted ${functionName} through ${rpcEndpoint}: ${tx.hash}`);
+            /* Custody routing: execute through Circle's contract-execution API (Gas Station pays gas). */
+            const custody = await getWalletCustody(wallet.toLowerCase());
+
+            const { txHash } = await custody.executeContract({
+                contractAddress,
+                abi: contractAbi,
+                functionName,
+                args: finalArgs,
+                /* Domain key where the op is terminal/idempotent; otherwise request-scoped
+                   (client can reuse x-request-id to make a retry dedupe). */
+                idempotencyKey: durableIdempotencyKey ?? deterministicIdempotencyKey(`req:${requestId}:${action}`),
+            });
+            console.log(`[execute-tx] executed ${functionName} via ${custody.kind} custody: ${txHash}`);
 
             if (action === "withdraw") {
-                console.log(`[Withdrawal Executed] session: ${wallet}, txHash: ${tx.hash}, requestId: ${requestId}`);
+                console.log(`[Withdrawal Executed] session: ${wallet}, txHash: ${txHash}, requestId: ${requestId}`);
             }
 
-            return NextResponse.json({ success: true, txHash: tx.hash }, { status: 200 });
+            return NextResponse.json({ success: true, txHash }, { status: 200 });
 
         } catch (err: any) {
             console.error("EVM execution error:", err);

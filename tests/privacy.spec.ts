@@ -2,21 +2,37 @@ import { test, expect } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { SignJWT } from "jose";
 import dotenv from "dotenv";
+import path from "path";
 
-// Load local environment variables (.env)
-dotenv.config();
+// Load local environment variables (mirroring Next.js load order)
+dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 const prisma = new PrismaClient();
+
+import * as crypto from "crypto";
 
 // Helper to generate a valid subscript_session_token JWT signed with JWT_SECRET
 async function createAuthCookie(address: string): Promise<string> {
   const secretStr = process.env.JWT_SECRET || "mock_jwt_secret_for_testing_32_characters";
   const secret = new TextEncoder().encode(secretStr);
   const now = Date.now();
-  return await new SignJWT({ address: address.toLowerCase(), authenticatedAt: now })
+  const jti = crypto.randomUUID();
+  const expiresAt = new Date(now + 30 * 24 * 60 * 60 * 1000);
+
+  const token = await new SignJWT({ address: address.toLowerCase(), authenticatedAt: now })
     .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime("30d")
+    .setIssuer("subscriptonarc.com")
+    .setAudience("subscript-app")
+    .setJti(jti)
+    .setIssuedAt(Math.floor(now / 1000))
+    .setExpirationTime(Math.floor(expiresAt.getTime() / 1000))
     .sign(secret);
+
+  const hash = crypto.createHash("sha256").update(token).digest("hex");
+  await prisma.$executeRaw`insert into sessions (wallet, token, expires_at) values (${address.toLowerCase()}, ${hash}, ${expiresAt}) on conflict do nothing`;
+
+  return token;
 }
 
 // Generate random mock addresses for the test
@@ -31,7 +47,7 @@ test.describe("SubScript Receipt Privacy E2E Integration Flow", () => {
   let txHash: string;
 
   test.beforeAll(async () => {
-    receiptId = `test-receipt-${Date.now()}`;
+    receiptId = "rcpt-" + Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
     txHash = `0x${Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join("")}`;
 
     console.log(`[TEST SETUP] Creating mock receipt ${receiptId} in database...`);

@@ -1,14 +1,18 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import crypto from "crypto";
 import { sanitizeInput } from "@/utils/security";
-import { isConnectionError, saveOfflineOtpCode } from "@/lib/offlineDb";
+import { isConnectionError, storeLocalOtpCode } from "@/lib/offlineDb";
 import { sendAuthenticationCodeEmail } from "@/lib/email/transactional";
 import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
 import { withPgClient } from "@/lib/serverPg";
+import { getSessionWallet } from "@/lib/auth";
+import { requireAccountRole } from "@/lib/accounts/roles";
 
 import { verifyCaptchaToken } from "@/lib/captcha";
+import { checkProviderRateLimit } from "@/lib/providerRateLimit";
 
 const OTP_TTL_MS = 10 * 60 * 1000;
+const GENERIC_OTP_MESSAGE = "If this email can sign in, a verification code has been sent.";
 
 function otpSecret() {
     const secret = process.env.OTP_SECRET || process.env.JWT_SECRET;
@@ -21,7 +25,7 @@ function hashOtp(email: string, code: string) {
 }
 
 function allowOfflineAuth() {
-    return process.env.NODE_ENV !== "production" && process.env.ALLOW_INSECURE_OFFLINE_AUTH === "true";
+    return process.env.NODE_ENV !== "production" && process.env.ENABLE_LOCAL_OFFLINE_AUTH === "true";
 }
 
 function allowDevOtpFallback() {
@@ -36,28 +40,45 @@ export async function POST(request: Request) {
         }
 
         const sanitizedBody = sanitizeInput(body);
-        const { email, captchaCode, captchaToken, isSignup } = sanitizedBody;
+        const { email, captchaToken, purpose, authFlow } = sanitizedBody;
 
         if (!email || typeof email !== "string" || !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
             return NextResponse.json({ error: "Invalid email address format" }, { status: 400 });
         }
 
-        if (isSignup) {
-            const isValid = await verifyCaptchaToken(captchaToken);
-            if (!isValid) {
-                return NextResponse.json({ error: "Incorrect or expired CAPTCHA code. Please try again." }, { status: 400 });
+        const emailLower = email.toLowerCase();
+        const isEmailBindingRequest = purpose === "bind_wallet_email";
+        const isSignInRequest = authFlow === "signin";
+        let bindingWallet: string | null = null;
+        if (isEmailBindingRequest) {
+            const sessionWallet = await getSessionWallet(request.headers);
+            if (!sessionWallet) {
+                return NextResponse.json({ error: "Sign in with this wallet before verifying an email." }, { status: 401 });
             }
+            const roleCheck = await requireAccountRole(sessionWallet, "USER");
+            if (!roleCheck.ok) {
+                return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
+            }
+            bindingWallet = sessionWallet.toLowerCase();
+        }
+        /* IP limit is charged up front (cheap DoS guard). The per-email limit is deliberately NOT
+           charged here — it is charged just before the code is actually sent, so a request that
+           later fails CAPTCHA or hits the wallet-only 409 doesn't burn the 3-per-window email quota
+           without ever delivering a code. */
+        const requesterIp = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+        const ipLimit = checkProviderRateLimit({ provider: "otp-send-ip", key: requesterIp, limit: 10, windowMs: 10 * 60 * 1000 });
+        if (!ipLimit.ok) {
+            return NextResponse.json(
+                { error: "Too many verification-code requests. Please wait before trying again." },
+                { status: 429, headers: { "Retry-After": String(ipLimit.retryAfterSeconds) } },
+            );
         }
 
-        const emailLower = email.toLowerCase();
+        let emailLoginAllowed = false;
 
         try {
             const emailBinding = await withPgClient((client) => findAccountEmailBinding(client, emailLower));
-            if (isWalletOnlyEmailBinding(emailBinding)) {
-                return NextResponse.json({
-                    error: "This email is linked to a wallet-only SubScript account. Connect that wallet to sign in."
-                }, { status: 409 });
-            }
+            emailLoginAllowed = Boolean(emailBinding) && !isWalletOnlyEmailBinding(emailBinding);
         } catch (err: any) {
             console.error("OTP send email binding query error:", err);
             if (!isConnectionError(err) || !allowOfflineAuth()) {
@@ -65,27 +86,83 @@ export async function POST(request: Request) {
             }
         }
 
+        /* CAPTCHA runs before any account-dependent response for every anonymous LOGIN-code
+           request. Otherwise an attacker can omit CAPTCHA and distinguish an existing email
+           (code sent) from an unknown email (CAPTCHA error). */
+        if (!isEmailBindingRequest) {
+            const isValid = await verifyCaptchaToken(captchaToken);
+            if (!isValid) {
+                return NextResponse.json({ error: "Incorrect or expired CAPTCHA code. Please try again." }, { status: 400 });
+            }
+        }
+
+        /* Charge the per-email quota only now that all validation/CAPTCHA/wallet-only gates have
+           passed and we're about to actually issue a code. */
+        const emailLimit = checkProviderRateLimit({ provider: "otp-send-email", key: emailLower, limit: 3, windowMs: 10 * 60 * 1000 });
+        if (!emailLimit.ok) {
+            return NextResponse.json(
+                { error: "Too many verification-code requests. Please wait before trying again." },
+                { status: 429, headers: { "Retry-After": String(emailLimit.retryAfterSeconds) } },
+            );
+        }
+
         const code = crypto.randomInt(100000, 1000000).toString();
         const codeHash = hashOtp(emailLower, code);
         const expiresAt = new Date(Date.now() + OTP_TTL_MS);
-
-        try {
+        const persistOtp = async () => {
             await withPgClient(async (client) => {
                 await client.query(
-                    `insert into otp_codes (email, code, expires_at)
-                     values ($1, $2, $3)
+                    `insert into otp_codes (email, code, expires_at, purpose, wallet_address)
+                     values ($1, $2, $3, $4, $5)
                      on conflict (email)
-                     do update set code = excluded.code, expires_at = excluded.expires_at, created_at = now()`,
-                    [emailLower, codeHash, expiresAt]
+                     do update set
+                        code = excluded.code,
+                        expires_at = excluded.expires_at,
+                        purpose = excluded.purpose,
+                        wallet_address = excluded.wallet_address,
+                        failed_attempts = 0,
+                        created_at = now()`,
+                    [
+                        emailLower,
+                        codeHash,
+                        expiresAt,
+                        isEmailBindingRequest ? "BIND_WALLET_EMAIL" : "LOGIN",
+                        bindingWallet,
+                    ]
                 );
             });
+        };
+
+        /* Production anonymous OTP work continues after the uniform HTTP response. Known and
+           unknown sign-in emails therefore have the same request latency; only the mailbox owner
+           can observe whether a code was delivered. */
+        if (process.env.NODE_ENV === "production" && !isEmailBindingRequest) {
+            after(async () => {
+                if (isSignInRequest && !emailLoginAllowed) return;
+                try {
+                    await persistOtp();
+                    await sendAuthenticationCodeEmail(emailLower, code);
+                } catch (error) {
+                    console.error("Deferred OTP issue failed:", error instanceof Error ? error.message : error);
+                }
+            });
+            return NextResponse.json({ success: true, message: GENERIC_OTP_MESSAGE, email: emailLower });
+        }
+
+        /* Non-production keeps the synchronous path so local sandboxes can expose devOtpCode. */
+        if (isSignInRequest && !emailLoginAllowed) {
+            return NextResponse.json({ success: true, message: GENERIC_OTP_MESSAGE, email: emailLower });
+        }
+
+        try {
+            await persistOtp();
         } catch (err: any) {
             console.error("OTP send database insert error:", err);
             if (isConnectionError(err)) {
                 if (!allowOfflineAuth()) {
                     return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
                 }
-                saveOfflineOtpCode(emailLower, codeHash, expiresAt);
+                storeLocalOtpCode(emailLower, codeHash, expiresAt);
             } else {
                 console.error("Failed to store OTP code in database:", err);
                 return NextResponse.json({
@@ -103,9 +180,9 @@ export async function POST(request: Request) {
             if (allowDevOtpFallback()) {
                 return NextResponse.json({
                     success: true,
-                    message: "OTP code generated. Email delivery is not configured in this local environment.",
+                    message: GENERIC_OTP_MESSAGE,
                     email: emailLower,
-                    sandboxCode: code,
+                    devOtpCode: code,
                 });
             }
             return NextResponse.json({ error: "We could not send a verification email. Please try again." }, { status: 502 });
@@ -113,7 +190,7 @@ export async function POST(request: Request) {
 
         return NextResponse.json({
             success: true, 
-            message: "OTP code successfully generated.",
+            message: GENERIC_OTP_MESSAGE,
             email: emailLower
         });
     } catch (err: any) {

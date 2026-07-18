@@ -89,3 +89,16 @@ export async function disablePush(): Promise<{ ok: boolean }> {
         return { ok: true };
     }
 }
+
+export async function sendTestPush(): Promise<{ ok: boolean; message?: string; error?: string }> {
+    try {
+        const response = await fetch("/api/push/test", { method: "POST" });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            return { ok: false, error: data.error || "Could not send a test notification." };
+        }
+        return { ok: true, message: data.message || "Test notification sent." };
+    } catch {
+        return { ok: false, error: "Could not reach the notification service." };
+    }
+}

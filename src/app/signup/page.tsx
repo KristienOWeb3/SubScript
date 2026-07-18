@@ -15,12 +15,15 @@ import {
   Building2,
   Lock,
   MailCheck,
-  RefreshCw
+  RefreshCw,
+  LogOut
 } from "@/components/icons";
-import { getDashboardUrl } from "@/utils/navigation";
+import { getDashboardUrl, getSafeRelativePath } from "@/utils/navigation";
 import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import Script from "next/script";
+import { CIRCLE_GOOGLE_ENABLED } from "@/lib/featureFlags";
+import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 
 // Global type declaration for Cloudflare Turnstile
 declare global {
@@ -35,8 +38,7 @@ export default function SignupPage() {
      user followed). Only safe same-origin relative paths are honored. */
   const getSafeNext = () => {
     if (typeof window === "undefined") return "";
-    const raw = new URLSearchParams(window.location.search).get("next") || "";
-    return /^\/(?!\/)[^\s]*$/.test(raw) ? raw : "";
+    return getSafeRelativePath(new URLSearchParams(window.location.search).get("next"));
   };
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending: isConnecting } = useConnect();
@@ -63,10 +65,20 @@ export default function SignupPage() {
   const [roleLoading, setRoleLoading] = useState(false);
   const [roleError, setRoleError] = useState<string | null>(null);
   const [requiresEmailLinking, setRequiresEmailLinking] = useState(false);
+  /* True only for external/self-custody wallet signups, which have no email. The "add your email
+     for push notifications" prompt is shown only for these — email/Google accounts already carry
+     an email, so they must never see it. */
+  const [isExternalWalletSignup, setIsExternalWalletSignup] = useState(false);
+  const [isCompleteRoleFlow, setIsCompleteRoleFlow] = useState(false);
+  
+  const [activeSession, setActiveSession] = useState<{ wallet: string; email?: string; role: string } | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   /* CAPTCHA (Cloudflare Turnstile) states */
   const [captchaToken, setCaptchaToken] = useState("");
   const [turnstileLoaded, setTurnstileLoaded] = useState(false);
+  const isTurnstileConfigured = !!process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.turnstile) {
@@ -119,6 +131,11 @@ export default function SignupPage() {
           const data = await res.json();
           if (data.loggedIn) {
             setActiveMerchantAddress(data.wallet);
+            /* An external wallet has no user_embedded_wallets row until register-role runs, so a
+               logged-in session with no provider AND no email is a not-yet-completed external-wallet
+               signup — keep it flagged so the email-for-push prompt stays visible on reload. OTP and
+               Google always carry a provider + email, so they never hit this fallback. */
+            setIsExternalWalletSignup(data.provider === "external_wallet" || (!data.provider && !data.email));
             if (data.email) {
               setEmail(data.email);
               setRequiresEmailLinking(false);
@@ -126,14 +143,30 @@ export default function SignupPage() {
               setRequiresEmailLinking(true);
             }
             if (data.role) {
-              setRoleError("This browser is already signed in. Use Sign In to open the existing dashboard, or log out before creating another account.");
+              setActiveSession({
+                wallet: data.wallet,
+                email: data.email || undefined,
+                role: data.role
+              });
             } else {
+              setShowRoleSelector(true);
+            }
+          } else {
+            /* Fresh, not-logged-in signup → ask what kind of account they want FIRST, before the
+               auth method (so merchants get the email/Google-only screen). Skip when the entry point
+               already declares the type: the merchant funnel, an email-resume link, or completeRole=1. */
+            const sp = new URLSearchParams(window.location.search);
+            const hint = (sp.get("role") || sp.get("type") || sp.get("account") || "").toLowerCase();
+            const merchantIntent = ["merchant", "enterprise", "business"].includes(hint);
+            if (!merchantIntent && !sp.get("email") && sp.get("completeRole") !== "1") {
               setShowRoleSelector(true);
             }
           }
         }
       } catch (err) {
         console.error("Failed to check active session on mount:", err);
+      } finally {
+        setCheckingSession(false);
       }
     };
     checkSession();
@@ -143,13 +176,47 @@ export default function SignupPage() {
     const roleHint = (params.get("role") || params.get("type") || params.get("account") || "").toLowerCase();
     const merchantIntent = ["merchant", "enterprise", "business"].includes(roleHint);
     setMerchantSignupIntent(merchantIntent);
+    /* Arrived via the merchant funnel (/signup?role=merchant) → pre-select the merchant card so
+       the intended account type is chosen for them and the role picker reads correctly. */
+    if (merchantIntent) setSelectedRole("ENTERPRISE");
     setMerchantSignupCode(params.get("merchantCode") || params.get("invite") || "");
+
+    const refParam = params.get("ref") || params.get("referral");
+    if (refParam) {
+      localStorage.setItem("subscript_referrer", refParam.trim());
+    }
+
+    /* If redirected here from sign-in with completeRole=1, the user already
+       authenticated but is missing a role. Jump straight to the role picker
+       instead of showing the full signup form. */
+    if (params.get("completeRole") === "1") {
+      setShowRoleSelector(true);
+      setIsCompleteRoleFlow(true);
+    }
 
     if (initialEmail) {
       setEmail(initialEmail);
       setAuthMethod("email");
     } else {
       setShowEmailInput(true);
+    }
+  }, []);
+
+  const triggerReferralLogging = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    const referrer = localStorage.getItem("subscript_referrer");
+    if (!referrer) return;
+    try {
+      const res = await fetch("/api/user/referrals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ referrer }),
+      });
+      if (res.ok) {
+        localStorage.removeItem("subscript_referrer");
+      }
+    } catch (err) {
+      console.error("Failed to log referral:", err);
     }
   }, []);
 
@@ -160,17 +227,23 @@ export default function SignupPage() {
       setRequiresEmailLinking(false);
     }
     if (data.role) {
-      const next = getSafeNext();
-      window.location.href = (next && data.role === "USER")
-        ? next
-        : getDashboardUrl(data.role as any, "/dashboard");
+      triggerReferralLogging().finally(() => {
+        const next = getSafeNext();
+        window.location.href = (next && data.role === "USER")
+          ? next
+          : getDashboardUrl(data.role as any, "/dashboard");
+      });
     } else {
       if (!data.email && !email) {
+        /* No email on the login response is the SIWE / external-wallet path (OTP and Google always
+           return an email), so prompt for a push-notification email and flag it so the field stays
+           gated to this case — including on the very first SIWE success, before any reload. */
         setRequiresEmailLinking(true);
+        setIsExternalWalletSignup(true);
       }
       setShowRoleSelector(true);
     }
-  }, [email]);
+  }, [email, triggerReferralLogging]);
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -183,37 +256,16 @@ export default function SignupPage() {
     setSandboxOtp(null);
 
     try {
-      // 1. Check if email already has an account
-      const checkRes = await fetch("/api/auth/check-account", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      const checkData = await checkRes.json();
-      if (checkData.exists) {
-        if (checkData.authMethod === "wallet") {
-          setOtpError("This email is linked to a wallet-only account. Connect that wallet to sign in; this email cannot create another account.");
-          return;
-        }
-        if (checkData.onboardingComplete === false) {
-          setOtpError("This email already started signup but has not chosen an account type yet. Sending a verification code so you can finish setup.");
-        } else {
-          setOtpError("An account with this email already exists. Use Sign In below to access it.");
-          return;
-        }
-      }
-
-      // 2. Send OTP
       const res = await fetch("/api/auth/otp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, captchaCode: "", captchaToken, isSignup: true }),
+        body: JSON.stringify({ email, captchaCode: "", captchaToken, isSignup: true, authFlow: "signup" }),
       });
       const data = await res.json();
       if (data.success) {
         setOtpSent(true);
-        if (data.sandboxCode) {
-          setSandboxOtp(data.sandboxCode);
+        if (data.devOtpCode) {
+          setSandboxOtp(data.devOtpCode);
         }
       } else {
         setOtpError(data.error || "Failed to send verification code.");
@@ -302,7 +354,7 @@ export default function SignupPage() {
         throw new Error(nonceData.error || "Failed to fetch SIWE nonce");
       }
       const fetchedNonce = nonceData.nonce;
-      const message = `Sign this message to verify ownership of your SubScript Merchant Dashboard.\n\nNonce: ${fetchedNonce}`;
+      const message = buildWalletAuthMessage({ address, nonce: fetchedNonce, domain: window.location.host, uri: window.location.origin });
       const signature = await signMessageAsync({ message });
 
       const verifyRes = await fetch("/api/auth/verify-signature", {
@@ -318,6 +370,8 @@ export default function SignupPage() {
       });
       const verifyData = await verifyRes.json();
       if (verifyData.success) {
+        /* External-wallet signup: no email on file, so this is the one flow that prompts for one. */
+        setIsExternalWalletSignup(true);
         handleLoginSuccess(verifyData);
       } else {
         setSiweError(verifyData.error || "Wallet signature verification failed.");
@@ -332,10 +386,6 @@ export default function SignupPage() {
 
   const handleRoleSelection = async () => {
     if (!selectedRole) return;
-    if (selectedRole === "ENTERPRISE" && !merchantSignupIntent) {
-      setRoleError("Merchant onboarding is invite-only. Continue as an Individual User unless you have a merchant invite link.");
-      return;
-    }
     if (requiresEmailLinking) {
       if (!email || !email.includes("@")) {
         setRoleError("Please enter a valid email address.");
@@ -356,10 +406,12 @@ export default function SignupPage() {
       });
       const data = await res.json();
       if (data.success) {
-        const next = getSafeNext();
-        window.location.href = (next && selectedRole === "USER")
-          ? next
-          : getDashboardUrl(selectedRole as any, "/dashboard");
+        triggerReferralLogging().finally(() => {
+          const next = getSafeNext();
+          window.location.href = (next && selectedRole === "USER")
+            ? next
+            : getDashboardUrl(selectedRole as any, "/dashboard");
+        });
       } else {
         setRoleError(data.error || "Failed to register account type.");
       }
@@ -368,6 +420,16 @@ export default function SignupPage() {
     } finally {
       setRoleLoading(false);
     }
+  };
+
+  /* Pre-auth account-type step: the user picks User vs Merchant BEFORE choosing an auth method, so
+     the auth screen can adapt (merchants are email/Google only). This only records the choice and
+     advances to the auth method screen; the role is registered after authentication. */
+  const handleContinueToAuth = () => {
+    if (!selectedRole) return;
+    setRoleError(null);
+    setMerchantSignupIntent(selectedRole === "ENTERPRISE");
+    setShowRoleSelector(false);
   };
 
   useEffect(() => {
@@ -384,12 +446,17 @@ export default function SignupPage() {
         <div className="relative z-10 w-full max-w-md">
           <div className="text-center mb-8">
             <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
-              SubScript <span className="font-serif italic lowercase font-normal text-[#ccff00]">onboarding</span>
+              {isCompleteRoleFlow
+                ? <>SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">almost there</span></>
+                : <>SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">onboarding</span></>
+              }
             </h1>
-            <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Decentralized Payment Protocol</p>
+            <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">
+              {isCompleteRoleFlow ? "One last step to complete your account" : "Decentralized Payment Protocol"}
+            </p>
           </div>
 
-          <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
+          <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
             <div className="text-center space-y-1.5">
               <h2 className="text-base font-bold uppercase tracking-wider text-white">Select Account Type</h2>
               <p className="text-xs text-white/50 leading-relaxed">
@@ -403,25 +470,25 @@ export default function SignupPage() {
                 onClick={() => setSelectedRole("USER")}
                 className={`w-full p-5 border text-left rounded-2xl transition-all duration-300 relative overflow-hidden group ${
                   selectedRole === "USER"
-                    ? "border-[#ccff00] bg-[#ccff00]/5 shadow-[0_0_20px_rgba(204,255,0,0.15)]"
-                    : "border-white/5 bg-white/[0.01] hover:border-[#ccff00]/40 hover:bg-white/[0.02] hover:shadow-[0_0_15px_rgba(204,255,0,0.08)]"
+                    ? "border-[#00d2b4] bg-[#00d2b4]/5 shadow-[0_0_20px_rgba(0,210,180,0.15)]"
+                    : "border-white/5 bg-white/[0.01] hover:border-[#00d2b4]/40 hover:bg-white/[0.02] hover:shadow-[0_0_15px_rgba(0,210,180,0.08)]"
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <div className={`p-2.5 rounded-xl border transition-colors ${
                     selectedRole === "USER"
-                      ? "bg-[#ccff00]/10 border-[#ccff00]/30 text-[#ccff00]"
-                      : "bg-white/5 border-white/5 text-white/40 group-hover:text-[#ccff00]"
+                      ? "bg-[#00d2b4]/10 border-[#00d2b4]/30 text-[#00d2b4]"
+                      : "bg-white/5 border-white/5 text-white/40 group-hover:text-[#00d2b4]"
                   }`}>
                     <User className="w-5 h-5" />
                   </div>
                   <div>
                     <h3 className={`font-bold text-sm uppercase tracking-wider transition-colors ${
-                      selectedRole === "USER" ? "text-[#ccff00]" : "text-white"
+                      selectedRole === "USER" ? "text-[#00d2b4]" : "text-white"
                     }`}>
                       Individual User
                     </h3>
-                    <span className="text-[9px] text-[#ccff00] uppercase font-bold tracking-wider">Routes to User Hub</span>
+                    <span className="text-[9px] text-[#00d2b4] uppercase font-bold tracking-wider">Routes to User Hub</span>
                   </div>
                 </div>
                 <p className="text-[11px] text-white/50 mt-3 leading-relaxed">
@@ -432,13 +499,10 @@ export default function SignupPage() {
               {/* Enterprise Merchant Option */}
               <button
                 onClick={() => setSelectedRole("ENTERPRISE")}
-                disabled={!merchantSignupIntent}
                 className={`w-full p-5 border text-left rounded-2xl transition-all duration-300 relative overflow-hidden group ${
                   selectedRole === "ENTERPRISE"
                     ? "border-[#00d2b4] bg-[#00d2b4]/5 shadow-[0_0_20px_rgba(0,210,180,0.15)]"
-                    : merchantSignupIntent
-                      ? "border-white/5 bg-white/[0.01] hover:border-[#00d2b4]/40 hover:bg-white/[0.02] hover:shadow-[0_0_15px_rgba(0,210,180,0.08)]"
-                      : "border-white/5 bg-white/[0.01] opacity-55 cursor-not-allowed"
+                    : "border-white/5 bg-white/[0.01] hover:border-[#00d2b4]/40 hover:bg-white/[0.02] hover:shadow-[0_0_15px_rgba(0,210,180,0.08)]"
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -459,14 +523,12 @@ export default function SignupPage() {
                   </div>
                 </div>
                 <p className="text-[11px] text-white/50 mt-3 leading-relaxed">
-                  {merchantSignupIntent
-                    ? "Configure subscription tiers, generate hosted payment links, run automated payroll runs, and manage cashflow."
-                    : "Merchant onboarding is invite-only. Use a merchant invite link to create this account type."}
+                  Configure subscription tiers, generate hosted payment links, run automated payroll runs, and manage cashflow.
                 </p>
               </button>
             </div>
 
-            {requiresEmailLinking && (
+            {requiresEmailLinking && isExternalWalletSignup && (
               <div className="space-y-2 pt-2 text-left">
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
                   Email Address (for push notifications)
@@ -483,7 +545,7 @@ export default function SignupPage() {
                   <Mail className="absolute right-3.5 top-3.5 w-4 h-4 text-white/30" />
                 </div>
                 <p className="text-[9px] text-white/40 leading-relaxed">
-                  Enter your email address so you don't miss critical payment and billing push notifications.
+                  Enter your email address so you don&apos;t miss critical payment and billing push notifications.
                 </p>
               </div>
             )}
@@ -496,19 +558,104 @@ export default function SignupPage() {
             )}
 
             <button
-              onClick={handleRoleSelection}
+              onClick={activeMerchantAddress ? handleRoleSelection : handleContinueToAuth}
               disabled={!selectedRole || roleLoading}
               className={`w-full py-4 rounded-2xl flex items-center justify-center gap-2 transition-all font-bold text-xs uppercase tracking-wider text-black ${
-                !selectedRole 
-                  ? "bg-white/10 text-white/40 cursor-not-allowed border border-white/5" 
-                  : selectedRole === "USER"
-                    ? "bg-[#ccff00] hover:bg-[#ccff00]/85 shadow-[0_0_20px_rgba(204,255,0,0.2)]"
-                    : "bg-[#00d2b4] hover:bg-[#00d2b4]/85 shadow-[0_0_20px_rgba(0,210,180,0.2)]"
+                !selectedRole
+                  ? "bg-white/10 text-white/40 cursor-not-allowed border border-white/5"
+                  : "bg-[#00d2b4] hover:bg-[#00d2b4]/85 shadow-[0_0_20px_rgba(0,210,180,0.2)]"
               }`}
             >
-              {roleLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Complete Signup"}
+              {/* Pre-auth (no session yet) records the choice and moves to the auth method screen;
+                  post-auth it finalizes the account by registering the chosen role. */}
+              {roleLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : (activeMerchantAddress ? "Complete Signup" : "Continue")}
               {!roleLoading && <ArrowRight className="w-4 h-4" />}
             </button>
+
+            <p className="text-center text-xs text-white/40 pt-1">
+              Already have an account?{" "}
+              <button
+                onClick={() => router.push("/signin")}
+                className="text-[#00d2b4] hover:text-[#00d2b4]/80 font-semibold transition-colors"
+              >
+                Sign In
+              </button>
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const handleLogout = async () => {
+    setIsSigningOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      setActiveSession(null);
+    } catch (err) {
+      console.error("Signout error:", err);
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
+
+  const handleGoToDashboard = () => {
+    if (!activeSession) return;
+    const next = getSafeNext();
+    window.location.href = (next && activeSession.role === "USER")
+      ? next
+      : getDashboardUrl(activeSession.role as any, "/dashboard");
+  };
+
+  if (checkingSession || isSigningOut) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-[#00d2b4]" />
+      </div>
+    );
+  }
+
+  if (activeSession) {
+    return (
+      <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white flex items-center justify-center p-4 sm:p-6 relative font-sans">
+        <AnimatedGradientBg />
+        
+        <div className="relative z-10 w-full max-w-md">
+          <div className="text-center mb-8">
+            <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
+              SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">signup</span>
+            </h1>
+            <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Decentralized Payment Protocol</p>
+          </div>
+
+          <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
+            <div className="text-center space-y-2">
+              <h2 className="text-base font-bold uppercase tracking-wider text-white">Active Session Found</h2>
+              <p className="text-xs text-white/50 leading-relaxed">
+                You are currently signed in as:
+              </p>
+              <div className="bg-white/5 border border-white/10 p-3 rounded-xl font-mono text-[11px] break-all text-[#00d2b4]">
+                {activeSession.email || activeSession.wallet}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={handleGoToDashboard}
+                className="w-full py-3.5 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2"
+              >
+                Go to Dashboard
+                <ArrowRight className="w-4 h-4" />
+              </button>
+
+              <button
+                onClick={handleLogout}
+                className="w-full py-3.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign Out / Switch Account
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -516,19 +663,19 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white flex items-center justify-center p-6 relative font-sans">
+    <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white flex items-center justify-center p-4 sm:p-6 relative font-sans">
       <AnimatedGradientBg />
       
       <div className="relative z-10 w-full max-w-md">
         
         <div className="text-center mb-8">
           <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
-            SubScript <span className="font-serif italic lowercase font-normal text-[#ccff00]">signup</span>
+            SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">signup</span>
           </h1>
           <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Decentralized Payment Protocol</p>
         </div>
 
-        <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
+        <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
           
           {/* Onboarding Progress Indicator */}
           <div className="flex items-center justify-between px-2 pb-4 border-b border-white/5">
@@ -540,15 +687,15 @@ export default function SignupPage() {
                 <div key={s.step} className="flex items-center gap-2">
                   <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all duration-300 ${
                     isCompleted 
-                      ? "bg-[#ccff00] text-black" 
+                      ? "bg-[#00d2b4] text-black" 
                       : isActive 
-                        ? "bg-[#ccff00]/25 text-[#ccff00] border border-[#ccff00]/40 shadow-[0_0_10px_rgba(204,255,0,0.2)]" 
+                        ? "bg-[#00d2b4]/25 text-[#00d2b4] border border-[#00d2b4]/40 shadow-[0_0_10px_rgba(0,210,180,0.2)]" 
                         : "bg-white/5 text-white/30 border border-white/10"
                   }`}>
                     {isCompleted ? "✓" : s.step}
                   </div>
-                  <span className={`text-[9px] uppercase font-bold tracking-wider ${
-                    isActive ? "text-[#ccff00]" : isCompleted ? "text-white/80" : "text-white/30"
+                  <span className={`text-[9px] uppercase font-bold tracking-wider hidden sm:inline ${
+                    isActive ? "text-[#00d2b4]" : isCompleted ? "text-white/80" : "text-white/30"
                   }`}>
                     {s.label}
                   </span>
@@ -564,25 +711,34 @@ export default function SignupPage() {
                 Configure your payout wallet and secure your connection to the subscription system.
               </p>
 
+              <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 text-[10px] leading-relaxed text-emerald-300 flex items-start gap-2">
+                <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Recommended:</strong> Register with Email{CIRCLE_GOOGLE_ENABLED ? " or Google" : ""} to create a secure <strong>Server-Signed Wallet</strong>. This will be fully compatible with our upcoming mobile app. Web3 connected wallets are web-only.
+                </span>
+              </div>
+
               <button
                 onClick={() => {
                   posthog.capture("signup_method_selected", { method: "email" });
                   setAuthMethod("email");
                 }}
-                className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-white"
+                className="w-full py-4 bg-white/5 hover:bg-white/10 border border-emerald-400/30 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-white shadow-[0_0_15px_rgba(52,211,153,0.05)]"
               >
                 <Mail className="w-4 h-4 text-[#ccff00]" />
-                Continue with Email Wallet
+                Continue with Email Wallet (Recommended)
               </button>
               <p className="-mt-2 px-3 text-center text-[10px] leading-relaxed text-white/40">
                 {merchantSignupIntent
-                  ? "Merchant accounts use email or Google sign-in for security, recovery, and professional invoicing."
+                  ? `Merchant accounts use email${CIRCLE_GOOGLE_ENABLED ? " or Google" : ""} sign-in for security, recovery, and professional invoicing.`
                   : "Email wallets use SubScript-managed recovery. Connect an external wallet for self-custody."}
               </p>
 
-              <div onClick={() => posthog.capture("signup_method_selected", { method: "circle_google" })}>
-                <CircleGoogleWalletButton onSuccess={handleLoginSuccess} />
-              </div>
+              {CIRCLE_GOOGLE_ENABLED && (
+                <div onClick={() => posthog.capture("signup_method_selected", { method: "circle_google" })}>
+                  <CircleGoogleWalletButton onSuccess={handleLoginSuccess} />
+                </div>
+              )}
 
               {/* External/self-custody wallets are for USERS only — merchant accounts must be
                   email/embedded (server-recoverable) for a more professional, recoverable account. */}
@@ -603,7 +759,7 @@ export default function SignupPage() {
                   handleConnectWallet();
                 }}
                 disabled={isConnecting || siweLoading}
-                className="w-full py-4 bg-[#ccff00] hover:bg-[#ccff00]/90 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-black shadow-[0_0_20px_rgba(204,255,0,0.15)]"
+                className="w-full py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/90 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-black shadow-[0_0_20px_rgba(0,210,180,0.15)]"
               >
                 {isConnecting || siweLoading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -623,9 +779,9 @@ export default function SignupPage() {
               )}
 
               {walletSignupPrompt && address && (
-                <div className="bg-[#ccff00]/10 border border-[#ccff00]/20 rounded-2xl p-4 text-xs text-white/70 space-y-4 mt-2">
+                <div className="bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-2xl p-4 text-xs text-white/70 space-y-4 mt-2">
                   <div className="flex items-start gap-3">
-                    <Wallet className="w-5 h-5 shrink-0 mt-0.5 text-[#ccff00]" />
+                    <Wallet className="w-5 h-5 shrink-0 mt-0.5 text-[#00d2b4]" />
                     <div className="space-y-1">
                       <p className="font-bold text-white uppercase tracking-wider">Wallet detected</p>
                       <p className="leading-relaxed">
@@ -636,19 +792,21 @@ export default function SignupPage() {
                   </div>
 
                   {/* Cloudflare Turnstile for Wallet Signup */}
-                  <div className="space-y-2 border-t border-white/5 pt-3 flex flex-col items-center">
-                    <label className="block text-[9px] font-bold uppercase tracking-wider text-white/50 self-start">
-                      Security Verification
-                    </label>
-                    <div id="turnstile-wallet-signup" className="my-2"></div>
-                  </div>
+                  {isTurnstileConfigured && (
+                    <div className="space-y-2 border-t border-white/5 pt-3 flex flex-col items-center">
+                      <label className="block text-[9px] font-bold uppercase tracking-wider text-white/50 self-start">
+                        Security Verification
+                      </label>
+                      <div id="turnstile-wallet-signup" className="my-2"></div>
+                    </div>
+                  )}
 
                   <div className="grid gap-2">
                     <button
                       type="button"
                       onClick={() => performSiwe(true)}
-                      disabled={siweLoading || !captchaToken}
-                      className="w-full py-3 bg-[#ccff00] text-black rounded-xl font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-2"
+                      disabled={siweLoading || (isTurnstileConfigured && !captchaToken)}
+                      className="w-full py-3 bg-[#00d2b4] text-black rounded-xl font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-2"
                     >
                       {siweLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create Account With This Wallet"}
                     </button>
@@ -696,12 +854,14 @@ export default function SignupPage() {
                     </div>
 
                     {/* Cloudflare Turnstile */}
-                    <div className="space-y-2 pt-2 flex flex-col items-center">
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60 self-start">
-                        Security Verification
-                      </label>
-                      <div id="turnstile-email-signup" className="my-2"></div>
-                    </div>
+                    {isTurnstileConfigured && (
+                      <div className="space-y-2 pt-2 flex flex-col items-center">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60 self-start">
+                          Security Verification
+                        </label>
+                        <div id="turnstile-email-signup" className="my-2"></div>
+                      </div>
+                    )}
                     {otpError && (
                       <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-400 flex items-start gap-3 mt-2">
                         <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
@@ -721,7 +881,7 @@ export default function SignupPage() {
                     <button
                       type="submit"
                       disabled={otpLoading}
-                      className="flex-1 py-3.5 bg-[#ccff00] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#ccff00]/95"
+                      className="flex-1 py-3.5 bg-[#00d2b4] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/95"
                     >
                       {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send Code"}
                     </button>
@@ -753,9 +913,9 @@ export default function SignupPage() {
                   </div>
 
                   {sandboxOtp && (
-                    <div className="bg-[#ccff00]/10 border border-[#ccff00]/20 rounded-2xl p-4 text-xs text-[#ccff00] flex items-center gap-3 shadow-[0_0_15px_rgba(204,255,0,0.1)]">
+                    <div className="bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-2xl p-4 text-xs text-[#00d2b4] flex items-center gap-3 shadow-[0_0_15px_rgba(0,210,180,0.1)]">
                       <MailCheck className="w-5 h-5 shrink-0" />
-                      <span className="font-mono">Sandbox Test OTP: {sandboxOtp}</span>
+                      <span className="font-mono">Development Code: {sandboxOtp}</span>
                     </div>
                   )}
 
@@ -770,7 +930,7 @@ export default function SignupPage() {
                     <button
                       type="submit"
                       disabled={otpLoading}
-                      className="flex-1 py-3.5 bg-[#ccff00] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#ccff00]/95"
+                      className="flex-1 py-3.5 bg-[#00d2b4] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/95"
                     >
                       {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Continue"}
                     </button>
@@ -789,7 +949,7 @@ export default function SignupPage() {
                 Already have an account?{" "}
                 <button 
                   onClick={() => router.push("/signin")} 
-                  className="text-[#ccff00] font-bold hover:underline"
+                  className="text-[#00d2b4] font-bold hover:underline"
                 >
                   Sign In
                 </button>

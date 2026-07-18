@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { getSessionWallet } from "@/lib/auth";
 
 /* Helper to hash token with SHA-256 */
 function hashToken(token: string): string {
@@ -87,6 +88,21 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "Missing required parameters: merchantAddress, mode" },
         { status: 400 }
+      );
+    }
+
+    /* A CLI onboarding token grants the CLI the merchant's identity + tier, so it must only be
+       minted by the authenticated owner of that merchant account. Without this check any anonymous
+       caller could mint a token for an arbitrary (publicly-known) merchant address and read its tier
+       / privacy mode, or impersonate it to the CLI. */
+    const sessionWallet = await getSessionWallet(request.headers);
+    if (!sessionWallet) {
+      return NextResponse.json({ error: "Unauthorized: connect your merchant wallet first." }, { status: 401 });
+    }
+    if (typeof merchantAddress !== "string" || sessionWallet.toLowerCase() !== merchantAddress.toLowerCase()) {
+      return NextResponse.json(
+        { error: "Forbidden: you can only start a CLI session for your own merchant account." },
+        { status: 403 }
       );
     }
 

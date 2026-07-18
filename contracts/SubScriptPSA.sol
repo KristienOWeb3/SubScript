@@ -28,6 +28,20 @@ contract SubScriptPSA is ReentrancyGuard {
         bool    isActive;       /* Whether the authorization is live */
         address settlementToken; /* The merchant's settlement token (e.g. EURC) */
         address paymentToken;    /* The subscriber's payment token (e.g. USDC) */
+        uint256 maxPaymentAmount; /* Subscriber-approved ceiling on payment-token pulled per period.
+                                     Bounds FX slippage: the swap can never pull more input than this. */
+    }
+
+    /* Merchant-offered introductory pricing, authorized by the subscriber at creation.
+       Kept OUTSIDE the Authorization struct so the `subscriptions(id)` getter ABI is
+       unchanged for existing integrations. `amount` is the per-cycle charge while the
+       promotion lasts (0 = free trial); `cycles` counts discounted billing sequences
+       starting from sequence 0 (the signup payment). The charge for any sequence is a
+       pure function of the sequence number, so there is no mutable phase counter that
+       could drift or be manipulated. */
+    struct IntroductoryTerms {
+        uint256 amount; /* Discounted per-cycle charge in settlement token units (0 = free) */
+        uint256 cycles; /* Number of discounted cycles, counted from sequence 0 */
     }
 
     /* ──────────────────────────── State ──────────────────────────── */
@@ -44,6 +58,10 @@ contract SubScriptPSA is ReentrancyGuard {
     uint256 public constant PROTOCOL_FEE_BPS = 100;
     uint256 public constant BPS_DENOMINATOR = 10_000;
 
+    /* Ceiling on discounted cycles so a promotion can never postpone full-price
+       billing indefinitely (3 years of monthly cycles). */
+    uint256 public constant MAX_INTRODUCTORY_CYCLES = 36;
+
     /* Auto-incrementing subscription ID counter; starts at 1 */
     uint256 public nextSubscriptionId = 1;
 
@@ -56,6 +74,9 @@ contract SubScriptPSA is ReentrancyGuard {
 
     /* Densely packed execution bitmaps: subId => (wordIndex => word) */
     mapping(uint256 => mapping(uint256 => uint256)) public executionBitmaps;
+
+    /* subId => introductory pricing authorized at creation (cycles == 0 => none) */
+    mapping(uint256 => IntroductoryTerms) public introductoryTerms;
 
     /* ──────────────────────────── Events ─────────────────────────── */
 
@@ -91,6 +112,13 @@ contract SubScriptPSA is ReentrancyGuard {
         uint256 newPeriod
     );
 
+    event IntroductoryTermsSet(
+        uint256 indexed subId,
+        uint256 introductoryAmount,
+        uint256 introductoryCycles,
+        uint256 regularAmount
+    );
+
     /* ──────────────────────────── Errors ─────────────────────────── */
 
     error InvalidAddress();
@@ -98,10 +126,14 @@ contract SubScriptPSA is ReentrancyGuard {
     error InvalidPeriod();
     error SubscriptionNotActive(uint256 subId);
     error PaymentNotDue(uint256 subId, uint256 expectedPayment, uint256 currentTime);
+    error PaymentWindowExpired(uint256 subId, uint256 sequenceId, uint256 windowEnd);
     error PaymentAlreadyExecuted(uint256 subId, uint256 sequenceId);
     error NotAuthorized(uint256 subId);
     error PlanReductionNotAllowed(uint256 subId);
     error DuplicateActiveSubscription(uint256 existingSubscriptionId);
+    error MaxPaymentAmountRequired();
+    error InvalidIntroductoryTerms();
+    error ExcessiveSwapInput(uint256 amountIn, uint256 maxAllowed);
     error InsufficientSwapOutput(uint256 expected, uint256 received);
 
     /* ─────────────────────── Constructor ─────────────────────────── */
@@ -132,17 +164,60 @@ contract SubScriptPSA is ReentrancyGuard {
         uint256 _amount,
         uint256 _period
     ) external nonReentrant returns (uint256 subId) {
+        /* Same settlement + payment token => no FX, so the cap equals the exact amount. */
         return _createSubscription(
             _merchant,
             _amount,
             _period,
             address(paymentToken),
-            address(paymentToken)
+            address(paymentToken),
+            _amount,
+            0,
+            0
+        );
+    }
+
+    /*
+     * @notice Create a subscription under merchant-offered introductory terms. The subscriber
+     *         authorizes BOTH prices in this single transaction: `_introductoryAmount` per cycle
+     *         for the first `_introductoryCycles` billing sequences (0 = free trial, in which
+     *         case nothing is transferred at signup), then `_amount` per cycle forever after.
+     *         The regular amount is stored on the authorization, so the promotion can only ever
+     *         lower a charge — never raise one — and the phase switch is enforced on-chain per
+     *         sequence, independent of any off-chain database state.
+     * @dev Default-token only: introductory pricing composes with FX routing poorly (the input
+     *      cap would need per-phase scaling), so promotional subscriptions settle in the
+     *      protocol's default payment token.
+     */
+    function createSubscriptionWithIntroductoryTerms(
+        address _merchant,
+        uint256 _amount,
+        uint256 _period,
+        uint256 _introductoryAmount,
+        uint256 _introductoryCycles
+    ) external nonReentrant returns (uint256 subId) {
+        if (
+            _introductoryCycles == 0
+                || _introductoryCycles > MAX_INTRODUCTORY_CYCLES
+                || _introductoryAmount >= _amount
+        ) revert InvalidIntroductoryTerms();
+        return _createSubscription(
+            _merchant,
+            _amount,
+            _period,
+            address(paymentToken),
+            address(paymentToken),
+            _amount,
+            _introductoryAmount,
+            _introductoryCycles
         );
     }
 
     /*
      * @notice Overloaded function to create a new recurring subscription with token specifications.
+     * @dev Cross-token (FX) subscriptions MUST use the overload that takes `_maxPaymentAmount`; this
+     *      overload only serves the same-token case and reverts for cross-token to avoid an unbounded
+     *      input pull.
      */
     function createSubscription(
         address _merchant,
@@ -151,7 +226,24 @@ contract SubScriptPSA is ReentrancyGuard {
         address _settlementToken,
         address _paymentToken
     ) public nonReentrant returns (uint256 subId) {
-        return _createSubscription(_merchant, _amount, _period, _settlementToken, _paymentToken);
+        /* max == 0 sentinel; _createSubscription requires an explicit cap when the tokens differ. */
+        return _createSubscription(_merchant, _amount, _period, _settlementToken, _paymentToken, 0, 0, 0);
+    }
+
+    /*
+     * @notice Create a multi-currency subscription with a subscriber-approved ceiling on the amount
+     *         of payment token that may be pulled each period. This bounds FX slippage — the swap can
+     *         never pull more input than `_maxPaymentAmount`, even if the FX router is manipulated.
+     */
+    function createSubscription(
+        address _merchant,
+        uint256 _amount,
+        uint256 _period,
+        address _settlementToken,
+        address _paymentToken,
+        uint256 _maxPaymentAmount
+    ) public nonReentrant returns (uint256 subId) {
+        return _createSubscription(_merchant, _amount, _period, _settlementToken, _paymentToken, _maxPaymentAmount, 0, 0);
     }
 
     /*
@@ -162,11 +254,26 @@ contract SubScriptPSA is ReentrancyGuard {
         uint256 _amount,
         uint256 _period,
         address _settlementToken,
-        address _paymentToken
+        address _paymentToken,
+        uint256 _maxPaymentAmount,
+        uint256 _introductoryAmount,
+        uint256 _introductoryCycles
     ) internal returns (uint256 subId) {
         if (_merchant == address(0) || _settlementToken == address(0) || _paymentToken == address(0)) revert InvalidAddress();
         if (_amount == 0) revert InvalidAmount();
-        if (_period == 0) revert InvalidPeriod();
+        if (_period < 3600) revert InvalidPeriod();
+        /* Introductory pricing is default-token only (no FX input-cap phase scaling). */
+        if (_introductoryCycles != 0 && _settlementToken != _paymentToken) revert InvalidIntroductoryTerms();
+
+        /* Bound the payment-token pull. Same-token: no swap, so the cap is exactly the amount.
+           Cross-token: the subscriber MUST approve an explicit ceiling (>= the settlement amount);
+           without it the FX router could pull an unbounded amount of their payment token. */
+        if (_settlementToken == _paymentToken) {
+            _maxPaymentAmount = _amount;
+        } else {
+            if (_maxPaymentAmount == 0) revert MaxPaymentAmountRequired();
+            if (_maxPaymentAmount < _amount) revert InvalidAmount();
+        }
 
         _assertNoActiveDuplicate(msg.sender, _merchant, _amount, _period, _settlementToken, _paymentToken, 0);
 
@@ -180,7 +287,8 @@ contract SubScriptPSA is ReentrancyGuard {
             nextPayment: block.timestamp + _period,
             isActive:    true,
             settlementToken: _settlementToken,
-            paymentToken: _paymentToken
+            paymentToken: _paymentToken,
+            maxPaymentAmount: _maxPaymentAmount
         });
         _indexActiveSubscription(
             subId,
@@ -197,17 +305,34 @@ contract SubScriptPSA is ReentrancyGuard {
         uint256 bitPosition = 0;
         executionBitmaps[subId][wordIndex] = 1 << bitPosition;
 
-        _collectAndDistributePayment(
-            subId,
-            msg.sender,
-            _merchant,
-            _settlementToken,
-            _paymentToken,
-            _amount
-        );
+        /* Sequence 0 charges the introductory amount when a promotion applies. A zero
+           introductory amount is a free trial: the authorization is recorded (with the
+           full regular amount the subscriber approved), but no funds move and no
+           protocol fee is taken until a non-zero cycle bills. */
+        uint256 initialCharge = _amount;
+        if (_introductoryCycles != 0) {
+            introductoryTerms[subId] = IntroductoryTerms({
+                amount: _introductoryAmount,
+                cycles: _introductoryCycles
+            });
+            initialCharge = _introductoryAmount;
+            emit IntroductoryTermsSet(subId, _introductoryAmount, _introductoryCycles, _amount);
+        }
+
+        if (initialCharge != 0) {
+            _collectAndDistributePayment(
+                subId,
+                msg.sender,
+                _merchant,
+                _settlementToken,
+                _paymentToken,
+                initialCharge,
+                _maxPaymentAmount
+            );
+        }
 
         emit SubscriptionCreated(subId, msg.sender, _merchant, _amount, _period);
-        emit PaymentExecuted(subId, msg.sender, _merchant, _amount, 0, block.timestamp);
+        emit PaymentExecuted(subId, msg.sender, _merchant, initialCharge, 0, block.timestamp);
     }
 
     /*
@@ -229,23 +354,40 @@ contract SubScriptPSA is ReentrancyGuard {
             revert PaymentNotDue(_subId, expectedPaymentTime, block.timestamp);
         }
 
+        /* A sequence is chargeable only during its own billing window: once the next sequence
+           becomes due, the older one expires. This means a lapsed-but-uncancelled subscriber can
+           never be batch back-charged for missed periods, and a modifySubscription re-timing can
+           never make a burst of historical sequences simultaneously chargeable. At most one
+           sequence is executable at any moment. */
+        uint256 windowEnd = expectedPaymentTime + sub.period;
+        if (block.timestamp >= windowEnd) {
+            revert PaymentWindowExpired(_subId, _sequenceId, windowEnd);
+        }
+
         /* Mark sequence as executed before transfer (Checks-Effects-Interactions) */
         _setSequenceExecuted(_subId, _sequenceId);
 
-        _collectAndDistributePayment(
-            _subId,
-            sub.subscriber,
-            sub.merchant,
-            sub.settlementToken,
-            sub.paymentToken,
-            sub.amount
-        );
+        /* The applicable amount is derived on-chain from the sequence number: introductory
+           price while the promotion lasts, the subscriber-authorized regular price after.
+           Zero-amount cycles (free trial) advance the sequence without moving funds. */
+        uint256 chargeAmount = chargeAmountFor(_subId, _sequenceId);
+        if (chargeAmount != 0) {
+            _collectAndDistributePayment(
+                _subId,
+                sub.subscriber,
+                sub.merchant,
+                sub.settlementToken,
+                sub.paymentToken,
+                chargeAmount,
+                sub.maxPaymentAmount
+            );
+        }
 
         emit PaymentExecuted(
             _subId,
             sub.subscriber,
             sub.merchant,
-            sub.amount,
+            chargeAmount,
             _sequenceId,
             block.timestamp
         );
@@ -283,7 +425,7 @@ contract SubScriptPSA is ReentrancyGuard {
         if (!sub.isActive) revert SubscriptionNotActive(_subId);
         if (msg.sender != sub.subscriber) revert NotAuthorized(_subId);
         if (_newAmount == 0) revert InvalidAmount();
-        if (_newPeriod == 0) revert InvalidPeriod();
+        if (_newPeriod < 3600) revert InvalidPeriod(); // Minimum period of 1 hour
         /* Compare recurring rates with integer cross-multiplication. A longer billing interval
            must not let a subscriber disguise a lower tier as a nominal amount increase. */
         if (_newAmount * sub.period < sub.amount * _newPeriod) {
@@ -292,8 +434,23 @@ contract SubScriptPSA is ReentrancyGuard {
 
         _reindexModifiedSubscription(_subId, sub, _newAmount, _newPeriod);
 
+        /* Keep the FX input ceiling consistent with the new amount. Same-token: exact. Cross-token:
+           scale the subscriber-approved cap by the amount ratio so the same slippage headroom carries
+           over (amount only ever increases here, so the cap only grows). */
+        if (sub.settlementToken == sub.paymentToken) {
+            sub.maxPaymentAmount = _newAmount;
+        } else if (sub.amount > 0) {
+            sub.maxPaymentAmount = (sub.maxPaymentAmount * _newAmount) / sub.amount;
+        }
+
         sub.amount = _newAmount;
         sub.period = _newPeriod;
+
+        /* A modification is the subscriber explicitly re-authorizing a new price, so any
+           remaining introductory cycles end here: every future charge is _newAmount. */
+        if (introductoryTerms[_subId].cycles != 0) {
+            delete introductoryTerms[_subId];
+        }
 
         emit SubscriptionModified(_subId, _newAmount, _newPeriod);
     }
@@ -405,7 +562,21 @@ contract SubScriptPSA is ReentrancyGuard {
     }
 
     /*
-     * @notice Check whether a subscription's payment is currently due.
+     * @notice The amount a given billing sequence charges: the introductory amount while the
+     *         promotion's cycles last (sequence 0 is the signup payment), the regular amount
+     *         after. Keepers and integrators read this instead of assuming `amount`.
+     */
+    function chargeAmountFor(uint256 _subId, uint256 _sequenceId) public view returns (uint256) {
+        IntroductoryTerms storage terms = introductoryTerms[_subId];
+        if (terms.cycles != 0 && _sequenceId < terms.cycles) {
+            return terms.amount;
+        }
+        return subscriptions[_subId].amount;
+    }
+
+    /*
+     * @notice Check whether a subscription's payment is currently due (and not yet expired —
+     *         a sequence is only chargeable within its own billing window).
      */
     function isPaymentDue(uint256 _subId, uint256 _sequenceId) external view returns (bool) {
         Authorization storage sub = subscriptions[_subId];
@@ -413,7 +584,8 @@ contract SubScriptPSA is ReentrancyGuard {
         if (isSequenceExecuted(_subId, _sequenceId)) return false;
 
         uint256 expectedPaymentTime = sub.nextPayment + ((_sequenceId - 1) * sub.period);
-        return block.timestamp >= expectedPaymentTime;
+        return block.timestamp >= expectedPaymentTime
+            && block.timestamp < expectedPaymentTime + sub.period;
     }
 
     /* ────────────────── Keeper Compatibility ─────────────────────── */
@@ -430,7 +602,8 @@ contract SubScriptPSA is ReentrancyGuard {
         }
 
         uint256 expectedPaymentTime = sub.nextPayment + ((sequenceId - 1) * sub.period);
-        upkeepNeeded = block.timestamp >= expectedPaymentTime;
+        upkeepNeeded = block.timestamp >= expectedPaymentTime
+            && block.timestamp < expectedPaymentTime + sub.period;
         performData = checkData;
     }
 
@@ -450,7 +623,8 @@ contract SubScriptPSA is ReentrancyGuard {
         address _merchant,
         address _settlementToken,
         address _paymentToken,
-        uint256 _amount
+        uint256 _amount,
+        uint256 _maxPaymentAmount
     ) internal {
         if (_paymentToken != _settlementToken) {
             uint256 amountIn = stableFXRouter.getAmountIn(
@@ -458,8 +632,13 @@ contract SubScriptPSA is ReentrancyGuard {
                 _settlementToken,
                 _amount
             );
+            /* Slippage/manipulation guard: never pull more payment token than the subscriber approved,
+               even if the FX router quotes an inflated input. */
+            if (amountIn > _maxPaymentAmount) revert ExcessiveSwapInput(amountIn, _maxPaymentAmount);
             IERC20(_paymentToken).safeTransferFrom(_subscriber, address(this), amountIn);
             IERC20(_paymentToken).safeIncreaseAllowance(address(stableFXRouter), amountIn);
+
+            uint256 paymentTokenBalanceBefore = IERC20(_paymentToken).balanceOf(address(this));
 
             IERC20 settlementToken = IERC20(_settlementToken);
             uint256 balanceBefore = settlementToken.balanceOf(address(this));
@@ -477,9 +656,20 @@ contract SubScriptPSA is ReentrancyGuard {
 
             _distributeSettlement(_subId, _merchant, settlementToken, _amount);
 
-            // Exact-output routes should not leave dust in this contract.
+            // Refund any unspent payment token instead of excess settlement token
+            uint256 paymentTokenBalanceAfter = IERC20(_paymentToken).balanceOf(address(this));
+            uint256 unspentPayment = paymentTokenBalanceAfter > (paymentTokenBalanceBefore - amountIn) 
+                ? paymentTokenBalanceAfter - (paymentTokenBalanceBefore - amountIn) 
+                : 0;
+
+            if (unspentPayment > 0) {
+                // Return unspent payment token to the subscriber
+                IERC20(_paymentToken).safeTransfer(_subscriber, unspentPayment);
+            }
+
+            // Any excess settlement token generated by positive slippage goes to the treasury
             if (amountReceived > _amount) {
-                settlementToken.safeTransfer(_subscriber, amountReceived - _amount);
+                settlementToken.safeTransfer(treasury, amountReceived - _amount);
             }
         } else {
             IERC20 token = IERC20(_paymentToken);

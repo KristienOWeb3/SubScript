@@ -179,19 +179,36 @@ async function startKeeper() {
       const nextId = await protocol.nextSubscriptionId();
       for (let i = 1; i < nextId; i++) {
         const sub = await protocol.subscriptions(i);
+        const period = Number(sub[3]);
+        const nextPayment = Number(sub[4]);
         const isActive = sub[5];
         let sequenceId = 1;
+        
+        // Prevent O(N) RPC calls for 1-second periods by jumping directly to the unexpired sequence
+        const now = Math.floor(Date.now() / 1000);
+        if (now > nextPayment && period > 0) {
+           const timeElapsed = now - nextPayment;
+           const currentExpectedSeq = Math.floor(timeElapsed / period) + 1;
+           if (currentExpectedSeq > sequenceId) {
+               sequenceId = currentExpectedSeq;
+           }
+        }
+
         while (await protocol.isSequenceExecuted(i, sequenceId)) {
           sequenceId++;
         }
 
-        const isDue = isActive && await protocol.isPaymentDue(i, sequenceId);
-        if (isDue) {
-          console.log(`⚡ Sub #${i} sequence ${sequenceId} is DUE! Executing payment...`);
-          const tx = await protocol.executePayment(i, sequenceId);
-          console.log(`   Tx Sent: ${tx.hash}`);
-          await tx.wait();
-          console.log(`✅ Payment Executed for Sub #${i}`);
+        try {
+          const isDue = isActive && await protocol.isPaymentDue(i, sequenceId);
+          if (isDue) {
+            console.log(`⚡ Sub #${i} sequence ${sequenceId} is DUE! Executing payment...`);
+            const tx = await protocol.executePayment(i, sequenceId);
+            console.log(`   Tx Sent: ${tx.hash}`);
+            await tx.wait();
+            console.log(`✅ Payment Executed for Sub #${i}`);
+          }
+        } catch (subError) {
+          console.error(`❌ Error processing Sub #${i}:`, subError.message);
         }
       }
     } catch (error) {

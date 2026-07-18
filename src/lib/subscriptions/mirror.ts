@@ -1,8 +1,7 @@
 /* Write-through mirror for customer (non-Premium) subscriptions.
    Customer subs live on-chain (created/modified/cancelled via the embedded-wallet routes and
-   billed by on-chain Chainlink Automation). We mirror our own actions into the `subscriptions`
-   table — kind "CUSTOMER" — so the dashboard can list them and detect an active plan for the
-   switch UI. All functions are best-effort and never throw (callers already committed on-chain). */
+   billed by on-chain Chainlink Automation). Creation is authoritative for fulfillment and throws
+   when persistence fails; callers retain their post-broadcast reconciliation state and retry. */
 import { prisma } from "@/lib/prisma";
 
 export async function mirrorSubscriptionCreated({
@@ -11,20 +10,66 @@ export async function mirrorSubscriptionCreated({
     subscriber,
     amountUsdc,
     periodSeconds,
+    beneficiaryAddress,
+    minCommitmentSeconds,
+    promotion,
+    anchorNextPaymentSeconds,
+    externalReference,
+    sourceCheckoutId,
 }: {
     subscriptionId: string | bigint;
     merchantAddress: string;
     subscriber: string;
     amountUsdc: bigint;
     periodSeconds: bigint;
+    /* Sponsored subscriptions: the wallet that receives the service when it differs
+       from the paying subscriber. Carried into merchant webhooks. */
+    beneficiaryAddress?: string | null;
+    /* Plan commitment window snapshot (<= one period). NULL/0 = no commitment. */
+    minCommitmentSeconds?: bigint | null;
+    /* Immutable snapshot of the introductory terms the subscriber authorized. Merchant
+       edits to the promotion never touch these. promotionId may be null when the terms
+       were recovered from the chain and the originating offer is unknown. */
+    promotion?: { promotionId: string | null; introAmountUsdc: bigint; introCycles: number } | null;
+    /* When reconciling an existing on-chain subscription (rather than mirroring a create
+       that just happened), the chain's nextPayment is authoritative — anchor billing to
+       it instead of "now + period" so the keeper neither drifts late nor re-bills early. */
+    anchorNextPaymentSeconds?: bigint | null;
+    /* Merchant account binding copied from the API checkout. */
+    externalReference?: string | null;
+    /* Checkout identity used to create/select the canonical plan. */
+    sourceCheckoutId?: string | null;
 }) {
-    try {
-        const merchant = merchantAddress.toLowerCase();
+    const merchant = merchantAddress.toLowerCase();
         const sub = subscriber.toLowerCase();
         const id = BigInt(subscriptionId);
         const period = BigInt(periodSeconds);
         const now = new Date();
-        const nextBilling = new Date(now.getTime() + Number(period) * 1000);
+        /* Fresh creates bill one period from now; reconciled subs bill at the chain's
+           recorded nextPayment. lastSettlement is anchored one period earlier so the DB
+           trigger derives the identical next_billing_date. */
+        const nextBilling = anchorNextPaymentSeconds && anchorNextPaymentSeconds > BigInt(0)
+            ? new Date(Number(anchorNextPaymentSeconds) * 1000)
+            : new Date(now.getTime() + Number(period) * 1000);
+        const settlementAnchor = anchorNextPaymentSeconds && anchorNextPaymentSeconds > BigInt(0)
+            ? new Date(Number(anchorNextPaymentSeconds - period) * 1000)
+            : now;
+        const beneficiary = beneficiaryAddress ? beneficiaryAddress.toLowerCase() : null;
+        const commitmentUntil = minCommitmentSeconds && minCommitmentSeconds > BigInt(0)
+            ? new Date(now.getTime() + Number(minCommitmentSeconds) * 1000)
+            : null;
+        /* Sequence 0 (signup) is the first introductory cycle, so full price begins
+           after `introCycles` whole periods. */
+        const promoSnapshot = promotion
+            ? {
+                promotionId: promotion.promotionId,
+                introAmountUsdc: promotion.introAmountUsdc,
+                introCycles: promotion.introCycles,
+                firstRegularPaymentAt: new Date(now.getTime() + promotion.introCycles * Number(period) * 1000),
+            }
+            : {};
+        const merchantReference = externalReference?.trim() || null;
+        const checkoutSource = sourceCheckoutId?.trim().toLowerCase() || null;
 
         /* The subscriptions.merchant_address FK requires a merchants row. */
         await prisma.merchant.upsert({
@@ -33,7 +78,7 @@ export async function mirrorSubscriptionCreated({
             create: { walletAddress: merchant },
         });
 
-        await prisma.subscription.upsert({
+    await prisma.subscription.upsert({
             where: { subscriptionId: id },
             update: {
                 merchantAddress: merchant,
@@ -43,8 +88,13 @@ export async function mirrorSubscriptionCreated({
                 amountCapUsdc: amountUsdc.toString(),
                 billingIntervalSeconds: period,
                 nextBillingDate: nextBilling,
-                lastSettlementTimestamp: now,
+                lastSettlementTimestamp: settlementAnchor,
                 cancelAtPeriodEnd: false,
+                beneficiaryAddress: beneficiary,
+                externalReference: merchantReference,
+                sourceCheckoutId: checkoutSource,
+                minCommitmentUntil: commitmentUntil,
+                ...promoSnapshot,
                 updatedAt: now,
             },
             create: {
@@ -57,37 +107,45 @@ export async function mirrorSubscriptionCreated({
                 amountCapUsdc: amountUsdc.toString(),
                 billingIntervalSeconds: period,
                 nextBillingDate: nextBilling,
-                lastSettlementTimestamp: now,
+                lastSettlementTimestamp: settlementAnchor,
+                beneficiaryAddress: beneficiary,
+                externalReference: merchantReference,
+                sourceCheckoutId: checkoutSource,
+                minCommitmentUntil: commitmentUntil,
+                ...promoSnapshot,
             },
-        });
-    } catch (err) {
-        console.error("[mirror] subscription create failed:", err instanceof Error ? err.message : err);
-    }
+    });
 }
 
 export async function mirrorSubscriptionModified({
     subscriptionId,
     amountUsdc,
     periodSeconds,
+    externalReference,
+    sourceCheckoutId,
 }: {
     subscriptionId: string | bigint;
     amountUsdc: bigint;
     periodSeconds: bigint;
+    /* Undefined preserves the existing binding; a string fills or updates it. */
+    externalReference?: string;
+    sourceCheckoutId?: string;
 }) {
-    try {
-        await prisma.subscription.update({
-            where: { subscriptionId: BigInt(subscriptionId) },
-            data: {
-                amountCapUsdc: amountUsdc.toString(),
-                billingIntervalSeconds: BigInt(periodSeconds),
-                kind: "CUSTOMER",
-                updatedAt: new Date(),
-            },
-        });
-    } catch (err) {
-        /* Row may predate the mirror; that's fine — nothing to update. */
-        console.error("[mirror] subscription modify skipped:", err instanceof Error ? err.message : err);
-    }
+    await prisma.subscription.update({
+        where: { subscriptionId: BigInt(subscriptionId) },
+        data: {
+            amountCapUsdc: amountUsdc.toString(),
+            billingIntervalSeconds: BigInt(periodSeconds),
+            kind: "CUSTOMER",
+            ...(externalReference !== undefined
+                ? { externalReference: externalReference.trim() || null }
+                : {}),
+            ...(sourceCheckoutId !== undefined
+                ? { sourceCheckoutId: sourceCheckoutId.trim().toLowerCase() || null }
+                : {}),
+            updatedAt: new Date(),
+        },
+    });
 }
 
 export async function mirrorSubscriptionCanceled(subscriptionId: string | bigint) {
@@ -105,6 +163,9 @@ export async function mirrorSubscriptionCanceled(subscriptionId: string | bigint
    billing now but keep it ACTIVE until `nextPaymentSeconds` (the paid-through date). The
    customer-billing keeper performs the actual on-chain cancel once next_billing_date is reached.
    Upserts so a sub created before the mirror still gets a row the keeper can find. */
+/* Returns true only if the cancel-at-period-end marker was persisted. Callers that treat this row
+   as the authoritative record of the cancellation (e.g. the sponsorship-unavailable fallback in the
+   cancel route) must check the result and NOT report success to the user on a false return. */
 export async function mirrorSubscriptionCancelAtPeriodEnd({
     subscriptionId,
     merchantAddress,
@@ -112,6 +173,8 @@ export async function mirrorSubscriptionCancelAtPeriodEnd({
     amountUsdc,
     periodSeconds,
     nextPaymentSeconds,
+    revocationTxHash = null,
+    revocationPending = false,
 }: {
     subscriptionId: string | bigint;
     merchantAddress: string;
@@ -119,7 +182,12 @@ export async function mirrorSubscriptionCancelAtPeriodEnd({
     amountUsdc: bigint;
     periodSeconds: bigint;
     nextPaymentSeconds: bigint;
-}) {
+    /* On-chain authorization revocation, performed at cancellation time. When the revoke could
+       not be confirmed, revocationPending keeps the row inside the retry worker's queue — the
+       subscription remains chargeable on-chain until the chain reports inactive. */
+    revocationTxHash?: string | null;
+    revocationPending?: boolean;
+}): Promise<boolean> {
     try {
         const merchant = merchantAddress.toLowerCase();
         const sub = subscriber.toLowerCase();
@@ -143,6 +211,8 @@ export async function mirrorSubscriptionCancelAtPeriodEnd({
                 kind: "CUSTOMER",
                 cancelAtPeriodEnd: true,
                 cancelRequestedAt: now,
+                revocationPending,
+                revocationTxHash: revocationTxHash?.toLowerCase() ?? null,
                 lastSettlementTimestamp: periodStart,
                 nextBillingDate: nextBilling,
                 updatedAt: now,
@@ -160,9 +230,13 @@ export async function mirrorSubscriptionCancelAtPeriodEnd({
                 nextBillingDate: nextBilling,
                 cancelAtPeriodEnd: true,
                 cancelRequestedAt: now,
+                revocationPending,
+                revocationTxHash: revocationTxHash?.toLowerCase() ?? null,
             },
         });
+        return true;
     } catch (err) {
         console.error("[mirror] cancel-at-period-end skipped:", err instanceof Error ? err.message : err);
+        return false;
     }
 }

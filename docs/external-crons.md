@@ -29,7 +29,7 @@ header, not a query param.
 
 ## Ready-made scheduler: GitHub Actions
 
-A workflow that runs all five on the cadences below already lives at
+A workflow that runs all four on the cadences below already lives at
 **[`.github/workflows/keepers.yml`](../.github/workflows/keepers.yml)**. It's free for
 this public repo. One-time setup in **Settings → Secrets and variables → Actions**:
 
@@ -51,7 +51,6 @@ If you use a scheduler other than the workflow above, hit each **via `GET`** wit
 | Endpoint | Suggested cadence | Purpose |
 |---|---|---|
 | `/api/cron/reconcile` | every 15 min | Recover stuck premium-upgrade payment sessions (user-facing — keep frequent) |
-| `/api/cron/games-timeout` | hourly | Settle expired DM games, relay the referee-signed result on-chain, reclaim escrow for expired unjoined invites |
 | `/api/cron/billing` | daily | Premium (merchant→SubScript) recurring billing + grace-period downgrades |
 | `/api/internal/payroll` | daily | Execute due payroll campaigns (per-payday atomic claim makes overlapping runs safe) |
 | `/api/internal/billing` | daily | Premium downgrade sweep for delinquent merchants |
@@ -61,19 +60,28 @@ If you use a scheduler other than the workflow above, hit each **via `GET`** wit
 - **`/api/internal/billing` — use GET for the sweep.** Its `POST` handler is the
   HMAC-signed protocol webhook receiver (verified with `SUBSCRIPT_WEBHOOK_SECRET`),
   **not** the cron. Point the scheduler at `GET`.
-- **Idempotency / safety.** These are safe to over-run: `games-timeout` settlement is
-  idempotent, `customer-billing`/`cron-billing` gate every charge on the contract's
-  sequence bitmap, and `internal/payroll` atomically claims each payday before moving
-  funds. A missed run just delays work to the next tick — it never double-charges.
+- **Idempotency / safety.** These are safe to over-run: `customer-billing`/`cron-billing`
+  gate every charge on the contract's sequence bitmap, and `internal/payroll` atomically
+  claims each payday before moving funds. A missed run just delays work to the next
+  tick — it never double-charges.
+- **No back-charging (2026-07-08).** Both billing crons charge only the LATEST due
+  sequence (`floor((now - nextPayment) / period) + 1`), never walking up from the lowest
+  unexecuted one — a keeper outage or funding gap delays at most the current period and
+  never bills the user for lapsed periods on recovery. The next contract deployment also
+  enforces this on-chain (a sequence expires once the next one becomes due).
+- **Period-end cancels revoke on-chain.** Both crons cancel the PSA authorization from
+  the subscriber's embedded wallet before flipping DB state, so a "cancelled" subscription
+  is never left chargeable on-chain. Externally-controlled wallets can't be signed for —
+  those users get an advisory DM to revoke from their own wallet.
 - **If a keeper silently stops,** the symptoms are: premium upgrades stuck "pending"
   (reconcile), subscriptions not renewing (cron-billing / customer-billing), payroll
-  not paying out (internal/payroll), premium not downgrading after non-payment
-  (internal/billing), or games not auto-settling at the 24h deadline (games-timeout).
+  not paying out (internal/payroll), or premium not downgrading after non-payment
+  (internal/billing).
 
 ## Required env for the keepers
 
 - `KEEPER_SECRET` (or `CRON_SECRET`) — auth for all of the above.
 - `PRIVATE_KEY` — admin/keeper signer for billing, payroll, reconcile, vault-draw.
-- `KEEPER_PRIVATE_KEY` — the DM-game referee/relayer (games-timeout settlement relay)
-  and vault drawer; must be a funded EOA and match the on-chain referee/drawer.
+- `KEEPER_PRIVATE_KEY` — the vault drawer; must be a funded EOA and match the
+  on-chain drawer.
 - `SPONSOR_PRIVATE_KEY` — gas sponsorship for server-signed embedded-wallet actions.

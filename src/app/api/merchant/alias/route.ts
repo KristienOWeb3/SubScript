@@ -268,6 +268,11 @@ export async function POST(request: Request) {
             }, { status: 200 });
         } else {
             /* If alias is empty, it means we are clearing the alias */
+            if (role === "ENTERPRISE") {
+                return NextResponse.json({
+                    error: "Business names cannot be unregistered. Customers rely on your registered name to recognize who they are paying.",
+                }, { status: 403 });
+            }
             if (!supabaseAdmin) {
                 return NextResponse.json({ error: "Configuration Error: Database not available" }, { status: 500 });
             }
@@ -304,6 +309,15 @@ export async function DELETE(request: Request) {
         }
 
         const normalizedUser = walletAddress.toLowerCase();
+
+        /* A merchant's registered name is the identity customers pay to — it must never be
+           unregistered from the dashboard. (Support can intervene for genuine rebrands.) */
+        const role = await getAccountRole(normalizedUser) || "USER";
+        if (role === "ENTERPRISE") {
+            return NextResponse.json({
+                error: "Business names cannot be unregistered. Customers rely on your registered name to recognize who they are paying.",
+            }, { status: 403 });
+        }
 
         if (!supabaseAdmin) {
             return NextResponse.json({ error: "Configuration Error: Database not available" }, { status: 500 });

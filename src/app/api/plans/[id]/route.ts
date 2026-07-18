@@ -4,6 +4,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAccountRole } from "@/lib/accounts/roles";
+import { readSubscriptionCheckoutMeta, subscriptionCheckoutPeriod } from "@/lib/subscriptionCheckout";
+import { formatPromotion, isPromotionLive, type PromotionRow } from "@/lib/subscriptions/promotions";
 
 type RouteContext = {
     params: Promise<{ id: string }>;
@@ -16,10 +18,28 @@ export async function GET(_request: Request, { params }: RouteContext) {
             return NextResponse.json({ error: "Missing plan id" }, { status: 400 });
         }
 
-        const plan = await prisma.merchantPlan.findUnique({ where: { id } }).catch(() => null);
-        if (!plan || !plan.active) {
+        const merchantPlan = await prisma.merchantPlan.findUnique({ where: { id } }).catch(() => null);
+        const checkout = !merchantPlan
+            ? await prisma.paymentLink.findUnique({ where: { id } }).catch(() => null)
+            : null;
+        const checkoutMeta = readSubscriptionCheckoutMeta(checkout?.stateSnapshot);
+        if ((!merchantPlan || !merchantPlan.active)
+            && (!checkout || !checkout.active || !["PENDING", "PROCESSING"].includes(checkout.status) || !checkoutMeta)) {
             return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
         }
+        const plan = merchantPlan?.active ? merchantPlan : {
+            id: checkout!.id,
+            name: checkout!.title,
+            description: checkout!.description,
+            detailsUrl: null,
+            amountUsdc: checkout!.amountUsdc,
+            periodSeconds: subscriptionCheckoutPeriod(checkoutMeta!),
+            minCommitmentSeconds: BigInt(checkoutMeta!.minCommitmentSeconds || 0),
+            merchantAddress: checkout!.merchantAddress,
+            checkoutSessionId: checkout!.id,
+            successUrl: checkoutMeta!.successUrl,
+            cancelUrl: checkoutMeta!.cancelUrl,
+        };
 
         const merchantAddress = plan.merchantAddress.toLowerCase();
         const [alias, merchant, role] = await Promise.all([
@@ -34,6 +54,19 @@ export async function GET(_request: Request, { params }: RouteContext) {
         const merchantName = alias?.alias
             || `${merchantAddress.slice(0, 6)}...${merchantAddress.slice(-4)}`;
 
+        /* Live introductory offer on catalog plans (checkout sessions carry none). The
+           subscribe page uses it to disclose due-today vs recurring price BEFORE the
+           customer authorizes; eligibility (once-per-customer, new-customers-only) is
+           re-checked at subscribe time. */
+        const livePromotion = merchantPlan?.active
+            ? await prisma.merchantPlanPromotion.findFirst({
+                where: { planId: merchantPlan.id, active: true },
+            }).catch(() => null)
+            : null;
+        const promotion = livePromotion && isPromotionLive(livePromotion as PromotionRow)
+            ? formatPromotion(livePromotion as PromotionRow)
+            : null;
+
         return NextResponse.json({
             success: true,
             plan: {
@@ -43,7 +76,12 @@ export async function GET(_request: Request, { params }: RouteContext) {
                 detailsUrl: plan.detailsUrl ?? null,
                 amountUsdc: plan.amountUsdc.toString(),
                 periodSeconds: plan.periodSeconds.toString(),
+                minCommitmentSeconds: (plan.minCommitmentSeconds ?? BigInt(0)).toString(),
                 merchantAddress,
+                checkoutSessionId: "checkoutSessionId" in plan ? plan.checkoutSessionId : undefined,
+                successUrl: "successUrl" in plan ? plan.successUrl : undefined,
+                cancelUrl: "cancelUrl" in plan ? plan.cancelUrl : undefined,
+                promotion,
             },
             merchant: {
                 address: merchantAddress,

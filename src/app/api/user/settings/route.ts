@@ -69,8 +69,9 @@ export async function GET(request: Request) {
             email: string | null;
             provider: string | null;
             encrypted_private_key: string | null;
+            backup_completed_at: Date | null;
         }>(
-            `select email, provider, encrypted_private_key
+            `select email, provider, encrypted_private_key, backup_completed_at
                from user_embedded_wallets
               where wallet_address = $1
               limit 1`,
@@ -107,18 +108,22 @@ export async function GET(request: Request) {
                     profilePic: safeProfilePicOrNull(merchant.profilePic),
                     alias: aliasRecord?.alias || null,
                     isAnonymous: aliasRecord?.isAnonymous || false,
+                    verified: merchant.verified,
+                    tier: merchant.tier,
                     pushEnabled: merchant.pushEnabled,
                     emailEnabled: merchant.emailEnabled,
                     payoutSettlementEnabled: merchant.payoutSettlementEnabled,
                     disputeAlertsEnabled: merchant.disputeAlertsEnabled,
                     securityMultiSigEnabled: merchant.securityMultiSigEnabled,
                     churnSurveyEnabled: merchant.churnSurveyEnabled,
+                    churnSurveyQuestion: merchant.churnSurveyQuestion,
                     payoutDestination: merchant.payoutDestination,
                     availableBalanceUsdc: merchant.availableBalanceUsdc.toString(),
                     walletBackup: embeddedWalletRecord ? {
                         email: embeddedWalletRecord.email,
                         provider: embeddedWalletRecord.provider,
                         available: Boolean(embeddedWalletRecord.encrypted_private_key),
+                        completedAt: embeddedWalletRecord.backup_completed_at || null,
                     } : null,
                 };
             }
@@ -161,6 +166,7 @@ export async function GET(request: Request) {
                         email: embeddedWalletRecord.email,
                         provider: embeddedWalletRecord.provider,
                         available: Boolean(embeddedWalletRecord.encrypted_private_key),
+                        completedAt: embeddedWalletRecord.backup_completed_at || null,
                     } : null,
                 };
             }
@@ -180,17 +186,42 @@ export async function GET(request: Request) {
             take: 50,
         }).catch(() => []);
 
-        const formattedReceipts = receipts.map((r: any) => ({
-            receiptId: r.receiptId,
-            txHash: r.txHash,
-            chainId: r.chainId,
-            payerAddress: r.payerAddress,
-            merchantAddress: r.merchantAddress,
-            amountUsdc: r.amountUsdc.toString(),
-            status: r.status,
-            createdAt: r.createdAt,
-            memoNote: r.memoNote,
-        }));
+        /* Resolve counterparty display names so the transactions table can say who was paid
+           instead of showing a bare receipt id. Anonymous aliases stay hidden. */
+        const counterpartyAddresses = Array.from(new Set(
+            receipts.map((r: any) => {
+                const payer = String(r.payerAddress || "").toLowerCase();
+                const merchant = String(r.merchantAddress || "").toLowerCase();
+                return payer === normalizedUser ? merchant : payer;
+            }).filter(Boolean),
+        ));
+        const counterpartyAliases = counterpartyAddresses.length
+            ? await prisma.addressAlias.findMany({
+                where: { address: { in: counterpartyAddresses }, isAnonymous: false },
+                select: { address: true, alias: true },
+            }).catch(() => [])
+            : [];
+        const aliasByAddress = new Map(counterpartyAliases.map((a: any) => [a.address, a.alias]));
+
+        const formattedReceipts = receipts.map((r: any) => {
+            const payer = String(r.payerAddress || "").toLowerCase();
+            const merchant = String(r.merchantAddress || "").toLowerCase();
+            const outgoing = payer === normalizedUser;
+            const counterparty = outgoing ? merchant : payer;
+            return {
+                receiptId: r.receiptId,
+                txHash: r.txHash,
+                chainId: r.chainId,
+                payerAddress: r.payerAddress,
+                merchantAddress: r.merchantAddress,
+                amountUsdc: r.amountUsdc.toString(),
+                status: r.status,
+                createdAt: r.createdAt,
+                memoNote: r.memoNote,
+                direction: outgoing ? "sent" : "received",
+                counterpartyName: aliasByAddress.get(counterparty) || null,
+            };
+        });
 
         return NextResponse.json({
             success: true,
@@ -232,6 +263,7 @@ export async function POST(request: Request) {
             payoutSettlementEnabled,
             disputeAlertsEnabled,
             churnSurveyEnabled,
+            churnSurveyQuestion,
             payoutDestination,
             spendingLimitDaily,
             spendingLimitWeekly,
@@ -247,6 +279,10 @@ export async function POST(request: Request) {
 
         if (typeof payoutDestination === "string" && payoutDestination.length > 200) {
             return NextResponse.json({ error: "Payout destination is too long (max 200 characters)." }, { status: 400 });
+        }
+
+        if (typeof churnSurveyQuestion === "string" && churnSurveyQuestion.trim().length > 280) {
+            return NextResponse.json({ error: "Exit-survey question is too long (max 280 characters)." }, { status: 400 });
         }
 
         let finalProfilePic = profilePic;
@@ -274,6 +310,11 @@ export async function POST(request: Request) {
             if (disputeAlertsEnabled !== undefined) updateData.disputeAlertsEnabled = false;
             if (securityMultiSigEnabled !== undefined) updateData.securityMultiSigEnabled = false;
             if (churnSurveyEnabled !== undefined) updateData.churnSurveyEnabled = !!churnSurveyEnabled;
+            if (churnSurveyQuestion !== undefined) {
+                // Empty/whitespace clears the custom question and falls back to the default prompt.
+                const trimmed = typeof churnSurveyQuestion === "string" ? churnSurveyQuestion.trim() : "";
+                updateData.churnSurveyQuestion = trimmed.length > 0 ? trimmed : null;
+            }
             if (payoutDestination !== undefined) updateData.payoutDestination = payoutDestination;
 
             await prisma.merchant.upsert({

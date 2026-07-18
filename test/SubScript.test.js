@@ -247,6 +247,30 @@ describe("SubScript", function () {
       ).to.be.revertedWithCustomError(subScript, "SubscriptionNotActive");
     });
 
+    it("must reject the charge when cancellation was requested at the period boundary", async function () {
+      /* The exact race behind cancel-at-period-end: the renewal is already DUE, the user
+         requests cancellation, and a permissionless keeper (or anyone) calls executePayment
+         immediately after. Because SubScript now revokes the authorization on-chain at
+         cancellation time, the charge must fail even though the payment was due first. */
+      const { subScript, subscriber, merchant, keeper, AMOUNT, PERIOD } =
+        await loadFixture(deployFixture);
+
+      await subScript
+        .connect(subscriber)
+        .createSubscription(merchant.address, AMOUNT, PERIOD);
+
+      /* Renewal becomes due BEFORE the cancellation request. */
+      await time.increase(PERIOD + 1);
+
+      /* User requests cancellation, causing immediate on-chain revocation. */
+      await subScript.connect(subscriber).cancelSubscription(1);
+
+      /* Permissionless charge attempt right at the boundary must fail. */
+      await expect(
+        subScript.connect(keeper).executePayment(1, 1)
+      ).to.be.revertedWithCustomError(subScript, "SubscriptionNotActive");
+    });
+
     it("should revert if subscriber has insufficient allowance", async function () {
       const { subScript, usdc, subscriber, merchant, AMOUNT, PERIOD } =
         await loadFixture(deployFixture);
@@ -535,10 +559,15 @@ describe("SubScript", function () {
       const subscriberUsdcBefore = await usdc.balanceOf(subscriber.address);
       const fee = AMOUNT / 100n;
 
-      /* Create multi-currency subscription (merchant gets EURC, subscriber pays USDC) */
+      /* Create multi-currency subscription (merchant gets EURC, subscriber pays USDC).
+         maxPaymentAmount caps the USDC pulled: 20% headroom above the 15 EURC settlement covers the
+         1.10 FX rate (16.5 USDC needed). */
+      const maxPay = (AMOUNT * 120n) / 100n;
       await subScript
         .connect(subscriber)
-        .createSubscription(merchant.address, AMOUNT, PERIOD, eurcAddress, usdcAddress);
+        ["createSubscription(address,uint256,uint256,address,address,uint256)"](
+          merchant.address, AMOUNT, PERIOD, eurcAddress, usdcAddress, maxPay
+        );
 
       /* Verify first payment took place (swapped) */
       const merchantEurcAfter = await eurc.balanceOf(merchant.address);
@@ -567,6 +596,49 @@ describe("SubScript", function () {
       expect(merchantEurcAfterExecution - merchantEurcBeforeExecution).to.equal(AMOUNT - fee);
       expect(treasuryEurcAfterExecution - treasuryEurcBeforeExecution).to.equal(fee);
       expect(subscriberUsdcBeforeExecution - subscriberUsdcAfterExecution).to.equal(expectedUsdcSpent);
+    });
+
+    it("reverts a cross-token swap that would pull more input than the subscriber approved", async function () {
+      const { subScript, usdc, stableFX, subscriber, merchant, AMOUNT, PERIOD, TEN_K } =
+        await loadFixture(deployFixture);
+      const MockEURC = await ethers.getContractFactory("MockUSDC");
+      const eurc = await MockEURC.deploy();
+      const eurcAddress = await eurc.getAddress();
+      const usdcAddress = await usdc.getAddress();
+
+      /* Router quotes 2.0x input (manipulated/adverse rate): 15 EURC -> 30 USDC. */
+      await stableFX.setRate(200);
+      await eurc.mint(await stableFX.getAddress(), TEN_K);
+      await usdc.connect(subscriber).approve(await subScript.getAddress(), TEN_K);
+
+      /* Subscriber only approved a 20% headroom cap (18 USDC), so the 30 USDC pull must revert
+         rather than silently draining their wallet. */
+      const maxPay = (AMOUNT * 120n) / 100n;
+      await expect(
+        subScript
+          .connect(subscriber)
+          ["createSubscription(address,uint256,uint256,address,address,uint256)"](
+            merchant.address, AMOUNT, PERIOD, eurcAddress, usdcAddress, maxPay
+          )
+      ).to.be.revertedWithCustomError(subScript, "ExcessiveSwapInput");
+    });
+
+    it("requires an explicit max for cross-token subscriptions", async function () {
+      const { subScript, usdc, subscriber, merchant, AMOUNT, PERIOD } =
+        await loadFixture(deployFixture);
+      const MockEURC = await ethers.getContractFactory("MockUSDC");
+      const eurc = await MockEURC.deploy();
+      const eurcAddress = await eurc.getAddress();
+      const usdcAddress = await usdc.getAddress();
+
+      /* The 5-arg overload has no cap, so cross-token creation must be rejected outright. */
+      await expect(
+        subScript
+          .connect(subscriber)
+          ["createSubscription(address,uint256,uint256,address,address)"](
+            merchant.address, AMOUNT, PERIOD, eurcAddress, usdcAddress
+          )
+      ).to.be.revertedWithCustomError(subScript, "MaxPaymentAmountRequired");
     });
   });
 
@@ -651,15 +723,19 @@ describe("SubScript", function () {
       const amount = ethers.parseUnits("100", 6); // 100 USDC
       const memo = "receipt-12345";
 
+      await router.setMerchantTier(merchant.address, 1);
       await router.connect(subscriber).depositForMerchant(merchant.address, amount, memo);
 
       const recipientBalBefore = await usdc.balanceOf(recipient.address);
       const treasuryBalBefore = await usdc.balanceOf(treasury.address);
 
-      // Perform withdrawal to recipient
+      // Perform withdrawal to recipient. Withdraw stays keyed to the merchant so rerouted
+      // payouts keep their merchant identity; PayoutDelivered records the destination.
       await expect(router.connect(merchant).withdrawTo(recipient.address))
         .to.emit(router, "Withdraw")
-        .withArgs(recipient.address, ethers.parseUnits("99", 6));
+        .withArgs(merchant.address, ethers.parseUnits("99", 6))
+        .and.to.emit(router, "PayoutDelivered")
+        .withArgs(merchant.address, recipient.address, ethers.parseUnits("99", 6), ethers.parseUnits("1", 6));
 
       const recipientBalAfter = await usdc.balanceOf(recipient.address);
       const treasuryBalAfter = await usdc.balanceOf(treasury.address);
@@ -667,6 +743,31 @@ describe("SubScript", function () {
       expect(recipientBalAfter - recipientBalBefore).to.equal(ethers.parseUnits("99", 6));
       expect(treasuryBalAfter - treasuryBalBefore).to.equal(ethers.parseUnits("1", 6));
       expect(await router.merchantBalances(merchant.address)).to.equal(0);
+    });
+
+    it("should never allow the owner to rescue the payment token", async function () {
+      const { usdc, router, owner, subscriber, merchant } = await loadFixture(deployRouterFixture);
+
+      const amount = ethers.parseUnits("100", 6);
+      await router.connect(subscriber).depositForMerchant(merchant.address, amount, "receipt-1");
+      expect(await router.totalMerchantLiabilities()).to.equal(amount);
+
+      /* Legacy deposits predate the liability counter, so payment-token rescue stays disabled
+         even when the current counter appears to leave a surplus. */
+      await expect(
+        router.rescueERC20(await usdc.getAddress(), owner.address, 1)
+      ).to.be.revertedWith("Payment token rescue disabled");
+
+      /* Direct transfers cannot be distinguished safely from pre-upgrade liabilities. */
+      const surplus = ethers.parseUnits("5", 6);
+      await usdc.connect(subscriber).transfer(await router.getAddress(), surplus);
+      await expect(
+        router.rescueERC20(await usdc.getAddress(), owner.address, surplus)
+      ).to.be.revertedWith("Payment token rescue disabled");
+
+      /* Withdrawal releases the liability */
+      await router.connect(merchant).withdraw();
+      expect(await router.totalMerchantLiabilities()).to.equal(0);
     });
   });
 });

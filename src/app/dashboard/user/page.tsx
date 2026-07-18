@@ -3,9 +3,10 @@
 
 import { ethers } from "ethers";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { enablePush, disablePush, isPushEnabled, pushSupported } from "@/lib/clientPush";
+import { enablePush, disablePush, isPushEnabled, pushSupported, sendTestPush } from "@/lib/clientPush";
 import { useRouter } from "next/navigation";
-import { useDisconnect, useBalance, useAccount, useSwitchChain, useWriteContract } from "wagmi";
+import Link from "next/link";
+import { useDisconnect, useReadContract, useAccount, useSwitchChain, useWriteContract } from "wagmi";
 import { 
   formatUnits, 
   createPublicClient, 
@@ -16,32 +17,39 @@ import {
   fallback
 } from "viem";
 import { sepolia } from "viem/chains";
-import { arcTestnet } from "@/lib/wagmi";
+import { activeArcChain } from "@/lib/wagmi";
+import { arcHttp } from "@/lib/arc/transport";
 import { 
-  ARC_TESTNET_CHAIN_ID, 
   ARC_CCTP_DOMAIN_ID,
   ARC_MESSAGE_TRANSMITTER_ADDRESS,
   CCTP_CONFIG 
 } from "@/lib/contracts/constants";
-import { QRCodeSVG } from "qrcode.react";
+import { QRCode } from "react-qrcode-logo";
 import jsQR from "jsqr";
 import { motion, AnimatePresence } from "framer-motion";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
-import { GamesModals, ESCROW_CONTRACT_ABI } from "@/components/games/GamesModals";
+import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+import KycVerificationPanel from "@/components/KycVerificationPanel";
+import ConfirmModal from "@/components/ConfirmModal";
 import { getDashboardUrl } from "@/utils/navigation";
+import { Identity } from "@/components/Identity";
+import { receiptHrefFromDescriptionLine } from "@/lib/dms/receiptPresentation";
 import {
   AlertCircle,
   ArrowDown,
   ArrowUpRight,
   ArrowLeft,
   ArrowRight,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   Copy,
   CreditCard,
   Download,
   ExternalLink,
   Globe,
+  HelpCircle,
   Home,
   Link2,
   Loader2,
@@ -57,21 +65,30 @@ import {
   X,
   Activity,
   Sliders,
-  Lock,
   Eye,
   EyeOff,
   RefreshCw,
-  GamepadIcon,
+  Gift,
+  Lock,
+  BarChart3,
+  TrendingUp,
+  Search,
+  Tag,
+  PieChart,
+  DollarSign,
 } from "@/components/icons";
 import type { LucideIcon } from "@/components/icons";
 import { USDC_NATIVE_GAS_ADDRESS, SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
 import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
-import { parseFen, getLegalTargets, INITIAL_FEN } from "@/lib/games/chess";
-import { requireGameEscrowAddress } from "@/lib/games/client";
-import { GAME_CATALOG } from "@/lib/games/catalog";
+import { humanStatus, humanSubscriptionStatus } from "@/lib/transactionLabels";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
+import { accountDisplayName, merchantDisplayName } from "@/lib/identityDisplay";
 
 const comingSoonUserSettings = new Set(["emailEnabled", "securityShieldEnabled", "securityMultiSigEnabled"]);
+
+const ERC20_BALANCE_ABI = [
+  { type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] },
+] as const;
 
 /* Minimal client-side ABIs for external/browser-wallet vault actions (the embedded path is
    signed server-side instead). */
@@ -86,8 +103,8 @@ const VAULT_CONTRACT_ABI = [
 ] as const;
 
 const publicClient = createPublicClient({
-  chain: arcTestnet,
-  transport: http(),
+  chain: activeArcChain,
+  transport: arcHttp(),
 });
 
 const sepoliaClient = createPublicClient({
@@ -111,6 +128,7 @@ interface Subscription {
   amountCapUsdc: string;
   billingIntervalSeconds: string;
   lastSettlementTimestamp: string | null;
+  cancelAtPeriodEnd: boolean;
   createdAt: string;
 }
 
@@ -131,12 +149,12 @@ interface DmMessage {
   description: string | null;
   txHash: string | null;
   paymentLinkId: string | null;
-  dmGameId?: string | null;
   createdAt: string;
 }
 
 interface MerchantPlan {
   id: string;
+  checkoutSessionId?: string | null;
   merchantAddress: string;
   name: string;
   description?: string | null;
@@ -146,7 +164,7 @@ interface MerchantPlan {
   active: boolean;
 }
 
-type UserTab = "home" | "commit" | "links" | "batch" | "inbox" | "dns";
+type UserTab = "home" | "commit" | "links" | "batch" | "inbox" | "dns" | "referrals";
 
 const userBottomTabs = [
   { id: "home", label: "Home", icon: Home },
@@ -162,11 +180,18 @@ const userDesktopTabs = [
   { id: "batch", label: "Send Out", icon: Send },
   { id: "inbox", label: "Direct Messages", icon: MessageSquare },
   { id: "dns", label: "Profile & DNS", icon: Globe },
+  { id: "referrals", label: "Refer & Earn", icon: Gift },
 ] as const;
 
 const formatAddress = (addr: string | null) => {
   if (!addr) return "";
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+};
+
+const limitDecimals = (value: string, maxDecimals: number = 6): string => {
+  if (!value || !value.includes(".")) return value;
+  const [integer, fraction] = value.split(".");
+  return `${integer}.${fraction.slice(0, maxDecimals)}`;
 };
 
 const walletAddressPattern = /0x[a-fA-F0-9]{40}/g;
@@ -175,15 +200,23 @@ const looksLikeWalletAddress = (value: string | null | undefined) => {
   return typeof value === "string" && /^0x[a-fA-F0-9]{40}$/.test(value.trim());
 };
 
-const formatPeerDisplayName = (name: string | null | undefined, address: string | null) => {
+const formatPeerDisplayName = (name: string | null | undefined, _address: string | null) => {
   const cleanedName = name?.trim();
-  if (!cleanedName || looksLikeWalletAddress(cleanedName)) return formatAddress(address);
-  return cleanedName;
+  if (!cleanedName || looksLikeWalletAddress(cleanedName)) return accountDisplayName(null);
+  return accountDisplayName(cleanedName);
 };
 
+const txHashPattern = /0x[a-fA-F0-9]{64}/g;
+
+/* Shorten raw hex identifiers to a scannable form. Tx hashes (66 chars) must be replaced
+   before addresses (42 chars) or the address pattern eats the front of the hash and leaves
+   mangled text. Never replace with a generic label like "SubScript account" — that hid who
+   was actually paid. */
 const shortenWalletsInText = (value: string | null | undefined) => {
   if (!value) return value || null;
-  return value.replace(walletAddressPattern, (match) => formatAddress(match));
+  return value
+    .replace(txHashPattern, (hash) => `${hash.slice(0, 10)}…${hash.slice(-6)}`)
+    .replace(walletAddressPattern, (address) => `${address.slice(0, 6)}…${address.slice(-4)}`);
 };
 
 const dmRequestDurationOptions = [
@@ -196,6 +229,19 @@ const formatUsdc = (amount: string | null) => {
   if (!amount) return "0.00";
   const numeric = Number(amount);
   return Number.isFinite(numeric) ? (numeric / 1_000_000).toFixed(2) : "0.00";
+};
+
+/* Display amounts on the overview cards and activity rows, in USDC or in the local-currency estimate
+   beside it. Cents are load-bearing under 1,000: rounding 0.40 to "0" claims an empty wallet rather
+   than forty cents. Past that they're noise, and dropping them keeps these strings as short as they
+   are today — the balance renders at 52px on a 390px viewport, where the mobile audit allows no
+   horizontal protrusion at all. The threshold suits both scales: sub-$1,000 USDC keeps its cents,
+   while a naira estimate is large enough to stay whole. */
+const formatHeadlineAmount = (value: number) => {
+  /* Threshold on the rounded value, or 999.999 picks the cents branch and renders "1,000.00" while
+     1000 renders "1,000". */
+  const digits = Math.abs(Math.round(value * 100) / 100) < 1000 ? 2 : 0;
+  return value.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 };
 
 const formatPlanPeriod = (seconds: string) => {
@@ -229,13 +275,6 @@ const splitDmDescription = (description: string | null) => {
   return description.split("\n").map((item) => item.trim()).filter(Boolean);
 };
 
-/* A DM only links to the explorer when it carries a genuine on-chain hash.
-   Reactions and other system messages have null/placeholder (all-zero) hashes. */
-const isRealTxHash = (txHash: string | null | undefined): txHash is string => {
-  if (!txHash || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) return false;
-  return !/^0x0+$/.test(txHash);
-};
-
 const isReactionMessage = (messageType: string) => messageType === "PEER_REACTION";
 
 const getDmPeerAddress = (dm: DmMessage, userWallet: string | null) => {
@@ -261,8 +300,25 @@ export default function UserDashboard() {
   }, []);
 
   const [activeTab, setActiveTab] = useState<UserTab>("home");
+
+  /* A tab switch always starts at the top — otherwise a scroll depth carried over
+     from a longer tab can sit past the end of a shorter one, showing only background. */
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [activeTab]);
+
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [confirmModal, setConfirmModal] = useState<{
+    open: boolean;
+    title: string;
+    description: string;
+    confirmLabel: string;
+    cancelLabel?: string;
+    variant: "danger" | "warning" | "default";
+    onConfirm: () => void;
+    onCancel?: () => void;
+  } | null>(null);
 
   const triggerToast = (message: string) => {
     setToastMessage(message);
@@ -288,6 +344,7 @@ export default function UserDashboard() {
   const [linkQrShown, setLinkQrShown] = useState(false);
   const [loading, setLoading] = useState(true);
   const [redirectMessage, setRedirectMessage] = useState<string | null>(null);
+  const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
   const [userWallet, setUserWallet] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [emailPromptValue, setEmailPromptValue] = useState("");
@@ -303,37 +360,49 @@ export default function UserDashboard() {
   const [vaultActionAmount, setVaultActionAmount] = useState("");
   const [vaultActionBusy, setVaultActionBusy] = useState(false);
   const [vaultActionError, setVaultActionError] = useState<string | null>(null);
+  /* Unverified-merchant commit warning (informed consent before escrowing to an unverified merchant). */
+  const [vaultUnverifiedWarning, setVaultUnverifiedWarning] = useState(false);
   const [isEmbeddedWalletSession, setIsEmbeddedWalletSession] = useState(false);
+  const [detectedCurrency, setDetectedCurrency] = useState({ code: "USD", symbol: "$" });
+  const [exchangeRate, setExchangeRate] = useState(1.0);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [dms, setDms] = useState<DmMessage[]>([]);
   const [threadPlans, setThreadPlans] = useState<MerchantPlan[]>([]);
   const [plansMerchantAddress, setPlansMerchantAddress] = useState<string | null>(null);
 
-  // Games state variables
-  const [gamesMenuOpen, setGamesMenuOpen] = useState(false);
-  const [selectedGameForInvite, setSelectedGameForInvite] = useState<string | null>(null);
-  const [gameStakeAmount, setGameStakeAmount] = useState("1");
-  const [isCreatingGame, setIsCreatingGame] = useState(false);
-  const [activePlayingGame, setActivePlayingGame] = useState<any | null>(null);
-  const [isChessBoardModalOpen, setIsChessBoardModalOpen] = useState(false);
-  const [isSubmittingMove, setIsSubmittingMove] = useState(false);
-  const [isClaimingPayout, setIsClaimingPayout] = useState(false);
-  const [chessSelectedSquare, setChessSelectedSquare] = useState<string | null>(null);
-  const [chessLegalMoves, setChessLegalMoves] = useState<string[]>([]);
-  const [gameErrorMessage, setGameErrorMessage] = useState<string | null>(null);
-  const [gameStatusMessage, setGameStatusMessage] = useState<string | null>(null);
-
-  // Link type selection in links tab
-  const [linkType, setLinkType] = useState<"payment" | "game">("payment");
-  // Which game a "Host Game" link deploys (only the playable catalog entries are selectable).
-  const [linkGameType, setLinkGameType] = useState<"chess" | "checkers">("chess");
   const [isThreadPlansLoading, setIsThreadPlansLoading] = useState(false);
   const [planManagerOpen, setPlanManagerOpen] = useState(false);
   const [planManagerStatus, setPlanManagerStatus] = useState<string | null>(null);
   const [planManagerError, setPlanManagerError] = useState<string | null>(null);
   const [registeredDomain, setRegisteredDomain] = useState<string | null>(null);
   const [profilePic, setProfilePic] = useState<string | null>(null);
-  const [balanceVisible, setBalanceVisible] = useState(true);
+  const [balanceVisible, setBalanceVisible] = useState(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("subscript_balance_visible");
+      return stored !== "false";
+    }
+    return true;
+  });
+
+  const toggleBalanceVisible = () => {
+    setBalanceVisible((prev) => {
+      const newVal = !prev;
+      localStorage.setItem("subscript_balance_visible", String(newVal));
+      window.dispatchEvent(new Event("storage"));
+      return newVal;
+    });
+  };
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const handleStorageChange = () => {
+        const current = localStorage.getItem("subscript_balance_visible");
+        setBalanceVisible(current !== "false");
+      };
+      window.addEventListener("storage", handleStorageChange);
+      return () => window.removeEventListener("storage", handleStorageChange);
+    }
+  }, []);
   const [txFilter, setTxFilter] = useState<"all" | "recurring" | "one-time">("all");
   const [allTxOpen, setAllTxOpen] = useState(false);
   const [allTxSearch, setAllTxSearch] = useState("");
@@ -343,6 +412,7 @@ export default function UserDashboard() {
   /* Browser Web Push registration state for this device. */
   const [browserPushOn, setBrowserPushOn] = useState(false);
   const [browserPushBusy, setBrowserPushBusy] = useState(false);
+  const [browserPushTestBusy, setBrowserPushTestBusy] = useState(false);
   const [browserPushSupported, setBrowserPushSupported] = useState(true);
 
   useEffect(() => {
@@ -351,6 +421,84 @@ export default function UserDashboard() {
     if (supported) {
       isPushEnabled().then(setBrowserPushOn).catch(() => {});
     }
+  }, []);
+
+  /* Detect browser local currency and fetch real-time exchange rate */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const detectLocalCurrency = () => {
+      try {
+        // Prioritize timezone detection (most reliable indicator of current physical location)
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+        if (tz.includes("Lagos") || tz.includes("Nigeria") || tz.includes("Africa/Lagos")) return { code: "NGN", symbol: "₦" };
+        if (tz.includes("London") || tz.includes("Europe/London")) return { code: "GBP", symbol: "£" };
+        if (tz.includes("Europe")) return { code: "EUR", symbol: "€" };
+        if (tz.includes("Calcutta") || tz.includes("Kolkata") || tz.includes("Asia/Kolkata")) return { code: "INR", symbol: "₹" };
+        if (tz.includes("Tokyo") || tz.includes("Asia/Tokyo")) return { code: "JPY", symbol: "¥" };
+        if (tz.includes("Sydney") || tz.includes("Melbourne") || tz.includes("Australia")) return { code: "AUD", symbol: "A$" };
+        if (tz.includes("Toronto") || tz.includes("Vancouver") || tz.includes("America/Toronto")) return { code: "CAD", symbol: "C$" };
+        if (tz.includes("Nairobi") || tz.includes("Kenya")) return { code: "KES", symbol: "KSh" };
+        if (tz.includes("Accra") || tz.includes("Ghana")) return { code: "GHS", symbol: "GH₵" };
+        if (tz.includes("Johannesburg") || tz.includes("South_Africa")) return { code: "ZAR", symbol: "R" };
+
+        // Next check browser language preferences
+        const languages = navigator.languages || [];
+        if (languages.some(lang => lang.toLowerCase().includes("ng"))) return { code: "NGN", symbol: "₦" };
+
+        const locale = navigator.language || "en-US";
+        const parts = locale.split("-");
+        const country = parts[1] ? parts[1].toUpperCase() : "";
+
+        const countryToCurrency: Record<string, { code: string; symbol: string }> = {
+          NG: { code: "NGN", symbol: "₦" },
+          GB: { code: "GBP", symbol: "£" },
+          DE: { code: "EUR", symbol: "€" },
+          FR: { code: "EUR", symbol: "€" },
+          IT: { code: "EUR", symbol: "€" },
+          ES: { code: "EUR", symbol: "€" },
+          NL: { code: "EUR", symbol: "€" },
+          JP: { code: "JPY", symbol: "¥" },
+          IN: { code: "INR", symbol: "₹" },
+          AU: { code: "AUD", symbol: "A$" },
+          CA: { code: "CAD", symbol: "C$" },
+          US: { code: "USD", symbol: "$" },
+          ZA: { code: "ZAR", symbol: "R" },
+          KE: { code: "KES", symbol: "KSh" },
+          GH: { code: "GHS", symbol: "GH₵" },
+        };
+
+        if (country && countryToCurrency[country]) {
+          return countryToCurrency[country];
+        }
+      } catch (e) {
+        console.error("Failed to detect currency from locale/timezone fallback:", e);
+      }
+      return { code: "USD", symbol: "$" };
+    };
+
+    const initialCurrency = detectLocalCurrency();
+    setDetectedCurrency(initialCurrency);
+
+    const fetchGeoCurrencyAndRate = async () => {
+      try {
+        const res = await fetch("/api/rates");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            setDetectedCurrency({
+              code: data.currency,
+              symbol: data.symbol
+            });
+            setExchangeRate(Number(data.rate));
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch exchange rates from local API:", e);
+      }
+    };
+
+    fetchGeoCurrencyAndRate();
   }, []);
 
   const handleToggleBrowserPush = async () => {
@@ -373,6 +521,15 @@ export default function UserDashboard() {
       setBrowserPushBusy(false);
     }
   };
+  const handleTestBrowserPush = async () => {
+    setBrowserPushTestBusy(true);
+    try {
+      const result = await sendTestPush();
+      triggerToast(result.ok ? (result.message || "Test notification sent.") : (result.error || "Could not send a test notification."));
+    } finally {
+      setBrowserPushTestBusy(false);
+    }
+  };
   const [copiedAddress, setCopiedAddress] = useState(false);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [sendFundsOpen, setSendFundsOpen] = useState(false);
@@ -386,6 +543,10 @@ export default function UserDashboard() {
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const [userSettings, setUserSettings] = useState<any>(null);
+  const mustBackupWallet = Boolean(
+    userSettings?.walletBackup?.available && 
+    !userSettings?.walletBackup?.completedAt
+  );
   const [settingsTransactions, setSettingsTransactions] = useState<any[]>([]);
   const [isSettingsLoading, setIsSettingsLoading] = useState(false);
   const [savingSettingsField, setSavingSettingsField] = useState<string | null>(null);
@@ -409,6 +570,20 @@ export default function UserDashboard() {
   const [topupVaultOpen, setTopupVaultOpen] = useState(false);
   const [editingVault, setEditingVault] = useState<any | null>(null);
 
+  // Referrals States
+  const [referrals, setReferrals] = useState<any[]>([]);
+  const [referralLink, setReferralLink] = useState<string>("");
+  const [referralsCount, setReferralsCount] = useState<number>(0);
+  const [referralsLoading, setReferralsLoading] = useState<boolean>(false);
+  const [referralCopySuccess, setReferralCopySuccess] = useState<boolean>(false);
+
+  const [accountSubView, setAccountSubView] = useState<"menu" | "profile" | "kyc" | "limits" | "transactions" | "notifications" | "security" | "support" | "spend-analysis">("menu");
+  const [spendSearchQuery, setSpendSearchQuery] = useState("");
+
+  useEffect(() => {
+    setAccountSubView("menu");
+  }, [activeTab]);
+
   useEffect(() => {
     if (userSettings) {
       setDailyLimitInput(userSettings.spendingLimitDaily ? (Number(userSettings.spendingLimitDaily) / 1_000_000).toString() : "");
@@ -416,6 +591,29 @@ export default function UserDashboard() {
       setMonthlyLimitInput(userSettings.spendingLimitMonthly ? (Number(userSettings.spendingLimitMonthly) / 1_000_000).toString() : "");
     }
   }, [userSettings]);
+
+  const fetchReferrals = useCallback(async () => {
+    setReferralsLoading(true);
+    try {
+      const res = await fetch("/api/user/referrals");
+      const data = await res.json();
+      if (data.success) {
+        setReferrals(data.referrals || []);
+        setReferralLink(data.referralLink || "");
+        setReferralsCount(data.count || 0);
+      }
+    } catch (err) {
+      console.error("Failed to fetch referrals:", err);
+    } finally {
+      setReferralsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "referrals") {
+      fetchReferrals();
+    }
+  }, [activeTab, fetchReferrals]);
 
   const loadUserSettings = async () => {
     setIsSettingsLoading(true);
@@ -595,12 +793,11 @@ export default function UserDashboard() {
   /* Thumb-swipe between the Single / Batch send sub-tabs (tap still works). Pointer-based, so a
      55px drag is needed — harmless on desktop, natural on mobile. */
   const sendSwipe = useSwipeTabs(["single", "batch"] as const, sendMode, setSendMode);
-  /* Swipe between Standard Link / Host Game in the Payment Links tab. */
-  const linksSwipe = useSwipeTabs(["payment", "game"] as const, linkType, (next) => {
-    setLinkType(next);
-    setLinkResultUrl(null);
-    setLinkError(null);
-  });
+  const [prevSendMode, setPrevSendMode] = useState<"single" | "batch">("single");
+  if (sendMode !== prevSendMode) {
+    setPrevSendMode(sendMode);
+  }
+  const sendDirection = sendMode === "batch" ? 1 : -1;
   const [singleRecipient, setSingleRecipient] = useState("");
   const [singleAmount, setSingleAmount] = useState("");
   const [singleResolved, setSingleResolved] = useState<{ address: string | null; alias: string | null; profilePic: string | null } | null>(null);
@@ -616,29 +813,43 @@ export default function UserDashboard() {
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
 
-  const { data: usdcBalance, refetch: refetchUsdc } = useBalance({
-    address: userWallet as `0x${string}` | undefined,
-    token: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
-    chainId: ARC_TESTNET_CHAIN_ID,
+  /* balanceOf only. useBalance({ token }) also reads decimals() and symbol() on every refetch, so a
+     single balance cost 3 calls against Arc's public RPC — which rate-limits per RPC call (429,
+     ~1/sec/IP), not per HTTP request. The extra reads raced the one we needed, readContracts runs
+     with allowFailure:false, and the whole query rejected. USDC's decimals are fixed at 6 (the
+     formatUnits below has always assumed it) and the symbol was never read, so both were pure cost. */
+  const { data: usdcBalance, refetch: refetchUsdc } = useReadContract({
+    address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
+    abi: ERC20_BALANCE_ABI,
+    functionName: "balanceOf",
+    args: userWallet ? [userWallet as `0x${string}`] : undefined,
+    chainId: activeArcChain.id,
+    query: { enabled: Boolean(userWallet) },
   });
 
-  const { data: sepoliaUsdcBalance, refetch: refetchSepolia } = useBalance({
-    address: userWallet as `0x${string}` | undefined,
-    token: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as `0x${string}`, // Sepolia USDC
+  const { data: sepoliaUsdcBalance, refetch: refetchSepolia } = useReadContract({
+    address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as `0x${string}`, // Sepolia USDC
+    abi: ERC20_BALANCE_ABI,
+    functionName: "balanceOf",
+    args: userWallet ? [userWallet as `0x${string}`] : undefined,
     chainId: 11155111,
+    query: { enabled: Boolean(userWallet) },
   });
 
-  const { data: mainnetUsdcBalance, refetch: refetchMainnet } = useBalance({
-    address: userWallet as `0x${string}` | undefined,
-    token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as `0x${string}`, // Mainnet USDC
+  const { data: mainnetUsdcBalance, refetch: refetchMainnet } = useReadContract({
+    address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as `0x${string}`, // Mainnet USDC
+    abi: ERC20_BALANCE_ABI,
+    functionName: "balanceOf",
+    args: userWallet ? [userWallet as `0x${string}`] : undefined,
     chainId: 1,
+    query: { enabled: Boolean(userWallet) },
   });
 
-  const sepoliaUsdc = sepoliaUsdcBalance ? Number(formatUnits(sepoliaUsdcBalance.value, 6)) : 0;
-  const mainnetUsdc = mainnetUsdcBalance ? Number(formatUnits(mainnetUsdcBalance.value, 6)) : 0;
+  const sepoliaUsdc = sepoliaUsdcBalance !== undefined ? Number(formatUnits(sepoliaUsdcBalance, 6)) : 0;
+  const mainnetUsdc = mainnetUsdcBalance !== undefined ? Number(formatUnits(mainnetUsdcBalance, 6)) : 0;
   const hasExternalUsdc = sepoliaUsdc > 0 || mainnetUsdc > 0;
 
-  const walletBalance = usdcBalance ? Number(formatUnits(usdcBalance.value, 6)) : 0;
+  const walletBalance = usdcBalance !== undefined ? Number(formatUnits(usdcBalance, 6)) : 0;
 
   const handleManualRefreshBalances = async () => {
     setIsRefreshingBalances(true);
@@ -666,34 +877,50 @@ export default function UserDashboard() {
     }
   };
 
+  const dmRequestSequence = useRef(0);
   const loadDms = useCallback(async () => {
+    const requestSequence = ++dmRequestSequence.current;
     try {
       const res = await fetch("/api/user/dms");
       const data = await res.json();
-      if (data.success) setDms(data.dms);
+      if (data.success && requestSequence === dmRequestSequence.current) setDms(data.dms);
     } catch (err) {
       console.error("Failed to load DMs:", err);
     }
   }, []);
 
-  /* Live inbox: poll DMs while the tab is visible (and refresh immediately on focus) so messages
-     from the other end and settled requests appear without a manual reload — which also keeps the
-     notification badge honest, since it's derived from this same data. */
+  /* Live inbox: poll DMs while visible. On focus/visibility or a checkout completion from another
+     tab, refresh every payment-backed surface so balances, receipts, subscriptions and DMs agree. */
   useEffect(() => {
     if (!userWallet) return;
-    const refresh = () => {
+    const refreshAll = () => {
       if (typeof document === "undefined" || document.visibilityState === "visible") {
-        loadDms();
+        void Promise.all([
+          loadDms(),
+          loadSubscriptions(),
+          loadUserSettings(),
+          refetchUsdc().catch(console.error),
+        ]);
       }
     };
-    const interval = window.setInterval(refresh, 8000);
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", refresh);
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === "subscript_payment_settled") refreshAll();
+    };
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") void loadDms();
+    }, 8000);
+    window.addEventListener("focus", refreshAll);
+    window.addEventListener("storage", handleStorage);
+    document.addEventListener("visibilitychange", refreshAll);
     return () => {
       window.clearInterval(interval);
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refreshAll);
+      window.removeEventListener("storage", handleStorage);
+      document.removeEventListener("visibilitychange", refreshAll);
     };
+    // loadSubscriptions/loadUserSettings are page-local fetchers; this effect is re-established
+    // whenever the authenticated wallet changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userWallet, loadDms]);
 
   const loadRegisteredDns = async (walletAddress: string) => {
@@ -709,9 +936,9 @@ export default function UserDashboard() {
 
   const redirectTo = useCallback((url: string, message: string) => {
     setRedirectMessage(message);
+    setRedirectUrl(url);
     setLoading(false);
-    router.replace(url);
-  }, [router]);
+  }, []);
 
   const verifySession = useCallback(async () => {
     try {
@@ -719,7 +946,7 @@ export default function UserDashboard() {
       const res = await fetch("/api/auth/session");
       const data = await res.json();
       if (!data.loggedIn) {
-        redirectTo(getDashboardUrl("USER", "/signup"), "Redirecting to sign up...");
+        redirectTo(getDashboardUrl("USER", "/login"), "Redirecting to login...");
         return;
       }
 
@@ -737,7 +964,7 @@ export default function UserDashboard() {
       if (!data.isEmbedded && accountAddress && data.wallet.toLowerCase() !== accountAddress.toLowerCase()) {
         console.warn("Session wallet mismatch, logging out");
         await fetch("/api/auth/logout", { method: "POST" });
-        redirectTo(getDashboardUrl("USER", "/signup"), "Signing you out...");
+        redirectTo(getDashboardUrl("USER", "/login"), "Signing you out...");
         return;
       }
 
@@ -747,7 +974,7 @@ export default function UserDashboard() {
       await Promise.all([loadSubscriptions(), loadDms(), loadUserSettings(), loadVaults()]);
     } catch (e) {
       console.error("Session verification error:", e);
-      redirectTo(getDashboardUrl("USER", "/signup"), "Redirecting to sign up...");
+      redirectTo(getDashboardUrl("USER", "/login"), "Redirecting to login...");
     } finally {
       setLoading(false);
     }
@@ -808,10 +1035,41 @@ export default function UserDashboard() {
     redirectTo(getDashboardUrl("USER", "/signup"), "Signing you out...");
   };
 
+  const [deleteAccountLoading, setDeleteAccountLoading] = useState(false);
+  const handleDeleteAccount = () => {
+    setConfirmModal({
+      open: true,
+      title: "Delete your account?",
+      description: "This erases your profile, alias, and settings, and signs you out everywhere. Your payment receipts remain part of the shared ledger. Active subscriptions must be cancelled and vault funds withdrawn before deleting. This cannot be undone.",
+      confirmLabel: "Delete Account",
+      variant: "danger",
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setDeleteAccountLoading(true);
+        try {
+          const res = await fetch("/api/user/account", { method: "DELETE" });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.success) {
+            triggerToast(data.error || "Account deletion failed.");
+            return;
+          }
+          disconnect();
+          redirectTo(getDashboardUrl("USER", "/signup"), "Deleting your account...");
+        } catch {
+          triggerToast("Account deletion failed. Please try again.");
+        } finally {
+          setDeleteAccountLoading(false);
+        }
+      },
+      onCancel: () => setConfirmModal(null),
+    });
+  };
+
   const copyAddress = async () => {
     if (!userWallet) return;
     await navigator.clipboard.writeText(userWallet);
     setCopiedAddress(true);
+    triggerToast("Address copied to clipboard");
     setTimeout(() => setCopiedAddress(false), 1600);
   };
 
@@ -823,15 +1081,27 @@ export default function UserDashboard() {
     receiverAddress?: string;
     amountUsdc?: string;
     recipients?: { receiverAddress: string; amountUsdc: string }[];
+    /* Stable per logical send attempt; the server derives each transfer's Circle idempotency
+       key from it, so a retry with the same key cannot pay a recipient twice. */
+    requestKey?: string;
   }) => {
+    const { requestKey, ...body } = payload;
     const res = await fetch("/api/user/wallet/send", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      headers: {
+        "Content-Type": "application/json",
+        ...(requestKey ? { "x-request-id": requestKey } : {}),
+      },
+      body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.success) {
-      throw new Error(data.error || "Failed to send USDC from your generated wallet.");
+      const err = new Error(data.error || "Failed to send USDC from your generated wallet.");
+      /* On a partial batch failure the API returns the transfers that already settled; surface
+         them so a retry only covers the remaining recipients instead of double-paying. */
+      (err as any).partial = Boolean(data.partial);
+      (err as any).settledTransfers = data.transfers || [];
+      throw err;
     }
     return data.transfers as { receiverAddress: string; amountUsdc: string; txHash: string }[];
   };
@@ -859,9 +1129,30 @@ export default function UserDashboard() {
   const getActiveSubscriptionForMerchant = (merchantAddress: string | null | undefined) => {
     if (!merchantAddress) return null;
     return subscriptions.find(
-      (sub) => sub.merchantAddress.toLowerCase() === merchantAddress.toLowerCase() && sub.status === "ACTIVE"
+      (sub) => sub.merchantAddress.toLowerCase() === merchantAddress.toLowerCase() && sub.status === "ACTIVE" && !sub.cancelAtPeriodEnd
     ) || null;
   };
+
+  /* Mirror-gap self-heal: a subscription can be live on-chain (the user was charged and
+     has the SUBSCRIPTION_STARTED DM) while the local mirror row is missing, which hides
+     the Manage/Cancel controls. When a merchant thread is opened and we know of no active
+     subscription with them, ask the server to reconcile from the chain once per peer. */
+  const reconciledPeersRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!selectedDmPeer || !userWallet) return;
+    const peer = selectedDmPeer.toLowerCase();
+    if (reconciledPeersRef.current.has(peer)) return;
+    const hasActive = subscriptions.some(
+      (sub) => sub.merchantAddress.toLowerCase() === peer && sub.status === "ACTIVE" && !sub.cancelAtPeriodEnd
+    );
+    if (hasActive) return;
+    reconciledPeersRef.current.add(peer);
+    fetch(`/api/user/subscriptions?reconcileMerchant=${encodeURIComponent(peer)}`)
+      .then((res) => res.json())
+      .then((data) => { if (data.success) setSubscriptions(data.subscriptions); })
+      .catch(() => { /* best-effort; the normal list already loaded */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDmPeer, userWallet]);
 
   const loadPlansForMerchant = async (merchantAddress: string) => {
     setIsThreadPlansLoading(true);
@@ -890,14 +1181,17 @@ export default function UserDashboard() {
     }
   };
 
+  /* Stable per subscribe attempt: reused on retry so the server's Circle idempotency key
+     dedupes the first charge; cleared on success so the next subscribe is a fresh attempt. */
+  const subscribeRequestKey = useRef<string | null>(null);
+
   const handleSubscribeOrSwitchPlan = async (plan: MerchantPlan) => {
     const activeSub = getActiveSubscriptionForMerchant(plan.merchantAddress);
 
     /* Plan reductions are intentionally unavailable. Compare normalized recurring rates so a
        longer billing period cannot disguise a cheaper tier as an upgrade. */
-    let mode: "scheduled" | "immediate" = "scheduled";
+    let isUpgrade = false;
     if (activeSub) {
-      let isUpgrade = false;
       try {
         const comparison = compareRecurringRates(
           BigInt(plan.amountUsdc),
@@ -905,52 +1199,78 @@ export default function UserDashboard() {
           BigInt(activeSub.amountCapUsdc),
           BigInt(activeSub.billingIntervalSeconds),
         );
-        if (comparison < 0) {
+        if (comparison <= 0) {
           setPlanManagerStatus(null);
-          setPlanManagerError("Plan reductions are not available. Choose your current plan or a higher tier.");
+          setPlanManagerError(
+            comparison < 0
+              ? "Plan reductions are not available. Choose your current plan or a higher tier."
+              : "Only upgrades to a higher recurring rate are available."
+          );
           return;
         }
-        isUpgrade = comparison > 0;
+        isUpgrade = true;
       } catch {
         setPlanManagerError("This plan could not be compared with your current subscription.");
         return;
       }
-      if (isUpgrade) {
-        const now = window.confirm(
-          `Upgrade to ${plan.name}?\n\n`
-          + `OK — upgrade now: you'll pay a prorated amount for the rest of the current period, and the new rate bills from the next renewal.\n\n`
-          + `Cancel — switch at renewal: keep your current plan until it renews, then the new rate starts automatically (no charge today).`
-        );
-        mode = now ? "immediate" : "scheduled";
-      }
     }
 
-    const actionKey = activeSub ? `switch-plan-${plan.id}` : `subscribe-plan-${plan.id}`;
-    await runAction(actionKey, async () => {
-      setPlanManagerStatus(activeSub ? "Switching plan on-chain..." : "Creating subscription on-chain...");
-      setPlanManagerError(null);
-      const endpoint = activeSub ? "/api/user/subscription/change" : "/api/user/subscription/subscribe";
-      const body = activeSub
-        ? { fromSubscriptionId: activeSub.subscriptionId, planId: plan.id, mode }
-        : { planId: plan.id };
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+    const applyPlanChange = async (mode: "scheduled" | "immediate") => {
+      const actionKey = activeSub ? `switch-plan-${plan.id}` : `subscribe-plan-${plan.id}`;
+      await runAction(actionKey, async () => {
+        setPlanManagerStatus(activeSub ? "Switching plan on-chain..." : "Creating subscription on-chain...");
+        setPlanManagerError(null);
+        const endpoint = activeSub ? "/api/user/subscription/change" : "/api/user/subscription/subscribe";
+        const body = activeSub
+          ? { fromSubscriptionId: activeSub.subscriptionId, planId: plan.id, mode }
+          : plan.checkoutSessionId
+            ? { checkoutSessionId: plan.checkoutSessionId }
+            : { planId: plan.id };
+        /* Subscribing charges the first payment server-side; a retry with the same x-request-id
+           dedupes at Circle instead of creating (and charging) a second subscription. */
+        subscribeRequestKey.current ||= crypto.randomUUID();
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-request-id": subscribeRequestKey.current },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) throw new Error(data.error || "Subscription transaction failed.");
+        subscribeRequestKey.current = null;
+        const charged = data.proratedChargeUsdc ? ` Charged ${data.proratedChargeUsdc} USDC now.` : "";
+        setPlanManagerStatus(
+          activeSub
+            ? `${data.effective || `Switched to ${data.planName || plan.name}.`}${charged}`
+            : `Subscribed to ${data.planName || plan.name}.`
+        );
+        triggerToast(activeSub ? "Plan change applied" : "Subscription created on-chain");
+        await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
+      }).catch((err: any) => {
+        setPlanManagerError(err.message || "Subscription transaction failed.");
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) throw new Error(data.error || "Subscription transaction failed.");
-      const charged = data.proratedChargeUsdc ? ` Charged ${data.proratedChargeUsdc} USDC now.` : "";
-      setPlanManagerStatus(
-        activeSub
-          ? `${data.effective || `Switched to ${data.planName || plan.name}.`}${charged}`
-          : `Subscribed to ${data.planName || plan.name}.`
-      );
-      triggerToast(activeSub ? "Plan change applied" : "Subscription created on-chain");
-      await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
-    }).catch((err: any) => {
-      setPlanManagerError(err.message || "Subscription transaction failed.");
-    });
+    };
+
+    if (isUpgrade) {
+      setConfirmModal({
+        open: true,
+        title: `Upgrade to ${plan.name}`,
+        description: "Upgrade now to pay the prorated amount for the rest of this period, or switch at renewal with no charge today.",
+        confirmLabel: "Upgrade Now",
+        cancelLabel: "At Renewal",
+        variant: "default",
+        onConfirm: () => {
+          setConfirmModal(null);
+          void applyPlanChange("immediate");
+        },
+        onCancel: () => {
+          setConfirmModal(null);
+          void applyPlanChange("scheduled");
+        },
+      });
+      return;
+    }
+
+    await applyPlanChange("scheduled");
   };
 
   const handleCancelSubscriptionForMerchant = async (merchantAddress: string) => {
@@ -959,39 +1279,84 @@ export default function UserDashboard() {
       setPlanManagerError("No active subscription found for this merchant.");
       return;
     }
-    if (!window.confirm("Cancel this subscription on-chain now? Access may stop immediately.")) return;
-    await runAction(`cancel-sub-${activeSub.subscriptionId}`, async () => {
-      setPlanManagerStatus("Cancelling subscription...");
-      setPlanManagerError(null);
-      const res = await fetch("/api/user/subscription/cancel", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscriptionId: activeSub.subscriptionId }),
+    await new Promise<void>((resolve) => {
+      setConfirmModal({
+        open: true,
+        title: "Cancel Subscription",
+        description: "This will cancel the subscription on-chain. Access may stop immediately, and the cancellation cannot be undone.",
+        confirmLabel: "Cancel Plan",
+        variant: "warning",
+        onConfirm: async () => {
+          setConfirmModal(null);
+          await runAction(`cancel-sub-${activeSub.subscriptionId}`, async () => {
+            setPlanManagerStatus("Cancelling subscription...");
+            setPlanManagerError(null);
+            const res = await fetch("/api/user/subscription/cancel", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ subscriptionId: activeSub.subscriptionId }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) throw new Error(data.error || "Cancel transaction failed.");
+            if (data.message) {
+              setPlanManagerStatus(data.message);
+              triggerToast("Subscription cancelled");
+            } else if (data.cancelAtPeriodEnd && data.accessUntil) {
+              const until = new Date(data.accessUntil).toLocaleDateString();
+              setPlanManagerStatus(`Cancelled — you keep access until ${until}.`);
+              triggerToast(`Cancelled — access until ${until}`);
+            } else {
+              setPlanManagerStatus("Subscription cancelled on-chain.");
+              triggerToast("Subscription cancelled on-chain");
+            }
+            await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
+          }).catch((err: any) => {
+            setPlanManagerError(err.message || "Cancel transaction failed.");
+          });
+          resolve();
+        },
+        onCancel: () => {
+          setConfirmModal(null);
+          resolve();
+        },
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) throw new Error(data.error || "Cancel transaction failed.");
-      if (data.cancelAtPeriodEnd && data.accessUntil) {
-        const until = new Date(data.accessUntil).toLocaleDateString();
-        setPlanManagerStatus(`Cancelled — you keep access until ${until}.`);
-        triggerToast(`Cancelled — access until ${until}`);
-      } else {
-        setPlanManagerStatus("Subscription cancelled on-chain.");
-        triggerToast("Subscription cancelled on-chain");
-      }
-      await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
-    }).catch((err: any) => {
-      setPlanManagerError(err.message || "Cancel transaction failed.");
     });
   };
 
   const handleConfirmPaymentDm = async (dm: DmMessage) => {
-    /* Merchant subscription requests settle through the sponsored hosted checkout. */
+    /* Assigned API subscription offers use the same plan-change controller as the DM plan
+       picker. That controller detects an existing merchant subscription and modifies its
+       on-chain id in place; a new subscriber activates the assigned checkout instead. */
+    if (dm.messageType === "SUBSCRIPTION_OFFER") {
+      if (!dm.paymentLinkId) return;
+      try {
+        const merchantAddress = dm.senderAddress.toLowerCase();
+        const res = await fetch(`/api/merchant/plans?merchantAddress=${encodeURIComponent(merchantAddress)}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) throw new Error(data.error || "Failed to load this subscription offer.");
+        const plans = (data.plans || []) as MerchantPlan[];
+        const assignedPlan = plans.find((plan) => plan.checkoutSessionId === dm.paymentLinkId);
+        if (!assignedPlan) throw new Error("This subscription offer is no longer available.");
+        setThreadPlans(plans);
+        setPlansMerchantAddress(merchantAddress);
+        await handleSubscribeOrSwitchPlan(assignedPlan);
+      } catch (error: any) {
+        setPlanManagerError(error.message || "Failed to open this subscription offer.");
+      }
+      return;
+    }
+
+    /* Other merchant requests settle through the hosted one-time checkout. */
     if (dm.messageType !== "PEER_REQUEST") {
       if (!dm.paymentLinkId) return;
-      await runAction(`pay-${dm.id}`, async () => {
-        await handleUpdateDmStatus(dm.id, "APPROVED");
-        router.push(`/pay/${dm.paymentLinkId}?direct=true`);
-      });
+      const checkoutUrl = `/pay/${dm.paymentLinkId}`;
+      const opened = window.open("about:blank", "_blank");
+      if (opened) {
+        opened.opener = null;
+        opened.location.href = checkoutUrl;
+      } else {
+        router.push(checkoutUrl);
+      }
       return;
     }
 
@@ -1010,6 +1375,9 @@ export default function UserDashboard() {
         const transfers = await sendFromEmbeddedWallet({
           receiverAddress: requesterAddress,
           amountUsdc: humanAmount,
+          /* A peer request is paid at most once — keying on the DM id makes any retry of
+             this payment dedupe at Circle instead of paying the requester twice. */
+          requestKey: `dm-pay:${dm.id}`,
         });
         txHash = transfers[0]?.txHash;
       } else {
@@ -1017,8 +1385,8 @@ export default function UserDashboard() {
           throw new Error("Connect your wallet to pay this request.");
         }
         /* Connected-wallet accounts must be on Arc before the USDC transfer settles. */
-        if (chainId !== ARC_TESTNET_CHAIN_ID) {
-          await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+        if (chainId !== activeArcChain.id) {
+          await switchChainAsync({ chainId: activeArcChain.id });
         }
         txHash = await writeContractAsync({
           address: USDC_NATIVE_GAS_ADDRESS,
@@ -1039,8 +1407,7 @@ export default function UserDashboard() {
         });
       }
 
-      /* Mark the request handled and drop a transfer receipt into the thread (real txHash
-         so "View Tx" links to the explorer). */
+      /* Mark the request handled and keep the transfer receipt in the thread. */
       await handleUpdateDmStatus(dm.id, "APPROVED");
       if (txHash) {
         await fetch("/api/user/dms", {
@@ -1104,53 +1471,6 @@ export default function UserDashboard() {
     });
   };
 
-  const handlePlayGame = async (gameId: string) => {
-    try {
-      const res = await fetch(`/api/user/dms/games/${gameId}`, {
-        headers: { "x-session-wallet": userWallet || "" },
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to load game details");
-      }
-
-      const game = data.game;
-      setActivePlayingGame(game);
-
-      if (game.status === "INVITED") {
-        const isHost = userWallet?.toLowerCase() === game.creatorAddress?.toLowerCase();
-
-        if (!isHost) {
-          if (game.mode === "sandbox") {
-            const acceptRes = await fetch(`/api/user/dms/games/${game.id}/accept`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "x-session-wallet": userWallet!,
-              },
-            });
-            const acceptData = await acceptRes.json();
-            if (!acceptRes.ok) throw new Error(acceptData.error || "Failed to accept challenge");
-            
-            triggerToast("Challenge accepted!");
-            setActivePlayingGame(acceptData.game);
-            setIsChessBoardModalOpen(true);
-            await loadDms();
-          } else {
-            // For testnet, redirect to the stake invite page
-            router.push(`/pay/game/${game.id}`);
-          }
-        } else {
-          triggerToast("Waiting for opponent to join and stake.");
-        }
-      } else {
-        setIsChessBoardModalOpen(true);
-      }
-    } catch (err: any) {
-      triggerToast(err.message || "Failed to launch game board");
-    }
-  };
-
   const handleCancelPlanSuggestion = async (dm: DmMessage) => {
     const merchantAddress = dm.senderAddress.toLowerCase();
     await handleCancelSubscriptionForMerchant(merchantAddress);
@@ -1207,7 +1527,7 @@ export default function UserDashboard() {
       const res = await fetch("/api/auth/otp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: value }),
+        body: JSON.stringify({ email: value, purpose: "bind_wallet_email" }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || "Could not send a verification code.");
@@ -1255,6 +1575,7 @@ export default function UserDashboard() {
     setVaultActionMerchantLocked(Boolean(merchant));
     setVaultActionAmount("");
     setVaultActionError(null);
+    setVaultUnverifiedWarning(false);
     setVaultActionOpen(true);
   };
 
@@ -1264,42 +1585,178 @@ export default function UserDashboard() {
     setVaultActionMerchantLocked(true);
     setVaultActionAmount("");
     setVaultActionError(null);
+    setVaultUnverifiedWarning(false);
     setVaultActionOpen(true);
   };
 
-  const submitVaultAction = async (event: React.FormEvent) => {
-    event.preventDefault();
+  /* Liveness escape hatch: reclaim the full escrow from a matured-but-never-settled vault
+     once the contract's 7-day grace has elapsed. Embedded wallets sign server-side; external
+     wallets sign reclaimAbandonedEscrow directly. */
+  const [vaultReclaimBusyId, setVaultReclaimBusyId] = useState<string | null>(null);
+  const handleVaultReclaim = async (vault: any) => {
+    if (vaultReclaimBusyId) return;
+    setVaultReclaimBusyId(String(vault.id || vault.merchantAddress));
+    try {
+      if (isEmbeddedWalletSession) {
+        const res = await fetch("/api/user/vault/reclaim", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ merchantAddress: vault.merchantAddress }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) throw new Error(data.error || "Reclaim failed.");
+      } else {
+        if (!accountAddress) throw new Error("Connect your browser wallet to reclaim.");
+        if (chainId !== activeArcChain.id) {
+          await switchChainAsync({ chainId: activeArcChain.id });
+        }
+        const reclaimHash = await writeContractAsync({
+          address: SUBSCRIPT_VAULT_ADDRESS,
+          abi: [{ type: "function", name: "reclaimAbandonedEscrow", stateMutability: "nonpayable", inputs: [{ name: "merchant", type: "address" }], outputs: [] }] as const,
+          functionName: "reclaimAbandonedEscrow",
+          args: [vault.merchantAddress as `0x${string}`],
+        });
+        const reclaimReceipt = await publicClient.waitForTransactionReceipt({ hash: reclaimHash });
+        if (reclaimReceipt.status !== "success") {
+          throw new Error("The reclaim transaction reverted. Your vault remains unchanged.");
+        }
+        const syncRes = await fetch("/api/user/vault/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ merchantAddress: vault.merchantAddress }),
+        });
+        if (!syncRes.ok) {
+          throw new Error("Reclaim confirmed on-chain, but the vault could not be refreshed. Retry to synchronize it.");
+        }
+      }
+      await loadVaults();
+    } catch (err: any) {
+      setVaultActionError(err?.message || "Reclaim failed.");
+      setVaultActionOpen(true);
+      setVaultActionMode("withdraw");
+      setVaultActionMerchant(vault.merchantAddress);
+      setVaultActionMerchantLocked(true);
+    } finally {
+      setVaultReclaimBusyId(null);
+    }
+  };
+
+  /* Stable per commit attempt: a retry after a timed-out response reuses the key, so the
+     server-side Circle idempotency key dedupes instead of escrowing the amount twice. */
+  const vaultCommitRequestKey = useRef<string | null>(null);
+
+  const submitVaultAction = async (event?: React.FormEvent, opts?: { acknowledgedUnverified?: boolean }) => {
+    event?.preventDefault();
     setVaultActionError(null);
+    /* /api/auth/session only exposes emails returned by getVerifiedAccountEmail, so userEmail is
+       the client-side source of truth for the same OTP/trusted-provider check enforced server-side. */
+    if (vaultActionMode === "commit" && !userEmail) {
+      setVaultActionError("Verify your email before committing.");
+      return;
+    }
     if (!vaultActionAmount || isNaN(Number(vaultActionAmount)) || Number(vaultActionAmount) <= 0) {
       setVaultActionError("Enter a valid amount.");
       return;
     }
+    const acknowledgedUnverified = opts?.acknowledgedUnverified === true;
     setVaultActionBusy(true);
     try {
-      // Accept a 0x address or a registered alias for the merchant on a new commit.
+      // Customer-facing vault setup accepts a friendly SubScript name only.
       let merchantAddress = vaultActionMerchant.trim();
-      if (!merchantAddress.startsWith("0x")) {
-        const resolved = await resolveRecipient(merchantAddress);
-        if (!resolved) throw new Error("Could not resolve that merchant name to an address.");
-        merchantAddress = resolved;
+      if (!vaultActionMerchantLocked && merchantAddress.startsWith("0x")) {
+        throw new Error("Enter the merchant's SubScript name instead of a wallet address.");
       }
+      if (!merchantAddress.startsWith("0x")) {
+        const response = await fetch(`/api/merchant/alias?alias=${encodeURIComponent(merchantAddress)}`);
+        const data = await response.json().catch(() => ({}));
+        if (!data.success || !data.address) throw new Error("Could not find that merchant name.");
+        merchantAddress = data.address;
+      }
+
+      /* Committing escrows funds a merchant can bill metered usage against, so warn before
+         committing to a merchant SubScript hasn't verified. Applies to BOTH wallet paths (the
+         external-wallet path signs on-chain directly and never hits the server gate). Fail open on
+         a lookup error — this is an informed-consent warning, not a hard gate. */
+      if (vaultActionMode === "commit" && !acknowledgedUnverified) {
+        const verified = await fetch(`/api/merchant/profile?address=${merchantAddress}`)
+          .then((r) => r.json())
+          .then((d) => d?.verified !== false)
+          .catch(() => true);
+        if (!verified) {
+          setVaultUnverifiedWarning(true);
+          setVaultActionBusy(false);
+          return;
+        }
+      }
+
       if (isEmbeddedWalletSession) {
         // Embedded wallet: SubScript signs server-side (and sponsors gas).
         const endpoint = vaultActionMode === "commit" ? "/api/user/vault/commit" : "/api/user/vault/withdraw";
+        const intentStorageKey = "subscript_vault_commit_intent";
+        if (vaultActionMode === "commit") {
+          /* Durable money-moving operation id: persisted in localStorage until terminal
+             resolution, so a reload cannot mint a fresh id for the same commit. Any prior
+             unresolved intent is resolved server-side BEFORE a new commit is allowed. */
+          let storedIntent: { requestId?: string; merchantAddress?: string; amountUsdc?: string } | null = null;
+          try { storedIntent = JSON.parse(localStorage.getItem(intentStorageKey) || "null"); } catch { storedIntent = null; }
+          if (storedIntent?.requestId
+              && (storedIntent.merchantAddress !== merchantAddress || storedIntent.amountUsdc !== vaultActionAmount)) {
+            const priorResponse = await fetch(`/api/user/vault/commit?requestId=${encodeURIComponent(storedIntent.requestId)}`)
+              .catch(() => null);
+            if (!priorResponse?.ok) {
+              throw new Error("Unable to verify the previous vault commit. Retry after its status can be confirmed.");
+            }
+            const prior = await priorResponse.json().catch(() => null);
+            if (!prior || typeof prior.exists !== "boolean") {
+              throw new Error("The previous vault commit returned an invalid status. Retry before starting a new commit.");
+            }
+            if (prior?.exists && (prior.status === "PENDING" || prior.status === "SUBMITTED")) {
+              throw new Error("A previous vault commit is still resolving. Retry that exact commit (same merchant and amount), or wait for it to finish before starting a new one.");
+            }
+            const terminal = prior.exists === false
+              || (prior.exists === true && (prior.status === "MIRRORED" || prior.status === "FAILED"));
+            if (!terminal) {
+              throw new Error("The previous vault commit has an unknown status. Retry before starting a new commit.");
+            }
+            try { localStorage.removeItem(intentStorageKey); } catch { /* no-op */ }
+            storedIntent = null;
+          }
+          vaultCommitRequestKey.current = storedIntent?.requestId || vaultCommitRequestKey.current || crypto.randomUUID();
+          try {
+            localStorage.setItem(intentStorageKey, JSON.stringify({
+              requestId: vaultCommitRequestKey.current,
+              merchantAddress,
+              amountUsdc: vaultActionAmount,
+            }));
+          } catch { /* the in-memory ref still guards this tab */ }
+        }
         const res = await fetch(endpoint, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ merchantAddress, amountUsdc: vaultActionAmount }),
+          headers: {
+            "Content-Type": "application/json",
+            ...(vaultActionMode === "commit" && vaultCommitRequestKey.current
+              ? { "x-request-id": vaultCommitRequestKey.current }
+              : {}),
+          },
+          body: JSON.stringify({ merchantAddress, amountUsdc: vaultActionAmount, acknowledgeUnverified: acknowledgedUnverified || undefined }),
         });
         const data = await res.json();
-        if (!res.ok || !data.success) throw new Error(data.error || "Vault action failed.");
+        if (!res.ok || !data.success) {
+          /* An ambiguous commit stays persisted — the retry reuses the same request id and
+             dedupes at Circle instead of escrowing twice. */
+          throw new Error(data.error || "Vault action failed.");
+        }
+        if (vaultActionMode === "commit") {
+          vaultCommitRequestKey.current = null;
+          try { localStorage.removeItem(intentStorageKey); } catch { /* no-op */ }
+        }
       } else {
         // External/browser wallet: sign the vault transactions client-side, then refresh the mirror.
         if (!accountAddress) throw new Error("Connect your browser wallet to manage your vault.");
-        if (chainId !== ARC_TESTNET_CHAIN_ID) {
-          await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+        if (chainId !== activeArcChain.id) {
+          await switchChainAsync({ chainId: activeArcChain.id });
         }
-        const amountMicros = parseUnits(vaultActionAmount, 6);
+        const amountMicros = parseUnits(limitDecimals(vaultActionAmount, 6), 6);
 
         if (vaultActionMode === "commit") {
           const allowance = (await publicClient.readContract({
@@ -1345,7 +1802,11 @@ export default function UserDashboard() {
       setVaultActionOpen(false);
       await loadVaults().catch(() => {});
     } catch (err: any) {
-      setVaultActionError(err.message || "Vault action failed.");
+      if (err.message?.includes("User rejected the request")) {
+        setVaultActionError("Transaction signature was rejected by user.");
+      } else {
+        setVaultActionError(err.message || "Vault action failed.");
+      }
     } finally {
       setVaultActionBusy(false);
     }
@@ -1362,111 +1823,20 @@ export default function UserDashboard() {
     }
     setLinkLoading(true);
     try {
-      if (linkType === "game") {
-        const stakeMicros = BigInt(Math.round(Number(linkAmount) * 1_000_000));
-        
-        // 1. Register lobby
-        const res = await fetch("/api/user/dms/games", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-session-wallet": userWallet!,
-          },
-          body: JSON.stringify({
-            opponentAddress: null, // Public invite link
-            stakeUsdc: linkAmount,
-            gameType: linkGameType.toUpperCase(),
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed to create game lobby");
-
-        const game = data.game;
-
-        if (isEmbeddedWalletSession) {
-          // Embedded (email) wallet: no browser connector — SubScript stakes to the escrow
-          // server-side (gas sponsored) via fund-creator with no client-signed txHash.
-          const verifyRes = await fetch(`/api/user/dms/games/${game.id}/fund-creator`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-session-wallet": userWallet! },
-            body: JSON.stringify({}),
-          });
-          const verifyData = await verifyRes.json();
-          if (!verifyRes.ok) throw new Error(verifyData.error || "Failed to stake your game escrow");
-          setLinkResultUrl(`${window.location.origin}/pay/game/${game.id}`);
-          setLinkAmount("");
-          setLinkMemo("");
-          triggerToast(`${linkGameType === "checkers" ? "Checkers" : "Chess"} game invite link created!`);
-          refetchUsdc();
-          return;
-        }
-
-        // 2. Escrow deposit on-chain (external / browser wallet)
-        const escrowAddress = requireGameEscrowAddress(game);
-        if (chainId !== ARC_TESTNET_CHAIN_ID) {
-          await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
-        }
-
-        const provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");
-        const tokenContract = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, [
-            "function allowance(address owner, address spender) view returns (uint256)"
-        ], provider);
-        const allowance = await tokenContract.allowance(userWallet!, escrowAddress);
-
-        if (BigInt(allowance.toString()) < stakeMicros) {
-          const approveTx = await writeContractAsync({
-            address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
-            abi: VAULT_TOKEN_ABI,
-            functionName: "approve",
-            args: [escrowAddress, stakeMicros],
-            chainId: ARC_TESTNET_CHAIN_ID,
-          });
-          await provider.waitForTransaction(approveTx, 1, 30_000);
-        }
-
-        const initialStateHash = ethers.id("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-        const stakeTx = await writeContractAsync({
-          address: escrowAddress,
-          abi: ESCROW_CONTRACT_ABI,
-          // Since it's a public invite, the opponent is address(0)
-          functionName: "createGame",
-          args: [ethers.ZeroAddress as `0x${string}`, stakeMicros, initialStateHash as `0x${string}`],
-          chainId: ARC_TESTNET_CHAIN_ID,
-        });
-
-        // 3. Verify stake deposit
-        const verifyRes = await fetch(`/api/user/dms/games/${game.id}/fund-creator`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-session-wallet": userWallet!,
-          },
-          body: JSON.stringify({ txHash: stakeTx }),
-        });
-        const verifyData = await verifyRes.json();
-        if (!verifyRes.ok) throw new Error(verifyData.error || "Referee failed to verify stake deposit");
-
-        setLinkResultUrl(`${window.location.origin}/pay/game/${game.id}`);
-        setLinkAmount("");
-        setLinkMemo("");
-        triggerToast("Chess game invite link created!");
-        refetchUsdc();
-      } else {
-        const res = await fetch("/api/user/payment-links", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            amountUsdc: linkAmount,
-            title: linkMemo.trim() || "USDC payment",
-            description: linkMemo.trim() || "SubScript payment link.",
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok || !data.success) throw new Error(data.error || "Could not create the payment link.");
-        setLinkResultUrl(data.checkoutUrl as string);
-        setLinkAmount("");
-        setLinkMemo("");
-      }
+      const res = await fetch("/api/user/payment-links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amountUsdc: linkAmount,
+          title: linkMemo.trim() || "USDC payment",
+          description: linkMemo.trim() || "SubScript payment link.",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Could not create the payment link.");
+      setLinkResultUrl(data.checkoutUrl as string);
+      setLinkAmount("");
+      setLinkMemo("");
     } catch (err: any) {
       setLinkError(err.message || "Could not create the link.");
     } finally {
@@ -1479,6 +1849,7 @@ export default function UserDashboard() {
     try {
       await navigator.clipboard.writeText(linkResultUrl);
       setLinkCopied(true);
+      triggerToast("Shareable link copied!");
       setTimeout(() => setLinkCopied(false), 1600);
     } catch {
       /* clipboard unavailable */
@@ -1491,33 +1862,36 @@ export default function UserDashboard() {
     const domainName = dnsDomain.endsWith(".sub") ? dnsDomain : `${dnsDomain}.sub`;
 
     /* Make sure the user understands the once-a-year limit before they commit. */
-    if (!window.confirm(
-      `Set your DNS name to "${domainName}"?\n\n`
-      + `You can only change your .sub name once every 365 days. After this you won't be able to change it again for a year, so make sure it's right.`
-    )) {
-      return;
-    }
+    setConfirmModal({
+      open: true,
+      title: "Confirm DNS Name",
+      description: `Set your DNS name to "${domainName}"? You can only change your .sub name once every 365 days, so make sure it is correct.`,
+      confirmLabel: "Set Name",
+      variant: "warning",
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setDnsLoading(true);
+        setDnsError(null);
+        setDnsSuccess(null);
 
-    setDnsLoading(true);
-    setDnsError(null);
-    setDnsSuccess(null);
-
-    try {
-      const res = await fetch("/api/merchant/alias", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ alias: domainName }),
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || "Failed to register domain.");
-      setDnsSuccess(`Successfully registered ${domainName}.`);
-      setRegisteredDomain(domainName);
-      setDnsDomain("");
-    } catch (err: any) {
-      setDnsError(err.message || "Network error registering DNS domain.");
-    } finally {
-      setDnsLoading(false);
-    }
+        try {
+          const res = await fetch("/api/merchant/alias", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ alias: domainName }),
+          });
+          const data = await res.json();
+          if (!data.success) throw new Error(data.error || "Failed to register domain.");
+          setDnsSuccess(`Successfully registered ${domainName}.`);
+          setRegisteredDomain(domainName);
+          setDnsDomain("");
+        } catch (err: any) {
+          setDnsError(err.message || "Network error registering DNS domain.");
+        } finally {
+          setDnsLoading(false);
+        }
+      },
+    });
   };
 
   const handleProfilePicUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1635,6 +2009,12 @@ export default function UserDashboard() {
     return () => clearTimeout(timer);
   }, [singleRecipient]);
 
+  /* Idempotency keys for money-moving sends: minted per logical attempt, reused verbatim on a
+     retry after a failure (so the server dedupes at Circle), cleared only on success so an
+     intentional identical follow-up send gets a fresh key. */
+  const singleSendRequestKey = useRef<string | null>(null);
+  const batchSendRequestKey = useRef<string | null>(null);
+
   const handleSingleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     setSingleSendStatus(null);
@@ -1654,13 +2034,32 @@ export default function UserDashboard() {
     setSingleSendLoading(true);
     try {
       if (isEmbeddedWalletSession) {
+        singleSendRequestKey.current ||= crypto.randomUUID();
         const transfers = await sendFromEmbeddedWallet({
           receiverAddress: singleResolved.address,
           amountUsdc: singleAmount,
+          requestKey: singleSendRequestKey.current,
         });
-        setSingleSendStatus(`Success! Transfer transaction submitted: ${transfers[0]?.txHash || "confirmed"}`);
+        singleSendRequestKey.current = null;
+        const txHash = transfers[0]?.txHash;
+        setSingleSendStatus(`Success! Transfer transaction submitted: ${txHash || "confirmed"}`);
         setSingleRecipient("");
         setSingleAmount("");
+        if (txHash) {
+          await fetch("/api/user/dms", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "log-transfer",
+              receiverAddress: singleResolved.address,
+              amountUsdc: singleAmount,
+              txHash,
+              title: `${singleAmount} USDC Sent`,
+              description: `Sent ${singleAmount} USDC directly from embedded wallet.`,
+            }),
+          }).catch((err) => console.error("Failed to log single send transfer:", err));
+          await loadDms().catch(() => {});
+        }
         await refetchUsdc().catch(console.error);
         return;
       }
@@ -1684,22 +2083,41 @@ export default function UserDashboard() {
       ] as const;
 
       /* Connected-wallet accounts must be on Arc before the USDC transfer settles. */
-      if (chainId !== ARC_TESTNET_CHAIN_ID) {
-        await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+      if (chainId !== activeArcChain.id) {
+        await switchChainAsync({ chainId: activeArcChain.id });
       }
       const txHash = await writeContractAsync({
         address: USDC_NATIVE_GAS_ADDRESS,
         abi: usdcAbi,
         functionName: "transfer",
-        args: [singleResolved.address as `0x${string}`, parseUnits(singleAmount, 6)],
+        args: [singleResolved.address as `0x${string}`, parseUnits(limitDecimals(singleAmount, 6), 6)],
       });
 
       setSingleSendStatus(`Success! Transfer transaction submitted: ${txHash}`);
       setSingleRecipient("");
       setSingleAmount("");
+      if (txHash) {
+        await fetch("/api/user/dms", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "log-transfer",
+            receiverAddress: singleResolved.address,
+            amountUsdc: singleAmount,
+            txHash,
+            title: `${singleAmount} USDC Sent`,
+            description: `Sent ${singleAmount} USDC directly to recipient.`,
+          }),
+        }).catch((err) => console.error("Failed to log single send transfer:", err));
+        await loadDms().catch(() => {});
+      }
       refetchUsdc().catch(console.error);
     } catch (err: any) {
-      setSingleSendStatus(err.message || "Failed to execute transfer.");
+      if (err.message?.includes("User rejected the request")) {
+        setSingleSendStatus("Transaction signature was rejected by user.");
+      } else {
+        setSingleSendStatus(err.message || "Failed to execute transfer.");
+      }
     } finally {
       setSingleSendLoading(false);
     }
@@ -1734,15 +2152,35 @@ export default function UserDashboard() {
       }
 
       if (isEmbeddedWalletSession) {
+        batchSendRequestKey.current ||= crypto.randomUUID();
         const transfers = await sendFromEmbeddedWallet({
           recipients: resolvedRows.map((row) => ({
             receiverAddress: row.address,
             amountUsdc: row.amount,
           })),
+          requestKey: batchSendRequestKey.current,
         });
+        batchSendRequestKey.current = null;
         setBatchSendStatus(`Successfully sent ${transfers.length} transfers!`);
         setBatchRows([{ address: "", amount: "" }]);
         setBatchProgress(null);
+        for (const t of transfers) {
+          if (t.txHash) {
+            await fetch("/api/user/dms", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "log-transfer",
+                receiverAddress: t.receiverAddress,
+                amountUsdc: t.amountUsdc,
+                txHash: t.txHash,
+                title: `${t.amountUsdc} USDC Sent`,
+                description: `Sent ${t.amountUsdc} USDC in a batch payout.`,
+              }),
+            }).catch(console.error);
+          }
+        }
+        await loadDms().catch(() => {});
         await refetchUsdc().catch(console.error);
         return;
       }
@@ -1764,24 +2202,77 @@ export default function UserDashboard() {
         },
       ] as const;
 
+      if (chainId !== activeArcChain.id) {
+        await switchChainAsync({ chainId: activeArcChain.id });
+      }
       for (let i = 0; i < resolvedRows.length; i++) {
         const row = resolvedRows[i];
         setBatchProgress(`Sending transfer ${i + 1} of ${resolvedRows.length}...`);
         
-        await writeContractAsync({
+        const txHash = await writeContractAsync({
           address: USDC_NATIVE_GAS_ADDRESS,
           abi: usdcAbi,
           functionName: "transfer",
-          args: [row.address as `0x${string}`, parseUnits(row.amount, 6)],
+          args: [row.address as `0x${string}`, parseUnits(limitDecimals(row.amount, 6), 6)],
         });
+
+        if (txHash) {
+          await fetch("/api/user/dms", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "log-transfer",
+              receiverAddress: row.address,
+              amountUsdc: row.amount,
+              txHash,
+              title: `${row.amount} USDC Sent`,
+              description: `Sent ${row.amount} USDC in a batch payout.`,
+            }),
+          }).catch((err) => console.error("Failed to log batch send transfer:", err));
+        }
       }
 
       setBatchSendStatus(`Successfully sent ${resolvedRows.length} transfers!`);
       setBatchRows([{ address: "", amount: "" }]);
       setBatchProgress(null);
+      await loadDms().catch(() => {});
       refetchUsdc().catch(console.error);
     } catch (err: any) {
-      setBatchSendStatus(err.message || "Failed to execute batch send.");
+      const settled = Array.isArray(err.settledTransfers) ? err.settledTransfers : [];
+      if (err.partial && settled.length > 0) {
+        /* Transfers settle in order and the API stops at the first failure, so the first
+           `settled.length` recipients are done. Drop them so a retry only sends the rest and
+           never resends an already-settled transfer. */
+        setBatchRows((rows) => {
+          const remaining = rows.slice(settled.length);
+          return remaining.length > 0 ? remaining : [{ address: "", amount: "" }];
+        });
+        setBatchSendStatus(
+          `${err.message || "Batch partially completed."} ${settled.length} transfer${settled.length === 1 ? "" : "s"} already settled and ${settled.length === 1 ? "was" : "were"} removed — retry sends only the remaining recipients.`
+        );
+        for (const t of settled) {
+          if (t?.txHash) {
+            await fetch("/api/user/dms", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "log-transfer",
+                receiverAddress: t.receiverAddress,
+                amountUsdc: t.amountUsdc,
+                txHash: t.txHash,
+                title: `${t.amountUsdc} USDC Sent`,
+                description: `Sent ${t.amountUsdc} USDC in a batch payout.`,
+              }),
+            }).catch(console.error);
+          }
+        }
+        await loadDms().catch(() => {});
+        await refetchUsdc().catch(console.error);
+      } else if (err.message?.includes("User rejected the request")) {
+        setBatchSendStatus("Transaction signature was rejected by user.");
+      } else {
+        setBatchSendStatus(err.message || "Failed to execute batch send.");
+      }
       setBatchProgress(null);
     } finally {
       setBatchSendLoading(false);
@@ -1796,7 +2287,7 @@ export default function UserDashboard() {
   if (loading) {
     return (
       <div className="mx-auto flex min-h-[100dvh] max-w-md lg:max-w-none lg:w-full flex-col lg:flex-row overflow-hidden bg-transparent text-white font-sans relative">
-        <AnimatedGradientBg />
+        <AnimatedGradientBg variant="dashboard" />
         
         {/* Desktop Sidebar Skeleton */}
         <aside className="hidden md:flex md:w-20 lg:w-64 border-r border-white/5 bg-black/40 backdrop-blur-xl flex-col p-4 lg:p-5 shrink-0 h-screen sticky top-0 justify-between relative z-10">
@@ -1886,7 +2377,7 @@ export default function UserDashboard() {
               </div>
 
               {/* Right Column: Active Subscriptions Skeleton */}
-              <div className="md:col-span-1 md:h-[330px] order-3 md:order-2">
+              <div className="hidden md:block md:col-span-1 md:h-[330px] order-3 md:order-2">
                 <div className="h-full rounded-3xl border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl liquid-glass sm:p-8 flex flex-col">
                   <div className="mb-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between shrink-0">
                     <div className="h-4 w-36 subscript-skeleton rounded-full" />
@@ -1957,38 +2448,45 @@ export default function UserDashboard() {
   if (redirectMessage) {
     return (
       <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[#060608] px-6 text-white">
-        <AnimatedGradientBg />
-        <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl border border-white/10 bg-black/45 p-8 text-center shadow-2xl backdrop-blur-xl">
-          <Loader2 className="h-6 w-6 animate-spin text-[#ccff00]" />
+        <AnimatedGradientBg variant="dashboard" />
+        <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl border border-white/10 bg-black/45 p-6 sm:p-8 text-center shadow-2xl backdrop-blur-xl">
+          <span className="inline-flex p-3 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 mb-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </span>
           <div className="space-y-2">
-            <p className="text-sm font-black uppercase tracking-[0.18em] text-white">{redirectMessage}</p>
-            <p className="text-xs leading-5 text-white/50">If this takes more than a moment, use the button below.</p>
+            <p className="text-sm font-black uppercase tracking-[0.18em] text-white">Session Notice</p>
+            <p className="text-xs leading-5 text-white/50">{redirectMessage}</p>
           </div>
           <button
             type="button"
-            onClick={() => router.replace(getDashboardUrl("USER", "/signup"))}
+            onClick={() => {
+              if (redirectUrl) {
+                window.location.href = redirectUrl;
+              }
+            }}
             className="subscript-primary-button w-full"
           >
-            Go to Sign Up
+            Proceed
           </button>
         </div>
       </div>
     );
   }
 
-  const sortedSubscriptions = [...subscriptions].sort((a, b) => {
-    const aNext = a.lastSettlementTimestamp ? new Date(a.lastSettlementTimestamp).getTime() + Number(a.billingIntervalSeconds) * 1000 : Infinity;
-    const bNext = b.lastSettlementTimestamp ? new Date(b.lastSettlementTimestamp).getTime() + Number(b.billingIntervalSeconds) * 1000 : Infinity;
-    return aNext - bNext;
-  });
+  const sortedSubscriptions = [...subscriptions]
+    .filter((s) => s.status === "ACTIVE" && !s.cancelAtPeriodEnd)
+    .sort((a, b) => {
+      const aNext = a.lastSettlementTimestamp ? new Date(a.lastSettlementTimestamp).getTime() + Number(a.billingIntervalSeconds) * 1000 : Infinity;
+      const bNext = b.lastSettlementTimestamp ? new Date(b.lastSettlementTimestamp).getTime() + Number(b.billingIntervalSeconds) * 1000 : Infinity;
+      return aNext - bNext;
+    });
 
   /* ---- Home overview (derived from existing data; no dedicated analytics backend) ---- */
   // Display-only fiat estimate. Not a live oracle — clearly a rough naira reference for the balance.
-  const NGN_PER_USDC = 1600;
-  const nairaBalance = walletBalance * NGN_PER_USDC;
+  const localBalance = walletBalance * exchangeRate;
   // "30-day spend" proxy: sum of active subscriptions normalised to a 30-day cost.
   const monthlySpendUsdc = subscriptions
-    .filter((s) => s.status === "ACTIVE")
+    .filter((s) => s.status === "ACTIVE" && !s.cancelAtPeriodEnd)
     .reduce((sum, s) => {
       const period = Math.max(1, Number(s.billingIntervalSeconds));
       const monthly = (Number(s.amountCapUsdc) / 1_000_000) * (2_592_000 / period);
@@ -2001,26 +2499,42 @@ export default function UserDashboard() {
   );
   // Unified recent-activity feed: subscriptions are "recurring", paid/settled payment DMs are "one-time".
   const recentTransactions = [
-    ...subscriptions.map((s) => ({
-      id: `sub-${s.subscriptionId}`,
-      kind: "recurring" as const,
-      name: s.merchantName || formatAddress(s.merchantAddress),
-      pic: s.merchantProfilePic,
-      detail: `Plan • ${formatPlanPeriod(s.billingIntervalSeconds)}`,
-      amountLabel: `$${formatUsdc(s.amountCapUsdc)}/${formatPlanPeriod(s.billingIntervalSeconds)[0]}`,
-      time: s.lastSettlementTimestamp ? new Date(s.lastSettlementTimestamp).getTime() : new Date(s.createdAt).getTime(),
-    })),
+    ...subscriptions.map((s) => {
+      const usdVal = Number(s.amountCapUsdc) / 1_000_000;
+      const localVal = usdVal * exchangeRate;
+      const localLabel = `${detectedCurrency.symbol}${formatHeadlineAmount(localVal)}`;
+      return {
+        id: `sub-${s.subscriptionId}`,
+        kind: "recurring" as const,
+        name: merchantDisplayName(s.merchantName),
+        pic: s.merchantProfilePic,
+        detail: `Plan • ${formatPlanPeriod(s.billingIntervalSeconds)}`,
+        amountLabel: `-$${formatUsdc(s.amountCapUsdc)}/${formatPlanPeriod(s.billingIntervalSeconds)[0]}`,
+        localAmountLabel: `-${localLabel}/${formatPlanPeriod(s.billingIntervalSeconds)[0]}`,
+        time: s.lastSettlementTimestamp ? new Date(s.lastSettlementTimestamp).getTime() : new Date(s.createdAt).getTime(),
+        incoming: false,
+      };
+    }),
     ...dms
-      .filter((d) => d.amountUsdc && ["DEBIT_SUCCESS", "PAYMENT", "PEER_PAYMENT", "PAYMENT_SUCCESS"].includes(d.messageType) || (d.amountUsdc && d.status === "PAID"))
-      .map((d) => ({
-        id: `dm-${d.id}`,
-        kind: "one-time" as const,
-        name: (d.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? d.receiverName : d.senderName) || "Payment",
-        pic: d.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? d.receiverProfilePic : d.senderProfilePic,
-        detail: d.title || d.description || "One-time payment",
-        amountLabel: `$${formatUsdc(d.amountUsdc)}`,
-        time: new Date(d.createdAt).getTime(),
-      })),
+      .filter((d) => d.amountUsdc && ["DEBIT_SUCCESS", "PAYMENT", "PEER_PAYMENT", "PAYMENT_SUCCESS", "PEER_TRANSFER"].includes(d.messageType) || (d.amountUsdc && d.status === "PAID"))
+      .map((d) => {
+        const isDebitSuccess = d.messageType === "DEBIT_SUCCESS";
+        const incoming = d.receiverAddress.toLowerCase() === userWallet?.toLowerCase() && !isDebitSuccess;
+        const usdVal = Number(d.amountUsdc) / 1_000_000;
+        const localVal = usdVal * exchangeRate;
+        const localLabel = `${detectedCurrency.symbol}${formatHeadlineAmount(localVal)}`;
+        return {
+          id: `dm-${d.id}`,
+          kind: "one-time" as const,
+          name: (incoming ? d.senderName : d.receiverName) || "Payment",
+          pic: incoming ? d.senderProfilePic : d.receiverProfilePic,
+          detail: d.title || d.description || (incoming ? "Received payment" : "Sent payment"),
+          amountLabel: `${incoming ? "+" : "-"}$${formatUsdc(d.amountUsdc)}`,
+          localAmountLabel: `${incoming ? "+" : "-"}${localLabel}`,
+          time: new Date(d.createdAt).getTime(),
+          incoming,
+        };
+      }),
   ].sort((a, b) => b.time - a.time);
   const filteredTransactions = recentTransactions.filter(
     (t) => txFilter === "all" || t.kind === txFilter,
@@ -2032,7 +2546,7 @@ export default function UserDashboard() {
   const isActionableDm = (dm: DmMessage) =>
     dm.status === "PENDING" &&
     dm.receiverAddress.toLowerCase() === userWallet?.toLowerCase() &&
-    ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING"].includes(dm.messageType);
+    ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
   const pendingDmCount = dms.filter(isActionableDm).length;
   const dmThreads = Array.from(dms.reduce((threads, dm) => {
     const peerAddress = getDmPeerAddress(dm, userWallet).toLowerCase();
@@ -2091,11 +2605,133 @@ export default function UserDashboard() {
   const isActiveMobileDm = isMobile && activeTab === "inbox" && Boolean(selectedDmPeer);
 
   return (
-    <div className="relative min-h-[100dvh] overflow-x-hidden bg-[#060608] text-white selection:bg-[#ccff00]/30 selection:text-white border-t-4 border-[#ccff00] md:h-[100dvh] md:overflow-hidden">
-      <AnimatedGradientBg />
+    <div className={`relative overflow-x-hidden bg-[#060608] text-white selection:bg-[#ccff00]/30 selection:text-white border-t-4 border-[#ccff00] md:h-[100dvh] md:overflow-hidden ${
+      isActiveMobileDm ? "h-[100dvh] overflow-hidden" : "min-h-[100dvh]"
+    }`}>
+      <AnimatedGradientBg variant="dashboard" />
 
-      <div className="relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0">
-        {!isMobile && (
+      <div className={`relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0 ${
+        isActiveMobileDm ? "h-full overflow-hidden" : ""
+      }`}>
+        {mustBackupWallet ? (
+          <div className="flex-1 flex items-center justify-center p-6 md:h-full overflow-y-auto">
+            <div className="max-w-xl w-full space-y-6 py-12">
+              <div className="liquid-glass border border-red-500/20 bg-red-500/5 backdrop-blur-xl rounded-[28px] p-6 text-center shadow-2xl space-y-4">
+                <div className="mx-auto w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center border border-red-500/20">
+                  <Lock className="h-6 w-6 text-red-400" />
+                </div>
+                <h2 className="text-xl font-bold uppercase tracking-tight text-white">Private Key Backup Required</h2>
+                <p className="text-sm text-white/60 leading-relaxed font-sans">
+                  Your SubScript wallet has been generated, but its private key is not backed up yet.
+                  This wallet type supports key export, so download your recovery key now to ensure you never lose access to your funds.
+                </p>
+                <p className="text-xs text-[#ccff00]/80 font-bold uppercase tracking-wide">
+                  The dashboard remains locked until backup is completed.
+                </p>
+              </div>
+
+              <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-[28px] p-6 sm:p-8 space-y-5 shadow-2xl">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                      <Lock className="h-4 w-4 text-[#ccff00]" /> Export & Verify Wallet Backup
+                    </h3>
+                    <p className="text-[10px] text-white/40 leading-relaxed">
+                      Export the private key for your SubScript-generated email wallet. Store it offline; anyone with this key can control the wallet.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/5 bg-black/30 p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Account Email</span>
+                    <span className="min-w-0 truncate text-right text-[11px] font-mono text-white/70">{userSettings?.walletBackup?.email || userEmail || "Not linked"}</span>
+                  </div>
+                </div>
+
+                {exportedPrivateKey && (
+                  <div className="space-y-3">
+                    <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-3">
+                      <p className="break-all font-mono text-[11px] leading-relaxed text-red-100">
+                        {privateKeyVisible ? exportedPrivateKey : "*".repeat(Math.min(exportedPrivateKey.length, 64))}
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <button type="button" onClick={() => setPrivateKeyVisible((value) => !value)} className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-white transition flex items-center justify-center gap-2">
+                        {privateKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {privateKeyVisible ? "Hide" : "Show"}
+                      </button>
+                      <button type="button" onClick={handleCopyPrivateKey} className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition flex items-center justify-center gap-2">
+                        <Copy className="h-4 w-4" /> Copy
+                      </button>
+                      <button type="button" onClick={handleDownloadPrivateKey} className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition flex items-center justify-center gap-2">
+                        <Download className="h-4 w-4" /> Download
+                      </button>
+                    </div>
+                    
+                    <button
+                      type="button"
+                      onClick={loadUserSettings}
+                      className="w-full mt-4 rounded-2xl bg-[#ccff00] hover:bg-[#ccff00]/90 text-black py-4 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition"
+                    >
+                      I have saved my key, Proceed to Dashboard
+                    </button>
+                  </div>
+                )}
+
+                {walletBackupError && <p className="text-[11px] text-red-300">{walletBackupError}</p>}
+
+                {!exportedPrivateKey && (
+                  exportOtpStage ? (
+                    <div className="space-y-3">
+                      <p className="text-[10px] text-white/50 leading-relaxed text-center">
+                        Enter the 6-digit verification code sent to your email to reveal your private key.
+                      </p>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        value={exportOtpCode}
+                        onChange={(e) => setExportOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                        placeholder="000000"
+                        className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-3 text-center font-mono text-lg tracking-[0.4em] text-white focus:border-[#ccff00]/50 focus:outline-none"
+                      />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={handleExportWallet}
+                          disabled={walletBackupLoading || exportOtpCode.length !== 6}
+                          className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition"
+                        >
+                          {walletBackupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                          Confirm & Reveal
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setExportOtpStage(false); setExportOtpCode(""); setWalletBackupError(null); }}
+                          className="w-full rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 py-3.5 text-xs font-black uppercase tracking-[0.16em] text-white/70 transition"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={requestExportOtp}
+                      disabled={exportOtpSending}
+                      className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition"
+                    >
+                      {exportOtpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                      Export Private Key to Unlock
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            {!isMobile && (
           <UserDesktopSidebar
             activeTab={activeTab}
             pendingDmCount={pendingDmCount}
@@ -2111,7 +2747,7 @@ export default function UserDashboard() {
           />
         )}
 
-        <div className={`min-w-0 flex-1 md:h-full ${activeTab === "inbox" ? "md:overflow-hidden" : "md:overflow-y-auto"}`}>
+        <div className={`min-w-0 flex-1 md:h-full ${isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : ""} ${activeTab === "inbox" ? "md:overflow-hidden" : "md:overflow-y-auto"}`}>
           {/* Mobile headers (only shown on small screens) */}
           {isMobile && (
             <div className="w-full">
@@ -2140,7 +2776,11 @@ export default function UserDashboard() {
           )}
 
       {/* Main Grid View Container */}
-      <main className={`mx-auto max-w-7xl px-5 lg:px-8 pt-24 lg:pt-8 lg:pb-12 ${isActiveMobileDm ? "pb-3" : "pb-[calc(8rem+env(safe-area-inset-bottom))]"}`}>
+      <main className={`mx-auto max-w-7xl px-5 lg:px-8 pt-24 lg:pt-8 lg:pb-12 ${
+        isActiveMobileDm
+          ? "h-full overflow-hidden pb-0"
+          : "pb-[calc(8rem+env(safe-area-inset-bottom))]"
+      }`}>
         {/* Title Header (Desktop only — hidden on inbox so the chat frame fills the viewport) */}
         {!isMobile && activeTab !== "inbox" && (
           <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 mb-8 pb-6 border-b border-white/5">
@@ -2155,20 +2795,23 @@ export default function UserDashboard() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-8 items-start">
+        <div className={`grid grid-cols-1 gap-8 items-start ${
+          isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : ""
+        }`}>
           {/* Right main view content */}
-          <div className="col-span-1 min-h-[500px]">
-            {/* One keyed child per active tab. AnimatePresence must track a SINGLE child whose key
-                changes only on tab switch — otherwise an unrelated re-render (the 8s DM poll) landing
-                mid exit-animation drops the presence and the screen goes blank. */}
-            <AnimatePresence mode="wait">
+          <div className={`col-span-1 ${
+            isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : "min-h-[500px]"
+          }`}>
+            {/* Keyed enter-only animation — deliberately NO AnimatePresence/exit here. Gating the
+                incoming tab on the outgoing tab's exit spring (mode="wait") dropped the presence
+                whenever a re-render or second tap landed mid-exit on slow mobile frames, leaving
+                the content area permanently blank. */}
             <motion.div
               key={activeTab}
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -16 }}
               transition={{ type: "spring", stiffness: 320, damping: 28 }}
-              className="min-h-0"
+              className={isActiveMobileDm ? "h-full min-h-0" : "min-h-0"}
             >
             {activeTab === "home" && (
               <div className="grid grid-cols-1 gap-7 md:grid-cols-2 items-stretch">
@@ -2181,7 +2824,7 @@ export default function UserDashboard() {
                         <span className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ccff00]/85">Connected Wallet Balance</span>
                         <button
                           type="button"
-                          onClick={() => setBalanceVisible((value) => !value)}
+                          onClick={toggleBalanceVisible}
                           className="text-white/40 hover:text-white transition-colors"
                           aria-label="Toggle balance visibility"
                         >
@@ -2198,10 +2841,10 @@ export default function UserDashboard() {
                         </button>
                       </div>
                       <div className="mt-3 text-[52px] leading-none sm:text-6xl font-extrabold tracking-tight text-white select-all">
-                        {balanceVisible ? `$${walletBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••••"}
+                        {balanceVisible ? `$${formatHeadlineAmount(walletBalance)}` : "••••••"}
                       </div>
                       <p className="mt-3 text-xl sm:text-2xl font-extrabold text-white/55">
-                        {balanceVisible ? `₦${nairaBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••"}
+                        {balanceVisible ? `${detectedCurrency.symbol}${formatHeadlineAmount(localBalance)}` : "••••"}
                       </p>
                     </section>
 
@@ -2240,12 +2883,12 @@ export default function UserDashboard() {
                         <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/50">Spending past (USDC)</p>
                         <p className="mt-3 text-[11px] font-black text-white/40">30D</p>
                         <p className="mt-1 text-3xl font-extrabold tracking-tight text-white">
-                          ${monthlySpendUsdc.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                          {balanceVisible ? `$${formatHeadlineAmount(monthlySpendUsdc)}` : "••••"}
                         </p>
                       </div>
                       <button
                         type="button"
-                        onClick={() => setActiveTab("dns")}
+                        onClick={() => { setActiveTab("dns"); setTimeout(() => setAccountSubView("spend-analysis"), 50); }}
                         className="mt-3 flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-[#ccff00] hover:opacity-70 transition-opacity"
                       >
                         Manage Spending <ArrowUpRight className="h-3.5 w-3.5" />
@@ -2255,7 +2898,7 @@ export default function UserDashboard() {
                       <div>
                         <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/50">Total Commit (LOCKED)</p>
                         <p className="mt-3 text-3xl font-extrabold tracking-tight text-white">
-                          ${totalCommitLockedUsdc.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                          {balanceVisible ? `$${formatHeadlineAmount(totalCommitLockedUsdc)}` : "••••"}
                         </p>
                       </div>
                       <button
@@ -2270,11 +2913,11 @@ export default function UserDashboard() {
                 </div>
 
                 {/* Right Column: Active Subscriptions */}
-                <div className="md:col-span-1 md:h-[330px] order-3 md:order-2">
+                <div className="hidden md:block md:col-span-1 md:h-[330px] order-3 md:order-2">
                   <section className="h-full rounded-3xl border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl liquid-glass sm:p-8 flex flex-col">
                     <div className="mb-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between shrink-0">
                       <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions</h2>
-                      <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00] border border-[#ccff00]/20 w-fit">{subscriptions.length} active</span>
+                      <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00] border border-[#ccff00]/20 w-fit">{subscriptions.filter((s) => s.status === "ACTIVE" && !s.cancelAtPeriodEnd).length} active</span>
                     </div>
 
                     <div className="flex-1 min-h-0 overflow-y-auto pr-1 scrollbar-thin">
@@ -2286,7 +2929,7 @@ export default function UserDashboard() {
                       ) : (
                         <div className="space-y-3">
                           {sortedSubscriptions.map((sub) => (
-                            <SubscriptionRow key={sub.subscriptionId} subscription={sub} />
+                            <SubscriptionRow key={sub.subscriptionId} subscription={sub} balanceVisible={balanceVisible} />
                           ))}
                         </div>
                       )}
@@ -2299,13 +2942,12 @@ export default function UserDashboard() {
                   <section className="liquid-glass rounded-[28px] border border-white/5 bg-black/40 p-5 text-white shadow-2xl backdrop-blur-xl">
                     <div className="flex items-center justify-between">
                       <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-white/70">Recent Transactions</h2>
-                      <button
-                        type="button"
-                        onClick={() => { setAllTxSearch(""); setAllTxOpen(true); }}
+                      <Link
+                        href="/dashboard/user/transactions"
                         className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-white/45 hover:text-[#ccff00] transition-colors"
                       >
                         View All <ArrowUpRight className="h-3 w-3" />
-                      </button>
+                      </Link>
                     </div>
 
                     <div className="mt-4 flex gap-2">
@@ -2342,9 +2984,18 @@ export default function UserDashboard() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-sm font-black text-white">{tx.name}</p>
-                              <p className="truncate text-[10px] font-bold text-white/40">{tx.detail}</p>
+                              <p className="truncate text-[10px] font-bold text-white/40">
+                                {tx.detail} • {new Date(tx.time).toLocaleString()}
+                              </p>
                             </div>
-                            <span className="shrink-0 text-base font-extrabold text-white">{tx.amountLabel}</span>
+                            <div className="text-right shrink-0">
+                              <span className={`block text-xs font-black ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>
+                                {balanceVisible ? tx.amountLabel : "••••"}
+                              </span>
+                              <span className="block text-[9px] font-bold text-[#ccff00] mt-0.5">
+                                {balanceVisible ? tx.localAmountLabel : "••••"}
+                              </span>
+                            </div>
                           </div>
                         ))
                       )}
@@ -2415,6 +3066,9 @@ export default function UserDashboard() {
                           vault={vault}
                           onCommit={(v) => openVaultCommit(v.merchantAddress)}
                           onWithdraw={(v) => openVaultWithdraw(v.merchantAddress)}
+                          onReclaim={handleVaultReclaim}
+                          reclaimBusy={vaultReclaimBusyId !== null}
+                          balanceVisible={balanceVisible}
                         />
                       ))}
                     </div>
@@ -2425,11 +3079,12 @@ export default function UserDashboard() {
 
             {activeTab === "inbox" && (
               <section
-                className="mx-auto flex w-full max-w-[430px] min-h-0 flex-col gap-5 md:h-[calc(100dvh-104px)] md:max-w-none md:flex-row"
+                className={`mx-auto flex w-full max-w-[430px] min-h-0 flex-col gap-5 md:h-[calc(100dvh-104px)] md:max-w-none md:flex-row ${
+                  isActiveMobileDm ? "h-full overflow-hidden" : ""
+                }`}
               >
                 {isMobile ? (
-                  /* Mobile View Thread Selection Toggle */
-                  <div className="flex-1 flex flex-col justify-between w-full">
+                  <div className="flex min-h-0 flex-1 flex-col justify-between overflow-hidden w-full">
                     {!selectedDmPeer ? (
                       <div className="w-full space-y-4 pb-20">
                         <DmThreadSelect
@@ -2438,8 +3093,11 @@ export default function UserDashboard() {
                         />
                       </div>
                     ) : (
-                      <div className="relative flex h-[calc(100dvh-7.5rem)] flex-1 flex-col overflow-hidden">
-                        <div className="flex-1 overflow-y-auto will-change-transform translate-z-0 space-y-4 px-1 pt-1 pb-32">
+                      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+                        <div
+                          data-testid="mobile-dm-message-scroller"
+                          className="min-h-0 flex-1 overflow-y-auto overscroll-contain will-change-transform translate-z-0 space-y-4 px-1 pt-1 pb-4"
+                        >
                           <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55 mt-3">
                             {isActiveDmMerchant
                               ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
@@ -2462,14 +3120,16 @@ export default function UserDashboard() {
                               onThanks={() => handleThanksSuggestion(dm)}
                               onCancelPlan={() => handleCancelPlanSuggestion(dm)}
                               onSurveySubmit={(dmMsg, ans) => handleSurveySubmit(dmMsg, ans)}
-                              onPlayGame={handlePlayGame}
                             />
                           ))}
                           <div ref={dmBottomRef} />
                         </div>
 
-                        {/* Bottom Action Footer for Mobile — fixed so the chat scrolls behind it and it stays visible. */}
-                        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/5 bg-[#060608]/90 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-md">
+                        {/* Bottom Action Footer for Mobile — stays inside the DM while only messages scroll. */}
+                        <div
+                          data-testid="mobile-dm-action-footer"
+                          className="relative z-30 shrink-0 border-t border-white/5 bg-[#060608]/95 px-1 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-xl"
+                        >
                           {isActiveDmMerchant ? (
                             <MerchantPlanManager
                               open={planManagerOpen}
@@ -2502,30 +3162,6 @@ export default function UserDashboard() {
                                 onNoteChange={setDmRequestNote}
                                 onDurationChange={setDmRequestDuration}
                               />
-                              <DmGamesComposer
-                                open={gamesMenuOpen}
-                                selectedPeer={selectedDmPeer}
-                                userWallet={userWallet}
-                                triggerToast={triggerToast}
-                                refetchDms={loadDms}
-                                writeContractAsync={writeContractAsync}
-                                refetchUsdc={refetchUsdc}
-                                onToggle={() => setGamesMenuOpen(false)}
-                                isEmbeddedWalletSession={isEmbeddedWalletSession}
-                              />
-                              {!gamesMenuOpen && !dmRequestOpen && (
-                                <motion.button
-                                  whileHover={{ scale: 1.02 }}
-                                  whileTap={{ scale: 0.97 }}
-                                  transition={{ type: "spring", stiffness: 500, damping: 15 }}
-                                  type="button"
-                                  onClick={() => setGamesMenuOpen(true)}
-                                  className="relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full border border-white/5 bg-black/30 py-3 text-center text-xs font-black uppercase tracking-[0.16em] text-white hover:text-[#ccff00] transition-all shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-lg"
-                                >
-                                  <GamepadIcon className="w-4 h-4 text-[#ccff00]" />
-                                  <span>Games Menu</span>
-                                </motion.button>
-                              )}
                             </div>
                           )}
                         </div>
@@ -2547,35 +3183,7 @@ export default function UserDashboard() {
                     {/* Active thread message bubble display (right column in blueprint) */}
                     <div className="flex-1 flex flex-col overflow-hidden liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-6 min-h-0 justify-between">
                       <AnimatePresence mode="wait">
-                        {isChessBoardModalOpen && activePlayingGame && (
-                          activePlayingGame.opponentAddress?.toLowerCase() === selectedDmPeer?.toLowerCase() ||
-                          activePlayingGame.creatorAddress?.toLowerCase() === selectedDmPeer?.toLowerCase()
-                        ) ? (
-                          <motion.div
-                            key="active-game-board"
-                            initial={{ opacity: 0, scale: 0.98 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.98 }}
-                            className="hidden md:flex w-full h-full flex-col justify-between"
-                          >
-                            <GamesModals
-                              gamesMenuOpen={gamesMenuOpen}
-                              setGamesMenuOpen={setGamesMenuOpen}
-                              selectedDmPeer={selectedDmPeer}
-                              activePlayingGame={activePlayingGame}
-                              setActivePlayingGame={setActivePlayingGame}
-                              isChessBoardModalOpen={isChessBoardModalOpen}
-                              setIsChessBoardModalOpen={setIsChessBoardModalOpen}
-                              userWallet={userWallet}
-                              triggerToast={triggerToast}
-                              refetchDms={loadDms}
-                              writeContractAsync={writeContractAsync}
-                              refetchUsdc={refetchUsdc}
-                              isEmbeddedWalletSession={isEmbeddedWalletSession}
-                              inline={true}
-                            />
-                          </motion.div>
-                        ) : selectedDmPeer ? (
+                        {selectedDmPeer ? (
                           <motion.div
                             key={selectedDmPeer}
                             initial={{ opacity: 0, scale: 0.96, y: 12 }}
@@ -2585,7 +3193,10 @@ export default function UserDashboard() {
                             className="flex flex-col h-full justify-between gap-5 overflow-hidden"
                           >
                             {/* Desktop Chat Pane Header */}
-                            <div className="flex items-center justify-between pb-4 border-b border-white/5 shrink-0">
+                            <div
+                              data-testid="desktop-dm-header"
+                              className="sticky top-0 z-20 flex shrink-0 items-center justify-between border-b border-white/5 bg-[#09090c]/95 pb-4 backdrop-blur-xl"
+                            >
                               <div className="flex items-center gap-3">
                                 <Avatar profilePic={activeThread?.peerProfilePic || null} />
                                 <div>
@@ -2597,7 +3208,6 @@ export default function UserDashboard() {
                                       <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                                     )}
                                   </div>
-                                  <p className="text-[9px] text-white/40 uppercase tracking-widest mt-0.5">{formatAddress(selectedDmPeer)}</p>
                                 </div>
                               </div>
                               
@@ -2625,7 +3235,7 @@ export default function UserDashboard() {
                             </div>
 
                             {/* Message bubbles pane */}
-                            <div className="flex-1 overflow-y-auto will-change-transform translate-z-0 pr-1 space-y-4 min-h-0">
+                            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain will-change-transform translate-z-0 pr-1 space-y-4">
                               <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55 mt-3">
                                 {isActiveDmMerchant
                                   ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
@@ -2648,14 +3258,16 @@ export default function UserDashboard() {
                                   onThanks={() => handleThanksSuggestion(dm)}
                                   onCancelPlan={() => handleCancelPlanSuggestion(dm)}
                                   onSurveySubmit={(dmMsg, ans) => handleSurveySubmit(dmMsg, ans)}
-                                  onPlayGame={handlePlayGame}
                                 />
                               ))}
                               <div ref={dmBottomRef} />
                             </div>
 
                             {/* Bottom Action Footer for Desktop */}
-                            <div className="pt-4 border-t border-white/5 shrink-0">
+                            <div
+                              data-testid="desktop-dm-action-footer"
+                              className="sticky bottom-0 z-20 shrink-0 border-t border-white/5 bg-[#09090c]/95 pt-4 backdrop-blur-xl"
+                            >
                               {isActiveDmMerchant ? (
                                 <MerchantPlanManager
                                   open={planManagerOpen}
@@ -2688,30 +3300,6 @@ export default function UserDashboard() {
                                     onNoteChange={setDmRequestNote}
                                     onDurationChange={setDmRequestDuration}
                                   />
-                                  <DmGamesComposer
-                                    open={gamesMenuOpen}
-                                    selectedPeer={selectedDmPeer}
-                                    userWallet={userWallet}
-                                    triggerToast={triggerToast}
-                                    refetchDms={loadDms}
-                                    writeContractAsync={writeContractAsync}
-                                    refetchUsdc={refetchUsdc}
-                                    onToggle={() => setGamesMenuOpen(false)}
-                                    isEmbeddedWalletSession={isEmbeddedWalletSession}
-                                  />
-                                  {!gamesMenuOpen && !dmRequestOpen && (
-                                    <motion.button
-                                      whileHover={{ scale: 1.02 }}
-                                      whileTap={{ scale: 0.97 }}
-                                      transition={{ type: "spring", stiffness: 500, damping: 15 }}
-                                      type="button"
-                                      onClick={() => setGamesMenuOpen(true)}
-                                      className="relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full border border-white/5 bg-black/30 py-3 text-center text-xs font-black uppercase tracking-[0.16em] text-white hover:text-[#ccff00] transition-all shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-lg"
-                                    >
-                                      <GamepadIcon className="w-4 h-4 text-[#ccff00]" />
-                                      <span>Games Menu</span>
-                                    </motion.button>
-                                  )}
                                 </div>
                               )}
                             </div>
@@ -2737,121 +3325,30 @@ export default function UserDashboard() {
             )}
 
             {activeTab === "links" && (
-              <section
-                className="space-y-5 max-w-lg pb-6 lg:pb-0"
-                {...linksSwipe}
-              >
+              <section className="space-y-5 max-w-lg pb-6 lg:pb-0">
                 <SectionTitle title="Payment Links" subtitle="Create a shareable link to receive USDC. Anyone who pays is auto-onboarded and a DM opens with them." />
-                
-                {/* Link Type Selector */}
-                <div className="grid grid-cols-2 gap-2 p-1 bg-black/40 rounded-full border border-white/5 backdrop-blur-md">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLinkType("payment");
-                      setLinkResultUrl(null);
-                      setLinkError(null);
-                    }}
-                    className={`py-2 text-[10px] font-black uppercase tracking-wider rounded-full transition-all ${
-                      linkType === "payment"
-                        ? "bg-[#ccff00] text-black shadow-md"
-                        : "text-white/60 hover:text-white"
-                    }`}
-                  >
-                    Standard Link
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLinkType("game");
-                      setLinkResultUrl(null);
-                      setLinkError(null);
-                    }}
-                    className={`py-2 text-[10px] font-black uppercase tracking-wider rounded-full transition-all ${
-                      linkType === "game"
-                        ? "bg-[#ccff00] text-black shadow-md"
-                        : "text-white/60 hover:text-white"
-                    }`}
-                  >
-                    Host Game
-                  </button>
-                </div>
 
                 <form onSubmit={handleCreateShareableLink} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-5 shadow-2xl">
-                  <Field label={linkType === "game" ? "Staked USDC Amount" : "USDC Amount"}>
+                  <Field label="USDC Amount">
                     <input
                       value={linkAmount}
                       onChange={(event) => setLinkAmount(event.target.value)}
-                      placeholder={linkType === "game" ? "1.00" : "25.00"}
+                      placeholder="25.00"
                       inputMode="decimal"
                       className="subscript-input"
                       required
                     />
                   </Field>
 
-                  {linkType === "payment" && (
-                    <Field label="What's it for (optional)">
-                      <input
-                        value={linkMemo}
-                        onChange={(event) => setLinkMemo(event.target.value)}
-                        placeholder="Invoice #1042, split the bill, donation..."
-                        className="subscript-input"
-                        maxLength={120}
-                      />
-                    </Field>
-                  )}
-
-                  {linkType === "game" && (
-                    <>
-                      <Field label="Choose a game">
-                        <div className="grid grid-cols-3 gap-2">
-                          {GAME_CATALOG.map((g) => {
-                            const playable = g.status === "PLAYABLE";
-                            const selected = playable && linkGameType === g.slug;
-                            return (
-                              <button
-                                key={g.slug}
-                                type="button"
-                                onClick={() => {
-                                  if (playable) setLinkGameType(g.slug as "chess" | "checkers");
-                                  else triggerToast(`${g.name} is coming soon`);
-                                }}
-                                className={`relative flex flex-col items-center gap-1 rounded-2xl border px-2 py-3 transition-all ${
-                                  selected
-                                    ? "border-[#ccff00] bg-[#ccff00]/10 text-white"
-                                    : playable
-                                      ? "border-white/10 bg-black/30 text-white/70 hover:text-white hover:border-white/20"
-                                      : "border-white/5 bg-black/20 text-white/30 cursor-not-allowed"
-                                }`}
-                              >
-                                <span className="text-xl leading-none">{g.symbol}</span>
-                                <span className="text-[9px] font-black uppercase tracking-wider text-center leading-tight">{g.name}</span>
-                                {!playable && (
-                                  <span className="absolute right-1 top-1 rounded-full bg-white/10 px-1.5 py-0.5 text-[7px] font-black uppercase tracking-wider text-white/50">Soon</span>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </Field>
-
-                      <div className="rounded-2xl border border-white/5 bg-black/30 p-4 space-y-2 text-[10px] text-white/50 font-bold uppercase tracking-wider">
-                        <p className="text-white font-black">{linkGameType === "checkers" ? "Checkers" : "Chess"} Stake Economics:</p>
-                        <div className="flex justify-between">
-                          <span>Your Stake:</span>
-                          <span>${Number(linkAmount || 0).toFixed(2)} USDC</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Guest Stake:</span>
-                          <span>${Number(linkAmount || 0).toFixed(2)} USDC</span>
-                        </div>
-                        <div className="flex justify-between border-t border-white/5 pt-2 font-black text-white">
-                          <span>Winner Payout (90%):</span>
-                          <span className="text-[#ccff00]">${(Number(linkAmount || 0) * 2 * 0.9).toFixed(2)} USDC</span>
-                        </div>
-                      </div>
-                    </>
-                  )}
+                  <Field label="What's it for (optional)">
+                    <input
+                      value={linkMemo}
+                      onChange={(event) => setLinkMemo(event.target.value)}
+                      placeholder="Invoice #1042, split the bill, donation..."
+                      className="subscript-input"
+                      maxLength={120}
+                    />
+                  </Field>
 
                   {linkError && (
                     <div className="rounded-2xl border border-red-400/20 bg-red-500/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-red-300">
@@ -2867,10 +3364,10 @@ export default function UserDashboard() {
                     {linkLoading ? (
                       <span className="flex items-center justify-center gap-1.5">
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        {linkType === "game" ? "Staking & Deploying Match..." : "Creating payment link..."}
+                        Creating payment link...
                       </span>
                     ) : (
-                      <span>{linkType === "game" ? "Stake & Host Game" : "Create payment link"}</span>
+                      <span>Create payment link</span>
                     )}
                   </button>
                 </form>
@@ -2899,11 +3396,23 @@ export default function UserDashboard() {
                     {linkQrShown && (
                       <div className="flex flex-col items-center gap-3 pt-1">
                         <div className="rounded-3xl bg-white p-4">
-                          <QRCodeSVG
+                          <QRCode
                             value={linkResultUrl}
-                            size={196}
-                            level="H"
-                            imageSettings={{ src: "/favicon-48x48.png", height: 40, width: 40, excavate: true }}
+                            size={isMobile ? 196 : 280}
+                            ecLevel="H"
+                            bgColor="#ffffff"
+                            fgColor="#000000"
+                            qrStyle="dots"
+                            eyeRadius={[
+                              [10, 10, 0, 10],
+                              [10, 10, 10, 0],
+                              [10, 0, 10, 10]
+                            ]}
+                            logoImage="/logo.png"
+                            logoWidth={40}
+                            logoHeight={40}
+                            removeQrCodeBehindLogo={true}
+                            logoPadding={2}
                           />
                         </div>
                         <p className="text-[11px] leading-relaxed text-center text-white/45">
@@ -2935,32 +3444,70 @@ export default function UserDashboard() {
                   <SectionTitle title="Send Funds" subtitle="Transfer USDC to another user or execute a batch payout." />
                   
                   {/* Mode Selector */}
-                  <div className="flex gap-1 rounded-xl bg-black/40 p-1 border border-white/5 shrink-0 self-stretch sm:self-auto justify-center">
+                  <div className="relative flex gap-1 rounded-xl bg-black/40 p-1 border border-white/5 shrink-0 self-stretch sm:self-auto justify-center">
                     <button
                       type="button"
                       onClick={() => setSendMode("single")}
-                      className={`px-3.5 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${
-                        sendMode === "single"
-                          ? "bg-[#ccff00] text-black shadow-md"
-                          : "text-white/50 hover:text-white/80"
+                      className={`relative px-3.5 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg z-10 transition-colors duration-200 ${
+                        sendMode === "single" ? "text-black" : "text-white/50 hover:text-white/80"
                       }`}
                     >
-                      Single
+                      {sendMode === "single" && (
+                        <motion.div
+                          layoutId="sendActivePill"
+                          className="absolute inset-0 bg-[#ccff00] rounded-lg -z-10 shadow-md"
+                          transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                        />
+                      )}
+                      <span className="relative z-20">Single</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setSendMode("batch")}
-                      className={`px-3.5 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${
-                        sendMode === "batch"
-                          ? "bg-[#ccff00] text-black shadow-md"
-                          : "text-white/50 hover:text-white/80"
+                      className={`relative px-3.5 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg z-10 transition-colors duration-200 ${
+                        sendMode === "batch" ? "text-black" : "text-white/50 hover:text-white/80"
                       }`}
                     >
-                      Batch
+                      {sendMode === "batch" && (
+                        <motion.div
+                          layoutId="sendActivePill"
+                          className="absolute inset-0 bg-[#ccff00] rounded-lg -z-10 shadow-md"
+                          transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                        />
+                      )}
+                      <span className="relative z-20">Batch</span>
                     </button>
                   </div>
                 </div>
-                {sendMode === "single" ? (
+                <div className="overflow-hidden w-full relative">
+                  <AnimatePresence mode="wait" initial={false} custom={sendDirection}>
+                    <motion.div
+                      key={sendMode}
+                      custom={sendDirection}
+                      variants={{
+                        enter: (dir: number) => ({
+                          x: dir > 0 ? "100%" : "-100%",
+                          opacity: 0,
+                        }),
+                        center: {
+                          x: 0,
+                          opacity: 1,
+                        },
+                        exit: (dir: number) => ({
+                          x: dir < 0 ? "100%" : "-100%",
+                          opacity: 0,
+                        }),
+                      }}
+                      initial="enter"
+                      animate="center"
+                      exit="exit"
+                      transition={{
+                        x: { type: "spring", stiffness: 300, damping: 30 },
+                        opacity: { duration: 0.2 },
+                      }}
+                      className="w-full"
+                    >
+                      {sendMode === "single" ? (
                   <form onSubmit={handleSingleSend} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
                     <Field label="Recipient Wallet Address or .sub Name">
                       <div className="relative">
@@ -3161,440 +3708,1146 @@ export default function UserDashboard() {
                     </button>
                   </div>
                 )}
+                    </motion.div>
+                  </AnimatePresence>
+                </div>
               </section>
             )}
 
-            {activeTab === "dns" && (
-              <section
-                className="space-y-6 pb-20 max-w-2xl"
-              >
-                <SectionTitle title="Account Settings" subtitle="Manage your .sub identity, spending limits, and alert preferences." />
-                
-                {/* Profile & DNS Registration */}
-                <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
-                  <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                    <User className="h-4 w-4 text-[#ccff00]" /> Profile & Identity
-                  </h3>
-                  <div className="flex items-center gap-4 pb-4 border-b border-white/5">
-                    <Avatar profilePic={profilePic} size="lg" />
-                    <div className="space-y-2">
-                      <label className="inline-block rounded-2xl border border-white/5 bg-black/20 hover:bg-[#ccff00]/10 hover:border-[#ccff00]/30 text-[#ccff00] px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] cursor-pointer transition-all">
-                        Choose Image
-                        <input type="file" accept="image/*" onChange={handleProfilePicUpload} disabled={uploadingPic} className="hidden" />
-                      </label>
-                      <p className="text-[10px] text-white/40">JPG/PNG, max 2MB.</p>
+              {activeTab === "dns" && (
+                <section className="pb-20 max-w-2xl font-sans text-white">
+                {/* 1. MAIN MENU VIEW */}
+                {accountSubView === "menu" && (
+                  <div className="space-y-6">
+                    <SectionTitle title="Account Settings" subtitle="Manage your identity, spending limits, and security." />
+
+                    {/* Refer & Earn Banner (Inspiration from Screenshot 2) */}
+                    <div 
+                      onClick={() => setActiveTab("referrals")}
+                      className="cursor-pointer relative overflow-hidden rounded-3xl border border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 p-5 flex items-center justify-between transition-all duration-300 shadow-lg group"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="p-3 rounded-2xl bg-emerald-500/10 text-emerald-400">
+                          <Gift className="h-6 w-6" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-black uppercase tracking-wider text-white group-hover:text-emerald-300 transition-colors">Refer and Earn</h4>
+                          <p className="text-[10px] text-white/50 leading-relaxed mt-0.5">Invite your friends and earn on SubScript</p>
+                        </div>
+                      </div>
+                      <ChevronRight className="h-5 w-5 text-white/30 group-hover:text-white/60 group-hover:translate-x-1 transition-all" />
+                    </div>
+
+                    {/* Settings Menu Options Card */}
+                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-3 space-y-1 shadow-2xl">
+                      <button
+                        onClick={() => setAccountSubView("profile")}
+                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                            <User className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-white uppercase tracking-wide">My Profile</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Edit your identity and registered alias</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                      </button>
+
+                      <button
+                        onClick={() => setAccountSubView("kyc")}
+                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                            <CheckCircle2 className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-white uppercase tracking-wide">KYC Verification</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Start or review provider verification</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                      </button>
+
+                      <button
+                        onClick={() => setAccountSubView("spend-analysis")}
+                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                            <PieChart className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-white uppercase tracking-wide">Spend Analysis</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">View spending breakdown and categories</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                      </button>
+
+                      <button
+                        onClick={() => setAccountSubView("limits")}
+                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                            <CreditCard className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-white uppercase tracking-wide">Spending Limits</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">See spending limits and caps</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                      </button>
+
+                      <button
+                        onClick={() => setAccountSubView("transactions")}
+                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                            <Activity className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-white uppercase tracking-wide">Transactions</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">See all transaction logs and history</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                      </button>
+
+                      <button
+                        onClick={() => setAccountSubView("notifications")}
+                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                            <Sliders className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-white uppercase tracking-wide">Notifications</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Set your notification preferences</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                      </button>
+
+                      <button
+                        onClick={() => setAccountSubView("security")}
+                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                            <Lock className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-white uppercase tracking-wide">Security</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case font-normal normal-case">Change privacy settings and export private key</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                      </button>
+
+                      <button
+                        onClick={() => setAccountSubView("support")}
+                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                            <MessageSquare className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-white uppercase tracking-wide">Support</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Talk to Us</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                      </button>
+
+                      <button
+                        onClick={handleDeleteAccount}
+                        disabled={deleteAccountLoading}
+                        className="w-full text-left p-4 hover:bg-red-500/[0.06] rounded-2xl flex items-center justify-between transition-all group disabled:opacity-50"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-red-500/10 text-red-400 group-hover:bg-red-500/20 transition-all">
+                            {deleteAccountLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertCircle className="h-4 w-4" />}
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-red-400 uppercase tracking-wide">Delete Account</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Permanently erase your profile and sign out</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-red-400/60 group-hover:translate-x-0.5 transition-all" />
+                      </button>
                     </div>
                   </div>
-                  {uploadError && <p className="text-[11px] text-red-300">{uploadError}</p>}
+                )}
 
-                  <p className="text-[10px] leading-relaxed text-amber-300/80 rounded-2xl border border-amber-400/20 bg-amber-400/5 px-3 py-2">
-                    Heads up: you can only change your <span className="font-mono">.sub</span> name <strong>once every 365 days</strong>. Pick carefully — after a change you won't be able to switch again for a year.
-                  </p>
-
-                  {registeredDomain ? (
-                    <div className="space-y-2">
-                    <div className="rounded-3xl border border-[#ccff00]/15 bg-[#ccff00]/5 p-4 flex items-center justify-between">
-                      <div>
-                        <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ccff00]/70">Registered Domain</p>
-                        <h3 className="mt-1 font-mono text-lg font-black text-[#ccff00]">{registeredDomain}</h3>
-                      </div>
+                {/* 2. KYC VIEW */}
+                {accountSubView === "kyc" && (
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-4 font-sans text-xs">
                       <button
-                        onClick={async () => {
-                          setDnsLoading(true);
-                          setDnsError(null);
-                          try {
-                            const res = await fetch("/api/merchant/alias", { method: "DELETE" });
-                            const data = await res.json().catch(() => ({}));
-                            if (res.ok) {
-                              setRegisteredDomain(null);
-                              setProfilePic(null);
-                              setDnsDomain("");
-                              setDnsSuccess("Alias removed successfully");
-                              setTimeout(() => setDnsSuccess(null), 3000);
-                            } else {
-                              setDnsError(data.error || "Could not unregister this name.");
-                            }
-                          } catch (err) {
-                            console.error(err);
-                            setDnsError("Network error removing DNS name.");
-                          } finally {
-                            setDnsLoading(false);
-                          }
-                        }}
-                        className="px-3 py-1.5 border border-red-500/30 hover:border-red-500/50 text-red-400 hover:text-red-300 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all"
+                        onClick={() => setAccountSubView("menu")}
+                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
                       >
-                        {dnsLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Unregister"}
+                        <ChevronLeft className="h-5 w-5" />
                       </button>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-white">KYC Verification</h2>
                     </div>
-                      {dnsError && <p className="text-[11px] text-red-300">{dnsError}</p>}
-                      {dnsSuccess && <p className="text-[11px] text-emerald-300">{dnsSuccess}</p>}
-                    </div>
-                  ) : (
-                    <form onSubmit={handleRegisterDns} className="space-y-3">
-                      <Field label="SubScript DNS">
-                        <div className="relative">
-                          <input value={dnsDomain} onChange={(event) => setDnsDomain(event.target.value)} placeholder="alice" className="subscript-input pr-16" required />
-                          <span className="absolute right-4 top-3 text-sm font-black text-white/35">.sub</span>
-                        </div>
-                      </Field>
-                      {dnsError && <p className="text-[11px] text-red-300">{dnsError}</p>}
-                      {dnsSuccess && <p className="text-[11px] text-emerald-300">{dnsSuccess}</p>}
+                    <KycVerificationPanel accent="#ccff00" variant="user" />
+                  </div>
+                )}
+
+                {/* 2. PROFILE VIEW (Inspiration from Screenshot 1) */}
+                {accountSubView === "profile" && (
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-4 font-sans text-xs">
                       <button 
-                        type="submit" 
-                        disabled={dnsLoading} 
-                        className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)]"
+                        onClick={() => setAccountSubView("menu")}
+                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
                       >
-                        {dnsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Register"}
+                        <ChevronLeft className="h-5 w-5" />
                       </button>
-                    </form>
-                  )}
-                </div>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-white">My Profile</h2>
+                    </div>
 
-                {userSettings?.walletBackup && (
-                  <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-5 shadow-2xl">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="space-y-2">
-                        <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                          <Lock className="h-4 w-4 text-[#ccff00]" /> Wallet Backup
-                        </h3>
-                        <p className="text-[10px] text-white/40 leading-relaxed">
-                          Export the private key for your SubScript-generated email wallet. Store it offline; anyone with this key can control the wallet.
-                        </p>
+                    <div className="flex flex-col items-center justify-center space-y-3 py-6">
+                      <div className="relative group">
+                        <Avatar profilePic={profilePic} size="lg" />
+                        <label className="absolute bottom-0 right-0 p-1.5 rounded-full bg-[#ccff00] text-black border-2 border-[#0a0a0c] cursor-pointer hover:scale-105 transition-all">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                          <input type="file" accept="image/*" onChange={handleProfilePicUpload} disabled={uploadingPic} className="hidden" />
+                        </label>
                       </div>
-                      <span className={`rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] ${
-                        userSettings.walletBackup.available
-                          ? "border border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00]"
-                          : "border border-white/10 bg-white/5 text-white/45"
-                      }`}>
-                        {userSettings.walletBackup.available ? "Exportable" : "Managed"}
+                      <span className="rounded-full bg-white/5 px-3 py-1 text-[9px] font-bold text-white/45 uppercase tracking-widest">
+                        Individual account
                       </span>
+                      {uploadError && <p className="text-[10px] text-red-300 font-sans">{uploadError}</p>}
                     </div>
 
-                    <div className="rounded-2xl border border-white/5 bg-black/30 p-4 space-y-2">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Account Email</span>
-                        <span className="min-w-0 truncate text-right text-[11px] font-mono text-white/70">{userSettings.walletBackup.email || userEmail || "Not linked"}</span>
+                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-6 space-y-4 shadow-2xl">
+                      {/* SubScript DNS alias (Spenda ID / Username) */}
+                      <div className="pb-3 border-b border-white/5 flex items-center justify-between">
+                        <div>
+                          <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">SubScript DNS</label>
+                          <span className="block font-mono text-xs font-bold text-[#ccff00] mt-1">
+                            {registeredDomain ? `@${registeredDomain}` : "No DNS Alias"}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Provider</span>
-                        <span className="text-[11px] font-mono text-white/70">{userSettings.walletBackup.provider || "embedded"}</span>
+
+                      {/* Linked Wallet Address */}
+                      <div className="pb-3 border-b border-white/5 flex items-center justify-between">
+                        <div>
+                          <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Wallet Address</label>
+                          <span className="block font-mono text-[11px] text-white/70 mt-1 truncate max-w-[170px] xs:max-w-[210px] sm:max-w-xs">{userWallet}</span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(userWallet || "");
+                            triggerToast("Address copied to clipboard");
+                          }}
+                          className="p-2 rounded-xl bg-white/5 text-white/40 hover:text-white transition"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+
+                      {/* Linked Email */}
+                      <div className="pb-3 border-b border-white/5 flex items-center justify-between">
+                        <div>
+                          <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Email Address</label>
+                          <span className="block font-sans text-xs text-white/60 mt-1">
+                            {userSettings?.walletBackup?.email || userEmail || "Not linked"}
+                          </span>
+                        </div>
+                        <Lock className="h-4 w-4 text-white/20 shrink-0" />
+                      </div>
+
+                      {/* Linked Role */}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Account Role</label>
+                          <span className="block font-sans text-xs text-white/60 mt-1">Individual Customer</span>
+                        </div>
+                        <Lock className="h-4 w-4 text-white/20 shrink-0" />
                       </div>
                     </div>
 
-                    {exportedPrivateKey && (
-                      <div className="space-y-3">
-                        <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-3">
-                          <p className="break-all font-mono text-[11px] leading-relaxed text-red-100">
-                            {privateKeyVisible ? exportedPrivateKey : "*".repeat(Math.min(exportedPrivateKey.length, 64))}
+                    {/* Help & Support Panel */}
+                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 space-y-3 shadow-2xl">
+                      <h4 className="text-[10px] font-black uppercase tracking-wider text-white/50 flex items-center gap-1.5">
+                        <HelpCircle className="h-3.5 w-3.5 text-[#00d2b4]" /> Help &amp; Support
+                      </h4>
+                      <p className="text-[10px] leading-relaxed text-white/45 font-sans">
+                        Billing question, incorrect charge, or something not working? Real humans read every
+                        message — include your wallet address and a receipt ID or transaction hash if it&apos;s
+                        about a payment.
+                      </p>
+                      <div className="space-y-2 font-sans text-xs">
+                        <a
+                          href="mailto:support@subscriptonarc.com"
+                          className="flex items-center justify-between rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3 transition hover:border-[#00d2b4]/25 hover:bg-[#00d2b4]/5"
+                        >
+                          <span className="text-white/60">General support</span>
+                          <span className="font-mono text-[11px] font-bold text-[#00d2b4]">support@subscriptonarc.com</span>
+                        </a>
+                        <a
+                          href="mailto:compliance@subscriptonarc.com"
+                          className="flex items-center justify-between rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3 transition hover:border-[#00d2b4]/25 hover:bg-[#00d2b4]/5"
+                        >
+                          <span className="text-white/60">Billing, refunds &amp; privacy</span>
+                          <span className="font-mono text-[11px] font-bold text-[#00d2b4]">compliance@subscriptonarc.com</span>
+                        </a>
+                        <a
+                          href="/support"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block w-full rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/5 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-[#00d2b4] transition hover:bg-[#00d2b4]/10"
+                        >
+                          Open the Help Center
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* DNS Management Panel */}
+                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 space-y-4 shadow-2xl">
+                      <h4 className="text-[10px] font-black uppercase tracking-wider text-white/50 flex items-center gap-1.5">
+                        <Globe className="h-3.5 w-3.5 text-[#ccff00]" /> DNS Identity Management
+                      </h4>
+                      <p className="text-[9px] leading-relaxed text-amber-300/80 rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 font-sans">
+                        Heads up: a DNS name can only be changed <strong>once every 365 days</strong>. Choose carefully — after a change you won't be able to switch again for a year.
+                      </p>
+
+                      {registeredDomain ? (
+                        <button
+                          onClick={async () => {
+                            setDnsLoading(true);
+                            setDnsError(null);
+                            try {
+                              const res = await fetch("/api/merchant/alias", { method: "DELETE" });
+                              if (res.ok) {
+                                setRegisteredDomain(null);
+                                /* The profile picture belongs to the account, not the alias —
+                                   unregistering a name must not blank the avatar. */
+                                setDnsDomain("");
+                                setDnsSuccess("Alias removed successfully");
+                                setTimeout(() => setDnsSuccess(null), 3000);
+                              } else {
+                                const data = await res.json().catch(() => ({}));
+                                setDnsError(data.error || "Could not unregister this name.");
+                              }
+                            } catch (err) {
+                              setDnsError("Network error removing DNS name.");
+                            } finally {
+                              setDnsLoading(false);
+                            }
+                          }}
+                          className="w-full py-3 border border-red-500/20 hover:bg-red-500/5 text-red-400 text-xs font-black uppercase tracking-wider rounded-2xl transition"
+                        >
+                          {dnsLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Unregister .sub Alias"}
+                        </button>
+                      ) : (
+                        <form onSubmit={handleRegisterDns} className="space-y-3 font-sans text-xs">
+                          <div className="space-y-1">
+                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Domain Alias</label>
+                            <div className="flex gap-2">
+                              <div className="relative flex-1">
+                                <input
+                                  type="text"
+                                  value={dnsDomain}
+                                  onChange={(e) => setDnsDomain(e.target.value)}
+                                  placeholder="my-alias"
+                                  className="w-full bg-white/[0.02] border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-[#ccff00]/40 font-mono"
+                                  required
+                                />
+                                <span className="absolute right-4 top-2.5 text-xs font-black text-white/35">.sub</span>
+                              </div>
+                              <button
+                                type="submit"
+                                disabled={dnsLoading}
+                                className="px-6 bg-[#ccff00]/10 border border-[#ccff00]/30 hover:bg-[#ccff00]/20 text-[#ccff00] font-bold uppercase tracking-wider rounded-xl transition"
+                              >
+                                {dnsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Register"}
+                              </button>
+                            </div>
+                          </div>
+                        </form>
+                      )}
+                      {dnsError && <p className="text-[10px] text-red-300 font-sans">{dnsError}</p>}
+                      {dnsSuccess && <p className="text-[10px] text-emerald-300 font-sans">{dnsSuccess}</p>}
+                    </div>
+
+                    <button
+                      onClick={() => disconnect()}
+                      className="w-full py-4 border border-red-500/25 hover:bg-red-500/5 text-red-400 rounded-3xl text-xs font-black uppercase tracking-widest transition shadow-[0_0_15px_rgba(239,68,68,0.05)]"
+                    >
+                      Disconnect Account
+                    </button>
+                  </div>
+                )}
+
+                {/* 3. SPENDING LIMITS VIEW */}
+                {/* ========== SPEND ANALYSIS VIEW ========== */}
+                {accountSubView === "spend-analysis" && (() => {
+                  /* ---- Category classification engine ---- */
+                  const spendCategories = (() => {
+                    const cats: Record<string, { label: string; color: string; bgColor: string; borderColor: string; icon: string; total: number; items: typeof recentTransactions }> = {
+                      subscriptions: { label: "Subscriptions", color: "#ccff00", bgColor: "rgba(204,255,0,0.08)", borderColor: "rgba(204,255,0,0.25)", icon: "🔄", total: 0, items: [] },
+                      payments: { label: "Payments", color: "#38bdf8", bgColor: "rgba(56,189,248,0.08)", borderColor: "rgba(56,189,248,0.25)", icon: "💳", total: 0, items: [] },
+                      transfers: { label: "Transfers", color: "#a78bfa", bgColor: "rgba(167,139,250,0.08)", borderColor: "rgba(167,139,250,0.25)", icon: "↗️", total: 0, items: [] },
+                      other: { label: "Other", color: "#f97316", bgColor: "rgba(249,115,22,0.08)", borderColor: "rgba(249,115,22,0.25)", icon: "📦", total: 0, items: [] },
+                    };
+                    recentTransactions.forEach((tx) => {
+                      const amountNum = parseFloat(tx.amountLabel.replace(/[^0-9.]/g, "")) || 0;
+                      if (tx.kind === "recurring") {
+                        cats.subscriptions.total += amountNum;
+                        cats.subscriptions.items.push(tx);
+                      } else if (tx.detail?.toLowerCase().includes("payment") || tx.detail?.toLowerCase().includes("invoice")) {
+                        cats.payments.total += amountNum;
+                        cats.payments.items.push(tx);
+                      } else if (tx.detail?.toLowerCase().includes("transfer") || tx.detail?.toLowerCase().includes("send")) {
+                        cats.transfers.total += amountNum;
+                        cats.transfers.items.push(tx);
+                      } else {
+                        cats.payments.total += amountNum;
+                        cats.payments.items.push(tx);
+                      }
+                    });
+                    return cats;
+                  })();
+                  const totalSpending = Object.values(spendCategories).reduce((s, c) => s + c.total, 0);
+                  const categoryEntries = Object.entries(spendCategories).filter(([, c]) => c.total > 0);
+                  const allCategoryEntries = Object.entries(spendCategories);
+
+                  /* ---- Filtered transaction list ---- */
+                  const spendTxList = recentTransactions.filter((tx) => {
+                    if (!spendSearchQuery.trim()) return true;
+                    const q = spendSearchQuery.toLowerCase();
+                    return tx.name.toLowerCase().includes(q) || tx.detail.toLowerCase().includes(q) || tx.amountLabel.toLowerCase().includes(q);
+                  });
+
+                  return (
+                    <div className="space-y-6">
+                      {/* Header */}
+                      <div className="flex items-center gap-4">
+                        <button
+                          onClick={() => setAccountSubView("menu")}
+                          className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                        >
+                          <ChevronLeft className="h-5 w-5" />
+                        </button>
+                        <h2 className="text-sm font-black uppercase tracking-wider text-white">Spend Analysis</h2>
+                      </div>
+
+                      {/* ---- Hero: Total Spending ---- */}
+                      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/50">Total spending</p>
+                          <div className="p-2 rounded-xl bg-white/5">
+                            <BarChart3 className="h-4 w-4 text-[#ccff00]" />
+                          </div>
+                        </div>
+                        <p className="mt-3 text-4xl sm:text-5xl font-extrabold tracking-tight text-white">
+                          {balanceVisible ? `$${totalSpending.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "••••"}
+                        </p>
+                        <div className="mt-2 flex items-center gap-2">
+                          {monthlySpendUsdc > 0 ? (
+                            <>
+                              <TrendingUp className="h-3.5 w-3.5 text-[#ccff00]" />
+                              <span className="text-[10px] font-bold text-[#ccff00]">
+                                {balanceVisible ? `$${monthlySpendUsdc.toFixed(2)}/mo recurring` : "••••/mo recurring"}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-[10px] font-bold text-white/30">No active recurring spend</span>
+                          )}
+                        </div>
+
+                        {/* ---- Segmented color bar ---- */}
+                        {totalSpending > 0 && (
+                          <div className="mt-5 flex h-3 w-full overflow-hidden rounded-full gap-0.5">
+                            {categoryEntries.map(([key, cat]) => (
+                              <div
+                                key={key}
+                                className="h-full rounded-full transition-all duration-700"
+                                style={{
+                                  width: `${Math.max(4, (cat.total / totalSpending) * 100)}%`,
+                                  backgroundColor: cat.color,
+                                }}
+                                title={`${cat.label}: $${cat.total.toFixed(2)}`}
+                              />
+                            ))}
+                          </div>
+                        )}
+                        {totalSpending === 0 && (
+                          <div className="mt-5 flex h-3 w-full overflow-hidden rounded-full bg-white/[0.06]" />
+                        )}
+                      </div>
+
+                      {/* ---- Category cards ---- */}
+                      <div className="grid grid-cols-2 gap-3">
+                        {allCategoryEntries.map(([key, cat]) => (
+                          <div
+                            key={key}
+                            className="rounded-2xl p-4 border transition-all hover:scale-[1.02] active:scale-[0.98]"
+                            style={{ backgroundColor: cat.bgColor, borderColor: cat.borderColor }}
+                          >
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-base">{cat.icon}</span>
+                              <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: cat.color }}>{cat.label}</span>
+                            </div>
+                            <p className="text-xl font-extrabold tracking-tight text-white">
+                              {balanceVisible ? `$${cat.total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "••••"}
+                            </p>
+                            {totalSpending > 0 && (
+                              <p className="text-[9px] font-bold text-white/30 mt-1">{((cat.total / totalSpending) * 100).toFixed(0)}% of total</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* ---- Smart category banner ---- */}
+                      <div className="rounded-2xl border border-[#ccff00]/15 bg-[#ccff00]/[0.04] p-4 flex items-start gap-3">
+                        <div className="p-2 rounded-xl bg-[#ccff00]/10 shrink-0">
+                          <Tag className="h-5 w-5 text-[#ccff00]" />
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-black uppercase tracking-wider text-white">Smart category</h4>
+                          <p className="text-[10px] text-white/45 leading-relaxed mt-1">
+                            We&apos;ve categorized your transactions automatically based on subscription type and payment context. Categories update as new transactions come in.
                           </p>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                          <button type="button" onClick={() => setPrivateKeyVisible((value) => !value)} className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-white transition flex items-center justify-center gap-2">
-                            {privateKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {privateKeyVisible ? "Hide" : "Show"}
-                          </button>
-                          <button type="button" onClick={handleCopyPrivateKey} className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition flex items-center justify-center gap-2">
-                            <Copy className="h-4 w-4" /> Copy
-                          </button>
-                          <button type="button" onClick={handleDownloadPrivateKey} className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition flex items-center justify-center gap-2">
-                            <Download className="h-4 w-4" /> Download
-                          </button>
-                        </div>
                       </div>
-                    )}
 
-                    {walletBackupError && <p className="text-[11px] text-red-300">{walletBackupError}</p>}
-
-                    {exportOtpStage ? (
-                      <div className="space-y-3">
-                        <p className="text-[10px] text-white/50 leading-relaxed">
-                          For your security, enter the 6-digit verification code we emailed you to reveal your private key.
-                        </p>
+                      {/* ---- Search bar ---- */}
+                      <div className="relative">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30 pointer-events-none" />
                         <input
                           type="text"
-                          inputMode="numeric"
-                          autoComplete="one-time-code"
-                          maxLength={6}
-                          value={exportOtpCode}
-                          onChange={(e) => setExportOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                          placeholder="000000"
-                          className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-3 text-center font-mono text-lg tracking-[0.4em] text-white placeholder:text-white/20 focus:border-[#ccff00]/50 focus:outline-none"
+                          value={spendSearchQuery}
+                          onChange={(e) => setSpendSearchQuery(e.target.value)}
+                          placeholder="Search for any transaction"
+                          className="w-full rounded-2xl border border-white/10 bg-white/[0.04] pl-11 pr-4 py-3.5 text-xs text-white placeholder:text-white/25 focus:border-[#ccff00]/30 focus:outline-none focus:ring-1 focus:ring-[#ccff00]/20 transition-all"
                         />
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={handleExportWallet}
-                            disabled={walletBackupLoading || exportOtpCode.length !== 6}
-                            className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {walletBackupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                            Confirm & Reveal
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => { setExportOtpStage(false); setExportOtpCode(""); setWalletBackupError(null); }}
-                            disabled={walletBackupLoading}
-                            className="w-full rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 py-3.5 text-xs font-black uppercase tracking-[0.16em] text-white/70 transition disabled:opacity-50"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={requestExportOtp}
-                          disabled={exportOtpSending}
-                          className="w-full text-center text-[10px] uppercase tracking-[0.14em] text-[#ccff00]/70 hover:text-[#ccff00] transition disabled:opacity-50"
-                        >
-                          {exportOtpSending ? "Resending…" : "Resend code"}
-                        </button>
                       </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={requestExportOtp}
-                        disabled={exportOtpSending || !userSettings.walletBackup.available}
-                        className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] disabled:opacity-50 disabled:cursor-not-allowed"
+
+                      {/* ---- Transaction list ---- */}
+                      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl shadow-2xl overflow-hidden">
+                        {spendTxList.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center py-12 text-center">
+                            <DollarSign className="h-8 w-8 text-white/15 mb-3" />
+                            <p className="text-xs text-white/35">{spendSearchQuery ? "No matching transactions." : "No transactions yet."}</p>
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-white/[0.05]">
+                            {spendTxList.map((tx) => (
+                              <div key={tx.id} className="flex items-center gap-3 px-5 py-4 hover:bg-white/[0.02] transition-colors">
+                                <div className="h-10 w-10 shrink-0 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center overflow-hidden">
+                                  {tx.pic ? (
+                                    <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
+                                  ) : (
+                                    <span className="text-sm font-black text-[#ccff00]">{(tx.name || "?").charAt(0).toUpperCase()}</span>
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-bold text-white">{tx.name}</p>
+                                  <p className="truncate text-[10px] text-white/40">
+                                    {tx.detail} • {new Date(tx.time).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}
+                                  </p>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <span className={`text-sm font-extrabold ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>{balanceVisible ? tx.amountLabel : "••••"}</span>
+                                  <span className={`block text-[8px] font-bold uppercase tracking-wider mt-0.5 ${tx.kind === "recurring" ? "text-[#ccff00]/60" : "text-sky-400/60"}`}>
+                                    {tx.kind === "recurring" ? "Recurring" : "One-time"}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {accountSubView === "limits" && (
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => setAccountSubView("menu")}
+                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
                       >
-                        {exportOtpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                        {userSettings.walletBackup.available ? "Export Private Key" : "Export Not Available"}
+                        <ChevronLeft className="h-5 w-5" />
                       </button>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-white">Spending Limits</h2>
+                    </div>
+
+                    {userSettings && (
+                      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
+                        <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                          <CreditCard className="h-4 w-4 text-[#ccff00]" /> Edit Spending Limits
+                        </h3>
+                        <p className="text-[10px] text-white/40 leading-relaxed font-sans">
+                          Limit the maximum USDC that can be debited from your wallet within a period. Leave empty for no limit.
+                        </p>
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            handleSaveSpendingLimits(dailyLimitInput, weeklyLimitInput, monthlyLimitInput);
+                          }}
+                          className="space-y-4 font-sans text-xs"
+                        >
+                          <Field label="Daily Limit (USDC)">
+                            <input
+                              type="number"
+                              value={dailyLimitInput}
+                              onChange={(e) => setDailyLimitInput(e.target.value)}
+                              placeholder="e.g. 50"
+                              className="subscript-input"
+                            />
+                          </Field>
+                          <Field label="Weekly Limit (USDC)">
+                            <input
+                              type="number"
+                              value={weeklyLimitInput}
+                              onChange={(e) => setWeeklyLimitInput(e.target.value)}
+                              placeholder="e.g. 200"
+                              className="subscript-input"
+                            />
+                          </Field>
+                          <Field label="Monthly Limit (USDC)">
+                            <input
+                              type="number"
+                              value={monthlyLimitInput}
+                              onChange={(e) => setMonthlyLimitInput(e.target.value)}
+                              placeholder="e.g. 500"
+                              className="subscript-input"
+                            />
+                          </Field>
+                          <button
+                            type="submit"
+                            disabled={savingSettingsField === "spendingLimits"}
+                            className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition disabled:opacity-50"
+                          >
+                            {savingSettingsField === "spendingLimits" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Limits"}
+                          </button>
+                        </form>
+                      </div>
                     )}
                   </div>
                 )}
 
-                {/* Spending Limits Form */}
-                {userSettings && (
-                  <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
-                    <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                      <CreditCard className="h-4 w-4 text-[#ccff00]" /> Spending Limits
-                    </h3>
-                    <p className="text-[10px] text-white/40 leading-relaxed">
-                      Limit the maximum USDC that can be debited from your wallet within a period. Leave empty for no limit.
-                    </p>
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        handleSaveSpendingLimits(dailyLimitInput, weeklyLimitInput, monthlyLimitInput);
-                      }}
-                      className="space-y-4"
-                    >
-                      <Field label="Daily Limit (USDC)">
-                        <input
-                          type="number"
-                          value={dailyLimitInput}
-                          onChange={(e) => setDailyLimitInput(e.target.value)}
-                          placeholder="e.g. 50"
-                          className="subscript-input"
-                        />
-                      </Field>
-                      <Field label="Weekly Limit (USDC)">
-                        <input
-                          type="number"
-                          value={weeklyLimitInput}
-                          onChange={(e) => setWeeklyLimitInput(e.target.value)}
-                          placeholder="e.g. 200"
-                          className="subscript-input"
-                        />
-                      </Field>
-                      <Field label="Monthly Limit (USDC)">
-                        <input
-                          type="number"
-                          value={monthlyLimitInput}
-                          onChange={(e) => setMonthlyLimitInput(e.target.value)}
-                          placeholder="e.g. 500"
-                          className="subscript-input"
-                        />
-                      </Field>
-                      <button
-                        type="submit"
-                        disabled={savingSettingsField === "spendingLimits"}
-                        className={`w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] ${
-                          savingSettingsField === "spendingLimits" ? "opacity-60 cursor-not-allowed" : ""
-                        }`}
+                {/* 4. TRANSACTIONS VIEW */}
+                {accountSubView === "transactions" && (
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => setAccountSubView("menu")}
+                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
                       >
-                        {savingSettingsField === "spendingLimits" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Limits"}
+                        <ChevronLeft className="h-5 w-5" />
                       </button>
-                    </form>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-white">Transactions</h2>
+                    </div>
+
+                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
+                      <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                        <Activity className="h-4 w-4 text-[#ccff00]" /> Recent Transactions History
+                      </h3>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left font-sans text-xs">
+                          <thead>
+                            <tr className="border-b border-white/5 text-white/40 uppercase text-[9px] tracking-wider">
+                              <th className="pb-3">Payment</th>
+                              <th className="pb-3">Date &amp; Time</th>
+                              <th className="pb-3">Amount</th>
+                              <th className="pb-3">Status</th>
+                              <th className="pb-3 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {settingsTransactions.length === 0 ? (
+                              <tr>
+                                <td colSpan={5} className="text-center py-6 text-white/30">
+                                  No payments yet.
+                                </td>
+                              </tr>
+                            ) : (
+                              settingsTransactions.map((tx) => {
+                                const counterparty = tx.counterpartyName
+                                  || formatAddress(tx.direction === "sent" ? tx.merchantAddress : tx.payerAddress);
+                                return (
+                                <tr key={tx.receiptId} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
+                                  <td className="py-4 font-semibold text-white/80">
+                                    {tx.direction === "sent" ? `Paid ${counterparty}` : `Received from ${counterparty}`}
+                                  </td>
+                                  <td className="py-4 text-white/50">{new Date(tx.createdAt).toLocaleString()}</td>
+                                  <td className="py-4 font-mono font-bold text-white">
+                                    ${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
+                                  </td>
+                                  <td className="py-4">
+                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-500/15 text-amber-400"}`}>
+                                      {humanStatus(tx.status)}
+                                    </span>
+                                  </td>
+                                  <td className="py-4 text-right">
+                                    <div className="inline-flex items-center gap-3">
+                                      <a
+                                        href={`/receipt/${tx.receiptId}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-[#ccff00]/80 hover:text-[#ccff00] hover:underline inline-flex items-center gap-1"
+                                        title="Open this receipt in a new tab"
+                                      >
+                                        View receipt
+                                      </a>
+                                      <a
+                                        href={`/receipt/${tx.receiptId}?invite=1`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-white/60 hover:text-[#ccff00] hover:underline inline-flex items-center gap-1"
+                                        title="Grant another address permission to view this private receipt"
+                                      >
+                                        Share
+                                      </a>
+                                    </div>
+                                  </td>
+                                </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                   </div>
                 )}
 
-                {/* Notification Toggles */}
-                {userSettings && (
-                  <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
-                    <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                      <Sliders className="h-4 w-4 text-[#ccff00]" /> Notifications
-                    </h3>
-                    <div className="space-y-4 font-sans text-xs">
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-0.5">
-                          <p className="text-white font-bold">Push Notifications</p>
-                          <p className="text-[9px] text-white/40">Enable alerts inside the browser portal</p>
-                        </div>
-                        <button
-                          onClick={() => handleToggleSetting("pushEnabled", userSettings.pushEnabled)}
-                          disabled={savingSettingsField === "pushEnabled"}
-                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.pushEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
-                        >
-                          <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.pushEnabled ? "translate-x-5" : "translate-x-0"}`} />
-                        </button>
-                      </div>
+                {/* 5. NOTIFICATIONS VIEW */}
+                {accountSubView === "notifications" && (
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => setAccountSubView("menu")}
+                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                      >
+                        <ChevronLeft className="h-5 w-5" />
+                      </button>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-white">Notifications</h2>
+                    </div>
 
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-0.5">
-                          <p className="text-white font-bold">Browser Push (This Device)</p>
-                          <p className="text-[9px] text-white/40">
-                            {browserPushSupported
-                              ? "Receive alerts even when SubScript is closed"
-                              : "Not supported in this browser"}
+                    {userSettings && (
+                      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
+                        <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                          <Sliders className="h-4 w-4 text-[#ccff00]" /> Notification Preferences
+                        </h3>
+                        <div className="space-y-4 font-sans text-xs">
+                          <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                              <p className="text-white font-bold">Push Notifications</p>
+                              <p className="text-[9px] text-white/40">Enable alerts inside the browser portal</p>
+                            </div>
+                            <button
+                              onClick={() => handleToggleSetting("pushEnabled", userSettings.pushEnabled)}
+                              disabled={savingSettingsField === "pushEnabled"}
+                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.pushEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                            >
+                              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.pushEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                            </button>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                              <p className="text-white font-bold">Browser Push (This Device)</p>
+                              <p className="text-[9px] text-white/40">
+                                {browserPushSupported
+                                  ? "Receive alerts even when SubScript is closed"
+                                  : "Not supported in this browser"}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={browserPushOn}
+                              aria-label="Browser Push on this device"
+                              onClick={handleToggleBrowserPush}
+                              disabled={browserPushBusy || !browserPushSupported}
+                              className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${browserPushOn ? "bg-[#ccff00]" : "bg-white/10"} ${browserPushBusy || !browserPushSupported ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                            >
+                              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${browserPushOn ? "translate-x-5" : "translate-x-0"}`} />
+                            </button>
+                          </div>
+
+                          {browserPushOn && (
+                            <div className="flex items-center justify-between rounded-2xl border border-white/5 bg-white/[0.025] px-4 py-3">
+                              <div className="space-y-0.5">
+                                <p className="text-white font-bold">Verify this device</p>
+                                <p className="text-[9px] text-white/40">Send a private test alert to your registered browsers</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={handleTestBrowserPush}
+                                disabled={browserPushTestBusy}
+                                className="rounded-xl border border-[#ccff00]/30 bg-[#ccff00]/10 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-[#ccff00] transition hover:bg-[#ccff00]/15 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {browserPushTestBusy ? "Sending…" : "Send test"}
+                              </button>
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                              <p className="text-white font-bold">Debit Success</p>
+                              <p className="text-[9px] text-white/40">Notify immediately when a subscription billing succeeds</p>
+                            </div>
+                            <button
+                              onClick={() => handleToggleSetting("debitSuccessEnabled", userSettings.debitSuccessEnabled)}
+                              disabled={savingSettingsField === "debitSuccessEnabled"}
+                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.debitSuccessEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                            >
+                              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.debitSuccessEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                            </button>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                              <p className="text-white font-bold">Expiry Warnings</p>
+                              <p className="text-[9px] text-white/40">Alert 3 days before any subscription renewal or cap expiry</p>
+                            </div>
+                            <button
+                              onClick={() => handleToggleSetting("expiryWarningEnabled", userSettings.expiryWarningEnabled)}
+                              disabled={savingSettingsField === "expiryWarningEnabled"}
+                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.expiryWarningEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                            >
+                              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.expiryWarningEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 6. SECURITY & KEY EXPORT VIEW */}
+                {accountSubView === "security" && (
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => setAccountSubView("menu")}
+                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                      >
+                        <ChevronLeft className="h-5 w-5" />
+                      </button>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-white">Security & Keys</h2>
+                    </div>
+
+                    {/* Wallet Security Card */}
+                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-4 shadow-2xl">
+                      <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                        <Wallet className="h-4 w-4 text-[#ccff00]" /> Wallet Security & Compatibility
+                      </h3>
+                      
+                      {userSettings?.walletBackup ? (
+                        <div className="space-y-3">
+                          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 flex items-start gap-3">
+                            <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
+                            <div>
+                              <h4 className="text-xs font-bold text-emerald-300">Server-Signed Wallet (Embedded)</h4>
+                              <p className="text-[10px] text-white/50 leading-relaxed mt-1">
+                                Your account is secured with a server-signed embedded wallet generated via email/social login.
+                              </p>
+                              <span className="inline-block mt-2 rounded-md bg-emerald-500/20 text-emerald-300 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">
+                                Mobile App Compatible
+                              </span>
+                            </div>
+                          </div>
+                          <p className="text-[10px] text-white/40 leading-relaxed">
+                            This wallet will be automatically portable to our upcoming mobile app. All transaction signatures are co-signed by the SubScript server.
                           </p>
                         </div>
-                        <button
-                          onClick={handleToggleBrowserPush}
-                          disabled={browserPushBusy || !browserPushSupported}
-                          className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${browserPushOn ? "bg-[#ccff00]" : "bg-white/10"} ${browserPushBusy || !browserPushSupported ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                        >
-                          <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${browserPushOn ? "translate-x-5" : "translate-x-0"}`} />
-                        </button>
+                      ) : (
+                        <div className="space-y-3">
+                          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 flex items-start gap-3">
+                            <AlertCircle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+                            <div>
+                              <h4 className="text-xs font-bold text-amber-300">Client-Connected Wallet (Web3)</h4>
+                              <p className="text-[10px] text-white/50 leading-relaxed mt-1">
+                                Your account uses an external browser/Web3 wallet (e.g. MetaMask, WalletConnect).
+                              </p>
+                              <span className="inline-block mt-2 rounded-md bg-amber-500/20 text-amber-300 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">
+                                Web Only (No Mobile App Support)
+                              </span>
+                            </div>
+                          </div>
+                          <p className="text-[10px] text-white/40 leading-relaxed">
+                            Note: External Web3 wallets are compatible with our web dashboard only. Our upcoming mobile app will strictly support email/Apple/Google login (Server-Signed wallets). To use the mobile app, we recommend creating a new account using your email.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Key export exists only for wallet providers that expose a recoverable key. */}
+                    {userSettings?.walletBackup?.available && (
+                      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-5 shadow-2xl">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="space-y-2">
+                            <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                              <Lock className="h-4 w-4 text-[#ccff00]" /> Wallet Backup
+                            </h3>
+                            <p className="text-[10px] text-white/40 leading-relaxed">
+                              Export the private key for your SubScript-generated email wallet. Store it offline; anyone with this key can control the wallet.
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-[#ccff00]/25 bg-[#ccff00]/10 px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-[#ccff00]">
+                            Exportable
+                          </span>
+                        </div>
+
+                        <div className="rounded-2xl border border-white/5 bg-black/30 p-4 space-y-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Account Email</span>
+                            <span className="min-w-0 truncate text-right text-[11px] font-mono text-white/70">{userSettings.walletBackup.email || userEmail || "Not linked"}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Provider</span>
+                            <span className="text-[11px] font-mono text-white/70">{userSettings.walletBackup.provider || "embedded"}</span>
+                          </div>
+                        </div>
+
+                        {exportedPrivateKey && (
+                          <div className="space-y-3">
+                            <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-3">
+                              <p className="break-all font-mono text-[11px] leading-relaxed text-red-100">
+                                {privateKeyVisible ? exportedPrivateKey : "*".repeat(Math.min(exportedPrivateKey.length, 64))}
+                              </p>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                              <button type="button" onClick={() => setPrivateKeyVisible((value) => !value)} className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-white transition flex items-center justify-center gap-2">
+                                {privateKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {privateKeyVisible ? "Hide" : "Show"}
+                              </button>
+                              <button type="button" onClick={handleCopyPrivateKey} className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition flex items-center justify-center gap-2">
+                                <Copy className="h-4 w-4" /> Copy
+                              </button>
+                              <button type="button" onClick={handleDownloadPrivateKey} className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition flex items-center justify-center gap-2">
+                                <Download className="h-4 w-4" /> Download
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {walletBackupError && <p className="text-[11px] text-red-300">{walletBackupError}</p>}
+
+                        {exportOtpStage ? (
+                          <div className="space-y-3">
+                            <p className="text-[10px] text-white/50 leading-relaxed">
+                              For your security, enter the 6-digit verification code we emailed you to reveal your private key.
+                            </p>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              autoComplete="one-time-code"
+                              maxLength={6}
+                              value={exportOtpCode}
+                              onChange={(e) => setExportOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                              placeholder="000000"
+                              className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-3 text-center font-mono text-lg tracking-[0.4em] text-white placeholder:text-white/20 focus:border-[#ccff00]/50 focus:outline-none"
+                            />
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={handleExportWallet}
+                                disabled={walletBackupLoading || exportOtpCode.length !== 6}
+                                className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition disabled:opacity-50"
+                              >
+                                {walletBackupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                                Confirm & Reveal
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { setExportOtpStage(false); setExportOtpCode(""); setWalletBackupError(null); }}
+                                disabled={walletBackupLoading}
+                                className="w-full rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 py-3.5 text-xs font-black uppercase tracking-[0.16em] text-white/70 transition"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={requestExportOtp}
+                              disabled={exportOtpSending}
+                              className="w-full text-center text-[10px] uppercase tracking-[0.14em] text-[#ccff00]/70 hover:text-[#ccff00] transition disabled:opacity-50"
+                            >
+                              {exportOtpSending ? "Resending…" : "Resend code"}
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={requestExportOtp}
+                            disabled={exportOtpSending}
+                            className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition disabled:opacity-50"
+                          >
+                            {exportOtpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                            Export Private Key
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 7. SUPPORT VIEW (Inspiration from Screenshot 3) */}
+                {accountSubView === "support" && (
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => setAccountSubView("menu")}
+                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                      >
+                        <ChevronLeft className="h-5 w-5" />
+                      </button>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-white">Support</h2>
+                    </div>
+
+                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl flex flex-col items-center justify-center text-center">
+                      <div className="p-4 rounded-full bg-[#ccff00]/10 text-[#ccff00] border border-[#ccff00]/25">
+                        <MessageSquare className="h-10 w-10 animate-bounce" />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <h3 className="text-base font-black uppercase tracking-wider text-white">Here for you 24/7!</h3>
+                        <p className="text-xs text-white/50 max-w-sm leading-relaxed font-sans">
+                          Talk to a SubScript rep or explore self-serve options below.
+                        </p>
                       </div>
 
-                      <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
-                        <div className="space-y-0.5">
-                          <p className="text-white font-bold flex items-center gap-1.5">Email Alerts <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
-                          <p className="text-[9px] text-white/40">Receive transaction details via email</p>
-                        </div>
-                        <button
-                          onClick={() => {}}
-                          disabled={true}
-                          className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-white/5 opacity-50"
+                      <div className="w-full space-y-3 pt-4">
+                        <a
+                          href="https://t.me/subscriptsupport"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full p-4 rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 flex items-center justify-between transition-all group font-bold text-xs uppercase tracking-wider text-[#ccff00]"
                         >
-                          <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white/20 shadow translate-x-0" />
-                        </button>
-                      </div>
+                          <span>Join Telegram Support Group</span>
+                          <ChevronRight className="h-4 w-4 text-[#ccff00]/50 group-hover:text-[#ccff00] transition" />
+                        </a>
 
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-0.5">
-                          <p className="text-white font-bold">Debit Success</p>
-                          <p className="text-[9px] text-white/40">Notify immediately when a subscription billing succeeds</p>
-                        </div>
-                        <button
-                          onClick={() => handleToggleSetting("debitSuccessEnabled", userSettings.debitSuccessEnabled)}
-                          disabled={savingSettingsField === "debitSuccessEnabled"}
-                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.debitSuccessEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                        <a
+                          href="https://www.subscriptonarc.com/support"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full p-4 rounded-2xl border border-white/10 hover:bg-white/[0.03] flex items-center justify-between transition-all group font-bold text-xs uppercase tracking-wider text-white"
                         >
-                          <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.debitSuccessEnabled ? "translate-x-5" : "translate-x-0"}`} />
-                        </button>
-                      </div>
+                          <span>Help Center & FAQs</span>
+                          <ChevronRight className="h-4 w-4 text-white/25 group-hover:text-white/60 transition" />
+                        </a>
 
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-0.5">
-                          <p className="text-white font-bold">Expiry Warnings</p>
-                          <p className="text-[9px] text-white/40">Alert 3 days before any subscription renewal or cap expiry</p>
-                        </div>
-                        <button
-                          onClick={() => handleToggleSetting("expiryWarningEnabled", userSettings.expiryWarningEnabled)}
-                          disabled={savingSettingsField === "expiryWarningEnabled"}
-                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.expiryWarningEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                        <a
+                          href="mailto:support@subscriptonarc.com"
+                          className="w-full p-4 rounded-2xl border border-white/10 hover:bg-white/[0.03] flex items-center justify-between transition-all group font-bold text-xs uppercase tracking-wider text-white"
                         >
-                          <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.expiryWarningEnabled ? "translate-x-5" : "translate-x-0"}`} />
-                        </button>
+                          <span>Email Support</span>
+                          <ChevronRight className="h-4 w-4 text-white/25 group-hover:text-white/60 transition" />
+                        </a>
                       </div>
                     </div>
                   </div>
                 )}
+              </section>
+            )}
 
-                {/* Security Preferences */}
-                {userSettings && (
-                  <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
-                    <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                      <Lock className="h-4 w-4 text-[#ccff00]" /> Security Settings
-                    </h3>
-                    <div className="space-y-4 font-sans text-xs">
-                      <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
-                        <div className="space-y-0.5">
-                          <p className="text-white font-bold flex items-center gap-1.5">Security Shield <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
-                          <p className="text-[9px] text-white/40">Enable confidential routing on the Arc network</p>
-                        </div>
-                        <button
-                          onClick={() => {}}
-                          disabled={true}
-                          className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-white/5 opacity-50"
-                        >
-                          <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white/20 shadow translate-x-0" />
-                        </button>
-                      </div>
+            {activeTab === "referrals" && (
+              <section className="space-y-6 pb-20 max-w-2xl">
+                <SectionTitle title="Referrals Program" subtitle="Invite friends to join SubScript and view your referred signup registry." />
 
-                      <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
-                        <div className="space-y-0.5">
-                          <p className="text-white font-bold flex items-center gap-1.5">Multi-Sig Verification <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
-                          <p className="text-[9px] text-white/40">Prompt for secondary wallet confirmations during debit limits updates</p>
-                        </div>
-                        <button
-                          onClick={() => {}}
-                          disabled={true}
-                          className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-white/5 opacity-50"
-                        >
-                          <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white/20 shadow translate-x-0" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Transactions History */}
+                {/* Referral Link Card */}
                 <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
                   <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                    <Activity className="h-4 w-4 text-[#ccff00]" /> Recent Transactions History
+                    <Gift className="h-4 w-4 text-[#ccff00]" /> Your Referral Link
                   </h3>
+                  <p className="text-[10px] text-white/40 leading-relaxed">
+                    Share your invite link with others. When they create an account and register a role, their signup is logged in your referral registry.
+                  </p>
+
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="flex-1 rounded-2xl border border-white/10 bg-black/40 px-4 py-3 font-mono text-xs text-white/70 overflow-x-auto whitespace-nowrap select-all flex items-center">
+                      {referralLink || "Loading your link..."}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!referralLink}
+                      onClick={() => {
+                        if (!referralLink) return;
+                        navigator.clipboard.writeText(referralLink);
+                        setReferralCopySuccess(true);
+                        triggerToast("Referral link copied!");
+                        setTimeout(() => setReferralCopySuccess(false), 3000);
+                      }}
+                      className="rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 px-6 py-3.5 text-xs font-black uppercase tracking-[0.16em] transition flex items-center justify-center gap-2 shrink-0 shadow-[0_0_15px_rgba(204,255,0,0.15)]"
+                    >
+                      {referralCopySuccess ? "Copied!" : "Copy Link"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Referral Statistics Card */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 shadow-2xl flex flex-col justify-between">
+                    <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Total Signups</span>
+                    <span className="mt-2 font-mono text-3xl font-black text-[#ccff00]">{referralsCount}</span>
+                  </div>
+                  <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 shadow-2xl flex flex-col justify-between">
+                    <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Program Status</span>
+                    <span className="mt-2 font-mono text-base font-black text-emerald-400">Active</span>
+                  </div>
+                </div>
+
+                {/* Referrals Registry List */}
+                <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
+                  <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                    <Users className="h-4 w-4 text-[#ccff00]" /> Referred Signup Registry
+                  </h3>
+
                   <div className="overflow-x-auto">
                     <table className="w-full text-left font-sans text-xs">
                       <thead>
                         <tr className="border-b border-white/5 text-white/40 uppercase text-[9px] tracking-wider">
-                          <th className="pb-3">Receipt ID</th>
-                          <th className="pb-3">Date</th>
-                          <th className="pb-3">Amount</th>
-                          <th className="pb-3">Status</th>
-                          <th className="pb-3 text-right">Action</th>
+                          <th className="pb-3">Referred Address</th>
+                          <th className="pb-3">Alias</th>
+                          <th className="pb-3">Registered At</th>
+                          <th className="pb-3 text-right">Status</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {settingsTransactions.length === 0 ? (
+                        {referralsLoading ? (
                           <tr>
-                            <td colSpan={5} className="text-center py-6 text-white/30">
-                              No recent transaction logs.
+                            <td colSpan={4} className="text-center py-6 text-white/30">
+                              <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                            </td>
+                          </tr>
+                        ) : referrals.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="text-center py-6 text-white/30">
+                              No signups registered under your link yet.
                             </td>
                           </tr>
                         ) : (
-                          settingsTransactions.map((tx) => (
-                            <tr key={tx.receiptId} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
-                              <td className="py-4 font-mono font-semibold text-white/80">{tx.receiptId.slice(0, 8)}...</td>
-                              <td className="py-4 text-white/50">{new Date(tx.createdAt).toLocaleDateString()}</td>
-                              <td className="py-4 font-mono font-bold text-white">
-                                ${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
-                              </td>
-                              <td className="py-4">
-                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-500/15 text-amber-400"}`}>
-                                  {tx.status}
-                                </span>
-                              </td>
+                          referrals.map((ref) => (
+                            <tr key={ref.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
+                              <td className="py-4 font-semibold text-white/80"><Identity address={ref.referredAddress} /></td>
+                              <td className="py-4 font-semibold text-white/60">{ref.alias ? `@${ref.alias}` : "—"}</td>
+                              <td className="py-4 text-white/50">{new Date(ref.createdAt).toLocaleDateString()}</td>
                               <td className="py-4 text-right">
-                                <div className="inline-flex items-center gap-3">
-                                  <a
-                                    href={`/receipt/${tx.receiptId}?invite=1`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-white/60 hover:text-[#ccff00] hover:underline inline-flex items-center gap-1"
-                                    title="Grant another address permission to view this private receipt"
-                                  >
-                                    Grant access
-                                  </a>
-                                  <a
-                                    href={`https://explorer.testnet.arc.network/tx/${tx.txHash}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-[#ccff00] hover:underline inline-flex items-center gap-1"
-                                  >
-                                    Tx <ExternalLink className="w-3.5 h-3.5" />
-                                  </a>
-                                </div>
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400">
+                                  {humanStatus(ref.status)}
+                                </span>
                               </td>
                             </tr>
                           ))
@@ -3606,21 +4859,24 @@ export default function UserDashboard() {
               </section>
             )}
             </motion.div>
-          </AnimatePresence>
           </div>
         </div>
       </main>
         </div>
+          </>
+        )}
       </div>
 
       {/* Mobile-only Bottom Navigation Bar */}
-      {isMobile && userWallet && !isActiveMobileDm && (
+      {isMobile && userWallet && !isActiveMobileDm && !mustBackupWallet && (
         <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3">
           {/* Capsule Navigation Menu */}
           <nav
             aria-label="Primary navigation"
-            className="liquid-glass flex flex-1 items-center justify-around rounded-full bg-black/30 backdrop-blur-lg px-3 py-[1.1rem] shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
+            className="liquid-glass flex flex-1 items-center justify-around rounded-full backdrop-blur-lg px-3 py-[1.1rem] shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
+            style={{ backgroundImage: "linear-gradient(to bottom, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.2))", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)" }}
           >
+            <LiquidGlassEffect />
             {userBottomTabs.map((tab) => (
               <AnimatedBottomNavButton
                 key={tab.id}
@@ -3743,7 +4999,7 @@ export default function UserDashboard() {
                         <p className="truncate text-sm font-black text-white">{tx.name}</p>
                         <p className="truncate text-[10px] font-bold text-white/40">{tx.detail}</p>
                       </div>
-                      <span className="shrink-0 text-base font-extrabold text-white">{tx.amountLabel}</span>
+                      <span className={`shrink-0 text-base font-extrabold ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>{tx.amountLabel}</span>
                     </div>
                   ));
                 })()}
@@ -3781,16 +5037,17 @@ export default function UserDashboard() {
             window.location.href = raw;
             return;
           }
-          /* EIP-681 (ethereum:0x...) or a bare address -> autofill the send recipient. */
+          /* EIP-681 (ethereum:0x...) or a bare address -> open the Send Funds screen prefilled with
+             the scanned recipient, so scanning a QR lands the user directly on the payment flow. */
           const addrMatch = raw.match(/0x[a-fA-F0-9]{40}/);
           if (addrMatch) {
-            setSingleRecipient(addrMatch[0]);
-            triggerToast("Recipient address scanned.");
+            setSendFundsRecipient(addrMatch[0]);
+            setSendFundsOpen(true);
             return;
           }
-          /* Otherwise treat it as a DNS alias / handle and let the send box resolve it. */
-          setSingleRecipient(raw);
-          triggerToast("Scanned. Review the recipient before sending.");
+          /* Otherwise treat it as a DNS alias / handle — the Send Funds box resolves it. */
+          setSendFundsRecipient(raw);
+          setSendFundsOpen(true);
         }}
       />
       
@@ -3802,6 +5059,8 @@ export default function UserDashboard() {
         sepoliaUsdc={sepoliaUsdc}
         userWallet={userWallet}
         isEmbeddedWalletSession={isEmbeddedWalletSession}
+        chainId={chainId}
+        switchChainAsync={switchChainAsync}
         writeContractAsync={writeContractAsync}
         refetchUsdc={refetchUsdc}
       />
@@ -3827,22 +5086,6 @@ export default function UserDashboard() {
       />
 
       <VaultInfoModal open={vaultInfoOpen} onClose={() => setVaultInfoOpen(false)} />
-
-      <GamesModals
-        gamesMenuOpen={gamesMenuOpen}
-        setGamesMenuOpen={setGamesMenuOpen}
-        selectedDmPeer={selectedDmPeer}
-        activePlayingGame={activePlayingGame}
-        setActivePlayingGame={setActivePlayingGame}
-        isChessBoardModalOpen={isChessBoardModalOpen}
-        setIsChessBoardModalOpen={setIsChessBoardModalOpen}
-        userWallet={userWallet}
-        triggerToast={triggerToast}
-        refetchDms={loadDms}
-        writeContractAsync={writeContractAsync}
-        refetchUsdc={refetchUsdc}
-        isEmbeddedWalletSession={isEmbeddedWalletSession}
-      />
 
       <AnimatePresence>
         {vaultActionOpen && (
@@ -3872,15 +5115,20 @@ export default function UserDashboard() {
                     : "Withdraw unused committed balance back to your wallet. Dropping below the required commit pauses the service until you re-commit."}
                 </p>
               </div>
-              <Field label="Merchant address or name">
-                <input
-                  value={vaultActionMerchant}
-                  onChange={(event) => setVaultActionMerchant(event.target.value)}
-                  placeholder="0x... or alice.sub"
-                  className="subscript-input"
-                  disabled={vaultActionMerchantLocked}
-                  required
-                />
+              <Field label="Merchant">
+                {vaultActionMerchantLocked ? (
+                  <div className="subscript-input flex items-center">
+                    {merchantDisplayName(vaults.find((vault: any) => vault.merchantAddress?.toLowerCase() === vaultActionMerchant.toLowerCase())?.merchantName)}
+                  </div>
+                ) : (
+                  <input
+                    value={vaultActionMerchant}
+                    onChange={(event) => setVaultActionMerchant(event.target.value)}
+                    placeholder="Merchant name"
+                    className="subscript-input"
+                    required
+                  />
+                )}
               </Field>
               <Field label="Amount (USDC)">
                 <input
@@ -3894,6 +5142,39 @@ export default function UserDashboard() {
                 />
               </Field>
               {vaultActionError && <p className="text-[11px] font-bold text-red-300">{vaultActionError}</p>}
+              {vaultUnverifiedWarning ? (
+                <div className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] p-4">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-black uppercase tracking-wide text-amber-300">Unverified merchant</p>
+                      <p className="text-[11px] leading-relaxed text-white/70">
+                        SubScript has not verified this merchant. Committing escrows funds they can bill
+                        metered usage against. Only commit to merchants you trust and have independently
+                        verified — funds lost to a fraudulent merchant may not be recoverable.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setVaultUnverifiedWarning(false); }}
+                      disabled={vaultActionBusy}
+                      className="dm-quick-button min-w-0 border-white/10 bg-white/[0.06] text-white/55"
+                    >
+                      Go back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setVaultUnverifiedWarning(false); submitVaultAction(undefined, { acknowledgedUnverified: true }); }}
+                      disabled={vaultActionBusy}
+                      className="dm-quick-button min-w-0 border-amber-500/30 bg-amber-500/15 text-amber-200"
+                    >
+                      Commit anyway
+                    </button>
+                  </div>
+                </div>
+              ) : (
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -3911,10 +5192,24 @@ export default function UserDashboard() {
                   {vaultActionBusy ? "Working..." : vaultActionMode === "commit" ? "Commit" : "Withdraw"}
                 </button>
               </div>
+              )}
             </motion.form>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {confirmModal && (
+        <ConfirmModal
+          open={confirmModal.open}
+          title={confirmModal.title}
+          description={confirmModal.description}
+          confirmLabel={confirmModal.confirmLabel}
+          cancelLabel={confirmModal.cancelLabel}
+          variant={confirmModal.variant}
+          onConfirm={confirmModal.onConfirm}
+          onCancel={confirmModal.onCancel ?? (() => setConfirmModal(null))}
+        />
+      )}
 
       {/* Blocking email capture — an email is required for receipts and notifications.
           Shown for accounts that don't have one yet (e.g. wallet-onboarded payers). */}
@@ -4028,8 +5323,8 @@ function VaultInfoModal({ open, onClose }: { open: boolean; onClose: () => void 
               </ul>
             </div>
             <p className="text-[11px] leading-relaxed text-white/40">
-              The merchant sets the commit amount. At the end of each 30-day cycle they draw the period's
-              usage cost from your vault; you top the vault back up to keep the service running.
+              SubScript fixes the commitment at 2 USDC for each user–merchant relationship per cycle.
+              At cycle end the keeper settles reported usage and closes the vault; commit again to start the next cycle.
             </p>
             <button type="button" onClick={onClose} className="subscript-primary-button">
               Got it
@@ -4067,7 +5362,7 @@ function UserDesktopSidebar({
           <img
             src="/logo.png"
             alt="SubScript Logo"
-            className="h-9 w-9 shrink-0 object-contain drop-shadow-[0_0_10px_rgba(204,255,0,0.35)]"
+            className="h-9 w-9 shrink-0 object-contain drop-shadow-[0_0_10px_rgba(0,210,180,0.35)]"
           />
           <div className="hidden lg:block min-w-0">
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#ccff00]">SubScript</p>
@@ -4129,6 +5424,17 @@ function UserDesktopSidebar({
           </div>
         </button>
 
+        <a
+          href="/support"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex w-full items-center justify-center gap-2 rounded-full lg:rounded-2xl border border-white/5 bg-white/[0.02] p-3.5 lg:px-4 lg:py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/45 transition hover:border-[#00d2b4]/25 hover:bg-[#00d2b4]/10 hover:text-[#00d2b4]"
+          title="Help & Support"
+        >
+          <HelpCircle className="h-4 w-4 shrink-0" />
+          <span className="hidden lg:inline">Support</span>
+        </a>
+
         <button
           type="button"
           onClick={onLogout}
@@ -4165,7 +5471,7 @@ function HomeHeader({
             <img 
               src="/logo.png" 
               alt="SubScript Logo" 
-              className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(204,255,0,0.4)]" 
+              className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]"
             />
           </div>
           {/* Actions (Right) */}
@@ -4288,7 +5594,7 @@ function RoundAction({ icon: Icon, label, onClick }: { icon: LucideIcon; label: 
   );
 }
 
-function SubscriptionRow({ subscription }: { subscription: Subscription }) {
+function SubscriptionRow({ subscription, balanceVisible }: { subscription: Subscription; balanceVisible: boolean }) {
   const intervalDays = Math.max(1, Math.round(Number(subscription.billingIntervalSeconds) / 86400));
   return (
     <div className="flex items-center justify-between rounded-2xl border border-white/5 bg-black/20 hover:bg-black/35 hover:border-white/10 transition px-4 py-3.5">
@@ -4305,8 +5611,10 @@ function SubscriptionRow({ subscription }: { subscription: Subscription }) {
         </div>
       </div>
       <div className="text-right">
-        <p className="text-xs font-black text-[#ccff00]">{formatUsdc(subscription.amountCapUsdc)} USDC</p>
-        <p className="text-[9px] uppercase text-white/35">{subscription.status}</p>
+        <p className="text-xs font-black text-[#ccff00]">
+          {balanceVisible ? `${formatUsdc(subscription.amountCapUsdc)} USDC` : "•••• USDC"}
+        </p>
+        <p className="text-[9px] uppercase text-white/35">{humanSubscriptionStatus(subscription.status)}</p>
       </div>
     </div>
   );
@@ -4406,7 +5714,6 @@ function DmBubble({
   onThanks,
   onCancelPlan,
   onSurveySubmit,
-  onPlayGame,
 }: {
   dm: DmMessage;
   focused: boolean;
@@ -4419,18 +5726,17 @@ function DmBubble({
   onThanks?: () => void;
   onCancelPlan?: () => void;
   onSurveySubmit?: (dm: DmMessage, response: string) => void;
-  onPlayGame?: (gameId: string) => void;
 }) {
   const isPending = dm.status === "PENDING";
   const displayTitle = shortenWalletsInText(dm.title);
   const displayDescription = shortenWalletsInText(dm.description);
   const senderLabel = formatPeerDisplayName(dm.senderName, dm.senderAddress);
   const lines = splitDmDescription(displayDescription);
-  const canPay = incoming && isPending && Boolean(dm.paymentLinkId) && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING"].includes(dm.messageType);
-  const canDecline = incoming && isPending && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING"].includes(dm.messageType);
+  const canPay = incoming && isPending && Boolean(dm.paymentLinkId) && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
+  const canDecline = incoming && isPending && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
 
   /* Parse lines to show a beautiful checkout details card for payment requests */
-  const isRequest = ["PAYMENT_REQUEST", "PEER_REQUEST"].includes(dm.messageType);
+  const isRequest = ["PAYMENT_REQUEST", "PEER_REQUEST", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const actionItems: Array<{
     key: string;
@@ -4443,7 +5749,11 @@ function DmBubble({
   if (canPay) {
     actionItems.push({
       key: "pay",
-      label: dm.messageType === "EXPIRY_WARNING" ? "Resubscribe" : "Confirm",
+      label: dm.messageType === "EXPIRY_WARNING"
+        ? "Resubscribe"
+        : dm.messageType === "SUBSCRIPTION_OFFER"
+          ? "Review plan"
+          : "Confirm",
       onClick: onPay,
       loadingKey: `pay-${dm.id}`,
     });
@@ -4455,9 +5765,6 @@ function DmBubble({
       onClick: onDecline,
       loadingKey: `decline-${dm.id}`,
     });
-  }
-  if (dm.messageType === "DEBIT_SUCCESS" && isPending) {
-    actionItems.push({ key: "dismiss", label: "Thanks", onClick: onDismiss, loadingKey: `dismiss-${dm.id}` });
   }
   /* Only the recipient of a transfer can thank the sender — you don't thank yourself. */
   if (dm.messageType === "PEER_TRANSFER" && incoming && onThanks) {
@@ -4479,13 +5786,6 @@ function DmBubble({
       { key: "survey-skip", label: "Prefer not to answer", onClick: () => onSurveySubmit(dm, "DISMISSED"), loadingKey: `survey-${dm.id}-DISMISSED` },
     );
   }
-  if (isRealTxHash(dm.txHash)) {
-    actionItems.push({
-      key: "tx",
-      label: "View Tx",
-      href: `https://explorer.testnet.arc.network/tx/${dm.txHash}`,
-    });
-  }
   const hasActionMenu = actionItems.length > 1;
 
   /* iMessage-style entrance: bubbles pop in from their own corner with a soft
@@ -4494,76 +5794,6 @@ function DmBubble({
     ? { type: "spring" as const, stiffness: 380, damping: 14, mass: 0.8 }
     : { type: "spring" as const, stiffness: 420, damping: 12, mass: 0.85 };
   const bubbleOrigin = incoming ? "bottom left" : "bottom right";
-
-  if (["GAME_INVITE", "GAME_STARTED", "GAME_RESULT"].includes(dm.messageType)) {
-    const isInvite = dm.messageType === "GAME_INVITE";
-    const isStarted = dm.messageType === "GAME_STARTED";
-    const buttonLabel = isInvite 
-      ? (incoming ? "Accept Challenge" : "Manage Invite") 
-      : isStarted 
-        ? "Play Move" 
-        : "View Results";
-
-    return (
-      <motion.div
-        initial={{ scale: 0.85, opacity: 0, y: 12 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        whileHover={{ scale: 1.01 }}
-        transition={bubbleSpring}
-        style={{ transformOrigin: bubbleOrigin }}
-        className={`flex gap-2.5 ${incoming ? "justify-start" : "justify-end"}`}
-      >
-        {incoming && <Avatar profilePic={dm.senderProfilePic} />}
-        <div className={`max-w-[80%] ${incoming ? "items-start" : "items-end"} flex flex-col gap-1.5`}>
-          <div
-            className={`px-5 py-4 border shadow-xl rounded-[24px] ${
-              incoming
-                ? `${focused ? "border-[#ccff00]/40 bg-[#ccff00]/[0.08]" : "border-white/10 bg-[#0d0d11]/95 text-white"} rounded-bl-[4px]`
-                : "border-[#00b2ff]/30 bg-[#002b4d]/40 text-white rounded-br-[4px]"
-            }`}
-          >
-            <p className={`mb-1.5 text-[8px] font-black uppercase tracking-[0.2em] ${incoming ? "text-[#ccff00]" : "text-[#00b2ff]"}`}>
-              ♟ Chess Match
-            </p>
-            
-            <h3 className="text-sm font-black uppercase leading-snug text-white tracking-wide">
-              {displayTitle || "Chess Game"}
-            </h3>
-            
-            <p className="mt-2 text-xs leading-relaxed text-white/70 whitespace-pre-wrap">
-              {displayDescription}
-            </p>
-
-            <div className="mt-4 flex items-center justify-between gap-6 border-t border-white/5 pt-3">
-              <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-[9px] font-bold text-white/40">
-                {new Date(dm.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
-              </span>
-              {dm.amountUsdc && (
-                <span className={`text-xs font-black ${incoming ? "text-[#ccff00]" : "text-[#00b2ff]"}`}>
-                  ${(Number(dm.amountUsdc) / 1000000).toFixed(2)} USDC
-                </span>
-              )}
-            </div>
-
-            {dm.dmGameId && onPlayGame && (
-              <button
-                type="button"
-                onClick={() => onPlayGame(dm.dmGameId!)}
-                className={`mt-3.5 w-full rounded-full py-2.5 text-center text-[10px] font-black uppercase tracking-[0.16em] transition-all flex items-center justify-center gap-1.5 ${
-                  incoming 
-                    ? "bg-[#ccff00] text-black hover:opacity-90"
-                    : "bg-[#00b2ff] text-white hover:opacity-90"
-                }`}
-              >
-                <GamepadIcon className="w-3.5 h-3.5" />
-                <span>{buttonLabel}</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </motion.div>
-    );
-  }
 
   if (isReactionMessage(dm.messageType)) {
     return (
@@ -4618,7 +5848,7 @@ function DmBubble({
               incoming ? "text-[#ccff00]" : "text-white/70"
             }`}
           >
-            {dm.messageType.replace(/_/g, " ")}
+            {humanStatus(dm.messageType)}
           </p>
           
           {isRequest ? (
@@ -4656,9 +5886,31 @@ function DmBubble({
             <>
               <h3 className="text-base font-black uppercase leading-snug text-white">{displayTitle || "SubScript message"}</h3>
               <div className="mt-3 space-y-1.5">
-                {lines.length > 0 ? lines.map((line) => (
-                  <p key={line} className={`text-xs leading-relaxed ${incoming ? "text-white/70" : "text-white/90"}`}>{line}</p>
-                )) : <p className={`text-xs leading-relaxed ${incoming ? "text-white/70" : "text-white/90"}`}>System-generated SubScript payment update.</p>}
+                {lines.length > 0 ? lines.map((line) => {
+                  /* Receipt references read as noise in a chat bubble — show a same-origin
+                     "View receipt" action and never trust a host stored in legacy DM text. */
+                  const receiptHref = receiptHrefFromDescriptionLine(line);
+                  if (receiptHref) {
+                    return (
+                      <a
+                        key={line}
+                        href={receiptHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`inline-flex items-center gap-1.5 text-xs font-bold underline underline-offset-2 ${incoming ? "text-[#ccff00]" : "text-white"}`}
+                      >
+                        View receipt <ExternalLink className="h-3 w-3" />
+                      </a>
+                    );
+                  }
+                  /* Older receipts embedded the raw tx hash — meaningless to a person, and
+                     payment proof stays inside SubScript (the receipt page carries it), so the
+                     line is simply dropped rather than linked to an external explorer. */
+                  if (/^transaction\b/i.test(line)) return null;
+                  return (
+                    <p key={line} className={`text-xs leading-relaxed ${incoming ? "text-white/70" : "text-white/90"}`}>{line}</p>
+                  );
+                }) : <p className={`text-xs leading-relaxed ${incoming ? "text-white/70" : "text-white/90"}`}>System-generated SubScript payment update.</p>}
               </div>
             </>
           )}
@@ -4777,7 +6029,7 @@ function DmBubble({
 
           {dm.messageType === "CHURN_SURVEY" && !isPending && (
             <span className="text-[10px] font-sans font-black uppercase tracking-widest text-[#ccff00] bg-[#ccff00]/10 border border-[#ccff00]/20 px-4 py-1.5 rounded-full select-none shadow-[0_2px_12px_rgba(204,255,0,0.06)]">
-              Response: {dm.status.replace(/_/g, " ")}
+              Response: {humanStatus(dm.status)}
             </span>
           )}
         </div>
@@ -4812,16 +6064,26 @@ function MerchantPlanManager({
   onCancel: () => void;
 }) {
   const hasActiveSubscription = !!activeSubscription;
+  const activePlan = activeSubscription
+    ? plans.find(
+        (p) =>
+          Number(activeSubscription.amountCapUsdc) === Number(p.amountUsdc) &&
+          Number(activeSubscription.billingIntervalSeconds) === Number(p.periodSeconds)
+      )
+    : null;
+  const planLabel = activePlan ? activePlan.name : "Active Plan";
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
       <motion.div
         layout
         transition={{ type: "spring", stiffness: 400, damping: 22, mass: 0.8 }}
-        className="flex flex-wrap items-center gap-2 rounded-2xl border border-[#ccff00]/15 bg-[#ccff00]/[0.06] p-3"
+        className="order-2 flex flex-wrap items-center gap-2 rounded-2xl border border-[#ccff00]/15 bg-[#ccff00]/[0.06] p-3"
       >
         <div className="min-w-0 flex-1">
-          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ccff00]/70">Merchant plan controls</p>
+          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ccff00]/70">
+            {hasActiveSubscription ? planLabel : "Merchant Plan Controls"}
+          </p>
           <p className="truncate text-xs font-bold text-white">
             {hasActiveSubscription
               ? `${formatUsdc(activeSubscription.amountCapUsdc)} USDC / ${formatPlanPeriod(activeSubscription.billingIntervalSeconds)}`
@@ -4838,11 +6100,11 @@ function MerchantPlanManager({
             type="button"
             onClick={onCancel}
             disabled={loadingAction === `cancel-sub-${activeSubscription.subscriptionId}`}
-            className={`dm-quick-button relative overflow-hidden border-red-400/20 bg-red-500/10 text-red-200 ${
+            className={`dm-quick-button flex-1 min-w-0 text-center truncate relative overflow-hidden border-red-400/20 bg-red-500/10 text-red-200 ${
               loadingAction === `cancel-sub-${activeSubscription.subscriptionId}` ? "quick-action-loading" : ""
             }`}
           >
-            Hard Cancel
+            Cancel current plan
           </motion.button>
         )}
         <motion.button
@@ -4851,7 +6113,7 @@ function MerchantPlanManager({
           transition={{ type: "spring", stiffness: 500, damping: 12, mass: 0.7 }}
           type="button"
           onClick={onToggle}
-          className="dm-quick-button dm-action-menu-trigger relative overflow-hidden"
+          className={`dm-quick-button dm-action-menu-trigger relative overflow-hidden ${hasActiveSubscription ? "flex-1 min-w-0 text-center truncate" : ""}`}
         >
           {open ? "Hide Plans" : hasActiveSubscription ? "Manage Plan" : "Subscribe"}
         </motion.button>
@@ -4865,7 +6127,7 @@ function MerchantPlanManager({
             exit={{ opacity: 0, y: 8, scale: 0.95, scaleY: 0.9 }}
             transition={{ type: "spring", stiffness: 380, damping: 16, mass: 0.7 }}
             style={{ transformOrigin: "top center" }}
-            className="space-y-3 rounded-2xl border border-white/10 bg-black/45 p-3"
+            className="order-1 max-h-[min(48dvh,28rem)] space-y-3 overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-black/45 p-3"
           >
             {loading ? (
               <div className="flex items-center justify-center gap-2 py-5 text-[10px] font-black uppercase tracking-[0.16em] text-white/45">
@@ -4883,17 +6145,17 @@ function MerchantPlanManager({
                     ? activeSubscription.amountCapUsdc === plan.amountUsdc &&
                       activeSubscription.billingIntervalSeconds === plan.periodSeconds
                     : false;
-                  let isReduction = false;
+                  let isUnavailableChange = false;
                   if (activeSubscription) {
                     try {
-                      isReduction = compareRecurringRates(
+                      isUnavailableChange = compareRecurringRates(
                         BigInt(plan.amountUsdc),
                         BigInt(plan.periodSeconds),
                         BigInt(activeSubscription.amountCapUsdc),
                         BigInt(activeSubscription.billingIntervalSeconds),
-                      ) < 0;
+                      ) <= 0;
                     } catch {
-                      isReduction = true;
+                      isUnavailableChange = true;
                     }
                   }
                   const loadingKey = hasActiveSubscription ? `switch-plan-${plan.id}` : `subscribe-plan-${plan.id}`;
@@ -4933,7 +6195,7 @@ function MerchantPlanManager({
                           <motion.span
                             initial={{ scale: 0 }}
                             animate={{ scale: 1 }}
-                            transition={{ type: "spring", stiffness: 500, damping: 14 }}
+                            transition={{ type: "spring", stiffness: 300, damping: 25 }}
                             className="rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-[#ccff00]"
                           >
                             Current
@@ -4946,17 +6208,17 @@ function MerchantPlanManager({
                         transition={{ type: "spring", stiffness: 500, damping: 12, mass: 0.7 }}
                         type="button"
                         onClick={() => onSubscribe(plan)}
-                        disabled={isCurrent || isReduction || loadingAction === loadingKey}
+                        disabled={isCurrent || isUnavailableChange || loadingAction === loadingKey}
                         className={`mt-3 w-full rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition ${
-                          isCurrent || isReduction
+                          isCurrent || isUnavailableChange
                             ? "border-white/5 bg-white/[0.03] text-white/25"
                             : "border-[#ccff00]/25 bg-[#ccff00]/10 text-white hover:bg-[#ccff00]/18"
                         } ${loadingAction === loadingKey ? "quick-action-loading" : ""}`}
                       >
                         {isCurrent
                           ? "Active now"
-                          : isReduction
-                            ? "Lower tier unavailable"
+                          : isUnavailableChange
+                            ? "Upgrade only"
                             : hasActiveSubscription
                               ? "Upgrade"
                               : "Subscribe"}
@@ -5014,7 +6276,7 @@ function DmRequestComposer({
             transition={{ type: "spring", stiffness: 450, damping: 20, mass: 0.8 }}
             style={{ transformOrigin: "bottom center" }}
             onSubmit={onSubmit}
-            className="rounded-[28px] border border-[#ccff00]/20 bg-black/55 p-4 shadow-[0_14px_45px_rgba(0,0,0,0.35)] backdrop-blur-xl"
+            className="max-h-[min(55dvh,30rem)] overflow-y-auto overscroll-contain rounded-[28px] border border-[#ccff00]/20 bg-black/55 p-4 shadow-[0_14px_45px_rgba(0,0,0,0.35)] backdrop-blur-xl"
           >
             <div className="grid grid-cols-2 gap-3">
               <Field label="Amount">
@@ -5115,261 +6377,6 @@ function DmRequestComposer({
   );
 }
 
-function DmGamesComposer({
-  open,
-  selectedPeer,
-  userWallet,
-  triggerToast,
-  refetchDms,
-  writeContractAsync,
-  refetchUsdc,
-  onToggle,
-  isEmbeddedWalletSession,
-}: {
-  open: boolean;
-  selectedPeer: string | null;
-  userWallet: string | null;
-  triggerToast: (msg: string) => void;
-  refetchDms: () => void;
-  writeContractAsync: any;
-  refetchUsdc: () => void;
-  onToggle: () => void;
-  isEmbeddedWalletSession: boolean;
-}) {
-  const [selectedGameType, setSelectedGameType] = useState<"chess" | "checkers">("chess");
-  const [stakeAmount, setStakeAmount] = useState("1.00");
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-
-  const usdcAddress = USDC_NATIVE_GAS_ADDRESS as `0x${string}`;
-
-  const handleCreateInvite = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage(null);
-    setLoading(true);
-
-    try {
-      const stakeMicros = BigInt(Math.round(Number(stakeAmount) * 1_000_000));
-      if (stakeMicros <= BigInt(0)) {
-        throw new Error("Stake amount must be greater than zero");
-      }
-
-      // 1. Create game invite record on backend
-      setStatusMessage("Registering game lobby...");
-      const res = await fetch("/api/user/dms/games", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-session-wallet": userWallet!,
-        },
-        body: JSON.stringify({
-          opponentAddress: selectedPeer,
-          stakeUsdc: stakeAmount,
-          gameType: selectedGameType.toUpperCase(),
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to create game lobby");
-      }
-
-      const createdGame = data.game;
-
-      if (isEmbeddedWalletSession) {
-        // Embedded (email) wallet: SubScript stakes to the escrow server-side (gas sponsored).
-        setStatusMessage("Staking to game escrow...");
-        const verifyRes = await fetch(`/api/user/dms/games/${createdGame.id}/fund-creator`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-session-wallet": userWallet! },
-          body: JSON.stringify({}),
-        });
-        const verifyData = await verifyRes.json();
-        if (!verifyRes.ok) throw new Error(verifyData.error || "Failed to stake your game escrow");
-        triggerToast(`${selectedGameType === "checkers" ? "Checkers" : "Chess"} game invite sent successfully!`);
-        refetchDms();
-        refetchUsdc();
-        onToggle();
-        return;
-      }
-
-      // 2. Perform on-chain stake escrow (external / browser wallet)
-      const escrowAddress = requireGameEscrowAddress(createdGame);
-      setStatusMessage("Checking USDC allowance...");
-      const provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");
-      const tokenContract = new ethers.Contract(usdcAddress, [
-        "function allowance(address owner, address spender) view returns (uint256)"
-      ], provider);
-      const allowance = await tokenContract.allowance(userWallet!, escrowAddress);
-
-      if (BigInt(allowance.toString()) < stakeMicros) {
-        setStatusMessage("Approving USDC stake...");
-        const approveTx = await writeContractAsync({
-          address: usdcAddress,
-          abi: VAULT_TOKEN_ABI,
-          functionName: "approve",
-          args: [escrowAddress, stakeMicros],
-          chainId: ARC_TESTNET_CHAIN_ID,
-        });
-        setStatusMessage("Waiting for approval confirmation...");
-        await provider.waitForTransaction(approveTx, 1, 30_000);
-      }
-
-      setStatusMessage("Staking USDC to game escrow...");
-      const initialStateHash = ethers.id(
-        selectedGameType === "checkers"
-          ? "b1b1b1b1/1b1b1b1b/b1b1b1b1/8/8/1w1w1w1w/w1w1w1w1/1w1w1w1w w"
-          : "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-      );
-      const stakeTx = await writeContractAsync({
-        address: escrowAddress,
-        abi: ESCROW_CONTRACT_ABI,
-        functionName: "createGame",
-        args: [selectedPeer || ethers.ZeroAddress, stakeMicros, initialStateHash],
-        chainId: ARC_TESTNET_CHAIN_ID,
-      });
-
-      // 3. Confirm deposit with backend
-      setStatusMessage("Verifying stake transaction...");
-      const verifyRes = await fetch(`/api/user/dms/games/${createdGame.id}/fund-creator`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-session-wallet": userWallet!,
-        },
-        body: JSON.stringify({ txHash: stakeTx }),
-      });
-
-      const verifyData = await verifyRes.json();
-      if (!verifyRes.ok) {
-        throw new Error(verifyData.error || "Referee failed to verify deposit transaction");
-      }
-
-      triggerToast(`${selectedGameType === "checkers" ? "Checkers" : "Chess"} game invite sent successfully!`);
-      refetchDms();
-      refetchUsdc();
-      onToggle();
-    } catch (err: any) {
-      console.error("Game creation error:", err);
-      setErrorMessage(err.message || "Failed to initialize game.");
-    } finally {
-      setLoading(false);
-      setStatusMessage(null);
-    }
-  };
-
-  return (
-    <div className="space-y-3">
-      <AnimatePresence>
-        {open && (
-          <motion.form
-            key="dm-games-form"
-            initial={{ opacity: 0, y: 24, scaleY: 0.7, scaleX: 0.94 }}
-            animate={{ opacity: 1, y: 0, scaleY: 1, scaleX: 1 }}
-            exit={{ opacity: 0, y: 16, scaleY: 0.8, scaleX: 0.96 }}
-            transition={{ type: "spring", stiffness: 450, damping: 20, mass: 0.8 }}
-            style={{ transformOrigin: "bottom center" }}
-            onSubmit={handleCreateInvite}
-            className="rounded-[28px] border border-[#ccff00]/20 bg-black/55 p-4 shadow-[0_14px_45px_rgba(0,0,0,0.35)] backdrop-blur-xl text-left"
-          >
-            <div className="flex items-center justify-between mb-3 border-b border-white/5 pb-2">
-              <span className="text-[10px] font-black uppercase tracking-[0.14em] text-white">Configure Game Invite</span>
-              {statusMessage && (
-                <span className="text-[9px] font-bold text-[#ccff00] animate-pulse">{statusMessage}</span>
-              )}
-            </div>
-
-            {/* Game Type Selector Segment */}
-            <div className="grid grid-cols-2 gap-2 bg-black/40 p-1.5 rounded-2xl border border-white/5 mb-3">
-              <button
-                type="button"
-                onClick={() => setSelectedGameType("chess")}
-                className={`py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-                  selectedGameType === "chess"
-                    ? "bg-[#ccff00] text-black shadow-md"
-                    : "text-white/60 hover:text-white"
-                }`}
-              >
-                <span>♞</span> Chess
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedGameType("checkers")}
-                className={`py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-                  selectedGameType === "checkers"
-                    ? "bg-[#ccff00] text-black shadow-md"
-                    : "text-white/60 hover:text-white"
-                }`}
-              >
-                <span>⛀</span> Checkers
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <Field label="Staked USDC Amount">
-                <input
-                  type="number"
-                  step="any"
-                  value={stakeAmount}
-                  onChange={(e) => setStakeAmount(e.target.value)}
-                  className="subscript-input"
-                  placeholder="1.00"
-                  required
-                />
-              </Field>
-
-              <div className="rounded-2xl border border-white/5 bg-black/30 p-3 space-y-1.5 text-[9px] text-white/50 font-bold uppercase tracking-wider">
-                <div className="flex justify-between">
-                  <span>Your Stake</span>
-                  <span className="text-white">${Number(stakeAmount || 0).toFixed(2)} USDC</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Opponent Stake</span>
-                  <span className="text-white">${Number(stakeAmount || 0).toFixed(2)} USDC</span>
-                </div>
-                <div className="flex justify-between border-t border-white/5 pt-1.5 font-black text-white text-[10px]">
-                  <span>Winner Payout (90%)</span>
-                  <span className="text-[#ccff00]">${(Number(stakeAmount || 0) * 2 * 0.9).toFixed(2)} USDC</span>
-                </div>
-              </div>
-
-              {errorMessage && (
-                <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-2 text-[9px] font-bold uppercase text-red-300 flex items-center gap-1.5">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{errorMessage}</span>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <motion.button
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.96 }}
-                  type="button"
-                  onClick={onToggle}
-                  disabled={loading}
-                  className="dm-quick-button min-w-0 border-white/10 bg-white/[0.06] text-white/55"
-                >
-                  Cancel
-                </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.96 }}
-                  type="submit"
-                  disabled={loading}
-                  className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white ${loading ? "quick-action-loading" : ""}`}
-                >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Send Invite"}
-                </motion.button>
-              </div>
-            </div>
-          </motion.form>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
 function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div>
@@ -5387,42 +6394,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
     </label>
   );
 }
-
-type FiatFundingMode = "loading" | "disabled" | "sandbox" | "live";
-
-type FiatFundingIntentView = {
-  id: string;
-  status: string;
-  fiatCurrency: string;
-  fiatAmountMinor: string;
-  quoteRateNgnPerUsdcMinor: string;
-  grossUsdcMicros: string;
-  feeFiatMinor: string;
-  netUsdcMicros: string;
-  bankName: string;
-  accountName: string;
-  accountNumber: string;
-  transferReference: string;
-  destinationWallet: string;
-  destinationChainId: number;
-  expiresAt: string;
-  settledAt: string | null;
-  settlementTxHash: string | null;
-  createdAt: string;
-};
-
-const formatNgnMinor = (minor: string) =>
-  new Intl.NumberFormat("en-NG", {
-    style: "currency",
-    currency: "NGN",
-    minimumFractionDigits: 2,
-  }).format(Number(minor) / 100);
-
-const formatUsdcMicros = (micros: string) =>
-  `${(Number(micros) / 1_000_000).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 6,
-  })} USDC`;
 
 function DepositModal({
   open,
@@ -5451,7 +6422,7 @@ function DepositModal({
   writeContractAsync: any;
   refetchBalances: () => void;
 }) {
-  const [activeSubMode, setActiveSubMode] = useState<"menu" | "direct" | "cctp" | "fiat">("menu");
+  const [activeSubMode, setActiveSubMode] = useState<"menu" | "direct" | "cctp">("menu");
 
   // Reset sub-mode when modal opens
   useEffect(() => {
@@ -5469,17 +6440,76 @@ function DepositModal({
   const [cctpStatus, setCctpStatus] = useState<"idle" | "switching" | "approving" | "burning" | "attesting" | "claiming" | "success" | "error">("idle");
   const [cctpMessage, setCctpMessage] = useState<string | null>(null);
   const [cctpError, setCctpError] = useState<string | null>(null);
+  const [cctpReviewOpen, setCctpReviewOpen] = useState(false);
+  const [cctpRecovery, setCctpRecovery] = useState<{ burnHash: `0x${string}`; messageBytes: `0x${string}`; messageHash: `0x${string}`; amount: string } | null>(null);
 
-  // Bank-transfer funding state. The backend owns quote math, wallet identity, and mode gates.
-  const [fiatAmount, setFiatAmount] = useState("10000");
-  const [fiatMode, setFiatMode] = useState<FiatFundingMode>("loading");
-  const [fiatIntent, setFiatIntent] = useState<FiatFundingIntentView | null>(null);
-  const [fiatStatus, setFiatStatus] = useState<"idle" | "loading" | "creating" | "awaiting_transfer" | "settling" | "success" | "error">("idle");
-  const [fiatMessage, setFiatMessage] = useState<string | null>(null);
-  const [fiatError, setFiatError] = useState<string | null>(null);
-  const fiatIdempotencyKey = useRef<string | null>(null);
+  const bridgeableUsdc = sepoliaUsdc;
+  const cctpInProgress = !["idle", "success", "error"].includes(cctpStatus);
+  const cctpRecoveryKey = userWallet ? `subscript:cctp-recovery:${userWallet.toLowerCase()}` : null;
 
-  const totalExternalUsdc = sepoliaUsdc + mainnetUsdc;
+  useEffect(() => {
+    if (!open || !cctpRecoveryKey) return;
+    try {
+      const stored = window.localStorage.getItem(cctpRecoveryKey);
+      setCctpRecovery(stored ? JSON.parse(stored) : null);
+    } catch {
+      setCctpRecovery(null);
+    }
+  }, [open, cctpRecoveryKey]);
+
+  const completeCctpBridge = async (recovery: { burnHash: `0x${string}`; messageBytes: `0x${string}`; messageHash: `0x${string}`; amount: string }) => {
+    setCctpStatus("attesting");
+    setCctpError(null);
+    setCctpMessage("Circle attestation in progress. Fetching signature...");
+    let attestation: `0x${string}` | null = null;
+    let attempts = 0;
+    while (attempts < 60) {
+      attempts++;
+      try {
+        const res = await fetch(`https://iris-api-sandbox.circle.com/attestations/${recovery.messageHash}`);
+        const data = await res.json();
+        if (data.status === "complete") {
+          const rawHex = data.attestation;
+          attestation = (rawHex.startsWith("0x") ? rawHex : `0x${rawHex}`) as `0x${string}`;
+          break;
+        }
+      } catch (error) {
+        console.warn("Attestation fetch retry:", error);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+    if (!attestation) throw new Error("Circle attestation is not ready yet. Resume this bridge later; do not burn again.");
+
+    setCctpStatus("claiming");
+    setCctpMessage("Switching to Arc Testnet to complete the existing bridge...");
+    await switchChainAsync({ chainId: activeArcChain.id });
+    const mintHash = await writeContractAsync({
+      address: ARC_MESSAGE_TRANSMITTER_ADDRESS,
+      abi: [{ type: "function", name: "receiveMessage", stateMutability: "nonpayable", inputs: [{ name: "message", type: "bytes" }, { name: "attestation", type: "bytes" }], outputs: [{ name: "success", type: "bool" }] }],
+      functionName: "receiveMessage",
+      args: [recovery.messageBytes, attestation],
+    });
+    setCctpMessage("Waiting for Arc mint confirmation...");
+    const mintReceipt = await publicClient.waitForTransactionReceipt({ hash: mintHash, timeout: 120_000 });
+    if (mintReceipt.status !== "success") throw new Error("Arc mint failed. Resume this bridge later; do not burn again.");
+
+    if (cctpRecoveryKey) window.localStorage.removeItem(cctpRecoveryKey);
+    setCctpRecovery(null);
+    setCctpStatus("success");
+    setCctpMessage("USDC successfully bridged to your Arc wallet!");
+    setCctpReviewOpen(false);
+    refetchBalances();
+  };
+
+  const handleResumeCctp = async () => {
+    if (!cctpRecovery) return;
+    try {
+      await completeCctpBridge(cctpRecovery);
+    } catch (error: any) {
+      setCctpStatus("error");
+      setCctpError(error.message || "Could not resume the existing bridge.");
+    }
+  };
 
   const handleStartCctp = async (bridgeAmountStr: string) => {
     setCctpError(null);
@@ -5487,13 +6517,18 @@ function DepositModal({
       setCctpError("Please enter a valid amount to bridge.");
       return;
     }
-    if (Number(bridgeAmountStr) > totalExternalUsdc) {
-      setCctpError("Insufficient external USDC balance.");
+    if (Number(bridgeAmountStr) > bridgeableUsdc) {
+      setCctpError("Insufficient Sepolia USDC. Mainnet bridging is not available in this flow.");
+      return;
+    }
+
+    if (!cctpReviewOpen) {
+      setCctpReviewOpen(true);
       return;
     }
 
     try {
-      const requiredAmount = parseUnits(bridgeAmountStr, 6);
+      const requiredAmount = parseUnits(limitDecimals(bridgeAmountStr, 6), 6);
       const sepoliaConfig = CCTP_CONFIG[11155111] || {
         tokenMessenger: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275" as `0x${string}`,
         usdc: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as `0x${string}`,
@@ -5570,9 +6605,7 @@ function DepositModal({
         throw new Error("Sepolia CCTP burn failed.");
       }
 
-      // Step 4: Fetch Attestation from Circle
-      setCctpStatus("attesting");
-      setCctpMessage("Circle attestation in progress. Fetching signature...");
+      // Persist the irreversible burn before attestation so reloads resume instead of burning twice.
       const logs = parseEventLogs({
         abi: [{ type: "event", name: "MessageSent", inputs: [{ type: "bytes", name: "message", indexed: false }] }],
         logs: burnReceipt.logs,
@@ -5580,262 +6613,145 @@ function DepositModal({
       if (logs.length === 0) {
         throw new Error("MessageSent event not found.");
       }
-      const messageBytes = (logs[0].args as any).message;
+      const messageBytes = (logs[0].args as any).message as `0x${string}`;
       const messageHash = keccak256(messageBytes);
-
-      let attestation: `0x${string}` | null = null;
-      let attempts = 0;
-      while (attempts < 60) {
-        attempts++;
-        try {
-          const res = await fetch(`https://iris-api-sandbox.circle.com/attestations/${messageHash}`);
-          const data = await res.json();
-          if (data.status === "complete") {
-            const rawHex = data.attestation;
-            attestation = (rawHex.startsWith("0x") ? rawHex : `0x${rawHex}`) as `0x${string}`;
-            break;
-          }
-        } catch (e) {
-          console.warn("Attestation fetch retry:", e);
-        }
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-      }
-
-      if (!attestation) {
-        throw new Error("Timeout waiting for attestation signature.");
-      }
-
-      // Step 5: Switch back to Arc Testnet
-      setCctpStatus("claiming");
-      setCctpMessage("Switching back to Arc Testnet...");
-      await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
-
-      // Step 6: Mint USDC on Arc
-      setCctpMessage("Minting USDC on Arc Network...");
-      const mintHash = await writeContractAsync({
-        address: ARC_MESSAGE_TRANSMITTER_ADDRESS,
-        abi: [
-          {
-            type: "function",
-            name: "receiveMessage",
-            stateMutability: "nonpayable",
-            inputs: [
-              { name: "message", type: "bytes" },
-              { name: "attestation", type: "bytes" },
-            ],
-            outputs: [{ name: "success", type: "bool" }],
-          },
-        ],
-        functionName: "receiveMessage",
-        args: [messageBytes, attestation],
-      });
-
-      setCctpMessage("Waiting for Arc mint confirmation...");
-      const mintReceipt = await publicClient.waitForTransactionReceipt({
-        hash: mintHash,
-        timeout: 120_000,
-      });
-      if (mintReceipt.status !== "success") {
-        throw new Error("USDC minting transaction failed on Arc.");
-      }
-
-      setCctpStatus("success");
-      setCctpMessage("USDC successfully bridged to your Arc wallet!");
-      refetchBalances();
+      const recovery = { burnHash, messageBytes, messageHash, amount: bridgeAmountStr };
+      if (cctpRecoveryKey) window.localStorage.setItem(cctpRecoveryKey, JSON.stringify(recovery));
+      setCctpRecovery(recovery);
+      await completeCctpBridge(recovery);
     } catch (err: any) {
       console.error(err);
       setCctpStatus("error");
-      setCctpError(err.message || "Failed to bridge USDC.");
+      if (err.message?.includes("User rejected the request")) {
+        setCctpError("Transaction signature was rejected by user.");
+      } else {
+        setCctpError(err.message || "Failed to bridge USDC.");
+      }
     }
   };
 
   useEffect(() => {
-    if (!open || activeSubMode !== "fiat") return;
-
-    let cancelled = false;
-    const loadFundingState = async () => {
-      setFiatStatus("loading");
-      setFiatError(null);
-      try {
-        const response = await fetch("/api/user/funding-intents", { cache: "no-store" });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(payload.error || "Could not load bank-transfer funding.");
-        }
-        if (cancelled) return;
-
-        const mode = (payload.mode || "disabled") as FiatFundingMode;
-        const latest = Array.isArray(payload.intents) ? payload.intents[0] as FiatFundingIntentView | undefined : undefined;
-        setFiatMode(mode);
-        if (latest?.status === "SIMULATED_SETTLED") {
-          setFiatIntent(latest);
-          setFiatStatus("success");
-          setFiatMessage("Sandbox flow completed. No real NGN or USDC moved.");
-        } else if (latest?.status === "AWAITING_TRANSFER") {
-          setFiatIntent(latest);
-          setFiatStatus("awaiting_transfer");
-          setFiatMessage("Use the one-time sandbox instructions below.");
-        } else {
-          setFiatIntent(null);
-          fiatIdempotencyKey.current = null;
-          setFiatStatus("idle");
-          setFiatMessage(latest
-            ? `Your previous bank-transfer quote is ${latest.status.toLowerCase().replaceAll("_", " ")}. Create a new quote.`
-            : typeof payload.unavailableReason === "string"
-              ? payload.unavailableReason
-              : null);
-        }
-      } catch {
-        if (cancelled) return;
-        /* The funding rail returns 503 until it goes live at mainnet. That is not an error state
-           for the user — present it as "coming at mainnet" (handled in the render), never as a
-           failure or a disabled feature. */
-        setFiatMode("disabled");
-        setFiatStatus("idle");
-        setFiatError(null);
-        setFiatMessage(null);
-      }
+    if (!cctpInProgress) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
     };
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [cctpInProgress]);
 
-    void loadFundingState();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeSubMode, open]);
-
-  const handleStartFiatOnramp = async () => {
-    setFiatError(null);
-    if (!fiatAmount || !/^\d+(?:\.\d{1,2})?$/.test(fiatAmount) || Number(fiatAmount) <= 0) {
-      setFiatError("Enter a valid NGN amount with no more than two decimal places.");
-      return;
-    }
-
-    setFiatStatus("creating");
-    setFiatMessage("Creating a time-limited bank-transfer quote...");
-    fiatIdempotencyKey.current ||= crypto.randomUUID();
-
-    try {
-      const response = await fetch("/api/user/funding-intents", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": fiatIdempotencyKey.current,
-        },
-        body: JSON.stringify({ amountNgn: fiatAmount }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || "Could not create bank-transfer instructions.");
-      }
-
-      setFiatMode((payload.mode || "sandbox") as FiatFundingMode);
-      if (payload.intent?.status === "SIMULATED_SETTLED") {
-        setFiatIntent(payload.intent as FiatFundingIntentView);
-        setFiatStatus("success");
-        setFiatMessage("Sandbox flow completed. No real NGN or USDC moved.");
-      } else if (payload.intent?.status === "AWAITING_TRANSFER") {
-        setFiatIntent(payload.intent as FiatFundingIntentView);
-        setFiatStatus("awaiting_transfer");
-        setFiatMessage("Use the one-time sandbox instructions below.");
-      } else {
-        setFiatIntent(null);
-        fiatIdempotencyKey.current = null;
-        setFiatStatus("idle");
-        setFiatMessage("The quote is no longer active. Create a new quote.");
-      }
-    } catch (error) {
-      setFiatStatus("error");
-      setFiatError(error instanceof Error ? error.message : "Could not create bank-transfer instructions.");
-    }
+  const closeDepositModal = () => {
+    if (cctpInProgress) return;
+    onClose();
   };
 
-  const handleSimulateBankTransfer = async () => {
-    if (!fiatIntent) return;
-    setFiatStatus("settling");
-    setFiatError(null);
-    setFiatMessage("Simulating provider confirmation and test settlement...");
-
-    try {
-      const response = await fetch(`/api/user/funding-intents/${encodeURIComponent(fiatIntent.id)}/simulate`, {
-        method: "POST",
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || "Could not simulate the bank transfer.");
-      }
-      setFiatIntent(payload.intent as FiatFundingIntentView);
-      setFiatStatus("success");
-      setFiatMessage("Sandbox flow completed. No real NGN or USDC moved.");
-      if (payload.intent?.settlementTxHash) {
-        refetchBalances();
-      }
-    } catch (error) {
-      setFiatStatus("error");
-      setFiatError(error instanceof Error ? error.message : "Could not simulate the bank transfer.");
-    }
-  };
-
-  /* Mobile thumb-swipe across the Direct / Bank / Bridge deposit modes. Off on the chooser menu. */
+  /* Mobile thumb-swipe across the Direct / Bridge deposit modes. Off on the chooser menu. */
   const depositSwipe = useSwipeTabs(
-    ["direct", "fiat", "cctp"] as const,
-    activeSubMode as "direct" | "fiat" | "cctp",
+    ["direct", "cctp"] as const,
+    activeSubMode as "direct" | "cctp",
     (mode) => {
       setActiveSubMode(mode);
       setCctpStatus("idle");
-      setFiatStatus("idle");
     },
-    { enabled: activeSubMode !== "menu" },
+    { enabled: activeSubMode !== "menu" && !cctpInProgress },
   );
+  const [prevActiveSubMode, setPrevActiveSubMode] = useState<"menu" | "direct" | "cctp">("menu");
+  if (activeSubMode !== prevActiveSubMode) {
+    setPrevActiveSubMode(activeSubMode);
+  }
+  const subModes = ["menu", "direct", "cctp"] as const;
+  const subIndex = subModes.indexOf(activeSubMode);
+  const prevSubIndex = subModes.indexOf(prevActiveSubMode);
+  const subDirection = subIndex >= prevSubIndex ? 1 : -1;
 
   return (
     <AnimatePresence>
       {open && userWallet && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 backdrop-blur-xl">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="relative max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-3xl border border-white/10 bg-black/50 p-6 shadow-2xl backdrop-blur-xl liquid-glass" {...depositSwipe}>
+          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} role="dialog" aria-modal="true" aria-labelledby="deposit-dialog-title" className="relative max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-3xl border border-white/10 bg-black/50 p-6 shadow-2xl backdrop-blur-xl liquid-glass" {...depositSwipe}>
             <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
-              <h3 className="text-sm font-black uppercase tracking-wider text-white">
-                {activeSubMode === "menu" ? "Deposit USDC" : activeSubMode === "direct" ? "Direct Deposit" : activeSubMode === "fiat" ? "Bank Transfer" : "Circle CCTP Bridge"}
+              <h3 id="deposit-dialog-title" className="text-sm font-black uppercase tracking-wider text-white">
+                {activeSubMode === "menu" ? "Deposit USDC" : activeSubMode === "direct" ? "Direct Deposit" : "Circle CCTP Bridge"}
               </h3>
-              <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 transition-all"><X className="h-4 w-4" /></button>
+              <button type="button" onClick={closeDepositModal} disabled={cctpInProgress} aria-label="Close deposit dialog" className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30 transition-all"><X className="h-4 w-4" /></button>
             </div>
             
             {/* Tabs for non-menu active modes */}
             {activeSubMode !== "menu" && (
-              <div className="mb-6 flex gap-1 rounded-2xl bg-black/40 p-1 border border-white/5">
-                {(["direct", "fiat", "cctp"] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => {
-                      setActiveSubMode(tab);
-                      setCctpStatus("idle");
-                      setFiatStatus("idle");
-                    }}
-                    className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-xl transition-all ${
-                      activeSubMode === tab
-                        ? "bg-[#ccff00] text-black shadow-md"
-                        : "text-white/50 hover:text-white/85"
-                    }`}
-                  >
-                    {tab === "direct" ? "Direct" : tab === "fiat" ? "Bank" : "Bridge"}
-                  </button>
-                ))}
+              <div className="relative mb-6 flex gap-1 rounded-2xl bg-black/40 p-1 border border-white/5">
+                {(["direct", "cctp"] as const).map((tab) => {
+                  const isActive = activeSubMode === tab;
+                  return (
+                    <button
+                      key={tab}
+                      type="button"
+                      disabled={cctpInProgress}
+                      onClick={() => {
+                        setActiveSubMode(tab);
+                        setCctpStatus("idle");
+                      }}
+                      className={`relative flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-xl z-10 transition-colors duration-200 ${
+                        isActive ? "text-black" : "text-white/50 hover:text-white/85"
+                      }`}
+                    >
+                      {isActive && (
+                        <motion.div
+                          layoutId="depositActivePill"
+                          className="absolute inset-0 bg-[#ccff00] rounded-xl -z-10 shadow-md"
+                          transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                        />
+                      )}
+                      <span className="relative z-20">
+                        {tab === "direct" ? "Direct" : "Bridge"}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             )}
 
-            {activeSubMode === "menu" && (
+            <div className="overflow-hidden w-full relative">
+              <AnimatePresence mode="wait" initial={false} custom={subDirection}>
+                <motion.div
+                  key={activeSubMode}
+                  custom={subDirection}
+                  variants={{
+                    enter: (dir: number) => ({
+                      x: dir > 0 ? "100%" : "-100%",
+                      opacity: 0,
+                    }),
+                    center: {
+                      x: 0,
+                      opacity: 1,
+                    },
+                    exit: (dir: number) => ({
+                      x: dir < 0 ? "100%" : "-100%",
+                      opacity: 0,
+                    }),
+                  }}
+                  initial="enter"
+                  animate="center"
+                  exit="exit"
+                  transition={{
+                    x: { type: "spring", stiffness: 300, damping: 30 },
+                    opacity: { duration: 0.2 },
+                  }}
+                  className="w-full"
+                >
+                  {activeSubMode === "menu" && (
               <div className="space-y-5">
                 <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] text-lg font-black text-black">S</div>
                 <div className="rounded-3xl border border-yellow-500/25 bg-yellow-500/5 p-4 text-left">
                   <p className="text-[9px] font-black uppercase tracking-[0.16em] text-yellow-400">External USDC Detected</p>
                   <p className="mt-1.5 text-[11px] text-white/70 leading-relaxed">
-                    We found <strong>{(sepoliaUsdc || mainnetUsdc).toFixed(2)} USDC</strong> on Sepolia/Mainnet. How would you like to proceed?
+                    We found <strong>{(sepoliaUsdc + mainnetUsdc).toFixed(2)} USDC</strong> outside Arc. Sepolia USDC can be bridged here; Mainnet bridging is not yet available.
                   </p>
                 </div>
                 <div className="space-y-3 pt-2">
                   <button
                     type="button"
                     onClick={() => setActiveSubMode("cctp")}
+                    disabled={sepoliaUsdc <= 0}
                     className="flex w-full items-center gap-4 rounded-3xl border border-[#ccff00]/20 bg-[#ccff00]/5 p-5 text-left hover:bg-[#ccff00]/10 transition-all group"
                   >
                     <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#ccff00] text-black group-hover:scale-105 transition-all shrink-0">
@@ -5843,22 +6759,7 @@ function DepositModal({
                     </div>
                     <div className="flex-1">
                       <h4 className="text-xs font-black uppercase tracking-wider text-white">Circle CCTP Bridge</h4>
-                      <p className="mt-1 text-[9px] text-white/45 leading-normal">Import your Sepolia USDC directly to Arc.</p>
-                    </div>
-                    <ArrowRight className="h-4 w-4 text-white/35 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setActiveSubMode("fiat")}
-                    className="flex w-full items-center gap-4 rounded-3xl border border-white/10 bg-white/[0.035] p-5 text-left hover:bg-white/[0.06] transition-all group"
-                  >
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white/80 group-hover:scale-105 transition-all shrink-0">
-                      <Download className="h-5 w-5" />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-white">Bank Transfer</h4>
-                      <p className="mt-1 text-[9px] text-white/45 leading-normal">Fund with NGN. No card required. Arriving at mainnet.</p>
+                      <p className="mt-1 text-[9px] text-white/45 leading-normal">{sepoliaUsdc > 0 ? `Bridge up to ${sepoliaUsdc.toFixed(2)} USDC from Sepolia to Arc.` : "No bridgeable Sepolia USDC detected."}</p>
                     </div>
                     <ArrowRight className="h-4 w-4 text-white/35 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
@@ -5884,9 +6785,27 @@ function DepositModal({
             {activeSubMode === "direct" && (
               <div className="text-center">
                 <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] text-lg font-black text-black">S</div>
-                <p className="mt-2 text-xs text-white/45">Send funds to your connected SubScript wallet address.</p>
+                <p className="mt-2 text-xs text-white/45">Send native USDC on Arc Testnet to your SubScript wallet address.</p>
+                <p className="mt-2 rounded-xl border border-amber-400/20 bg-amber-400/[0.05] p-3 text-[10px] leading-relaxed text-amber-200/75">Arc Testnet only. Sending another token or using another network will not credit this balance.</p>
                 <div className="mx-auto my-6 w-fit rounded-3xl bg-white p-4">
-                  <QRCodeSVG value={userWallet} size={178} level="H" imageSettings={{ src: "/favicon-48x48.png", height: 38, width: 38, excavate: true }} />
+                  <QRCode
+                    value={userWallet}
+                    size={178}
+                    ecLevel="H"
+                    bgColor="#ffffff"
+                    fgColor="#000000"
+                    qrStyle="dots"
+                    eyeRadius={[
+                      [10, 10, 0, 10],
+                      [10, 10, 10, 0],
+                      [10, 0, 10, 10]
+                    ]}
+                    logoImage="/logo.png"
+                    logoWidth={36}
+                    logoHeight={36}
+                    removeQrCodeBehindLogo={true}
+                    logoPadding={2}
+                  />
                 </div>
                 <button type="button" onClick={onCopy} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black text-white/80">
                   <Copy className="h-4 w-4" /> {copied ? "Copied" : formatAddress(userWallet)}
@@ -5894,224 +6813,63 @@ function DepositModal({
               </div>
             )}
 
-            {activeSubMode === "fiat" && (
-              <div className="space-y-4 text-left">
-                <div className="rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/5 p-4">
-                  <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ccff00]">Bank transfer only</p>
-                  <p className="mt-1.5 text-[10px] leading-relaxed text-white/60">
-                    Fund with NGN without a bank card. Settlement gas is paid separately, so it is never deducted from the quoted USDC principal.
-                  </p>
-                </div>
-
-                {fiatMode === "sandbox" && (
-                  <div className="rounded-2xl border border-amber-400/25 bg-amber-400/5 p-4">
-                    <p className="text-[9px] font-black uppercase tracking-[0.16em] text-amber-300">Arc testnet sandbox</p>
-                    <p className="mt-1.5 text-[10px] leading-relaxed text-white/55">
-                      Do not send real NGN. The account details are deliberately fake and the final balance is simulated.
-                    </p>
-                  </div>
-                )}
-
-                {(fiatStatus === "loading" || fiatStatus === "creating" || fiatStatus === "settling") ? (
-                  <div className="flex flex-col items-center gap-4 py-8 text-center">
-                    <Loader2 className="h-10 w-10 animate-spin text-[#ccff00]" />
-                    <p className="text-xs leading-normal text-white/70">{fiatMessage || "Loading bank-transfer funding..."}</p>
-                  </div>
-                ) : (fiatMode !== "sandbox" && fiatMode !== "live") ? (
-                  <div className="space-y-4 py-6 text-center">
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/10 text-[#ccff00]">
-                      <Download className="h-6 w-6" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-black uppercase tracking-wider text-white">Bank transfer — arriving at mainnet</h4>
-                      <p className="mt-2 text-[11px] leading-relaxed text-white/50">
-                        Fund your wallet by NGN bank transfer, no card needed. This goes live when SubScript
-                        launches on Arc mainnet with a licensed funding partner. Until then, use Direct Deposit
-                        or bridge in USDC from another chain.
-                      </p>
-                    </div>
-                  </div>
-                ) : fiatStatus === "success" && fiatIntent ? (
-                  <div className="space-y-4 py-3 text-center">
-                    <CheckCircle2 className="mx-auto h-12 w-12 text-[#ccff00]" />
-                    <div>
-                      <h4 className="text-sm font-black uppercase tracking-wider text-white">Sandbox flow complete</h4>
-                      <p className="mt-2 text-xs leading-normal text-white/50">{fiatMessage}</p>
-                    </div>
-                    <div className="rounded-2xl border border-white/5 bg-black/45 p-4">
-                      <p className="text-[9px] uppercase tracking-wider text-white/35">Simulated wallet credit</p>
-                      <p className="mt-1 text-base font-black text-[#ccff00]">{formatUsdcMicros(fiatIntent.netUsdcMicros)}</p>
-                    </div>
-                    <p className="text-[10px] leading-relaxed text-amber-200/70">
-                      No real NGN was received and no real or testnet USDC was transferred.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        fiatIdempotencyKey.current = null;
-                        setFiatIntent(null);
-                        setFiatStatus("idle");
-                        setFiatMessage(null);
-                        setFiatError(null);
-                      }}
-                      className="rounded-xl border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white/75"
-                    >
-                      Create another quote
-                    </button>
-                  </div>
-                ) : fiatIntent?.status === "AWAITING_TRANSFER" ? (
-                  <div className="space-y-4">
-                    <div className="rounded-2xl border border-white/5 bg-black/45 p-4">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="text-[9px] uppercase tracking-wider text-white/35">Transfer exactly</p>
-                          <p className="mt-1 text-sm font-black text-white">{formatNgnMinor(fiatIntent.fiatAmountMinor)}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[9px] uppercase tracking-wider text-white/35">You receive</p>
-                          <p className="mt-1 text-sm font-black text-[#ccff00]">{formatUsdcMicros(fiatIntent.netUsdcMicros)}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                      <div>
-                        <p className="text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Sandbox bank</p>
-                        <p className="mt-1 text-xs font-bold text-white/80">{fiatIntent.bankName}</p>
-                      </div>
-                      <div>
-                        <p className="text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Account name</p>
-                        <p className="mt-1 text-xs font-bold text-white/80">{fiatIntent.accountName}</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => void navigator.clipboard.writeText(fiatIntent.accountNumber)}
-                        className="flex w-full items-center justify-between rounded-xl bg-black/35 px-3 py-2.5 text-left"
-                      >
-                        <span>
-                          <span className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Fake account number</span>
-                          <span className="mt-0.5 block font-mono text-sm font-black text-white">{fiatIntent.accountNumber}</span>
-                        </span>
-                        <Copy className="h-4 w-4 text-white/40" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void navigator.clipboard.writeText(fiatIntent.transferReference)}
-                        className="flex w-full items-center justify-between rounded-xl bg-black/35 px-3 py-2.5 text-left"
-                      >
-                        <span>
-                          <span className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Transfer reference</span>
-                          <span className="mt-0.5 block font-mono text-xs font-black text-[#ccff00]">{fiatIntent.transferReference}</span>
-                        </span>
-                        <Copy className="h-4 w-4 text-white/40" />
-                      </button>
-                    </div>
-
-                    <div className="space-y-2 rounded-2xl border border-white/5 bg-black/30 p-4 text-[10px] text-white/50">
-                      <div className="flex justify-between gap-3">
-                        <span>Quote rate</span>
-                        <span className="font-bold text-white/75">{formatNgnMinor(fiatIntent.quoteRateNgnPerUsdcMinor)} / USDC</span>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <span>Sandbox funding fee</span>
-                        <span className="font-bold text-white/75">{formatNgnMinor(fiatIntent.feeFiatMinor)}</span>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <span>Destination</span>
-                        <span className="font-mono text-white/75">{formatAddress(fiatIntent.destinationWallet)}</span>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <span>Expires</span>
-                        <span className="font-bold text-white/75">{new Date(fiatIntent.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-                      </div>
-                    </div>
-
-                    {fiatError && <p className="text-center text-[10px] text-red-300">{fiatError}</p>}
-                    <button
-                      type="button"
-                      onClick={handleSimulateBankTransfer}
-                      disabled={fiatMode !== "sandbox"}
-                      className="subscript-primary-button"
-                    >
-                      Simulate bank transfer received
-                    </button>
-                    <p className="text-center text-[9px] leading-relaxed text-white/35">
-                      Production will replace this simulation with a signed event from a licensed bank/VASP partner.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="space-y-1.5">
-                      <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Amount (NGN)</span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={fiatAmount}
-                        onChange={(e) => {
-                          setFiatAmount(e.target.value);
-                          fiatIdempotencyKey.current = null;
-                        }}
-                        className="subscript-input"
-                        placeholder="10000"
-                      />
-                    </div>
-                    <div className="rounded-2xl border border-white/5 bg-black/45 p-4 flex justify-between items-center text-xs">
-                      <span className="text-white/40">Quote includes</span>
-                      <span className="font-black text-[#ccff00]">Quoted USDC + zero gas deduction</span>
-                    </div>
-                    {fiatMessage && <p className="text-center text-[10px] text-amber-200/70">{fiatMessage}</p>}
-                    {fiatError && <p className="text-center text-[10px] text-red-300">{fiatError}</p>}
-                    <button
-                      type="button"
-                      onClick={handleStartFiatOnramp}
-                      disabled={fiatMode !== "sandbox"}
-                      className="subscript-primary-button mt-2"
-                    >
-                      Get bank details
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
             {activeSubMode === "cctp" && (
               <div className="space-y-4 text-left">
                 <div className="flex justify-between items-center">
                   <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[9px] font-bold text-[#ccff00]">
-                    Sepolia: {totalExternalUsdc.toFixed(2)} USDC
+                    Sepolia available: {bridgeableUsdc.toFixed(2)} USDC
                   </span>
                 </div>
                 
                 {cctpStatus === "idle" ? (
                   <div className="space-y-4">
-                    <div className="space-y-1.5">
+                    {cctpRecovery && (
+                      <div className="rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-[10px] leading-relaxed text-amber-100/80">
+                        <p className="font-bold uppercase tracking-wider text-amber-200">Bridge recovery found</p>
+                        <p className="mt-2">{cctpRecovery.amount} USDC was already burned on Sepolia. Resume attestation and Arc minting—do not start another burn.</p>
+                        <a href={`https://sepolia.etherscan.io/tx/${cctpRecovery.burnHash}`} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block font-bold underline">View burn transaction</a>
+                      </div>
+                    )}
+                    {!cctpRecovery && <div className="space-y-1.5">
                       <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Amount to Bridge (USDC)</span>
                       <div className="relative">
                         <input
                           type="number"
                           value={cctpAmount}
-                          onChange={(e) => setCctpAmount(e.target.value)}
+                          onChange={(e) => { setCctpAmount(e.target.value); setCctpReviewOpen(false); setCctpError(null); }}
                           className="subscript-input pr-16"
                           placeholder="0.00"
                         />
                         <button
                           type="button"
-                          onClick={() => setCctpAmount(totalExternalUsdc.toString())}
+                          onClick={() => { setCctpAmount(bridgeableUsdc.toString()); setCctpReviewOpen(false); }}
                           className="absolute right-3 top-2.5 px-2 py-1 rounded bg-white/10 text-[9px] font-black uppercase tracking-wider text-[#ccff00] hover:bg-white/20 transition-all"
                         >
                           Max
                         </button>
                       </div>
-                    </div>
+                    </div>}
 
                     {cctpError && <p className="text-[11px] text-red-300 bg-red-950/15 border border-red-500/20 rounded-xl p-3">{cctpError}</p>}
 
+                    {mainnetUsdc > 0 && <p className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/55">{mainnetUsdc.toFixed(2)} USDC was detected on Ethereum Mainnet but is excluded from this Sepolia-only bridge.</p>}
+
+                    {cctpReviewOpen && !cctpRecovery && (
+                      <div className="space-y-3 rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-xs">
+                        <div className="flex justify-between"><span className="text-white/45">From</span><span className="font-bold">Ethereum Sepolia</span></div>
+                        <div className="flex justify-between"><span className="text-white/45">To</span><span className="font-bold">Arc Testnet</span></div>
+                        <div className="flex justify-between"><span className="text-white/45">Amount</span><span className="font-bold">{Number(cctpAmount).toFixed(2)} USDC</span></div>
+                        <p className="border-t border-white/10 pt-3 text-[10px] leading-relaxed text-amber-200/80">This starts an approval and burn on Sepolia, followed by Circle attestation and minting on Arc. Keep this page open until completion.</p>
+                        <button type="button" onClick={() => setCctpReviewOpen(false)} className="text-[10px] font-bold uppercase tracking-wider text-white/55">Back to edit</button>
+                      </div>
+                    )}
+
                     <button
                       type="button"
-                      onClick={() => handleStartCctp(cctpAmount)}
+                      onClick={() => cctpRecovery ? handleResumeCctp() : handleStartCctp(cctpAmount)}
                       className="subscript-primary-button mt-2"
                     >
-                      Bridge USDC
+                      {cctpRecovery ? "Resume existing bridge" : cctpReviewOpen ? "Confirm bridge" : "Review bridge"}
                     </button>
                   </div>
                 ) : (
@@ -6123,7 +6881,7 @@ function DepositModal({
                         <p className="text-xs text-white/50 leading-normal">{cctpMessage}</p>
                         <button
                           type="button"
-                          onClick={() => setCctpStatus("idle")}
+                          onClick={() => cctpRecovery ? handleResumeCctp() : setCctpStatus("idle")}
                           className="mt-4 rounded-xl border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white/75"
                         >
                           Done
@@ -6139,7 +6897,7 @@ function DepositModal({
                           onClick={() => setCctpStatus("idle")}
                           className="mt-4 rounded-xl border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white/75"
                         >
-                          Try Again
+                          {cctpRecovery ? "Resume existing bridge" : "Try Again"}
                         </button>
                       </div>
                     ) : (
@@ -6180,6 +6938,9 @@ function DepositModal({
                 )}
               </div>
             )}
+                </motion.div>
+              </AnimatePresence>
+            </div>
           </motion.div>
         </motion.div>
       )}
@@ -6195,6 +6956,8 @@ function SendFundsModal({
   sepoliaUsdc,
   userWallet,
   isEmbeddedWalletSession,
+  chainId,
+  switchChainAsync,
   writeContractAsync,
   refetchUsdc,
 }: {
@@ -6205,6 +6968,8 @@ function SendFundsModal({
   sepoliaUsdc: number;
   userWallet: string | null;
   isEmbeddedWalletSession: boolean;
+  chainId: number | undefined;
+  switchChainAsync: (parameters: { chainId: number }) => Promise<unknown>;
   writeContractAsync: any;
   refetchUsdc: () => void;
 }) {
@@ -6213,6 +6978,8 @@ function SendFundsModal({
   const [resolving, setResolving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [transactionHash, setTransactionHash] = useState<string | null>(null);
   const isSelfSend = Boolean(resolvedAddress && userWallet && resolvedAddress.toLowerCase() === userWallet.toLowerCase());
 
   useEffect(() => {
@@ -6220,6 +6987,8 @@ function SendFundsModal({
     setStatus(null);
     setAmount("");
     setResolvedAddress(null);
+    setReviewOpen(false);
+    setTransactionHash(null);
 
     const trimmed = recipient.trim().toLowerCase();
     if (/^0x[a-fA-F0-9]{40}$/.test(trimmed)) {
@@ -6239,6 +7008,10 @@ function SendFundsModal({
       .finally(() => setResolving(false));
   }, [open, recipient]);
 
+  /* Stable per send attempt: reused on retry so the server's Circle idempotency key dedupes
+     instead of transferring twice; cleared on success. */
+  const sendRequestKey = useRef<string | null>(null);
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resolvedAddress) {
@@ -6253,19 +7026,26 @@ function SendFundsModal({
       setStatus("Please enter a valid amount.");
       return;
     }
-    if (Number(amount) > walletBalance + sepoliaUsdc) {
-      setStatus("Insufficient combined USDC balance.");
+    if (Number(amount) > walletBalance) {
+      setStatus(`Insufficient Arc balance. Bridge or deposit ${(Number(amount) - walletBalance).toFixed(2)} more USDC before sending.`);
+      return;
+    }
+
+    if (!reviewOpen) {
+      setStatus(null);
+      setReviewOpen(true);
       return;
     }
 
     setLoading(true);
-    setStatus(null);
+    setStatus(isEmbeddedWalletSession ? "Submitting transfer securely…" : "Waiting for wallet signature…");
 
     try {
       if (isEmbeddedWalletSession) {
+        sendRequestKey.current ||= crypto.randomUUID();
         const response = await fetch("/api/user/wallet/send", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "x-request-id": sendRequestKey.current },
           body: JSON.stringify({
             receiverAddress: resolvedAddress,
             amountUsdc: amount,
@@ -6275,9 +7055,10 @@ function SendFundsModal({
         if (!response.ok || !data.success) {
           throw new Error(data.error || "Transfer execution failed.");
         }
+        if (data.transfers?.[0]?.txHash) setTransactionHash(data.transfers[0].txHash);
+        sendRequestKey.current = null;
         setStatus("success");
         refetchUsdc();
-        setTimeout(() => onClose(), 2000);
         return;
       }
 
@@ -6294,18 +7075,29 @@ function SendFundsModal({
         },
       ] as const;
 
-      await writeContractAsync({
+      if (chainId !== activeArcChain.id) {
+        await switchChainAsync({ chainId: activeArcChain.id });
+      }
+      const hash = await writeContractAsync({
         address: USDC_NATIVE_GAS_ADDRESS,
         abi: usdcAbi,
         functionName: "transfer",
-        args: [resolvedAddress as `0x${string}`, parseUnits(amount, 6)],
+        args: [resolvedAddress as `0x${string}`, parseUnits(limitDecimals(amount, 6), 6)],
       });
+
+      setTransactionHash(hash);
+      setStatus("Transaction submitted. Waiting for Arc confirmation…");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("The Arc transaction failed before confirmation.");
 
       setStatus("success");
       refetchUsdc();
-      setTimeout(() => onClose(), 2000);
     } catch (err: any) {
-      setStatus(err.message || "Transfer execution failed.");
+      if (err.message?.includes("User rejected the request")) {
+        setStatus("Transaction signature was rejected by user.");
+      } else {
+        setStatus(err.message || "Transfer execution failed.");
+      }
     } finally {
       setLoading(false);
     }
@@ -6315,10 +7107,10 @@ function SendFundsModal({
     <AnimatePresence>
       {open && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 backdrop-blur-xl">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm liquid-glass border border-white/10 rounded-3xl p-6 shadow-2xl bg-black/50 backdrop-blur-xl relative overflow-hidden">
+          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} role="dialog" aria-modal="true" aria-labelledby="send-funds-title" className="w-full max-w-sm liquid-glass border border-white/10 rounded-3xl p-6 shadow-2xl bg-black/50 backdrop-blur-xl relative overflow-hidden">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-black uppercase tracking-wider text-white">Send Funds</h3>
-              <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 transition-all"><X className="h-4 w-4" /></button>
+              <h3 id="send-funds-title" className="text-sm font-black uppercase tracking-wider text-white">Send USDC</h3>
+              <button type="button" onClick={onClose} disabled={loading} aria-label="Close send dialog" className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30 transition-all"><X className="h-4 w-4" /></button>
             </div>
 
             <form onSubmit={handleSend} className="space-y-4 text-left">
@@ -6344,7 +7136,7 @@ function SendFundsModal({
                   type="number"
                   step="any"
                   value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
+                  onChange={(e) => { setAmount(e.target.value); setReviewOpen(false); setStatus(null); setTransactionHash(null); }}
                   className="subscript-input"
                   placeholder="0.00"
                   required
@@ -6357,24 +7149,35 @@ function SendFundsModal({
                 sepoliaUsdc={sepoliaUsdc}
               />
 
+              {reviewOpen && status !== "success" && (
+                <div className="space-y-3 rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-xs">
+                  <div className="flex justify-between gap-3"><span className="text-white/45">You send</span><span className="font-bold text-white">{Number(amount).toFixed(2)} USDC</span></div>
+                  <div className="space-y-1"><span className="text-white/45">Recipient</span><p className="break-all font-mono text-[10px] text-white/80">{resolvedAddress}</p></div>
+                  <div className="flex justify-between gap-3"><span className="text-white/45">Network</span><span className="font-bold text-white">Arc</span></div>
+                  <p className="border-t border-white/10 pt-3 text-[10px] leading-relaxed text-amber-200/80">On-chain transfers cannot be reversed. Verify the recipient and amount before confirming.</p>
+                  <button type="button" onClick={() => setReviewOpen(false)} disabled={loading} className="text-[10px] font-bold uppercase tracking-wider text-white/55 hover:text-white">Back to edit</button>
+                </div>
+              )}
+
               {status && status !== "success" && (
-                <p className="text-[11px] text-red-300 bg-red-950/15 border border-red-500/20 rounded-xl p-3">{status}</p>
+                <p className={`text-[11px] rounded-xl border p-3 ${loading ? "border-amber-400/20 bg-amber-400/[0.06] text-amber-200" : "border-red-500/20 bg-red-950/15 text-red-300"}`} aria-live="polite">{status}</p>
               )}
 
               {status === "success" && (
                 <div className="flex flex-col items-center gap-2 py-4 text-center">
                   <CheckCircle2 className="h-10 w-10 text-[#ccff00]" />
-                  <p className="text-xs text-white/80 font-bold">USDC Transferred successfully!</p>
+                  <p className="text-xs text-white/80 font-bold">Transfer confirmed on Arc</p>
+                  <button type="button" onClick={onClose} className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-white">Done</button>
                 </div>
               )}
 
-              <button
+              {status !== "success" && <button
                 type="submit"
-                disabled={loading || !resolvedAddress || isSelfSend || status === "success"}
+                disabled={loading || !resolvedAddress || isSelfSend}
                 className="subscript-primary-button w-full mt-2"
               >
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send USDC"}
-              </button>
+                {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Confirming…</> : reviewOpen ? "Confirm and send" : "Review transfer"}
+              </button>}
             </form>
           </motion.div>
         </motion.div>
@@ -6569,7 +7372,7 @@ function BalanceRoutingNotice({
           <span className="h-1.5 w-1.5 rounded-full bg-[#ccff00] animate-pulse" />
         </p>
         <p className="text-[11px] leading-relaxed text-white/60">
-          This transaction will execute directly and instantly on Arc Testnet using your native Arc USDC.
+          This transfer will be submitted on Arc Testnet using your native Arc USDC, then shown as complete after confirmation.
         </p>
       </div>
     );
@@ -6583,9 +7386,7 @@ function BalanceRoutingNotice({
           <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
         </p>
         <p className="text-[11px] leading-relaxed text-white/60">
-          Your Arc balance (${walletBalance.toFixed(2)} USDC) is insufficient, but your combined balance is enough.
-          The protocol will automatically bridge the remaining ${(numericAmount - walletBalance).toFixed(2)} USDC from Sepolia to Arc using Circle CCTP.
-          Note: bridging will take a few minutes to finalize.
+          Your Arc balance ({walletBalance.toFixed(2)} USDC) is insufficient. Bridge {(numericAmount - walletBalance).toFixed(2)} USDC from Sepolia in Deposit first, wait for the Arc balance to update, then return to send.
         </p>
       </div>
     );
@@ -6598,8 +7399,8 @@ function BalanceRoutingNotice({
         <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
       </p>
       <p className="text-[11px] leading-relaxed text-white/60">
-        You need ${numericAmount.toFixed(2)} USDC. Your combined balance is ${combinedBalance.toFixed(2)} USDC
-        (${walletBalance.toFixed(2)} USDC on Arc, ${sepoliaUsdc.toFixed(2)} USDC on Sepolia). This transaction will fail.
+        You need {numericAmount.toFixed(2)} USDC. You have {combinedBalance.toFixed(2)} USDC total
+        ({walletBalance.toFixed(2)} USDC on Arc, {sepoliaUsdc.toFixed(2)} USDC on Sepolia). Deposit or bridge more before sending.
       </p>
     </div>
   );
@@ -6609,20 +7410,42 @@ function MeteredVaultRow({
   vault,
   onCommit,
   onWithdraw,
+  onReclaim,
+  reclaimBusy,
+  balanceVisible,
 }: {
   vault: any;
   onCommit: (vault: any) => void;
   onWithdraw: (vault: any) => void;
+  onReclaim: (vault: any) => void;
+  reclaimBusy: boolean;
+  balanceVisible: boolean;
 }) {
   const balance = Number(vault.balanceUsdc || 0);
   const commitNeeded = Number(vault.commitUsdc || 0);
   const blocked = !vault.active;
+  const disputed = vault.disputed === true;
+  const cycleStartDate = vault.cycleStart ? new Date(vault.cycleStart) : null;
   const lockedUntilDate = vault.lockedUntil ? new Date(vault.lockedUntil) : null;
-  const locked = lockedUntilDate ? Date.now() < lockedUntilDate.getTime() : false;
-  const canWithdraw = balance > 0 && !locked;
-  const lockLabel = lockedUntilDate
-    ? lockedUntilDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-    : null;
+  const RECLAIM_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+  const reclaimDate = lockedUntilDate ? new Date(lockedUntilDate.getTime() + RECLAIM_GRACE_MS) : null;
+  const now = Date.now();
+  const locked = lockedUntilDate ? now < lockedUntilDate.getTime() : false;
+  /* Contract truth, mirrored in the UI:
+     - withdrawSurplus requires the vault to be INACTIVE and the lock elapsed;
+     - reclaimAbandonedEscrow requires an ACTIVE vault whose settle window (lockedUntil +
+       7-day grace) lapsed without keeper settlement;
+     - an active matured vault inside the grace is simply awaiting settlement. */
+  const canWithdraw = balance > 0 && blocked && !locked;
+  const awaitingSettlement = !blocked && !disputed && lockedUntilDate !== null
+    && now >= lockedUntilDate.getTime() && (reclaimDate === null || now < reclaimDate.getTime());
+  const canReclaim = !blocked && !disputed && balance > 0 && reclaimDate !== null && now >= reclaimDate.getTime();
+  /* Merchant-drawable exposure is the platform cap, never the surplus. */
+  const STANDARD_COMMIT_MICROS = 2_000_000;
+  const drawableExposure = Math.min(balance, STANDARD_COMMIT_MICROS);
+  const shortDate = (date: Date | null) => date
+    ? date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
+    : "—";
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-white/5 bg-black/20 px-4 py-3.5 transition hover:border-white/10 hover:bg-black/35">
       <div className="flex items-start justify-between gap-3">
@@ -6632,19 +7455,21 @@ function MeteredVaultRow({
           </div>
           <div className="min-w-0">
             <p className="truncate text-xs font-black uppercase tracking-[0.1em] text-white">{vault.merchantName}</p>
-            <p className="mt-1 text-[10px] text-white/40">
-              Used {formatUsdc(vault.accruedUsageUsdc)} / {formatUsdc(vault.balanceUsdc)} USDC committed this cycle
+            <p className="mt-1 text-[10px] text-white/45">
+              Used {balanceVisible ? formatUsdc(vault.accruedUsageUsdc) : "•••"} / {balanceVisible ? formatUsdc(vault.balanceUsdc) : "•••"} USDC committed this cycle
             </p>
           </div>
         </div>
-        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${blocked ? "bg-amber-500/15 text-amber-300" : "bg-emerald-500/15 text-emerald-300"}`}>
-          {blocked ? "Inactive" : "Active"}
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${blocked ? "bg-amber-500/15 text-amber-300" : disputed ? "bg-red-500/15 text-red-300" : awaitingSettlement ? "bg-sky-500/15 text-sky-300" : "bg-emerald-500/15 text-emerald-300"}`}>
+          {blocked ? "Inactive" : disputed ? "Disputed" : awaitingSettlement ? "Settling" : "Active"}
         </span>
       </div>
 
       <div className="flex items-end justify-between gap-3">
         <div>
-          <p className="text-sm font-black text-[#ccff00]">{formatUsdc(vault.balanceUsdc)} USDC</p>
+          <p className="text-sm font-black text-[#ccff00]">
+            {balanceVisible ? `${formatUsdc(vault.balanceUsdc)} USDC` : "•••• USDC"}
+          </p>
           <p className="text-[9px] uppercase text-white/35">committed balance</p>
         </div>
         <div className="flex items-center gap-2">
@@ -6655,21 +7480,50 @@ function MeteredVaultRow({
           >
             {blocked ? "Re-commit" : "Add commit"}
           </button>
-          {balance > 0 && (
+          {canWithdraw && (
             <button
               type="button"
-              onClick={() => canWithdraw && onWithdraw(vault)}
-              disabled={!canWithdraw}
-              className={`rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${canWithdraw ? "bg-white/5 border-white/10 text-white/80 hover:bg-white/15" : "cursor-not-allowed border-white/5 bg-black/20 text-white/30"}`}
+              onClick={() => onWithdraw(vault)}
+              className="rounded-xl border bg-white/5 border-white/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white/80 hover:bg-white/15 transition"
             >
-              {locked ? "Locked" : "Withdraw"}
+              Withdraw
+            </button>
+          )}
+          {canReclaim && (
+            <button
+              type="button"
+              onClick={() => !reclaimBusy && onReclaim(vault)}
+              disabled={reclaimBusy}
+              className={`rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${reclaimBusy ? "cursor-not-allowed border-white/5 bg-black/20 text-white/30" : "bg-amber-400/10 border-amber-300/30 text-amber-200 hover:bg-amber-400/20"}`}
+            >
+              {reclaimBusy ? "Reclaiming…" : "Reclaim escrow"}
             </button>
           )}
         </div>
       </div>
-      {locked && lockLabel && (
+
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-white/45 sm:grid-cols-3">
+        <p>Cycle started <span className="font-bold text-white/60">{shortDate(cycleStartDate)}</span></p>
+        <p>Cycle matures <span className="font-bold text-white/60">{shortDate(lockedUntilDate)}</span></p>
+        <p>Reported usage <span className="font-bold text-white/60">{balanceVisible ? formatUsdc(vault.accruedUsageUsdc) : "•••"} USDC</span></p>
+        <p>Max drawable <span className="font-bold text-white/60">{balanceVisible ? formatUsdc(String(drawableExposure)) : "•••"} USDC</span></p>
+        <p>Settlement due by <span className="font-bold text-white/60">{shortDate(reclaimDate)}</span></p>
+        <p>Reclaimable from <span className="font-bold text-white/60">{shortDate(reclaimDate)}</span></p>
+      </div>
+
+      {locked && !blocked && (
         <p className="text-[10px] leading-relaxed text-white/40">
-          Committed funds are locked for this cycle — withdrawable from <span className="font-bold text-white/60">{lockLabel}</span>.
+          Committed funds are locked while the cycle runs — the keeper settles usage after <span className="font-bold text-white/60">{shortDate(lockedUntilDate)}</span> and unused escrow returns to you automatically.
+        </p>
+      )}
+      {awaitingSettlement && (
+        <p className="text-[10px] leading-relaxed text-sky-200/70">
+          This cycle has matured and is awaiting keeper settlement. Unused escrow returns automatically; if nothing settles by <span className="font-bold">{shortDate(reclaimDate)}</span>, a Reclaim button appears here.
+        </p>
+      )}
+      {canReclaim && (
+        <p className="text-[10px] leading-relaxed text-amber-200/70">
+          Settlement never arrived for this matured cycle. You can reclaim your full escrow now.
         </p>
       )}
       {blocked && commitNeeded > 0 && (
@@ -6706,7 +7560,7 @@ function ConfigureVaultModal({
     if (!open) return;
     setStatus(null);
     if (editingVault) {
-      setMerchantAddress(editingVault.merchantName || editingVault.merchantAddress);
+      setMerchantAddress(merchantDisplayName(editingVault.merchantName));
       setResolvedAddress(editingVault.merchantAddress);
       setThreshold((Number(editingVault.thresholdUsdc) / 1_000_000).toString());
       setTopUpAmount((Number(editingVault.topUpAmountUsdc) / 1_000_000).toString());
@@ -6732,7 +7586,8 @@ function ConfigureVaultModal({
     }
 
     if (/^0x[a-fA-F0-9]{40}$/.test(trimmed)) {
-      setResolvedAddress(trimmed);
+      setResolvedAddress(null);
+      setStatus("Use the merchant's SubScript name instead of a wallet address.");
       return;
     }
 
@@ -6757,7 +7612,7 @@ function ConfigureVaultModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resolvedAddress) {
-      setStatus("Recipient merchant address is not resolved.");
+      setStatus("Merchant name was not found.");
       return;
     }
     if (Number(threshold) <= 0 || Number(topUpAmount) <= 0 || Number(monthlyLimit) <= 0) {
@@ -6814,7 +7669,7 @@ function ConfigureVaultModal({
 
             <form onSubmit={handleSubmit} className="space-y-4 text-left">
               <div className="space-y-1">
-                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Merchant wallet address (0x…)</span>
+                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Merchant</span>
                 {editingVault ? (
                   <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs font-mono text-white/80">
                     {merchantAddress}
@@ -6825,13 +7680,13 @@ function ConfigureVaultModal({
                     value={merchantAddress}
                     onChange={(e) => setMerchantAddress(e.target.value)}
                     className="subscript-input text-xs"
-                    placeholder="merchant.sub or 0x..."
+                    placeholder="Merchant name"
                     required
                   />
                 )}
                 {!editingVault && resolving && <span className="text-[9px] text-[#ccff00] animate-pulse">Resolving...</span>}
                 {!editingVault && resolvedAddress && (
-                  <div className="text-[9px] text-white/40 truncate mt-1">Resolved: {resolvedAddress}</div>
+                  <div className="text-[9px] text-white/40 truncate mt-1">Merchant found</div>
                 )}
               </div>
 
@@ -6987,7 +7842,7 @@ function TopupVaultModal({
               <div className="space-y-1">
                 <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Merchant Vault</span>
                 <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs font-mono text-white/80">
-                  {vault.merchantName || vault.merchantAddress}
+                  {merchantDisplayName(vault.merchantName)}
                 </div>
               </div>
 

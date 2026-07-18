@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import type { LucideIcon } from "@/components/icons";
 
 interface AnimatedBottomNavButtonProps {
@@ -22,24 +21,16 @@ export default function AnimatedBottomNavButton({
     badgeCount = 0,
     compact = false,
 }: AnimatedBottomNavButtonProps) {
-    const [expanded, setExpanded] = useState(active);
-
-    useEffect(() => {
-        setExpanded(active);
-    }, [active]);
-
-    const handleClick = () => {
-        setExpanded((current) => (active ? !current : true));
-        onClick();
-    };
+    const expanded = active;
 
     return (
         <button
             type="button"
-            aria-pressed={expanded}
+            aria-pressed={active}
+            aria-current={active ? "page" : undefined}
             aria-label={label}
-            onClick={handleClick}
-            className={`relative h-11 shrink-0 overflow-hidden rounded-full border transition-[width,background-color,border-color,box-shadow,transform] duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] active:scale-90 ${
+            onClick={onClick}
+            className={`relative h-11 shrink-0 overflow-hidden rounded-full border transition-[width,background-color,border-color,box-shadow,transform] duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00d2b4] ${
                 expanded
                     ? compact
                         ? "w-20 min-[360px]:w-[92px]"
@@ -62,7 +53,7 @@ export default function AnimatedBottomNavButton({
                 )}
             </span>
             <span
-                className={`absolute left-10 top-1/2 -translate-y-1/2 whitespace-nowrap text-[6px] font-bold uppercase tracking-wide transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] min-[360px]:text-[7px] min-[360px]:tracking-wider ${
+                className={`absolute left-10 top-1/2 -translate-y-1/2 whitespace-nowrap text-[9px] font-bold uppercase tracking-wide transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
                     expanded ? "translate-x-1 opacity-100" : "-translate-x-4 opacity-0"
                 }`}
             >

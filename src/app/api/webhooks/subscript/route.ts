@@ -1,49 +1,28 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import crypto from "crypto";
-import { createClient } from "@supabase/supabase-js";
 import { triggerExitSurvey } from "@/lib/payments/email";
-import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
-
-let supabaseClient: any = null;
-
-function getSupabaseClient() {
-    if (!supabaseClient) {
-        const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-        if (!supabaseUrl || !supabaseServiceKey) {
-            throw new Error("Supabase configuration missing: SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY must be defined in environment");
-        }
-        supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
-    }
-    return supabaseClient;
-}
+import {
+    InboundWebhookPayloadError,
+    processInboundSubscriptionWebhook,
+} from "@/lib/subscriptions/inboundWebhook";
 
 export async function POST(request: Request) {
-    const supabase = getSupabaseClient();
-    let eventIdInserted: string | null = null;
-    
     try {
-        /* 1. Enforce strict cryptographic HMAC-SHA256 signature verification */
         const signatureHeader = request.headers.get("x-subscript-signature");
         if (!signatureHeader) {
             return NextResponse.json({ error: "Unauthorized: Missing signature header" }, { status: 400 });
         }
 
-        const match = signatureHeader.match(/t=(\d+),v1=([a-f0-9]+)/);
+        const match = signatureHeader.match(/^t=(\d+),v1=([a-f0-9]{64})$/);
         if (!match) {
             return NextResponse.json({ error: "Unauthorized: Invalid signature format" }, { status: 400 });
         }
 
-        const t = match[1];
-        const v1 = match[2];
-
-        /* Replay attack prevention: check timestamp age (max 5 minutes) */
-        const now = Math.floor(Date.now() / 1000);
-        if (Math.abs(now - parseInt(t, 10)) > 300) {
+        const timestamp = Number(match[1]);
+        if (!Number.isFinite(timestamp) || Math.abs(Math.floor(Date.now() / 1000) - timestamp) > 300) {
             return NextResponse.json({ error: "Unauthorized: Signature expired" }, { status: 400 });
         }
 
-        /* Retrieve raw body text to maintain exact byte alignment for hashing */
         const rawBody = await request.text();
         const secret = process.env.SUBSCRIPT_WEBHOOK_SECRET;
         if (!secret) {
@@ -51,161 +30,89 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Internal Server Error: Webhook secret is not configured" }, { status: 500 });
         }
 
-        const signaturePayload = `${t}.${rawBody}`;
-        const hmac = crypto.createHmac("sha256", secret);
-        hmac.update(signaturePayload);
-        const computedSignature = hmac.digest("hex");
-
-        const receivedBuffer = Buffer.from(v1, "hex");
+        const computedSignature = crypto
+            .createHmac("sha256", secret)
+            .update(`${match[1]}.${rawBody}`)
+            .digest("hex");
+        const receivedBuffer = Buffer.from(match[2], "hex");
         const expectedBuffer = Buffer.from(computedSignature, "hex");
-        if (receivedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(receivedBuffer, expectedBuffer)) {
+        if (
+            receivedBuffer.length !== expectedBuffer.length
+            || !crypto.timingSafeEqual(receivedBuffer, expectedBuffer)
+        ) {
             return NextResponse.json({ error: "Unauthorized: Signature mismatch" }, { status: 401 });
         }
 
-        /* 2. Parse the body object */
-        const body = JSON.parse(rawBody);
-        const { event, data } = body;
+        let body: Record<string, unknown>;
+        try {
+            body = JSON.parse(rawBody) as Record<string, unknown>;
+        } catch {
+            return NextResponse.json({ error: "Bad Request: Invalid JSON payload" }, { status: 400 });
+        }
 
+        const event = typeof body.event === "string" ? body.event : "";
+        const data = body.data && typeof body.data === "object"
+            ? body.data as Record<string, unknown>
+            : null;
         if (!event || !data) {
             return NextResponse.json({ error: "Bad Request: Missing event or data payload" }, { status: 400 });
         }
 
-        const txHash = data.txHash || data.transactionHash;
-        if (!txHash) {
-            return NextResponse.json({ error: "Bad Request: Missing unique txHash" }, { status: 400 });
+        const rawTxHash = data.txHash || data.transactionHash;
+        if (typeof rawTxHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(rawTxHash.trim())) {
+            return NextResponse.json({ error: "Bad Request: Missing or malformed txHash" }, { status: 400 });
         }
+        const txHash = rawTxHash.trim().toLowerCase();
 
-        /* 3. Database transaction execution & replay protection */
-        /* Direct insertion into webhook_events acts as a concurrent lock on the unique tx_hash */
-        const { data: eventLog, error: eventError } = await supabase
-            .from("webhook_events")
-            .insert({
-                tx_hash: txHash,
-                event_type: event,
-                payload: body
-            })
-            .select("id")
-            .single();
-
-        if (eventError) {
-            if (eventError.code === "23505") { /* unique_violation */
-                console.log(`[Webhook Replay Protected] Uniqueness clash on tx_hash ${txHash}. Ignoring event.`);
-                return NextResponse.json({ success: true, message: "Duplicate transaction processed" });
-            }
-            console.error("[Webhook Database Error] Log insert failed:", eventError);
-            throw new Error(`Failed to log webhook event: ${eventError.message}`);
-        }
-
-        eventIdInserted = eventLog.id;
-
-        /* Extract merchant EVM wallet address and format */
-        const merchantAddress = (data.merchant || "").toLowerCase();
+        const merchantAddress = typeof data.merchant === "string"
+            ? data.merchant.trim().toLowerCase()
+            : "";
         if (!merchantAddress) {
-            throw new Error("Missing merchant address in data payload");
+            return NextResponse.json({ error: "Bad Request: Missing merchant address in data payload" }, { status: 400 });
         }
 
-        /* 4. Ensure Merchant wallet identity exists to prevent Foreign Key constraints failures */
-        const { error: merchantError } = await supabase
-            .from("merchants")
-            .upsert({
-                wallet_address: merchantAddress,
-            }, { onConflict: "wallet_address" });
+        const result = await processInboundSubscriptionWebhook({
+            event,
+            data,
+            payload: body,
+            txHash,
+            merchantAddress,
+        });
 
-        if (merchantError) {
-            console.error("[Webhook Database Error] Merchant upsert failed:", merchantError);
-            throw new Error(`Failed to sync merchant: ${merchantError.message}`);
+        if (result.outcome === "duplicate") {
+            console.log(`[Webhook Replay Protected] tx_hash ${txHash} already processed. Ignoring event.`);
+            return NextResponse.json({ success: true, message: "Duplicate transaction processed" });
+        }
+        if (result.outcome === "obsolete") {
+            console.warn("[Webhook Obsolete Identity] Ignoring CUSTOMER event for a canonical premium subscription.");
+            return NextResponse.json({ success: true, message: "Obsolete subscription identity ignored" });
         }
 
-        /* 5. Parse and upsert subscription details */
-        const subIdStr = data.subscriptionId || data.subId;
-        const cleanSubId = subIdStr ? parseInt(String(subIdStr).replace(/^sub_/, ""), 10) : null;
-
-        if (cleanSubId !== null && !isNaN(cleanSubId)) {
-            const amount = data.amount ? parseFloat(String(data.amount)) : 0;
-            const period = data.period ? parseInt(String(data.period), 10) : 0;
-            /* `last_settlement_timestamp` is when THIS payment settled (now), not the next due date.
-               A BEFORE INSERT/UPDATE trigger (update_subscription_next_billing_date) derives
-               next_billing_date as last_settlement_timestamp + billing_interval_seconds, so storing a
-               future value here would push the renewal a full period late. We also set next_billing_date
-               explicitly so it's correct even if that trigger isn't deployed. Matches subscriptions/mirror.ts. */
-            const nowIso = new Date().toISOString();
-            const nextBillingDate = new Date(Date.now() + period * 1000).toISOString();
-
-            let status = "ACTIVE";
-            if (event === "subscription.cancelled" || event === "subscription.expired") {
-                status = "CANCELED";
-            } else if (event === "subscription.payment.failed") {
-                status = "FAILED";
-            }
-
-            /* Classify by recipient: subscriptions paid to the SubScript treasury are PREMIUM
-               (merchant -> SubScript); everything else is a CUSTOMER plan (customer -> merchant)
-               which the Premium billing cron must ignore. */
-            const kind = merchantAddress === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()
-                ? "PREMIUM"
-                : "CUSTOMER";
-
-            const { error: subError } = await supabase
-                .from("subscriptions")
-                .upsert({
-                    subscription_id: cleanSubId,
-                    merchant_address: merchantAddress,
-                    subscriber: data.subscriber ? String(data.subscriber).toLowerCase() : null,
-                    current_nonce: data.currentNonce !== undefined ? parseInt(String(data.currentNonce), 10) : 0,
-                    last_settlement_timestamp: nowIso,
-                    next_billing_date: nextBillingDate,
-                    billing_interval_seconds: period,
-                    amount_cap_usdc: amount,
-                    payment_tx_hash: data.nextCommitment || data.nullifierHash || null,
-                    status: status,
-                    kind,
-                    updated_at: new Date().toISOString()
-                }, { onConflict: "subscription_id" });
-
-            if (subError) {
-                console.error("[Webhook Database Error] Subscription upsert failed:", subError);
-                throw new Error(`Failed to sync subscription details: ${subError.message}`);
-            }
-
-            if (status === "CANCELED" || status === "FAILED") {
-                triggerExitSurvey(merchantAddress, cleanSubId, 0).catch(err => {
-                    console.error("Failed to trigger exit survey:", err);
-                });
-            }
-        }
-
-        /* 6. Premium merchantPayoutDestination configurations retrieval */
-        const { data: merchantInfo, error: fetchError } = await supabase
-            .from("merchants")
-            .select("tier, payout_destination")
-            .eq("wallet_address", merchantAddress)
-            .single();
-
-        if (fetchError) {
-            console.warn(`[Webhook Warning] Could not fetch merchant status for ${merchantAddress}:`, fetchError);
-        } else if (merchantInfo && merchantInfo.tier === "PREMIUM") {
+        if (result.merchantInfo?.tier === "PREMIUM") {
             console.log(`[Premium Rerouting Active] Payout mapping fetched for ${merchantAddress}:`, {
-                tier: merchantInfo.tier,
-                payoutDestination: merchantInfo.payout_destination || "Default connected address"
+                tier: result.merchantInfo.tier,
+                payoutDestination: result.merchantInfo.payout_destination || "Default connected address",
             });
-            /* Execute premium alerts or configure automated payout cycles here */
         }
 
-        return NextResponse.json({ success: true, message: "Webhook processed and synced to Supabase" });
-
-    } catch (err: any) {
-        console.error("[CRITICAL Webhook Exception] Transaction execution failed. Reverting state changes.", err);
-        
-        /* Manual transaction rollback boundary to preserve off-chain database integrity */
-        if (eventIdInserted) {
-            console.log(`[Rollback Active] Deleting logged webhook event ID: ${eventIdInserted}`);
-            try {
-                await supabase.from("webhook_events").delete().eq("id", eventIdInserted);
-            } catch (rollbackErr: any) {
-                console.error("[CRITICAL Rollback Failed] Failed to delete logged event during rollback:", rollbackErr);
-            }
+        if (result.exitSurveySubId !== null) {
+            const surveySubId = result.exitSurveySubId;
+            after(() => {
+                triggerExitSurvey(merchantAddress, surveySubId, 0).catch((error) => {
+                    console.error("Failed to trigger exit survey:", error);
+                });
+            });
         }
 
-        return NextResponse.json({ error: "Database transaction failed", details: err.message }, { status: 500 });
+        return NextResponse.json({
+            success: true,
+            message: "Webhook receipt and subscription state committed atomically",
+        });
+    } catch (error) {
+        if (error instanceof InboundWebhookPayloadError) {
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
+        console.error("[Webhook Exception] Transaction rolled back; delivery is safe to retry.", error);
+        return NextResponse.json({ error: "Database transaction failed" }, { status: 500 });
     }
 }

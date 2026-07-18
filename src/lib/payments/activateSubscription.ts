@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
-import { ROUTER_ADDRESS, ARC_TESTNET_CHAIN_ID } from "./constants";
+import { ROUTER_ADDRESS, PREMIUM_PRICE } from "./constants";
+import { ProtocolConfig } from "./config";
 
 const ROUTER_INTERFACE = new ethers.Interface([
     "function setMerchantTier(address _merchant, uint8 _tier) external",
@@ -15,6 +16,7 @@ export async function activateSubscription({
     adminWallet,
     sessionId,
     subId,
+    claimId,
     rpcEndpoint,
     requestId = "unknown"
 }: {
@@ -24,6 +26,7 @@ export async function activateSubscription({
     adminWallet: ethers.Wallet;
     sessionId: string;
     subId: number;
+    claimId: string;
     rpcEndpoint?: string;
     requestId?: string;
 }) {
@@ -55,20 +58,7 @@ export async function activateSubscription({
     let activationTxHash = txHash;
 
     if (merchant && merchant.tier === "PREMIUM" && currentContractTier >= 1) {
-        console.log(`[activation_skipped] Merchant ${normalizedUser} is already premium on-chain and database. requestId: ${requestId}`);
-        
-        /* Ensure the payment session is marked COMPLETED */
-        const { error: sessionUpdateError } = await supabase
-            .from("payment_sessions")
-            .update({ status: "COMPLETED", updated_at: new Date().toISOString() })
-            .eq("session_id", sessionId);
-
-        if (sessionUpdateError) {
-            console.error(`[db_updated] Failed to finalize payment session status: ${sessionUpdateError.message}`);
-            throw sessionUpdateError;
-        }
-
-        return;
+        console.log(`[activation_skipped] Merchant ${normalizedUser} is already premium on-chain and database; finalizing the owned session atomically. requestId: ${requestId}`);
     }
 
     /* Circuit Breaker Check: Verify upgrades are active */
@@ -79,9 +69,13 @@ export async function activateSubscription({
             .update({
                 status: "PENDING",
                 last_error: "Premium upgrades are temporarily paused by administrator.",
+                processing_claim_id: null,
+                processing_started_at: null,
                 updated_at: new Date().toISOString()
             })
-            .eq("session_id", sessionId);
+            .eq("session_id", sessionId)
+            .eq("status", "PROCESSING")
+            .eq("processing_claim_id", claimId);
 
         if (sessionUpdateError) {
             console.error(`[db_updated] Failed to update payment session status under circuit breaker: ${sessionUpdateError.message}`);
@@ -120,8 +114,10 @@ export async function activateSubscription({
             p_subscription_id: premiumSubId,
             p_session_id: sessionId,
             p_tx_hash: txHash,
-            p_amount: 10,
-            p_period: 2592000
+            /* amount_cap_usdc is canonical integer micro-USDC throughout subscriptions. */
+            p_amount: PREMIUM_PRICE,
+            p_period: 2592000,
+            p_claim_id: claimId
         });
 
         if (rpcError) {
@@ -138,7 +134,7 @@ export async function activateSubscription({
                 merchant: normalizedUser,
                 payment_session: sessionId,
                 tx_hash: txHash,
-                chain_id: ARC_TESTNET_CHAIN_ID,
+                chain_id: ProtocolConfig.CHAIN_ID,
                 tier_before: tierBefore,
                 tier_after: 1,
                 admin_wallet: adminWallet.address.toLowerCase(),
@@ -166,9 +162,13 @@ export async function activateSubscription({
                 .update({
                     status: "NEEDS_RECONCILIATION",
                     last_error: `On-chain upgrade succeeded but database write failed: ${dbError.message || dbError}`,
+                    processing_claim_id: null,
+                    processing_started_at: null,
                     updated_at: new Date().toISOString()
                 })
-                .eq("session_id", sessionId);
+                .eq("session_id", sessionId)
+                .eq("status", "PROCESSING")
+                .eq("processing_claim_id", claimId);
         }
         throw dbError;
     }

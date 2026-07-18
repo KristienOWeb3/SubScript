@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { verifyMessage } from "viem";
-import { SignJWT } from "jose";
 import { sanitizeInput } from "@/utils/security";
-import { getCookieValue } from "@/lib/auth";
+import { createSessionToken, getCookieValue } from "@/lib/auth";
+import { pgMaybeOne } from "@/lib/serverPg";
 import { getAccountRole } from "@/lib/accounts/roles";
 import { verifyCaptchaToken } from "@/lib/captcha";
 import { clearSiweNonceCookie, setSessionCookie } from "@/lib/authCookies";
+import { buildWalletAuthMessage, walletAuthRequestContext } from "@/lib/walletAuthMessage";
 
 export async function POST(request: Request) {
     try {
@@ -33,7 +34,22 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Authentication session expired or invalid nonce" }, { status: 400 });
         }
 
-        const message = `Sign this message to verify ownership of your SubScript Merchant Dashboard.\n\nNonce: ${nonce}`;
+        /* Atomically consume the server-issued nonce (DELETE ... RETURNING, same pattern as the
+           wallet-export OTP). The cookie above only binds the attempt to this browser — both
+           values arrive from the client, so without this record a captured signature could be
+           replayed indefinitely by re-presenting its nonce. Consuming before signature
+           verification means every attempt burns the nonce and concurrent replays have exactly
+           one winner; clients fetch a fresh nonce per attempt. */
+        const consumedNonce = await pgMaybeOne<{ nonce: string }>(
+            "delete from siwe_nonces where nonce = $1 and expires_at > now() returning nonce",
+            [nonce]
+        );
+        if (!consumedNonce) {
+            return NextResponse.json({ error: "Authentication session expired or invalid nonce" }, { status: 400 });
+        }
+
+        const context = walletAuthRequestContext(request);
+        const message = buildWalletAuthMessage({ address, nonce, ...context });
 
         const isValid = await verifyMessage({
             address: address as `0x${string}`,
@@ -55,18 +71,7 @@ export async function POST(request: Request) {
             }
         }
 
-        const secretStr = process.env.JWT_SECRET;
-        if (!secretStr) {
-            return NextResponse.json({ error: "Internal Server Error: Secret key configuration missing" }, { status: 500 });
-        }
-        const secret = new TextEncoder().encode(secretStr);
-        
-        const now = Date.now();
-        const expiresAt = new Date(now + 30 * 24 * 60 * 60 * 1000);
-        const jwt = await new SignJWT({ address: address.toLowerCase(), authenticatedAt: now })
-            .setProtectedHeader({ alg: "HS256" })
-            .setExpirationTime("30d")
-            .sign(secret);
+        const { token: jwt, expiresAt } = await createSessionToken(address, 30 * 24 * 60 * 60 * 1000);
 
         const response = NextResponse.json({ success: true, wallet: address, role });
         

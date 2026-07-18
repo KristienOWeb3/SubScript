@@ -15,19 +15,23 @@ const redis = new Redis({
     token: process.env.UPSTASH_REDIS_REST_TOKEN || "",
 });
 
-/* Create two separate rate limiters using the Redis client */
-/* authLimiter: 20 requests per 1 minute (sliding window) */
+/* Create two separate rate limiters using the Redis client.
+   Limits are per-IP, and real users share IPs (offices, mobile CGNAT), so these have
+   to comfortably exceed one legitimate user's traffic. Brute-force protection for
+   OTP/login lives inside those routes (per-email/per-target limits); the middleware
+   tier only needs to stop floods. */
+/* authLimiter: 60 requests per 1 minute (sliding window) */
 const authLimiter = new Ratelimit({
     redis,
-    limiter: Ratelimit.slidingWindow(20, "1 m"),
+    limiter: Ratelimit.slidingWindow(60, "1 m"),
     analytics: true,
     prefix: "ratelimit:auth",
 });
 
-/* globalLimiter: 150 requests per 1 minute (sliding window) */
+/* globalLimiter: 400 requests per 1 minute (sliding window) */
 const globalLimiter = new Ratelimit({
     redis,
-    limiter: Ratelimit.slidingWindow(150, "1 m"),
+    limiter: Ratelimit.slidingWindow(400, "1 m"),
     analytics: true,
     prefix: "ratelimit:global",
 });
@@ -82,8 +86,8 @@ class MemoryLimiter {
     }
 }
 
-const authMemoryLimiter = new MemoryLimiter(60 * 1000, 20);
-const globalMemoryLimiter = new MemoryLimiter(60 * 1000, 150);
+const authMemoryLimiter = new MemoryLimiter(60 * 1000, 60);
+const globalMemoryLimiter = new MemoryLimiter(60 * 1000, 400);
 const cliCreateSessionMemoryLimiter = new MemoryLimiter(60 * 1000, 60);
 const cliValidateSessionMemoryLimiter = new MemoryLimiter(60 * 1000, 180);
 const cliTelemetryMemoryLimiter = new MemoryLimiter(60 * 1000, 600);
@@ -134,7 +138,10 @@ function createContentSecurityPolicy(nonce: string) {
 function checkBurstLimit(ip: string): boolean {
     const now = Date.now();
     const windowMs = 10 * 1000; // 10 seconds
-    const maxBurst = 25; // Max 25 requests per 10 seconds per IP (protects Redis and backend from spikes)
+    /* Sign-in (Circle SCA does config + device-token + wallet + complete + session) plus a
+       dashboard hydration can legitimately fire dozens of API calls in seconds, and NAT'd
+       IPs multiply that. 25/10s throttled single real users; keep this a flood guard only. */
+    const maxBurst = 80; // Max 80 requests per 10 seconds per IP (protects Redis and backend from spikes)
     
     let timestamps = memoryBurstLimiter.get(ip) || [];
     timestamps = timestamps.filter(t => now - t < windowMs);
@@ -156,9 +163,11 @@ function rateLimitResponse(message = "Too Many Requests") {
 }
 
 async function handleRateLimitViolation(ip: string, isRedisConfigured: boolean) {
+    /* A ban punishes every user behind the IP (offices, mobile carriers), so require
+       sustained abuse — not a handful of 429s from one busy session — and keep it short. */
     const violationWindowMs = 3600 * 1000; // 1 hour
-    const banDurationSeconds = 86400; // 24 hours
-    const maxViolationsBeforeBan = 5;
+    const banDurationSeconds = 3600; // 1 hour
+    const maxViolationsBeforeBan = 20;
     const now = Date.now();
 
     if (isRedisConfigured) {
@@ -237,7 +246,7 @@ export async function middleware(request: NextRequest) {
         }
     }
 
-    if (!isApiRoute && !isDashboardHost && !isLocalHost && isDashboardPath) {
+    if (!isApiRoute && !isDashboardHost && !isLocalHost && isDashboardPath && (host === APEX_HOST || host === PUBLIC_HOST)) {
         const subUrl = request.nextUrl.clone();
         subUrl.protocol = "https:";
         subUrl.host = DASHBOARD_HOST;
@@ -346,8 +355,21 @@ export async function middleware(request: NextRequest) {
         }
     }
 
+    /* Local development may use the E2E cookie. Production-mode CI uses a separate, ephemeral
+       HttpOnly cookie whose value exists only in that runner's environment. Scoping the credential
+       to the app origin also prevents it from leaking into browser requests to external services.
+       Deployed production has no token configured, so client-set cookies cannot bypass its limits. */
+    const configuredE2eToken = process.env.E2E_RATE_LIMIT_BYPASS_TOKEN || "";
+    const suppliedE2eToken = request.cookies.get("subscript_e2e_token")?.value || "";
+    const hasCiE2eBypass = configuredE2eToken.length > 0
+        && configuredE2eToken.length === suppliedE2eToken.length
+        && configuredE2eToken === suppliedE2eToken;
+    const isE2e = hasCiE2eBypass || (
+        process.env.NODE_ENV !== "production"
+        && request.cookies.get("subscript_e2e_test")?.value === "true"
+    );
     /* Apply rate limiting only to API endpoints */
-    if (pathname.startsWith("/api")) {
+    if (pathname.startsWith("/api") && !isE2e) {
         /* Read user's IP address */
         const ip = (request as NextRequest & { ip?: string }).ip || request.headers.get("x-real-ip") || request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "127.0.0.1";
 

@@ -2,14 +2,47 @@
 
 import { useEffect, useRef } from "react";
 
+type Orb = {
+    baseX: number;
+    baseY: number;
+    radius: number;
+    color: [number, number, number];
+    alpha: number;
+    speedX: number;
+    speedY: number;
+    phaseX: number;
+    phaseY: number;
+};
+
+// Brand palette: teal and warm gold, matching the public site identity.
+const brandOrbs: Orb[] = [
+    { baseX: 0.2,  baseY: 0.15, radius: 420, color: [0, 210, 180],  alpha: 0.30, speedX: 0.25, speedY: 0.18, phaseX: 0,   phaseY: 0.5  },
+    { baseX: 0.75, baseY: 0.55, radius: 450, color: [0, 210, 180],  alpha: 0.24, speedX: 0.2,  speedY: 0.28, phaseX: 1.2, phaseY: 0    },
+    { baseX: 0.5,  baseY: 0.75, radius: 350, color: [0, 160, 200],  alpha: 0.20, speedX: 0.35, speedY: 0.12, phaseX: 2.0, phaseY: 1.0  },
+    { baseX: 0.1,  baseY: 0.6,  radius: 320, color: [0, 210, 180],  alpha: 0.18, speedX: 0.18, speedY: 0.25, phaseX: 0.8, phaseY: 2.5  },
+    { baseX: 0.85, baseY: 0.2,  radius: 280, color: [0, 180, 160],  alpha: 0.16, speedX: 0.3,  speedY: 0.22, phaseX: 1.5, phaseY: 1.8  },
+    { baseX: 0.4,  baseY: 0.35, radius: 260, color: [212, 168, 83], alpha: 0.14, speedX: 0.15, speedY: 0.3,  phaseX: 3.0, phaseY: 0.4  },
+];
+
+// Original dashboard palette: yellow-green (#ccff00) and teal orbs.
+const dashboardOrbs: Orb[] = [
+    { baseX: 0.2,  baseY: 0.15, radius: 420, color: [204, 255, 0],  alpha: 0.32, speedX: 0.25, speedY: 0.18, phaseX: 0,   phaseY: 0.5  },
+    { baseX: 0.75, baseY: 0.55, radius: 450, color: [0, 210, 180],  alpha: 0.28, speedX: 0.2,  speedY: 0.28, phaseX: 1.2, phaseY: 0    },
+    { baseX: 0.5,  baseY: 0.75, radius: 350, color: [204, 255, 0],  alpha: 0.24, speedX: 0.35, speedY: 0.12, phaseX: 2.0, phaseY: 1.0  },
+    { baseX: 0.1,  baseY: 0.6,  radius: 320, color: [0, 210, 180],  alpha: 0.20, speedX: 0.18, speedY: 0.25, phaseX: 0.8, phaseY: 2.5  },
+    { baseX: 0.85, baseY: 0.2,  radius: 280, color: [160, 230, 0],  alpha: 0.18, speedX: 0.3,  speedY: 0.22, phaseX: 1.5, phaseY: 1.8  },
+    { baseX: 0.4,  baseY: 0.35, radius: 260, color: [212, 168, 83], alpha: 0.14, speedX: 0.15, speedY: 0.3,  phaseX: 3.0, phaseY: 0.4  },
+];
+
 /**
- * Full-screen animated gradient background with slowly morphing
- * yellow (#ccff00) and green (#00d2b4) orbs on a dark base.
+ * Full-screen animated gradient background with slowly morphing orbs on a
+ * dark base. The default "brand" variant uses the public-site teal/gold
+ * palette; "dashboard" preserves the original yellow-green dashboard look.
  *
  * Uses a fixed canvas that sits behind all page content.
  * The page <main> backgrounds must be transparent for this to show through.
  */
-export default function AnimatedGradientBg() {
+export default function AnimatedGradientBg({ variant = "brand" }: { variant?: "brand" | "dashboard" }) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     useEffect(() => {
@@ -35,21 +68,7 @@ export default function AnimatedGradientBg() {
         resize();
         window.addEventListener("resize", resize);
 
-        // Orb definitions — visible, bold gradients using theme colors
-        const orbs = [
-            // Large primary yellow-green
-            { baseX: 0.2,  baseY: 0.15, radius: 420, color: [204, 255, 0],   alpha: 0.32, speedX: 0.25, speedY: 0.18, phaseX: 0,   phaseY: 0.5  },
-            // Large teal
-            { baseX: 0.75, baseY: 0.55, radius: 450, color: [0, 210, 180],   alpha: 0.28, speedX: 0.2,  speedY: 0.28, phaseX: 1.2, phaseY: 0    },
-            // Mid yellow-green
-            { baseX: 0.5,  baseY: 0.75, radius: 350, color: [204, 255, 0],   alpha: 0.24, speedX: 0.35, speedY: 0.12, phaseX: 2.0, phaseY: 1.0  },
-            // Mid teal
-            { baseX: 0.1,  baseY: 0.6,  radius: 320, color: [0, 210, 180],   alpha: 0.20, speedX: 0.18, speedY: 0.25, phaseX: 0.8, phaseY: 2.5  },
-            // Small accent warm-green
-            { baseX: 0.85, baseY: 0.2,  radius: 280, color: [160, 230, 0],   alpha: 0.18, speedX: 0.3,  speedY: 0.22, phaseX: 1.5, phaseY: 1.8  },
-            // Extra subtle gold/warm accent
-            { baseX: 0.4,  baseY: 0.35, radius: 260, color: [212, 168, 83],  alpha: 0.14, speedX: 0.15, speedY: 0.3,  phaseX: 3.0, phaseY: 0.4  },
-        ];
+        const orbs = variant === "dashboard" ? dashboardOrbs : brandOrbs;
 
         const draw = () => {
             const w = window.innerWidth;
@@ -95,7 +114,7 @@ export default function AnimatedGradientBg() {
             window.removeEventListener("resize", resize);
             cancelAnimationFrame(animationId);
         };
-    }, []);
+    }, [variant]);
 
     return (
         <canvas

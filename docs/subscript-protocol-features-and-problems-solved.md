@@ -78,7 +78,7 @@ Streaming protocols require continuous locked liquidity and can collapse when ba
 
 ### 3.1 Continue With Google Setup
 
-SubScript supports mainstream onboarding through social login and embedded wallet creation. To preserve non-custodial permanence, onboarding must include a secure encrypted private-key export phase so users can recover wallet access independently if their social account is compromised.
+SubScript supports mainstream onboarding through social login and embedded wallet creation. Embedded wallets are provisioned through Circle developer-controlled MPC custody (key material managed by SubScript's custody provider so the platform can execute the actions the user requests); external self-custody wallets are supported via SIWE. For legacy exportable email wallets, onboarding enforces a secure, OTP-verified encrypted private-key export phase so those users can recover wallet access independently. Key export does not apply to Circle MPC wallets — recovery for those follows the custody provider's model.
 
 ### 3.2 Set-and-Forget Automated Billing
 
@@ -140,10 +140,10 @@ Arc's low-latency finality lets SubScript support event-driven billing beyond st
 
 Model:
 
-- The merchant sets a required commit amount for their service.
-- The customer escrows that amount once into a `(customer, merchant)` vault; the service stays active for the 30-day cycle.
+- SubScript fixes the commitment at 2 USDC per `(customer, merchant)` relationship for each cycle.
+- The customer escrows that amount once per cycle; the service stays active for the 30-day cycle.
 - The merchant reports usage via the metered usage API (`/api/user/vault/report-usage`), which accrues the charge and gates access (an inactive vault is refused until the customer re-commits).
-- At cycle end SubScript's keeper draws the accrued total from escrow; the merchant claims the settled funds. Usage beyond the commit is recorded as owed and pauses the service until re-commit — funds are never pulled from the customer's main wallet.
+- At cycle end SubScript's keeper draws the accrued total from escrow and closes the vault; the merchant claims the settled funds, and the customer makes a fresh commitment for another cycle. Usage beyond the commit is refused — funds are never pulled from the customer's main wallet.
 
 Examples:
 

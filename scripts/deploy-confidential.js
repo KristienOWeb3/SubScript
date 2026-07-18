@@ -24,18 +24,33 @@ async function main() {
     const paymentToken = process.env.USDC_ADDRESS || "0x3600000000000000000000000000000000000000";
     const stableFXRouter = process.env.STABLEFX_ROUTER_ADDRESS;
     const initialOwner = process.env.CONTRACT_OWNER_ADDRESS || deployer.address;
+    const treasury = process.env.TREASURY_ADDRESS || initialOwner;
 
     if (!stableFXRouter) {
         throw new Error("STABLEFX_ROUTER_ADDRESS is required (the IStableFX router the contract settles through).");
+    }
+    if (!hre.ethers.isAddress(treasury) || treasury === hre.ethers.ZeroAddress) {
+        throw new Error("TREASURY_ADDRESS must be a valid non-zero address.");
+    }
+
+    /* Never redeploy owned by the historically exposed key. */
+    const EXPOSED_OWNER = "0x59D67d7c31Ec4835648A3fCb9e9E767A18bBfC69";
+    if (!hre.ethers.isAddress(initialOwner) || initialOwner === hre.ethers.ZeroAddress) {
+        throw new Error("initialOwner (CONTRACT_OWNER_ADDRESS) must be a valid non-zero address.");
+    }
+    if (initialOwner.toLowerCase() === EXPOSED_OWNER.toLowerCase() || deployer.address.toLowerCase() === EXPOSED_OWNER.toLowerCase()) {
+        throw new Error("Refusing to deploy with the exposed key as owner/deployer. Use a fresh secure key + CONTRACT_OWNER_ADDRESS.");
     }
 
     console.log("\n--- Deploying SubScriptConfidential ---");
     console.log("  paymentToken:  ", paymentToken);
     console.log("  stableFXRouter:", stableFXRouter);
+    console.log("  treasury:      ", treasury);
     console.log("  initialOwner:  ", initialOwner);
 
     const Factory = await hre.ethers.getContractFactory("SubScriptConfidential");
-    const contract = await Factory.deploy(paymentToken, stableFXRouter, initialOwner);
+    /* constructor(paymentToken, stableFXRouter, treasury, initialOwner) */
+    const contract = await Factory.deploy(paymentToken, stableFXRouter, treasury, initialOwner);
     await contract.waitForDeployment();
     const address = await contract.getAddress();
 

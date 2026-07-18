@@ -2,13 +2,13 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Integration Docs",
-  description: "Step-by-step SubScript integration docs for no-code merchants, vibecoders, backend developers, webhook fulfillment, Checkout Intent IDs, metered billing, Arc memo receipt routing, and the Unified Payment Authorization protocol model.",
+  description: "Developer-first SubScript integration guide: create an Arc testnet Checkout Intent in five minutes, verify signed webhooks, understand identifiers and micro-USDC units, test idempotency, and ship Arc USDC payments safely.",
   alternates: {
     canonical: "/docs",
   },
   openGraph: {
     title: "SubScript Integration Docs",
-    description: "Add SubScript payment links, Checkout Intents, signed webhooks, metered billing, Arc memo receipts, and UPA-based payment flows to your platform.",
+    description: "Copy-paste quickstart, exact API contracts, secure webhook verification, testing checklists, metered billing, and Arc USDC receipt guidance.",
     url: "/docs",
   },
 };

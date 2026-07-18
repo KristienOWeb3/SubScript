@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resolveSecretKeyMode } from "@/lib/apiKeys";
 
 function normalizePublicUrl(value: string | undefined) {
     if (!value) return "";
@@ -15,6 +16,29 @@ function normalizePublicUrl(value: string | undefined) {
 
 const dashboardBaseUrl = normalizePublicUrl(process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL) || "https://www.subscriptonarc.com";
 
+/**
+ * Machine-readable error envelope for every non-2xx API response:
+ *   { error, code, message, request_id, doc_url }
+ * `error` stays the human-readable string older integrations already parse; `code` is the stable
+ * identifier agents branch on. `request_id` lets a merchant quote one opaque ID in a support
+ * request instead of us ever echoing ORM/DB internals.
+ */
+export function apiError(args: {
+    status: number;
+    code: string;
+    message: string;
+    requestId?: string;
+    docUrl?: string;
+}) {
+    return NextResponse.json({
+        error: args.message,
+        code: args.code,
+        message: args.message,
+        request_id: args.requestId ?? crypto.randomUUID(),
+        doc_url: args.docUrl ?? `${dashboardBaseUrl}/docs#errors`,
+    }, { status: args.status });
+}
+
 export function merchantPayoutWalletMissingResponse() {
     return NextResponse.json({
         error: "merchant_payout_wallet_missing",
@@ -29,7 +53,6 @@ export function isConfiguredPayoutDestination(value: string | null | undefined) 
 }
 
 export function getSecretKeyMode(secretKey: string) {
-    if (secretKey.startsWith("sk_test_")) return "test";
-    if (secretKey.startsWith("sk_live_")) return "live";
-    return "unknown";
+    const mode = resolveSecretKeyMode(secretKey);
+    return mode === "TEST" ? "test" : mode === "LIVE" ? "live" : "unknown";
 }

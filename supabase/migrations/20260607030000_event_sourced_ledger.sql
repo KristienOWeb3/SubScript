@@ -28,14 +28,11 @@ CREATE TABLE IF NOT EXISTS system_snapshots (
 
 CREATE INDEX IF NOT EXISTS system_snapshots_entity_idx ON system_snapshots(entity_type, entity_id);
 
-/* 3. Re-create ledger_entries with status and bytea merchant_address */
-/* Drop any views dependent on ledger_entries first if any exist */
+/* 3. Upgrade ledger_entries in place. Financial history is append-only: never
+   drop this table to align a legacy schema. */
 DROP VIEW IF EXISTS merchant_spendable_balances;
 
-/* Drop existing ledger_entries table to align schemas */
-DROP TABLE IF EXISTS ledger_entries CASCADE;
-
-CREATE TABLE ledger_entries (
+CREATE TABLE IF NOT EXISTS ledger_entries (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     merchant_address BYTEA NOT NULL,
     entry_type TEXT NOT NULL CONSTRAINT check_ledger_entry_type CHECK (entry_type IN ('CREDIT_PAYMENT', 'CREDIT_PAYMENT_LINK', 'DEBIT_WITHDRAWAL', 'DEBIT_BATCH_PAYOUT', 'RESERVE', 'RELEASE')),
@@ -46,6 +43,56 @@ CREATE TABLE ledger_entries (
     tx_hash TEXT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE public.ledger_entries
+    ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'PENDING';
+
+DO $$
+DECLARE
+    v_type TEXT;
+BEGIN
+    SELECT data_type
+      INTO v_type
+      FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'ledger_entries'
+       AND column_name = 'merchant_address';
+
+    IF v_type = 'text' THEN
+        ALTER TABLE public.ledger_entries
+            DROP CONSTRAINT IF EXISTS ledger_entries_merchant_address_fkey;
+            
+        -- 1) Drop policy that depends on the column
+        DROP POLICY IF EXISTS "Merchant select own ledger entries" ON public.ledger_entries;
+        
+        -- 2) Alter the column type
+        ALTER TABLE public.ledger_entries
+            ALTER COLUMN merchant_address TYPE BYTEA
+            USING decode(substring(merchant_address FROM 3), 'hex');
+            
+        -- 3) Recreate the policy for bytea comparison
+        CREATE POLICY "Merchant select own ledger entries" ON public.ledger_entries FOR SELECT 
+        USING (merchant_address = decode(substring(auth.jwt() ->> 'wallet_address' FROM 3), 'hex'));
+    ELSIF v_type IS DISTINCT FROM 'bytea' THEN
+        RAISE EXCEPTION 'Unsupported ledger_entries.merchant_address type: %', v_type;
+    END IF;
+END;
+$$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'public.ledger_entries'::regclass
+           AND conname = 'check_ledger_status'
+    ) THEN
+        ALTER TABLE public.ledger_entries
+            ADD CONSTRAINT check_ledger_status
+            CHECK (status IN ('PENDING', 'FINALIZED', 'FAILED')) NOT VALID;
+        ALTER TABLE public.ledger_entries VALIDATE CONSTRAINT check_ledger_status;
+    END IF;
+END;
+$$;
 
 CREATE INDEX IF NOT EXISTS ledger_entries_merchant_bytea_idx ON ledger_entries(merchant_address);
 

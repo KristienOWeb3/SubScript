@@ -17,7 +17,8 @@ import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
 import { createPublicClient, http, formatUnits } from "viem";
-import { arcTestnet } from "@/lib/wagmi";
+import { activeArcChain } from "@/lib/wagmi";
+import { arcHttp } from "@/lib/arc/transport";
 import { 
     SUBSCRIPT_ROUTER_ADDRESS, 
     USDC_NATIVE_GAS_ADDRESS 
@@ -26,7 +27,8 @@ import {
     SUBSCRIPT_ROUTER_ABI,
     USDC_ERC20_ABI
 } from "@/lib/contracts/abis";
-import { buildPermitSingle } from "@/lib/payroll/permit2";
+import { buildPermitSingle, payrollPermitWindow } from "@/lib/payroll/permit2";
+import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -50,8 +52,8 @@ const tabs = [
 type TabId = "overview" | "premium" | "analytics" | "payment-links" | "payroll" | "apikeys" | "checkout" | "webhooks" | "settings";
 
 const publicClient = createPublicClient({
-    chain: arcTestnet,
-    transport: http(),
+    chain: activeArcChain,
+    transport: arcHttp(),
 });
 
 /* Frequency presets in days */
@@ -121,6 +123,7 @@ interface PayrollCampaign {
     isShielded: boolean;
     status: "ACTIVE" | "PAUSED";
     permit2Signature: string | null;
+    totalPayrollUsdc: string;
     recipients: Array<{
         id: string;
         employeeWallet: string;
@@ -141,6 +144,15 @@ interface ToastState {
 
 function formatUsdc(microUsdc: number): string {
     return (microUsdc / 1_000_000).toFixed(2);
+}
+
+function parseUsdcToMicro(value: string): bigint | null {
+    const normalized = value.trim();
+    const match = /^(0|[1-9]\d*)(?:\.(\d{1,6}))?$/.exec(normalized);
+    if (!match) return null;
+    const amount = BigInt(match[1]) * BigInt(1_000_000)
+        + BigInt((match[2] || "").padEnd(6, "0") || "0");
+    return amount > BigInt(0) ? amount : null;
 }
 
 function generateTempId(): string {
@@ -217,6 +229,8 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
     ]);
     const [permit2Sig, setPermit2Sig] = useState<string | null>(null);
     const [permit2Nonce, setPermit2Nonce] = useState<number | null>(null);
+    const [permit2Deadline, setPermit2Deadline] = useState<string | null>(null);
+    const [permit2Expiration, setPermit2Expiration] = useState<string | null>(null);
     const [isSigning, setIsSigning] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -416,7 +430,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                 throw new Error(nonceData.error || "Failed to fetch nonce");
             }
             const fetchedNonce = nonceData.nonce;
-            const message = `Sign this message to verify ownership of your SubScript Merchant Dashboard.\n\nNonce: ${fetchedNonce}`;
+            const message = buildWalletAuthMessage({ address, nonce: fetchedNonce, domain: window.location.host, uri: window.location.origin });
             const signature = await signMessageAsync({ message });
             
             const res = await fetch("/api/auth/verify-signature", {
@@ -515,10 +529,8 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
             /* Compute total payroll in micro-USDC */
             let totalMicro = BigInt(0);
             for (const r of formRecipients) {
-                const parsed = parseFloat(r.salaryAmountUsdc);
-                if (!isNaN(parsed) && parsed > 0) {
-                    totalMicro += BigInt(Math.round(parsed * 1_000_000));
-                }
+                const parsed = parseUsdcToMicro(r.salaryAmountUsdc);
+                if (parsed) totalMicro += parsed;
             }
 
             if (totalMicro === BigInt(0)) {
@@ -526,15 +538,28 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                 setIsSigning(false);
                 return;
             }
+            const frequencyDays = formFrequencyPreset === 0
+                ? parseInt(formCustomDays, 10)
+                : formFrequencyPreset;
+            const window = payrollPermitWindow(frequencyDays);
 
             if (embeddedWallet) {
                 /* Embedded merchant (the only kind now): the server approves USDC -> Permit2 and signs
                    the authorization from the embedded key. */
-                const res = await fetch("/api/merchant/payroll/permit-sign", { method: "POST" });
+                const res = await fetch("/api/merchant/payroll/permit-sign", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        totalAmountUsdc: totalMicro.toString(),
+                        frequencyDays,
+                    }),
+                });
                 const data = await res.json();
                 if (!res.ok || !data.success) throw new Error(data.error || "Could not authorize payroll.");
                 setPermit2Sig(data.signature);
                 setPermit2Nonce(Number(data.nonce));
+                setPermit2Deadline(data.permit2Deadline);
+                setPermit2Expiration(data.permit2Expiration);
                 showToastMessage("Payroll authorization signed", "success");
                 return;
             }
@@ -555,7 +580,14 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
             })) as readonly [bigint, number, number];
             const nonce = Number(allowanceRes[2]);
 
-            const message = buildPermitSingle(USDC_ADDRESS, keeperAddress, nonce);
+            const message = buildPermitSingle(
+                USDC_ADDRESS,
+                keeperAddress,
+                nonce,
+                totalMicro,
+                window.expiration,
+                window.sigDeadline,
+            );
             const signature = await signTypedDataAsync({
                 domain: PERMIT2_DOMAIN,
                 types: PERMIT2_TYPES,
@@ -564,6 +596,8 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
             });
             setPermit2Sig(signature);
             setPermit2Nonce(nonce);
+            setPermit2Deadline(new Date(Number(window.sigDeadline) * 1000).toISOString());
+            setPermit2Expiration(new Date(Number(window.expiration) * 1000).toISOString());
             showToastMessage("Payroll authorization signed", "success");
         } catch (err: any) {
             showToastMessage(err?.shortMessage || err?.message || "Signing failed", "error");
@@ -593,10 +627,21 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
 
         /* Validate recipients */
         const validRecipients = formRecipients.filter(
-            (r) => r.employeeWallet.trim() && parseFloat(r.salaryAmountUsdc) > 0
+            (r) => r.employeeWallet.trim() && parseUsdcToMicro(r.salaryAmountUsdc) !== null
         );
         if (validRecipients.length === 0) {
             showToastMessage("Add at least one recipient with a wallet and salary", "error");
+            return;
+        }
+
+        const isAddress = (address: string) => /^0x[a-fA-F0-9]{40}$/.test(address);
+        const isDns = (address: string) => /\.sub$/.test(address);
+
+        const invalidAddress = validRecipients.find(
+            (r) => !isAddress(r.employeeWallet.trim()) && !isDns(r.employeeWallet.trim())
+        );
+        if (invalidAddress) {
+            showToastMessage(`Recipient "${invalidAddress.employeeWallet}" must be a valid 0x address or .sub DNS name`, "error");
             return;
         }
         if (!permit2Sig) {
@@ -612,9 +657,11 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                 isShielded: formShielded,
                 permit2Signature: permit2Sig,
                 permit2Nonce,
+                permit2Deadline,
+                permit2Expiration,
                 recipients: validRecipients.map((r) => ({
                     employeeWallet: r.employeeWallet.trim(),
-                    salaryAmountUsdc: Math.round(parseFloat(r.salaryAmountUsdc) * 1_000_000),
+                    salaryAmountUsdc: parseUsdcToMicro(r.salaryAmountUsdc)!.toString(),
                 })),
             };
 
@@ -647,10 +694,35 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
         setTogglingIds((prev) => new Set(prev).add(campaign.id));
         try {
             const newStatus = campaign.status === "ACTIVE" ? "PAUSED" : "ACTIVE";
+            let authorization: Record<string, unknown> = {};
+            if (newStatus === "ACTIVE") {
+                const permitRes = await fetch("/api/merchant/payroll/permit-sign", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        totalAmountUsdc: campaign.totalPayrollUsdc,
+                        frequencyDays: campaign.frequencyDays,
+                    }),
+                });
+                const permit = await permitRes.json().catch(() => ({}));
+                if (!permitRes.ok || !permit.success) {
+                    throw new Error(permit.error || "Could not renew the payroll authorization");
+                }
+                authorization = {
+                    permit2Signature: permit.signature,
+                    permit2Nonce: Number(permit.nonce),
+                    permit2Deadline: permit.permit2Deadline,
+                    permit2Expiration: permit.permit2Expiration,
+                };
+            }
             const res = await fetch("/api/merchant/payroll", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id: campaign.id, status: newStatus }),
+                body: JSON.stringify({
+                    campaignId: campaign.id,
+                    action: newStatus === "ACTIVE" ? "RESUME" : "PAUSE",
+                    ...authorization,
+                }),
             });
 
             if (!res.ok) {
@@ -740,6 +812,9 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
         setFormShielded(false);
         setFormRecipients([{ id: generateTempId(), employeeWallet: "", salaryAmountUsdc: "" }]);
         setPermit2Sig(null);
+        setPermit2Nonce(null);
+        setPermit2Deadline(null);
+        setPermit2Expiration(null);
     };
 
     /* ------------------------------------------------------------------ */
@@ -765,7 +840,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
 
     return (
         <div data-mounted={isMounted} className={embedded ? "text-white" : "min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4]"}>
-            {!embedded && <AnimatedGradientBg />}
+            {!embedded && <AnimatedGradientBg variant="dashboard" />}
 
             <div className="relative z-10">
                 {!embedded && (
@@ -812,7 +887,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                     {/* Check if connected */}
                     {!isConnected ? (
                         <div className="space-y-8">
-                            <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
+                            <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
                                 <div className="p-4 rounded-3xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-300">
                                     <AlertTriangle className="w-10 h-10" />
                                 </div>
@@ -882,7 +957,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                 
                                 {/* Session check: Verify wallet ownership */}
                                 {isConnected && address && !sessionWallet && !embeddedWallet ? (
-                                    <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
+                                    <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
                                         <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
                                         <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
                                         <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
@@ -1048,7 +1123,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                 </div>
 
                                                                 {/* Headers */}
-                                                                <div className="grid grid-cols-[1fr_160px_40px] gap-2 mb-1.5 px-1">
+                                                                <div className="grid grid-cols-[minmax(0,1fr)_110px_36px] sm:grid-cols-[minmax(0,1fr)_160px_40px] gap-2 mb-1.5 px-1">
                                                                     <span className="text-[10px] font-bold uppercase tracking-wider text-white/40 font-sans">Wallet Address</span>
                                                                     <span className="text-[10px] font-bold uppercase tracking-wider text-white/40 font-sans">Salary (USDC)</span>
                                                                     <span />
@@ -1062,7 +1137,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                             initial={{ opacity: 0, x: -10 }}
                                                                             animate={{ opacity: 1, x: 0 }}
                                                                             exit={{ opacity: 0, x: 10 }}
-                                                                            className="grid grid-cols-[1fr_160px_40px] gap-2 mb-2 items-center"
+                                                                            className="grid grid-cols-[minmax(0,1fr)_110px_36px] sm:grid-cols-[minmax(0,1fr)_160px_40px] gap-2 mb-2 items-center"
                                                                         >
                                                                             <input
                                                                                 type="text"
@@ -1176,7 +1251,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
 
                                             {/* Error display */}
                                             {!pageIsLoading && loadError && (
-                                                <div className="liquid-glass border border-red-500/10 rounded-3xl p-8 text-center max-w-md mx-auto space-y-5 shadow-2xl bg-black/40">
+                                                <div className="liquid-glass border border-red-500/10 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-5 shadow-2xl bg-black/40">
                                                     <AlertTriangle size={36} className="text-red-400 mx-auto" />
                                                     <div className="space-y-1">
                                                         <h3 className="text-sm font-bold text-white uppercase tracking-wider">Failed to Load Campaigns</h3>
@@ -1414,7 +1489,7 @@ function RecipientList({ recipients }: { recipients: PayrollCampaign["recipients
                     >
                         <div className="mt-3 bg-white/[0.01] rounded-2xl border border-white/5 p-4 font-sans">
                             {/* Table header */}
-                            <div className="grid grid-cols-[1fr_120px] gap-2 pb-2 border-b border-white/5 mb-2">
+                            <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-2 pb-2 border-b border-white/5 mb-2">
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-white/40 font-sans">
                                     Wallet
                                 </span>
@@ -1427,10 +1502,10 @@ function RecipientList({ recipients }: { recipients: PayrollCampaign["recipients
                             {recipients.map((r) => (
                                 <div
                                     key={r.id}
-                                    className="grid grid-cols-[1fr_120px] gap-2 py-1.5 text-xs"
+                                    className="grid grid-cols-[minmax(0,1fr)_120px] gap-2 py-1.5 text-xs"
                                 >
-                                    <span className="text-white/60 font-mono truncate">
-                                        {r.employeeAlias || r.employeeWallet}
+                                    <span className="text-white/60 font-mono truncate" title={r.employeeWallet}>
+                                        {r.employeeAlias || (r.employeeWallet.startsWith("0x") && r.employeeWallet.length === 42 ? `${r.employeeWallet.slice(0, 6)}...${r.employeeWallet.slice(-4)}` : r.employeeWallet)}
                                     </span>
                                     <span className="text-white font-medium text-right">
                                         {formatUsdc(r.salaryAmountUsdc)} USDC

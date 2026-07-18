@@ -1,15 +1,20 @@
-/* Server-side subscription actions on the standard contract, signed from the user's
-   embedded wallet. createSubscription takes the first payment immediately (so the user
-   must approve USDC first), mirroring the vault-commit approve+act pattern. */
+/* Server-side subscription actions on the standard contract, executed from the user's
+   embedded wallet through the custody provider (legacy AES key or Circle MPC).
+   createSubscription takes the first payment immediately (so the user must approve
+   USDC first), mirroring the vault-commit approve+act pattern. */
 import { ethers } from "ethers";
-import { getEmbeddedSigner } from "@/lib/vault/onchain";
+import { getWalletCustody, cancelSubscriptionIdempotencyKey } from "@/lib/custody";
+import { ensureUsdcAllowance } from "@/lib/vault/onchain";
 import { STANDARD_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 
 const SUB_ABI = [
     "function createSubscription(address merchant, uint256 amount, uint256 period) returns (uint256)",
+    "function createSubscriptionWithIntroductoryTerms(address merchant, uint256 amount, uint256 period, uint256 introductoryAmount, uint256 introductoryCycles) returns (uint256)",
     "function cancelSubscription(uint256 subId)",
     "function modifySubscription(uint256 subId, uint256 newAmount, uint256 newPeriod)",
     "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive, address settlementToken, address paymentToken)",
+    "function introductoryTerms(uint256) view returns (uint256 amount, uint256 cycles)",
+    "function chargeAmountFor(uint256 subId, uint256 sequenceId) view returns (uint256)",
     "event SubscriptionCreated(uint256 indexed subId, address indexed subscriber, address indexed merchant, uint256 amount, uint256 period)",
 ];
 
@@ -45,6 +50,24 @@ export async function getSubscriptionOnChain(subId: string | bigint): Promise<On
             isActive: Boolean(s.isActive ?? s[5]),
         };
     } catch {
+        return null;
+    }
+}
+
+/* Introductory terms recorded on-chain at creation (cycles = 0 => none). Used by the
+   recovery paths to rebuild the subscription's promo snapshot from the authoritative
+   source when the original request context is gone. Null on RPC error. */
+export async function getIntroductoryTermsOnChain(
+    subId: string | bigint,
+): Promise<{ introAmountUsdc: bigint; introCycles: number } | null> {
+    try {
+        const c = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider());
+        const terms = await c.introductoryTerms(BigInt(subId));
+        const cycles = Number(terms.cycles ?? terms[1]);
+        if (!Number.isFinite(cycles) || cycles <= 0) return null;
+        return { introAmountUsdc: BigInt(terms.amount ?? terms[0]), introCycles: cycles };
+    } catch {
+        /* Older deployed contract without introductoryTerms, or transient RPC error. */
         return null;
     }
 }
@@ -93,23 +116,57 @@ function horizonAllowance(amount: bigint, period: bigint): bigint {
     return amount * BigInt(cyclesPerYear);
 }
 
-export async function subscribeFromEmbedded(walletAddress: string, merchant: string, amount: bigint, period: bigint) {
-    const signer = await getEmbeddedSigner(walletAddress);
-    const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, USDC_ABI, signer);
-    const allowance: bigint = await usdc.allowance(signer.address, STANDARD_CONTRACT_ADDRESS);
-    const desiredAllowance = horizonAllowance(amount, period);
-    if (allowance < desiredAllowance) {
-        const approveTx = await usdc.approve(STANDARD_CONTRACT_ADDRESS, desiredAllowance);
-        await approveTx.wait();
+/* The custody provider has already waited for the transaction to confirm, so the receipt
+   is normally available on the first read — the retries only cover read-endpoint lag. */
+async function fetchReceipt(txHash: string): Promise<ethers.TransactionReceipt | null> {
+    const provider = readProvider();
+    for (let attempt = 0; attempt < 30; attempt++) {
+        const receipt = await provider.getTransactionReceipt(txHash).catch(() => null);
+        if (receipt) return receipt;
+        await new Promise((resolve) => setTimeout(resolve, 2000));
     }
-    const contract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, signer);
-    const tx = await contract.createSubscription(merchant.toLowerCase(), amount, period);
-    const receipt = await tx.wait();
+    return null;
+}
 
+/* createSubscription takes the first payment immediately, so a retry after a timed-out response
+   must not double-submit. The caller passes an idempotencyKey scoped to the logical attempt (the
+   single-use checkout session, or the client's reusable request id) — NEVER derived from just the
+   subscriber+merchant relationship, since a user who cancels and later re-subscribes is a
+   legitimately distinct create and a relationship key would make Circle return the old
+   (cancelled) transaction. The subscribe route's DB advisory-lock + on-chain active-sub scan
+   guard against duplicate active subs on top of this. */
+export async function subscribeFromEmbedded(
+    walletAddress: string,
+    merchant: string,
+    amount: bigint,
+    period: bigint,
+    idempotencyKey?: string,
+    /* Introductory terms the subscriber is authorizing alongside the regular price.
+       `introAmountUsdc` (0 = free trial) applies for `introCycles` billing sequences,
+       then `amount` applies forever — both enforced by the contract per sequence. */
+    introTerms?: { introAmountUsdc: bigint; introCycles: number } | null,
+) {
+    const custody = await getWalletCustody(walletAddress);
+    /* Allowance is sized on the REGULAR amount: intro charges are strictly lower, and the
+       keeper needs headroom for full-price renewals after the promotion ends. */
+    await ensureUsdcAllowance(custody, STANDARD_CONTRACT_ADDRESS, horizonAllowance(amount, period));
+    const { txHash } = await custody.executeContract({
+        contractAddress: STANDARD_CONTRACT_ADDRESS,
+        abi: SUB_ABI,
+        functionName: introTerms ? "createSubscriptionWithIntroductoryTerms" : "createSubscription",
+        args: introTerms
+            ? [merchant.toLowerCase(), amount, period, introTerms.introAmountUsdc, BigInt(introTerms.introCycles)]
+            : [merchant.toLowerCase(), amount, period],
+        ...(idempotencyKey ? { idempotencyKey } : {}),
+    });
+
+    /* Recover the new subId from the SubscriptionCreated event in the receipt. */
+    const receipt = await fetchReceipt(txHash);
+    const iface = new ethers.Interface(SUB_ABI);
     let subId: string | null = null;
     for (const log of receipt?.logs || []) {
         try {
-            const parsed = contract.interface.parseLog(log);
+            const parsed = iface.parseLog(log);
             if (parsed?.name === "SubscriptionCreated") {
                 subId = parsed.args.subId.toString();
                 break;
@@ -118,7 +175,16 @@ export async function subscribeFromEmbedded(walletAddress: string, merchant: str
             /* not our event */
         }
     }
-    return { txHash: receipt?.hash || tx.hash, subId };
+    if (!subId) {
+        /* Some RPC providers lag on receipt logs even after Circle reports confirmation. Recover
+           from the indexed on-chain event before returning; a missing id must never be presented
+           as a completed subscription because the mirror and merchant fulfillment need it. */
+        for (let attempt = 0; attempt < 5 && !subId; attempt++) {
+            subId = await findActiveOnChainSubscriptionId(walletAddress, merchant);
+            if (!subId) await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+    }
+    return { txHash, subId };
 }
 
 /**
@@ -155,6 +221,7 @@ export async function verifyExternalSubscriptionTx(input: {
     const contract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, provider);
     for (const log of receipt.logs) {
         try {
+            if (log.address.toLowerCase() !== STANDARD_CONTRACT_ADDRESS.toLowerCase()) continue;
             const parsed = contract.interface.parseLog(log);
             if (
                 parsed?.name === "SubscriptionCreated"
@@ -173,11 +240,18 @@ export async function verifyExternalSubscriptionTx(input: {
 }
 
 export async function cancelFromEmbedded(walletAddress: string, subId: string | bigint) {
-    const signer = await getEmbeddedSigner(walletAddress);
-    const contract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, signer);
-    const tx = await contract.cancelSubscription(BigInt(subId));
-    const receipt = await tx.wait();
-    return receipt?.hash || tx.hash;
+    const custody = await getWalletCustody(walletAddress);
+    const { txHash } = await custody.executeContract({
+        contractAddress: STANDARD_CONTRACT_ADDRESS,
+        abi: SUB_ABI,
+        functionName: "cancelSubscription",
+        args: [BigInt(subId)],
+        /* Idempotent by subId: cancelling the same sub twice is a no-op, so a retried cancel
+           after a timed-out response must not submit a second transaction. Shared with the
+           execute-tx cancel path via the custody helper so both derive the identical key. */
+        idempotencyKey: cancelSubscriptionIdempotencyKey(STANDARD_CONTRACT_ADDRESS, subId),
+    });
+    return txHash;
 }
 
 /**
@@ -191,46 +265,58 @@ export async function modifyFromEmbedded(
     subId: string | bigint,
     newAmount: bigint,
     newPeriod: bigint,
+    idempotencyKey?: string,
 ) {
-    const signer = await getEmbeddedSigner(walletAddress);
-    const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, USDC_ABI, signer);
-    const allowance: bigint = await usdc.allowance(signer.address, STANDARD_CONTRACT_ADDRESS);
-    const desiredAllowance = horizonAllowance(newAmount, newPeriod);
-    if (allowance < desiredAllowance) {
-        const approveTx = await usdc.approve(STANDARD_CONTRACT_ADDRESS, desiredAllowance);
-        await approveTx.wait();
-    }
-    const contract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, signer);
-    const tx = await contract.modifySubscription(BigInt(subId), newAmount, newPeriod);
-    const receipt = await tx.wait();
-    return receipt?.hash || tx.hash;
+    const custody = await getWalletCustody(walletAddress);
+    await ensureUsdcAllowance(custody, STANDARD_CONTRACT_ADDRESS, horizonAllowance(newAmount, newPeriod));
+    const { txHash } = await custody.executeContract({
+        contractAddress: STANDARD_CONTRACT_ADDRESS,
+        abi: SUB_ABI,
+        functionName: "modifySubscription",
+        args: [BigInt(subId), newAmount, newPeriod],
+        ...(idempotencyKey ? { idempotencyKey } : {}),
+    });
+    return txHash;
 }
 
 /** Direct USDC transfer from the embedded wallet to a recipient — used to charge the
-    prorated difference when a user upgrades immediately. */
-export async function transferUsdcFromEmbedded(walletAddress: string, to: string, amountMicros: bigint) {
-    const signer = await getEmbeddedSigner(walletAddress);
-    const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, USDC_ABI, signer);
-    const tx = await usdc.transfer(to.toLowerCase(), amountMicros);
-    const receipt = await tx.wait();
-    return receipt?.hash || tx.hash;
+    prorated difference when a user upgrades immediately. Pass a deterministic idempotencyKey
+    to make the charge safe against retries/concurrent requests: the custody provider returns the
+    original transaction instead of moving funds a second time. */
+export async function transferUsdcFromEmbedded(walletAddress: string, to: string, amountMicros: bigint, idempotencyKey?: string) {
+    const custody = await getWalletCustody(walletAddress);
+    const { txHash } = await custody.executeContract({
+        contractAddress: USDC_NATIVE_GAS_ADDRESS,
+        abi: USDC_ABI,
+        functionName: "transfer",
+        args: [to.toLowerCase(), amountMicros],
+        ...(idempotencyKey ? { idempotencyKey } : {}),
+    });
+    return txHash;
 }
 
 /**
- * Prorated upgrade charge for the remainder of the current period:
- *   (newAmount - oldAmount) * (secondsRemaining / period), clamped to a single period.
- * Returns 0n for downgrades or once the period has lapsed.
+ * Prorated upgrade charge for the remainder of the current period, computed on the
+ * RECURRING RATE difference so interval changes price correctly:
+ *   delta = remaining * (newAmount/newPeriod - oldAmount/oldPeriod)
+ * A nominal newAmount - oldAmount is wrong the moment periods differ (e.g. 10 USDC/month
+ * → 100 USDC/year is a rate DECREASE, not a 90 USDC charge). Integer math throughout;
+ * remaining time is clamped to the old period. Returns 0n for rate downgrades/equal rates
+ * or once the period has lapsed.
  */
 export function proratedUpgradeDelta(
     oldAmount: bigint,
     newAmount: bigint,
-    period: bigint,
+    oldPeriod: bigint,
+    newPeriod: bigint,
     nextPayment: bigint,
     nowSeconds: bigint,
 ): bigint {
-    if (newAmount <= oldAmount || period <= BigInt(0)) return BigInt(0);
+    if (oldPeriod <= BigInt(0) || newPeriod <= BigInt(0)) return BigInt(0);
     let remaining = nextPayment - nowSeconds;
     if (remaining <= BigInt(0)) return BigInt(0);
-    if (remaining > period) remaining = period;
-    return ((newAmount - oldAmount) * remaining) / period;
+    if (remaining > oldPeriod) remaining = oldPeriod;
+    const rateNumerator = newAmount * oldPeriod - oldAmount * newPeriod;
+    if (rateNumerator <= BigInt(0)) return BigInt(0);
+    return (remaining * rateNumerator) / (newPeriod * oldPeriod);
 }

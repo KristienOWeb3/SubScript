@@ -4,6 +4,7 @@ import { useMemo, useState, useEffect } from "react";
 import { Crown, BarChart3, ArrowUpRight, RefreshCw, Loader2, Sparkles, Save, Lock, Shield } from "@/components/icons";
 import Link from "next/link";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
+import type { MerchantAnalyticsSummary, MerchantSubscriptionDetail } from "@/lib/analytics/merchantSubscriptions";
 
 interface AnalyticsDashboardProps {
     isPremium: boolean;
@@ -11,6 +12,7 @@ interface AnalyticsDashboardProps {
     walletBalance: number;
     vaultBalance: number;
     ledgers: any[];
+    analytics: MerchantAnalyticsSummary | null;
     onRetryCharge: (subId: string) => Promise<void>;
     merchantAddress: string;
 }
@@ -60,6 +62,7 @@ export default function AnalyticsDashboard({
     walletBalance,
     vaultBalance,
     ledgers,
+    analytics,
     onRetryCharge,
     merchantAddress,
 }: AnalyticsDashboardProps) {
@@ -69,6 +72,17 @@ export default function AnalyticsDashboard({
     /* Mobile thumb-swipe between Metrics & Automations (Premium only — the tabs only exist then). */
     const subTabSwipe = useSwipeTabs(["metrics", "automations"] as const, activeSubTab, setActiveSubTab, { enabled: isPremium });
     const [inactivePage, setInactivePage] = useState(0);
+    const [inactiveList, setInactiveList] = useState<Array<{
+        id: string;
+        address: string;
+        timestamp: string;
+        retrying: boolean;
+        statusLabel: string;
+    }>>([]);
+    const [inactiveTotalPages, setInactiveTotalPages] = useState(1);
+    const [isInactiveLoading, setIsInactiveLoading] = useState(false);
+    const [inactiveCursors, setInactiveCursors] = useState<Array<string | null>>([null]);
+    const inactiveCursor = inactiveCursors[inactivePage] || null;
 
     /* Automations Tab States */
     const [isActive, setIsActive] = useState(false);
@@ -328,25 +342,20 @@ export default function AnalyticsDashboard({
         && Number(sub.downgradeFailures || 0) === 0
         && !sub.cancelAtPeriodEnd;
 
-    /* The keeper keeps a failing sub ACTIVE and retries it each run (1..MAX-1 failures); only
-       after MAX_RENEWAL_FAILURES does it flip to PAST_DUE and STOP retrying. So "actually
-       auto-retrying" is an ACTIVE sub with at least one recorded failure — never a PAST_DUE
-       (parked) one. Mirror this constant from cron/customer-billing. */
+    /* Mirror the retry ceiling from cron/customer-billing for the attention-state label. */
     const MAX_RENEWAL_FAILURES = 4;
-    const isRetrying = (sub: any) =>
-        sub.active
-        && sub.billingStatus === "ACTIVE"
-        && Number(sub.downgradeFailures || 0) > 0
-        && !sub.cancelAtPeriodEnd;
-
     const monthlyOf = (sub: any) =>
         (parseFloat(sub.rawAmount) || 0) * (2592000 / (parseFloat(sub.rawPeriod) || 2592000));
 
-    const activeSubscribers = useMemo(() => ledgers.filter(isPaying).length, [ledgers]);
+    const activeSubscribers = useMemo(
+        () => analytics?.renewingSubscriptions ?? ledgers.filter(isPaying).length,
+        [analytics, ledgers],
+    );
 
     const mrr = useMemo(() => {
-        return ledgers.reduce((acc, sub) => (isPaying(sub) ? acc + monthlyOf(sub) : acc), 0);
-    }, [ledgers]);
+        return analytics?.mrrUsdc
+            ?? ledgers.reduce((acc, sub) => (isPaying(sub) ? acc + monthlyOf(sub) : acc), 0);
+    }, [analytics, ledgers]);
 
     /* Annual run rate = current monthly recurring revenue × 12. Honest, derived from live ledgers. */
     const annualRunRate = useMemo(() => mrr * 12, [mrr]);
@@ -356,16 +365,16 @@ export default function AnalyticsDashboard({
 
     /* Calculate dynamic retention rate from ledger count */
     const stats = useMemo(() => {
-        const total = ledgers.length;
+        const total = analytics?.totalSubscriptions ?? ledgers.length;
         if (total === 0) {
             return { churn: 0.0, retention: 100.0 };
         }
-        const active = ledgers.filter((s) => s.active).length;
+        const active = analytics?.renewingSubscriptions ?? ledgers.filter(isPaying).length;
         const inactive = total - active;
         const churn = (inactive / total) * 100;
         const retention = 100 - churn;
         return { churn, retention };
-    }, [ledgers]);
+    }, [analytics, ledgers]);
 
     /* Dynamic SVG stroke offset based on actual retention rate */
     const strokeDashoffset = useMemo(() => {
@@ -376,14 +385,22 @@ export default function AnalyticsDashboard({
        Heights are relative to the largest; the actual dollar amount and subscriber are surfaced
        so the chart shows accurate detail, not just anonymous relative bars. No fabricated history. */
     const revenueBars = useMemo(() => {
-        const top = ledgers
-            .filter(isPaying)
-            .map((s: any) => ({
-                monthly: monthlyOf(s),
-                label: s.shortSubAddress || s.displayAddress || "Subscriber",
+        const top = analytics
+            ? analytics.topRevenue.map((subscription) => ({
+                monthly: subscription.monthlyUsdc,
+                label: subscription.subscriberName
+                    || (subscription.subscriber
+                        ? `${subscription.subscriber.slice(0, 6)}...${subscription.subscriber.slice(-4)}`
+                        : "Subscriber"),
             }))
-            .sort((a, b) => b.monthly - a.monthly)
-            .slice(0, 6);
+            : ledgers
+                .filter(isPaying)
+                .map((s: any) => ({
+                    monthly: monthlyOf(s),
+                    label: s.shortSubAddress || s.displayAddress || "Subscriber",
+                }))
+                .sort((a, b) => b.monthly - a.monthly)
+                .slice(0, 6);
         const maxVal = top.length ? Math.max(...top.map((t) => t.monthly)) : 0;
         const bars = top.map((t) => ({
             height: maxVal > 0 ? (t.monthly / maxVal) * 100 : 0,
@@ -392,49 +409,103 @@ export default function AnalyticsDashboard({
         }));
         while (bars.length < 6) bars.push({ height: 0, monthly: 0, label: "" });
         return bars;
-    }, [ledgers]);
+    }, [analytics, ledgers]);
 
-    /* Display list of subscribers actually generating revenue. */
+    /* Display subscribers actually generating revenue, ordered by their real latest settlement
+       timestamp (or creation time before the first renewal). */
     const displayList = useMemo(() => {
+        if (analytics) {
+            return analytics.recentSubscribers.map((subscription) => ({
+                address: subscription.subscriberName
+                    || (subscription.subscriber
+                        ? `${subscription.subscriber.slice(0, 6)}...${subscription.subscriber.slice(-4)}`
+                        : "Unknown subscriber"),
+                tier: 1, /* Active subscribers of standard subscription represent tier 1 setup */
+                timestamp: new Date(subscription.activityAt).toLocaleDateString(),
+            }));
+        }
         return ledgers
             .filter(isPaying)
+            .slice()
+            .sort((a: any, b: any) => new Date(b.activityAt || 0).getTime() - new Date(a.activityAt || 0).getTime())
             .slice(0, 5)
             .map((sub: any) => ({
                 address: sub.shortSubAddress || "0x0000...0000",
-                tier: 1, /* Active subscribers of standard subscription represent tier 1 setup */
-                timestamp: sub.nextBilling || new Date().toLocaleDateString()
+                tier: 1,
+                timestamp: sub.activityAt ? new Date(sub.activityAt).toLocaleDateString() : "Unknown",
             }));
-    }, [ledgers]);
+    }, [analytics, ledgers]);
 
     /* Everything not currently paying: actively-retrying (still ACTIVE, renewal failing),
        ending (cancel-at-period-end), parked (PAST_DUE — retries stopped), and ended subs.
        Only the genuinely auto-retrying ones get the "Auto-retrying" treatment — a PAST_DUE sub
        is parked, not retrying, so it is labelled "Past due" instead. */
-    const inactiveList = useMemo(() => {
-        return ledgers
-            .filter((sub) => !isPaying(sub))
-            .map((sub: any) => {
-                const retrying = isRetrying(sub);
-                const attempts = Number(sub.downgradeFailures || 0);
-                return {
-                    id: sub.rawId,
-                    address: sub.displayAddress || sub.shortSubAddress || "Unknown subscriber",
-                    timestamp: sub.nextBilling || new Date().toLocaleDateString(),
-                    retrying,
-                    statusLabel: retrying
-                        ? `Auto-retrying (${Math.min(attempts, MAX_RENEWAL_FAILURES)}/${MAX_RENEWAL_FAILURES})`
-                        : sub.cancelAtPeriodEnd
-                            ? "Ends at renewal"
-                            : sub.billingStatus === "PAST_DUE"
-                                ? "Past due — paused"
-                                : sub.billingStatus === "CANCELED"
-                                    ? "Canceled"
-                                    : !sub.active
-                                        ? "Ended"
+    useEffect(() => {
+        if (!merchantAddress || !isPremium) {
+            setInactiveList([]);
+            setInactiveTotalPages(1);
+            setInactivePage(0);
+            setInactiveCursors([null]);
+            return;
+        }
+        let cancelled = false;
+        setIsInactiveLoading(true);
+        const cursorParam = inactiveCursor ? `&cursor=${encodeURIComponent(inactiveCursor)}` : "";
+        fetch(`/api/merchant/subscriptions?scope=attention&pageSize=5${cursorParam}`)
+            .then(async (response) => {
+                const payload = await response.json().catch(() => null);
+                if (!response.ok || !payload?.success) {
+                    throw new Error(payload?.error || "Inactive subscriptions could not be loaded");
+                }
+                if (cancelled) return;
+                const totalPages = Math.max(1, Number(payload.pagination?.totalPages || 1));
+                if (inactivePage >= totalPages) {
+                    setInactivePage(totalPages - 1);
+                    return;
+                }
+                const rows = (payload.subscriptions || []).map((subscription: MerchantSubscriptionDetail) => {
+                    const retrying = subscription.status === "ACTIVE"
+                        && subscription.downgradeFailures > 0
+                        && !subscription.cancelAtPeriodEnd;
+                    const attempts = Number(subscription.downgradeFailures || 0);
+                    const fallbackAddress = subscription.subscriber
+                        ? `${subscription.subscriber.slice(0, 6)}...${subscription.subscriber.slice(-4)}`
+                        : "Unknown subscriber";
+                    return {
+                        id: subscription.subscriptionId,
+                        address: subscription.subscriberName || fallbackAddress,
+                        timestamp: subscription.nextBillingDate
+                            ? new Date(subscription.nextBillingDate).toLocaleDateString()
+                            : "Not scheduled",
+                        retrying,
+                        statusLabel: retrying
+                            ? `Auto-retrying (${Math.min(attempts, MAX_RENEWAL_FAILURES)}/${MAX_RENEWAL_FAILURES})`
+                            : subscription.cancelAtPeriodEnd
+                                ? "Ends at renewal"
+                                : subscription.status === "PAST_DUE"
+                                    ? "Past due — paused"
+                                    : subscription.status === "CANCELED"
+                                        ? "Canceled"
                                         : "Payment overdue",
-                };
+                    };
+                });
+                setInactiveList(rows);
+                setInactiveTotalPages(totalPages);
+                const nextCursor = payload.pagination?.nextCursor || null;
+                setInactiveCursors((current) => {
+                    const updated = current.slice(0, inactivePage + 1);
+                    if (nextCursor) updated[inactivePage + 1] = String(nextCursor);
+                    return updated;
+                });
+            })
+            .catch((error) => {
+                if (!cancelled) console.error("Inactive subscription lookup failed:", error);
+            })
+            .finally(() => {
+                if (!cancelled) setIsInactiveLoading(false);
             });
-    }, [ledgers]);
+        return () => { cancelled = true; };
+    }, [inactiveCursor, inactivePage, isPremium, merchantAddress]);
 
     return (
         <div className="space-y-6 relative max-w-[1400px] mx-auto">
@@ -544,7 +615,7 @@ export default function AnalyticsDashboard({
                                                 <p className="text-3xl font-extrabold text-white tracking-tight">{activeSubscribers}</p>
                                             </div>
                                             <div>
-                                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">30-Day Churn Rate</p>
+                                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">All-Time Churn</p>
                                                 <p className="text-xl font-bold text-white/90">{stats.churn.toFixed(1)}%</p>
                                             </div>
                                             <div>
@@ -561,7 +632,7 @@ export default function AnalyticsDashboard({
                                         </div>
                                     </div>
                                     <p className="text-[9px] text-white/30 font-sans mt-4">
-                                        Subscriptions active this billing cycle vs cancellations
+                                        Share of all subscriptions ever created that are still active
                                     </p>
                                 </div>
                             </div>
@@ -593,7 +664,7 @@ export default function AnalyticsDashboard({
                                     </div>
 
                                     <p className="text-[9px] text-white/30 font-sans mt-4">
-                                        Each bar is a top subscriber's monthly recurring revenue
+                                        Each bar is a top subscriber&apos;s monthly recurring revenue
                                     </p>
                                 </div>
 
@@ -601,7 +672,7 @@ export default function AnalyticsDashboard({
                                 <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[320px]">
                                     <div>
                                         <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Recent Subscribers</p>
-                                        <p className="text-xs text-white/60">Active premium nodes</p>
+                                        <p className="text-xs text-white/60">Currently renewing subscriptions</p>
                                     </div>
 
                                     <div className="space-y-3 my-4">
@@ -642,15 +713,17 @@ export default function AnalyticsDashboard({
                                     </div>
 
                                     <div className="space-y-3 my-4 overflow-y-auto max-h-[280px]">
-                                        {inactiveList.length === 0 ? (
+                                        {isInactiveLoading ? (
+                                            <div className="flex items-center justify-center h-36 text-white/30 text-xs gap-2">
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading subscriptions
+                                            </div>
+                                        ) : inactiveList.length === 0 ? (
                                             <div className="flex flex-col items-center justify-center h-36 text-white/30 text-xs">
                                                 No inactive subscriptions
                                             </div>
                                         ) : (
                                             (() => {
-                                                const inactivePageSize = 5;
-                                                const paginatedInactive = inactiveList.slice(inactivePage * inactivePageSize, (inactivePage + 1) * inactivePageSize);
-                                                return paginatedInactive.map((item) => (
+                                                return inactiveList.map((item) => (
                                                     <div key={item.id} className="flex justify-between items-center bg-white/[0.01] border border-white/5 rounded-2xl p-3">
                                                         <div className="flex items-center gap-3">
                                                             <div className="w-7 h-7 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-[9px] text-red-400 font-bold font-mono">
@@ -674,8 +747,7 @@ export default function AnalyticsDashboard({
                                     </div>
 
                                     {(() => {
-                                        const inactivePageSize = 5;
-                                        const totalPages = Math.ceil(inactiveList.length / inactivePageSize);
+                                        const totalPages = inactiveTotalPages;
                                         if (totalPages <= 1) return null;
                                         return (
                                             <div className="flex items-center justify-between pt-3 mt-1 border-t border-white/5 font-sans mb-3">

@@ -5,7 +5,8 @@ import Link from "next/link";
 import { Wallet, Copy, Check, PlugZap, Loader2, Shield, Eye, EyeOff, User } from "@/components/icons";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { createPublicClient, http, formatUnits } from "viem";
-import { arcTestnet } from "@/lib/wagmi";
+import { activeArcChain } from "@/lib/wagmi";
+import { arcHttp } from "@/lib/arc/transport";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 
 const WALLET_PLACEHOLDER = "0xYOUR_CONNECTED_WALLET_ADDRESS";
@@ -21,8 +22,8 @@ const ERC20_ABI = [
 ] as const;
 
 const publicClient = createPublicClient({
-    chain: arcTestnet,
-    transport: http(),
+    chain: activeArcChain,
+    transport: arcHttp(),
 });
 
 interface DashboardHeaderProps {
@@ -63,6 +64,7 @@ export default function DashboardHeader({
     profilePic,
 }: DashboardHeaderProps) {
     const [copiedAddress, setCopiedAddress] = useState(false);
+    const [mounted, setMounted] = useState(false);
     const { address: realAddress, isConnected: realIsConnected } = useAccount();
     const { connect, connectors, isPending: isConnecting } = useConnect();
     const { disconnect } = useDisconnect();
@@ -71,6 +73,10 @@ export default function DashboardHeader({
     const [usdcBalance, setUsdcBalance] = useState("0.00");
     const [merchantAlias, setMerchantAlias] = useState<string | null>(propMerchantAlias || null);
     const [balancesVisible, setBalancesVisible] = useState(true);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     useEffect(() => {
         if (propMerchantAlias !== undefined) {
@@ -92,8 +98,8 @@ export default function DashboardHeader({
         return () => window.removeEventListener("scroll", handleScroll);
     }, []);
 
-    const isConnected = realIsConnected || isTestMode || !!embeddedWallet;
-    const address = realAddress || (isTestMode ? "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29" : embeddedWallet?.wallet);
+    const isConnected = (mounted ? realIsConnected : false) || isTestMode || !!embeddedWallet;
+    const address = (mounted ? realAddress : undefined) || (isTestMode ? "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29" : embeddedWallet?.wallet);
 
     useEffect(() => {
         if (!address) return;

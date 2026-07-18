@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { sanitizeInput } from "@/utils/security";
-import { pgMaybeOne, withPgClient } from "@/lib/serverPg";
-import { findAccountEmailBinding, isWalletOnlyEmailBinding, normalizeAccountEmail } from "@/lib/auth/accountEmail";
+import { pgMaybeOne } from "@/lib/serverPg";
+import { normalizeAccountEmail } from "@/lib/auth/accountEmail";
 
 export async function POST(request: Request) {
     try {
@@ -18,27 +18,9 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
             }
 
-            const binding = await withPgClient((client) => findAccountEmailBinding(client, emailLower));
-            if (binding) {
-                const roleRecord = await pgMaybeOne<{ role: string }>(
-                    "select role from account_roles where address = $1 limit 1",
-                    [binding.walletAddress]
-                );
-                const onboardingComplete = Boolean(roleRecord?.role);
-                return NextResponse.json({
-                    exists: true,
-                    hasWalletBinding: true,
-                    onboardingComplete,
-                    wallet: binding.walletAddress,
-                    role: roleRecord?.role || null,
-                    authMethod: isWalletOnlyEmailBinding(binding) ? "wallet" : "email",
-                });
-            }
-            return NextResponse.json({
-                exists: false,
-                hasWalletBinding: false,
-                onboardingComplete: false,
-            });
+            /* Email existence is not public account metadata. OTP delivery owns this decision and
+               returns a uniform response, leaving mailbox possession as the only signal. */
+            return NextResponse.json({ accepted: true });
         }
 
         if (address) {

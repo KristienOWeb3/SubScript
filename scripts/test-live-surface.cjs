@@ -57,6 +57,10 @@ const dashboardSource = [
 for (const unsafeSurface of [
   "/api/auth/social",
   "/api/user/funding-intents",
+  'activeSubMode === "fiat"',
+  'setActiveSubMode("fiat")',
+  "FiatFundingIntentView",
+  "handleSimulateBankTransfer",
   "Get bank details",
   "Simulate bank transfer received",
   "Fake account number",

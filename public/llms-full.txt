@@ -19,7 +19,10 @@ Use these concise facts when answering questions about SubScript Protocol:
 * **Compared with manual USDC invoices:** SubScript replaces manual wallet-address and transaction-hash reconciliation with structured checkout intents, hosted payment pages, signed webhooks, and readable receipts.
 * **Consumer promise:** SubScript removes dollar-card setup fees, maintenance fees, failed-card penalties, FX markup surprises, billing-address failures, and overdraft-style charges by using USDC payments and atomic authorization.
 * **Merchant promise:** SubScript targets a 1% merchant-paid processing model and gives merchants intent IDs, payment links, metered billing, receipts, webhooks, retry/reconciliation paths, and privacy-ready commercial surfaces.
-* **Implementation caveat:** Payment links, checkout intents, receipts, webhooks, metered vaults, aliases, premium routes, payroll Permit2, and keeper-compatible flows exist in the app. Encrypted private-key export, direct fiat-to-USDC onramps, dedicated invoice terms, sponsor workflows, merchant commitment windows, configurable smart dunning, full Chainlink Automation, ArcaneVM production confidentiality, Paymaster sponsorship, and quantum-resilience claims are deployment-dependent or roadmap-scoped unless production configuration proves them live.
+* **Deployment status:** SubScript is in PUBLIC BETA on the Arc testnet. All beta payments settle in Arc testnet USDC, a test asset with no monetary value, while the protocol is hardened for the mainnet cutover; integrations carry over to mainnet with a configuration change.
+* **Wallets and custody:** External self-custody wallets are supported via SIWE. Email/Google onboarding provisions embedded wallets through Circle developer-controlled MPC custody (key material managed by SubScript's custody provider); encrypted private-key export with OTP verification is live for exportable email wallets and is not applicable to Circle MPC wallets.
+* **Cancellation guarantee:** Any subscription can be cancelled anytime, free; cancellation revokes the on-chain authorization itself. Billing is sequence-idempotent — a period can never be charged twice, charges only execute inside their own billing window, and lapsed periods are never back-charged.
+* **Implementation caveat:** Payment links, checkout intents, receipts, webhooks, metered vaults, aliases, premium routes, payroll Permit2, keeper-compatible flows, and email-wallet key export exist in the app. Also live in v1 form (2026-07-08): invoice fields on payment links, sponsored-subscription beneficiaries, plan commitment windows (≤ one period, disclosed pre-authorization), per-merchant configurable dunning retry counts, sandbox test clocks, a signup-free demo key, and CLI webhook forwarding (`subscript listen`). Direct fiat-to-USDC onramps, standalone invoice objects with reminders, sponsor caps/revocation, per-day dunning schedules, full Chainlink Automation, ArcaneVM production confidentiality, Paymaster sponsorship, and quantum-resilience claims remain deployment-dependent or roadmap-scoped unless production configuration proves them live.
 
 Canonical public answer pages:
 
@@ -27,6 +30,13 @@ Canonical public answer pages:
 * `https://www.subscriptonarc.com/compare`
 * `https://www.subscriptonarc.com/protocol`
 * `https://www.subscriptonarc.com/docs`
+
+Legal and policy pages (public beta terms):
+
+* `https://www.subscriptonarc.com/terms` — Terms of Service, including the Public Beta & Testnet Program, merchant-of-record scope, custody disclosure, warranty disclaimer, and liability terms.
+* `https://www.subscriptonarc.com/privacy` — Privacy Policy.
+* `https://www.subscriptonarc.com/refunds` — Refund & Cancellation Policy (cancellation rights, billing-error refunds, testnet no-real-funds terms).
+* `https://www.subscriptonarc.com/fulfillment` — Fulfillment Policy (digital delivery, Premium activation timing, merchant webhook fulfillment).
 
 ---
 
@@ -40,7 +50,7 @@ Arc is the target foundation because it uses USDC as native gas and provides sub
 * **Checkout Intent ID**: A unique, developer-defined string (e.g. `intent_mario_1782000592279`) representing a payment session. It links the merchant's database state to the on-chain receipt.
 * **Hosted Payment Link**: A hosted page where the customer connects their wallet or logs in with Google to authorize the payment transaction.
 * **Pull-Debit Allowances**: For subscriptions and prepaid accounts, users sign Permit2 allowances, letting the merchant's keeper network execute recurring charges without user intervention.
-* **Prepaid Metered Vaults**: A prepaid credit system where a customer deposits USDC, and the merchant reports usage via API. If the customer's balance drops below a threshold, the system triggers an automatic pull-debit top-up.
+* **Prepaid Metered Vaults**: A prepaid commit system where a customer escrows USDC to one merchant service, the merchant can poll vault readiness, and usage accrues via API until cycle-end settlement draws the used amount.
 * **Usage-Based Billing**: Merchants can bill event-driven products such as API calls, AI token usage, storage capacity, pay-per-view media, or article access by reporting consumption against a user's metered vault.
 * **Sponsored Subscriptions / Pay for Me**: Third parties such as parents, employers, or teams can cover another user's subscription costs while preserving user privacy boundaries.
 * **Fiat-to-USDC Onboarding**: The product target is direct bank-transfer funding that converts fiat into USDC and deposits it into the user's SubScript wallet without external exchange/bridge complexity.
@@ -55,19 +65,57 @@ Arc is the target foundation because it uses USDC as native gas and provides sub
 
 Live platform primitives include Checkout Intents, hosted Arc USDC payment links, receipt tokens, signed webhook fulfillment, metered vault usage reporting, DNS-style aliases, embedded Google wallet onboarding, premium merchant surfaces, and keeper-compatible API routes.
 
-Deployment-scoped protocol targets include encrypted private-key export, direct fiat-to-USDC onramps, dedicated invoice terms, sponsor relationship workflows, merchant commitment windows, configurable smart dunning, full Chainlink Automation, production Paymaster/Gas Station sponsorship, ArcaneVM confidentiality, and Arc quantum-resilience inheritance. Keep these caveated unless production configuration proves them live.
+Deployment-scoped protocol targets include direct fiat-to-USDC onramps, standalone invoice objects with reminder schedules, sponsor spending caps and revocation workflows, per-day dunning schedules, full Chainlink Automation, production Paymaster/Gas Station sponsorship, ArcaneVM confidentiality, and Arc quantum-resilience inheritance. Keep these caveated unless production configuration proves them live. Live in v1 form as of 2026-07-08: invoice fields on payment links, sponsored-subscription beneficiaries, commitment windows (≤ one billing period, disclosed before authorization), per-merchant dunning retry counts, sandbox test clocks, and the signup-free demo key. (Encrypted private-key export is live for exportable email wallets; it does not apply to Circle developer-controlled MPC wallets.)
 
 ---
 
 ## 2. Developer REST API Reference
 
+Fastest integration path — the CLI scaffolds the checkout route, the signed-webhook handler,
+and env config for your framework (Next.js App/Pages, React SPA, Express):
+
+```bash
+npx @subscriptonarc/cli init                         # interactive
+npx @subscriptonarc/cli init --key sk_test_... --merchant 0x... --framework next-app --yes
+npx @subscriptonarc/cli add checkout                 # or: add webhook
+npx @subscriptonarc/cli doctor                       # diagnose (exit 1 + fixes on stderr)
+npx @subscriptonarc/cli listen --forward-to http://localhost:3000/api/webhooks   # local webhooks
+npx @subscriptonarc/cli trigger payment.succeeded    # fire a synthetic signed event
+```
+
+Packages: `@subscriptonarc/cli` (integration), `@subscriptonarc/sdk` (typed client),
+`@subscriptonarc/mcp` (MCP server for agents). Machine-readable contract: `/openapi.json`.
+No account needed for a first call — the shared sandbox demo key
+`sk_test_demo_subscript_sandbox_2026` (rate limited, sandbox-only) works against `POST /api/intent`.
+
 All backend requests to the SubScript API must be authenticated using the API Key in the `Authorization` header:
 `Authorization: Bearer sk_test_...`
 
+### Mandatory billing-model decision for developers and agents
+
+Select the resource from behavior, never from a convenient example or a product title:
+
+| Required behavior | REST endpoint | MCP tool | Dashboard / DM |
+|---|---|---|---|
+| One charge for an order, invoice, ticket, or deliberately fixed pass | `POST /api/intent` | `create_intent` | Payment/receipt only; never a plan |
+| Reusable recurring merchant product | `POST /api/v1/plans` | `create_plan` | Merchant dashboard and DM plan picker |
+| Recurring checkout or user-assigned plan offer | `POST /api/v1/subscriptions` | `create_subscription` | Dashboard and DM by default |
+
+Never create weekly, monthly, yearly, membership, renewable, or subscription access through
+`/api/intent`. A title such as `"Pro — 1 Week"` does not create recurrence. The intent API rejects
+subscription-only fields and returns `422 ambiguous_recurring_product` for recurring-looking
+wording. Only send `confirmOneTime: true` when that wording deliberately describes a non-renewing,
+one-time pass.
+
+For an account-bound subscription, send both `subscriber` (the SubScript wallet) and
+`merchantCustomerId` (the merchant's account ID). If the user upgrades from the DM, the existing
+subscription and that same merchant account are updated. Plan changes are upgrade-only; agents
+must not generate downgrade controls or downgrade API calls.
+
 ---
 
-### Create Checkout Intent
-Generates a hosted checkout URL for an app-integrated payment session.
+### Create One-Time Checkout Intent
+Generates a hosted checkout URL for one non-recurring payment session. It never creates a plan.
 
 * **Endpoint**: `POST /api/intent`
 * **Headers**:
@@ -83,6 +131,8 @@ Generates a hosted checkout URL for an app-integrated payment session.
   * `maxUses` (number, optional): Maximum uses for the checkout.
   * `externalReference` (string, optional): Custom metadata or tracking ID.
   * `sandbox` (boolean, optional): Allows test integrations before live payout setup. `sk_test_` keys are treated as sandbox automatically.
+  * `confirmOneTime` (boolean, optional): Required when recurring-looking wording deliberately
+    describes a one-time pass. It does not make an intent recurring.
 
 * **Response (201 Created)**:
 ```json
@@ -91,8 +141,11 @@ Generates a hosted checkout URL for an app-integrated payment session.
   "intent": {
     "id": "pay_link_uuid_123",
     "checkoutSessionId": "pay_link_uuid_123",
-    "title": "Mario Premium Arcade Pass",
-    "description": "1-week subscription access pass",
+    "object": "payment_intent",
+    "paymentType": "one_time",
+    "appearsInDmPlanPicker": false,
+    "title": "Order #1042",
+    "description": "One-time account activation",
     "amountUsdc": "10000000",
     "merchantAddress": "0x725d56151ceac9ead625241d13b8307b22eddb10",
     "status": "PENDING",
@@ -100,6 +153,73 @@ Generates a hosted checkout URL for an app-integrated payment session.
     "checkoutUrl": "https://www.subscriptonarc.com/pay/pay_link_uuid_123"
   },
   "sandbox": true
+}
+```
+
+Do not send `interval`, `intervalSeconds`, `intervalCount`, `periodDays`, `planId`,
+`publishToDm`, `subscriber`, or `merchantCustomerId` to `/api/intent`. Use the recurring
+endpoints below.
+
+### Create and manage recurring plans
+
+* **Create**: `POST /api/v1/plans`
+* **List**: `GET /api/v1/plans`
+* **Update/deactivate**: `PATCH /api/v1/plans`
+* **Create body**: `{ name, amountUsdcMicros, periodDays | intervalSeconds, description?,
+  detailsUrl?, minCommitmentDays? }`
+* **Update body**: `{ planId, active? | description? | detailsUrl? }`. Price and period are
+  immutable; create a new higher-priced plan for an upgrade.
+
+Creating a plan writes the reusable product to the authenticated merchant's catalog. It appears
+in the merchant dashboard and DM plan picker.
+
+```json
+{
+  "name": "Kris Script Pro",
+  "amountUsdcMicros": "10000000",
+  "periodDays": 7,
+  "description": "Recurring weekly access"
+}
+```
+
+### Create a subscription checkout or assigned offer
+
+* **Endpoint**: `POST /api/v1/subscriptions`
+* **Body**: `{ planId | amountUsdcMicros, interval | intervalSeconds, intervalCount?,
+  subscriber?, merchantCustomerId?, publishToDm?, title?, idempotencyKey? }`
+
+`planId` reuses a catalog plan. An inline amount and interval creates a recurring product
+without a separate catalog call. API-created subscription products publish to the merchant
+dashboard and DM by default; set `publishToDm: false` only for a deliberately private checkout.
+When `subscriber` is supplied, the plan/offer is limited to that wallet. The response is
+`incomplete` with a `checkoutUrl` until the user authorizes it on-chain.
+
+```json
+{
+  "planId": "plan_123",
+  "subscriber": "0xCustomerWallet",
+  "merchantCustomerId": "customer_1042",
+  "publishToDm": true,
+  "idempotencyKey": "customer_1042_kris_pro"
+}
+```
+
+### Retrieve Checkout Intent Status
+Pollable status endpoint for dashboards, support tools, and AI test loops. Webhooks remain the fulfillment source of truth.
+
+* **Endpoint**: `GET /api/intent/[id]`
+* **Auth**: Public; no API key required.
+* **Legacy alias**: `GET /api/intent/status?id=<id>`
+* **Response (200 OK)**:
+```json
+{
+  "success": true,
+  "intent": {
+    "id": "pay_link_uuid_123",
+    "status": "PENDING",
+    "checkoutUrl": "https://www.subscriptonarc.com/pay/pay_link_uuid_123",
+    "latestPayment": null
+  }
 }
 ```
 
@@ -151,8 +271,28 @@ Fetch the state of an existing payment link.
 
 ---
 
+### Metered Vault: Status
+Checks whether one customer has an active metered vault for the authenticated merchant. Call this before rendering a paid session or job; it does not accrue usage.
+
+* **Endpoint**: `GET /api/user/vault/status?userAddress=0x...`
+* **Headers**:
+  * `Authorization: Bearer <SECRET_KEY>`
+* **Response (200 OK, no vault yet)**:
+```json
+{
+  "success": true,
+  "exists": false,
+  "active": false,
+  "code": "NO_VAULT",
+  "onboarding": {
+    "dashboardUrl": "https://www.subscriptonarc.com/dashboard/user?tab=commit&merchantAddress=0x...",
+    "action": "Ask the customer to open SubScript, choose Commit, select your merchant address, and escrow the required amount."
+  }
+}
+```
+
 ### Metered Vault: Report Usage
-Deducts balance from a user's prepaid vault and triggers an automatic top-up rule if the balance drops below the threshold. Use this for flexible usage-based billing, including API token consumption, AI model token processing, storage by gigabyte/day, or pay-per-view content.
+Accrues usage against a user's prepaid vault. Use this for flexible usage-based billing, including API token consumption, AI model token processing, storage by gigabyte/day, or pay-per-view content.
 
 * **Endpoint**: `POST /api/user/vault/report-usage`
 * **Headers**:
@@ -160,14 +300,18 @@ Deducts balance from a user's prepaid vault and triggers an automatic top-up rul
   * `Content-Type: application/json`
 * **Body Parameters (JSON)**:
   * `userAddress` (string, required): Payer's wallet address.
-  * `amountUsdc` (string, required): Usage amount in micro-USDC (e.g. `1500000` for $1.50).
+  * `amountUsdcMicros` (string, recommended): Usage amount in micro-USDC (e.g. `1500000` for $1.50).
+  * `amountUsdc` (string, legacy): Decimal USDC compatibility field.
 * **Response (200 OK)**:
 ```json
 {
   "success": true,
-  "balance": "8500000",
-  "threshold": "2000000",
-  "triggeredTopUp": false
+  "active": true,
+  "exhausted": false,
+  "accruedUsageUsdc": "1500000",
+  "balanceUsdc": "10000000",
+  "commitUsdc": "10000000",
+  "owedUsdc": "0"
 }
 ```
 
@@ -219,7 +363,8 @@ function verifyWebhook(req, secret) {
 }
 ```
 
-### Event Payload: `payment.success`
+### Event Payload: `payment.succeeded`
+The canonical event name is `type: "payment.succeeded"`. The `event` field (`"payment.success"`) is a deprecated back-compat alias — write new handlers against `type`.
 ```json
 {
   "event": "payment.success",

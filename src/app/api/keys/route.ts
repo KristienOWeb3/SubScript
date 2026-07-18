@@ -3,6 +3,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { hashSecretKey, secretKeyHint } from "@/lib/apiKeys";
+import { validateWebhookUrl } from "@/lib/webhookUrls";
 
 function getSupabase() {
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -84,49 +85,100 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
         }
 
-        const { error: revokeError } = await supabase
-            .from("api_keys")
-            .update({ revoked: true })
-            .eq("wallet_address", walletLower)
-            .eq("revoked", false);
-
-        if (revokeError) {
-            console.error("Failed to revoke older keys:", revokeError);
+        const body = await request.json().catch(() => ({}));
+        if (!body || typeof body !== "object" || Array.isArray(body)) {
+            return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+        }
+        const requestedWebhookUrl = "webhookUrl" in body ? body.webhookUrl : undefined;
+        if (requestedWebhookUrl !== undefined && typeof requestedWebhookUrl !== "string") {
+            return NextResponse.json({ error: "webhookUrl must be a string" }, { status: 400 });
+        }
+        const webhookUrl = typeof requestedWebhookUrl === "string" && requestedWebhookUrl.trim()
+            ? requestedWebhookUrl.trim()
+            : null;
+        const validatedWebhook = webhookUrl ? await validateWebhookUrl(webhookUrl) : null;
+        if (validatedWebhook && !validatedWebhook.ok) {
+            return NextResponse.json({ error: validatedWebhook.error }, { status: 400 });
         }
 
         const publishableKey = `pk_test_${crypto.randomBytes(24).toString("hex")}`;
         const secretKeyPlain = `sk_test_${crypto.randomBytes(32).toString("hex")}`;
 
-        const { data: newKey, error: insertError } = await supabase
-            .from("api_keys")
-            .insert({
-                wallet_address: walletLower,
-                publishable_key: publishableKey,
-                /* Persist only the hash + display hint; the cleartext is returned once below. */
-                secret_key_hash: hashSecretKey(secretKeyPlain),
-                secret_key_hint: secretKeyHint(secretKeyPlain),
-                revoked: false,
-            })
-            .select()
-            .single();
+        /* Atomic rotation: the replacement key is created FIRST and the old keys are revoked in
+           the same database transaction. If the insert fails, nothing is revoked — a merchant
+           can never be left with zero working keys. Only hash + hint leave this process. */
+        const { data: rotated, error: rotateError } = await supabase.rpc("rotate_merchant_api_key", {
+            p_wallet: walletLower,
+            p_publishable_key: publishableKey,
+            p_secret_key_hash: hashSecretKey(secretKeyPlain),
+            p_secret_key_hint: secretKeyHint(secretKeyPlain),
+        });
 
-        if (insertError) {
-            console.error("POST API key error:", insertError);
-            return NextResponse.json({ error: "Failed to create API key" }, { status: 500 });
+        if (rotateError || !rotated?.id) {
+            console.error("POST API key rotation error:", rotateError?.message);
+            return NextResponse.json({ error: "Failed to create API key; existing keys were preserved." }, { status: 500 });
         }
 
         const camelCaseKey = {
-            id: newKey.id,
-            walletAddress: newKey.wallet_address,
-            publishableKey: newKey.publishable_key,
+            id: rotated.id,
+            walletAddress: rotated.walletAddress,
+            publishableKey: rotated.publishableKey,
+            mode: rotated.mode,
             /* One-time reveal of the full secret. After this response it cannot be retrieved again. */
             secretKeyPlain,
             secretKeyAvailable: true,
-            createdAt: newKey.created_at,
-            revoked: newKey.revoked,
+            createdAt: rotated.createdAt,
+            revoked: false,
         };
 
-        return NextResponse.json({ key: camelCaseKey }, { status: 201 });
+        let webhookEndpoint: {
+            id: string;
+            walletAddress: string;
+            url: string;
+            secret: string;
+            secretAvailable: true;
+            active: boolean;
+            createdAt: string;
+        } | null = null;
+        let webhookWarning: string | null = null;
+
+        /* Key issuance has already succeeded, so webhook setup is deliberately best-effort.
+           Always return the one-time key secret even if endpoint storage fails; otherwise the
+           merchant would lose the only opportunity to copy it and needlessly rotate again. */
+        if (validatedWebhook?.ok) {
+            const webhookSecret = `whsec_${crypto.randomBytes(24).toString("hex")}`;
+            const { data: endpoint, error: endpointError } = await supabase
+                .from("webhook_endpoints")
+                .insert({
+                    wallet_address: walletLower,
+                    url: validatedWebhook.url,
+                    secret: webhookSecret,
+                    active: true,
+                })
+                .select()
+                .single();
+
+            if (endpointError || !endpoint) {
+                console.error("POST API key webhook registration error:", endpointError?.message);
+                webhookWarning = "API key created, but the webhook endpoint could not be registered. Copy the key now, then add the endpoint from Developers → Webhooks.";
+            } else {
+                webhookEndpoint = {
+                    id: endpoint.id,
+                    walletAddress: endpoint.wallet_address,
+                    url: endpoint.url,
+                    secret: endpoint.secret,
+                    secretAvailable: true,
+                    active: endpoint.active,
+                    createdAt: endpoint.created_at,
+                };
+            }
+        }
+
+        return NextResponse.json({
+            key: camelCaseKey,
+            ...(webhookEndpoint ? { webhookEndpoint } : {}),
+            ...(webhookWarning ? { webhookWarning } : {}),
+        }, { status: 201 });
     } catch (error: any) {
         console.error("POST API key error:", error);
         return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });

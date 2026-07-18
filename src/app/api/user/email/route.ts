@@ -6,7 +6,6 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
-import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { ensureDefaultAliasFromEmail } from "@/lib/auth/defaultAlias";
 import { withPgClient } from "@/lib/serverPg";
@@ -17,12 +16,6 @@ function hashOtp(email: string, code: string) {
     const secret = process.env.OTP_SECRET || process.env.JWT_SECRET;
     if (!secret) throw new Error("OTP_SECRET or JWT_SECRET must be configured");
     return crypto.createHmac("sha256", secret).update(`${email}:${code}`).digest("hex");
-}
-
-function safeHashMatch(expected: string, actual: string) {
-    const e = Buffer.from(expected, "utf8");
-    const a = Buffer.from(actual, "utf8");
-    return e.length === a.length && crypto.timingSafeEqual(e, a);
 }
 
 export async function POST(request: Request) {
@@ -46,42 +39,66 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Enter the 6-digit code we emailed you." }, { status: 400 });
         }
 
-        /* Confirm the email with the OTP issued by /api/auth/otp/send before binding it. */
-        let otpRecord: { code: string; expires_at: string | Date } | null;
+        /* Consume the exact wallet-bound OTP atomically. Login OTPs and codes issued for another
+           wallet are deliberately ineligible here, so the two authentication purposes cannot be
+           confused or replayed across endpoints. */
+        let consumedOtp = false;
         try {
-            otpRecord = await withPgClient(async (client) => {
+            consumedOtp = await withPgClient(async (client) => {
                 const result = await client.query(
-                    "select code, expires_at from otp_codes where email = $1 limit 1",
-                    [email]
+                    `delete from otp_codes
+                      where email = $1
+                        and code = $2
+                        and purpose = 'BIND_WALLET_EMAIL'
+                        and wallet_address = $3
+                        and expires_at > now()
+                    returning email`,
+                    [email, hashOtp(email, code), wallet.toLowerCase()]
                 );
-                return result.rows[0] || null;
+                return ((result as { rowCount?: number }).rowCount ?? 0) === 1;
             });
         } catch (err) {
-            console.error("Email OTP lookup failed:", err);
+            console.error("Email OTP consume failed:", err);
             return NextResponse.json({ error: "Verification is temporarily unavailable. Please try again." }, { status: 503 });
         }
-        if (!otpRecord) {
-            return NextResponse.json({ error: "Verification code expired or not found. Request a new one." }, { status: 400 });
+        if (!consumedOtp) {
+            return NextResponse.json({ error: "Invalid or expired verification code. Request a new one." }, { status: 400 });
         }
-        if (!safeHashMatch(otpRecord.code, hashOtp(email, code))) {
-            return NextResponse.json({ error: "Invalid verification code. Please check and try again." }, { status: 400 });
-        }
-        if (new Date() > new Date(otpRecord.expires_at)) {
-            await withPgClient((client) => client.query("delete from otp_codes where email = $1", [email])).catch(() => {});
-            return NextResponse.json({ error: "Verification code has expired. Request a new one." }, { status: 400 });
-        }
-        /* Consume the code so it can't be replayed. */
-        await withPgClient((client) => client.query("delete from otp_codes where email = $1", [email])).catch(() => {});
 
         try {
-            await prisma.customer.upsert({
-                where: { walletAddress: wallet.toLowerCase() },
-                update: { email },
-                create: { walletAddress: wallet.toLowerCase(), email },
+            await withPgClient(async (client) => {
+                await client.query("begin");
+                try {
+                    await client.query(
+                        `insert into customers (wallet_address, email)
+                         values ($1, $2)
+                         on conflict (wallet_address) do update set email = excluded.email`,
+                        [wallet.toLowerCase(), email],
+                    );
+                    await client.query(
+                        `insert into user_embedded_wallets
+                            (wallet_address, email, provider, email_verified_at, updated_at)
+                         values ($1, $2, 'external_wallet_email_otp', now(), now())
+                         on conflict (wallet_address) do update set
+                            email = excluded.email,
+                            provider = case
+                                when user_embedded_wallets.provider = 'external_wallet'
+                                    then excluded.provider
+                                else user_embedded_wallets.provider
+                            end,
+                            email_verified_at = now(),
+                            updated_at = now()`,
+                        [wallet.toLowerCase(), email],
+                    );
+                    await client.query("commit");
+                } catch (error) {
+                    await client.query("rollback").catch(() => undefined);
+                    throw error;
+                }
             });
         } catch (e: any) {
             /* A DB trigger enforces one email per account — surface that as a clean conflict. */
-            if (e?.code === "P2002" || /already associated|23505/i.test(String(e?.message || ""))) {
+            if (e?.code === "23505" || /already associated|23505/i.test(String(e?.message || ""))) {
                 return NextResponse.json({ error: "That email is already linked to another SubScript account." }, { status: 409 });
             }
             throw e;

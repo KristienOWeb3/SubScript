@@ -4,19 +4,18 @@
  * the message from THIS module, so the signed message and the on-chain reconstruction can never
  * drift (a drift would make the signature fail to verify and the payout revert).
  *
- * Design: one fixed authorization for the lifetime of the campaign — max allowance + max expiration
- * — so the keeper calls `permit()` exactly once and every payday after is a plain `transferFrom`.
- * The ONLY dynamic field is `nonce`, read fresh from chain at sign time and persisted on the campaign.
+ * Design: one bounded authorization for one payday. The signed amount is the
+ * exact recipient total, expiry is shortly after that payday, and the signature
+ * can only be submitted briefly after creation. A compromised keeper therefore
+ * cannot drain an organization beyond the payroll the merchant approved.
  */
 
 export const PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3" as const;
 
-/* uint160 max (allowance amount) */
 export const PERMIT2_MAX_AMOUNT = BigInt("0xffffffffffffffffffffffffffffffffffffffff");
-/* uint48 max (allowance expiration) */
-export const PERMIT2_MAX_EXPIRATION = BigInt("0xffffffffffff");
-/* uint256 max (signature submission deadline) */
-export const PERMIT2_SIG_DEADLINE = BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+const MAX_FREQUENCY_DAYS = 366;
+const AUTHORIZATION_GRACE_SECONDS = 6 * 60 * 60;
+const SIGNATURE_WINDOW_SECONDS = 15 * 60;
 
 /* EIP-712 types (no EIP712Domain entry — both viem and ethers add it from the domain). */
 export const PERMIT2_TYPES = {
@@ -43,17 +42,37 @@ export type PermitSingleMessage = {
     sigDeadline: bigint;
 };
 
-/* Build the PermitSingle message. `token` = USDC, `spender` = the keeper address,
-   `nonce` = current on-chain Permit2 nonce for (owner, token, spender). */
-export function buildPermitSingle(token: string, spender: string, nonce: number | bigint): PermitSingleMessage {
+export function payrollPermitWindow(frequencyDays: number, nowSeconds = Math.floor(Date.now() / 1000)) {
+    if (!Number.isInteger(frequencyDays) || frequencyDays < 1 || frequencyDays > MAX_FREQUENCY_DAYS) {
+        throw new Error(`Payroll frequency must be between 1 and ${MAX_FREQUENCY_DAYS} days.`);
+    }
+    return {
+        expiration: BigInt(nowSeconds + frequencyDays * 24 * 60 * 60 + AUTHORIZATION_GRACE_SECONDS),
+        sigDeadline: BigInt(nowSeconds + SIGNATURE_WINDOW_SECONDS),
+    };
+}
+
+/* Build the exact PermitSingle signed by the merchant and reconstructed by the keeper. */
+export function buildPermitSingle(
+    token: string,
+    spender: string,
+    nonce: number | bigint,
+    amount: number | bigint,
+    expiration: number | bigint,
+    sigDeadline: number | bigint,
+): PermitSingleMessage {
+    const boundedAmount = BigInt(amount);
+    if (boundedAmount <= BigInt(0) || boundedAmount > PERMIT2_MAX_AMOUNT) {
+        throw new Error("Payroll authorization amount is outside Permit2's uint160 range.");
+    }
     return {
         details: {
             token,
-            amount: PERMIT2_MAX_AMOUNT,
-            expiration: PERMIT2_MAX_EXPIRATION,
+            amount: boundedAmount,
+            expiration: BigInt(expiration),
             nonce: BigInt(nonce),
         },
         spender,
-        sigDeadline: PERMIT2_SIG_DEADLINE,
+        sigDeadline: BigInt(sigDeadline),
     };
 }

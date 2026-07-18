@@ -1,9 +1,14 @@
 /* API route for internal webhook and cron execution of merchant premium billing */
 
 import { NextResponse } from "next/server";
+import crypto from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 import { verifyWebhookSignature } from "@/lib/webhooks";
+import { ethers } from "ethers";
+import { SUBSCRIPT_ROUTER_ADDRESS } from "@/lib/contracts/constants";
+
+const ROUTER_ABI = ["function merchantTiers(address) view returns (uint8)"];
 
 /*
  * GET handler: Cron execution to synchronize billing state and downgrade delinquent merchants.
@@ -48,14 +53,23 @@ export async function GET(request: Request) {
         for (const merchant of (premiumMerchants || [])) {
             const wallet = merchant.wallet_address.toLowerCase();
 
-            /* Check if there exists an active subscription where subscriber is the merchant and merchant_address is the Admin Wallet */
+            /* Premium subscriptions (merchant -> SubScript) are stored by activate_premium_merchant
+               with merchant_address = the MERCHANT's own wallet and kind = 'PREMIUM' (subscriber is
+               left null on that path). The prior query looked them up as merchant_address = the admin
+               wallet / subscriber = the merchant, which matched zero rows and downgraded every paying
+               merchant. Match on the merchant's own row instead. */
+            /* subscriptions is keyed by subscription_id, so a merchant can hold more than one
+               PREMIUM row (e.g. a re-subscribe with a new subId). Order by the latest next_billing
+               and take one so maybeSingle() can't error on multiple rows and skip a legitimate
+               downgrade — the most recent authorization is the one that keeps them premium. */
             const { data: sub, error: subError } = await supabaseAdmin
                 .from("subscriptions")
                 .select("status, next_billing_date")
                 .eq("kind", "PREMIUM")
-                .eq("merchant_address", PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase())
-                .eq("subscriber", wallet)
+                .eq("merchant_address", wallet)
                 .in("status", ["ACTIVE", "PAST_DUE"])
+                .order("next_billing_date", { ascending: false })
+                .limit(1)
                 .maybeSingle();
 
             if (subError) {
@@ -152,45 +166,114 @@ export async function POST(request: Request) {
         }
 
         const subscriber = (data.subscriber || "").toLowerCase();
-        if (!subscriber) {
+        if (!ethers.isAddress(subscriber)) {
             return NextResponse.json({ error: "Bad Request: Missing subscriber address" }, { status: 400 });
         }
 
-        /* 3. Execute state transitions based on subscription event type */
-        let newTier: number = 0;
-        let actionMessage = "";
+        /* The signed raw body is immutable: replaying a captured request necessarily produces the
+           same digest. Claim it before changing entitlement state so an older success event cannot
+           be replayed after a cancellation/failure within the signature tolerance window. */
+        const executionKey = `internal-billing:${crypto.createHash("sha256").update(rawBody).digest("hex")}`;
+        const { error: claimError } = await supabaseAdmin
+            .from("idempotency_keys")
+            .insert({
+                execution_key: executionKey,
+                status: "PROCESSING",
+                response_payload: null,
+                expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+            });
+        if (claimError?.code === "23505") {
+            const { data: existingClaim, error: existingClaimError } = await supabaseAdmin
+                .from("idempotency_keys")
+                .select("status")
+                .eq("execution_key", executionKey)
+                .maybeSingle();
+            if (existingClaimError) {
+                return NextResponse.json({ error: "Database idempotency lookup failed" }, { status: 500 });
+            }
+            if (existingClaim?.status === "COMPLETED") {
+                return NextResponse.json({ success: true, duplicate: true, message: "Event already processed" });
+            }
+            /* A prior attempt changed no committed state or failed before marking completion.
+               Re-run the idempotent chain-derived reconciliation instead of abandoning the claim. */
+        } else if (claimError) {
+            /* else-if: the 23505 branch above is a RECOVERABLE duplicate that must fall through to
+               reconciliation, not into this generic 500. Only non-duplicate claim errors abort. */
+            console.error("[internal/billing] Failed to claim webhook event:", claimError.message);
+            return NextResponse.json({ error: "Database idempotency check failed" }, { status: 500 });
+        }
 
-        if (
+        /* 3. Execute state transitions based on subscription event type */
+        const isStateEvent = (
             event === "subscription.created" || 
             event === "payment.executed" || 
-            event === "subscription.payment.executed"
-        ) {
-            newTier = 1;
-            actionMessage = "Upgraded merchant to PREMIUM";
-        } else if (
+            event === "subscription.payment.executed" ||
             event === "subscription.cancelled" || 
             event === "subscription.expired" || 
             event === "subscription.payment.failed"
-        ) {
-            newTier = 0;
-            actionMessage = "Downgraded merchant to FREE";
-        } else {
+        );
+        if (!isStateEvent) {
             /* Ignore unhandled events but return 200 */
+            const { data: completed, error: completionError } = await supabaseAdmin.from("idempotency_keys").update({
+                status: "COMPLETED",
+                response_payload: { event, ignored: true },
+                updated_at: new Date().toISOString(),
+            }).eq("execution_key", executionKey).select("id").maybeSingle();
+            if (completionError || !completed) {
+                return NextResponse.json({ error: "Database idempotency completion failed" }, { status: 500 });
+            }
             return NextResponse.json({ success: true, message: `No action taken for event: ${event}` });
         }
 
-        /* 4. Update the database record */
+        /* 4. Signed events are wake-ups, not entitlement authority. Re-read the canonical router
+           tier so delayed/out-of-order success and cancellation deliveries can never move the DB
+           backwards or report Premium after on-chain activation failed. */
+        /* Chain-aware fallback: an authoritative tier read must target the SAME network the router
+           address belongs to. A hardcoded testnet default would read unrelated state on mainnet and
+           could overwrite a real merchant's tier. */
+        const defaultArcRpc = process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet"
+            ? "https://rpc.mainnet.arc.network"
+            : "https://rpc.testnet.arc.network";
+        const provider = new ethers.JsonRpcProvider(
+            process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || defaultArcRpc,
+        );
+        const router = new ethers.Contract(SUBSCRIPT_ROUTER_ADDRESS, ROUTER_ABI, provider);
+        let newTier: number;
+        try {
+            newTier = Number(await router.merchantTiers(subscriber));
+        } catch (chainError) {
+            console.error("[internal/billing] Authoritative tier read failed:", chainError);
+            return NextResponse.json({ error: "On-chain entitlement state unavailable" }, { status: 503 });
+        }
+        const actionMessage = newTier >= 1 ? "Reconciled merchant to PREMIUM" : "Reconciled merchant to FREE";
+
         const { error: updateError } = await supabaseAdmin
             .from("merchants")
-            .update({
-                tier: newTier === 1 ? "PREMIUM" : "FREE",
+            .upsert({
+                wallet_address: subscriber,
+                tier: newTier >= 1 ? "PREMIUM" : "FREE",
                 updated_at: new Date().toISOString()
-            })
-            .eq("wallet_address", subscriber);
+            }, { onConflict: "wallet_address" });
 
         if (updateError) {
             console.error(`Failed to update tier for merchant ${subscriber}:`, updateError);
             return NextResponse.json({ error: "Database update failed" }, { status: 500 });
+        }
+
+        const { data: completedClaim, error: completionError } = await supabaseAdmin
+            .from("idempotency_keys")
+            .update({
+                status: "COMPLETED",
+                response_payload: { event, subscriber, tier: newTier },
+                updated_at: new Date().toISOString(),
+            })
+            .eq("execution_key", executionKey)
+            .eq("status", "PROCESSING")
+            .select("id")
+            .maybeSingle();
+        if (completionError || !completedClaim) {
+            console.error("[internal/billing] Tier reconciled but claim completion failed:", completionError?.message || "claim missing");
+            return NextResponse.json({ error: "Billing event reconciliation is incomplete" }, { status: 500 });
         }
 
         console.log(`[Billing Webhook] ${actionMessage} for ${subscriber}. Event: ${event}`);

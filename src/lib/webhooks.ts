@@ -73,12 +73,44 @@ export function subscriptionWebhookData(args: {
     txHash?: string | null;
     chainId?: number;
     reason?: string | null;
+    /* Sponsored subscriptions: the wallet receiving the service when it differs from the
+       paying subscriber. Merchants key entitlements off this when present. */
+    beneficiary?: string | null;
+    /* Introductory-pricing phase for this event, derived from the subscription's immutable
+       promo snapshot (lib/subscriptions/promotions.pricingPhaseFor). Present only when the
+       subscription was created under a promotion. */
+    pricing?: {
+        phase: "introductory" | "regular";
+        chargedAmountUsdcMicros: bigint;
+        regularAmountUsdcMicros: bigint;
+        introductoryCyclesRemaining: number;
+        nextPaymentAmountUsdcMicros: bigint;
+    } | null;
+    /* Merchant-owned account identifier and canonical originating checkout. */
+    externalReference?: string | null;
+    sourceCheckoutId?: string | null;
 }): Record<string, unknown> {
     const micros = args.amountUsdcMicros != null
         ? (typeof args.amountUsdcMicros === "bigint" ? args.amountUsdcMicros : BigInt(args.amountUsdcMicros)).toString()
         : null;
     const settlement = args.txHash ? arcReconciliation(args.txHash, args.chainId) : null;
+    const pricing = args.pricing
+        ? {
+            phase: args.pricing.phase,
+            charged_amount_usdc: formatUsdc(args.pricing.chargedAmountUsdcMicros),
+            chargedAmountUsdc: formatUsdc(args.pricing.chargedAmountUsdcMicros),
+            charged_amount_usdc_micros: args.pricing.chargedAmountUsdcMicros.toString(),
+            regular_amount_usdc: formatUsdc(args.pricing.regularAmountUsdcMicros),
+            regularAmountUsdc: formatUsdc(args.pricing.regularAmountUsdcMicros),
+            regular_amount_usdc_micros: args.pricing.regularAmountUsdcMicros.toString(),
+            introductory_cycles_remaining: args.pricing.introductoryCyclesRemaining,
+            introductoryCyclesRemaining: args.pricing.introductoryCyclesRemaining,
+            next_payment_amount_usdc: formatUsdc(args.pricing.nextPaymentAmountUsdcMicros),
+            nextPaymentAmountUsdc: formatUsdc(args.pricing.nextPaymentAmountUsdcMicros),
+        }
+        : null;
     return {
+        ...(pricing ? { pricing } : {}),
         subscription_id: `sub_${args.subscriptionId}`,
         subscriptionId: `sub_${args.subscriptionId}`,
         status: args.status,
@@ -89,6 +121,13 @@ export function subscriptionWebhookData(args: {
         subscriber: args.subscriber ?? null,
         merchant_address: args.merchantAddress ?? null,
         merchantAddress: args.merchantAddress ?? null,
+        external_reference: args.externalReference ?? null,
+        externalReference: args.externalReference ?? null,
+        merchant_customer_id: args.externalReference ?? null,
+        merchantCustomerId: args.externalReference ?? null,
+        source_checkout_id: args.sourceCheckoutId ?? null,
+        sourceCheckoutId: args.sourceCheckoutId ?? null,
+        ...(args.beneficiary ? { beneficiary: args.beneficiary, beneficiary_address: args.beneficiary, beneficiaryAddress: args.beneficiary } : {}),
         ...(args.reason ? { reason: args.reason } : {}),
         ...(settlement ? {
             transaction_hash: args.txHash,
@@ -125,10 +164,14 @@ export async function sendWebhookRequest(
 
     /* Validate + consume the destination rate limit once for the whole delivery (all retries go to
        the same host for the same event — they shouldn't each burn a token). */
-    const urlValidation = validateWebhookUrl(url);
+    const urlValidation = await validateWebhookUrl(url);
     if (!urlValidation.ok) {
-        return { status: 400, responseText: urlValidation.error };
+        return {
+            status: "transient" in urlValidation && urlValidation.transient === true ? 503 : 400,
+            responseText: urlValidation.error,
+        };
     }
+    const destination = new URL(urlValidation.url).origin;
     try {
         const destinationHost = new URL(urlValidation.url).host.toLowerCase();
         assertProviderRateLimit({
@@ -141,40 +184,60 @@ export async function sendWebhookRequest(
         return { status: 429, responseText: err?.message || "Webhook destination rate limit exceeded" };
     }
 
+    /* DNS-rebinding defense: dial the exact vetted IP while TLS keeps verifying the original
+       hostname (SNI/cert come from the URL). A resolver that answered public for validation
+       cannot swap in a private address for the actual connection, because the connection
+       never resolves again. */
+    const pinned = urlValidation.addresses[0];
+    const { Agent: UndiciAgent, fetch: undiciFetch } = await import("undici");
+    const pinnedDispatcher = new UndiciAgent({
+        connect: {
+            lookup: (_hostname: string, _options: unknown, callback: (err: Error | null, address: string, family: number) => void) => {
+                callback(null, pinned.address, pinned.family);
+            },
+        },
+    });
+
     const BACKOFF_MS = [500, 1500];
     const maxAttempts = BACKOFF_MS.length + 1;
     let last: { status: number; responseText: string } = { status: 0, responseText: "" };
 
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const timestamp = Math.floor(Date.now() / 1000);
-        const signature = crypto.createHmac("sha256", secret).update(`${timestamp}.${serializedPayload}`).digest("hex");
-        const signatureHeader = `t=${timestamp},v1=${signature}`;
+    try {
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const timestamp = Math.floor(Date.now() / 1000);
+            const signature = crypto.createHmac("sha256", secret).update(`${timestamp}.${serializedPayload}`).digest("hex");
+            const signatureHeader = `t=${timestamp},v1=${signature}`;
 
-        try {
-            const response = await fetch(urlValidation.url, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "x-subscript-signature": signatureHeader,
-                    "User-Agent": "SubScript-Webhook-Dispatcher/1.0",
-                },
-                body: serializedPayload,
-                signal: AbortSignal.timeout(10000),
-            });
-            const responseText = (await response.text().catch(() => "")).slice(0, 1000);
-            last = { status: response.status, responseText };
-            if (!isRetryableStatus(response.status)) return last;
-        } catch (err: any) {
-            console.warn(`Webhook delivery failure to ${url} (attempt ${attempt + 1}/${maxAttempts}):`, err);
-            last = { status: 504, responseText: `Delivery failed: ${err.message || String(err)}` };
+            try {
+                const response = await undiciFetch(urlValidation.url, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "x-subscript-signature": signatureHeader,
+                        "User-Agent": "SubScript-Webhook-Dispatcher/1.0",
+                    },
+                    body: serializedPayload,
+                    signal: AbortSignal.timeout(10000),
+                    redirect: "manual",
+                    dispatcher: pinnedDispatcher,
+                });
+                const responseText = (await response.text().catch(() => "")).slice(0, 1000);
+                last = { status: response.status, responseText };
+                if (!isRetryableStatus(response.status)) return last;
+            } catch (err: any) {
+                console.warn(`Webhook delivery failure to ${destination} (attempt ${attempt + 1}/${maxAttempts}):`, err);
+                last = { status: 504, responseText: `Delivery failed: ${err.message || String(err)}` };
+            }
+
+            if (attempt < maxAttempts - 1) {
+                await new Promise((resolve) => setTimeout(resolve, BACKOFF_MS[attempt]));
+            }
         }
 
-        if (attempt < maxAttempts - 1) {
-            await new Promise((resolve) => setTimeout(resolve, BACKOFF_MS[attempt]));
-        }
+        return last;
+    } finally {
+        await pinnedDispatcher.close().catch(() => { /* connection cleanup is best-effort */ });
     }
-
-    return last;
 }
 
 /**

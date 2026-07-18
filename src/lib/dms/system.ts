@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { getAccountRole } from "@/lib/accounts/roles";
-import { sendPushToWallet } from "@/lib/push";
+import { createDmAndNotify } from "@/lib/dms/notifications";
+import { isPeerRequestLink } from "@/lib/paymentLinks/classification";
 
 const USDC_DECIMALS = 1_000_000;
 
@@ -24,11 +24,13 @@ export function parseUsdcToMicros(value: unknown) {
     }
 
     const trimmed = value.trim();
-    if (/^\d+$/.test(trimmed)) {
-        const whole = BigInt(trimmed);
-        return whole > BigInt(100_000) ? whole : whole * BigInt(USDC_DECIMALS);
-    }
 
+    /* Input here is always a HUMAN USDC amount — the dashboard send / request / payment-link / plan
+       / vault flows all pass a user-entered USDC value, and the programmatic micro-USDC APIs
+       (/intent, /v1/subscriptions, vault report-usage) parse `amountUsdcMicros` themselves and never
+       call this. So an integer means whole USDC, exactly like the decimal branch treats "10". The
+       previous `> 100_000 ? already-micros : × 1e6` heuristic was an unresolvable unit guess that
+       silently under-charged any amount over 100,000 USDC by 1,000,000×. */
     if (!/^\d+(\.\d{1,6})?$/.test(trimmed)) {
         throw new Error("Amount must be a USDC value with up to 6 decimals");
     }
@@ -74,6 +76,7 @@ export async function createSubscriptionStartedDm({
     amountUsdc,
     periodSeconds,
     isChange = false,
+    introTerms = null,
 }: {
     merchantAddress: string;
     subscriberAddress: string;
@@ -81,6 +84,13 @@ export async function createSubscriptionStartedDm({
     amountUsdc: bigint;
     periodSeconds: bigint;
     isChange?: boolean;
+    /* Introductory terms the subscriber authorized: full disclosure of the price they paid
+       today, how long the discount lasts, and when the regular price begins. */
+    introTerms?: {
+        introAmountUsdc: bigint;
+        introCycles: number;
+        firstRegularPaymentAt: Date;
+    } | null;
 }) {
     const merchant = merchantAddress.toLowerCase();
     const subscriber = subscriberAddress.toLowerCase();
@@ -90,32 +100,89 @@ export async function createSubscriptionStartedDm({
     const amount = formatUsdcFromMicros(amountUsdc);
     const cadence = formatPeriodLabel(periodSeconds);
 
-    const dm = await prisma.subscriptDm.create({
-        data: {
+    const pricingLines = introTerms
+        ? [
+            introTerms.introAmountUsdc === BigInt(0)
+                ? `Paid today: 0 USDC (free ${introTerms.introCycles > 1 ? `${introTerms.introCycles} cycles` : "first cycle"})`
+                : `Paid today: ${formatUsdcFromMicros(introTerms.introAmountUsdc)} USDC (introductory price${introTerms.introCycles > 1 ? ` for ${introTerms.introCycles} cycles` : ""})`,
+            `Then: ${amount} USDC / ${cadence} starting ${introTerms.firstRegularPaymentAt.toISOString().slice(0, 10)}`,
+            "Cancel before then to avoid the regular price.",
+        ]
+        : [`Amount: ${amount} USDC / ${cadence}`];
+
+    const dm = await createDmAndNotify({
+        senderAddress: merchant,
+        receiverAddress: subscriber,
+        messageType: "SUBSCRIPTION_STARTED",
+        status: "APPROVED",
+        amountUsdc: introTerms ? introTerms.introAmountUsdc : amountUsdc,
+        title: isChange ? `Plan changed to ${planName}` : `Subscribed to ${planName}`,
+        description: [
+            `Merchant: ${merchantName}`,
+            `Plan: ${planName}`,
+            ...pricingLines,
+            "You can manage or cancel this subscription anytime from your dashboard.",
+        ].join("\n"),
+    });
+
+    return dm;
+}
+
+/**
+ * Deliver a merchant-authored API subscription offer to one SubScript user.
+ * The checkout id is the durable identity: retries return the existing DM
+ * instead of sending duplicate inbox rows or push notifications.
+ */
+export async function createSubscriptionOfferDm({
+    merchantAddress,
+    subscriberAddress,
+    checkoutSessionId,
+    planName,
+    amountUsdc,
+    periodSeconds,
+}: {
+    merchantAddress: string;
+    subscriberAddress: string;
+    checkoutSessionId: string;
+    planName: string;
+    amountUsdc: bigint;
+    periodSeconds: bigint;
+}) {
+    const merchant = merchantAddress.toLowerCase();
+    const subscriber = subscriberAddress.toLowerCase();
+    const dedupeKey = `subscription-offer:${checkoutSessionId}:${subscriber}`;
+
+    const existing = await prisma.subscriptDm.findUnique({ where: { dedupeKey } });
+    if (existing) return existing;
+
+    const merchantAlias = await prisma.addressAlias.findUnique({ where: { address: merchant } }).catch(() => null);
+    const merchantName = merchantAlias?.alias || `${merchant.slice(0, 6)}...${merchant.slice(-4)}`;
+    const amount = formatUsdcFromMicros(amountUsdc);
+    const cadence = formatPeriodLabel(periodSeconds);
+
+    try {
+        return await createDmAndNotify({
             senderAddress: merchant,
             receiverAddress: subscriber,
-            messageType: "SUBSCRIPTION_STARTED",
-            status: "APPROVED",
+            messageType: "SUBSCRIPTION_OFFER",
+            status: "PENDING",
             amountUsdc,
-            title: isChange ? `Plan changed to ${planName}` : `Subscribed to ${planName}`,
+            title: `${merchantName} offered ${planName}`,
             description: [
                 `Merchant: ${merchantName}`,
                 `Plan: ${planName}`,
                 `Amount: ${amount} USDC / ${cadence}`,
-                "You can manage or cancel this subscription anytime from your dashboard.",
+                "Review the recurring terms, then accept or decline this plan.",
             ].join("\n"),
-        },
-    });
-
-    /* Browser push for the new DM (best-effort; no-op if the user hasn't enabled it). */
-    sendPushToWallet(subscriber, {
-        title: isChange ? "Plan updated" : "Subscription started",
-        body: `${planName}: ${amount} USDC / ${cadence} with ${merchantName}.`,
-        url: "/user?tab=inbox",
-        tag: `subscription-${merchant}`,
-    }).catch(() => { /* best-effort */ });
-
-    return dm;
+            paymentLinkId: checkoutSessionId,
+            dedupeKey,
+        });
+    } catch (error: any) {
+        if (error?.code !== "P2002") throw error;
+        const raced = await prisma.subscriptDm.findUnique({ where: { dedupeKey } });
+        if (!raced) throw error;
+        return raced;
+    }
 }
 
 /**
@@ -157,13 +224,14 @@ export async function createPaymentRequestDm({
     }
 
     const creatorAddress = link.merchantAddress.toLowerCase();
-    const creatorRole = await getAccountRole(creatorAddress);
-    /* Links are created either by merchants (ENTERPRISE) or by users (peer-to-peer
-       "receive USDC" links). Both open a request DM the recipient can act on. */
-    if (creatorRole !== "ENTERPRISE" && creatorRole !== "USER") {
-        throw new Error("This payment link's owner does not have a SubScript account.");
-    }
-    const isMerchantLink = creatorRole === "ENTERPRISE";
+    /* Classify from the LINK METADATA, using the same predicate the hosted checkout (/pay
+       isUserRequest) and the embedded-pay route use. Keying off the creator's account role
+       instead let the two sides disagree: an ENTERPRISE-role creator whose link carried the
+       peer-request markers produced a PAYMENT_REQUEST here while /pay treated it as a user
+       request — so confirming the DM bounced back to /pay, which re-offered "Go to DMs", an
+       infinite loop. A real merchant checkout never carries the peer markers, so this is also
+       the correct signal. See [[isPeerRequestLink]]. */
+    const isMerchantLink = !isPeerRequestLink(link);
     const messageType = isMerchantLink ? "PAYMENT_REQUEST" : "PEER_REQUEST";
 
     if (creatorAddress === normalizedReceiver) {
@@ -198,26 +266,24 @@ export async function createPaymentRequestDm({
         timeStyle: "short",
     });
 
-    const dm = await prisma.subscriptDm.create({
-        data: {
-            senderAddress: creatorAddress,
-            receiverAddress: normalizedReceiver,
-            messageType,
-            status: "PENDING",
-            amountUsdc: link.amountUsdc,
-            title: `${creatorName} requested ${amount} USDC`,
-            description: [
-                `Payment for: ${link.title}`,
-                link.description ? `Details: ${link.description}` : null,
-                `Amount: ${amount} USDC`,
-                isMerchantLink
-                    ? `Merchant: ${creatorName}${merchant?.verified ? " (verified)" : " (unverified)"}`
-                    : `From: ${creatorName}`,
-                `Issued: ${issuedAt}`,
-                link.expiresAt ? `Expires: ${link.expiresAt.toLocaleString("en-US")}` : null,
-            ].filter(Boolean).join("\n"),
-            paymentLinkId: link.id,
-        },
+    const dm = await createDmAndNotify({
+        senderAddress: creatorAddress,
+        receiverAddress: normalizedReceiver,
+        messageType,
+        status: "PENDING",
+        amountUsdc: link.amountUsdc,
+        title: `${creatorName} requested ${amount} USDC`,
+        description: [
+            `Payment for: ${link.title}`,
+            link.description ? `Details: ${link.description}` : null,
+            `Amount: ${amount} USDC`,
+            isMerchantLink
+                ? `Merchant: ${creatorName}${merchant?.verified ? " (verified)" : " (unverified)"}`
+                : `From: ${creatorName}`,
+            `Issued: ${issuedAt}`,
+            link.expiresAt ? `Expires: ${link.expiresAt.toLocaleString("en-US")}` : null,
+        ].filter(Boolean).join("\n"),
+        paymentLinkId: link.id,
     });
 
     return { dm, created: true, link };

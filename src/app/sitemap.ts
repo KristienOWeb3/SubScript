@@ -63,5 +63,23 @@ export default function sitemap(): MetadataRoute.Sitemap {
             changeFrequency: "yearly",
             priority: 0.6,
         },
+        {
+            url: `${baseUrl}/refunds`,
+            lastModified: new Date(),
+            changeFrequency: "yearly",
+            priority: 0.6,
+        },
+        {
+            url: `${baseUrl}/fulfillment`,
+            lastModified: new Date(),
+            changeFrequency: "yearly",
+            priority: 0.6,
+        },
+        {
+            url: `${baseUrl}/support`,
+            lastModified: new Date(),
+            changeFrequency: "monthly",
+            priority: 0.7,
+        },
     ];
 }

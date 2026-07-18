@@ -57,7 +57,7 @@ export default function UserDashboardHeader({
                                 <img 
                                     src="/logo.png" 
                                     alt="SubScript Logo" 
-                                    className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(204,255,0,0.4)]" 
+                                    className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]" 
                                 />
                             </Link>
                         </div>
@@ -108,7 +108,7 @@ export default function UserDashboardHeader({
                             <img 
                                 src="/logo.png" 
                                 alt="SubScript Logo" 
-                                className="w-7 h-7 sm:w-8 sm:h-8 object-contain filter drop-shadow-[0_0_8px_rgba(204,255,0,0.4)] group-hover:scale-105 transition-transform" 
+                                className="w-7 h-7 sm:w-8 sm:h-8 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)] group-hover:scale-105 transition-transform" 
                             />
                             <span className="text-xs font-bold uppercase tracking-[0.2em] text-white">SubScript <span className="text-[9px] text-[#ccff00] font-normal lowercase italic tracking-wide">user</span></span>
                         </Link>

@@ -3,6 +3,8 @@ import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import { prisma } from "@/lib/prisma";
 import { hashSecretKey } from "@/lib/apiKeys";
+import { isValidPaymentLinkId, parsePaymentLinkExpiry } from "@/lib/paymentLinks/validation";
+import { merchantDisplayName } from "@/lib/identityDisplay";
 
 async function authenticateRequest(request: Request): Promise<{ wallet: string | null; error: string | null; status: number }> {
     const sessionWallet = await getSessionWallet(request.headers);
@@ -15,7 +17,7 @@ async function authenticateRequest(request: Request): Promise<{ wallet: string |
         const keyRecord = await prisma.apiKey.findFirst({
             where: {
                 revoked: false,
-                OR: [{ secretKeyHash: hashSecretKey(secretKey) }, { secretKeyPlain: secretKey }],
+                secretKeyHash: hashSecretKey(secretKey),
             }
         });
         if (keyRecord) {
@@ -53,6 +55,9 @@ export async function GET(request: Request, { params }: RouteContext) {
         if (!id) {
             return NextResponse.json({ error: "Bad Request: Missing ID parameter" }, { status: 400 });
         }
+        if (!isValidPaymentLinkId(id)) {
+            return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
+        }
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -77,38 +82,99 @@ export async function GET(request: Request, { params }: RouteContext) {
             return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
         }
 
-        /* Fetch merchant verified status */
-        const { data: merchant } = await supabase
-            .from("merchants")
-            .select("verified")
-            .eq("wallet_address", link.merchant_address.toLowerCase())
-            .maybeSingle();
+        const [
+            { data: merchant },
+            { data: merchantAlias },
+            { data: paymentSettings, error: paymentSettingsError },
+        ] = await Promise.all([
+            supabase
+                .from("merchants")
+                .select("verified")
+                .eq("wallet_address", link.merchant_address.toLowerCase())
+                .maybeSingle(),
+            supabase
+                .from("address_aliases")
+                .select("alias")
+                .eq("address", link.merchant_address.toLowerCase())
+                .maybeSingle(),
+            supabase
+                .from("system_settings")
+                .select("hosted_payments_enabled")
+                .maybeSingle(),
+        ]);
 
         const merchantVerified = merchant ? !!merchant.verified : false;
+        const merchantName = merchantDisplayName(merchantAlias?.alias);
+        const hostedPaymentsEnabled = !paymentSettingsError && paymentSettings?.hosted_payments_enabled !== false;
 
         /* Check authorization: if not owner, check active, expiration, and usage constraints */
         const auth = await authenticateRequest(request);
         const walletAddress = auth.wallet;
         const isOwner = walletAddress && walletAddress.toLowerCase() === link.merchant_address.toLowerCase();
 
-        if (!isOwner) {
-            const isExpired = link.expires_at && new Date(link.expires_at) < new Date();
-            if (!link.active || isExpired) {
-                return NextResponse.json({ error: "Payment Link is Expired or Inactive" }, { status: 410 });
-            }
-
-            const maxUses = link.max_uses;
-            const useCount = link.use_count || 0;
-            if (maxUses !== null && maxUses !== undefined && useCount >= maxUses) {
-                return NextResponse.json({ error: "Payment Link has reached its maximum usage limit" }, { status: 410 });
-            }
+        if (isOwner) {
+            /* The owning merchant (session or API key) gets the full record, minus the legacy
+               receiver key column — raw key material never leaves the database via this API. */
+            const { receiver_private_key: _receiverKey, ...ownerLink } = link;
+            return NextResponse.json({
+                link: {
+                    ...ownerLink,
+                    merchant_display_name: merchantName,
+                    hosted_payments_enabled: hostedPaymentsEnabled,
+                    merchant_verified: merchantVerified
+                }
+            }, { status: 200 });
         }
 
-        return NextResponse.json({ 
+        const isExpired = link.expires_at && new Date(link.expires_at) < new Date();
+        if (link.deleted_at || (!link.active && link.status !== "PAID") || isExpired) {
+            return NextResponse.json({ error: "Payment Link is Expired or Inactive" }, { status: 410 });
+        }
+
+        const maxUses = link.max_uses;
+        const useCount = link.use_count || 0;
+        if (maxUses !== null && maxUses !== undefined && useCount >= maxUses) {
+            return NextResponse.json({ error: "Payment Link has reached its maximum usage limit" }, { status: 410 });
+        }
+
+        /* This endpoint is reachable by anyone holding the link id (that is the point of a
+           payment link), so the anonymous payload is a strict whitelist of what the hosted
+           checkout renders. Never spread the row: payer_email, state_snapshot (checkout intent
+           internals), settlement/idempotency bookkeeping and the legacy receiver key columns
+           stay server-side. external_reference is exposed only for the system-generated
+           peer-request markers the checkout uses to detect user-to-user requests — merchant
+           references can carry order/customer details. */
+        const isPeerRequestReference = typeof link.external_reference === "string" && (
+            link.external_reference.startsWith("peer-request:")
+            || link.external_reference.startsWith("dm-peer-request:")
+        );
+        return NextResponse.json({
             link: {
-                ...link,
+                id: link.id,
+                merchant_address: link.merchant_address,
+                title: link.title,
+                description: link.description,
+                amount_usdc: link.amount_usdc,
+                active: link.active,
+                /* These public settlement-mode fields let the checkout select the correct Arc
+                   network and distinguish funded testnet links from the shared demo simulation. */
+                sandbox_mode: link.sandbox_mode,
+                simulation_only: link.simulation_only,
+                settlement_chain_id: link.settlement_chain_id,
+                status: link.status,
+                expires_at: link.expires_at,
+                max_uses: link.max_uses,
+                use_count: link.use_count,
+                merchant_name_snapshot: link.merchant_name_snapshot,
+                merchant_display_name: merchantName,
+                hosted_payments_enabled: hostedPaymentsEnabled,
+                invoice_number: link.invoice_number,
+                due_date: link.due_date,
+                receipt_token: link.receipt_token,
+                link_kind: link.link_kind,
+                ...(isPeerRequestReference ? { external_reference: link.external_reference } : {}),
                 merchant_verified: merchantVerified
-            } 
+            }
         }, { status: 200 });
 
     } catch (error: any) {
@@ -121,6 +187,9 @@ export async function GET(request: Request, { params }: RouteContext) {
 export async function PATCH(request: Request, { params }: RouteContext) {
     try {
         const { id } = await params;
+        if (!isValidPaymentLinkId(id)) {
+            return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
+        }
         const auth = await authenticateRequest(request);
         if (auth.error) {
             return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -133,6 +202,19 @@ export async function PATCH(request: Request, { params }: RouteContext) {
         }
 
         const { title, description, active, expires_at, external_reference, max_uses } = body;
+
+        if (title !== undefined && (typeof title !== "string" || !title.trim() || title.length > 200)) {
+            return NextResponse.json({ error: "Bad Request: title must be a non-empty string up to 200 characters" }, { status: 400 });
+        }
+        if (description !== undefined && description !== null
+            && (typeof description !== "string" || description.length > 2000)) {
+            return NextResponse.json({ error: "Bad Request: description must be a string up to 2000 characters" }, { status: 400 });
+        }
+        if (external_reference !== undefined && external_reference !== null
+            && (typeof external_reference !== "string" || external_reference.length > 256
+                || external_reference.startsWith("peer-request:") || external_reference.startsWith("dm-peer-request:"))) {
+            return NextResponse.json({ error: "Bad Request: external_reference is invalid or reserved" }, { status: 400 });
+        }
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -165,15 +247,11 @@ export async function PATCH(request: Request, { params }: RouteContext) {
         if (description !== undefined) updates.description = description;
         if (active !== undefined) updates.active = active;
         if (expires_at !== undefined) {
-            updates.expires_at = expires_at
-                ? (() => {
-                    const num = Number(expires_at);
-                    if (!isNaN(num)) {
-                        return new Date(num < 10000000000 ? num * 1000 : num).toISOString();
-                    }
-                    return new Date(expires_at).toISOString();
-                })()
-                : null;
+            const expiry = parsePaymentLinkExpiry(expires_at);
+            if (!expiry.ok) {
+                return NextResponse.json({ error: `Bad Request: ${expiry.error}` }, { status: 400 });
+            }
+            updates.expires_at = expiry.value?.toISOString() ?? null;
         }
         if (external_reference !== undefined) updates.external_reference = external_reference;
         if (max_uses !== undefined) {
@@ -200,7 +278,8 @@ export async function PATCH(request: Request, { params }: RouteContext) {
             return NextResponse.json({ error: updateError.message }, { status: 500 });
         }
 
-        return NextResponse.json({ link: updatedLink }, { status: 200 });
+        const { receiver_private_key: _receiverKey, ...safeUpdatedLink } = updatedLink;
+        return NextResponse.json({ link: safeUpdatedLink }, { status: 200 });
 
     } catch (error: any) {
         console.error("Payment link PATCH error:", error);
@@ -211,6 +290,9 @@ export async function PATCH(request: Request, { params }: RouteContext) {
 export async function DELETE(request: Request, { params }: RouteContext) {
     try {
         const { id } = await params;
+        if (!isValidPaymentLinkId(id)) {
+            return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
+        }
         const auth = await authenticateRequest(request);
         if (auth.error) {
             return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -242,7 +324,12 @@ export async function DELETE(request: Request, { params }: RouteContext) {
 
         const { error: deleteError } = await supabase
             .from("payment_links")
-            .delete()
+            .update({
+                active: false,
+                status: "ARCHIVED",
+                deleted_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            })
             .eq("id", id);
 
         if (deleteError) {
@@ -250,7 +337,7 @@ export async function DELETE(request: Request, { params }: RouteContext) {
             return NextResponse.json({ error: deleteError.message }, { status: 500 });
         }
 
-        return NextResponse.json({ success: true, message: "Payment link deleted successfully" }, { status: 200 });
+        return NextResponse.json({ success: true, message: "Payment link archived successfully" }, { status: 200 });
 
     } catch (error: any) {
         console.error("Payment link DELETE error:", error);

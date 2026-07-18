@@ -1,0 +1,285 @@
+/* On-page checkout for logged-in embedded (custody) wallet users. Signs the SAME on-chain payment
+   a browser wallet would make on /pay/[id], server-side, so Google/email users can pay a merchant
+   link (or peer request) without being bounced through DMs. Returns the confirmed tx hash; the
+   client then runs the standard /api/payment-links/verify + status stream, so settlement, receipts,
+   and merchant webhooks are entirely unchanged. */
+import { NextResponse } from "next/server";
+import { getSessionWallet } from "@/lib/auth";
+import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
+import { prisma } from "@/lib/prisma";
+import { isReceiptId } from "@/lib/arc/memo";
+import { deterministicIdempotencyKey } from "@/lib/custody";
+import { isPeerRequestLink } from "@/lib/paymentLinks/classification";
+import { payMerchantLinkFromEmbedded, payPeerLinkFromEmbedded } from "@/lib/paymentLinks/embeddedPay";
+import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
+import { enqueuePaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+
+type RouteContext = {
+    params: Promise<{ id: string }>;
+};
+
+export async function POST(request: Request, { params }: RouteContext) {
+    try {
+        const wallet = await getSessionWallet(request.headers);
+        if (!wallet) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+        const role = await resolveAccountRoleWithBackfill(wallet);
+        if (role !== "USER") {
+            return NextResponse.json({
+                error: role === "ENTERPRISE"
+                    ? "Merchant accounts can't pay checkout links."
+                    : "Unable to verify your account. Please try again.",
+            }, { status: role === "ENTERPRISE" ? 403 : 500 });
+        }
+        const verifiedEmail = await getVerifiedAccountEmail(wallet);
+        if (!verifiedEmail?.email) {
+            return NextResponse.json({ error: "Verify an email address with OTP before paying." }, { status: 403 });
+        }
+
+        const { id } = await params;
+        if (!id) {
+            return NextResponse.json({ error: "Missing payment link id" }, { status: 400 });
+        }
+
+        let clientIntentId = "";
+        try {
+            const body = await request.json();
+            if (body && typeof body.clientIntentId === "string") {
+                clientIntentId = body.clientIntentId;
+            }
+        } catch (e) {
+            // Ignore parsing errors, default to empty
+        }
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientIntentId)) {
+            return NextResponse.json({ error: "Missing or invalid checkout attempt" }, { status: 400 });
+        }
+
+        const link = await prisma.paymentLink.findUnique({ where: { id } });
+        if (!link) {
+            return NextResponse.json({ error: "Payment link not found" }, { status: 404 });
+        }
+
+        /* Settlement-parity guards with the hosted verifier: never let an inactive, expired, or
+           exhausted link mint a fresh on-chain charge. */
+        /* PAID is aggregate history, not exhaustion: reusable links stay payable until maxUses.
+           active/expiry/use-count are the actual availability guards. */
+        if (link.active === false) {
+            return NextResponse.json({ error: "This payment link is no longer active." }, { status: 410 });
+        }
+        if (link.expiresAt && new Date(link.expiresAt) < new Date()) {
+            return NextResponse.json({ error: "This payment link has expired." }, { status: 410 });
+        }
+        /* This is an early UX guard. The verifier owns the atomic capacity reservation after it
+           receives the real transaction hash; reserving useCount here would make verification
+           increment the same payment twice. */
+        if (link.maxUses !== null && link.maxUses !== undefined && (link.useCount || 0) >= link.maxUses) {
+            return NextResponse.json({ error: "This payment link has reached its usage limit." }, { status: 409 });
+        }
+
+        const amountMicros = BigInt(link.amountUsdc);
+        if (amountMicros <= BigInt(0)) {
+            return NextResponse.json({ error: "This payment link has an invalid amount." }, { status: 400 });
+        }
+
+        const payer = wallet.toLowerCase();
+        const recipient = link.merchantAddress.toLowerCase();
+        if (payer === recipient) {
+            return NextResponse.json({ error: "You can't pay your own payment link." }, { status: 400 });
+        }
+
+        const settlesDirectlyToUser = isPeerRequestLink(link);
+
+        if (!supabaseAdmin) {
+            return NextResponse.json({ error: "Payment service is unavailable" }, { status: 503 });
+        }
+        const { data: reservation, error: reservationError } = await supabaseAdmin.rpc(
+            "reserve_payment_link_checkout_attempt",
+            {
+                p_attempt_id: clientIntentId,
+                p_payment_link_id: id,
+                p_payer_address: payer,
+                p_ttl_seconds: 600,
+            },
+        );
+        if (reservationError) {
+            console.error("Embedded checkout reservation failed:", reservationError.message);
+            return NextResponse.json({ error: "Unable to reserve this checkout attempt" }, { status: 503 });
+        }
+        if (reservation?.outcome === "DISABLED") {
+            return NextResponse.json({ error: "Hosted payments are temporarily unavailable." }, { status: 503 });
+        }
+        if (reservation?.outcome === "IN_PROGRESS") {
+            return NextResponse.json({ error: "A payment for this link is already in progress." }, { status: 409 });
+        }
+        if (reservation?.outcome === "RELEASED") {
+            /* Terminal attempt UUID — the client must rotate to a fresh one before paying. */
+            return NextResponse.json(
+                { error: "This checkout attempt was released. Start a new payment attempt.", code: "ATTEMPT_RELEASED" },
+                { status: 409 },
+            );
+        }
+        if (reservation?.outcome === "SUBMITTED" || reservation?.outcome === "SETTLED") {
+            /* A transaction is already durably bound to this attempt. Never sign another
+               custody transfer — return the original hash so the client resumes verification. */
+            if (typeof reservation.txHash === "string" && reservation.txHash) {
+                return NextResponse.json({
+                    success: true,
+                    txHash: reservation.txHash,
+                    receiptId: reservation.receiptId,
+                    settlesDirectlyToUser,
+                    resumed: true,
+                }, { status: 200 });
+            }
+            return NextResponse.json(
+                { error: "A payment for this checkout attempt was already submitted." },
+                { status: 409 },
+            );
+        }
+        if (reservation?.outcome !== "RESERVED") {
+            return NextResponse.json({ error: "This link cannot accept a payment right now." }, { status: 409 });
+        }
+
+        /* Both settlement paths need a valid receipt token downstream in /verify (the merchant path
+           uses it as the on-chain memo; the peer path still requires one for the receipt record), so
+           validate it BEFORE moving any funds rather than transferring and only failing at verify. */
+        if (!isReceiptId(reservation.receiptId)) {
+            return NextResponse.json(
+                { error: "This checkout is missing a valid receipt token. Ask the merchant to regenerate the link." },
+                { status: 400 },
+            );
+        }
+        const receiptToken = reservation.receiptId as string;
+
+        /* Single-flight guard: two concurrent POSTs (double-click, two tabs) would otherwise both pass
+           the read-only guards above and sign SEPARATE custody transfers — a double charge. Atomically
+           claim the (link, payer) pair via the unique idempotency key: a concurrent attempt gets 409,
+           and an already-completed one returns the original tx hash instead of paying again. */
+        const claimKey = `embedded-pay-attempt:${clientIntentId}`;
+        const claimExpiry = () => new Date(Date.now() + 5 * 60 * 1000);
+        try {
+            await prisma.idempotencyKey.create({
+                data: { executionKey: claimKey, status: "PROCESSING", expiresAt: claimExpiry() },
+            });
+        } catch (e: any) {
+            if (e?.code === "P2002") {
+                const existing = await prisma.idempotencyKey.findUnique({ where: { executionKey: claimKey } }).catch(() => null);
+                const priorTx = (existing?.responsePayload as any)?.txHash;
+                if (existing?.status === "COMPLETED" && priorTx) {
+                    return NextResponse.json({ success: true, txHash: priorTx, receiptId: receiptToken, settlesDirectlyToUser }, { status: 200 });
+                }
+                /* A PROCESSING claim whose expiry has passed is an abandoned lock — a previous request
+                   crashed or timed out after create() but before completing. Atomically re-claim it
+                   (guarded on the still-expired state so it can't steal a live claim) and continue;
+                   otherwise a genuine in-flight request is holding it. */
+                const isReclaimable = existing?.status === "PROCESSING" && existing?.expiresAt && new Date(existing.expiresAt) < new Date();
+                if (isReclaimable) {
+                    const reclaimed = await prisma.idempotencyKey.updateMany({
+                        where: { executionKey: claimKey, status: "PROCESSING", expiresAt: { lt: new Date() } },
+                        data: { expiresAt: claimExpiry(), responsePayload: undefined },
+                    });
+                    if (reclaimed.count === 0) {
+                        /* Another request re-claimed it first. */
+                        return NextResponse.json({ error: "A payment for this link is already in progress." }, { status: 409 });
+                    }
+                } else {
+                    return NextResponse.json({ error: "A payment for this link is already in progress." }, { status: 409 });
+                }
+            } else {
+                throw e;
+            }
+        }
+
+        /* Deterministic Circle idempotency key scoped to (link, payer). If Circle accepts the tx
+           but the response times out, a retry submits the SAME key and Circle returns the original
+           transaction instead of charging again. This is the real double-charge guard — the DB
+           claim below only serializes concurrent requests within this process. */
+        const custodyIdempotencyKey = deterministicIdempotencyKey(`embedded-pay-attempt:${clientIntentId}`);
+
+        let txHash: string;
+        try {
+            txHash = settlesDirectlyToUser
+                ? await payPeerLinkFromEmbedded(payer, recipient, amountMicros, custodyIdempotencyKey)
+                : await payMerchantLinkFromEmbedded(payer, recipient, amountMicros, receiptToken, custodyIdempotencyKey);
+        } catch (err: any) {
+            const message = err?.message || "Payment could not be signed from your SubScript wallet.";
+            /* getWalletCustody throws for wallets with no server-held key (external/browser wallets). */
+            const isPreSubmission = /no server-held key|connect a browser wallet/i.test(message);
+            /* Only release the claim for failures that provably happened BEFORE any transaction was
+               submitted (custody resolution / validation). For a signing or polling-timeout error we
+               cannot be sure Circle didn't accept the tx, so we KEEP the PROCESSING claim: a retry is
+               refused until it expires, and the deterministic idempotency key above guarantees that
+               even a post-expiry retry cannot double-charge. */
+            if (isPreSubmission) {
+                await prisma.idempotencyKey.delete({ where: { executionKey: claimKey } }).catch(() => {});
+            }
+            const status = isPreSubmission ? 400
+                : /insufficient|balance|exceeds/i.test(message) ? 402
+                : 502;
+            return NextResponse.json({ error: message }, { status });
+        }
+
+        /* Durably bind the hash and create the verification job server-side, before responding.
+           The browser also calls /api/payment-links/verify, but if the tab closes right here the
+           payment must still settle from durable state — never depend on the client returning. */
+        try {
+            const { data: bindResult, error: bindError } = await supabaseAdmin.rpc(
+                "claim_payment_link_settlement_durable",
+                {
+                    p_execution_key: `verify-payment-link:${txHash.toLowerCase()}`,
+                    p_tx_hash: txHash.toLowerCase(),
+                    p_chain_id: Number(link.settlementChainId ?? 5042002),
+                    p_payment_link_id: id,
+                    p_payer_address: payer,
+                    p_receipt_id: receiptToken,
+                    p_expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                    p_create_ledger: !settlesDirectlyToUser,
+                    p_checkout_attempt_id: clientIntentId,
+                    p_request_origin: request.headers.get("origin"),
+                },
+            );
+            if (bindError) throw new Error(bindError.message);
+            if (!["CLAIMED", "IN_PROGRESS", "COMPLETED"].includes(bindResult?.outcome)) {
+                throw new Error(`durable bind returned ${bindResult?.outcome || "no outcome"}`);
+            }
+        } catch (bindFailure) {
+            /* The payment has already moved. A strict reconciliation enqueue is the durable
+               fallback when the atomic bind failed; if this enqueue also fails, propagate the
+               error instead of acknowledging a payment with no recoverable server-side record. */
+            await enqueuePaymentReconciliationRequired({
+                dedupeKey: `embedded-payment-durable-bind:${txHash.toLowerCase()}`,
+                kind: "EMBEDDED_PAYMENT_DURABLE_BIND",
+                message: "embedded payment confirmed on-chain but the durable verification job was not created",
+                context: { paymentLinkId: id, payer, txHash: txHash.toLowerCase(), checkoutAttemptId: clientIntentId },
+                error: bindFailure,
+            });
+        }
+
+        /* Mark the claim COMPLETED with the tx hash so an accidental re-submit returns it idempotently. */
+        try {
+            await prisma.idempotencyKey.update({
+                where: { executionKey: claimKey },
+                data: { status: "COMPLETED", responsePayload: { txHash } },
+            });
+        } catch (reconciliationError) {
+            await enqueuePaymentReconciliationRequired({
+                dedupeKey: `embedded-payment-idempotency:${claimKey}`,
+                kind: "EMBEDDED_PAYMENT_IDEMPOTENCY_COMPLETION",
+                message: "on-chain payment confirmed but the idempotency record was not completed",
+                context: { paymentLinkId: id, payer, txHash: txHash.toLowerCase(), claimKey },
+                error: reconciliationError,
+            });
+        }
+
+        return NextResponse.json({
+            success: true,
+            txHash,
+            receiptId: receiptToken,
+            settlesDirectlyToUser,
+        }, { status: 200 });
+    } catch (error: any) {
+        console.error("Embedded payment-link pay failed:", error);
+        return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+    }
+}

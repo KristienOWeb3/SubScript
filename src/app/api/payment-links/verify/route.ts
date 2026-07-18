@@ -1,98 +1,23 @@
 import { after, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { decryptPrivateKey } from "@/lib/crypto";
 import { ethers } from "ethers";
 
-async function sweepEphemeralWallet(receiverPrivateKeyEncrypted: string, merchantAddress: string) {
-    try {
-        const privateKey = decryptPrivateKey(receiverPrivateKeyEncrypted);
-        const rpcUrl = process.env.ARC_RPC_PRIMARY || "https://rpc.testnet.arc.network";
-        const provider = new ethers.JsonRpcProvider(rpcUrl);
-        const wallet = new ethers.Wallet(privateKey, provider);
-
-        const balance = await provider.getBalance(wallet.address);
-        if (balance === BigInt(0)) {
-            console.log(`[sweep] No balance to sweep from ephemeral wallet ${wallet.address}`);
-            return null;
-        }
-
-        const feeData = await provider.getFeeData();
-        const gasPrice = feeData.gasPrice || ethers.parseUnits("1", "gwei");
-        const gasLimit = BigInt(21000); // Standard native transfer gas limit
-        const fee = gasPrice * gasLimit;
-
-        if (balance <= fee) {
-            console.warn(`[sweep] Ephemeral wallet balance (${balance.toString()}) is too low to pay gas fee (${fee.toString()})`);
-            return null;
-        }
-
-        const sweepAmount = balance - fee;
-        console.log(`[sweep] Sweeping ${sweepAmount.toString()} USDC (native) from ${wallet.address} to merchant ${merchantAddress}`);
-
-        const tx = await wallet.sendTransaction({
-            to: merchantAddress,
-            value: sweepAmount,
-            gasLimit,
-            gasPrice
-        });
-
-        console.log(`[sweep] Sweep transaction submitted: ${tx.hash}`);
-        await tx.wait();
-        console.log(`[sweep] Sweep transaction confirmed: ${tx.hash}`);
-        return tx.hash;
-    } catch (err: any) {
-        console.error("[sweep] Sweep execution failed:", err);
-        return null;
-    }
-}
-
-import { ProtocolConfig } from "@/lib/payments/config";
-import { executeWithRpcFallback } from "@/lib/payments/rpc";
-import { addressToBuffer } from "@/lib/payments/address";
-import { createPaymentSucceededWebhook, sendWebhookRequest } from "@/lib/webhooks";
-import { CCTP_CONFIG, ARC_CCTP_DOMAIN_ID, SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_GAS_ADDRESS, isProd } from "@/lib/contracts/constants";
-import { ROUTER_DEPOSIT_INTERFACE, USDC_TRANSFER_INTERFACE, isReceiptId, receiptUrl } from "@/lib/arc/memo";
-import { sendPaymentReceiptEmails } from "@/lib/email/transactional";
-import { sendPushToWallet } from "@/lib/push";
+import { isReceiptId, receiptUrl } from "@/lib/arc/memo";
+import { getSessionWallet } from "@/lib/auth";
+import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
+import { CCTP_CONFIG, SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
+import { consumeDistributedRateLimit } from "@/lib/distributedRateLimit";
 import {
     resolveFulfillmentAddress,
     validateBeneficiaryAddress,
 } from "@/lib/paymentLinks/beneficiary";
+import { isPeerRequestLink } from "@/lib/paymentLinks/classification";
+import { ProtocolConfig } from "@/lib/payments/config";
+import { processPaymentLinkVerificationJob } from "@/lib/payments/paymentLinkVerificationWorker";
+import { deliverWebhookOutboxEvent } from "@/lib/webhookOutbox";
+import { assertFinancialNetworkReady } from "@/lib/network/registry";
 
 export const maxDuration = 120;
-
-const CCTP_MESSENGER_INTERFACE = new ethers.Interface([
-    "event DepositForBurn(uint64 indexed nonce, address indexed burnToken, uint256 amount, address indexed depositor, bytes32 mintRecipient, uint32 destinationDomain, bytes32 destinationTokenMessenger, bytes32 destinationCaller)"
-]);
-
-const CCTP_RPCS: Record<number, string[]> = isProd
-    ? {
-        1: ["https://ethereum-rpc.publicnode.com", "https://rpc.ankr.com/eth"]
-      }
-    : {
-        11155111: ["https://ethereum-sepolia-rpc.publicnode.com", "https://rpc.ankr.com/eth_sepolia"]
-      };
-
-async function getTransactionReceiptWithFallback(chainId: number, txHash: string) {
-    const urls = CCTP_RPCS[chainId] || [process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network"];
-    let lastError = null;
-    for (const url of urls) {
-        try {
-            const provider = new ethers.JsonRpcProvider(url);
-            const [receipt, currentBlock] = await Promise.all([
-                provider.getTransactionReceipt(txHash),
-                provider.getBlockNumber()
-            ]);
-            if (receipt) {
-                const tx = await provider.getTransaction(txHash);
-                return { receipt, currentBlock, tx };
-            }
-        } catch (err) {
-            lastError = err;
-        }
-    }
-    throw lastError || new Error("Failed to fetch receipt from all RPC endpoints");
-}
 
 async function parseBody(request: Request) {
     try {
@@ -103,54 +28,76 @@ async function parseBody(request: Request) {
 }
 
 function isUserPaymentLink(link: any) {
-    return link?.merchant_name_snapshot === "SubScript user request" ||
-        (typeof link?.external_reference === "string" &&
-            (link.external_reference.startsWith("peer-request:") || link.external_reference.startsWith("dm-peer-request:")));
+    return isPeerRequestLink(link);
 }
 
 export async function POST(request: Request) {
-    let executionKey = "";
-    let supabase: any = null;
-
     try {
+        /* Fail-closed: mainnet mode with incomplete network config must not serve financial
+           routes (never silently fall back to a testnet address). No-op on testnet. */
+        assertFinancialNetworkReady();
+
+        const requesterIp = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+        let rateLimit;
+        try {
+            rateLimit = await consumeDistributedRateLimit({
+                scope: "payment-link-verification",
+                key: requesterIp,
+                limit: 10,
+                windowSeconds: 60,
+            });
+        } catch (rateLimitError) {
+            console.error("[verify] Distributed rate limiter unavailable:", rateLimitError);
+            return NextResponse.json(
+                { error: "Payment verification is temporarily unavailable" },
+                { status: 503, headers: { "Retry-After": "5" } },
+            );
+        }
+        if (!rateLimit.ok) {
+            return NextResponse.json(
+                { error: "Too many payment-verification requests" },
+                { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } },
+            );
+        }
+
         const body = await parseBody(request);
         if (!body) {
             return NextResponse.json({ error: "Bad Request: Invalid JSON body" }, { status: 400 });
         }
 
-        const { txHash, paymentLinkId, payerAddress, receiptId, chainId: bodyChainId, payerEmail } = body;
+        const { txHash, paymentLinkId, payerAddress, receiptId, chainId: bodyChainId, checkoutAttemptId } = body;
         const chainId = bodyChainId ? Number(bodyChainId) : ProtocolConfig.CHAIN_ID;
-        /* Optional email captured at checkout (e.g. the returning-payer prompt). */
-        const normalizedPayerEmail = typeof payerEmail === "string"
-            && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payerEmail.trim())
-            && payerEmail.trim().length <= 254
-            ? payerEmail.trim().toLowerCase()
-            : null;
         const isCctp = Number(chainId) in CCTP_CONFIG;
         const submittedReceiptId = isReceiptId(receiptId) ? receiptId : null;
 
+        /* Hosted payment links deliberately remain Arc-only until CCTP can bind
+           the payment-link receipt token and merchant parameters on-chain. */
         if (isCctp) {
             return NextResponse.json(
                 {
                     error: "CCTP checkout verification is not enabled for hosted payment links yet. Use direct Arc payment so the on-chain DepositWithMemo event binds merchant, amount, and receipt token.",
                 },
-                { status: 400 }
+                { status: 400 },
             );
         }
 
         if (!txHash || typeof txHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
             return NextResponse.json({ error: "Bad Request: Missing or invalid txHash" }, { status: 400 });
         }
-
         if (!paymentLinkId || typeof paymentLinkId !== "string") {
             return NextResponse.json({ error: "Bad Request: Missing or invalid paymentLinkId" }, { status: 400 });
         }
-
         if (!payerAddress || typeof payerAddress !== "string" || !ethers.isAddress(payerAddress)) {
             return NextResponse.json({ error: "Bad Request: Missing or invalid payerAddress" }, { status: 400 });
         }
-        if (!isCctp && !submittedReceiptId) {
+        if (!submittedReceiptId) {
             return NextResponse.json({ error: "Bad Request: Missing or invalid receiptId" }, { status: 400 });
+        }
+        if (
+            typeof checkoutAttemptId !== "string" ||
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(checkoutAttemptId)
+        ) {
+            return NextResponse.json({ error: "Bad Request: Missing or invalid checkout attempt" }, { status: 400 });
         }
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -158,40 +105,33 @@ export async function POST(request: Request) {
         if (!supabaseUrl || !supabaseServiceKey) {
             return NextResponse.json({ error: "Configuration Error" }, { status: 500 });
         }
-        supabase = createClient(supabaseUrl, supabaseServiceKey);
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
         const requestOrigin = request.headers.get("origin");
-
-        /* Normalize address */
         const normalizedPayer = payerAddress.toLowerCase();
         const normalizedTx = txHash.toLowerCase();
+        const executionKey = `verify-payment-link:${normalizedTx}`;
 
-        /* Enforce Idempotency */
-        executionKey = `verify-payment-link:${normalizedTx}`;
-        const { data: existingKey } = await supabase
-            .from("idempotency_keys")
-            .select("*")
-            .eq("execution_key", executionKey)
-            .maybeSingle();
-
-        if (existingKey) {
-            if (existingKey.status === "PROCESSING") {
-                return NextResponse.json({ error: "Conflict: Verification in progress", status: "VERIFYING" }, { status: 409 });
-            }
-            if (existingKey.status === "COMPLETED") {
-                return NextResponse.json(existingKey.response_payload, { status: 200 });
-            }
+        const sessionWallet = await getSessionWallet(request.headers);
+        if (!sessionWallet) {
+            return NextResponse.json({ error: "Sign in with the paying wallet before verification." }, { status: 401 });
+        }
+        if (sessionWallet.toLowerCase() !== normalizedPayer) {
+            return NextResponse.json({ error: "The authenticated wallet does not match the payer." }, { status: 403 });
+        }
+        const verifiedEmail = await getVerifiedAccountEmail(sessionWallet);
+        if (!verifiedEmail?.email) {
+            return NextResponse.json({ error: "Verify an email address with OTP before paying." }, { status: 403 });
         }
 
-        /* Fetch payment link details */
         const { data: paymentLink, error: linkError } = await supabase
             .from("payment_links")
             .select("*")
             .eq("id", paymentLinkId)
             .maybeSingle();
-
         if (linkError || !paymentLink) {
             return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
         }
+
         const settlesDirectlyToUser = isUserPaymentLink(paymentLink);
         const beneficiaryValidation = validateBeneficiaryAddress(
             paymentLink.beneficiary_address,
@@ -212,7 +152,6 @@ export async function POST(request: Request) {
                 .select("role")
                 .eq("address", explicitBeneficiary)
                 .maybeSingle();
-
             if (beneficiaryRoleError) {
                 console.error("[verify] Failed to validate payment-link beneficiary:", beneficiaryRoleError.message);
                 return NextResponse.json({ error: "Failed to validate beneficiary account" }, { status: 500 });
@@ -225,607 +164,167 @@ export async function POST(request: Request) {
             }
         }
 
-        const paymentLinkReceiptId = isReceiptId(paymentLink.receipt_token) ? paymentLink.receipt_token : null;
-        const finalReceiptId = paymentLinkReceiptId || submittedReceiptId;
-        if (!finalReceiptId) {
-            return NextResponse.json({ error: "Payment link is missing a valid receipt token" }, { status: 400 });
-        }
-        if (!isCctp && submittedReceiptId !== finalReceiptId) {
-            return NextResponse.json({ error: "Receipt token does not match this checkout session" }, { status: 400 });
-        }
-        if (isCctp && submittedReceiptId && submittedReceiptId !== finalReceiptId) {
-            return NextResponse.json({ error: "Receipt token does not match this checkout session" }, { status: 400 });
-        }
+        /* Receipt identity belongs to the reserved attempt, not the reusable link. The claim RPC
+           atomically verifies (attempt, link, payer, receipt) and binds the tx hash once. */
+        const finalReceiptId = submittedReceiptId;
 
-        /* Check circuit breakers */
-        const { data: settings } = await supabase
+        const { data: settings, error: settingsError } = await supabase
             .from("system_settings")
             .select("hosted_payments_enabled")
             .maybeSingle();
-
-        if (settings && settings.hosted_payments_enabled === false) {
-            return NextResponse.json({ error: "Service Unavailable: Hosted payments are temporarily disabled." }, { status: 503 });
+        if (settingsError) {
+            console.error("[verify] Failed to read hosted payment settings:", settingsError.message);
+        } else if (settings?.hosted_payments_enabled === false) {
+            /* This request is post-broadcast. A circuit breaker may stop new payments, but it
+               must never strand funds that have already left the payer's account. */
+            console.warn("[verify] Hosted payments are disabled; continuing recovery for submitted payment.");
         }
 
-        /* Verify no duplicate credit exists in payment_link_payments */
-        const { data: priorPayment } = await supabase
-            .from("payment_link_payments")
-            .select("id, payer_address, beneficiary_address")
-            .eq("tx_hash", normalizedTx)
-            .maybeSingle();
-
-        if (priorPayment) {
-            const responsePayload = {
-                success: true,
-                message: "Transaction already processed",
-                paymentId: priorPayment.id,
-                payerAddress: priorPayment.payer_address,
-                beneficiaryAddress: resolveFulfillmentAddress(
-                    priorPayment.beneficiary_address,
-                    priorPayment.payer_address,
-                ),
-            };
-            return NextResponse.json(responsePayload, { status: 200 });
-        }
-
-        /* Create idempotency key in PROCESSING state */
         const expiresAt = new Date(Date.now() + ProtocolConfig.IDEMPOTENCY_TTL * 1000).toISOString();
-        await supabase
-            .from("idempotency_keys")
-            .insert({
-                execution_key: executionKey,
-                status: "PROCESSING",
-                expires_at: expiresAt,
-                response_payload: null
-            });
-
-        /* Phase 1: Initialize transaction verification in SUBMITTED state */
-        await supabase
-            .from("transaction_verifications")
-            .upsert({
-                tx_hash: normalizedTx,
-                status: "SUBMITTED",
-                reference_type: "PAYMENT_LINK",
-                reference_id: paymentLink.id,
-                confirmations: 0,
-                updated_at: new Date().toISOString()
-            });
-
-        if (!settlesDirectlyToUser) {
-            /* Merchant links credit withdrawable router balances; peer links settle directly on-chain. */
-            const merchantBuf = addressToBuffer(paymentLink.merchant_address);
-            await supabase
-                .from("ledger_entries")
-                .insert({
-                    merchant_address: merchantBuf,
-                    entry_type: "CREDIT_PAYMENT_LINK",
-                    status: "PENDING",
-                    amount_usdc: paymentLink.amount_usdc.toString(),
-                    reference_type: "PAYMENT_LINK",
-                    reference_id: paymentLink.id,
-                    tx_hash: normalizedTx
-                });
+        const { data: claimResult, error: claimError } = await supabase.rpc(
+            "claim_payment_link_settlement_durable",
+            {
+                p_execution_key: executionKey,
+                p_tx_hash: normalizedTx,
+                p_chain_id: chainId,
+                p_payment_link_id: paymentLink.id,
+                p_payer_address: normalizedPayer,
+                p_receipt_id: finalReceiptId,
+                p_expires_at: expiresAt,
+                p_create_ledger: !settlesDirectlyToUser,
+                p_checkout_attempt_id: checkoutAttemptId,
+                p_request_origin: requestOrigin,
+            },
+        );
+        if (claimError) {
+            console.error("[verify] Failed to claim payment settlement:", claimError.message);
+            return NextResponse.json({ error: "Failed to initialize payment verification" }, { status: 500 });
         }
 
-        /* Schedule the async verification job after the submit response. */
-        after(async () => {
-            try {
-                let attempts = 0;
-                const maxAttempts = 15;
-                let confirmations = 0;
-
-                while (attempts < maxAttempts) {
-                    attempts++;
-                    try {
-                        let receipt: any;
-                        let confirmations = 0;
-                        let tx: any;
-
-                        if (isCctp) {
-                            const result = await getTransactionReceiptWithFallback(Number(chainId), normalizedTx);
-                            receipt = result.receipt;
-                            confirmations = Math.max(0, result.currentBlock - receipt.blockNumber + 1);
-                            tx = result.tx;
-                        } else {
-                            const verifyResult = await executeWithRpcFallback(async (provider) => {
-                                const [rcpt, currentBlock] = await Promise.all([
-                                    provider.getTransactionReceipt(normalizedTx),
-                                    provider.getBlockNumber()
-                                ]);
-
-                                if (!rcpt) {
-                                    throw new Error("Transaction receipt not found on-chain yet");
-                                }
-
-                                const confs = currentBlock - rcpt.blockNumber + 1;
-                                return { receipt: rcpt, confs };
-                            });
-
-                            receipt = verifyResult.result.receipt;
-                            confirmations = Math.max(0, verifyResult.result.confs);
-                        }
-
-                        /* Update current confirmations count in DB */
-                        await supabase
-                            .from("transaction_verifications")
-                            .update({
-                                status: "PENDING_CONFIRMATIONS",
-                                confirmations,
-                                updated_at: new Date().toISOString()
-                            })
-                            .eq("tx_hash", normalizedTx);
-
-                        if (confirmations >= ProtocolConfig.MIN_CONFIRMATIONS) {
-                            /* Verification phase */
-                            await supabase
-                                .from("transaction_verifications")
-                                .update({ status: "VERIFYING", updated_at: new Date().toISOString() })
-                                .eq("tx_hash", normalizedTx);
-
-                            if (!isCctp) {
-                                /* Validate parameters */
-                                const txDetails = await executeWithRpcFallback(async (provider) => {
-                                    return await provider.getTransaction(normalizedTx);
-                                });
-
-                                const nativeTx = txDetails.result;
-                                if (!nativeTx) {
-                                    throw new Error("Transaction details not found on-chain");
-                                }
-                                if (Number(nativeTx.chainId) !== ProtocolConfig.CHAIN_ID) {
-                                    throw new Error(`Chain ID mismatch. Expected ${ProtocolConfig.CHAIN_ID}`);
-                                }
-
-                                if (receipt.status !== 1) {
-                                    throw new Error("On-chain transaction reverted");
-                                }
-
-                                if (settlesDirectlyToUser) {
-                                    if (!nativeTx.to || nativeTx.to.toLowerCase() !== USDC_NATIVE_GAS_ADDRESS.toLowerCase()) {
-                                        throw new Error("Target contract is not Arc USDC for peer payment");
-                                    }
-
-                                    const parsedTransferCall = USDC_TRANSFER_INTERFACE.parseTransaction({
-                                        data: nativeTx.data,
-                                        value: nativeTx.value
-                                    });
-                                    if (
-                                        !parsedTransferCall ||
-                                        parsedTransferCall.name !== "transfer" ||
-                                        parsedTransferCall.args[0].toLowerCase() !== paymentLink.merchant_address.toLowerCase() ||
-                                        BigInt(parsedTransferCall.args[1]) !== BigInt(paymentLink.amount_usdc)
-                                    ) {
-                                        throw new Error("Direct USDC transfer does not match payment link parameters");
-                                    }
-
-                                    let transferFound = false;
-                                    for (const log of receipt.logs) {
-                                        if (log.address.toLowerCase() !== USDC_NATIVE_GAS_ADDRESS.toLowerCase()) continue;
-                                        try {
-                                            const parsed = USDC_TRANSFER_INTERFACE.parseLog({
-                                                topics: log.topics,
-                                                data: log.data
-                                            });
-                                            if (
-                                                parsed &&
-                                                parsed.name === "Transfer" &&
-                                                parsed.args.from.toLowerCase() === normalizedPayer &&
-                                                parsed.args.to.toLowerCase() === paymentLink.merchant_address.toLowerCase() &&
-                                                BigInt(parsed.args.value) === BigInt(paymentLink.amount_usdc)
-                                            ) {
-                                                transferFound = true;
-                                                break;
-                                            }
-                                        } catch {
-                                            /* ignore */
-                                        }
-                                    }
-
-                                    if (!transferFound) {
-                                        throw new Error("Matching Arc USDC Transfer event not found");
-                                    }
-                                } else {
-                                    if (!nativeTx.to || nativeTx.to.toLowerCase() !== SUBSCRIPT_ROUTER_ADDRESS.toLowerCase()) {
-                                        throw new Error("Target contract is not SubScript Router contract");
-                                    }
-
-                                    const parsedRouterCall = ROUTER_DEPOSIT_INTERFACE.parseTransaction({
-                                        data: nativeTx.data,
-                                        value: nativeTx.value
-                                    });
-                                    if (
-                                        !parsedRouterCall ||
-                                        parsedRouterCall.name !== "depositForMerchant" ||
-                                        parsedRouterCall.args[0].toLowerCase() !== paymentLink.merchant_address.toLowerCase() ||
-                                        BigInt(parsedRouterCall.args[1]) !== BigInt(paymentLink.amount_usdc) ||
-                                        parsedRouterCall.args[2] !== finalReceiptId
-                                    ) {
-                                        throw new Error("SubScript Router deposit call does not match receipt parameters");
-                                    }
-
-                                    /* Verify log event DepositWithMemo from SubScriptRouter */
-                                    let logFound = false;
-                                    for (const log of receipt.logs) {
-                                        if (log.address.toLowerCase() !== SUBSCRIPT_ROUTER_ADDRESS.toLowerCase()) continue;
-                                        try {
-                                            const parsed = ROUTER_DEPOSIT_INTERFACE.parseLog({
-                                                topics: log.topics,
-                                                data: log.data
-                                            });
-                                            if (
-                                                parsed &&
-                                                parsed.name === "DepositWithMemo" &&
-                                                parsed.args.payer.toLowerCase() === normalizedPayer &&
-                                                parsed.args.merchant.toLowerCase() === paymentLink.merchant_address.toLowerCase() &&
-                                                BigInt(parsed.args.amount) === BigInt(paymentLink.amount_usdc) &&
-                                                parsed.args.memo === finalReceiptId
-                                            ) {
-                                                logFound = true;
-                                                break;
-                                            }
-                                        } catch {
-                                            /* ignore */
-                                        }
-                                    }
-
-                                    if (!logFound) {
-                                        throw new Error("SubScript Router DepositWithMemo event not found");
-                                    }
-                                }
-                            } else {
-                                /* CCTP Cross-chain transaction verification */
-                                if (!tx) {
-                                    throw new Error("CCTP transaction details not found on-chain");
-                                }
-                                if (Number(tx.chainId) !== Number(chainId)) {
-                                    throw new Error(`Chain ID mismatch. Expected ${chainId}`);
-                                }
-                                if (receipt.status !== 1) {
-                                    throw new Error("On-chain CCTP transaction reverted");
-                                }
-
-                                const cctpConfig = CCTP_CONFIG[Number(chainId)];
-                                if (!cctpConfig) {
-                                    throw new Error(`CCTP config not found for chain ID ${chainId}`);
-                                }
-
-                                if (!tx.to || tx.to.toLowerCase() !== cctpConfig.tokenMessenger.toLowerCase()) {
-                                    throw new Error("Target contract is not CCTP TokenMessenger");
-                                }
-
-                                const mintRecipientBytes32 = ("0x" + SUBSCRIPT_ROUTER_ADDRESS.slice(2).padStart(64, "0")).toLowerCase();
-
-                                /* Verify log event DepositForBurn */
-                                let depositFound = false;
-                                for (const log of receipt.logs) {
-                                    if (log.address.toLowerCase() !== cctpConfig.tokenMessenger.toLowerCase()) continue;
-                                    try {
-                                        const parsed = CCTP_MESSENGER_INTERFACE.parseLog({
-                                            topics: log.topics,
-                                            data: log.data
-                                        });
-                                        if (
-                                            parsed &&
-                                            parsed.name === "DepositForBurn" &&
-                                            parsed.args.burnToken.toLowerCase() === cctpConfig.usdc.toLowerCase() &&
-                                            BigInt(parsed.args.amount) === BigInt(paymentLink.amount_usdc) &&
-                                            parsed.args.depositor.toLowerCase() === normalizedPayer &&
-                                            parsed.args.mintRecipient.toLowerCase() === mintRecipientBytes32 &&
-                                            Number(parsed.args.destinationDomain) === ARC_CCTP_DOMAIN_ID
-                                        ) {
-                                            depositFound = true;
-                                            break;
-                                        }
-                                    } catch {
-                                        /* ignore */
-                                    }
-                                }
-
-                                if (!depositFound) {
-                                    throw new Error("CCTP DepositForBurn event with matching parameters not found");
-                                }
-                            }
-
-                            /* Verification successful: Transition to Phase 2 (FINALIZED) */
-                            if (!settlesDirectlyToUser) {
-                                await supabase.rpc("lock_merchant_row", {
-                                    p_wallet_address: paymentLink.merchant_address.toLowerCase()
-                                });
-                            }
-
-                            /* Sweep funds if using ephemeral wallet */
-                            let sweepTxHash: string | null = null;
-                            if (!settlesDirectlyToUser && paymentLink.receiver_address && paymentLink.receiver_private_key) {
-                                console.log(`[verify] Running sweep for ephemeral wallet: ${paymentLink.receiver_address}`);
-                                sweepTxHash = await sweepEphemeralWallet(
-                                    paymentLink.receiver_private_key,
-                                    paymentLink.merchant_address
-                                );
-                            }
-
-                            /* Auto-create SubScript account if it does not exist (flowchart requirement) */
-                            try {
-                                const { data: existingRole, error: roleQueryErr } = await supabase
-                                    .from("account_roles")
-                                    .select("role")
-                                    .eq("address", normalizedPayer)
-                                    .maybeSingle();
-
-                                if (!roleQueryErr && !existingRole) {
-                                    console.log(`[verify] Payer ${normalizedPayer} has no account. Auto-creating SubScript Account.`);
-                                    await supabase
-                                        .from("account_roles")
-                                        .insert({
-                                            address: normalizedPayer,
-                                            role: "USER"
-                                        });
-
-                                    await supabase
-                                        .from("customers")
-                                        .insert({
-                                            wallet_address: normalizedPayer,
-                                            ...(normalizedPayerEmail ? { email: normalizedPayerEmail } : {})
-                                        });
-                                } else if (normalizedPayerEmail) {
-                                    /* Returning payer who just supplied an email at checkout — backfill it. */
-                                    await supabase
-                                        .from("customers")
-                                        .update({ email: normalizedPayerEmail })
-                                        .eq("wallet_address", normalizedPayer)
-                                        .is("email", null);
-                                }
-                            } catch (accErr) {
-                                console.error("[verify] Failed to auto-create subscript account for payer:", accErr);
-                            }
-
-                            /* Update payment link status, record details, and increment use count */
-                            await supabase
-                                .from("payment_links")
-                                .update({
-                                    use_count: (paymentLink.use_count || 0) + 1,
-                                    status: "PAID",
-                                    paid_at: new Date().toISOString(),
-                                    verified_tx_hash: normalizedTx,
-                                    settlement_reference: settlesDirectlyToUser ? "direct-usdc-transfer" : sweepTxHash
-                                })
-                                .eq("id", paymentLink.id);
-
-                            /* Resolve the open request DM(s) for this link so the payer no longer sees the
-                               merchant "asking" for something they just paid — the DEBIT_SUCCESS receipt DM
-                               below is the record of success. Without this the PENDING PAYMENT_REQUEST lingers
-                               and reads like a duplicate/looping request. Best-effort, idempotent. */
-                            await supabase
-                                .from("subscript_dms")
-                                .update({ status: "APPROVED", updated_at: new Date().toISOString() })
-                                .eq("payment_link_id", paymentLink.id)
-                                .eq("receiver_address", normalizedPayer)
-                                .in("message_type", ["PAYMENT_REQUEST", "PEER_REQUEST"])
-                                .eq("status", "PENDING");
-
-                            /* Create payment_link_payments record */
-                            const { data: newPayment } = await supabase
-                                .from("payment_link_payments")
-                                .insert({
-                                    payment_link_id: paymentLink.id,
-                                    payer_address: normalizedPayer,
-                                    beneficiary_address: normalizedBeneficiary,
-                                    amount_usdc: paymentLink.amount_usdc.toString(),
-                                    tx_hash: normalizedTx,
-                                    merchant_address: paymentLink.merchant_address.toLowerCase(),
-                                    credited: true,
-                                    credited_at: new Date().toISOString(),
-                                    verification_block: receipt.blockNumber.toString(),
-                                    verification_chain_id: chainId.toString()
-                                })
-                                .select()
-                                .single();
-
-                            if (!settlesDirectlyToUser) {
-                                /* Finalize pending merchant ledger entry */
-                                await supabase
-                                    .from("ledger_entries")
-                                    .update({ status: "FINALIZED" })
-                                    .eq("tx_hash", normalizedTx);
-                            }
-
-                            /* Update transaction status */
-                            await supabase
-                                .from("transaction_verifications")
-                                .update({
-                                    status: "CONFIRMED",
-                                    updated_at: new Date().toISOString()
-                                })
-                                .eq("tx_hash", normalizedTx);
-
-                            /* Write audit event */
-                            await supabase
-                                .from("audit_events")
-                                .insert({
-                                    actor: normalizedPayer,
-                                    action: "PAYMENT_LINK_VERIFIED",
-                                    resource_type: "PAYMENT_LINK",
-                                    resource_id: paymentLink.id,
-                                    metadata: {
-                                        tx_hash: normalizedTx,
-                                        amount_usdc: paymentLink.amount_usdc.toString(),
-                                        payer_address: normalizedPayer,
-                                        beneficiary_address: normalizedBeneficiary,
-                                    }
-                                });
-
-                            /* Complete idempotency key */
-                            const successPayload = {
-                                success: true,
-                                message: "Payment verified and settled",
-                                paymentId: newPayment.id,
-                                payerAddress: normalizedPayer,
-                                beneficiaryAddress: normalizedBeneficiary,
-                            };
-                            const shareUrl = receiptUrl(finalReceiptId, requestOrigin);
-                            await supabase
-                                .from("receipts")
-                                .upsert({
-                                    receipt_id: finalReceiptId,
-                                    payment_link_id: paymentLink.id,
-                                    payment_link_payment_id: newPayment.id,
-                                    tx_hash: normalizedTx,
-                                    chain_id: Number(chainId),
-                                    memo_contract: isCctp
-                                        ? CCTP_CONFIG[Number(chainId)].tokenMessenger.toLowerCase()
-                                        : settlesDirectlyToUser
-                                        ? USDC_NATIVE_GAS_ADDRESS.toLowerCase()
-                                        : SUBSCRIPT_ROUTER_ADDRESS.toLowerCase(),
-                                    payer_address: normalizedPayer,
-                                    beneficiary_address: normalizedBeneficiary,
-                                    merchant_address: paymentLink.merchant_address.toLowerCase(),
-                                    amount_usdc: paymentLink.amount_usdc.toString(),
-                                    memo_note: finalReceiptId,
-                                    share_url: shareUrl,
-                                    status: "CONFIRMED",
-                                    block_number: receipt.blockNumber.toString(),
-                                    confirmed_at: new Date().toISOString(),
-                                    updated_at: new Date().toISOString()
-                                }, { onConflict: "receipt_id" });
-
-                            Object.assign(successPayload, { receiptId: finalReceiptId, shareUrl });
-
-                            const { data: payerSettings } = await supabase
-                                .from("customers")
-                                .select("push_enabled, debit_success_enabled")
-                                .eq("wallet_address", normalizedPayer)
-                                .maybeSingle();
-
-                            if (payerSettings?.push_enabled !== false && payerSettings?.debit_success_enabled !== false) {
-                                /* Every settled one-time payment surfaces as a receipt DM to the payer
-                                   (idempotent on tx_hash) so it shows in the inbox by default — no longer
-                                   gated on a pre-existing subscription thread. */
-                                const { data: existingReceipt } = await supabase
-                                    .from("subscript_dms")
-                                    .select("id")
-                                    .eq("message_type", "DEBIT_SUCCESS")
-                                    .eq("tx_hash", normalizedTx)
-                                    .limit(1)
-                                    .maybeSingle();
-
-                                if (!existingReceipt) {
-                                    await supabase
-                                        .from("subscript_dms")
-                                        .insert({
-                                            sender_address: paymentLink.merchant_address.toLowerCase(),
-                                            receiver_address: normalizedPayer,
-                                            message_type: "DEBIT_SUCCESS",
-                                            status: "PENDING",
-                                            amount_usdc: paymentLink.amount_usdc.toString(),
-                                            title: `Receipt: ${paymentLink.title}`,
-                                            description: [
-                                                `SubScript confirmed your ${Number(paymentLink.amount_usdc) / 1_000_000} USDC payment.`,
-                                                `Paid to: ${paymentLink.merchant_name_snapshot || paymentLink.merchant_address}`,
-                                                `Transaction: ${normalizedTx}`,
-                                                `Receipt: ${shareUrl}`,
-                                            ].filter(Boolean).join("\n"),
-                                            tx_hash: normalizedTx,
-                                            payment_link_id: paymentLink.id,
-                                        });
-                                }
-
-                                /* Best-effort browser/native push for the same event. */
-                                sendPushToWallet(normalizedPayer, {
-                                    title: "Payment confirmed",
-                                    body: `Your ${Number(paymentLink.amount_usdc) / 1_000_000} USDC payment to ${paymentLink.merchant_name_snapshot || "the merchant"} settled.`,
-                                    url: shareUrl,
-                                    tag: `payment-${normalizedTx}`,
-                                }).catch((pushErr) => console.error("[verify] push send failed:", pushErr));
-                            }
-
-                            await sendPaymentReceiptEmails({
-                                amountUsdc: paymentLink.amount_usdc,
-                                receiptUrl: shareUrl,
-                                receiptId: finalReceiptId,
-                                merchantAddress: paymentLink.merchant_address,
-                                payerAddress: normalizedPayer,
-                                paymentTitle: paymentLink.title,
-                                txHash: normalizedTx,
-                            });
-
-                            await supabase
-                                .from("idempotency_keys")
-                                .update({
-                                    status: "COMPLETED",
-                                    response_payload: successPayload,
-                                    updated_at: new Date().toISOString()
-                                })
-                                .eq("execution_key", executionKey);
-
-                            if (!settlesDirectlyToUser) {
-                                /* Dispatch merchant webhooks */
-                                const { data: endpoints } = await supabase
-                                    .from("webhook_endpoints")
-                                    .select("*")
-                                    .eq("wallet_address", paymentLink.merchant_address.toLowerCase())
-                                    .eq("active", true);
-
-                                if (endpoints) {
-                                    const webhookPayload = createPaymentSucceededWebhook({
-                                        paymentId: newPayment.id,
-                                        checkoutSessionId: paymentLink.id,
-                                        merchantReference: paymentLink.external_reference || null,
-                                        amountUsdc: paymentLink.amount_usdc,
-                                        receiptId: finalReceiptId,
-                                        txHash: normalizedTx,
-                                        payerAddress: normalizedPayer,
-                                        beneficiaryAddress: normalizedBeneficiary,
-                                    });
-                                    for (const endpoint of endpoints) {
-                                        sendWebhookRequest(endpoint.url, webhookPayload, endpoint.secret).catch(() => {});
-                                    }
-                                }
-                            }
-
-                            return;
-                        }
-                    } catch (err: any) {
-                        console.warn(`[verify-worker] Verification attempt ${attempts} failed: ${err.message}`);
-                    }
-                    await new Promise(res => setTimeout(res, 5000));
+        if (claimResult?.outcome === "COMPLETED") {
+            const completedPaymentId = claimResult.responsePayload?.paymentId;
+            if (completedPaymentId) {
+                const { error: attemptRepairError } = await supabase
+                    .from("payment_link_payments")
+                    .update({ checkout_attempt_id: checkoutAttemptId })
+                    .eq("id", completedPaymentId)
+                    .is("checkout_attempt_id", null);
+                if (attemptRepairError) {
+                    console.error("[verify] Checkout-attempt repair failed:", attemptRepairError.message);
+                    return NextResponse.json({ error: "Failed to bind checkout attempt" }, { status: 500 });
                 }
-
-                throw new Error("Verification timed out after max block polling attempts");
-
-            } catch (jobErr: any) {
-                console.error(`[verify-worker] Background job encountered terminal error:`, jobErr.message);
-
-                /* Transition ledger entry to FAILED */
-                await supabase
-                    .from("ledger_entries")
-                    .update({ status: "FAILED" })
-                    .eq("tx_hash", normalizedTx);
-
-                /* Update transaction status to FAILED */
-                await supabase
-                    .from("transaction_verifications")
-                    .update({
-                        status: "FAILED",
-                        error_message: jobErr.message,
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq("tx_hash", normalizedTx);
-
-                /* Remove or fail idempotency key to allow retries */
-                await supabase.from("idempotency_keys").delete().eq("execution_key", executionKey);
             }
-        });
+
+            after(async () => {
+                if (completedPaymentId) {
+                    await deliverWebhookOutboxEvent(supabase, `evt_payment_${completedPaymentId}`)
+                        .catch((error) => console.error("[verify] Webhook outbox retry failed:", error));
+                }
+                try {
+                    const { data: existingReceipt } = await supabase
+                        .from("receipts")
+                        .select("receipt_id")
+                        .eq("receipt_id", finalReceiptId)
+                        .maybeSingle();
+                    if (existingReceipt) return;
+
+                    const { data: paymentRow } = await supabase
+                        .from("payment_link_payments")
+                        .select("id, verification_block")
+                        .eq("tx_hash", normalizedTx)
+                        .maybeSingle();
+                    const { error: repairError } = await supabase.from("receipts").insert({
+                        receipt_id: finalReceiptId,
+                        payment_link_id: paymentLink.id,
+                        payment_link_payment_id: paymentRow?.id ?? null,
+                        tx_hash: normalizedTx,
+                        chain_id: Number(chainId),
+                        memo_contract: settlesDirectlyToUser
+                            ? USDC_NATIVE_GAS_ADDRESS.toLowerCase()
+                            : SUBSCRIPT_ROUTER_ADDRESS.toLowerCase(),
+                        payer_address: normalizedPayer,
+                        beneficiary_address: normalizedBeneficiary,
+                        merchant_address: paymentLink.merchant_address.toLowerCase(),
+                        amount_usdc: paymentLink.amount_usdc.toString(),
+                        memo_note: finalReceiptId,
+                        share_url: receiptUrl(finalReceiptId, requestOrigin),
+                        status: "CONFIRMED",
+                        block_number: paymentRow?.verification_block != null
+                            ? String(paymentRow.verification_block)
+                            : null,
+                        confirmed_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                    });
+                    if (repairError) {
+                        console.error("[verify] Missing-receipt repair failed:", repairError.message);
+                    } else {
+                        console.warn(`[verify] Repaired missing receipt ${finalReceiptId} for settled tx ${normalizedTx}`);
+                    }
+                } catch (repairError) {
+                    console.error("[verify] Missing-receipt repair errored:", repairError);
+                }
+            });
+            return NextResponse.json(claimResult.responsePayload, { status: 200 });
+        }
+        if (claimResult?.outcome === "FINGERPRINT_MISMATCH") {
+            return NextResponse.json(
+                { error: "Transaction is already bound to a different payment request" },
+                { status: 409 },
+            );
+        }
+        if (claimResult?.outcome === "CHAIN_MISMATCH") {
+            return NextResponse.json(
+                {
+                    error: `Payment was submitted on the wrong network. Expected chain ${claimResult.expectedChainId}.`,
+                    expectedChainId: claimResult.expectedChainId,
+                },
+                { status: 409 },
+            );
+        }
+        if (claimResult?.outcome === "LINK_UNAVAILABLE") {
+            return NextResponse.json(
+                { error: "Payment link is inactive, expired, or at its usage limit" },
+                { status: 409 },
+            );
+        }
+        if (claimResult?.outcome === "ATTEMPT_NOT_FOUND") {
+            return NextResponse.json(
+                { error: "Checkout attempt reservation was not found. Start a new payment attempt." },
+                { status: 409 },
+            );
+        }
+
+        if (claimResult?.outcome === "CLAIMED" || claimResult?.outcome === "IN_PROGRESS") {
+            /* Keep the request alive for a targeted worker pass. Production runtimes may
+               discard post-response callbacks, and a batch claim can select an unrelated
+               older checkout. The durable keeper still owns crash recovery if this pass
+               encounters a transient RPC failure or the job is already leased elsewhere. */
+            await processPaymentLinkVerificationJob(supabase, normalizedTx)
+                .catch((error) => console.error("[verify-worker] Immediate durable dispatch failed:", error));
+        }
+        if (claimResult?.outcome === "IN_PROGRESS") {
+            return NextResponse.json(
+                { error: "Conflict: Verification in progress", status: "VERIFYING" },
+                { status: 409 },
+            );
+        }
+        if (claimResult?.outcome !== "CLAIMED") {
+            return NextResponse.json(
+                { error: "Conflict: Verification in progress", status: "VERIFYING" },
+                { status: 409 },
+            );
+        }
 
         return NextResponse.json({
             success: true,
             message: "Transaction verification submitted",
-            status: "SUBMITTED"
+            status: "SUBMITTED",
         }, { status: 202 });
-
-    } catch (error: any) {
+    } catch (error) {
         console.error("Verification POST error:", error);
-        if (supabase && executionKey) {
-            await supabase.from("idempotency_keys").delete().eq("execution_key", executionKey);
-        }
-        return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : "Internal Server Error" },
+            { status: 500 },
+        );
     }
 }

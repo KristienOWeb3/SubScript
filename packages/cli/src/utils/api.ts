@@ -1,7 +1,8 @@
 import { ethers } from "ethers";
 
-const DEFAULT_API_URL = "https://jkrlsjpsytzffwjpixue.supabase.co"; // REST URL fallback
-const LOCAL_API_URL = "http://localhost:3000";
+/* The published CLI must talk to production by default — a localhost fallback silently breaks
+   every dashboard-bridge and version check for real users. Local dev overrides via env. */
+const DEFAULT_API_URL = "https://www.subscriptonarc.com";
 
 function normalizeBaseUrl(url: string): string {
   try {
@@ -16,11 +17,11 @@ function normalizeBaseUrl(url: string): string {
 }
 
 function getBaseUrl(): string {
-  // If we are developing locally or running in local dev server environment
-  if (process.env.NEXT_PUBLIC_APP_URL) {
-    return normalizeBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
+  const override = process.env.SUBSCRIPT_BASE_URL || process.env.NEXT_PUBLIC_APP_URL;
+  if (override) {
+    return normalizeBaseUrl(override);
   }
-  return LOCAL_API_URL;
+  return DEFAULT_API_URL;
 }
 
 export function isTelemetryEnabled(noTelemetryFlag: boolean): boolean {
@@ -94,10 +95,14 @@ export async function fetchConfigAndVerify(): Promise<any> {
 
   const { config, signature } = (await res.json()) as any;
 
-  // Signature verification (Addition 3)
+  // Signature verification (Addition 3). The server signs the config with the protocol
+  // owner key (Vercel PRIVATE_KEY / CLI_CONFIG_SIGNING_KEY); this is the independent trust
+  // anchor the CLI checks the recovered signer against — it must equal the on-chain contract
+  // owner. Overridable via env so an owner-key rotation doesn't require rebuilding the CLI.
   const message = JSON.stringify(config);
   const recoveredAddress = ethers.verifyMessage(message, signature);
-  const expectedAdminAddress = "0x49315D8b3282812B92f454d45Cf041920a403492";
+  const expectedAdminAddress =
+    process.env.SUBSCRIPT_CLI_ADMIN_ADDRESS || "0x59e6970Eac4c9A44247adf975c462d17c94135ee";
 
   if (recoveredAddress.toLowerCase() !== expectedAdminAddress.toLowerCase()) {
     throw new Error(

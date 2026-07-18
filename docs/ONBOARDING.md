@@ -15,17 +15,19 @@ SubScript supports three discrete authentication and wallet provisioning channel
   2. The system checks if the email is already in use via `/api/auth/check-account`. If it exists, they are routed to the sign-in flow.
   3. A 6-digit numeric OTP is sent to the user's email address using the Resend email service.
   4. Upon entering the correct OTP, the system checks if a wallet record already exists in `user_embedded_wallets`.
-  5. If no wallet exists, the backend securely derives a new, random Ethereum EOA wallet via `ethers.Wallet.createRandom()`, encrypts the private key, and stores it in the database.
+  5. If no wallet exists, the backend provisions a wallet based on the active provider configuration (`WALLET_PROVIDER`):
+     - **Circle Developer-Controlled MPC Wallet** (when `WALLET_PROVIDER=circle`): The backend provisions a new wallet on the Arc testnet using the Circle developer-controlled wallets client under the configured wallet set. This path utilizes a durable provisioning ledger (`circle_wallet_provisioning`) to guarantee idempotency and prevent orphaned wallets during registration retries.
+     - **Legacy Local EOA Wallet**: The backend securely derives a new, random Ethereum EOA wallet via `ethers.Wallet.createRandom()`, encrypts the private key using `WALLET_ENCRYPTION_KEY`, and stores it in the database.
   6. The session cookie is established, and the user is redirected to the role selector.
 
-### B. Google Social Wallet (Circle EOA)
-* **Target Audience**: Users seeking seamless web2-to-web3 social login.
-* **Process**:
-  1. User clicks the "Google Social Sign In" button, which opens the Circle OAuth login popup.
-  2. Upon successful authentication, the Google OAuth subject and email are retrieved.
-  3. A deterministic, non-custodial Circle EOA wallet is retrieved/initialized for that specific social UUID.
-  4. The system validates that this email is not associated with any other wallet address in `user_embedded_wallets`.
-  5. If the mapping is valid, a session cookie is issued, and the user proceeds to the role selector.
+### B. Google Social Wallet (Temporarily Disabled)
+* **Status**: The UI integration remains in the codebase, but `/api/auth/circle/wallet/complete` fails closed.
+* **Reason**: Browser-provided OAuth profile fields are not sufficient proof of identity. Google sign-in must not issue a SubScript session until the Circle user token is validated server-side and bound to a single-use login challenge.
+* **Required before reactivation**:
+  1. Validate the Circle user token on the server.
+  2. Derive the email and social subject only from the validated provider response.
+  3. Bind completion to a server-created, single-use state value.
+  4. Provision a developer-controlled Circle wallet through a durable idempotency record.
 
 ### C. Web3 Wallet (SIWE)
 * **Target Audience**: Web3 native users, merchants, and operations administrators.
@@ -44,14 +46,14 @@ SubScript supports three discrete authentication and wallet provisioning channel
 graph TD
     Start[User Visits /signup] --> Select[Choose Auth Method]
     Select -->|Email OTP| VerifyOTP[Verify OTP Code]
-    Select -->|Google Social| CompleteCircle[Complete Circle Wallet Challenge]
+    Select -->|Google Social| VerifyGoogle[Server verifies Google ID token + audience]
     Select -->|Web3 Wallet| SignSIWE[Sign SIWE Message]
     
     VerifyOTP --> checkWallet{Wallet Record Exists?}
-    checkWallet -->|No| CreateWallet[Generate Random EOA Wallet]
+    VerifyGoogle --> checkWallet
+    checkWallet -->|No| CreateWallet[Provision embedded wallet - Circle developer-controlled MPC when WALLET_PROVIDER=circle, legacy EOA otherwise]
     checkWallet -->|Yes| SetSession[Set Session Cookie]
     CreateWallet --> SetSession
-    CompleteCircle --> SetSession
     SignSIWE --> SetSession
     
     SetSession --> RoleCheck{Role Registered?}
@@ -59,9 +61,7 @@ graph TD
     RoleCheck -->|No| ShowSelector[Show Role Selector Gate]
     
     ShowSelector --> SelectRole[Select Individual User]
-    ShowSelector --> MerchantInvite{Merchant invite or public merchant signup enabled?}
-    MerchantInvite -->|Yes| SelectMerchant[Select Enterprise Merchant]
-    MerchantInvite -->|No| UserOnly[Enterprise option disabled]
+    ShowSelector --> SelectMerchant[Select Enterprise Merchant]
     SelectRole --> CheckEmailConflict{Email Already Registered?}
     SelectMerchant --> CheckEmailConflict
     CheckEmailConflict -->|Yes| ShowError[Reject Registration & Display Error]
@@ -85,9 +85,10 @@ To prevent role confusion, account hijack, and double email mapping, the onboard
   - Automatically routes to `/dashboard` (control center).
   - Allowed features: Billing tier setup, payroll campaigns, settlement triggers, and developer webhooks.
   - Strictly blocked from accessing user-facing dashboard functions.
-  - Public signup is invite-gated by default. New merchant creation requires either `ALLOW_PUBLIC_MERCHANT_SIGNUP=true` or a matching `MERCHANT_SIGNUP_CODE` supplied through a merchant invite link such as `/signup?role=merchant&invite=<code>`.
+  - Self-serve merchant signup is **open by default**: the Enterprise Merchant option is selectable on `/signup`, and `/signup?role=merchant` funnels straight into email/Google onboarding. To re-gate it behind invites, set `ALLOW_PUBLIC_MERCHANT_SIGNUP="false"` (accepts `false`/`0`/`no`/`off`); merchant creation then requires a matching `MERCHANT_SIGNUP_CODE` supplied through an invite link such as `/signup?role=merchant&invite=<code>`.
+  - Merchant accounts must still be email/embedded (server-signed) wallets — external/self-custody wallets stay users-only — and KYB verification still gates trust-sensitive capabilities.
 
-Normal `/signup` is user-first and does not expose public merchant account creation. Existing Enterprise accounts remain valid and continue routing to the merchant dashboard.
+Existing Enterprise accounts remain valid and continue routing to the merchant dashboard.
 
 ### B. Email Uniqueness Enforcement (Anti-Double-Mapping)
 An email address can only be mapped to exactly one wallet address. This rule is enforced across all API endpoints:

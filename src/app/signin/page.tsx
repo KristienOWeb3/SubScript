@@ -11,20 +11,23 @@ import {
   AlertCircle, 
   ArrowRight,
   Lock,
-  MailCheck
+  MailCheck,
+  LogOut
 } from "@/components/icons";
-import { getDashboardUrl } from "@/utils/navigation";
+import { getDashboardUrl, getSafeRelativePath } from "@/utils/navigation";
 import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+import { CIRCLE_GOOGLE_ENABLED } from "@/lib/featureFlags";
+import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
+import Script from "next/script";
 
 function SignInContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const initialEmail = searchParams.get("email") || "";
+  const initialEmail = searchParams?.get("email") || "";
   /* Optional post-login destination (e.g. a /subscribe/[planId] link). Only safe
      same-origin relative paths are honored, to avoid open-redirects. */
-  const rawNext = searchParams.get("next") || "";
-  const safeNext = /^\/(?!\/)[^\s]*$/.test(rawNext) ? rawNext : "";
+  const safeNext = getSafeRelativePath(searchParams?.get("next") || null);
 
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending: isConnecting } = useConnect();
@@ -42,11 +45,56 @@ function SignInContent() {
   const [walletAuthRequested, setWalletAuthRequested] = useState(false);
   const [walletMissingAccount, setWalletMissingAccount] = useState(false);
 
+  const [activeSession, setActiveSession] = useState<{ wallet: string; email?: string; role: string } | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [turnstileLoaded, setTurnstileLoaded] = useState(false);
+  const isTurnstileConfigured = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
+
+  useEffect(() => {
+    if (!turnstileLoaded || authMethod !== "email" || otpSent || !window.turnstile) return;
+    const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+    const container = document.getElementById("turnstile-email-signin");
+    if (!siteKey || !container || container.innerHTML !== "") return;
+
+    window.turnstile.render(container, {
+      sitekey: siteKey,
+      theme: "dark",
+      callback: (token: string) => setCaptchaToken(token),
+      "expired-callback": () => setCaptchaToken(""),
+      "error-callback": () => setCaptchaToken(""),
+    });
+  }, [turnstileLoaded, authMethod, otpSent]);
+
   useEffect(() => {
     if (initialEmail) {
       setAuthMethod("email");
     }
   }, [initialEmail]);
+
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const res = await fetch("/api/auth/session");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.loggedIn && data.role) {
+              setActiveSession({
+                  wallet: data.wallet,
+                  email: data.email || undefined,
+                  role: data.role
+              });
+          }
+        }
+      } catch (err) {
+        console.error("Failed to check active session on signin mount:", err);
+      } finally {
+        setCheckingSession(false);
+      }
+    };
+    checkSession();
+  }, [safeNext]);
 
   const handleLoginSuccess = useCallback((data: { success: boolean; wallet: string; role?: string | null }) => {
     // Honor a post-login destination for standard user accounts (e.g. a shared
@@ -58,10 +106,11 @@ function SignInContent() {
     if (data.role) {
       window.location.href = getDashboardUrl(data.role as any, "/dashboard");
     } else {
-      // If signed in but somehow role is missing, go to onboarding (signup role selector)
-      window.location.href = safeNext
-        ? `/signup?next=${encodeURIComponent(safeNext)}`
-        : getDashboardUrl("USER", "/signup");
+      // Authenticated but no role — go directly to role selection step
+      const params = new URLSearchParams();
+      params.set("completeRole", "1");
+      if (safeNext) params.set("next", safeNext);
+      window.location.href = `/signup?${params.toString()}`;
     }
   }, [safeNext]);
 
@@ -76,33 +125,16 @@ function SignInContent() {
     setSandboxOtp(null);
 
     try {
-      // Check if email has an account
-      const checkRes = await fetch("/api/auth/check-account", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      const checkData = await checkRes.json();
-      if (!checkData.exists) {
-        setOtpError("No completed account exists for this email yet. Use Sign Up below to create one.");
-        return;
-      }
-      if (checkData.authMethod === "wallet") {
-        setOtpError("This email is linked to a wallet-only account. Connect that wallet to sign in; email recovery is not available for linked notification emails.");
-        return;
-      }
-
-      // Send OTP
       const res = await fetch("/api/auth/otp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, authFlow: "signin", captchaToken }),
       });
       const data = await res.json();
       if (data.success) {
         setOtpSent(true);
-        if (data.sandboxCode) {
-          setSandboxOtp(data.sandboxCode);
+        if (data.devOtpCode) {
+          setSandboxOtp(data.devOtpCode);
         }
       } else {
         setOtpError(data.error || "Failed to send verification code.");
@@ -178,6 +210,7 @@ function SignInContent() {
         return;
       }
 
+
       // Verify wallet ownership via SIWE
       const nonceRes = await fetch("/api/auth/nonce");
       const nonceData = await nonceRes.json();
@@ -185,7 +218,7 @@ function SignInContent() {
         throw new Error(nonceData.error || "Failed to fetch SIWE nonce");
       }
       const fetchedNonce = nonceData.nonce;
-      const message = `Sign this message to verify ownership of your SubScript Merchant Dashboard.\n\nNonce: ${fetchedNonce}`;
+      const message = buildWalletAuthMessage({ address, nonce: fetchedNonce, domain: window.location.host, uri: window.location.origin });
       const signature = await signMessageAsync({ message });
 
       const verifyRes = await fetch("/api/auth/verify-signature", {
@@ -213,23 +246,97 @@ function SignInContent() {
     }
   }, [walletAuthRequested, isConnected, address, performSiwe]);
 
+  const handleLogout = async () => {
+    setIsSigningOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      setActiveSession(null);
+    } catch (err) {
+      console.error("Signout error:", err);
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
+
+  const handleGoToDashboard = () => {
+    if (!activeSession) return;
+    window.location.href = safeNext && activeSession.role === "USER"
+      ? safeNext
+      : getDashboardUrl(activeSession.role as any, "/dashboard");
+  };
+
+  if (checkingSession || isSigningOut) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-[#00d2b4]" />
+      </div>
+    );
+  }
+
+  if (activeSession) {
+    return (
+      <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white flex items-center justify-center p-4 sm:p-6 relative font-sans">
+        <AnimatedGradientBg />
+        
+        <div className="relative z-10 w-full max-w-md">
+          <div className="text-center mb-8">
+            <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
+              SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">signin</span>
+            </h1>
+            <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Decentralized Payment Protocol</p>
+          </div>
+
+          <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
+            <div className="text-center space-y-2">
+              <h2 className="text-base font-bold uppercase tracking-wider text-white">Active Session Found</h2>
+              <p className="text-xs text-white/50 leading-relaxed">
+                You are currently signed in as:
+              </p>
+              <div className="bg-white/5 border border-white/10 p-3 rounded-xl font-mono text-[11px] break-all text-[#00d2b4]">
+                {activeSession.email || activeSession.wallet}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={handleGoToDashboard}
+                className="w-full py-3.5 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2"
+              >
+                Go to Dashboard
+                <ArrowRight className="w-4 h-4" />
+              </button>
+
+              <button
+                onClick={handleLogout}
+                className="w-full py-3.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign Out / Switch Account
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white flex items-center justify-center p-6 relative font-sans">
+    <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white flex items-center justify-center p-4 sm:p-6 relative font-sans">
       <AnimatedGradientBg />
       
       <div className="relative z-10 w-full max-w-md">
         
         <div className="text-center mb-8">
           <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
-            SubScript <span className="font-serif italic lowercase font-normal text-[#ccff00]">signin</span>
+            SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">signin</span>
           </h1>
           <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Decentralized Payment Protocol</p>
         </div>
 
-        <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
+        <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
           
           <div className="flex items-center justify-between px-2 pb-4 border-b border-white/5">
-            <span className="text-[10px] uppercase font-extrabold tracking-widest text-[#ccff00]">Authenticate</span>
+            <span className="text-[10px] uppercase font-extrabold tracking-widest text-[#00d2b4]">Authenticate</span>
             <span className="text-[10px] uppercase font-extrabold tracking-widest text-white/40">Secure Sign In</span>
           </div>
 
@@ -246,13 +353,15 @@ function SignInContent() {
                 }}
                 className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-white"
               >
-                <Mail className="w-4 h-4 text-[#ccff00]" />
+                <Mail className="w-4 h-4 text-[#00d2b4]" />
                 Continue with Email
               </button>
 
-              <div onClick={() => posthog.capture("signin_method_selected", { method: "circle_google" })}>
-                <CircleGoogleWalletButton />
-              </div>
+              {CIRCLE_GOOGLE_ENABLED && (
+                <div onClick={() => posthog.capture("signin_method_selected", { method: "circle_google" })}>
+                  <CircleGoogleWalletButton />
+                </div>
+              )}
 
               <div className="relative py-2 flex items-center justify-center">
                 <div className="absolute inset-0 flex items-center">
@@ -269,7 +378,7 @@ function SignInContent() {
                   handleConnectWallet();
                 }}
                 disabled={isConnecting || siweLoading}
-                className="w-full py-4 bg-[#ccff00] hover:bg-[#ccff00]/90 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-black shadow-[0_0_20px_rgba(204,255,0,0.15)]"
+                className="w-full py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/90 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-black shadow-[0_0_20px_rgba(0,210,180,0.15)]"
               >
                 {isConnecting || siweLoading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -287,9 +396,9 @@ function SignInContent() {
               )}
 
               {walletMissingAccount && address && (
-                <div className="bg-[#ccff00]/10 border border-[#ccff00]/20 rounded-2xl p-4 text-xs text-white/70 space-y-4 mt-2">
+                <div className="bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-2xl p-4 text-xs text-white/70 space-y-4 mt-2">
                   <div className="flex items-start gap-3">
-                    <Wallet className="w-5 h-5 shrink-0 mt-0.5 text-[#ccff00]" />
+                    <Wallet className="w-5 h-5 shrink-0 mt-0.5 text-[#00d2b4]" />
                     <div className="space-y-1">
                       <p className="font-bold text-white uppercase tracking-wider">No account found</p>
                       <p className="leading-relaxed">
@@ -303,7 +412,7 @@ function SignInContent() {
                     <button
                       type="button"
                       onClick={() => router.push(safeNext ? `/signup?next=${encodeURIComponent(safeNext)}` : "/signup")}
-                      className="py-3 bg-[#ccff00] text-black rounded-xl font-bold text-[10px] uppercase tracking-wider"
+                      className="py-3 bg-[#00d2b4] text-black rounded-xl font-bold text-[10px] uppercase tracking-wider"
                     >
                       Create Account
                     </button>
@@ -340,6 +449,14 @@ function SignInContent() {
                       />
                       <Mail className="absolute right-3.5 top-3.5 w-4 h-4 text-white/30" />
                     </div>
+                    {isTurnstileConfigured && (
+                      <div className="space-y-2 pt-2 flex flex-col items-center">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60 self-start">
+                          Security Verification
+                        </label>
+                        <div id="turnstile-email-signin" className="my-2"></div>
+                      </div>
+                    )}
                     {otpError && (
                       <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-400 flex items-start gap-3 mt-2">
                         <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
@@ -358,8 +475,8 @@ function SignInContent() {
                     </button>
                     <button
                       type="submit"
-                      disabled={otpLoading}
-                      className="flex-1 py-3.5 bg-[#ccff00] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#ccff00]/95"
+                      disabled={otpLoading || (isTurnstileConfigured && !captchaToken)}
+                      className="flex-1 py-3.5 bg-[#00d2b4] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/95"
                     >
                       {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send Code"}
                     </button>
@@ -391,9 +508,9 @@ function SignInContent() {
                   </div>
 
                   {sandboxOtp && (
-                    <div className="bg-[#ccff00]/10 border border-[#ccff00]/20 rounded-2xl p-4 text-xs text-[#ccff00] flex items-center gap-3 shadow-[0_0_15px_rgba(204,255,0,0.1)]">
+                    <div className="bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-2xl p-4 text-xs text-[#00d2b4] flex items-center gap-3 shadow-[0_0_15px_rgba(0,210,180,0.1)]">
                       <MailCheck className="w-5 h-5 shrink-0" />
-                      <span className="font-mono">Sandbox Test OTP: {sandboxOtp}</span>
+                      <span className="font-mono">Development Code: {sandboxOtp}</span>
                     </div>
                   )}
 
@@ -408,7 +525,7 @@ function SignInContent() {
                     <button
                       type="submit"
                       disabled={otpLoading}
-                      className="flex-1 py-3.5 bg-[#ccff00] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#ccff00]/95"
+                      className="flex-1 py-3.5 bg-[#00d2b4] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/95"
                     >
                       {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Sign In"}
                     </button>
@@ -420,10 +537,10 @@ function SignInContent() {
 
           <div className="text-center pt-4 border-t border-white/5">
             <p className="text-xs text-white/40">
-              Don't have an account?{" "}
+              Don&apos;t have an account?{" "}
               <button 
                 onClick={() => router.push("/signup")} 
-                className="text-[#ccff00] font-bold hover:underline"
+                className="text-[#00d2b4] font-bold hover:underline"
               >
                 Sign Up
               </button>
@@ -431,6 +548,11 @@ function SignInContent() {
           </div>
 
         </div>
+        <Script
+          src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+          strategy="afterInteractive"
+          onLoad={() => setTurnstileLoaded(true)}
+        />
       </div>
     </div>
   );
@@ -440,7 +562,7 @@ export default function SignInPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen bg-black text-white flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-[#ccff00]" />
+        <Loader2 className="w-8 h-8 animate-spin text-[#00d2b4]" />
       </div>
     }>
       <SignInContent />

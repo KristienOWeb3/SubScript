@@ -4,6 +4,7 @@ export interface CheckoutButtonTemplateOptions {
   requestId: string;
   generationTimestamp: string;
   mode: "standard" | "privacy-routed";
+  billingMode: "one_time" | "subscription";
 }
 
 export function generateCheckoutButtonTemplate(opts: CheckoutButtonTemplateOptions): string {
@@ -11,6 +12,7 @@ export function generateCheckoutButtonTemplate(opts: CheckoutButtonTemplateOptio
  * generatedBy: "SubScript CLI"
  * cliVersion: "${opts.cliVersion}"
  * templateVersion: "${opts.templateVersion}"
+ * billingMode: "${opts.billingMode}"
  * requestId: "${opts.requestId}"
  * generationTimestamp: "${opts.generationTimestamp}"
  */
@@ -24,9 +26,16 @@ interface CheckoutButtonProps {
   title: string;
   description?: string;
   externalReference?: string;
+  subscriber?: string;
+  merchantCustomerId?: string;
   idempotencyKey?: string;
   className?: string;
-  onCreated?: (intent: { intentId: string; checkoutUrl: string; receiptToken?: string }) => void;
+  onCreated?: (checkout: {
+    checkoutId: string;
+    resourceType: "payment_intent" | "subscription";
+    checkoutUrl: string;
+    receiptToken?: string;
+  }) => void;
 }
 
 export function SubScriptCheckoutButton({
@@ -34,6 +43,8 @@ export function SubScriptCheckoutButton({
   title,
   description,
   externalReference,
+  subscriber,
+  merchantCustomerId,
   idempotencyKey,
   className,
   onCreated
@@ -54,6 +65,8 @@ export function SubScriptCheckoutButton({
           title,
           description,
           externalReference,
+          subscriber,
+          merchantCustomerId,
           idempotencyKey
         })
       });
@@ -66,13 +79,14 @@ export function SubScriptCheckoutButton({
         throw new Error("SubScript checkout response did not include a checkoutUrl");
       }
 
-      const intent = {
-        intentId: payload.intentId,
+      const checkout = {
+        checkoutId: payload.checkoutId,
+        resourceType: payload.resourceType,
         checkoutUrl: payload.checkoutUrl,
         receiptToken: payload.receiptToken
       };
-      onCreated?.(intent);
-      window.location.assign(intent.checkoutUrl);
+      onCreated?.(checkout);
+      window.location.assign(checkout.checkoutUrl);
     } catch (err: any) {
       setErrorMsg(err.message || "Checkout failed");
       setLoading(false);
@@ -90,7 +104,7 @@ export function SubScriptCheckoutButton({
           "rounded-md bg-black px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
         }
       >
-        {loading ? "Opening SubScript..." : "Pay with SubScript"}
+        {loading ? "Opening SubScript..." : "${opts.billingMode === "subscription" ? "Subscribe with SubScript" : "Pay once with SubScript"}"}
       </button>
       {errorMsg ? <p className="mt-2 text-sm text-red-600">{errorMsg}</p> : null}
     </div>

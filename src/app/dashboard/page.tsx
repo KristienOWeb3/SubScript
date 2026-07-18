@@ -1,7 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback, Fragment } from "react";
-import posthog from "posthog-js";
+import { useMemo, useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { ethers } from "ethers";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -11,11 +10,15 @@ import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import DashboardSkeleton from "@/components/DashboardSkeleton";
 import { getDashboardUrl } from "@/utils/navigation";
 import { buildCheckoutUrl, buildSubscribeUrl } from "@/lib/checkoutUrl";
+import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
+import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
+import ConfirmModal from "@/components/ConfirmModal";
 import DurationPicker from "@/components/DurationPicker";
 import SharePlanModal from "@/components/SharePlanModal";
+import KycVerificationPanel from "@/components/KycVerificationPanel";
 import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useReadContract, useSignMessage } from "wagmi";
 import { injected } from "wagmi/connectors";
 import {
@@ -23,16 +26,9 @@ import {
     http,
     formatUnits,
     parseUnits,
-    parseEventLogs,
-    bytesToHex,
-    encodePacked,
-    getAddress,
-    isAddress,
-    keccak256,
-    getContract,
-    type Hex,
 } from "viem";
-import { arcTestnet } from "@/lib/wagmi";
+import { activeArcChain } from "@/lib/wagmi";
+import { arcHttp } from "@/lib/arc/transport";
 import { 
     Activity, Key, Code2, Webhook, ArrowRightLeft, 
     ShieldAlert, Copy, Check, Eye, EyeOff, RotateCw, 
@@ -40,30 +36,29 @@ import {
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
     Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
     Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, User, Share2,
-    ShieldCheck, Save, Home, SquaresFour, Broadcast
+    ShieldCheck, Save, Home, SquaresFour, Broadcast, MessageSquare, HelpCircle
 } from "@/components/icons";
-import { QRCodeSVG } from "qrcode.react";
+import { QRCode } from "react-qrcode-logo";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
+import type { MerchantAnalyticsSummary, MerchantSubscriptionDetail } from "@/lib/analytics/merchantSubscriptions";
 import { PayrollContent } from "@/app/dashboard/payroll/PayrollContent";
 
-import { 
-    ARC_TESTNET_CHAIN_ID, 
-    PREMIUM_PAYMENT_RECIPIENT_ADDRESS,
+import {
     PREMIUM_PLAN_ID,
-    PREMIUM_PLAN_PRICE_USDC,
-    SUBSCRIPT_ROUTER_ADDRESS, 
-    STANDARD_CONTRACT_ADDRESS, 
+    SUBSCRIPT_ROUTER_ADDRESS,
+    STANDARD_CONTRACT_ADDRESS,
     USDC_NATIVE_GAS_ADDRESS,
     CONFIDENTIAL_CONTRACT_ADDRESS
 } from "@/lib/contracts/constants";
 import { STANDARD_SUBSCRIPT_ABI, SUBSCRIPT_ROUTER_ABI, USDC_ERC20_ABI, CONFIDENTIAL_CONTRACT_ABI } from "@/lib/contracts/abis";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
+import FinancialStatusBadge from "@/components/FinancialStatusBadge";
 
 const TEST_PUBLISHABLE_KEY = "pk_test_51Px9800Z7Z4M19XQY1R93B";
 
 const publicClient = createPublicClient({
-    chain: arcTestnet,
-    transport: http(),
+    chain: activeArcChain,
+    transport: arcHttp(),
 });
 
 const ERC20_ABI = USDC_ERC20_ABI;
@@ -80,13 +75,15 @@ const tabs = [
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "checkout", label: "Checkout Setup", icon: Code2 },
     { id: "webhooks", label: "Webhooks", icon: Broadcast },
+    { id: "offramp", label: "Off-Ramp", icon: ArrowRightLeft },
     { id: "settings", label: "Profile & DNS", icon: User },
 ] as const;
 
-type TabId = "overview" | "premium" | "analytics" | "payment-links" | "plans" | "apikeys" | "checkout" | "webhooks" | "settings" | "payroll";
+type TabId = "overview" | "premium" | "analytics" | "payment-links" | "plans" | "apikeys" | "checkout" | "webhooks" | "settings" | "payroll" | "offramp";
 
 type MerchantPlan = {
     id: string;
+    targetSubscriber?: string | null;
     merchantAddress: string;
     name: string;
     description?: string | null;
@@ -96,7 +93,31 @@ type MerchantPlan = {
     active: boolean;
 };
 
+type PlanPromotion = {
+    id: string;
+    planId: string;
+    name: string;
+    discountType: string;
+    discountBps: number | null;
+    regularAmountUsdc: string;
+    introductoryAmountUsdc: string;
+    introductoryCycles: number;
+    startsAt: string | null;
+    expiresAt: string | null;
+    maxRedemptions: number | null;
+    redemptionCount: number;
+    newCustomersOnly: boolean;
+    active: boolean;
+};
+
 const PLAN_DESCRIPTION_MAX = 300;
+
+const formatApiKeyFingerprint = (value: string | null | undefined) => {
+    if (!value) return null;
+    if (value.includes("...")) return value;
+    if (value.length <= 12) return "••••••••";
+    return `${value.slice(0, 12)}...${value.slice(-4)}`;
+};
 
 const formatPlanAmount = (micros: string) => {
     try {
@@ -107,6 +128,12 @@ const formatPlanAmount = (micros: string) => {
     } catch {
         return "0.00";
     }
+};
+
+const limitDecimals = (value: string, maxDecimals: number = 6): string => {
+    if (!value || !value.includes(".")) return value;
+    const [integer, fraction] = value.split(".");
+    return `${integer}.${fraction.slice(0, maxDecimals)}`;
 };
 
 const formatPlanPeriod = (seconds: string) => {
@@ -161,10 +188,12 @@ const shortenHash = (value: string | undefined) => {
 
 const settlementTimeframes = ["24H", "1W", "1M", "3M", "6M", "1Y"] as const;
 
+/* Same icons AND names as the desktop sidebar (`tabs`) so merchant navigation reads
+   identically on both form factors. */
 const mobileBottomTabs: ReadonlyArray<{ id: TabId; label: string; icon: typeof Home }> = [
-    { id: "overview", label: "Home", icon: SquaresFour },
+    { id: "overview", label: "Overview", icon: SquaresFour },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
-    { id: "payment-links", label: "Plans", icon: Sliders },
+    { id: "payment-links", label: "Payments", icon: Sliders },
     { id: "apikeys", label: "API Keys", icon: Key },
 ];
 
@@ -193,6 +222,7 @@ export default function DashboardPage() {
     const [isLinksLoading, setIsLinksLoading] = useState(false);
     const [initialLinksFetched, setInitialLinksFetched] = useState(false);
     const [merchantPlans, setMerchantPlans] = useState<MerchantPlan[]>([]);
+    const [planPromotions, setPlanPromotions] = useState<PlanPromotion[]>([]);
     const [isPlansLoading, setIsPlansLoading] = useState(false);
     const [initialPlansFetched, setInitialPlansFetched] = useState(false);
     const [planName, setPlanName] = useState("");
@@ -200,6 +230,7 @@ export default function DashboardPage() {
     const [planDetailsUrl, setPlanDetailsUrl] = useState("");
     const [planAmountUsdc, setPlanAmountUsdc] = useState("");
     const [planPeriodDays, setPlanPeriodDays] = useState("30");
+    const [planMinCommitmentDays, setPlanMinCommitmentDays] = useState("");
     const [planError, setPlanError] = useState<string | null>(null);
     const [planSuccess, setPlanSuccess] = useState<string | null>(null);
 
@@ -209,12 +240,31 @@ export default function DashboardPage() {
     const [linkDurationMinutes, setLinkDurationMinutes] = useState(1440); /* Default to 24 hours (1440 mins) */
     const [linkExternalReference, setLinkExternalReference] = useState("");
     const [linkMaxUses, setLinkMaxUses] = useState("1");
+    const [linkInvoiceNumber, setLinkInvoiceNumber] = useState("");
+    const [linkDueDate, setLinkDueDate] = useState("");
+    const [linkPayerEmail, setLinkPayerEmail] = useState("");
+
+    /* Configurable dunning: failed renewal attempts before the keeper stops a customer sub. */
+    const [dunningMaxFailures, setDunningMaxFailures] = useState("4");
+    const [dunningLoaded, setDunningLoaded] = useState(false);
+    const [dunningSaving, setDunningSaving] = useState(false);
+    const [dunningMessage, setDunningMessage] = useState<string | null>(null);
     const [isCreatingLink, setIsCreatingLink] = useState(false);
     const [linkError, setLinkError] = useState<string | null>(null);
     const [linkSuccess, setLinkSuccess] = useState<string | null>(null);
     const [createdLinkInfo, setCreatedLinkInfo] = useState<{ id: string; title: string; checkoutUrl: string } | null>(null);
     const [showToast, setShowToast] = useState(false);
     const [toastMessage, setToastMessage] = useState("");
+    const [confirmModal, setConfirmModal] = useState<{
+        open: boolean;
+        title: string;
+        description: string;
+        confirmLabel: string;
+        cancelLabel?: string;
+        variant: "danger" | "warning" | "default";
+        onConfirm: () => void;
+        onCancel?: () => void;
+    } | null>(null);
     const [linkCopyFeedback, setLinkCopyFeedback] = useState<{ [id: string]: boolean }>({});
     const [expandedLinkId, setExpandedLinkId] = useState<string | null>(null);
     const [showLinkAdvanced, setShowLinkAdvanced] = useState(true);
@@ -223,6 +273,7 @@ export default function DashboardPage() {
     const [dbProvider, setDbProvider] = useState("none");
     const [sessionProvider, setSessionProvider] = useState("none");
     const [ledgerPage, setLedgerPage] = useState(0);
+    const [ledgerCursors, setLedgerCursors] = useState<Array<string | null>>([null]);
     const [linksPage, setLinksPage] = useState(0);
     const [webhooksPage, setWebhooksPage] = useState(0);
 
@@ -309,11 +360,11 @@ export default function DashboardPage() {
             }
             return data.txHash as string;
         } else {
-            if (chainId !== ARC_TESTNET_CHAIN_ID) {
+            if (chainId !== activeArcChain.id) {
                 if (switchChainAsync) {
-                    await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+                    await switchChainAsync({ chainId: activeArcChain.id });
                 } else if (switchChain) {
-                    switchChain({ chainId: ARC_TESTNET_CHAIN_ID });
+                    switchChain({ chainId: activeArcChain.id });
                 }
             }
             return await writeContractAsync({
@@ -326,7 +377,6 @@ export default function DashboardPage() {
     };
 
 
-    const [isSubscribingPremium, setIsSubscribingPremium] = useState(false);
     const [premiumStatus, setPremiumStatus] = useState<string | null>(null);
     const [premiumError, setPremiumError] = useState<string | null>(null);
     const [rerouteAddress, setRerouteAddress] = useState("");
@@ -416,39 +466,20 @@ export default function DashboardPage() {
         setDetectedCurrency(initialCurrency);
 
         const fetchGeoCurrencyAndRate = async () => {
-            let activeCurrency = initialCurrency;
             try {
-                /* First attempt geographical IP currency lookup */
-                const geoRes = await fetch("https://ipapi.co/json/");
-                if (geoRes.ok) {
-                    const geoData = await geoRes.json();
-                    if (geoData.currency) {
-                        const currencySymbols: Record<string, string> = {
-                            NGN: "₦", EUR: "€", GBP: "£", USD: "$", JPY: "¥", 
-                            INR: "₹", AUD: "A$", CAD: "C$", ZAR: "R", KES: "KSh", GHS: "GH₵"
-                        };
-                        activeCurrency = {
-                            code: geoData.currency,
-                            symbol: currencySymbols[geoData.currency] || geoData.currency
-                        };
-                        setDetectedCurrency(activeCurrency);
+                const res = await fetch("/api/rates");
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success) {
+                        setDetectedCurrency({
+                            code: data.currency,
+                            symbol: data.symbol
+                        });
+                        setExchangeRate(Number(data.rate));
                     }
                 }
             } catch (e) {
-                console.log("Geo IP lookup failed, using browser locale fallback:", e);
-            }
-
-            /* Fetch actual exchange rate relative to USD */
-            try {
-                const rateRes = await fetch("https://open.er-api.com/v6/latest/USD");
-                if (rateRes.ok) {
-                    const rateData = await rateRes.json();
-                    if (rateData.rates && rateData.rates[activeCurrency.code]) {
-                        setExchangeRate(Number(rateData.rates[activeCurrency.code]));
-                    }
-                }
-            } catch (e) {
-                console.error("Failed to fetch real-time exchange rates:", e);
+                console.error("Failed to fetch exchange rates from local API:", e);
             }
         };
 
@@ -469,6 +500,7 @@ export default function DashboardPage() {
     const [exchangeRate, setExchangeRate] = useState<number>(1.0);
 
     /* Confidentiality states */
+    const [sessionAlert, setSessionAlert] = useState<"role_missing" | "wrong_role" | "wallet_mismatch" | null>(null);
     const [shieldedEnabled, setShieldedEnabled] = useState(false);
     const [viewKey, setViewKey] = useState("");
     const [isViewKeyRegistered, setIsViewKeyRegistered] = useState(false);
@@ -479,6 +511,7 @@ export default function DashboardPage() {
     const [settlementTimeframe, setSettlementTimeframe] = useState<string>('6M');
     const [balanceVisible, setBalanceVisible] = useState(true);
     const [timeframeOpen, setTimeframeOpen] = useState(false);
+    const [fiatSplit, setFiatSplit] = useState(50);
 
     /* QR Code modal states */
     const [activeQrCodeLink, setActiveQrCodeLink] = useState<string | null>(null);
@@ -495,62 +528,80 @@ export default function DashboardPage() {
 
 
 
+    /* Tier and confidentiality come from the database, and must not sit downstream of the chain
+       reads. All of this used to share ONE try block, with the API fetches sequenced after a
+       Promise.all of four Arc calls — and Arc's public RPC rate-limits per call while viem does not
+       retry its 429s (see lib/arc/transport). A single collision rejected the Promise.all and threw
+       before setIsPremium ever ran, so isPremium stayed false and a paying merchant was shown the
+       upgrade lock over their own API keys, checkout and webhooks. The retrying transport makes that
+       far less likely; independence makes it harmless. A chain hiccup may cost you a balance — it
+       must never cost you your tier. */
     const refetchBalancesAndTier = useCallback(async () => {
         if (!address) return;
-        try {
-            const [tierRaw, vaultRaw, payoutRaw, walletRaw] = await Promise.all([
-                publicClient.readContract({
-                    address: SUBSCRIPT_ROUTER_ADDRESS,
-                    abi: ROUTER_ABI,
-                    functionName: "merchantTiers",
-                    args: [address as `0x${string}`],
-                }),
-                publicClient.readContract({
-                    address: SUBSCRIPT_ROUTER_ADDRESS,
-                    abi: ROUTER_ABI,
-                    functionName: "merchantBalances",
-                    args: [address as `0x${string}`],
-                }),
-                publicClient.readContract({
-                    address: SUBSCRIPT_ROUTER_ADDRESS,
-                    abi: ROUTER_ABI,
-                    functionName: "merchantPayoutDestination",
-                    args: [address as `0x${string}`],
-                }),
-                publicClient.readContract({
-                    address: USDC_NATIVE_GAS_ADDRESS,
-                    abi: ERC20_ABI,
-                    functionName: "balanceOf",
-                    args: [address as `0x${string}`],
-                }),
-            ]);
 
-            setVaultBalance(parseFloat(formatUnits(vaultRaw, 6)));
-            setPayoutDestination(payoutRaw && payoutRaw !== "0x0000000000000000000000000000000000000000" ? payoutRaw : null);
-            setWalletBalance(parseFloat(formatUnits(walletRaw as bigint, 6)));
-
-            const tierRes = await fetch(`/api/merchant/tier?address=${address}`);
-            if (tierRes.ok) {
+        const loadTier = async () => {
+            try {
+                const tierRes = await fetch(`/api/merchant/tier?address=${address}`);
+                if (!tierRes.ok) return;
                 const tierData = await tierRes.json();
                 setIsPremium(Number(tierData.tier) >= 1);
                 setMerchantTier(Number(tierData.tier));
                 setPremiumSubId(tierData.subscriptionId ? Number(tierData.subscriptionId) : null);
-                /* SBT state update removed */
                 setCancelAtPeriodEnd(!!tierData.cancelAtPeriodEnd);
                 setCurrentPeriodEnd(tierData.nextBillingDate || null);
                 setDbSubscriptionStatus(tierData.status || null);
                 setDowngradeFailures(tierData.downgradeFailures ? Number(tierData.downgradeFailures) : 0);
+            } catch (error) {
+                console.error("Error loading merchant tier:", error);
             }
+        };
 
-            const confidentialityRes = await fetch("/api/merchant/confidentiality");
-            if (confidentialityRes.ok) {
+        const loadConfidentiality = async () => {
+            try {
+                const confidentialityRes = await fetch("/api/merchant/confidentiality");
+                if (!confidentialityRes.ok) return;
                 const confData = await confidentialityRes.json();
                 setShieldedEnabled(!!confData.shielded_payouts_enabled);
                 setIsViewKeyRegistered(!!confData.view_key_hash);
+            } catch (error) {
+                console.error("Error loading confidentiality settings:", error);
             }
-        } catch (error) {
-            console.error("Error reading contract data in background:", error);
-        }
+        };
+
+        const loadChainState = async () => {
+            try {
+                /* merchantTiers was read here too and never used — the tier below is the DB's. It was
+                   a fourth call into the limiter for nothing. */
+                const [vaultRaw, payoutRaw, walletRaw] = await Promise.all([
+                    publicClient.readContract({
+                        address: SUBSCRIPT_ROUTER_ADDRESS,
+                        abi: ROUTER_ABI,
+                        functionName: "merchantBalances",
+                        args: [address as `0x${string}`],
+                    }),
+                    publicClient.readContract({
+                        address: SUBSCRIPT_ROUTER_ADDRESS,
+                        abi: ROUTER_ABI,
+                        functionName: "merchantPayoutDestination",
+                        args: [address as `0x${string}`],
+                    }),
+                    publicClient.readContract({
+                        address: USDC_NATIVE_GAS_ADDRESS,
+                        abi: ERC20_ABI,
+                        functionName: "balanceOf",
+                        args: [address as `0x${string}`],
+                    }),
+                ]);
+
+                setVaultBalance(parseFloat(formatUnits(vaultRaw, 6)));
+                setPayoutDestination(payoutRaw && payoutRaw !== "0x0000000000000000000000000000000000000000" ? payoutRaw : null);
+                setWalletBalance(parseFloat(formatUnits(walletRaw as bigint, 6)));
+            } catch (error) {
+                console.error("Error reading contract data in background:", error);
+            }
+        };
+
+        await Promise.all([loadTier(), loadConfidentiality(), loadChainState()]);
     }, [address]);
 
     const handleDepositSuccess = () => {
@@ -566,7 +617,7 @@ export default function DashboardPage() {
 
     useEffect(() => {
         if (typeof window !== "undefined" && address) {
-            const storedKey = localStorage.getItem(`subscript_viewkey_${address.toLowerCase()}`);
+            const storedKey = sessionStorage.getItem(`subscript_viewkey_${address.toLowerCase()}`);
             if (storedKey) {
                 setViewKey(storedKey);
             } else {
@@ -597,9 +648,65 @@ export default function DashboardPage() {
 
 
     const [activeTab, setActiveTab] = useState<TabId>("overview");
+
+    /* A tab switch always starts at the top — otherwise a scroll depth carried over
+       from a longer tab can sit past the end of a shorter one, showing only background. */
+    useEffect(() => {
+        window.scrollTo(0, 0);
+    }, [activeTab]);
+
+    /* Load the dunning config lazily, the first time the settings tab opens. */
+    useEffect(() => {
+        if (activeTab !== "settings" || dunningLoaded) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch("/api/merchant/dunning");
+                const data = await res.json().catch(() => ({}));
+                if (!cancelled && res.ok && data.success) {
+                    setDunningMaxFailures(String(data.dunning.maxFailures));
+                    setDunningLoaded(true);
+                }
+            } catch { /* keep the default; the card still saves */ }
+        })();
+        return () => { cancelled = true; };
+    }, [activeTab, dunningLoaded]);
+
+    const handleSaveDunning = async () => {
+        const value = Number(dunningMaxFailures);
+        if (!Number.isInteger(value) || value < 1 || value > 10) {
+            setDunningMessage("Choose a whole number between 1 and 10.");
+            return;
+        }
+        setDunningSaving(true);
+        setDunningMessage(null);
+        try {
+            const res = await fetch("/api/merchant/dunning", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ maxFailures: value }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) throw new Error(data.error || "Failed to save");
+            setDunningMessage("Saved — applies from the next billing run.");
+            setTimeout(() => setDunningMessage(null), 4000);
+        } catch (err: any) {
+            setDunningMessage(err.message || "Failed to save dunning settings.");
+        } finally {
+            setDunningSaving(false);
+        }
+    };
     const [subTab, setSubTab] = useState<"subscriptions" | "one-time" | "commit">("subscriptions");
     /* Thumb-swipe or mouse-drag across the Payments & Subscriptions sub-tabs; taps still work. */
     const paymentSwipe = useSwipeTabs(["subscriptions", "one-time", "commit"] as const, subTab, setSubTab);
+    const [prevSubTab, setPrevSubTab] = useState<"subscriptions" | "one-time" | "commit">("subscriptions");
+    if (subTab !== prevSubTab) {
+        setPrevSubTab(subTab);
+    }
+    const subTabsList = ["subscriptions", "one-time", "commit"] as const;
+    const subTabIndex = subTabsList.indexOf(subTab);
+    const prevSubTabIndex = subTabsList.indexOf(prevSubTab);
+    const subTabDirection = subTabIndex >= prevSubTabIndex ? 1 : -1;
     const [vaults, setVaults] = useState<any[]>([]);
     const [isVaultsLoading, setIsVaultsLoading] = useState(false);
     const [requiredCommit, setRequiredCommit] = useState("0");
@@ -612,18 +719,23 @@ export default function DashboardPage() {
     const [usageSecretKey, setUsageSecretKey] = useState("");
     const [selectedApiKey, setSelectedApiKey] = useState("");
 
+    const [vaultsError, setVaultsError] = useState<string | null>(null);
     const fetchVaults = useCallback(async () => {
         setIsVaultsLoading(true);
+        setVaultsError(null);
         try {
             const res = await fetch("/api/user/vault/config");
-            if (res.ok) {
-                const data = await res.json();
-                if (data.success) {
-                    setVaults(data.vaults || []);
-                }
+            const data = await res.json().catch(() => null);
+            if (res.ok && data?.success) {
+                setVaults(data.vaults || []);
+            } else {
+                /* Don't render "no customers yet" over a failed load — that reads as
+                   real business data (zero escrows) when it's actually an error. */
+                setVaultsError(data?.error || "Customer escrows could not be loaded. Retry with Refresh.");
             }
         } catch (err) {
             console.error("Failed to load customer vaults:", err);
+            setVaultsError("Customer escrows could not be loaded. Retry with Refresh.");
         } finally {
             setIsVaultsLoading(false);
         }
@@ -762,6 +874,14 @@ export default function DashboardPage() {
     const [uploadingPic, setUploadingPic] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [savingSettingsField, setSavingSettingsField] = useState<string | null>(null);
+    const [payoutDestinationDraft, setPayoutDestinationDraft] = useState("");
+    const [payoutDestinationError, setPayoutDestinationError] = useState<string | null>(null);
+    const savedPayoutDestination = userSettings?.payoutDestination || "";
+
+    useEffect(() => {
+        if (userSettings) setPayoutDestinationDraft(savedPayoutDestination);
+    }, [savedPayoutDestination, userSettings]);
+    const [churnQuestionDraft, setChurnQuestionDraft] = useState("");
     const [merchantWalletBackupLoading, setMerchantWalletBackupLoading] = useState(false);
     const [merchantWalletBackupError, setMerchantWalletBackupError] = useState<string | null>(null);
     const [merchantExportOtpStage, setMerchantExportOtpStage] = useState(false);
@@ -778,6 +898,7 @@ export default function DashboardPage() {
             const data = await res.json();
             if (data.success) {
                 setUserSettings(data.settings);
+                setChurnQuestionDraft(data.settings?.churnSurveyQuestion || "");
                 setSettingsTransactions(data.receipts);
                 if (data.settings.alias) {
                     const aliasParts = data.settings.alias.split(".");
@@ -893,26 +1014,72 @@ export default function DashboardPage() {
         }
     };
 
-    const handleUpdatePayoutDestination = async (destination: string) => {
-        setSavingSettingsField("payoutDestination");
+    const handleUpdateChurnSurveyQuestion = async (question: string) => {
+        setSavingSettingsField("churnSurveyQuestion");
         try {
             const res = await fetch("/api/user/settings", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ payoutDestination: destination })
+                body: JSON.stringify({ churnSurveyQuestion: question })
             });
             const data = await res.json();
             if (data.success) {
-                setUserSettings((prev: any) => ({ ...prev, payoutDestination: destination }));
-                setToastMessage("Payout destination updated");
+                const trimmed = question.trim();
+                setUserSettings((prev: any) => ({ ...prev, churnSurveyQuestion: trimmed.length > 0 ? trimmed : null }));
+                setToastMessage("Exit-survey question saved");
+                setShowToast(true);
+                setTimeout(() => setShowToast(false), 3000);
+            } else {
+                setToastMessage(data.error || "Could not save the exit-survey question");
                 setShowToast(true);
                 setTimeout(() => setShowToast(false), 3000);
             }
         } catch (err) {
-            console.error("Error updating payout destination:", err);
+            console.error("Error updating churn survey question:", err);
         } finally {
             setSavingSettingsField(null);
         }
+    };
+
+    const handleUpdatePayoutDestination = async (destination: string) => {
+        const normalized = destination.trim();
+        if (normalized && !ethers.isAddress(normalized)) {
+            setPayoutDestinationError("Enter a valid EVM wallet address before saving.");
+            return;
+        }
+        setConfirmModal({
+            open: true,
+            title: "Update Payout Destination",
+            description: `Save ${normalized || "no address"} as the default payout destination? This changes the saved destination but does not move funds now.`,
+            confirmLabel: "Save",
+            variant: "warning",
+            onConfirm: async () => {
+                setConfirmModal(null);
+                setSavingSettingsField("payoutDestination");
+                setPayoutDestinationError(null);
+                try {
+                    const res = await fetch("/api/user/settings", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ payoutDestination: normalized })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        setUserSettings((prev: any) => ({ ...prev, payoutDestination: normalized }));
+                        setToastMessage("Payout destination updated");
+                        setShowToast(true);
+                        setTimeout(() => setShowToast(false), 3000);
+                    } else {
+                        setPayoutDestinationError(data.error || "Could not save the payout destination.");
+                    }
+                } catch (err) {
+                    console.error("Error updating payout destination:", err);
+                    setPayoutDestinationError("Network error. Your previous payout destination is still saved.");
+                } finally {
+                    setSavingSettingsField(null);
+                }
+            },
+        });
     };
 
     const handleProfilePicUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1015,6 +1182,8 @@ export default function DashboardPage() {
     const [isKeysLoading, setIsKeysLoading] = useState(false);
     const [revealSecret, setRevealSecret] = useState(false);
     const [isRolling, setIsRolling] = useState(false);
+    const [apiKeyWebhookUrl, setApiKeyWebhookUrl] = useState("");
+    const [apiKeySetupStatus, setApiKeySetupStatus] = useState<string | null>(null);
 
 
     const [webhookEndpoints, setWebhookEndpoints] = useState<any[]>([]);
@@ -1028,6 +1197,7 @@ export default function DashboardPage() {
 
     const [selectedWebhook, setSelectedWebhook] = useState<string>("");
     const [isReplaying, setIsReplaying] = useState(false);
+    const [isTestingWebhook, setIsTestingWebhook] = useState<string | null>(null);
     const [replayStatus, setReplayStatus] = useState<string | null>(null);
 
 
@@ -1055,12 +1225,19 @@ export default function DashboardPage() {
     const fetchMerchantPlans = async () => {
         setIsPlansLoading(true);
         try {
-            const res = await fetch("/api/merchant/plans");
+            const [res, promoRes] = await Promise.all([
+                fetch("/api/merchant/plans"),
+                fetch("/api/merchant/promotions"),
+            ]);
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.success) {
                 throw new Error(data.error || "Failed to load plans");
             }
             setMerchantPlans(data.plans || []);
+            const promoData = await promoRes.json().catch(() => ({}));
+            if (promoRes.ok && promoData.success) {
+                setPlanPromotions(promoData.promotions || []);
+            }
         } catch (err: any) {
             console.error("Error fetching merchant plans:", err);
             setPlanError(err.message || "Failed to load plans");
@@ -1096,6 +1273,12 @@ export default function DashboardPage() {
             setPlanError("Details link must start with http:// or https://");
             return;
         }
+        const commitmentDays = planMinCommitmentDays === "" ? 0 : Number(planMinCommitmentDays);
+        const commitmentCap = Math.min(30, Number(planPeriodDays));
+        if (!Number.isFinite(commitmentDays) || commitmentDays < 0 || commitmentDays > commitmentCap) {
+            setPlanError(`Minimum commitment must be between 0 and ${commitmentCap} days (one billing period, capped at 30).`);
+            return;
+        }
 
         setIsPlansLoading(true);
         try {
@@ -1108,6 +1291,7 @@ export default function DashboardPage() {
                     detailsUrl: trimmedDetailsUrl || undefined,
                     amountUsdc: planAmountUsdc,
                     periodDays: Number(planPeriodDays),
+                    minCommitmentDays: commitmentDays > 0 ? commitmentDays : undefined,
                 }),
             });
             const data = await res.json().catch(() => ({}));
@@ -1117,6 +1301,7 @@ export default function DashboardPage() {
             setPlanDetailsUrl("");
             setPlanAmountUsdc("");
             setPlanPeriodDays("30");
+            setPlanMinCommitmentDays("");
             setPlanSuccess("Plan created. Copy its subscribe link below and share it with customers.");
             setToastMessage("Plan Created");
             setShowToast(true);
@@ -1165,7 +1350,7 @@ export default function DashboardPage() {
                 throw new Error("Amount must be a positive number");
             }
 
-            const rawAmount = parseUnits(linkAmountUsdc, 6).toString();
+            const rawAmount = parseUnits(limitDecimals(linkAmountUsdc, 6), 6).toString();
             const totalSelectedSeconds = linkDurationMinutes * 60;
             const expiresTimestamp = Math.floor(Date.now() / 1000) + totalSelectedSeconds;
 
@@ -1178,7 +1363,10 @@ export default function DashboardPage() {
                     amount_usdc: rawAmount,
                     expires_at: linkDurationMinutes > 0 ? expiresTimestamp : null,
                     external_reference: linkExternalReference || null,
-                    max_uses: linkMaxUses ? Number(linkMaxUses) : null
+                    max_uses: linkMaxUses ? Number(linkMaxUses) : null,
+                    invoice_number: linkInvoiceNumber.trim() || null,
+                    due_date: linkDueDate || null,
+                    payer_email: linkPayerEmail.trim() || null
                 })
             });
 
@@ -1201,6 +1389,9 @@ export default function DashboardPage() {
             setLinkAmountUsdc("");
             setLinkDurationMinutes(1440);
             setLinkMaxUses("1");
+            setLinkInvoiceNumber("");
+            setLinkDueDate("");
+            setLinkPayerEmail("");
             setLinkExternalReference("");
             await fetchPaymentLinks();
         } catch (err: any) {
@@ -1260,20 +1451,29 @@ export default function DashboardPage() {
     };
 
     const handleDeleteLink = async (linkId: string) => {
-        if (!confirm("Are you sure you want to delete this payment link?")) return;
-        try {
-            const res = await fetch(`/api/payment-links/${linkId}`, {
-                method: "DELETE",
-            });
-            if (res.ok) {
-                await fetchPaymentLinks();
-            } else {
-                const data = await res.json();
-                console.error("Failed to delete payment link:", data.error);
-            }
-        } catch (err) {
-            console.error("Error deleting payment link:", err);
-        }
+        setConfirmModal({
+            open: true,
+            title: "Delete Payment Link",
+            description: "This payment link will be permanently deleted. Any pending checkouts using this link will stop working. This cannot be undone.",
+            confirmLabel: "Delete",
+            variant: "danger",
+            onConfirm: async () => {
+                setConfirmModal(null);
+                try {
+                    const res = await fetch(`/api/payment-links/${linkId}`, {
+                        method: "DELETE",
+                    });
+                    if (res.ok) {
+                        await fetchPaymentLinks();
+                    } else {
+                        const data = await res.json();
+                        console.error("Failed to delete payment link:", data.error);
+                    }
+                } catch (err) {
+                    console.error("Error deleting payment link:", err);
+                }
+            },
+        });
     };
 
     const getPublicCheckoutUrl = (linkId: string, checkoutUrl?: string | null) => {
@@ -1348,13 +1548,13 @@ export default function DashboardPage() {
                 const data = await res.json();
                 if (data.loggedIn && data.wallet) {
                     if (!data.role) {
-                        console.warn("Missing account role, redirecting to signup");
-                        window.location.href = getDashboardUrl("USER", "/signup");
+                        console.warn("Missing account role");
+                        setSessionAlert("role_missing");
                         return;
                     }
                     if (data.role === "USER") {
-                        console.warn("Unauthorized role for merchant dashboard, redirecting to user dashboard");
-                        window.location.href = getDashboardUrl("USER", "/user");
+                        console.warn("Unauthorized role for merchant dashboard");
+                        setSessionAlert("wrong_role");
                         return;
                     }
                     setSessionWallet(data.wallet.toLowerCase());
@@ -1402,19 +1602,18 @@ export default function DashboardPage() {
                             email: data.email
                         });
                     } else if (data.wallet.toLowerCase() !== address.toLowerCase()) {
-                        console.warn("Session wallet mismatch, logging out");
-                        await fetch("/api/auth/logout", { method: "POST" });
-                        window.location.href = "/signup";
+                        console.warn("Session wallet mismatch");
+                        setSessionAlert("wallet_mismatch");
                         return;
                     }
                     if (!data.role) {
-                        console.warn("Missing account role, redirecting to signup");
-                        window.location.href = getDashboardUrl("USER", "/signup");
+                        console.warn("Missing account role");
+                        setSessionAlert("role_missing");
                         return;
                     }
                     if (data.role === "USER") {
-                        console.warn("Unauthorized role for merchant dashboard, redirecting to user dashboard");
-                        window.location.href = getDashboardUrl("USER", "/user");
+                        console.warn("Unauthorized role for merchant dashboard");
+                        setSessionAlert("wrong_role");
                         return;
                     }
                     setSessionWallet(data.wallet.toLowerCase());
@@ -1449,7 +1648,7 @@ export default function DashboardPage() {
             const data = await res.json();
             if (data.success) {
                 setOtpSent(true);
-                console.log("Sandbox OTP Code:", data.sandboxCode);
+                console.log("Development OTP Code:", data.devOtpCode);
             } else {
                 setOtpError(data.error || "Failed to send verification code.");
             }
@@ -1598,7 +1797,7 @@ export default function DashboardPage() {
                 throw new Error(nonceData.error || "Failed to fetch nonce");
             }
             const fetchedNonce = nonceData.nonce;
-            const message = `Sign this message to verify ownership of your SubScript Merchant Dashboard.\n\nNonce: ${fetchedNonce}`;
+            const message = buildWalletAuthMessage({ address, nonce: fetchedNonce, domain: window.location.host, uri: window.location.origin });
             const signature = await signMessageAsync({ message });
             
             const res = await fetch("/api/auth/verify-signature", {
@@ -1666,18 +1865,27 @@ export default function DashboardPage() {
     };
 
     const handleDeleteWebhook = async (id: string) => {
-        if (!confirm("Are you sure you want to delete this webhook endpoint?")) return;
-        try {
-            const res = await fetch(`/api/webhooks/endpoints?id=${id}`, {
-                method: "DELETE",
-            });
-            const data = await res.json();
-            if (data.success) {
-                setWebhookEndpoints(prev => prev.filter(e => e.id !== id));
-            }
-        } catch (err) {
-            console.error("Error deleting endpoint:", err);
-        }
+        setConfirmModal({
+            open: true,
+            title: "Delete Webhook Endpoint",
+            description: "This endpoint will stop receiving webhook events immediately. This cannot be undone.",
+            confirmLabel: "Delete",
+            variant: "danger",
+            onConfirm: async () => {
+                setConfirmModal(null);
+                try {
+                    const res = await fetch(`/api/webhooks/endpoints?id=${id}`, {
+                        method: "DELETE",
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        setWebhookEndpoints(prev => prev.filter(e => e.id !== id));
+                    }
+                } catch (err) {
+                    console.error("Error deleting endpoint:", err);
+                }
+            },
+        });
     };
 
 
@@ -1686,14 +1894,21 @@ export default function DashboardPage() {
 
 
     const [ledgers, setLedgers] = useState<any[]>([]);
+    const [ledgerPagination, setLedgerPagination] = useState({ total: 0, totalPages: 1 });
+    const [merchantAnalytics, setMerchantAnalytics] = useState<MerchantAnalyticsSummary | null>(null);
     const [isLoadingContract, setIsLoadingContract] = useState(false);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
+    const ledgerCursor = ledgerCursors[ledgerPage] || null;
 
 
     useEffect(() => {
         const merchantAddress = address;
         if (!isConnected || !merchantAddress) {
             setLedgers([]);
+            setLedgerPagination({ total: 0, totalPages: 1 });
+            setMerchantAnalytics(null);
+            setLedgerPage(0);
+            setLedgerCursors([null]);
             return;
         }
 
@@ -1704,76 +1919,71 @@ export default function DashboardPage() {
             setIsLoadingContract(true);
             if (isTestMode) {
                 setLedgers([]);
+                setLedgerPagination({ total: 0, totalPages: 1 });
+                setMerchantAnalytics(null);
                 setIsLoadingContract(false);
                 setInitialContractFetched(true);
                 return;
             }
             try {
-                const mirrorRequest = fetch("/api/merchant/subscriptions").catch(() => null);
-                const nextIdRequest = publicClient.readContract({
-                    address: STANDARD_CONTRACT_ADDRESS,
-                    abi: STANDARD_ABI,
-                    functionName: "nextSubscriptionId",
+                const cursorParam = ledgerCursor ? `&cursor=${encodeURIComponent(ledgerCursor)}` : "";
+                const mirrorResponse = await fetch(`/api/merchant/subscriptions?pageSize=5${cursorParam}`);
+                const mirrorPayload = await mirrorResponse.json().catch(() => null);
+                if (!mirrorResponse.ok || !mirrorPayload?.success) {
+                    throw new Error(mirrorPayload?.error || "Subscription analytics could not be loaded");
+                }
+
+                /* The server owns merchant scoping, complete aggregates, and page-bounded detail.
+                   This keeps browser work constant and removes every protocol-wide RPC scan. */
+                const fetchedLedgers = (mirrorPayload.subscriptions || []).map((subscription: MerchantSubscriptionDetail) => {
+                    const subscriber = subscription.subscriber || "";
+                    const shortAddress = subscriber
+                        ? `${subscriber.slice(0, 6)}...${subscriber.slice(-4)}`
+                        : "Unknown subscriber";
+                    const nextBillingTs = subscription.nextBillingDate
+                        ? Math.floor(new Date(subscription.nextBillingDate).getTime() / 1000)
+                        : 0;
+                    return {
+                        id: `agent-run-${subscription.subscriptionId}`,
+                        rawId: subscription.subscriptionId,
+                        address: subscriber,
+                        displayAddress: subscription.externalReference || subscription.subscriberName || shortAddress,
+                        shortSubAddress: subscription.externalReference || subscription.subscriberName || shortAddress,
+                        limit: `${formatUnits(BigInt(subscription.amountUsdcMicros), 6)} USDC / ${formatPlanPeriod(subscription.periodSeconds)}`,
+                        rawAmount: formatUnits(BigInt(subscription.amountUsdcMicros), 6),
+                        rawPeriod: subscription.periodSeconds,
+                        nextBilling: subscription.nextBillingDate
+                            ? new Date(subscription.nextBillingDate).toLocaleDateString()
+                            : "Not scheduled",
+                        nextPaymentTs: nextBillingTs,
+                        activityAt: subscription.activityAt,
+                        active: subscription.status === "ACTIVE",
+                        billingStatus: subscription.status,
+                        cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+                        downgradeFailures: Number(subscription.downgradeFailures || 0),
+                    };
                 });
-                const [mirrorResponse, nextId] = await Promise.all([mirrorRequest, nextIdRequest]);
-
-                const mirrorById = new Map<string, {
-                    subscriberName: string | null;
-                    status: string;
-                    cancelAtPeriodEnd: boolean;
-                    nextBillingDate: string | null;
-                    downgradeFailures: number;
-                }>();
-                if (mirrorResponse?.ok) {
-                    const mirrorPayload = await mirrorResponse.json().catch(() => null);
-                    for (const subscription of mirrorPayload?.subscriptions || []) {
-                        mirrorById.set(String(subscription.subscriptionId), subscription);
-                    }
-                }
-                
-                const nextIdNum = Number(nextId);
-                const fetchedLedgers = [];
-                const onChainSubscriptions = await Promise.all(
-                    Array.from({ length: Math.max(0, nextIdNum - 1) }, async (_, index) => {
-                        const id = index + 1;
-                        const subscription = await publicClient.readContract({
-                            address: STANDARD_CONTRACT_ADDRESS,
-                            abi: STANDARD_ABI,
-                            functionName: "subscriptions",
-                            args: [BigInt(id)],
-                        });
-                        return { id, subscription };
-                    })
-                );
-
-                for (const { id, subscription: sub } of onChainSubscriptions) {
-                    const [subscriber, merchant, amount, period, nextPayment, isActive] = sub;
-
-                    if (merchant.toLowerCase() === merchantAddress.toLowerCase()) {
-                        const mirror = mirrorById.get(String(id));
-                        const shortAddress = `${subscriber.slice(0, 6)}...${subscriber.slice(-4)}`;
-                        fetchedLedgers.push({
-                            id: `agent-run-${id}`,
-                            rawId: String(id),
-                            address: subscriber,
-                            displayAddress: mirror?.subscriberName || shortAddress,
-                            shortSubAddress: mirror?.subscriberName || shortAddress,
-                            limit: `${formatUnits(amount, 6)} USDC / ${formatPlanPeriod(String(period))}`,
-                            rawAmount: formatUnits(amount, 6),
-                            rawPeriod: String(period),
-                            nextBilling: new Date(Number(nextPayment) * 1000).toLocaleDateString(),
-                            active: isActive,
-                            billingStatus: mirror?.status || (isActive ? "ACTIVE" : "ENDED"),
-                            cancelAtPeriodEnd: mirror?.cancelAtPeriodEnd || false,
-                            downgradeFailures: Number(mirror?.downgradeFailures || 0),
-                        });
-                    }
-                }
                 
                 if (isSubscribed) {
+                    const totalPages = Math.max(1, Number(mirrorPayload.pagination?.totalPages || 1));
+                    if (ledgerPage >= totalPages) {
+                        setLedgerPage(totalPages - 1);
+                        return;
+                    }
                     setLedgers(fetchedLedgers);
-                    if (fetchedLedgers.length > 0 && !selectedWebhook) {
-                        setSelectedWebhook(`evt_01_0`);
+                    setLedgerPagination({
+                        total: Number(mirrorPayload.pagination?.total || 0),
+                        totalPages,
+                    });
+                    const nextCursor = mirrorPayload.pagination?.nextCursor || null;
+                    setLedgerCursors((current) => {
+                        const updated = current.slice(0, ledgerPage + 1);
+                        if (nextCursor) updated[ledgerPage + 1] = String(nextCursor);
+                        return updated;
+                    });
+                    setMerchantAnalytics(mirrorPayload.analytics || null);
+                    if (fetchedLedgers.length > 0) {
+                        setSelectedWebhook((current) => current || "evt_01_0");
                     }
                 }
             } catch (err) {
@@ -1787,13 +1997,15 @@ export default function DashboardPage() {
         }
 
         fetchOnChainData();
-        const interval = setInterval(fetchOnChainData, 10000);
+        /* 45s: subscription state changes on billing-cycle timescales; a 10s poll only
+           multiplied RPC load (and 429s) without making the numbers fresher in practice. */
+        const interval = setInterval(fetchOnChainData, 45000);
 
         return () => {
             isSubscribed = false;
             clearInterval(interval);
         };
-    }, [isConnected, address, isPremium, refreshTrigger, isTestMode]);
+    }, [isConnected, address, isPremium, refreshTrigger, isTestMode, ledgerPage, ledgerCursor]);
 
     const handleCopy = (text: string, label: string) => {
         try {
@@ -1810,19 +2022,55 @@ export default function DashboardPage() {
     };
 
     const handleRollKeys = async () => {
-        setIsRolling(true);
-        try {
-            const res = await fetch("/api/keys", { method: "POST" });
-            const data = await res.json();
-            if (data.key) {
-                setApiKeys([data.key]);
-                handleCopy(data.key.secretKeyPlain, "API Secret Key Rolled");
-            }
-        } catch (err) {
-            console.error("Error rolling keys:", err);
-        } finally {
-            setIsRolling(false);
-        }
+        const hasActiveKey = apiKeys.some((key) => !key.revoked);
+        setConfirmModal({
+            open: true,
+            title: hasActiveKey ? "Rotate API Key" : "Generate API Key",
+            description: hasActiveKey
+                ? "The current production key will stop working immediately. Existing integrations will fail until they are updated with the new key."
+                : "Your secret key will be shown once. Save it before leaving this page.",
+            confirmLabel: hasActiveKey ? "Rotate Key" : "Generate Key",
+            variant: hasActiveKey ? "danger" : "default",
+            onConfirm: async () => {
+                setConfirmModal(null);
+                setIsRolling(true);
+                setApiKeySetupStatus(null);
+                try {
+                    const webhookUrl = apiKeyWebhookUrl.trim();
+                    const res = await fetch("/api/keys", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(webhookUrl ? { webhookUrl } : {}),
+                    });
+                    const data = await res.json();
+                    if (data.key) {
+                        setApiKeys([data.key]);
+                        handleCopy(data.key.secretKeyPlain, "API Secret Key Rolled");
+                        if (data.webhookEndpoint) {
+                            setWebhookEndpoints((current) => [
+                                data.webhookEndpoint,
+                                ...current.filter((endpoint) => endpoint.id !== data.webhookEndpoint.id),
+                            ]);
+                            setApiKeyWebhookUrl("");
+                        }
+                        if (data.webhookWarning) {
+                            setApiKeySetupStatus(`API key created, but webhook setup needs attention: ${data.webhookWarning}`);
+                        } else {
+                            setApiKeySetupStatus(data.webhookEndpoint
+                                ? "API key and webhook endpoint created."
+                                : "API key created. Register a webhook before going live.");
+                        }
+                    } else {
+                        setApiKeySetupStatus(data.error || "Could not create API credentials.");
+                    }
+                } catch (err) {
+                    console.error("Error rolling keys:", err);
+                    setApiKeySetupStatus("Network error while creating API credentials.");
+                } finally {
+                    setIsRolling(false);
+                }
+            },
+        });
     };
 
     const handleRetryCharge = async (rawId: string) => {
@@ -1884,14 +2132,14 @@ export default function DashboardPage() {
         }
     };
 
-    const handleReplayWebhook = async (eventId: string) => {
+    const handleReplayWebhook = async (eventId?: string) => {
         setIsReplaying(true);
-        setReplayStatus("Replaying event...");
+        setReplayStatus(eventId ? "Replaying event..." : "Resending latest event...");
         try {
             const res = await fetch("/api/webhooks/events/replay", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ eventId }),
+                body: JSON.stringify(eventId ? { eventId } : { latest: true }),
             });
             const data = await res.json();
             if (data.success) {
@@ -1910,11 +2158,45 @@ export default function DashboardPage() {
         }
     };
 
+    const handleSendWebhookTest = async (eventType: "test" | "payment.succeeded" | "subscription.created") => {
+        setIsTestingWebhook(eventType);
+        setReplayStatus(`Sending ${eventType} test event...`);
+        try {
+            const res = await fetch("/api/webhooks/test", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ eventType }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || data.message || "Test webhook delivery failed.");
+            }
+            setReplayStatus(data.message || `${eventType} test event sent.`);
+            await Promise.all([fetchWebhookEndpoints(), fetchWebhookEvents()]);
+        } catch (err: any) {
+            setReplayStatus(err.message || "Network error sending test webhook.");
+        } finally {
+            setIsTestingWebhook(null);
+            setTimeout(() => setReplayStatus(null), 6000);
+        }
+    };
+
 
     const handleWithdraw = async (targetAddress?: string) => {
         if (vaultBalance <= 0) return;
         setIsWithdrawing(true);
         try {
+            const liveBalanceRaw = await publicClient.readContract({
+                address: SUBSCRIPT_ROUTER_ADDRESS,
+                abi: ROUTER_ABI,
+                functionName: "merchantBalances",
+                args: [address as `0x${string}`],
+            });
+            const liveBalance = Number(formatUnits(liveBalanceRaw, 6));
+            if (Math.abs(liveBalance - vaultBalance) > 0.000001) {
+                setVaultBalance(liveBalance);
+                throw new Error(`Claimable balance changed to ${liveBalance.toFixed(2)} USDC. Review the updated amount before confirming again.`);
+            }
             const hasTarget = targetAddress && targetAddress.toLowerCase() !== address?.toLowerCase();
             const txHash = await executeContractWrite({
                 address: SUBSCRIPT_ROUTER_ADDRESS,
@@ -1923,8 +2205,11 @@ export default function DashboardPage() {
                 args: hasTarget ? [targetAddress as `0x${string}`] : [],
             });
 
+            const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as `0x${string}` });
+            if (receipt.status !== "success") throw new Error("The withdrawal failed before on-chain confirmation.");
+
             setWithdrawSuccess(true);
-            setToastMessage("Withdrawal transaction submitted");
+            setToastMessage("Withdrawal confirmed on Arc");
             setShowToast(true);
             setTimeout(() => setShowToast(false), 4000);
             setTimeout(() => setWithdrawSuccess(false), 4000);
@@ -1940,198 +2225,9 @@ export default function DashboardPage() {
 
 
 
-    const getCheckoutErrorMessage = (error: any) => {
-        /* Walk the error to find the root cause if it is a viem/wagmi error */
-        let message = error?.shortMessage || error?.reason || error?.message || "";
-        let currentError = error;
-        while (currentError) {
-            if (currentError.shortMessage) {
-                message = currentError.shortMessage;
-            } else if (currentError.reason) {
-                message = currentError.reason;
-            } else if (currentError.details) {
-                message = currentError.details;
-            }
-            currentError = currentError.walk ? currentError.walk() : currentError.cause;
-        }
-
-        const code = error?.code || error?.cause?.code || error?.details?.code;
-        if (code === 4001 || /user rejected|rejected by user|user denied/i.test(String(message || ""))) {
-            return "Transaction was rejected in the wallet.";
-        }
-        if (/insufficient allowance/i.test(String(message || ""))) {
-            return "USDC allowance is insufficient for the premium router.";
-        }
-        if (/insufficient funds|exceeds balance/i.test(String(message || ""))) {
-            return "Wallet has insufficient USDC or gas balance for this payment.";
-        }
-        if (/execution reverted|revert/i.test(String(message || ""))) {
-            return `Contract reverted: ${message}`;
-        }
-        return message || "Premium checkout failed. Please try again.";
-    };
-
-    const handleUpgrade = async () => {
-        if (!isConnected || !activeMerchantAddress) {
-            setPremiumError("Please connect your merchant wallet first.");
-            return;
-        }
-
-        /* Enforce locking controls so user cannot submit multiple times */
-        if (isSubscribingPremium) {
-            return;
-        }
-
-        setIsSubscribingPremium(true);
-        setPremiumStatus("Checking network");
-        setPremiumError(null);
-
-        try {
-            if (!isAddress(activeMerchantAddress)) {
-                throw new Error("Connected wallet address is invalid.");
-            }
-
-            if (!embeddedWallet && chainId !== ARC_TESTNET_CHAIN_ID) {
-                setPremiumStatus("Switching to Arc Testnet");
-                if (switchChainAsync) {
-                    await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
-                } else {
-                    switchChain?.({ chainId: ARC_TESTNET_CHAIN_ID });
-                    throw new Error("Switch to Arc Testnet and retry checkout.");
-                }
-            }
-
-            const userAddress = getAddress(activeMerchantAddress) as `0x${string}`;
-
-            /* Instantiate the USDC ERC20 contract using getContract from viem */
-            const usdcContract = getContract({
-                address: USDC_NATIVE_GAS_ADDRESS,
-                abi: ERC20_ABI,
-                client: publicClient,
-            });
-
-            setPremiumStatus("Checking USDC decimals");
-            const tokenDecimals = await usdcContract.read.decimals();
-            if (Number(tokenDecimals) !== 6) {
-                throw new Error(`Unexpected USDC decimals: ${tokenDecimals}. Expected 6.`);
-            }
-
-            const planPrice = parseUnits(PREMIUM_PLAN_PRICE_USDC, Number(tokenDecimals));
-            const approvalAmount = parseUnits("120", Number(tokenDecimals));
-            const subscriptionPeriod = 2592000;
-
-            /* Register purchase intent session in the database first */
-            setPremiumStatus("Registering purchase intent");
-            const checkoutRes = await fetch("/api/premium/checkout", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    merchantAddress: userAddress,
-                }),
-            });
-            const checkoutData = await checkoutRes.json();
-            if (!checkoutRes.ok) {
-                throw new Error(checkoutData.error || "Failed to initialize premium checkout session");
-            }
-
-            setPremiumStatus("Approving USDC Allowance");
-            await publicClient.simulateContract({
-                address: USDC_NATIVE_GAS_ADDRESS,
-                abi: ERC20_ABI,
-                functionName: "approve",
-                account: userAddress,
-                args: [STANDARD_CONTRACT_ADDRESS, approvalAmount],
-            });
-
-            const approveTxHash = await executeContractWrite({
-                address: USDC_NATIVE_GAS_ADDRESS,
-                abi: ERC20_ABI,
-                functionName: "approve",
-                args: [STANDARD_CONTRACT_ADDRESS, approvalAmount],
-            });
-
-            setPremiumStatus("Waiting for approval confirmation...");
-            const approveReceipt = await publicClient.waitForTransactionReceipt({
-                hash: approveTxHash as `0x${string}`,
-                timeout: 120_000,
-            });
-
-            if (approveReceipt.status !== "success") {
-                throw new Error("USDC approval transaction reverted.");
-            }
-
-            setPremiumStatus("Creating Premium Subscription");
-            await publicClient.simulateContract({
-                address: STANDARD_CONTRACT_ADDRESS,
-                abi: STANDARD_ABI,
-                functionName: "createSubscription",
-                account: userAddress,
-                args: [PREMIUM_PAYMENT_RECIPIENT_ADDRESS, planPrice, BigInt(subscriptionPeriod)],
-            });
-
-            const txHash = await executeContractWrite({
-                address: STANDARD_CONTRACT_ADDRESS,
-                abi: STANDARD_ABI,
-                functionName: "createSubscription",
-                args: [PREMIUM_PAYMENT_RECIPIENT_ADDRESS, planPrice, BigInt(subscriptionPeriod)],
-            });
-
-            posthog.capture("premium_upgrade_initiated");
-
-            setPremiumStatus("Confirming subscription on-chain...");
-            const receipt = await publicClient.waitForTransactionReceipt({
-                hash: txHash as `0x${string}`,
-                timeout: 120_000,
-            });
-
-            if (receipt.status !== "success") {
-                throw new Error("Subscription creation transaction reverted on-chain.");
-            }
-
-            const subscriptionLogs = parseEventLogs({
-                abi: STANDARD_ABI,
-                logs: receipt.logs,
-            });
-            const createLog = subscriptionLogs.find(
-                (log) =>
-                    log.eventName === "SubscriptionCreated" &&
-                    log.args.subscriber?.toLowerCase() === userAddress.toLowerCase() &&
-                    log.args.merchant?.toLowerCase() === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()
-            );
-
-            if (!createLog) {
-                throw new Error("SubscriptionCreated event not found in logs.");
-            }
-
-            const subId = Number(createLog.args.subId);
-
-            setPremiumStatus("Syncing premium state with server...");
-            const upgradeRes = await fetch("/api/premium/upgrade", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    txHash,
-                    sessionId: checkoutData.sessionId,
-                    subId,
-                }),
-            });
-            const upgradeData = await upgradeRes.json();
-            if (!upgradeRes.ok) {
-                throw new Error(upgradeData.error || "Failed to finalize premium upgrade on server");
-            }
-
-            posthog.capture("premium_upgrade_success");
-
-            setPremiumStatus("Subscription active! Premium tier activated.");
-            await refetchBalancesAndTier();
-            setTimeout(() => setPremiumStatus(null), 4000);
-        } catch (err: any) {
-            console.error("Premium subscription failed:", err);
-            setPremiumError(getCheckoutErrorMessage(err));
-        } finally {
-            setIsSubscribingPremium(false);
-        }
-    };
+    /* The premium checkout itself lives on /merchant/upgrade (src/app/dashboard/upgrade/page.tsx),
+       which handles both embedded (custody) and browser wallets and never re-runs a checkout after
+       a payment transaction was submitted. The dashboard only links there. */
 
     const handleCancelPremium = async () => {
         if (!isConnected || !activeMerchantAddress || !isPremium) {
@@ -2143,35 +2239,41 @@ export default function DashboardPage() {
             return;
         }
 
-        if (!confirm("Are you sure you want to cancel your Privacy Premium plan? Your Privacy Premium benefits will remain active until the end of your current billing period.")) {
-            return;
-        }
+        setConfirmModal({
+            open: true,
+            title: "Cancel Privacy Premium",
+            description: "Your Privacy Premium benefits will remain active until the end of the current billing period. You can resume before that date.",
+            confirmLabel: "Cancel Plan",
+            variant: "warning",
+            onConfirm: async () => {
+                setConfirmModal(null);
+                setIsCancellingPremium(true);
+                setPremiumStatus("Executing cancellation...");
+                setPremiumError(null);
 
-        setIsCancellingPremium(true);
-        setPremiumStatus("Executing cancellation...");
-        setPremiumError(null);
+                try {
+                    /* Send the POST request to /api/premium/cancel */
+                    const cancelRes = await fetch("/api/premium/cancel", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" }
+                    });
+                    const cancelData = await cancelRes.json();
+                    if (!cancelRes.ok) {
+                        throw new Error(cancelData.error || "Failed to sync cancellation to database.");
+                    }
 
-        try {
-            /* Send the POST request to /api/premium/cancel */
-            const cancelRes = await fetch("/api/premium/cancel", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" }
-            });
-            const cancelData = await cancelRes.json();
-            if (!cancelRes.ok) {
-                throw new Error(cancelData.error || "Failed to sync cancellation to database.");
-            }
-
-            const dateStr = cancelData.nextBillingDate ? new Date(cancelData.nextBillingDate).toLocaleDateString() : "the end of the current period";
-            setPremiumStatus(`Your Privacy Premium subscription will remain active until ${dateStr}. You can resume anytime before that date.`);
-            await refetchBalancesAndTier();
-            setTimeout(() => setPremiumStatus(null), 8000);
-        } catch (err: any) {
-            console.error("Cancellation failed:", err);
-            setPremiumError(err.message || "Cancellation failed.");
-        } finally {
-            setIsCancellingPremium(false);
-        }
+                    const dateStr = cancelData.nextBillingDate ? new Date(cancelData.nextBillingDate).toLocaleDateString() : "the end of the current period";
+                    setPremiumStatus(`Your Privacy Premium subscription will remain active until ${dateStr}. You can resume anytime before that date.`);
+                    await refetchBalancesAndTier();
+                    setTimeout(() => setPremiumStatus(null), 8000);
+                } catch (err: any) {
+                    console.error("Cancellation failed:", err);
+                    setPremiumError(err.message || "Cancellation failed.");
+                } finally {
+                    setIsCancellingPremium(false);
+                }
+            },
+        });
     };
 
     const handleResumePremium = async () => {
@@ -2259,19 +2361,61 @@ export default function DashboardPage() {
     };
 
     const handleSaveConfidentiality = async () => {
-        if (!viewKey) return;
+        if (!viewKey || !address) return;
         setIsSavingConfidentiality(true);
         setPremiumError(null);
         try {
             const viewKeyHash = ethers.keccak256(viewKey);
 
-            /* 1. If key is not registered, perform on-chain transaction */
+            /* 1. If key is not registered, use commit-reveal to prevent front-running */
             if (!isViewKeyRegistered) {
+                /* Generate a random salt to blind the commitment */
+                const salt = ethers.hexlify(ethers.randomBytes(32));
+
+                /* commitment = keccak256(abi.encodePacked(viewKeyHash, msg.sender, salt)) */
+                const commitment = ethers.keccak256(
+                    ethers.solidityPacked(
+                        ["bytes32", "address", "bytes32"],
+                        [viewKeyHash, address, salt]
+                    )
+                );
+
+                /* Phase 1: commit the blinded hash */
                 await executeContractWrite({
                     address: CONFIDENTIAL_CONTRACT_ADDRESS,
                     abi: CONFIDENTIAL_CONTRACT_ABI,
-                    functionName: "registerViewKey",
-                    args: [viewKeyHash],
+                    functionName: "commitViewKey",
+                    args: [commitment],
+                });
+
+                /* Wait for COMMIT_DELAY blocks (~20s on Arc with ~2s blocks).
+                   Poll the chain until enough blocks have passed. */
+                const provider = new ethers.BrowserProvider((window as any).ethereum);
+                const commitBlockNum = await provider.getBlockNumber();
+                const targetBlock = commitBlockNum + 11; /* COMMIT_DELAY (10) + 1 margin */
+
+                await new Promise<void>((resolve, reject) => {
+                    const maxWait = setTimeout(() => reject(new Error("Timed out waiting for commit delay")), 120_000);
+                    const poll = setInterval(async () => {
+                        try {
+                            const current = await provider.getBlockNumber();
+                            if (current >= targetBlock) {
+                                clearInterval(poll);
+                                clearTimeout(maxWait);
+                                resolve();
+                            }
+                        } catch {
+                            /* keep polling */
+                        }
+                    }, 2000);
+                });
+
+                /* Phase 2: reveal the view key hash */
+                await executeContractWrite({
+                    address: CONFIDENTIAL_CONTRACT_ADDRESS,
+                    abi: CONFIDENTIAL_CONTRACT_ABI,
+                    functionName: "revealViewKey",
+                    args: [viewKeyHash, salt],
                 });
             }
 
@@ -2291,8 +2435,10 @@ export default function DashboardPage() {
             }
 
             setIsViewKeyRegistered(true);
+            /* Store in sessionStorage (not localStorage) — cleared on tab close to
+               reduce the XSS exposure window for the plaintext view key. */
             if (typeof window !== "undefined" && address) {
-                localStorage.setItem(`subscript_viewkey_${address.toLowerCase()}`, viewKey);
+                sessionStorage.setItem(`subscript_viewkey_${address.toLowerCase()}`, viewKey);
             }
             
             /* Refresh settings */
@@ -2340,7 +2486,7 @@ export default function DashboardPage() {
 
 <SubScriptCheckoutButton
   amountUsdc="${subCap}"
-  title="${subName}"
+  planName="${subName}"
   description="${subInterval} access"
   externalReference="user_or_order_id"
 />`, [subCap, subInterval, subName]);
@@ -2374,7 +2520,7 @@ Please complete the following implementation tasks:
                 args: ["-y", "@subscriptonarc/mcp"],
                 env: {
                     SUBSCRIPT_MERCHANT_ADDRESS: merchantWalletAddress || "0xYOUR_CONNECTED_WALLET_ADDRESS",
-                    SUBSCRIPT_CHAIN_ID: String(ARC_TESTNET_CHAIN_ID),
+                    SUBSCRIPT_CHAIN_ID: String(activeArcChain.id),
                     SUBSCRIPT_ROUTER_ADDRESS,
                     SUBSCRIPT_USDC_NATIVE_GAS_ADDRESS: USDC_NATIVE_GAS_ADDRESS,
                 },
@@ -2392,12 +2538,20 @@ Please complete the following implementation tasks:
     };
 
 
-    const activeAllowances = ledgers.filter(l => l.active).length;
-    const revokedCount = ledgers.filter(l => !l.active).length;
-    const totalSubs = ledgers.length;
+    const activeAllowances = merchantAnalytics?.activeSubscriptions ?? ledgers.filter(l => l.active).length;
+    const totalSubs = merchantAnalytics?.totalSubscriptions ?? ledgerPagination.total;
+    const revokedCount = Math.max(0, totalSubs - activeAllowances);
     const failureRate = totalSubs > 0 ? ((revokedCount / totalSubs) * 100).toFixed(1) : "0.0";
-    const projected30DaySettlement = ledgers.reduce((acc, sub) => {
-        if (!sub.active) return acc;
+    /* Only subscriptions that will actually renew belong in a forward projection: an
+       on-chain-active sub that is mid-failed-renewal, past due, or ending at period end
+       will not collect next cycle, so counting it overstates expected volume. Mirrors
+       the isPaying definition in AnalyticsDashboard. */
+    const projected30DaySettlement = merchantAnalytics?.mrrUsdc ?? ledgers.reduce((acc, sub) => {
+        const willRenew = sub.active
+            && sub.billingStatus === "ACTIVE"
+            && Number(sub.downgradeFailures || 0) === 0
+            && !sub.cancelAtPeriodEnd;
+        if (!willRenew) return acc;
         const amountNum = parseFloat(sub.rawAmount) || 0;
         const periodNum = parseFloat(sub.rawPeriod) || 2592000;
         const monthlyEquivalent = amountNum * (2592000 / periodNum);
@@ -2434,7 +2588,7 @@ Please complete the following implementation tasks:
     const renderPaymentLinksTab = () => {
         if (isConnected && address && !sessionWallet && !embeddedWallet) {
             return (
-                <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
+                <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
                     <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
                     <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
                     <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
@@ -2571,6 +2725,43 @@ Please complete the following implementation tasks:
                                     />
                                 </div>
 
+                                <div className="col-span-2 space-y-3 rounded-2xl border border-white/5 bg-white/[0.015] p-4">
+                                    <p className="text-[9px] font-bold uppercase tracking-wide text-white/40">
+                                        Invoice details <span className="normal-case text-white/25">(optional — turns this link into an invoice; shown on the checkout page)</span>
+                                    </p>
+                                    <div className="grid gap-3 sm:grid-cols-3">
+                                        <div className="space-y-1">
+                                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Invoice Number</label>
+                                            <input
+                                                type="text"
+                                                placeholder="INV-2026-001"
+                                                value={linkInvoiceNumber}
+                                                onChange={(e) => setLinkInvoiceNumber(e.target.value.slice(0, 64))}
+                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Due Date</label>
+                                            <input
+                                                type="date"
+                                                value={linkDueDate}
+                                                onChange={(e) => setLinkDueDate(e.target.value)}
+                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors [color-scheme:dark]"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Payer Email</label>
+                                            <input
+                                                type="email"
+                                                placeholder="billing@client.com"
+                                                value={linkPayerEmail}
+                                                onChange={(e) => setLinkPayerEmail(e.target.value)}
+                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div className="space-y-1 col-span-2">
                                     <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Maximum Uses</label>
                                     <input
@@ -2597,7 +2788,7 @@ Please complete the following implementation tasks:
                                 </p>
                                 {createdLinkInfo && (
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-black/40 border border-white/5 rounded-xl p-3">
-                                        <span className="text-[11px] font-mono text-white/70 truncate flex-1">
+                                        <span className="text-[11px] font-mono text-white/70 truncate max-w-[190px] xs:max-w-[240px] sm:max-w-none flex-1">
                                             {createdLinkInfo.checkoutUrl}
                                         </span>
                                         <div className="flex items-center gap-2 flex-shrink-0">
@@ -2853,7 +3044,7 @@ Please complete the following implementation tasks:
                                                                                             <td className="py-2 px-3 text-white/40 hover:text-[#00d2b4] transition-colors">
                                                                                                 {p.tx_hash ? (
                                                                                                     <a 
-                                                                                                        href={`https://testnet.arcscan.app/tx/${p.tx_hash}`} 
+                                                                                                        href={`${activeArcChain.blockExplorers.default.url}/tx/${p.tx_hash}`}
                                                                                                         target="_blank" 
                                                                                                         rel="noopener noreferrer"
                                                                                                     >
@@ -2926,6 +3117,14 @@ Please complete the following implementation tasks:
     const renderPlansTab = () => {
         const activePlans = merchantPlans.filter((plan) => plan.active);
         const inactivePlans = merchantPlans.filter((plan) => !plan.active);
+        /* The most recent promotion per plan (active first) drives the row's promo panel. */
+        const promotionsByPlan = new Map<string, PlanPromotion>();
+        for (const promo of planPromotions) {
+            const existing = promotionsByPlan.get(promo.planId);
+            if (!existing || (promo.active && !existing.active)) {
+                promotionsByPlan.set(promo.planId, promo);
+            }
+        }
 
         return (
             <div className="space-y-8">
@@ -2989,6 +3188,21 @@ Please complete the following implementation tasks:
                         </div>
 
                         <div className="space-y-1">
+                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">
+                                Minimum Commitment (days) <span className="normal-case text-white/25">(optional — disclosed to subscribers before they authorize; max one billing period, capped at 30 days)</span>
+                            </label>
+                            <input
+                                type="number"
+                                min="0"
+                                max="30"
+                                value={planMinCommitmentDays}
+                                onChange={(event) => setPlanMinCommitmentDays(event.target.value)}
+                                placeholder="0 = no commitment"
+                                className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white transition-colors focus:border-[#00d2b4] focus:outline-none"
+                            />
+                        </div>
+
+                        <div className="space-y-1">
                             <div className="flex items-center justify-between">
                                 <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">
                                     Description <span className="normal-case text-white/25">(optional — shown to subscribers)</span>
@@ -3043,13 +3257,13 @@ Please complete the following implementation tasks:
                             <span className="rounded-full border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-3 py-1 text-[10px] font-bold text-[#00d2b4]">{activePlans.length}</span>
                         </div>
                         {activePlans.length === 0 ? (
-                            <div className="rounded-2xl border border-dashed border-white/10 p-8 text-center text-xs text-white/40">
+                            <div className="rounded-2xl border border-dashed border-white/10 p-6 sm:p-8 text-center text-xs text-white/40">
                                 No active plans yet. Create one above to get a shareable subscribe link.
                             </div>
                         ) : (
                             <div className="space-y-3">
                                 {activePlans.map((plan) => (
-                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} onShare={setSharingPlan} />
+                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} onShare={setSharingPlan} promotion={promotionsByPlan.get(plan.id) ?? null} onPromotionsChanged={fetchMerchantPlans} />
                                 ))}
                             </div>
                         )}
@@ -3061,13 +3275,13 @@ Please complete the following implementation tasks:
                             <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-bold text-white/45">{inactivePlans.length}</span>
                         </div>
                         {inactivePlans.length === 0 ? (
-                            <div className="rounded-2xl border border-dashed border-white/10 p-8 text-center text-xs text-white/40">
+                            <div className="rounded-2xl border border-dashed border-white/10 p-6 sm:p-8 text-center text-xs text-white/40">
                                 Deactivated plans stay here for auditability.
                             </div>
                         ) : (
                             <div className="space-y-3">
                                 {inactivePlans.map((plan) => (
-                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} onShare={setSharingPlan} />
+                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} onShare={setSharingPlan} promotion={promotionsByPlan.get(plan.id) ?? null} onPromotionsChanged={fetchMerchantPlans} />
                                 ))}
                             </div>
                         )}
@@ -3088,6 +3302,82 @@ Please complete the following implementation tasks:
 
         return (
             <div className="space-y-8 max-w-4xl mx-auto">
+                {/* Help & Support */}
+                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
+                    <div>
+                        <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                            <HelpCircle className="w-4 h-4 text-[#00d2b4]" />
+                            Help &amp; Support
+                        </h2>
+                        <p className="text-[11px] text-white/40 font-sans">
+                            Integration help, activation issues, billing questions, or security disclosures — real
+                            humans read every message.
+                        </p>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-3 font-sans text-xs">
+                        <a
+                            href="mailto:support@subscriptonarc.com"
+                            className="rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3 transition hover:border-[#00d2b4]/25 hover:bg-[#00d2b4]/5"
+                        >
+                            <span className="block text-[9px] font-black uppercase tracking-wider text-white/35">General support</span>
+                            <span className="mt-1 block break-all font-mono text-[10px] font-bold text-[#00d2b4]">support@subscriptonarc.com</span>
+                        </a>
+                        <a
+                            href="mailto:compliance@subscriptonarc.com"
+                            className="rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3 transition hover:border-[#00d2b4]/25 hover:bg-[#00d2b4]/5"
+                        >
+                            <span className="block text-[9px] font-black uppercase tracking-wider text-white/35">Billing, legal &amp; security</span>
+                            <span className="mt-1 block break-all font-mono text-[10px] font-bold text-[#00d2b4]">compliance@subscriptonarc.com</span>
+                        </a>
+                        <a
+                            href="/support"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-center rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/5 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-[#00d2b4] transition hover:bg-[#00d2b4]/10"
+                        >
+                            Open the Help Center
+                        </a>
+                    </div>
+                </div>
+
+                {/* Dunning / failed-renewal policy */}
+                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
+                    <div>
+                        <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                            <ArrowRightLeft className="w-4 h-4 text-[#00d2b4]" />
+                            Failed-Renewal Policy (Dunning)
+                        </h2>
+                        <p className="text-[11px] text-white/40 font-sans">
+                            When a customer&apos;s renewal fails (insufficient balance), the keeper retries roughly
+                            once a day. Choose how many attempts to make before the subscription is stopped and the
+                            customer is notified. More attempts ≈ more days of grace.
+                        </p>
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-3 sm:items-center font-sans">
+                        <input
+                            type="number"
+                            min="1"
+                            max="10"
+                            step="1"
+                            value={dunningMaxFailures}
+                            onChange={(e) => setDunningMaxFailures(e.target.value)}
+                            className="w-full sm:w-32 bg-black border border-white/10 rounded-xl px-4 py-3 text-white text-xs focus:outline-none focus:border-[#00d2b4] transition-colors"
+                        />
+                        <button
+                            type="button"
+                            onClick={handleSaveDunning}
+                            disabled={dunningSaving}
+                            className="w-full sm:w-auto shrink-0 px-6 py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/80 disabled:opacity-50 text-black text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2"
+                        >
+                            {dunningSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                            Save
+                        </button>
+                        {dunningMessage && (
+                            <span className="text-[10px] text-white/50">{dunningMessage}</span>
+                        )}
+                    </div>
+                </div>
+
                 {/* Profile & Identity Section */}
                 <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
                     <div>
@@ -3129,12 +3419,74 @@ Please complete the following implementation tasks:
                         </div>
                     </div>
 
+                    {/* Verification tier and plan are independent tracks: KYC is a trust badge,
+                        the plan gates product features. Each card always reflects the real DB
+                        state, so a Premium-but-unverified merchant sees both facts correctly. */}
+                    <div className="space-y-4 pt-4 border-t border-white/5">
+                        <h3 className="text-xs font-bold text-white uppercase tracking-wider">Verification & Plan</h3>
+                        <p className="text-[10px] text-white/40 leading-relaxed font-sans max-w-sm">
+                            Verification (KYC) adds a public trust badge. Your plan controls which product features are unlocked. They are independent — you can hold either without the other.
+                        </p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {/* KYC track */}
+                            <div className={`p-4 rounded-2xl border ${userSettings.verified ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5'} space-y-2`}>
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">KYC Tier</h4>
+                                    <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold ${userSettings.verified ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                                        {userSettings.verified ? 'Verified' : 'Unverified'}
+                                    </span>
+                                </div>
+                                <ul className="space-y-1 text-[9px] text-white/50 leading-relaxed font-sans">
+                                    {userSettings.verified ? (
+                                        <>
+                                            <li className="flex items-center gap-1 text-emerald-400">✓ Verified badge on your public profile</li>
+                                            <li className="flex items-center gap-1 text-emerald-400">✓ Customers can commit without a risk warning</li>
+                                            <li className="flex items-center gap-1 text-emerald-400">✓ Ready for regulated rails as they launch</li>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <li className="flex items-center gap-1 text-white/60">• Public profile shows unverified</li>
+                                            <li className="flex items-center gap-1 text-white/60">• Customers see a warning before committing funds</li>
+                                            <li className="flex items-center gap-1 text-white/60">• Complete business verification below to upgrade</li>
+                                        </>
+                                    )}
+                                </ul>
+                            </div>
+
+                            {/* Plan track */}
+                            <div className={`p-4 rounded-2xl border ${userSettings.tier === 'PREMIUM' ? 'border-purple-500/30 bg-purple-500/5' : 'border-white/5 bg-white/[0.02]'} space-y-2`}>
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">Plan</h4>
+                                    <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold ${userSettings.tier === 'PREMIUM' ? 'bg-purple-500/20 text-purple-300' : 'bg-white/10 text-white/60'}`}>
+                                        {userSettings.tier === 'PREMIUM' ? 'Premium' : 'Free'}
+                                    </span>
+                                </div>
+                                <ul className="space-y-1 text-[9px] text-white/50 leading-relaxed font-sans">
+                                    <li className="flex items-center gap-1 text-emerald-400">✓ Create unlimited payment links</li>
+                                    <li className={`flex items-center gap-1 ${userSettings.tier === 'PREMIUM' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {userSettings.tier === 'PREMIUM' ? '✓' : '✗'} API Keys &amp; Webhook endpoints
+                                    </li>
+                                    <li className={`flex items-center gap-1 ${userSettings.tier === 'PREMIUM' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {userSettings.tier === 'PREMIUM' ? '✓' : '✗'} Customer commitment vaults
+                                    </li>
+                                </ul>
+                                {userSettings.tier !== 'PREMIUM' && (
+                                    <p className="text-[8px] text-white/40 italic pt-1 font-sans">Upgrade plan under the "Premium" tab.</p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Identity Verification (KYC/KYB) */}
+                    <KycVerificationPanel />
+
                     {/* DNS / Alias Section */}
                     <div className="space-y-4">
                         <h3 className="text-xs font-bold text-white uppercase tracking-wider">SubScript DNS Registration</h3>
                         <p className="text-[10px] leading-relaxed text-amber-300/80 rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 font-sans">
                             {merchantAliasNextChange
-                                ? <>Your DNS name is locked until <strong>{new Date(merchantAliasNextChange).toLocaleDateString()}</strong> — you can change or unregister it again then.</>
+                                ? <>Your DNS name is locked until <strong>{new Date(merchantAliasNextChange).toLocaleDateString()}</strong> — you can change it again then. Business names cannot be unregistered.</>
                                 : <>Heads up: a DNS name can only be changed <strong>once every 365 days</strong>. Choose carefully — after a change you won't be able to switch again for a year.</>}
                         </p>
                         {userSettings.alias ? (
@@ -3143,33 +3495,11 @@ Please complete the following implementation tasks:
                                     <p className="text-[9px] uppercase tracking-wider font-bold text-[#00d2b4]/70">Registered Alias</p>
                                     <h4 className="font-mono text-lg font-bold text-[#00d2b4] mt-1">{userSettings.alias}</h4>
                                 </div>
-                                <button
-                                    onClick={async () => {
-                                        setDnsLoading(true);
-                                        setDnsError(null);
-                                        try {
-                                            const res = await fetch("/api/merchant/alias", { method: "DELETE" });
-                                            const data = await res.json().catch(() => ({}));
-                                            if (res.ok) {
-                                                setUserSettings((prev: any) => ({ ...prev, alias: null }));
-                                                setMerchantAlias(null);
-                                                setDnsDomain("");
-                                                setDnsSuccess("Alias removed successfully");
-                                                setTimeout(() => setDnsSuccess(null), 3000);
-                                            } else {
-                                                setDnsError(data.error || "Could not unregister this name.");
-                                            }
-                                        } catch (err) {
-                                            console.error(err);
-                                            setDnsError("Network error removing DNS name.");
-                                        } finally {
-                                            setDnsLoading(false);
-                                        }
-                                    }}
-                                    className="px-3 py-1.5 border border-red-500/30 hover:border-red-500/50 text-red-400 hover:text-red-300 text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all"
-                                >
-                                    {dnsLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Unregister"}
-                                </button>
+                                {/* Merchants can never unregister: the registered business name is the
+                                    identity customers pay to, and the API refuses the DELETE too. */}
+                                <span className="px-3 py-1.5 border border-white/10 text-white/40 text-[10px] font-bold uppercase tracking-wider rounded-xl select-none">
+                                    Permanent
+                                </span>
                             </div>
                         ) : dnsConfirmPending ? (
                             <div className="p-5 rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/[0.04] space-y-4">
@@ -3244,7 +3574,7 @@ Please complete the following implementation tasks:
                 </div>
 
                 {/* Wallet Recovery & Backup */}
-                {userSettings.walletBackup && (
+                {userSettings.walletBackup?.available && (
                     <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-5">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div>
@@ -3258,12 +3588,8 @@ Please complete the following implementation tasks:
                                     opens this same merchant account.
                                 </p>
                             </div>
-                            <span className={`self-start rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] ${
-                                userSettings.walletBackup.available
-                                    ? "border border-[#00d2b4]/25 bg-[#00d2b4]/10 text-[#00d2b4]"
-                                    : "border border-white/10 bg-white/5 text-white/45"
-                            }`}>
-                                {userSettings.walletBackup.available ? "Exportable" : "Managed"}
+                            <span className="self-start rounded-full border border-[#00d2b4]/25 bg-[#00d2b4]/10 px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-[#00d2b4]">
+                                Exportable
                             </span>
                         </div>
 
@@ -3352,14 +3678,10 @@ Please complete the following implementation tasks:
                             <button
                                 type="button"
                                 onClick={requestMerchantExportOtp}
-                                disabled={merchantExportOtpSending || !userSettings.walletBackup.available}
+                                disabled={merchantExportOtpSending}
                                 className="w-full rounded-2xl border border-[#00d2b4]/30 bg-[#00d2b4]/10 py-3.5 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#00d2b4]/20 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                                {merchantExportOtpSending
-                                    ? "Sending verification code…"
-                                    : userSettings.walletBackup.available
-                                        ? "Verify email & export wallet"
-                                        : "Private-key export unavailable"}
+                                {merchantExportOtpSending ? "Sending verification code…" : "Verify email & export wallet"}
                             </button>
                         )}
                     </div>
@@ -3373,7 +3695,7 @@ Please complete the following implementation tasks:
                             Payout Destination
                         </h2>
                         <p className="text-[11px] text-white/40 font-sans">
-                            Set up the target wallet where settled funds will be automatically swept.
+                            Save the default wallet offered during settlement withdrawals. Changing this setting does not move funds.
                         </p>
                     </div>
 
@@ -3383,19 +3705,17 @@ Please complete the following implementation tasks:
                             <div className="flex gap-2">
                                 <input
                                     type="text"
-                                    defaultValue={userSettings.payoutDestination || ""}
+                                    value={payoutDestinationDraft}
                                     placeholder="0x..."
-                                    onBlur={(e) => {
-                                        if (e.target.value !== (userSettings.payoutDestination || "")) {
-                                            handleUpdatePayoutDestination(e.target.value);
-                                        }
-                                    }}
+                                    onChange={(e) => { setPayoutDestinationDraft(e.target.value); setPayoutDestinationError(null); }}
                                     className="flex-1 bg-white/[0.02] border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-[#00d2b4]/40 font-mono"
                                 />
+                                <button type="button" onClick={() => handleUpdatePayoutDestination(payoutDestinationDraft)} disabled={savingSettingsField === "payoutDestination" || payoutDestinationDraft.trim() === (userSettings.payoutDestination || "")} className="rounded-xl bg-[#00d2b4] px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-black disabled:cursor-not-allowed disabled:opacity-40">{savingSettingsField === "payoutDestination" ? "Saving…" : "Review & save"}</button>
                             </div>
-                            <p className="text-[9px] text-white/35">
-                                Enter a valid EVM address. This is the address that receives all direct payments and payroll settlements.
+                            <p className="text-[9px] text-white/45">
+                                Enter a valid EVM address. You will still review the destination before each withdrawal.
                             </p>
+                            {payoutDestinationError && <p className="text-[10px] text-red-300" role="alert">{payoutDestinationError}</p>}
                         </div>
                     </div>
                 </div>
@@ -3473,6 +3793,41 @@ Please complete the following implementation tasks:
                         </div>
                     </div>
 
+                    {/* Exit Survey — merchant-defined cancellation question (SUB-501) */}
+                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                        <div>
+                            <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                                <MessageSquare className="w-4 h-4 text-[#00d2b4]" />
+                                Exit Survey
+                            </h2>
+                            <p className="text-[11px] text-white/40 font-sans">
+                                Ask cancelling customers your own question. Leave blank to use the default prompt.
+                            </p>
+                        </div>
+
+                        <div className="space-y-3 font-sans">
+                            <textarea
+                                value={churnQuestionDraft}
+                                onChange={(e) => setChurnQuestionDraft(e.target.value)}
+                                maxLength={280}
+                                rows={3}
+                                placeholder="e.g. What could we have done to keep you subscribed?"
+                                className="w-full resize-none rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-xs text-white placeholder:text-white/30 focus:border-[#00d2b4]/50 focus:outline-none"
+                            />
+                            <div className="flex items-center justify-between">
+                                <span className="text-[9px] text-white/30 uppercase tracking-wider">{churnQuestionDraft.length}/280</span>
+                                <button
+                                    type="button"
+                                    onClick={() => handleUpdateChurnSurveyQuestion(churnQuestionDraft)}
+                                    disabled={savingSettingsField === "churnSurveyQuestion" || (churnQuestionDraft.trim() === (userSettings?.churnSurveyQuestion || ""))}
+                                    className="px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-full bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white hover:bg-[#00d2b4]/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                >
+                                    {savingSettingsField === "churnSurveyQuestion" ? "Saving..." : "Save question"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Security Toggles */}
                     <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
                         <div>
@@ -3520,7 +3875,7 @@ Please complete the following implementation tasks:
                             <thead>
                                 <tr className="border-b border-white/5 text-white/40 uppercase text-[9px] tracking-wider">
                                     <th className="pb-3">Receipt ID</th>
-                                    <th className="pb-3">Date</th>
+                                    <th className="pb-3">Date &amp; Time</th>
                                     <th className="pb-3">Type</th>
                                     <th className="pb-3">Amount</th>
                                     <th className="pb-3">Status</th>
@@ -3540,19 +3895,17 @@ Please complete the following implementation tasks:
                                         return (
                                             <tr key={tx.receiptId} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
                                                 <td className="py-4 font-mono font-semibold text-white/80">{tx.receiptId.slice(0, 8)}...</td>
-                                                <td className="py-4 text-white/50">{new Date(tx.createdAt).toLocaleDateString()}</td>
+                                                <td className="py-4 text-white/50">{new Date(tx.createdAt).toLocaleString()}</td>
                                                 <td className="py-4">
                                                     <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${isOutgoing ? "bg-red-500/10 text-red-400" : "bg-emerald-500/10 text-emerald-400"}`}>
                                                         {isOutgoing ? "Debit" : "Credit"}
                                                     </span>
                                                 </td>
                                                 <td className="py-4 font-mono font-bold text-white">
-                                                    ${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
+                                                    {(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
                                                 </td>
                                                 <td className="py-4">
-                                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-500/15 text-amber-400"}`}>
-                                                        {tx.status}
-                                                    </span>
+                                                    <FinancialStatusBadge status={tx.status} />
                                                 </td>
                                                 <td className="py-4 text-right">
                                                     <div className="inline-flex items-center gap-3">
@@ -3566,7 +3919,7 @@ Please complete the following implementation tasks:
                                                             Grant access
                                                         </a>
                                                         <a
-                                                            href={`https://explorer.testnet.arc.network/tx/${tx.txHash}`}
+                                                            href={`${activeArcChain.blockExplorers.default.url}/tx/${tx.txHash}`}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
                                                             className="text-[#00d2b4] hover:underline inline-flex items-center gap-1"
@@ -3590,7 +3943,7 @@ Please complete the following implementation tasks:
     const renderView = () => {
         if (isConnected && address && !sessionWallet && !embeddedWallet) {
             return (
-                <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans mt-12">
+                <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans mt-12">
                     <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
                     <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
                     <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
@@ -3660,11 +4013,12 @@ Please complete the following implementation tasks:
                                     </div>
                                 </div>
                                 {/* Underline Indicator */}
-                                <div 
-                                    className={`absolute bottom-0 left-0 right-0 h-0.5 bg-[#00d2b4] transition-all duration-300 origin-center ${
-                                        isActive ? "scale-x-100 opacity-100" : "scale-x-0 opacity-0"
-                                    }`} 
-                                />
+                                {isActive && (
+                                    <motion.div 
+                                        layoutId="merchantActiveSubTabUnderline"
+                                        className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#00d2b4]" 
+                                    />
+                                )}
                             </button>
                         );
                     })}
@@ -3807,6 +4161,10 @@ Please complete the following implementation tasks:
                             <div className="flex h-24 items-center justify-center">
                                 <Loader2 className="h-5 w-5 animate-spin text-[#00d2b4]" />
                             </div>
+                        ) : vaultsError ? (
+                            <div className="flex h-24 flex-col items-center justify-center rounded-2xl border border-dashed border-red-500/20 bg-red-500/[0.03] text-center p-4">
+                                <p className="text-xs text-red-300/80">{vaultsError}</p>
+                            </div>
                         ) : vaults.length === 0 ? (
                             <div className="flex h-24 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center p-4">
                                 <p className="text-xs text-white/45">No customers have committed escrow to your metered service yet.</p>
@@ -3831,16 +4189,73 @@ Please complete the following implementation tasks:
         };
 
         switch (activeTab) {
+            case "offramp":
+                return (
+                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+                        <div className="space-y-2">
+                            <h2 className="text-lg font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                                <ArrowRightLeft className={`w-5 h-5 ${primaryColorText}`} />
+                                Fiat off-ramp
+                            </h2>
+                            <p className="text-xs text-white/50 font-sans leading-relaxed">
+                                Bank settlement routing is not yet available. No bank account is connected and changing controls here will never move or allocate funds.
+                            </p>
+                        </div>
+                        <div className="rounded-2xl border border-amber-400/20 bg-amber-400/[0.05] p-5 flex items-start gap-4">
+                            <div className="p-2 rounded-xl flex-shrink-0 border bg-amber-400/10 border-amber-400/20 text-amber-300">
+                                <AlertTriangle className="w-5 h-5" />
+                            </div>
+                            <div className="space-y-1">
+                                <p className="text-xs font-bold text-white uppercase tracking-wider">Coming soon</p>
+                                <p className="text-[10px] text-white/50 leading-relaxed font-sans">
+                                    When this launches, you will review the verified bank destination, conversion quote, fees, settlement timing, and allocation before explicitly confirming any change.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                );
+
             case "settings":
                 return renderSettingsTab();
  
              case "payment-links":
                 return (
-                    <div className="space-y-6" {...paymentSwipe}>
+                    <div className="space-y-6 overflow-hidden" {...paymentSwipe}>
                         {renderSubTabs()}
-                        {subTab === "subscriptions" && renderPlansTab()}
-                        {subTab === "one-time" && renderPaymentLinksTab()}
-                        {subTab === "commit" && renderCommitTab()}
+                        <div className="overflow-hidden w-full relative">
+                            <AnimatePresence mode="wait" initial={false} custom={subTabDirection}>
+                                <motion.div
+                                    key={subTab}
+                                    custom={subTabDirection}
+                                    variants={{
+                                        enter: (dir: number) => ({
+                                            x: dir > 0 ? "100%" : "-100%",
+                                            opacity: 0,
+                                        }),
+                                        center: {
+                                            x: 0,
+                                            opacity: 1,
+                                        },
+                                        exit: (dir: number) => ({
+                                            x: dir < 0 ? "100%" : "-100%",
+                                            opacity: 0,
+                                        }),
+                                    }}
+                                    initial="enter"
+                                    animate="center"
+                                    exit="exit"
+                                    transition={{
+                                        x: { type: "spring", stiffness: 300, damping: 30 },
+                                        opacity: { duration: 0.2 },
+                                    }}
+                                    className="w-full"
+                                >
+                                    {subTab === "subscriptions" && renderPlansTab()}
+                                    {subTab === "one-time" && renderPaymentLinksTab()}
+                                    {subTab === "commit" && renderCommitTab()}
+                                </motion.div>
+                            </AnimatePresence>
+                        </div>
                     </div>
                 );
 
@@ -3855,6 +4270,7 @@ Please complete the following implementation tasks:
                         walletBalance={walletBalance}
                         vaultBalance={vaultBalance}
                         ledgers={ledgers}
+                        analytics={merchantAnalytics}
                         onRetryCharge={handleRetryCharge}
                         merchantAddress={address || ""}
                     />
@@ -3910,7 +4326,7 @@ Please complete the following implementation tasks:
                                     <div className="flex items-center justify-between">
                                         <p className="text-[10px] text-white/30">USDC ready for merchant payout</p>
                                         <button
-                                            onClick={() => handleWithdraw()}
+                                            onClick={() => setIsWithdrawOpen(true)}
                                             disabled={vaultBalance <= 0 || isWithdrawing}
                                             className={`text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border transition-all flex items-center gap-1 ${
                                                 vaultBalance > 0 
@@ -3919,7 +4335,7 @@ Please complete the following implementation tasks:
                                             }`}
                                         >
                                             <ArrowDownToLine className="w-2.5 h-2.5" />
-                                            {isWithdrawing ? "Withdrawing..." : "Withdraw"}
+                                            Withdraw
                                         </button>
                                     </div>
                                     {withdrawSuccess && (
@@ -4007,9 +4423,7 @@ Please complete the following implementation tasks:
                                                 </tr>
                                             ) : (
                                                 (() => {
-                                                    const ledgerPageSize = 5;
-                                                    const paginatedLedgers = ledgers.slice(ledgerPage * ledgerPageSize, (ledgerPage + 1) * ledgerPageSize);
-                                                    return paginatedLedgers.map((item) => (
+                                                    return ledgers.map((item) => (
                                                         <tr key={item.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-colors">
                                                             <td className="py-4 font-semibold text-white">{item.id}</td>
                                                             <td className="py-4 text-white/40">{item.displayAddress || item.shortSubAddress}</td>
@@ -4038,8 +4452,7 @@ Please complete the following implementation tasks:
                                 </div>
 
                                 {(() => {
-                                    const ledgerPageSize = 5;
-                                    const totalPages = Math.ceil(ledgers.length / ledgerPageSize);
+                                    const totalPages = ledgerPagination.totalPages;
                                     if (totalPages <= 1) return null;
                                     return (
                                         <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/5 font-sans">
@@ -4168,7 +4581,7 @@ Please complete the following implementation tasks:
                                             </p>
                                             <div className="flex items-center gap-2">
                                                 <span className={`text-[10px] font-bold tracking-wide ${vaultBalance > 0 ? 'text-emerald-400' : 'text-white/30'}`}>
-                                                    {vaultBalance > 0 ? `+${Math.min(((vaultBalance / 100) * 0.8), 99.9).toFixed(1)}%` : '—'}
+                                                    {vaultBalance > 0 ? "Available" : "—"}
                                                 </span>
                                                 <span className="text-xs font-semibold text-white/40 font-mono">
                                                     {balanceVisible ? `${detectedCurrency.symbol}${(vaultBalance * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '•••••'}
@@ -4188,12 +4601,14 @@ Please complete the following implementation tasks:
 
                             {/* Quick Actions Grid (Circles) */}
                             <div className="grid grid-cols-4 gap-3 py-2 text-center">
+                                {/* Quick-action icons mirror the desktop sidebar so the same
+                                    destination always carries the same icon on every screen. */}
                                 <div>
                                     <button
                                         onClick={() => setActiveTab("payment-links")}
                                         className="mx-auto w-12 h-12 rounded-full border border-[#00d2b4]/20 bg-white/[0.02] hover:bg-white/[0.05] text-[#00d2b4] flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
                                     >
-                                        <ArrowUpRight className="w-5 h-5" />
+                                        <Sliders className="w-5 h-5" />
                                     </button>
                                     <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest block mt-2 leading-tight">Payments Link</span>
                                 </div>
@@ -4202,7 +4617,7 @@ Please complete the following implementation tasks:
                                         onClick={() => setActiveTab("webhooks")}
                                         className="mx-auto w-12 h-12 rounded-full border border-[#00d2b4]/20 bg-white/[0.02] hover:bg-white/[0.05] text-[#00d2b4] flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
                                     >
-                                        <ArrowUp className="w-5 h-5" />
+                                        <Broadcast className="w-5 h-5" />
                                     </button>
                                     <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest block mt-2 leading-tight">Webhooks</span>
                                 </div>
@@ -4247,9 +4662,7 @@ Please complete the following implementation tasks:
                                         </div>
                                     ) : (
                                         (() => {
-                                            const ledgerPageSize = 5;
-                                            const paginatedLedgers = ledgers.slice(ledgerPage * ledgerPageSize, (ledgerPage + 1) * ledgerPageSize);
-                                            return paginatedLedgers.map((item) => (
+                                            return ledgers.map((item) => (
                                                 <div key={item.id} className="p-4 bg-white/[0.01] border border-white/5 rounded-2xl relative space-y-3">
                                                     <div className="flex justify-between items-start pr-8">
                                                         <div>
@@ -4285,8 +4698,7 @@ Please complete the following implementation tasks:
                                     )}
                                 </div>
                                 {(() => {
-                                    const ledgerPageSize = 5;
-                                    const totalPages = Math.ceil(ledgers.length / ledgerPageSize);
+                                    const totalPages = ledgerPagination.totalPages;
                                     if (totalPages <= 1) return null;
                                     return (
                                         <div className="flex items-center justify-between pt-3 border-t border-white/5 font-sans">
@@ -4322,7 +4734,7 @@ Please complete the following implementation tasks:
             case "premium":
                 if (isConnected && address && !sessionWallet && !embeddedWallet) {
                     return (
-                        <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
+                        <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
                             <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
                             <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
                             <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
@@ -4343,7 +4755,7 @@ Please complete the following implementation tasks:
                 return (
                     <div className="space-y-8">
                         {/* Tier Status Card */}
-                        <div className={`liquid-glass border rounded-3xl p-8 shadow-2xl relative overflow-hidden ${isPremium ? "border-[#d4a853]/30 bg-gradient-to-b from-[#d4a853]/[0.03] to-transparent" : "border-white/5"}`}>
+                        <div className={`liquid-glass border rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden ${isPremium ? "border-[#d4a853]/30 bg-gradient-to-b from-[#d4a853]/[0.03] to-transparent" : "border-white/5"}`}>
                             <div className="flex items-start gap-4">
                                 <div className={`p-3 rounded-2xl ${isPremium ? "bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853]" : "bg-white/5 border border-white/10 text-white/40"}`}>
                                     <Crown className="w-8 h-8" />
@@ -4432,18 +4844,18 @@ Please complete the following implementation tasks:
                                             <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">
                                                 New Destination Address
                                             </label>
-                                            <div className="flex gap-3">
-                                                <input 
-                                                    type="text" 
-                                                    value={rerouteAddress} 
+                                            <div className="flex flex-col gap-3 sm:flex-row">
+                                                <input
+                                                    type="text"
+                                                    value={rerouteAddress}
                                                     onChange={(e) => setRerouteAddress(e.target.value)}
                                                     placeholder="0x... cold storage, multisig, or ledger address"
-                                                    className="flex-1 bg-black border border-white/10 rounded-xl px-4 py-3 text-xs font-mono text-white focus:outline-none focus:border-[#d4a853]/50 transition-colors placeholder:text-white/20"
+                                                    className="min-w-0 w-full flex-1 bg-black border border-white/10 rounded-xl px-4 py-3 text-xs font-mono text-white focus:outline-none focus:border-[#d4a853]/50 transition-colors placeholder:text-white/20"
                                                 />
                                                 <button
                                                     onClick={handleReroute}
                                                     disabled={isRerouting || !rerouteAddress}
-                                                    className="px-5 py-3 bg-[#d4a853] text-black font-bold rounded-xl text-xs uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+                                                    className="w-full sm:w-auto shrink-0 px-5 py-3 bg-[#d4a853] text-black font-bold rounded-xl text-xs uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                                 >
                                                     {isRerouting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5" />}
                                                     Reroute
@@ -4717,7 +5129,7 @@ Please complete the following implementation tasks:
                             </div>
                         ) : (
                             /* Upgrade CTA for Standard tier */
-                            <div className="liquid-glass border border-[#d4a853]/20 rounded-3xl p-8 shadow-2xl bg-gradient-to-b from-[#d4a853]/[0.02] to-transparent">
+                            <div className="liquid-glass border border-[#d4a853]/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-gradient-to-b from-[#d4a853]/[0.02] to-transparent">
                                 <div className="max-w-lg mx-auto text-center space-y-6">
                                     <div className="space-y-2">
                                         <h3 className="text-lg font-extrabold text-white uppercase tracking-tight">Upgrade to Privacy Premium</h3>
@@ -4759,10 +5171,10 @@ Please complete the following implementation tasks:
                     </div>
                 );
 
-            case "apikeys":
+            case "apikeys": {
                 if (isConnected && address && !sessionWallet && !embeddedWallet) {
                     return (
-                        <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
+                        <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
                             <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
                             <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
                             <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
@@ -4783,9 +5195,16 @@ Please complete the following implementation tasks:
                 const activeKey = apiKeys.find(k => !k.revoked) || null;
                 const activePublishableKey = activeKey ? activeKey.publishableKey : "";
                 const activeSecretKey = activeKey ? activeKey.secretKeyPlain : "";
+                /* Secrets are hashed at rest: only secret_key_hash and an "sk_test_1234...2345" hint
+                   are stored, so GET /api/keys can never return a usable key and always reports
+                   secretKeyAvailable: false. It is true only for a key minted in this session.
+                   This flag was returned by the API but never read here, so the hint was rendered
+                   behind the same dots-and-eye affordance as a real secret — revealing it produced a
+                   fingerprint, and Copy silently put that unusable string on the clipboard. */
+                const activeSecretAvailable = Boolean(activeKey?.secretKeyAvailable && activeSecretKey);
 
                 return (
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-8">
+                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-8">
                         <div className="flex justify-between items-start">
                             <div>
                                 <h2 className="text-lg font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
@@ -4807,17 +5226,41 @@ Please complete the following implementation tasks:
                             )}
                         </div>
 
+                        {apiKeySetupStatus && (
+                            <p role="status" className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-[10px] leading-relaxed text-white/65">
+                                {apiKeySetupStatus}
+                            </p>
+                        )}
+
                         {isKeysLoading ? (
                             <div className="py-12 text-center flex flex-col items-center gap-2">
                                 <Loader2 className="w-6 h-6 animate-spin text-[#00d2b4]" />
                                 <span className="text-xs text-white/40">Loading keys...</span>
                             </div>
                         ) : !activeKey ? (
-                            <div className="border border-white/5 rounded-2xl p-8 text-center bg-black/20 space-y-4 font-sans">
+                            <div className="border border-white/5 rounded-2xl p-6 sm:p-8 text-center bg-black/20 space-y-4 font-sans">
                                 <Key className="w-8 h-8 mx-auto text-white/20" />
                                 <div className="space-y-1">
                                     <p className="text-xs font-bold text-white uppercase tracking-wider">No Active API Credentials</p>
-                                    <p className="text-[10px] text-white/40 leading-relaxed">Generate credentials to start integrating the SubScript SDK.</p>
+                                    <p className="text-[10px] text-white/40 leading-relaxed">
+                                        Generate credentials and optionally register the webhook receiver that belongs to this integration.
+                                    </p>
+                                </div>
+                                <div className="mx-auto w-full max-w-xl space-y-2 text-left">
+                                    <label htmlFor="api-key-webhook-url" className="block text-[10px] font-bold uppercase tracking-wider text-white/55">
+                                        Webhook URL <span className="font-normal normal-case text-white/30">(recommended)</span>
+                                    </label>
+                                    <input
+                                        id="api-key-webhook-url"
+                                        type="url"
+                                        value={apiKeyWebhookUrl}
+                                        onChange={(event) => setApiKeyWebhookUrl(event.target.value)}
+                                        placeholder="https://your-app.example/api/subscript/webhook"
+                                        className="w-full rounded-xl border border-white/10 bg-black/50 px-4 py-3 text-xs text-white outline-none transition-colors focus:border-[#00d2b4]"
+                                    />
+                                    <p className="text-[9px] leading-relaxed text-white/30">
+                                        SubScript creates the endpoint with your API key so payment and subscription events are observable immediately.
+                                    </p>
                                 </div>
                                 <button
                                     onClick={handleRollKeys}
@@ -4860,29 +5303,50 @@ Please complete the following implementation tasks:
                                             {copiedText === "Secret Key" && (
                                                 <span className="text-[10px] text-[#00d2b4] font-bold">Copied</span>
                                             )}
-                                            <button
-                                                onClick={() => setRevealSecret(!revealSecret)}
-                                                className="text-white/40 hover:text-white transition-colors"
-                                            >
-                                                {revealSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                            </button>
+                                            {activeSecretAvailable && (
+                                                <button
+                                                    onClick={() => setRevealSecret(!revealSecret)}
+                                                    className="text-white/40 hover:text-white transition-colors"
+                                                >
+                                                    {revealSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
-                                    <div className="flex items-center justify-between gap-4 bg-black/60 rounded-xl p-3 border border-white/5 font-mono">
-                                        <code className="text-xs text-white/80 break-all">
-                                            {revealSecret 
-                                                ? activeSecretKey 
-                                                : "••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
-                                            }
-                                        </code>
-                                        <button 
-                                            onClick={() => handleCopy(activeSecretKey, "Secret Key")}
-                                            disabled={!revealSecret}
-                                            className="p-2 text-white/40 hover:text-white hover:bg-white/5 rounded-lg disabled:opacity-30 disabled:pointer-events-none transition-all"
-                                        >
-                                            <Copy className="w-4 h-4" />
-                                        </button>
-                                    </div>
+                                    {activeSecretAvailable ? (
+                                        <>
+                                            <div className="flex items-center justify-between gap-4 bg-black/60 rounded-xl p-3 border border-white/5 font-mono">
+                                                <code className="text-xs text-white/80 break-all">
+                                                    {revealSecret
+                                                        ? activeSecretKey
+                                                        : "••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
+                                                    }
+                                                </code>
+                                                <button
+                                                    onClick={() => handleCopy(activeSecretKey, "Secret Key")}
+                                                    disabled={!revealSecret}
+                                                    className="p-2 text-white/40 hover:text-white hover:bg-white/5 rounded-lg disabled:opacity-30 disabled:pointer-events-none transition-all"
+                                                >
+                                                    <Copy className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                            <p className="mt-2 text-[10px] leading-relaxed text-yellow-400/80">
+                                                Copy this now. It is only readable while this page stays open — the key is stored
+                                                hashed, so it cannot be shown again.
+                                            </p>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="flex items-center gap-4 rounded-xl border border-white/5 bg-black/60 p-3 font-mono">
+                                                <code className="break-all text-xs text-white/45">{activeSecretKey}</code>
+                                            </div>
+                                            <p className="mt-2 text-[10px] leading-relaxed text-white/40">
+                                                This is a fingerprint of the live key, not the key itself — enough to tell which one
+                                                your integration should be using. The secret is stored hashed and is shown only once,
+                                                when it is created. If you no longer have it, roll the key below to issue a new one.
+                                            </p>
+                                        </>
+                                    )}
                                 </div>
 
                                 {/* Roll Keys */}
@@ -4891,11 +5355,12 @@ Please complete the following implementation tasks:
                                         <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-1">Rotation / Roll Credentials</h3>
                                         <p className="text-[10px] text-white/40 max-w-md">
                                             Roll your API key pair instantly. Old keys are immediately invalidated for safety in this sandbox.
+                                            {!activeSecretAvailable && " This is also how you get a readable secret if you no longer have the current one — the new key is revealed and copied once, here."}
                                         </p>
                                     </div>
                                     <div className="flex items-center gap-4">
                                         {copiedText === "API Secret Key Rolled" && (
-                                            <span className="text-[10px] text-[#00d2b4] font-bold animate-pulse">Rolled & Copied</span>
+                                            <span className="text-[10px] text-[#00d2b4] font-bold animate-pulse">API Secret Key Rolled</span>
                                         )}
                                         <button
                                             onClick={handleRollKeys}
@@ -4911,6 +5376,7 @@ Please complete the following implementation tasks:
                         )}
                     </div>
                 );
+            }
 
             case "checkout":
                 return (
@@ -4961,6 +5427,7 @@ Please complete the following implementation tasks:
                                             <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Subscription/Plan Name</label>
                                             <input 
                                                 type="text" 
+                                                aria-label="Subscription/Plan Name"
                                                 value={subName} 
                                                 onChange={(e) => setSubName(e.target.value)}
                                                 className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
@@ -5068,11 +5535,9 @@ Please complete the following implementation tasks:
                                     <span className="text-xs font-bold text-white/40 uppercase tracking-widest">Checkout Snippet (REST · no SDK)</span>
                                     <p className="text-[10px] text-white/30">A fetch-based checkout button + intent route. No SDK to install.</p>
                                 </div>
-                                <div className="bg-white/[0.02] border border-white/5 rounded-xl p-5 text-center flex-1 flex items-center justify-center">
-                                    <p className="text-xs text-white/60 leading-relaxed">
-                                        Checkout paywall configurations compiled successfully. Ready to deploy.
-                                    </p>
-                                </div>
+                                <pre className="bg-black/40 p-4 rounded-xl border border-white/5 overflow-x-auto text-[10px] font-mono text-emerald-400 text-left flex-1">
+                                    <code>{checkoutCode}</code>
+                                </pre>
                                 <button 
                                     onClick={() => handleCopy(checkoutCode, "Checkout Snippet")}
                                     className={`w-full py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all duration-200 flex items-center justify-center gap-2 ${
@@ -5165,10 +5630,10 @@ Please complete the following implementation tasks:
                     </div>
                 );
 
-            case "webhooks":
+            case "webhooks": {
                 if (isConnected && address && !sessionWallet && !embeddedWallet) {
                     return (
-                        <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
+                        <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
                             <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
                             <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
                             <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
@@ -5187,6 +5652,10 @@ Please complete the following implementation tasks:
                 }
 
                 const selectedPayload = webhookEvents.find(w => w.id === selectedWebhook);
+                const webhookActiveKey = apiKeys.find((key) => !key.revoked) || null;
+                const webhookKeyFingerprint = formatApiKeyFingerprint(webhookActiveKey?.secretKeyPlain)
+                    || webhookActiveKey?.publishableKey
+                    || "No active API key";
 
                 return (
                     <div className="space-y-8">
@@ -5202,20 +5671,35 @@ Please complete the following implementation tasks:
                                 </p>
                             </div>
 
+                            <div className="grid gap-3 rounded-2xl border border-white/5 bg-black/25 p-4 text-[10px] font-sans sm:grid-cols-3">
+                                <div>
+                                    <p className="font-bold uppercase tracking-wider text-white/30">Merchant wallet</p>
+                                    <p className="mt-1 break-all font-mono text-white/70">{sessionWallet || "Not authenticated"}</p>
+                                </div>
+                                <div>
+                                    <p className="font-bold uppercase tracking-wider text-white/30">API key</p>
+                                    <p className="mt-1 break-all font-mono text-white/70">{webhookKeyFingerprint}</p>
+                                </div>
+                                <div>
+                                    <p className="font-bold uppercase tracking-wider text-white/30">Webhook access</p>
+                                    <p className="mt-1 text-white/70">{isPremium ? "Premium enabled" : "Premium required"}</p>
+                                </div>
+                            </div>
+
                             {/* Add endpoint form */}
-                            <form onSubmit={handleAddWebhook} className="flex gap-4 items-center">
+                            <form onSubmit={handleAddWebhook} className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center">
                                 <input
                                     type="url"
                                     placeholder="https://yourserver.com/api/webhooks"
                                     value={webhookUrlInput}
                                     onChange={(e) => setWebhookUrlInput(e.target.value)}
                                     required
-                                    className="flex-1 bg-black border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-[#00d2b4] transition-colors font-sans"
+                                    className="flex-1 w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-[#00d2b4] transition-colors font-sans"
                                 />
                                 <button
                                     type="submit"
                                     disabled={isAddingWebhook || !webhookUrlInput}
-                                    className="px-6 py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/80 disabled:opacity-50 text-black text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-2"
+                                    className="px-6 py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/80 disabled:opacity-50 text-black text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 w-full sm:w-auto shrink-0"
                                 >
                                     {isAddingWebhook ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlugZap className="w-3.5 h-3.5" />}
                                     Add Endpoint
@@ -5235,30 +5719,48 @@ Please complete the following implementation tasks:
                                 <div className="space-y-3 font-sans text-xs">
                                     {webhookEndpoints.map((ep) => (
                                         <div key={ep.id} className="bg-black/30 border border-white/5 rounded-2xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                                            <div className="space-y-1">
-                                                <p className="font-mono text-xs font-bold text-white break-all">{ep.url}</p>
+                                            <div className="min-w-0 space-y-2">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <p className="font-mono text-xs font-bold text-white break-all">{ep.url}</p>
+                                                    <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase ${
+                                                        ep.active
+                                                            ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
+                                                            : "border-red-500/20 bg-red-500/10 text-red-400"
+                                                    }`}>
+                                                        {ep.active ? "Active" : "Inactive"}
+                                                    </span>
+                                                </div>
                                                 <div className="flex items-center gap-3 text-[10px] text-white/40">
                                                     <span>Secret: </span>
                                                     <code className="font-mono bg-black/40 px-2 py-0.5 rounded border border-white/5">
-                                                        {revealWebhookSecret === ep.id ? ep.secret : "whsec_••••••••••••••••••••••••••••••••"}
+                                                        {ep.secretAvailable && revealWebhookSecret === ep.id
+                                                            ? ep.secret
+                                                            : "whsec_••••••••"}
                                                     </code>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setRevealWebhookSecret(prev => prev === ep.id ? null : ep.id)}
-                                                        className="text-[#00d2b4] hover:underline"
-                                                    >
-                                                        {revealWebhookSecret === ep.id ? "Hide" : "Reveal"}
-                                                    </button>
-                                                    {revealWebhookSecret === ep.id && (
-                                                        <button
+                                                    {ep.secretAvailable && (
+                                                        <>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setRevealWebhookSecret(prev => prev === ep.id ? null : ep.id)}
+                                                                className="text-[#00d2b4] hover:underline"
+                                                            >
+                                                                {revealWebhookSecret === ep.id ? "Hide" : "Reveal"}
+                                                            </button>
+                                                            {revealWebhookSecret === ep.id && <button
                                                             type="button"
                                                             onClick={() => handleCopy(ep.secret, "Webhook Secret")}
                                                             className="text-white/40 hover:text-white"
                                                         >
                                                             <Copy className="w-3 h-3" />
-                                                        </button>
+                                                            </button>}
+                                                        </>
                                                     )}
                                                 </div>
+                                                <p className="text-[10px] text-white/35">
+                                                    {ep.latestDelivery
+                                                        ? <>Last delivery: <span className="font-mono text-white/60">{ep.latestDelivery.event}</span> · HTTP {ep.latestDelivery.status ?? "pending"} · {ep.latestDelivery.lastAttemptAt ? new Date(ep.latestDelivery.lastAttemptAt).toLocaleString() : "time unavailable"}</>
+                                                        : "No deliveries recorded for this endpoint yet."}
+                                                </p>
                                             </div>
                                             <button
                                                 type="button"
@@ -5270,6 +5772,43 @@ Please complete the following implementation tasks:
                                         </div>
                                     ))}
                                 </div>
+                            )}
+                        </div>
+
+                        <div className="liquid-glass space-y-4 rounded-3xl border border-[#00d2b4]/20 bg-[#00d2b4]/[0.03] p-6 shadow-2xl">
+                            <div>
+                                <h2 className="text-sm font-bold uppercase tracking-wider text-white">Webhook health checks</h2>
+                                <p className="mt-1 text-[11px] text-white/40">
+                                    Send signed sample events to every active endpoint, or resend the newest real delivery.
+                                </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {([
+                                    ["test", "Send test webhook"],
+                                    ["payment.succeeded", "Send test payment.succeeded"],
+                                    ["subscription.created", "Send test subscription.created"],
+                                ] as const).map(([eventType, label]) => (
+                                    <button
+                                        key={eventType}
+                                        type="button"
+                                        onClick={() => handleSendWebhookTest(eventType)}
+                                        disabled={Boolean(isTestingWebhook) || webhookEndpoints.every((endpoint) => !endpoint.active)}
+                                        className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-white transition-colors hover:border-[#00d2b4]/30 hover:bg-[#00d2b4]/10 disabled:opacity-40"
+                                    >
+                                        {isTestingWebhook === eventType ? "Sending…" : label}
+                                    </button>
+                                ))}
+                                <button
+                                    type="button"
+                                    onClick={() => handleReplayWebhook()}
+                                    disabled={isReplaying || webhookEvents.length === 0}
+                                    className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-white transition-colors hover:border-[#00d2b4]/30 hover:bg-[#00d2b4]/10 disabled:opacity-40"
+                                >
+                                    {isReplaying ? "Resending…" : "Resend latest event"}
+                                </button>
+                            </div>
+                            {replayStatus && (
+                                <p className="rounded-xl border border-white/5 bg-black/30 px-3 py-2 text-[10px] text-white/60">{replayStatus}</p>
                             )}
                         </div>
 
@@ -5423,13 +5962,54 @@ Please complete the following implementation tasks:
                         </div>
                     </div>
                 );
+            }
         }
     };
 
     return (
         <div data-mounted={isMounted} className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4]">
-            <AnimatedGradientBg />
+            <AnimatedGradientBg variant="dashboard" />
             <div className="relative z-10">
+            {/* Session Consent Alerts Overlay */}
+            {sessionAlert && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
+                    <div className="liquid-glass border border-white/10 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center space-y-6 relative overflow-hidden bg-[#0d0d0d] shadow-2xl">
+                        <div className="space-y-2">
+                            <span className="inline-flex p-3 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 mb-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                            </span>
+                            <h2 className="text-lg font-extrabold uppercase tracking-wider text-white">
+                                {sessionAlert === "role_missing" && "Account Incomplete"}
+                                {sessionAlert === "wrong_role" && "Incorrect Dashboard"}
+                                {sessionAlert === "wallet_mismatch" && "Wallet Mismatch"}
+                            </h2>
+                            <p className="text-xs text-white/50 leading-relaxed font-sans font-normal">
+                                {sessionAlert === "role_missing" && "Your active profile is missing an assigned role. Please complete your registration."}
+                                {sessionAlert === "wrong_role" && "This is the Enterprise Merchant dashboard, but your session is registered as an Individual User."}
+                                {sessionAlert === "wallet_mismatch" && "Your connected wallet address does not match your active session. Please sign in again."}
+                            </p>
+                        </div>
+
+                        <button
+                            onClick={async () => {
+                                if (sessionAlert === "role_missing") {
+                                    window.location.href = getDashboardUrl("USER", "/signup?completeRole=1");
+                                } else if (sessionAlert === "wrong_role") {
+                                    window.location.href = getDashboardUrl("USER", "/user");
+                                } else {
+                                    await fetch("/api/auth/logout", { method: "POST" });
+                                    window.location.href = getDashboardUrl("USER", "/login");
+                                }
+                            }}
+                            className="w-full py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black rounded-xl font-bold text-xs uppercase tracking-widest transition-all"
+                        >
+                            {sessionAlert === "role_missing" && "Complete Account Setup"}
+                            {sessionAlert === "wrong_role" && "Switch to User Dashboard"}
+                            {sessionAlert === "wallet_mismatch" && "Return to Login"}
+                        </button>
+                    </div>
+                </div>
+            )}
             <DashboardHeader 
                 embeddedWallet={embeddedWallet}
                 onDisconnect={handleLogout}
@@ -5463,8 +6043,23 @@ Please complete the following implementation tasks:
                             </button>
                         )}
                         <div>
-                            <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2">
+                            <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2 flex flex-wrap items-center gap-3">
                                 Merchant Control <span className="font-serif italic lowercase font-normal text-[#00d2b4]">center</span>
+                                {isConnected && userSettings && (
+                                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                        !userSettings.verified
+                                            ? "bg-amber-500/10 text-amber-300 border border-amber-500/25"
+                                            : userSettings.tier === "PREMIUM"
+                                            ? "bg-purple-500/10 text-purple-300 border border-purple-500/25"
+                                            : "bg-emerald-500/10 text-emerald-300 border border-emerald-500/25"
+                                    }`}>
+                                        {!userSettings.verified
+                                            ? "Tier 1: Unverified"
+                                            : userSettings.tier === "PREMIUM"
+                                            ? "Tier 3: Premium"
+                                            : "Tier 2: Verified"}
+                                    </span>
+                                )}
                             </h1>
                             <p className="text-xs text-white/50 font-sans">
                                 Manage your premium subscriptions, payments, allowances, and billing analytics.
@@ -5477,7 +6072,7 @@ Please complete the following implementation tasks:
                     <DashboardSkeleton activeTab={activeTab} />
                 ) : !isConnected ? (
                     <div className="space-y-8">
-                        <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
+                        <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
                             <div className="p-4 rounded-3xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-300">
                                 <AlertTriangle className="w-10 h-10" />
                             </div>
@@ -5561,21 +6156,33 @@ Please complete the following implementation tasks:
                                     </button>
                                 );
                             })}
+
+                            <a
+                                href="/support"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="w-full flex items-center justify-center lg:justify-start gap-3.5 px-4 py-4 lg:px-5 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left bg-white/[0.01] border-white/5 text-white/50 hover:text-white hover:bg-[#00d2b4]/5 hover:border-[#00d2b4]/20"
+                                title="Help & Support"
+                            >
+                                <HelpCircle className="w-4 h-4 shrink-0 text-white/40" />
+                                <span className="hidden lg:inline">Support</span>
+                            </a>
                         </div>
 
                         {/* View Content */}
                         <div className="md:col-span-11 lg:col-span-3 min-h-[500px]">
-                            <AnimatePresence mode="wait">
-                                <motion.div
-                                    key={activeTab}
-                                    initial={{ opacity: 0, y: 15, scale: 0.985 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    exit={{ opacity: 0, y: -15, scale: 0.985 }}
-                                    transition={{ type: "spring", stiffness: 340, damping: 28, bounce: 0.16 }}
-                                >
-                                    {renderView()}
-                                </motion.div>
-                            </AnimatePresence>
+                            {/* Keyed enter-only animation — deliberately NO AnimatePresence/exit here.
+                                mode="wait" gated the incoming tab on the outgoing exit spring, which
+                                dropped the presence on interrupted switches (slow mobile frames) and
+                                left the content area blank. */}
+                            <motion.div
+                                key={activeTab}
+                                initial={{ opacity: 0, y: 15, scale: 0.985 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                transition={{ type: "spring", stiffness: 340, damping: 28, bounce: 0.16 }}
+                            >
+                                {renderView()}
+                            </motion.div>
                         </div>
                     </div>
                 )}
@@ -5596,7 +6203,7 @@ Please complete the following implementation tasks:
                 onClose={() => setIsWithdrawOpen(false)}
                 vaultBalance={vaultBalance}
                 connectedAddress={address || ""}
-                payoutDestination={payoutDestination}
+                payoutDestination={userSettings?.payoutDestination || payoutDestination}
                 onConfirmWithdraw={async (targetAddress) => {
                     await handleWithdraw(targetAddress);
                     setIsWithdrawOpen(false);
@@ -5652,13 +6259,23 @@ Please complete the following implementation tasks:
 
                         {/* QR Code display */}
                         <div className="flex justify-center p-4 bg-white rounded-2xl mx-auto w-fit">
-                            <QRCodeSVG
+                            <QRCode
                                 value={activeQrCodeLink}
                                 size={180}
-                                level="H"
+                                ecLevel="H"
                                 bgColor="#ffffff"
                                 fgColor="#000000"
-                                imageSettings={{ src: "/favicon-48x48.png", height: 40, width: 40, excavate: true }}
+                                qrStyle="dots"
+                                eyeRadius={[
+                                    [10, 10, 0, 10], // Top-left eye
+                                    [10, 10, 10, 0], // Top-right eye
+                                    [10, 0, 10, 10]  // Bottom-left eye
+                                ]}
+                                logoImage="/logo.png"
+                                logoWidth={38}
+                                logoHeight={38}
+                                removeQrCodeBehindLogo={true}
+                                logoPadding={2}
                             />
                         </div>
 
@@ -5683,6 +6300,18 @@ Please complete the following implementation tasks:
                     </motion.div>
                 </div>
             )}
+            {confirmModal && (
+                <ConfirmModal
+                    open={confirmModal.open}
+                    title={confirmModal.title}
+                    description={confirmModal.description}
+                    confirmLabel={confirmModal.confirmLabel}
+                    cancelLabel={confirmModal.cancelLabel}
+                    variant={confirmModal.variant}
+                    onConfirm={confirmModal.onConfirm}
+                    onCancel={confirmModal.onCancel ?? (() => setConfirmModal(null))}
+                />
+            )}
             {/* High-fidelity glassmorphic toast notification for settlement confirmation */}
                             {showToast && (
                                 <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass border border-emerald-500/30 bg-black/60 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-[0_8px_32px_0_rgba(0,210,180,0.2)]">
@@ -5698,6 +6327,7 @@ Please complete the following implementation tasks:
                             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex w-[calc(100%-0.75rem)] max-w-sm items-center justify-between gap-2 md:hidden">
                                 {/* Capsule Navigation Menu */}
                                 <div className="flex min-w-0 flex-1 items-center justify-around liquid-glass rounded-full border border-white/5 bg-black/60 px-2 py-3.5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-xl">
+                                    <LiquidGlassEffect />
                                     {mobileBottomTabs.map((tab) => (
                                         <AnimatedBottomNavButton
                                             key={tab.id}
@@ -5737,11 +6367,15 @@ function MerchantPlanRow({
     busy,
     onToggle,
     onShare,
+    promotion = null,
+    onPromotionsChanged,
 }: {
     plan: MerchantPlan;
     busy: boolean;
     onToggle: (plan: MerchantPlan) => void;
     onShare: (plan: MerchantPlan) => void;
+    promotion?: PlanPromotion | null;
+    onPromotionsChanged?: () => void;
 }) {
     const [copied, setCopied] = useState(false);
     const subscribeUrl = buildSubscribeUrl(plan.id, typeof window !== "undefined" ? window.location.origin : undefined);
@@ -5761,7 +6395,9 @@ function MerchantPlanRow({
                         {formatPlanAmount(plan.amountUsdc)} USDC / {formatPlanPeriod(plan.periodSeconds)}
                     </p>
                     <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.12em] text-white/30">
-                        {plan.active ? "Live — accepting subscribers" : "Hidden from new subscribers"}
+                        {plan.targetSubscriber
+                            ? `${plan.active ? "Assigned API offer" : "Assigned offer closed"} — ${plan.targetSubscriber.slice(0, 6)}…${plan.targetSubscriber.slice(-4)}`
+                            : plan.active ? "Live — accepting subscribers" : "Hidden from new subscribers"}
                     </p>
                 </div>
                 <button
@@ -5796,7 +6432,7 @@ function MerchantPlanRow({
                 </div>
             )}
 
-            {plan.active && (
+            {plan.active && !plan.targetSubscriber && (
                 <div data-testid="merchant-plan-link-strip" className="mt-3 grid min-w-0 gap-2 overflow-hidden rounded-xl border border-white/5 bg-black/30 p-2 sm:flex sm:items-center sm:px-3 sm:py-2">
                     <span className="block min-w-0 max-w-full truncate border-b border-white/5 pb-1.5 font-mono text-[10px] text-white/45 sm:flex-1 sm:border-none sm:pb-0">{subscribeUrl}</span>
                     <div className="grid w-full min-w-0 grid-cols-2 gap-2 pt-1 sm:flex sm:w-auto sm:items-center sm:justify-end sm:pt-0">
@@ -5821,6 +6457,231 @@ function MerchantPlanRow({
                     </div>
                 </div>
             )}
+
+            {(plan.active || promotion) && (
+                <PlanPromotionPanel plan={plan} promotion={promotion ?? null} onChanged={onPromotionsChanged} />
+            )}
+        </div>
+    );
+}
+
+/* Introductory-offer controls for one plan: create, edit, activate/deactivate a promotion.
+   Edits only affect FUTURE subscribers — terms already authorized are snapshotted per
+   subscription and enforced on-chain, so existing subscribers never reprice. */
+function PlanPromotionPanel({
+    plan,
+    promotion,
+    onChanged,
+}: {
+    plan: MerchantPlan;
+    promotion: PlanPromotion | null;
+    onChanged?: () => void;
+}) {
+    const [editing, setEditing] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [promoName, setPromoName] = useState(promotion?.name || "");
+    const [discountType, setDiscountType] = useState(promotion?.discountType || "PERCENT");
+    const [percentOff, setPercentOff] = useState(
+        promotion?.discountBps ? String(promotion.discountBps / 100) : "40",
+    );
+    const [introPriceUsdc, setIntroPriceUsdc] = useState(
+        promotion && promotion.discountType === "FIXED_PRICE"
+            ? formatPlanAmount(promotion.introductoryAmountUsdc)
+            : "",
+    );
+    const [introCycles, setIntroCycles] = useState(String(promotion?.introductoryCycles || 1));
+    const [expiresAt, setExpiresAt] = useState(
+        promotion?.expiresAt ? promotion.expiresAt.slice(0, 16) : "",
+    );
+    const [maxRedemptions, setMaxRedemptions] = useState(
+        promotion?.maxRedemptions ? String(promotion.maxRedemptions) : "",
+    );
+    const [newCustomersOnly, setNewCustomersOnly] = useState(promotion?.newCustomersOnly ?? true);
+
+    const regularMicros = (() => {
+        try { return BigInt(plan.amountUsdc); } catch { return BigInt(0); }
+    })();
+    const previewIntroMicros = (() => {
+        if (discountType === "FREE_TRIAL") return BigInt(0);
+        if (discountType === "PERCENT") {
+            const pct = Number(percentOff);
+            if (!Number.isFinite(pct) || pct < 1 || pct > 100) return null;
+            return (regularMicros * BigInt(10000 - Math.round(pct * 100))) / BigInt(10000);
+        }
+        const price = Number(introPriceUsdc);
+        if (!Number.isFinite(price) || price < 0) return null;
+        return BigInt(Math.round(price * 1_000_000));
+    })();
+    const cadence = formatPlanPeriod(plan.periodSeconds);
+
+    const submit = async (event: React.FormEvent) => {
+        event.preventDefault();
+        setError(null);
+        if (!promoName.trim()) { setError("Promotion name is required."); return; }
+        if (previewIntroMicros === null) { setError("Enter a valid discount."); return; }
+        if (previewIntroMicros >= regularMicros) { setError("Introductory price must be below the regular price."); return; }
+        setSaving(true);
+        try {
+            const payload: Record<string, unknown> = {
+                name: promoName.trim(),
+                discountType,
+                introductoryCycles: Number(introCycles) || 1,
+                expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+                maxRedemptions: maxRedemptions ? Number(maxRedemptions) : null,
+                newCustomersOnly,
+            };
+            if (discountType === "PERCENT") payload.percentOff = Number(percentOff);
+            if (discountType === "FIXED_PRICE") payload.introPriceUsdc = introPriceUsdc;
+            const res = await fetch("/api/merchant/promotions", {
+                method: promotion ? "PATCH" : "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(promotion ? { ...payload, promotionId: promotion.id } : { ...payload, planId: plan.id }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) throw new Error(data.error || "Failed to save promotion.");
+            setEditing(false);
+            onChanged?.();
+        } catch (err: any) {
+            setError(err.message || "Failed to save promotion.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const toggleActive = async () => {
+        if (!promotion) return;
+        setSaving(true);
+        setError(null);
+        try {
+            const res = await fetch("/api/merchant/promotions", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ promotionId: promotion.id, active: !promotion.active }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) throw new Error(data.error || "Failed to update promotion.");
+            onChanged?.();
+        } catch (err: any) {
+            setError(err.message || "Failed to update promotion.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const summaryLabel = promotion
+        ? promotion.discountType === "FREE_TRIAL"
+            ? `Free for the first ${promotion.introductoryCycles > 1 ? `${promotion.introductoryCycles} cycles` : cadence}`
+            : promotion.discountType === "PERCENT"
+                ? `${(promotion.discountBps || 0) / 100}% off → ${formatPlanAmount(promotion.introductoryAmountUsdc)} USDC for ${promotion.introductoryCycles > 1 ? `${promotion.introductoryCycles} cycles` : `the first ${cadence}`}`
+                : `${formatPlanAmount(promotion.introductoryAmountUsdc)} USDC for ${promotion.introductoryCycles > 1 ? `${promotion.introductoryCycles} cycles` : `the first ${cadence}`}`
+        : null;
+
+    return (
+        <div data-testid="plan-promotion-panel" className="mt-3 rounded-xl border border-amber-300/10 bg-amber-400/[0.03] p-3 font-sans">
+            {!editing && promotion && (
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                        <p className="text-[9px] font-black uppercase tracking-[0.14em] text-amber-300/70">
+                            Promotion · {promotion.active ? "Live" : "Off"} · {promotion.redemptionCount}{promotion.maxRedemptions ? `/${promotion.maxRedemptions}` : ""} redeemed
+                        </p>
+                        <p className="mt-0.5 truncate text-[11px] font-bold text-white/80">{promotion.name}: {summaryLabel}, then {formatPlanAmount(plan.amountUsdc)} USDC / {cadence}</p>
+                        {promotion.expiresAt && (
+                            <p className="text-[9px] text-white/35">Offer ends {new Date(promotion.expiresAt).toLocaleDateString()}</p>
+                        )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                        <button type="button" onClick={() => setEditing(true)} disabled={saving}
+                            className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider text-white/70 transition hover:text-white disabled:opacity-50">
+                            Edit
+                        </button>
+                        <button type="button" onClick={toggleActive} disabled={saving}
+                            className={`rounded-lg border px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition disabled:opacity-50 ${promotion.active ? "border-red-400/20 bg-red-500/10 text-red-200 hover:bg-red-500/15" : "border-[#00d2b4]/20 bg-[#00d2b4]/10 text-[#00d2b4] hover:bg-[#00d2b4]/15"}`}>
+                            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : promotion.active ? "Turn off" : "Turn on"}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {!editing && !promotion && plan.active && (
+                <button type="button" onClick={() => setEditing(true)}
+                    className="w-full rounded-lg border border-dashed border-amber-300/20 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-amber-200/70 transition hover:border-amber-300/40 hover:text-amber-200">
+                    + Add introductory offer (discount or free trial)
+                </button>
+            )}
+
+            {editing && (
+                <form onSubmit={submit} className="space-y-3 text-xs">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Offer name</label>
+                            <input type="text" value={promoName} onChange={(e) => setPromoName(e.target.value)} placeholder="Launch offer"
+                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Offer type</label>
+                            <select value={discountType} onChange={(e) => setDiscountType(e.target.value)}
+                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none">
+                                <option value="PERCENT">Percentage off</option>
+                                <option value="FIXED_PRICE">Fixed intro price</option>
+                                <option value="FREE_TRIAL">Free trial</option>
+                            </select>
+                        </div>
+                        {discountType === "PERCENT" && (
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Percent off (customer pays the rest)</label>
+                                <input type="number" min="1" max="100" step="1" value={percentOff} onChange={(e) => setPercentOff(e.target.value)}
+                                    className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                            </div>
+                        )}
+                        {discountType === "FIXED_PRICE" && (
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Intro price (USDC)</label>
+                                <input type="number" min="0" step="0.01" value={introPriceUsdc} onChange={(e) => setIntroPriceUsdc(e.target.value)}
+                                    className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                            </div>
+                        )}
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Discounted cycles</label>
+                            <input type="number" min="1" max="36" value={introCycles} onChange={(e) => setIntroCycles(e.target.value)}
+                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Offer ends (optional)</label>
+                            <input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)}
+                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Max redemptions (optional)</label>
+                            <input type="number" min="1" value={maxRedemptions} onChange={(e) => setMaxRedemptions(e.target.value)} placeholder="Unlimited"
+                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                        </div>
+                    </div>
+                    <label className="flex items-center gap-2 text-[10px] text-white/60">
+                        <input type="checkbox" checked={newCustomersOnly} onChange={(e) => setNewCustomersOnly(e.target.checked)} className="accent-[#00d2b4]" />
+                        New customers only (subscribers who never had a plan with you)
+                    </label>
+                    {previewIntroMicros !== null && previewIntroMicros < regularMicros && (
+                        <p className="rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-[10px] text-white/60">
+                            Customers pay <span className="font-bold text-[#00d2b4]">{formatPlanAmount(previewIntroMicros.toString())} USDC</span>
+                            {Number(introCycles) > 1 ? ` per ${cadence} for ${introCycles} cycles` : " today"}, then{" "}
+                            <span className="font-bold text-white/85">{formatPlanAmount(plan.amountUsdc)} USDC / {cadence}</span>. Both prices are
+                            disclosed and authorized at checkout; the switch to full price is enforced on-chain.
+                        </p>
+                    )}
+                    {error && <p className="text-[10px] font-bold text-red-400">{error}</p>}
+                    <div className="flex items-center justify-end gap-2">
+                        <button type="button" onClick={() => { setEditing(false); setError(null); }} disabled={saving}
+                            className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-white/60 transition hover:text-white disabled:opacity-50">
+                            Cancel
+                        </button>
+                        <button type="submit" disabled={saving}
+                            className="rounded-lg bg-[#00d2b4] px-4 py-2 text-[9px] font-bold uppercase tracking-wider text-black transition hover:bg-[#00d2b4]/85 disabled:opacity-50">
+                            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : promotion ? "Save changes" : "Launch offer"}
+                        </button>
+                    </div>
+                </form>
+            )}
         </div>
     );
 }
@@ -5836,18 +6697,31 @@ function LocalCustomerVaultRow({
 }) {
     const [chargeAmount, setChargeAmount] = useState("1.50");
     const [loading, setLoading] = useState(false);
+    const [reviewingCharge, setReviewingCharge] = useState(false);
+    const usageRequestKey = useRef<string | null>(null);
+    const usageInFlight = useRef(false);
     const [status, setStatus] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
     const handleReportUsage = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!apiKey) {
-            setStatus({ text: "A newly revealed secret key is required to test usage reporting. Roll or create an API key and copy it while it is shown.", type: "error" });
+            setStatus({ text: "A newly revealed secret key is required for live usage reporting. Roll or create an API key and copy it while it is shown.", type: "error" });
+            return;
+        }
+
+        if (!reviewingCharge) {
+            setStatus(null);
+            setReviewingCharge(true);
             return;
         }
         if (!chargeAmount || isNaN(Number(chargeAmount)) || Number(chargeAmount) <= 0) {
             setStatus({ text: "Invalid usage amount.", type: "error" });
             return;
         }
+
+        if (usageInFlight.current) return;
+        usageInFlight.current = true;
+        usageRequestKey.current ||= crypto.randomUUID();
 
         setLoading(true);
         setStatus(null);
@@ -5857,7 +6731,8 @@ function LocalCustomerVaultRow({
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    "Authorization": `Bearer ${apiKey}`
+                    "Authorization": `Bearer ${apiKey}`,
+                    "x-request-id": usageRequestKey.current,
                 },
                 body: JSON.stringify({
                     userAddress: vault.userAddress,
@@ -5868,9 +6743,11 @@ function LocalCustomerVaultRow({
             const data = await res.json();
             if (res.ok && data.success) {
                 setStatus({
-                    text: `Usage accrued. Cycle total: $${formatUsdcMicros(data.accruedUsageUsdc)} USDC.`,
+                    text: `Usage charge accrued. Cycle total: ${formatUsdcMicros(data.accruedUsageUsdc)} USDC.`,
                     type: "success"
                 });
+                setReviewingCharge(false);
+                usageRequestKey.current = null;
                 onRefresh();
             } else {
                 setStatus({ text: data.error || "Usage report failed.", type: "error" });
@@ -5878,6 +6755,7 @@ function LocalCustomerVaultRow({
         } catch (err: any) {
             setStatus({ text: err.message || "Failed to report usage.", type: "error" });
         } finally {
+            usageInFlight.current = false;
             setLoading(false);
         }
     };
@@ -5923,17 +6801,17 @@ function LocalCustomerVaultRow({
                 </div>
             </div>
 
-            {/* Test report usage tool */}
+            {/* Live usage accrual tool */}
             <form onSubmit={handleReportUsage} className="flex flex-col sm:flex-row gap-3 sm:items-end border-t border-white/5 pt-3">
                 <label className="flex-1 space-y-1">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-white/30">Test Report Usage (USDC)</span>
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-white/50">Accrue live usage charge (USDC)</span>
                     <input
                         type="number"
                         min="0.01"
                         step="0.01"
                         disabled={loading}
                         value={chargeAmount}
-                        onChange={(e) => setChargeAmount(e.target.value)}
+                        onChange={(e) => { setChargeAmount(e.target.value); setReviewingCharge(false); setStatus(null); usageRequestKey.current = null; }}
                         className="w-full max-w-xs bg-black/40 border border-white/10 rounded-xl px-3 py-1.5 text-white focus:outline-none focus:border-[#00d2b4] transition text-xs font-mono disabled:opacity-50"
                         placeholder="1.50"
                     />
@@ -5944,9 +6822,16 @@ function LocalCustomerVaultRow({
                     className="px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 disabled:opacity-50 text-[9px] font-bold uppercase tracking-wider text-white rounded-xl flex items-center justify-center gap-1.5 transition-all"
                 >
                     {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 text-[#ccff00]" />}
-                    Report Charge
+                    {reviewingCharge ? "Confirm live charge" : "Review charge"}
                 </button>
             </form>
+
+            {reviewingCharge && (
+                <div className="rounded-xl border border-amber-400/25 bg-amber-400/[0.06] p-3 text-[10px] leading-relaxed text-amber-200/80">
+                    This will add <strong>{Number(chargeAmount).toFixed(2)} USDC</strong> to the customer&apos;s live accrued usage for this billing cycle. It is not a test. Review the customer address above before confirming.
+                    <button type="button" onClick={() => setReviewingCharge(false)} className="mt-2 block font-bold uppercase tracking-wider text-white/60 hover:text-white">Back to edit</button>
+                </div>
+            )}
 
             {status && (
                 <p className={`text-[9px] font-bold tracking-wide ${
