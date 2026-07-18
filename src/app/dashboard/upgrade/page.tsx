@@ -282,14 +282,14 @@ export default function UpgradePage() {
 
                 setCheckoutStatus(
                     upgradeRes.status === 202
-                        ? "Payment received — waiting for block confirmations..."
-                        : "Payment submitted — waiting for the network to index the transaction..."
+                        ? "Payment received; waiting for block confirmations..."
+                        : "Payment submitted; waiting for the network to index the transaction..."
                 );
                 await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
             }
             throw new Error(
                 "Your payment was submitted on-chain but server confirmation is still pending. " +
-                "It will be finalized automatically — you can also retry verification below. Do not pay again."
+                "It will be finalized automatically. You can also retry verification below. Do not pay again."
             );
         } catch (err: any) {
             console.error("Premium upgrade sync failed:", err);

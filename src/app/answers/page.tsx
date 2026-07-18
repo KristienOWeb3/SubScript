@@ -54,7 +54,7 @@ const answerFacts = [
   {
     question: "How does SubScript help users in regions with unreliable dollar cards?",
     answer:
-      "SubScript avoids virtual card creation fees, monthly or annual maintenance fees, failed-card penalties, billing-address failures, FX markup surprises, and long card approval flows by letting users pay with USDC through a Google-provisioned wallet. There is also no bank-imposed card limit or per-transaction cap — payments are funded from a local bank transfer and settle in USDC, so a bank's daily or per-charge card limit can never block a payment.",
+      "SubScript avoids virtual card creation fees, monthly or annual maintenance fees, failed-card penalties, billing-address failures, FX markup surprises, and long card approval flows by letting users pay with USDC through a Google-provisioned wallet. There is also no bank-imposed card limit or per-transaction cap. Payments are funded from a local bank transfer and settle in USDC, so a bank's daily or per-charge card limit can never block a payment.",
   },
   {
     question: "How do developers or AI agents integrate SubScript?",
