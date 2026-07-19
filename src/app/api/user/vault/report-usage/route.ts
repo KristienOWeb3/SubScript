@@ -34,6 +34,7 @@ type UsageResult =
     | { kind: "idempotency_conflict" }
     | { kind: "environment_mismatch" }
     | { kind: "inactive"; vault: VaultUsageRow }
+    | { kind: "cancelled" }
     | { kind: "exhausted"; vault: VaultUsageRow; remaining: bigint; notification: DmPushInput | null }
     | { kind: "accrued"; vault: VaultUsageRow; exhausted: boolean; notification: DmPushInput | null; thresholdNotification: DmPushInput | null };
 
@@ -104,7 +105,7 @@ async function accrueUsageAtomically(
         try {
             const selected = await client.query(
                 `select id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active, usage_notified_bps,
-                        environment, settlement_chain_id
+                        environment, settlement_chain_id, cancel_requested_at
                    from metered_vaults
                   where user_address = $1
                     and merchant_address = $2
@@ -143,6 +144,15 @@ async function accrueUsageAtomically(
                 await client.query("commit");
                 if (BigInt(existingReport.rows[0].amount_usdc) !== amountMicros) return { kind: "idempotency_conflict" } as const;
                 return { kind: "accrued", vault, exhausted: accrued >= balance, notification: null, thresholdNotification: null } as const;
+            }
+
+            /* The user cancelled this service: freeze accrual so the keeper's end-of-cycle draw
+               settles only usage rendered BEFORE the cancel. New usage is refused (already-recorded
+               reports above still replay idempotently). Checked after idempotency, before the
+               active gate, so a cancelled-but-still-active vault stops billing immediately. */
+            if (selected.rows[0].cancel_requested_at) {
+                await client.query("commit");
+                return { kind: "cancelled" } as const;
             }
 
             if (!vault.active) {
@@ -330,6 +340,13 @@ export async function POST(request: Request) {
                 error: "This vault does not belong to the TEST environment on Arc testnet; a test key cannot mutate it.",
                 code: "ENVIRONMENT_MISMATCH",
             }, { status: 403 });
+        }
+
+        if (result.kind === "cancelled") {
+            return NextResponse.json({
+                error: "The customer cancelled this service. Stop rendering service — new usage is no longer accepted for this vault.",
+                code: "SERVICE_CANCELED",
+            }, { status: 409 });
         }
 
         if (result.kind === "inactive") {

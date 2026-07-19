@@ -135,15 +135,18 @@ export interface Plan {
     [key: string]: unknown;
 }
 
-export interface CreatePlanParams {
+interface CreatePlanBaseParams {
     name: string;
     amountUsdcMicros: string | bigint | number;
-    periodDays?: number;
-    intervalSeconds?: number;
     description?: string;
     detailsUrl?: string;
     minCommitmentDays?: number;
 }
+
+export type CreatePlanParams = CreatePlanBaseParams & (
+    | { periodDays: number; intervalSeconds?: never }
+    | { periodDays?: never; intervalSeconds: number }
+);
 
 export interface UpdatePlanParams {
     planId: string;

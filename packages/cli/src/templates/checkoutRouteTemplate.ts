@@ -12,12 +12,16 @@ export interface CheckoutRouteTemplateOptions {
 function checkoutRequestLogic(billingMode: "one_time" | "subscription"): string {
   const recurringSetup = billingMode === "subscription"
     ? `
-  const intervalSeconds = Number(body?.intervalSeconds || process.env.SUBSCRIPT_INTERVAL || "2592000");
+  const {
+    title,
+    amountUsdc,
+    intervalSeconds,
+    subscriber,
+    merchantCustomerId
+  } = authorizedSubscription;
   if (!Number.isSafeInteger(intervalSeconds) || intervalSeconds <= 0) {
     return { status: 400, body: { error: "intervalSeconds must be a positive integer for subscriptions" } };
   }
-  const subscriber = body?.subscriber;
-  const merchantCustomerId = body?.merchantCustomerId || body?.externalReference;
   if (merchantCustomerId && !subscriber) {
     return {
       status: 400,
@@ -37,9 +41,7 @@ function checkoutRequestLogic(billingMode: "one_time" | "subscription"): string 
       subscriber,
       merchantCustomerId,
       publishToDm: true,
-      idempotencyKey:
-        idempotencyKey ||
-        \`catalog:\${title}:\${amountUsdc}:\${intervalSeconds}:\${subscriber || "public"}\`,
+      idempotencyKey: \`catalog:\${title}:\${amountUsdc}:\${intervalSeconds}:\${subscriber || "public"}\`,
       sandbox: secretKey.startsWith("sk_test_")
     }`
     : `{
@@ -48,7 +50,6 @@ function checkoutRequestLogic(billingMode: "one_time" | "subscription"): string 
       description,
       externalReference,
       idempotencyKey,
-      confirmOneTime: true,
       sandbox: secretKey.startsWith("sk_test_")
     }`;
   const responseBody = billingMode === "subscription"
@@ -73,13 +74,14 @@ function checkoutRequestLogic(billingMode: "one_time" | "subscription"): string 
     return { status: 500, body: { error: "SUBSCRIPT_SECRET_KEY is not configured" } };
   }
 
-  const {
+${billingMode === "one_time" ? `  const {
     title = process.env.SUBSCRIPT_PLAN_NAME || "SubScript Checkout",
     amountUsdc = process.env.SUBSCRIPT_AMOUNT_USDC || process.env.SUBSCRIPT_AMOUNT_CAP,
     description,
     externalReference,
     idempotencyKey
   } = body || {};
+` : ""}
 
   if (!amountUsdc) {
     return { status: 400, body: { error: "amountUsdc is required" } };
@@ -106,6 +108,54 @@ ${recurringSetup}
   };`;
 }
 
+function subscriptionAuthorizationTemplate(billingMode: "one_time" | "subscription"): string {
+  if (billingMode !== "subscription") return "";
+
+  return `
+interface AuthorizedSubscriptionCheckout {
+  title: string;
+  amountUsdc: string;
+  intervalSeconds: number;
+  subscriber?: string;
+  merchantCustomerId?: string;
+}
+
+/**
+ * Connect this fail-closed hook to your application's authentication and database.
+ * Return only server-owned plan terms and customer identifiers for the authenticated
+ * user. Never copy these values from request JSON.
+ */
+async function authorizeSubscriptionCheckout(
+  _request: unknown
+): Promise<AuthorizedSubscriptionCheckout | null> {
+  return null;
+}
+`;
+}
+
+function checkoutFunctionSignature(billingMode: "one_time" | "subscription"): string {
+  return billingMode === "subscription"
+    ? "authorizedSubscription: AuthorizedSubscriptionCheckout"
+    : "body: any";
+}
+
+function checkoutInvocation(
+  billingMode: "one_time" | "subscription",
+  requestExpression: string,
+  bodyExpression: string,
+  unauthorizedResponse: string
+): string {
+  if (billingMode === "one_time") {
+    return `const result = await createSubScriptCheckout(${bodyExpression});`;
+  }
+
+  return `const authorizedSubscription = await authorizeSubscriptionCheckout(${requestExpression});
+    if (!authorizedSubscription) {
+      ${unauthorizedResponse}
+    }
+    const result = await createSubScriptCheckout(authorizedSubscription);`;
+}
+
 export function generateCheckoutRouteTemplate(opts: CheckoutRouteTemplateOptions): string {
   const billingMode = opts.billingMode || "one_time";
   const header = `/**
@@ -121,8 +171,9 @@ export function generateCheckoutRouteTemplate(opts: CheckoutRouteTemplateOptions
   if (opts.framework === "next-pages") {
     return `${header}
 import type { NextApiRequest, NextApiResponse } from "next";
+${subscriptionAuthorizationTemplate(billingMode)}
 
-async function createSubScriptCheckout(body: any) {
+async function createSubScriptCheckout(${checkoutFunctionSignature(billingMode)}) {
 ${checkoutRequestLogic(billingMode)}
 }
 
@@ -133,7 +184,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const result = await createSubScriptCheckout(req.body);
+    ${checkoutInvocation(
+      billingMode,
+      "req",
+      "req.body",
+      'return res.status(401).json({ error: "Authentication and an authorized subscription plan are required" });'
+    )}
     return res.status(result.status).json(result.body);
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Failed to create SubScript checkout" });
@@ -147,14 +203,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 import express from "express";
 
 const router = express.Router();
+${subscriptionAuthorizationTemplate(billingMode)}
 
-async function createSubScriptCheckout(body: any) {
+async function createSubScriptCheckout(${checkoutFunctionSignature(billingMode)}) {
 ${checkoutRequestLogic(billingMode)}
 }
 
 router.post("/api/subscript/checkout", express.json(), async (req, res) => {
   try {
-    const result = await createSubScriptCheckout(req.body);
+    ${checkoutInvocation(
+      billingMode,
+      "req",
+      "req.body",
+      'return res.status(401).json({ error: "Authentication and an authorized subscription plan are required" });'
+    )}
     return res.status(result.status).json(result.body);
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Failed to create SubScript checkout" });
@@ -167,14 +229,20 @@ export default router;
 
   return `${header}
 import { NextResponse } from "next/server";
+${subscriptionAuthorizationTemplate(billingMode)}
 
-async function createSubScriptCheckout(body: any) {
+async function createSubScriptCheckout(${checkoutFunctionSignature(billingMode)}) {
 ${checkoutRequestLogic(billingMode)}
 }
 
 export async function POST(request: Request) {
   try {
-    const result = await createSubScriptCheckout(await request.json());
+    ${checkoutInvocation(
+      billingMode,
+      "request",
+      "await request.json()",
+      'return NextResponse.json({ error: "Authentication and an authorized subscription plan are required" }, { status: 401 });'
+    )}
     return NextResponse.json(result.body, { status: result.status });
   } catch (err: any) {
     return NextResponse.json(

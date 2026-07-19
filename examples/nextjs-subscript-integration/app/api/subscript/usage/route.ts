@@ -1,44 +1,41 @@
 import { NextResponse } from "next/server";
+import { ApplicationRouteError, requireApplicationUser } from "../_lib/applicationAuth";
+import {
+  applicationErrorResponse,
+  subscriptRejectedResponse,
+  subscriptRequest,
+} from "../_lib/subscriptClient";
 
-const SUBSCRIPT_BASE_URL = process.env.SUBSCRIPT_BASE_URL || "https://www.subscriptonarc.com";
-const WALLET_PATTERN = /^0x[a-fA-F0-9]{40}$/;
-const MICRO_USDC_PATTERN = /^[1-9]\d*$/;
+const TRANSCRIPT_UNIT_PRICE_MICROS = "25000";
 
 export async function POST(request: Request) {
-  const secretKey = process.env.SUBSCRIPT_SECRET_KEY;
-  if (!secretKey) {
-    return NextResponse.json({ error: "SUBSCRIPT_SECRET_KEY is not configured" }, { status: 500 });
+  try {
+    const user = requireApplicationUser(request, { mutation: true });
+    if (!user.walletAddress) {
+      throw new ApplicationRouteError(
+        400,
+        "application_wallet_required",
+        "Link a wallet to your application account before using metered features",
+      );
+    }
+
+    // The wallet comes from the signed application session and the unit price is owned by
+    // server code. Never let a browser choose the billed wallet or amount.
+    const result = await subscriptRequest("/api/user/vault/report-usage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userAddress: user.walletAddress,
+        amountUsdcMicros: TRANSCRIPT_UNIT_PRICE_MICROS,
+      }),
+    });
+    if (!result.ok) {
+      return subscriptRejectedResponse(result, "SubScript usage charge failed");
+    }
+
+    // Perform and return the merchant's metered work only after this succeeds.
+    return NextResponse.json({ charged: true, usage: result.payload });
+  } catch (error) {
+    return applicationErrorResponse(error);
   }
-
-  const body = await request.json().catch(() => null);
-  const userAddress = typeof body?.userAddress === "string" ? body.userAddress.trim() : "";
-  const amountUsdcMicros =
-    typeof body?.amountUsdcMicros === "string" ? body.amountUsdcMicros.trim() : "";
-  if (!WALLET_PATTERN.test(userAddress) || !MICRO_USDC_PATTERN.test(amountUsdcMicros)) {
-    return NextResponse.json(
-      { error: "Valid userAddress and positive integer amountUsdcMicros are required" },
-      { status: 400 },
-    );
-  }
-
-  // Charge before serving the metered unit. On 402, do not perform the paid work.
-  const response = await fetch(`${SUBSCRIPT_BASE_URL}/api/user/vault/report-usage`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${secretKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ userAddress, amountUsdcMicros }),
-  });
-
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    return NextResponse.json(payload, { status: response.status });
-  }
-
-  return NextResponse.json({
-    charged: true,
-    usage: payload,
-    // Perform and return the merchant's metered work only after this response is successful.
-  });
 }

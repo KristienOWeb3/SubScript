@@ -1,24 +1,38 @@
 import { NextResponse } from "next/server";
-
-const SUBSCRIPT_BASE_URL = process.env.SUBSCRIPT_BASE_URL || "https://www.subscriptonarc.com";
+import {
+  ApplicationRouteError,
+  assertIntentStatusOwnership,
+  requireApplicationUser,
+} from "../../_lib/applicationAuth";
+import {
+  applicationErrorResponse,
+  subscriptRejectedResponse,
+  subscriptRequest,
+} from "../../_lib/subscriptClient";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ intentId: string }> },
 ) {
-  const secretKey = process.env.SUBSCRIPT_SECRET_KEY;
-  if (!secretKey) {
-    return NextResponse.json({ error: "SUBSCRIPT_SECRET_KEY is not configured" }, { status: 500 });
-  }
+  try {
+    const user = requireApplicationUser(request);
+    const { intentId } = await params;
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(intentId)) {
+      throw new ApplicationRouteError(400, "invalid_intent_id", "Invalid checkout id");
+    }
+    const statusToken = new URL(request.url).searchParams.get("token");
+    assertIntentStatusOwnership(statusToken, intentId, user.id);
 
-  const { intentId } = await params;
-  const response = await fetch(
-    `${SUBSCRIPT_BASE_URL}/api/intent/${encodeURIComponent(intentId)}`,
-    {
-      headers: { Authorization: `Bearer ${secretKey}` },
+    // Authentication plus the signed, short-lived token prevents one application user from
+    // using the merchant secret proxy to inspect another user's checkout.
+    const result = await subscriptRequest(`/api/intent/${encodeURIComponent(intentId)}`, {
       cache: "no-store",
-    },
-  );
-  const payload = await response.json().catch(() => ({}));
-  return NextResponse.json(payload, { status: response.status });
+    });
+    if (!result.ok) {
+      return subscriptRejectedResponse(result, "SubScript status lookup failed");
+    }
+    return NextResponse.json(result.payload, { status: result.status });
+  } catch (error) {
+    return applicationErrorResponse(error);
+  }
 }

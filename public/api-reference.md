@@ -98,6 +98,7 @@ plans/subscriptions API. The intent API rejects subscription-only fields and ret
 a one-time pass despite that wording, send `confirmOneTime: true`.
 
 ### `POST /api/intent` — create a one-time payment intent
+
 Body: `title` (required), `amountUsdcMicros` (required), `description?`, `externalReference?`,
 `maxUses?`, `expiresAt?`, `successUrl?`, `cancelUrl?`, `idempotencyKey?`, `sandbox?`, and
 `confirmOneTime?`. Returns `intent` with `object: "payment_intent"`,
@@ -108,16 +109,19 @@ Do not send `interval`, `intervalSeconds`, `planId`, `subscriber`, `merchantCust
 `publishToDm` here. Those fields belong to recurring endpoints and are rejected.
 
 ### `GET /api/intent/:id` — payment status (public)
+
 Returns `status` (`PENDING|PAID|EXPIRED|EXHAUSTED|INACTIVE`) and, once paid,
 `latestPayment.txHash` + `latestPayment.explorerUrl`. An authenticated owning merchant also
 receives the latest `webhookDelivery` summary when one exists: delivery status, HTTP response,
 attempt time, and endpoint URL.
 
 ### `GET /api/intent/status?id=<id>` — payment status legacy query form (public)
+
 Returns `status` (`PENDING|PAID|EXPIRED|EXHAUSTED|INACTIVE`) and, once paid,
 `latestPayment.txHash` + `latestPayment.explorerUrl`.
 
 ### `POST /api/v1/plans` — create a reusable recurring plan
+
 Body: `name` (required), `amountUsdcMicros` (required), `periodDays` **or**
 `intervalSeconds`; plus `description?`, `detailsUrl?`, and `minCommitmentDays?`.
 
@@ -138,6 +142,7 @@ curl -X POST https://www.subscriptonarc.com/api/v1/plans \
 ```
 
 ### `GET /api/v1/plans` / `PATCH /api/v1/plans` — list or update plans
+
 `GET` lists the authenticated merchant's plan catalog. `PATCH` accepts `planId` in the JSON body
 and updates `active`, `description`, or `detailsUrl`. Price and period are immutable because
 existing subscribers authorized those exact terms; create a new higher-priced plan for an
@@ -145,6 +150,7 @@ upgrade. Deactivating a plan removes it from new plan selection without downgrad
 subscriptions.
 
 ### `POST /api/v1/subscriptions` — create a subscription
+
 Body: `amountUsdcMicros` **or** `planId`; `interval` (`daily|weekly|monthly|yearly`) **or**
 `intervalSeconds`; plus `intervalCount?`, `subscriber?`, `title?`, `merchantCustomerId?`
 (`externalReference?` is the equivalent legacy name), `publishToDm?`, `idempotencyKey?`,
@@ -163,21 +169,25 @@ Customer plan changes are upgrade-only: the normalized recurring rate must incre
 modifies the existing on-chain subscription rather than creating a second authorization.
 
 ### `GET /api/v1/subscriptions` — read / list
+
 `?id=sub_<n>` reads one on-chain subscription; `?subscriber=0x…` lists a subscriber's
 subscriptions; no params lists your subscription checkout sessions.
 
 ### `DELETE /api/v1/subscriptions?id=<id>` — cancel
+
 `sub_<uuid>` withdraws a not-yet-accepted checkout/offer and removes its published plan.
 Active `sub_<number>` authorizations are customer-controlled; the subscriber cancels them from
 their DM or user dashboard, where cancellation is normally scheduled for the end of the paid
 period.
 
 ### `GET /api/user/vault/status?userAddress=<0x...>` — check metered vault status
+
 Merchant API key required. Returns whether the customer's vault exists and is active for your
 merchant, plus `balanceUsdc`, `commitUsdc`, `owedUsdc`, `accruedUsageUsdc`, `remainingUsdc`,
 and an onboarding dashboard URL when the customer must commit or re-commit.
 
 ### `POST /api/user/vault/report-usage` — report metered usage
+
 Body: `userAddress`, `amountUsdcMicros`. Accrues usage against the subscriber's vault.
 
 ## Success and cancel redirects
@@ -190,16 +200,19 @@ was delivered or that your application fulfilled the order. Fulfill only after a
 webhook, or reconcile from `GET /api/intent/:id`.
 
 ### Invoice fields on payment links
+
 `POST /api/payment-links` additionally accepts `invoice_number?`, `due_date?` (ISO or unix), and
 `payer_email?`. They ride the normal link → receipt → webhook lifecycle and render on the hosted
 checkout page, so a payment link can serve as an invoice.
 
 ### Sponsored subscriptions
+
 Subscription creation accepts `beneficiaryAddress?` — a wallet that receives the service while
 the caller pays. Renewal webhooks then carry `beneficiary_address` so you key entitlements off
 the beneficiary, not the payer. Billing and cancellation rights stay with the payer.
 
 ### Test clocks (sandbox) — simulate renewals without waiting
+
 Test-mode keys (`sk_test_…`) only. Simulated events are delivered to your real (test) webhook
 endpoints with `simulated: true` and `test_clock_id` in the payload — pair with
 `npx @subscriptonarc/cli listen` to watch them arrive locally.
@@ -212,11 +225,13 @@ endpoints with `simulated: true` and `test_clock_id` in the payload — pair wit
 - `DELETE /api/test/clocks/:id` → delete the clock and its simulated subscriptions
 
 ### Demo key (signup-free sandbox)
+
 `sk_test_demo_subscript_sandbox_2026` — a shared, heavily rate-limited, sandbox-only key for
 trying `POST /api/intent` before creating an account. Data on the demo merchant is shared and
 may be wiped at any time; create your own free `sk_test_` key for real integration work.
 
 ### `GET /api/merchant/dunning` / `PATCH /api/merchant/dunning` — configurable dunning
+
 Session-authenticated (merchant dashboard). `PATCH { maxFailures: 1..10 }` sets how many
 consecutive failed renewal attempts the keeper makes (roughly one per day) before a customer
 subscription is stopped. Default 4.

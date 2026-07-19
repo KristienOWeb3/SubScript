@@ -9,7 +9,13 @@ import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
-import { subscribeFromEmbedded, findActiveOnChainSubscriptionId, getSubscriptionOnChain, getIntroductoryTermsOnChain } from "@/lib/subscriptions/onchain";
+import {
+    subscribeFromEmbedded,
+    findActiveOnChainSubscriptionId,
+    getSubscriptionOnChain,
+    getIntroductoryTermsOnChain,
+    verifyExternalSubscriptionTx,
+} from "@/lib/subscriptions/onchain";
 import {
     findApplicablePromotion,
     claimPromotionRedemption,
@@ -73,14 +79,22 @@ export async function POST(request: Request) {
         if (!verifiedEmail?.email) {
             return NextResponse.json({ error: "Verify an email address with OTP before subscribing." }, { status: 403 });
         }
+        const body = sanitizeInput(await request.json().catch(() => null)) || {};
+        const requestedExternalTxHash = typeof body.txHash === "string" ? body.txHash.trim() : "";
+        if (requestedExternalTxHash && !/^0x[0-9a-fA-F]{64}$/.test(requestedExternalTxHash)) {
+            return NextResponse.json({ error: "txHash must be a 32-byte EVM transaction hash." }, { status: 400 });
+        }
+        /* Connected wallets sign createSubscription themselves and submit the confirmed hash for
+           server-side verification. Custodial wallets omit it and use the sponsored path below. */
+        const externalTxHash = requestedExternalTxHash || null;
         /* Gate on signing custody rather than the provider label: 'external_wallet_email_otp' is
            stamped on by /api/user/email whenever a wallet binds an OTP email, including wallets
            SubScript custodies, so the label rejected Circle accounts from subscribing with a message
            telling them to sign in the way they already had. */
-        if (!isCustodialWallet(await getWalletCustody(wallet))) {
+        if (!isCustodialWallet(await getWalletCustody(wallet)) && !externalTxHash) {
             return NextResponse.json({
-                error: "Browser-wallet subscriptions are not available yet. Sign in with email or Google to use a gas-sponsored SubScript wallet.",
-                code: "EMBEDDED_WALLET_REQUIRED",
+                error: "Sign the subscription with your connected wallet, then submit its transaction hash.",
+                code: "EXTERNAL_TRANSACTION_REQUIRED",
             }, { status: 409 });
         }
         /* Authenticate before inspecting deployment readiness so anonymous probes cannot receive
@@ -95,7 +109,6 @@ export async function POST(request: Request) {
             );
         }
 
-        const body = sanitizeInput(await request.json().catch(() => null)) || {};
         const planId = typeof body.planId === "string" ? body.planId : "";
         const checkoutSessionId = typeof body.checkoutSessionId === "string" ? body.checkoutSessionId : "";
         if (!planId && !checkoutSessionId) {
@@ -264,11 +277,26 @@ export async function POST(request: Request) {
                     }, { status: 409 });
                 }
 
+                /* An external transaction already exists on-chain before this request reaches us.
+                   Verify it before the duplicate scan so the scan can distinguish that intended
+                   subscription from an older, unmirrored active subscription. */
+                const verifiedExternal = externalTxHash
+                    ? await verifyExternalSubscriptionTx({
+                        txHash: externalTxHash,
+                        subscriber,
+                        merchant,
+                        amount: plan.amountUsdc,
+                        period: plan.periodSeconds,
+                    })
+                    : null;
+                if (verifiedExternal) onChainSubmitted = true;
+
                 /* Belt-and-suspenders: the mirror check above only sees subs we mirrored. Scan the
                    chain for an already-active sub from this subscriber to this merchant so an
-                   unmirrored on-chain sub can't be duplicated. Best-effort (null on RPC error). */
+                   unmirrored on-chain sub can't be duplicated. The verified external subscription
+                   itself is expected to appear in this scan and must continue to local mirroring. */
                 const onChainActiveId = await findActiveOnChainSubscriptionId(subscriber, merchant);
-                if (onChainActiveId) {
+                if (onChainActiveId && onChainActiveId !== verifiedExternal?.subId) {
                     const onChain = await getSubscriptionOnChain(onChainActiveId);
                     if (onChain && onChain.amount === plan.amountUsdc && onChain.period === plan.periodSeconds) {
                         /* A promo sub whose mirror write failed still has its authorized intro
@@ -342,7 +370,7 @@ export async function POST(request: Request) {
                    subscriber simply falls back to full price — checkout re-discloses the
                    actual terms in the response, and nothing was charged yet. Must run before
                    the sponsorship + subscribeFromEmbedded calls below, which read appliedPromo. */
-                if (!checkoutSessionId && merchantPlan) {
+                if (!externalTxHash && !checkoutSessionId && merchantPlan) {
                     const promo = await findApplicablePromotion({
                         planId: merchantPlan.id,
                         merchantAddress: merchant,
@@ -360,42 +388,51 @@ export async function POST(request: Request) {
                     }
                 }
 
-                /* createSubscription charges the first payment, so a retry after a timed-out
-                   response must reuse the SAME Circle idempotency key or it double-charges.
-                   Checkout sessions are single-use → durable key on the session id. Direct plan
-                   subscribes derive a generation from durable subscription history under the
-                   advisory lock, so even clients without a retry header reuse the same attempt. */
-                const generationResult = await client.query(
-                    `select count(*)::bigint AS generation
-                       from subscriptions
-                      where subscriber = $1 and merchant_address = $2 and kind = 'CUSTOMER'`,
-                    [subscriber, merchant],
-                );
-                const generation = BigInt(generationResult.rows[0]?.generation || 0) + BigInt(1);
-                /* Custody-aware sponsorship, keyed on the same stable identity as the Circle
-                   idempotency key so a retried subscribe reuses the durable record. The first
-                   period's charge is declared as principal — never reclassified as gas. */
-                await requireSponsoredGas({
-                    wallet: subscriber,
-                    action: "subscribe",
-                    requestKey: checkoutSessionId
-                        ? `subscribe-checkout:${checkoutSessionId}`
-                        : `subscribe-plan:${subscriber}:${merchant}:${planId}:generation:${generation}`,
-                    principalRequiredWei: BigInt(plan.amountUsdc) * BigInt(1_000_000_000_000),
-                });
-                const { txHash, subId } = await subscribeFromEmbedded(
-                    subscriber,
-                    merchant,
-                    plan.amountUsdc,
-                    plan.periodSeconds,
-                    checkoutSessionId
-                        ? deterministicIdempotencyKey(`subscribe-checkout:${checkoutSessionId}`)
-                        : deterministicIdempotencyKey(`subscribe-plan:${subscriber}:${merchant}:${planId}:generation:${generation}`),
-                    appliedPromo
-                        ? { introAmountUsdc: appliedPromo.introAmountUsdc, introCycles: appliedPromo.introCycles }
-                        : null,
-                );
-                onChainSubmitted = true;
+                let txHash: string;
+                let subId: string | null;
+                if (verifiedExternal) {
+                    txHash = verifiedExternal.txHash;
+                    subId = verifiedExternal.subId;
+                } else {
+                    /* createSubscription charges the first payment, so a retry after a timed-out
+                       response must reuse the SAME Circle idempotency key or it double-charges.
+                       Checkout sessions are single-use → durable key on the session id. Direct plan
+                       subscribes derive a generation from durable subscription history under the
+                       advisory lock, so even clients without a retry header reuse the same attempt. */
+                    const generationResult = await client.query(
+                        `select count(*)::bigint AS generation
+                           from subscriptions
+                          where subscriber = $1 and merchant_address = $2 and kind = 'CUSTOMER'`,
+                        [subscriber, merchant],
+                    );
+                    const generation = BigInt(generationResult.rows[0]?.generation || 0) + BigInt(1);
+                    /* Custody-aware sponsorship, keyed on the same stable identity as the Circle
+                       idempotency key so a retried subscribe reuses the durable record. The first
+                       period's charge is declared as principal — never reclassified as gas. */
+                    await requireSponsoredGas({
+                        wallet: subscriber,
+                        action: "subscribe",
+                        requestKey: checkoutSessionId
+                            ? `subscribe-checkout:${checkoutSessionId}`
+                            : `subscribe-plan:${subscriber}:${merchant}:${planId}:generation:${generation}`,
+                        principalRequiredWei: BigInt(plan.amountUsdc) * BigInt(1_000_000_000_000),
+                    });
+                    const signed = await subscribeFromEmbedded(
+                        subscriber,
+                        merchant,
+                        plan.amountUsdc,
+                        plan.periodSeconds,
+                        checkoutSessionId
+                            ? deterministicIdempotencyKey(`subscribe-checkout:${checkoutSessionId}`)
+                            : deterministicIdempotencyKey(`subscribe-plan:${subscriber}:${merchant}:${planId}:generation:${generation}`),
+                        appliedPromo
+                            ? { introAmountUsdc: appliedPromo.introAmountUsdc, introCycles: appliedPromo.introCycles }
+                            : null,
+                    );
+                    txHash = signed.txHash;
+                    subId = signed.subId;
+                    onChainSubmitted = true;
+                }
                 if (checkoutSessionId) {
                     try {
                         await prisma.paymentLink.update({

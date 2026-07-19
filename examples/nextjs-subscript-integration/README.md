@@ -22,7 +22,9 @@ Copy the `app` directory into a Next.js App Router project. Set:
 SUBSCRIPT_SECRET_KEY=sk_test_your_key
 SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret
 SUBSCRIPT_BASE_URL=https://www.subscriptonarc.com
+SUBSCRIPT_TIMEOUT_MS=10000
 NEXT_PUBLIC_APP_URL=http://localhost:3000
+EXAMPLE_APP_SESSION_SECRET=replace_with_at_least_32_random_characters
 ```
 
 Despite its conventional Next.js name, `NEXT_PUBLIC_APP_URL` is only a public origin string.
@@ -37,17 +39,58 @@ https://your-app.example/api/subscript/webhook
 Store the returned `whsec_…` value as `SUBSCRIPT_WEBHOOK_SECRET`. SubScript shows the full
 secret only when the endpoint is created.
 
-## 2. One-time checkout
+## 2. Connect application authentication first
 
-Render the included button with stable merchant identifiers:
+Every example route that can use `SUBSCRIPT_SECRET_KEY` fails closed unless the caller has a
+valid merchant-application session. `_lib/applicationAuth.ts` is a dependency-free adapter,
+not a second identity system:
+
+- your existing login callback supplies the server-verified application user id, linked wallet,
+  and role;
+- the adapter signs those server-owned values into an HttpOnly, SameSite cookie;
+- checkout, subscription, and usage routes derive identity/wallet from that cookie;
+- the plan creation route additionally requires the signed `admin` role; and
+- status polling requires both the session and a short-lived token bound to that user and intent.
+
+After your existing login provider has authenticated the user and loaded its database record,
+issue the example cookie:
+
+```ts
+import { createApplicationSessionCookie } from "@/app/api/subscript/_lib/applicationAuth";
+
+const response = Response.json({ signedIn: true });
+response.headers.append(
+  "Set-Cookie",
+  createApplicationSessionCookie({
+    id: databaseUser.id,
+    walletAddress: databaseUser.verifiedWalletAddress,
+    role: databaseUser.isBillingAdmin ? "admin" : "user",
+  }),
+);
+return response;
+```
+
+Never populate these fields directly from a login request body. If you already use Auth.js,
+Clerk, Supabase Auth, or another server session, replace only
+`requireApplicationUser`/`createApplicationSessionCookie` with that provider's server-side
+session lookup and preserve the returned `ApplicationUser` shape.
+
+All upstream calls use a bounded timeout (default 10 seconds, clamped to 1–30 seconds) and
+return structured `subscript_timeout`, `subscript_unreachable`, or
+`invalid_subscript_response` errors instead of hanging or leaking the merchant secret.
+
+## 3. One-time checkout
+
+Render the included button for a signed-in user:
 
 ```tsx
-<PayWithSubScriptButton userId={session.user.id} orderId={order.id} />
+<PayWithSubScriptButton />
 ```
 
 The server creates a genuinely one-time product (“Workshop ticket”) with
-`amountUsdcMicros`, stores its identifiers, and returns `checkoutUrl`. In a real app, persist
-`intent.id`, `receiptToken`, `userId`, and `orderId` before redirecting the browser.
+`amountUsdcMicros`, derives the user/order/idempotency values from the verified application
+session, and returns `checkoutUrl`. In a real app, persist `intent.id`, `receiptToken`, the
+authenticated user id, and your server-owned order id before redirecting the browser.
 
 After settlement, the merchant success URL includes:
 
@@ -63,33 +106,32 @@ fulfilled the order. Never unlock from these browser-controlled query parameters
 For support tooling or recovery, poll:
 
 ```http
-GET /api/subscript/status/{intentId}
+GET /api/subscript/status/{intentId}?token={statusToken}
 ```
 
-The server-side proxy authenticates as the merchant, so the response can include transaction
-proof and the latest `webhookDelivery` result. Webhooks remain the normal fulfillment path.
+The checkout response includes `statusToken`. The status proxy requires that token plus the
+same authenticated application user before using the merchant key, so one customer cannot
+inspect another customer's intent. The response can include transaction proof and the latest
+`webhookDelivery` result. Webhooks remain the normal fulfillment path.
 
-## 3. Public recurring plan
+## 4. Public recurring plan
 
-Create a reusable weekly tier once:
+Create a reusable weekly tier from an authenticated application-admin action:
 
-```bash
-curl -X POST http://localhost:3000/api/subscript/plans
+```ts
+await fetch("/api/subscript/plans", { method: "POST" });
 ```
 
 The route calls `/api/v1/plans` with `periodDays: 7`. The returned plan appears in the
 merchant dashboard and existing merchant/user DM plan pickers. Persist its `plan.id`; future
 subscription checkouts can pass that `planId` instead of repeating amount and interval.
+The endpoint accepts no financial fields from the browser; name, price, and period are
+server-owned constants.
 
-## 4. User-specific weekly subscription
+## 5. User-specific weekly subscription
 
-```bash
-curl -X POST http://localhost:3000/api/subscript/subscriptions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "userId": "user_123",
-    "subscriber": "0x1111111111111111111111111111111111111111"
-  }'
+```ts
+await fetch("/api/subscript/subscriptions", { method: "POST" });
 ```
 
 The route uses:
@@ -99,8 +141,8 @@ The route uses:
   "title": "Kris Script Pro",
   "amountUsdcMicros": "2000000",
   "interval": "weekly",
-  "subscriber": "0x...",
-  "merchantCustomerId": "user_123",
+  "subscriber": "<verified session wallet>",
+  "merchantCustomerId": "<verified application user id>",
   "publishToDm": true
 }
 ```
@@ -109,24 +151,22 @@ The route uses:
 targeted to the supplied subscriber and appear in that user's merchant DM. Keep
 `merchantCustomerId` stable: a later DM upgrade updates the same account's active
 subscription. SubScript permits upgrades only; do not build a downgrade control.
+The browser cannot override the subscriber, account binding, price, or interval.
 
-## 5. Metered usage
+## 6. Metered usage
 
 Report the charge before serving a paid unit:
 
-```bash
-curl -X POST http://localhost:3000/api/subscript/usage \
-  -H "Content-Type: application/json" \
-  -d '{
-    "userAddress": "0x1111111111111111111111111111111111111111",
-    "amountUsdcMicros": "25000"
-  }'
+```ts
+await fetch("/api/subscript/usage", { method: "POST" });
 ```
 
 Only perform the metered work after the route returns `200`. On `402`, do not serve the unit:
 the customer's vault is inactive or the charge would exceed its remaining commit.
+The route bills the verified session wallet at a server-owned unit price; never accept either
+value from browser input.
 
-## 6. Signed, idempotent fulfillment
+## 7. Signed, idempotent fulfillment
 
 The webhook route:
 
@@ -158,7 +198,9 @@ SubScript retries. Handle `payment.succeeded` and the subscription lifecycle eve
 `subscription.created`, `subscription.updated`, `subscription.renewed`,
 `subscription.payment_failed`, and `subscription.canceled`.
 
-## 7. Local webhook test flow
+Malformed, `null`, array, or non-JSON signed bodies receive `400`; they never reach fulfillment.
+
+## 8. Local webhook test flow
 
 Install or invoke the CLI without adding it to the app:
 
@@ -178,10 +220,11 @@ In the merchant dashboard you can also send `test`, `payment.succeeded`, or
 `subscription.created`, inspect the exact HTTP status/response, and replay a stored event.
 Replay the same event and verify that your UNIQUE event claim fulfills exactly once.
 
-## 8. Deploy to Vercel
+## 9. Deploy to Vercel
 
 1. Push the merchant app to GitHub and import it in Vercel.
-2. Add the four environment variables for Preview and Production. Use `sk_test_…` in Preview.
+2. Add all environment variables above for Preview and Production. Use `sk_test_…` in Preview.
+   Generate a distinct, random `EXAMPLE_APP_SESSION_SECRET` per environment.
 3. Deploy, then register `https://your-domain/api/subscript/webhook` in SubScript.
 4. Copy the newly returned `whsec_…` into `SUBSCRIPT_WEBHOOK_SECRET` and redeploy.
 5. Use “Send test webhook” and confirm a `2xx` response in the SubScript event log.

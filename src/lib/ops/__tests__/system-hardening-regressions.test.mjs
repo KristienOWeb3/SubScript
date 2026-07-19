@@ -20,6 +20,14 @@ test("OTP records are purpose- and wallet-bound across send, login, and email bi
     assert.match(bind, /delete from otp_codes[\s\S]*returning email/);
 });
 
+test("default alias assignment keeps probing after a concurrent alias race", async () => {
+    const helper = await source("src/lib/auth/defaultAlias.ts");
+    assert.match(helper, /await prisma\.addressAlias\.create/);
+    assert.match(helper, /const assigned = await prisma\.addressAlias\.findUnique/);
+    assert.match(helper, /if \(assigned\) return/);
+    assert.doesNotMatch(helper, /create\(\{ data: \{ address, alias, isAnonymous: false \} \}\)\.catch/);
+});
+
 test("wallet sessions are server-revocable and signatures are origin-bound", async () => {
     const [auth, logout, verifier, message] = await Promise.all([
         source("src/lib/auth.ts"),

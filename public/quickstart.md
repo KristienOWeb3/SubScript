@@ -89,6 +89,9 @@ export async function POST(req: Request) {
       // event.data.intent_id, event.data.amount_usdc_micros, event.data.transaction_hash
       // Idempotency: skip if you've already credited this intent_id.
       break;
+    case "subscription.created":
+      // Record the initial subscription lifecycle event; provision only when its status is active.
+      break;
     case "subscription.renewed":
     case "subscription.payment_failed":   // dunning
     case "subscription.canceled":
@@ -148,7 +151,8 @@ const sub = await subscript.subscriptions.create({
   publishToDm: true, // true is already the default
 });
 // sub.status is "incomplete" until the customer authorizes it on-chain at sub.checkoutUrl.
-// You'll then receive subscription.renewed on each cycle (and payment_failed / canceled).
+// Handle subscription.created first, then subscription.renewed on each settled cycle
+// (and subscription.payment_failed / subscription.canceled).
 ```
 
 Use `POST /api/v1/subscriptions` directly when you do not need a reusable catalog entry. API

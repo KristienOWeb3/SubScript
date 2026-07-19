@@ -439,7 +439,7 @@ test.describe("mobile overflow audit", () => {
       "Sign in",
       "Create account",
     ]) {
-      const link = page.getByRole("link", { name: linkName, exact: true });
+      const link = menuScroller.getByRole("link", { name: linkName, exact: true });
       await link.scrollIntoViewIfNeeded();
       await expect(link).toBeVisible();
     }
@@ -455,13 +455,31 @@ test.describe("mobile overflow audit", () => {
     expect(menuScroll.scrollHeight).toBeGreaterThan(menuScroll.clientHeight);
     expect(menuScroll.scrollTop).toBeGreaterThan(0);
 
+    const menuOverflowY = await menuScroller.evaluate(
+      (element) => getComputedStyle(element).overflowY,
+    );
+    expect(menuOverflowY).toBe("auto");
+
     await page.getByRole("button", { name: "Close Menu" }).click();
     await expect(page.getByRole("button", { name: "Open Menu" })).toBeVisible();
-    const pageScrollTop = await page.evaluate(() => {
-      window.scrollTo(0, document.documentElement.scrollHeight);
-      return window.scrollY;
+    const pageScroll = await page.evaluate(() => {
+      const scrollingElement = document.scrollingElement;
+      if (!scrollingElement) {
+        return { scrollTop: 0, scrollHeight: 0, clientHeight: 0 };
+      }
+      const previousScrollBehavior = (scrollingElement as HTMLElement).style.scrollBehavior;
+      (scrollingElement as HTMLElement).style.scrollBehavior = "auto";
+      scrollingElement.scrollTop = scrollingElement.scrollHeight;
+      const result = {
+        scrollTop: scrollingElement.scrollTop,
+        scrollHeight: scrollingElement.scrollHeight,
+        clientHeight: scrollingElement.clientHeight,
+      };
+      (scrollingElement as HTMLElement).style.scrollBehavior = previousScrollBehavior;
+      return result;
     });
-    expect(pageScrollTop).toBeGreaterThan(0);
+    expect(pageScroll.scrollHeight).toBeGreaterThan(pageScroll.clientHeight);
+    expect(pageScroll.scrollTop).toBeGreaterThan(0);
     await context.close();
   });
 

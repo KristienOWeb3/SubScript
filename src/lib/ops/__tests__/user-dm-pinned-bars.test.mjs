@@ -55,3 +55,28 @@ test("expanded DM actions scroll internally without moving the bottom controls",
         /max-h-\[min\(55dvh,30rem\)\] overflow-y-auto overscroll-contain/,
     );
 });
+
+test("DM refreshes ignore stale responses and every external send switches to Arc", () => {
+    assert.match(dashboard, /const requestSequence = \+\+dmRequestSequence\.current/);
+    assert.match(
+        dashboard,
+        /requestSequence === dmRequestSequence\.current\) setDms\(data\.dms\)/,
+    );
+
+    const batchSend = dashboard.slice(
+        dashboard.indexOf("const handleBatchSend"),
+        dashboard.indexOf("const singleSelfSend"),
+    );
+    assert.match(batchSend, /switchChainAsync\(\{ chainId: activeArcChain\.id \}\)/);
+    assert.ok(
+        batchSend.indexOf("switchChainAsync") < batchSend.indexOf("writeContractAsync"),
+        "batch sends must switch to Arc before the first external-wallet transfer",
+    );
+
+    const sendModal = dashboard.slice(dashboard.indexOf("function SendFundsModal"));
+    assert.match(sendModal, /chainId !== activeArcChain\.id/);
+    assert.ok(
+        sendModal.indexOf("switchChainAsync") < sendModal.indexOf("writeContractAsync"),
+        "the send modal must switch to Arc before an external-wallet transfer",
+    );
+});
