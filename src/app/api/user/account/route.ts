@@ -132,7 +132,6 @@ export async function DELETE(request: Request) {
                 where: { walletAddress: normalized },
                 data: {
                     email: "",
-                    alias: anonymousAlias,
                 }
             }),
             prisma.accountRole.deleteMany({ where: { address: normalized } }),

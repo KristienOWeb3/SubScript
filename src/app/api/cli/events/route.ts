@@ -45,8 +45,7 @@ export async function GET(request: Request) {
         }
         const walletAddress = keyRecord.walletAddress.toLowerCase();
 
-        /* Derive environment from API key mode — Finding 71 */
-        const environment = mode === "live" ? "LIVE" : "TEST";
+        const environment = (mode as string) === "live" ? "LIVE" : "TEST";
 
         /* Polling clients tick every couple of seconds; keep a hard ceiling per key. */
         const rl = checkProviderRateLimit({ provider: "cli-events", key: walletAddress, limit: 60, windowMs: 60_000 });

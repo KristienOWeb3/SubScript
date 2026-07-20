@@ -1,6 +1,7 @@
 /* User subscribes to a merchant plan from within a DM. Server-signed from the embedded
    wallet; gas covered by SubScript (Pay For Me). Takes the first payment immediately. */
 import { NextResponse } from "next/server";
+import crypto from "node:crypto";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
 import { getWalletCustody, isCustodialWallet } from "@/lib/auth/walletCustody";
@@ -256,9 +257,9 @@ export async function POST(request: Request) {
             });
 
             return { status: "NEW", attempt: newAttempt, appliedPromo };
-        }).catch((err) => {
-            if (err.message === "CONCURRENT_REQUEST") {
-                return { status: "CONCURRENT" };
+        }).catch((err: unknown) => {
+            if (err instanceof Error && err.message === "CONCURRENT_REQUEST") {
+                return { status: "CONCURRENT" as const, existing: null, attempt: null, appliedPromo: null };
             }
             throw err;
         });

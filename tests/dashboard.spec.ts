@@ -82,7 +82,11 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
           id: endpointId,
           walletAddress: testWallet,
           url: "https://example.com/webhooks",
-          secret: "whsec_mock_secret_for_e2e_testing",
+          ciphertext: "e2e_mock_ciphertext",
+          nonce: "e2e_mock_nonce",
+          authenticationTag: "e2e_mock_tag",
+          keyVersion: "v1",
+          encryptionAlgorithm: "aes-256-gcm",
           active: true,
         }
       });
