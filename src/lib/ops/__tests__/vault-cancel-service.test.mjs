@@ -49,10 +49,10 @@ test("report-usage freezes accrual once the service is cancelled", () => {
     assert.match(route, /code: "SERVICE_CANCELED",\s*\n\s*\}, \{ status: 409 \}\);/);
 });
 
-test("cancel-service route is user-authed, records the cancel, and notifies the merchant", () => {
+test("cancel-service route is user-authed, records the pause, and notifies both parties", () => {
     const route = source("src/app/api/user/vault/cancel-service/route.ts");
 
-    /* Only the vault's own user may cancel it. */
+    /* Only the vault's own user may pause it. */
     assert.match(route, /getSessionWallet\(request\.headers\)/);
     assert.match(route, /requireAccountRole\(wallet, "USER"\)/);
 
@@ -62,14 +62,37 @@ test("cancel-service route is user-authed, records the cancel, and notifies the 
     /* Idempotent: a repeat cancel returns existing state without re-notifying. */
     assert.match(route, /if \(vault\.cancelRequestedAt\)\s*\{[\s\S]*?alreadyCancelled: true/);
 
-    /* Merchant is told to stop: in-app DM + webhook. */
+    /* Merchant is told to stop (DM + webhook) AND the user's thread gets the pause card. */
     assert.match(route, /message_type: "SERVICE_CANCELED"/);
+    assert.match(route, /message_type: "SERVICE_PAUSED"/);
     assert.match(route, /recordMerchantEvent\(\{[\s\S]*?eventType: "vault\.service_canceled"/);
 });
 
-test("re-committing clears the cancellation (explicit opt back in)", () => {
+test("resume-service enforces the 2 USDC platform minimum and notifies the merchant", () => {
+    const route = source("src/app/api/user/vault/resume-service/route.ts");
+
+    assert.match(route, /getSessionWallet\(request\.headers\)/);
+    assert.match(route, /requireAccountRole\(wallet, "USER"\)/);
+
+    /* The gate: resume only with an active vault holding at least the platform minimum. */
+    assert.match(route, /STANDARD_COMMIT_MICROS = BigInt\(2_000_000\)/);
+    assert.match(route, /if \(!vault\.active \|\| balance < STANDARD_COMMIT_MICROS\)/);
+    assert.match(route, /code: "TOP_UP_REQUIRED",[\s\S]*?\}, \{ status: 402 \}\);/);
+
+    /* Success clears the pause, resolves the user's pause card, and tells the merchant. */
+    assert.match(route, /data: \{ cancelRequestedAt: null, cancelReason: null \}/);
+    assert.match(route, /message_type = 'SERVICE_PAUSED'[\s\S]*?status = 'PENDING'/);
+    assert.match(route, /message_type: "SERVICE_RESUMED"/);
+    assert.match(route, /dispatchMerchantWebhook\(merchant, "vault\.service_resumed"/);
+
+    /* Idempotent: resuming a non-paused service is a no-op success. */
+    assert.match(route, /alreadyActive: true/);
+});
+
+test("re-committing clears the cancellation and resolves the pause card", () => {
     const route = source("src/app/api/user/vault/commit/route.ts");
     assert.match(route, /cancelRequestedAt: null, cancelReason: null/);
+    assert.match(route, /messageType: \{ in: \["COMMIT_EXHAUSTED", "SERVICE_PAUSED"\] \}/);
 });
 
 test("vault config exposes the cancellation flag to both the user and merchant views", () => {
@@ -78,10 +101,27 @@ test("vault config exposes the cancellation flag to both the user and merchant v
     assert.equal(matches.length, 2, "expected cancelRequestedAt in both the USER and ENTERPRISE payloads");
 });
 
-test("dashboard surfaces a Cancel service control that calls the route", () => {
+test("dashboard surfaces Stop/Resume controls with the shimmer busy state", () => {
     const page = source("src/app/dashboard/user/page.tsx");
     assert.match(page, /fetch\("\/api\/user\/vault\/cancel-service"/);
-    assert.match(page, /Cancel service/);
+    assert.match(page, /fetch\("\/api\/user\/vault\/resume-service"/);
+
+    /* Kristien 2026-07-18: the control is "Stop service" (not Cancel), the busy state uses
+       the shimmer sweep, and the paused state reads as a pause with resume/top-up paths. */
+    assert.match(page, /Stop service/);
+    assert.doesNotMatch(page, /Cancel service/);
+    assert.match(page, /cancelBusy \? "quick-action-loading/);
+    assert.match(page, /resumeBusy \? "quick-action-loading/);
+    assert.match(page, /Service plan paused/);
+    assert.match(page, /"Paused"/);
+
+    /* A TOP_UP_REQUIRED reply routes into the commit modal instead of dead-ending. */
+    assert.match(page, /TOP_UP_REQUIRED/);
+
+    /* The paused-service DM renders as a full-width card with Resume / Top-up actions. */
+    assert.match(page, /dm\.messageType === "SERVICE_PAUSED"/);
+    assert.match(page, /Top up commit/);
+
     /* Copy must not promise a manual Withdraw step — the remainder auto-returns at settlement. */
     assert.doesNotMatch(page, /Withdraw button appears here/);
 });

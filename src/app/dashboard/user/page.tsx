@@ -58,6 +58,7 @@ import {
   MessageSquare,
   QrCode,
   Send,
+  Share2,
   Shield,
   User,
   Users,
@@ -374,6 +375,12 @@ export default function UserDashboard() {
   const [planManagerOpen, setPlanManagerOpen] = useState(false);
   const [planManagerStatus, setPlanManagerStatus] = useState<string | null>(null);
   const [planManagerError, setPlanManagerError] = useState<string | null>(null);
+  const [giftPlan, setGiftPlan] = useState<MerchantPlan | null>(null);
+  const [giftFriendUsername, setGiftFriendUsername] = useState("");
+  const [giftRequestUrl, setGiftRequestUrl] = useState<string | null>(null);
+  const [giftRequestError, setGiftRequestError] = useState<string | null>(null);
+  const [giftRequestCopied, setGiftRequestCopied] = useState(false);
+  const [giftRequestBusyPlanId, setGiftRequestBusyPlanId] = useState<string | null>(null);
   const [registeredDomain, setRegisteredDomain] = useState<string | null>(null);
   const [profilePic, setProfilePic] = useState<string | null>(null);
   const [balanceVisible, setBalanceVisible] = useState(() => {
@@ -1273,6 +1280,53 @@ export default function UserDashboard() {
     await applyPlanChange("scheduled");
   };
 
+  const openGiftPlanModal = (plan: MerchantPlan) => {
+    setGiftPlan(plan);
+    setGiftFriendUsername("");
+    setGiftRequestUrl(null);
+    setGiftRequestError(null);
+    setGiftRequestCopied(false);
+  };
+
+  const copyGiftRequestUrl = async (url: string) => {
+    await navigator.clipboard.writeText(url);
+    setGiftRequestCopied(true);
+    triggerToast("Gift checkout link copied!");
+    setTimeout(() => setGiftRequestCopied(false), 1600);
+  };
+
+  const handleCreateGiftPlanRequest = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!giftPlan) return;
+    setGiftRequestError(null);
+    setGiftRequestBusyPlanId(giftPlan.id);
+    try {
+      const res = await fetch("/api/user/requests/merchant-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          merchantAddress: giftPlan.merchantAddress,
+          planId: giftPlan.id,
+          amountUsdcMicros: giftPlan.amountUsdc,
+          title: `Sponsor ${giftPlan.name}`,
+          description: giftPlan.description || `Gift checkout for ${giftPlan.name}`,
+          friendUsername: giftFriendUsername.trim() || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || "Could not create gift checkout.");
+      const absoluteUrl = typeof data.checkoutUrl === "string" && /^https?:\/\//i.test(data.checkoutUrl)
+        ? data.checkoutUrl
+        : `${window.location.origin}${data.checkoutUrl || `/pay/${data.paymentLinkId}`}`;
+      setGiftRequestUrl(absoluteUrl);
+      await copyGiftRequestUrl(absoluteUrl).catch(() => {});
+    } catch (err: any) {
+      setGiftRequestError(err.message || "Could not create gift checkout.");
+    } finally {
+      setGiftRequestBusyPlanId(null);
+    }
+  };
+
   const handleCancelSubscriptionForMerchant = async (merchantAddress: string) => {
     const activeSub = getActiveSubscriptionForMerchant(merchantAddress);
     if (!activeSub) {
@@ -1641,18 +1695,19 @@ export default function UserDashboard() {
     }
   };
 
-  /* Cancel a metered service: tell the merchant to stop rendering + stop billing new usage.
-     The escrow stays locked until the cycle ends (contract rule) — the user withdraws the
-     unused remainder after that. Only usage already reported this cycle is settled. */
+  /* Stop (pause) a metered service: tell the merchant to stop rendering + stop billing new
+     usage. The escrow stays locked until the cycle ends (contract rule). Only usage already
+     reported this cycle is settled; the user can resume anytime while their commit balance
+     meets the 2 USDC platform minimum, or top up to resume. */
   const [vaultCancelBusyId, setVaultCancelBusyId] = useState<string | null>(null);
   const handleCancelService = (vault: any) => {
     setConfirmModal({
       open: true,
       variant: "warning",
-      title: "Cancel this service",
+      title: "Stop this service",
       description:
-        "We'll notify the merchant to stop rendering service and stop billing new usage — further usage reports are rejected immediately. You're charged only for usage already reported this cycle. When the cycle ends, the merchant is settled that amount and your unused balance returns to you automatically. Re-committing later restarts the service.",
-      confirmLabel: "Cancel service",
+        "We'll notify the merchant to pause your service and stop billing new usage — further usage reports are rejected immediately. You're charged only for usage already reported this cycle. Resume anytime while your committed balance is at least 2 USDC; below that, top up to resume.",
+      confirmLabel: "Stop service",
       onConfirm: async () => {
         const id = String(vault.id || vault.merchantAddress);
         setVaultCancelBusyId(id);
@@ -1663,11 +1718,11 @@ export default function UserDashboard() {
             body: JSON.stringify({ merchantAddress: vault.merchantAddress }),
           });
           const data = await res.json().catch(() => ({}));
-          if (!res.ok || !data.success) throw new Error(data.error || "Could not cancel the service.");
-          triggerToast("Service cancelled — the merchant has been notified.");
-          await loadVaults();
+          if (!res.ok || !data.success) throw new Error(data.error || "Could not stop the service.");
+          triggerToast("Service paused — the merchant has been notified.");
+          await Promise.all([loadVaults(), loadDms()]);
         } catch (err: any) {
-          triggerToast(err?.message || "Could not cancel the service.");
+          triggerToast(err?.message || "Could not stop the service.");
         } finally {
           setVaultCancelBusyId(null);
           setConfirmModal(null);
@@ -1675,6 +1730,34 @@ export default function UserDashboard() {
       },
       onCancel: () => setConfirmModal(null),
     });
+  };
+
+  /* Resume a paused service. The platform minimum (2 USDC) is enforced server-side; a
+     TOP_UP_REQUIRED reply routes straight into the commit modal for this merchant. */
+  const [vaultResumeBusyId, setVaultResumeBusyId] = useState<string | null>(null);
+  const handleResumeService = async (merchantAddress: string) => {
+    if (vaultResumeBusyId) return;
+    setVaultResumeBusyId(merchantAddress);
+    try {
+      const res = await fetch("/api/user/vault/resume-service", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ merchantAddress }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 402 && data.code === "TOP_UP_REQUIRED") {
+        triggerToast("Top up to at least 2 USDC to resume this service.");
+        openVaultCommit(merchantAddress);
+        return;
+      }
+      if (!res.ok || !data.success) throw new Error(data.error || "Could not resume the service.");
+      triggerToast("Service resumed — the merchant has been notified.");
+      await Promise.all([loadVaults(), loadDms()]);
+    } catch (err: any) {
+      triggerToast(err?.message || "Could not resume the service.");
+    } finally {
+      setVaultResumeBusyId(null);
+    }
   };
 
   /* Stable per commit attempt: a retry after a timed-out response reuses the key, so the
@@ -3104,7 +3187,9 @@ export default function UserDashboard() {
                           onWithdraw={(v) => openVaultWithdraw(v.merchantAddress)}
                           onReclaim={handleVaultReclaim}
                           onCancelService={handleCancelService}
+                          onResumeService={(v) => handleResumeService(v.merchantAddress)}
                           cancelBusy={vaultCancelBusyId !== null}
+                          resumeBusy={vaultResumeBusyId !== null}
                           reclaimBusy={vaultReclaimBusyId !== null}
                           balanceVisible={balanceVisible}
                         />
@@ -3158,6 +3243,9 @@ export default function UserDashboard() {
                               onThanks={() => handleThanksSuggestion(dm)}
                               onCancelPlan={() => handleCancelPlanSuggestion(dm)}
                               onSurveySubmit={(dmMsg, ans) => handleSurveySubmit(dmMsg, ans)}
+                              onResumeService={() => handleResumeService(dm.senderAddress)}
+                              onTopUpCommit={() => openVaultCommit(dm.senderAddress)}
+                              resumeBusy={vaultResumeBusyId !== null}
                             />
                           ))}
                           <div ref={dmBottomRef} />
@@ -3180,7 +3268,9 @@ export default function UserDashboard() {
                               error={planManagerError}
                               onToggle={handleTogglePlanManager}
                               onSubscribe={handleSubscribeOrSwitchPlan}
+                              onAskFriend={openGiftPlanModal}
                               onCancel={() => selectedDmPeer && handleCancelSubscriptionForMerchant(selectedDmPeer)}
+                              giftLoadingPlanId={giftRequestBusyPlanId}
                             />
                           ) : (
                             <div className="flex flex-col gap-2">
@@ -3296,6 +3386,9 @@ export default function UserDashboard() {
                                   onThanks={() => handleThanksSuggestion(dm)}
                                   onCancelPlan={() => handleCancelPlanSuggestion(dm)}
                                   onSurveySubmit={(dmMsg, ans) => handleSurveySubmit(dmMsg, ans)}
+                                  onResumeService={() => handleResumeService(dm.senderAddress)}
+                                  onTopUpCommit={() => openVaultCommit(dm.senderAddress)}
+                                  resumeBusy={vaultResumeBusyId !== null}
                                 />
                               ))}
                               <div ref={dmBottomRef} />
@@ -3318,7 +3411,9 @@ export default function UserDashboard() {
                                   error={planManagerError}
                                   onToggle={handleTogglePlanManager}
                                   onSubscribe={handleSubscribeOrSwitchPlan}
+                                  onAskFriend={openGiftPlanModal}
                                   onCancel={() => selectedDmPeer && handleCancelSubscriptionForMerchant(selectedDmPeer)}
+                                  giftLoadingPlanId={giftRequestBusyPlanId}
                                 />
                               ) : (
                                 <div className="flex flex-col gap-2">
@@ -5126,6 +5221,127 @@ export default function UserDashboard() {
       <VaultInfoModal open={vaultInfoOpen} onClose={() => setVaultInfoOpen(false)} />
 
       <AnimatePresence>
+        {giftPlan && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[65] flex items-center justify-center bg-black/80 p-5 backdrop-blur-md"
+            onClick={() => giftRequestBusyPlanId === null && setGiftPlan(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.94, y: 16, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 420, damping: 26 }}
+              onClick={(event) => event.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="gift-plan-title"
+              className="w-full max-w-md space-y-5 rounded-3xl border border-[#00d2b4]/20 bg-[#0c0c10] p-6 text-white shadow-2xl"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#00d2b4]">Gift checkout</p>
+                  <h2 id="gift-plan-title" className="mt-1 text-lg font-black text-white">{giftPlan.name}</h2>
+                  <p className="mt-1 text-xs font-bold text-[#ccff00]">
+                    {formatUsdc(giftPlan.amountUsdc)} USDC / {formatPlanPeriod(giftPlan.periodSeconds)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setGiftPlan(null)}
+                  disabled={giftRequestBusyPlanId !== null}
+                  className="grid h-9 w-9 place-items-center rounded-full border border-white/10 bg-white/5 text-white/60 transition hover:bg-white/10 disabled:opacity-40"
+                  aria-label="Close gift checkout modal"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {giftRequestUrl ? (
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.06] p-4">
+                    <div className="flex items-start gap-3">
+                      <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-wider text-emerald-200">Gift link ready</p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-white/55">
+                          Share this checkout anywhere. The payment is one-time, single-use, and credits access to your account.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
+                    <p className="break-all font-mono text-[11px] leading-relaxed text-white/70">{giftRequestUrl}</p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <button
+                      type="button"
+                      onClick={() => copyGiftRequestUrl(giftRequestUrl)}
+                      className="dm-quick-button justify-center border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00]"
+                    >
+                      <Copy className="h-3.5 w-3.5" /> {giftRequestCopied ? "Copied!" : "Copy"}
+                    </button>
+                    <a
+                      href={`https://t.me/share/url?url=${encodeURIComponent(giftRequestUrl)}&text=${encodeURIComponent(`Sponsor my ${giftPlan.name} plan on SubScript`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="dm-quick-button justify-center border-[#00d2b4]/20 bg-[#00d2b4]/10 text-[#00d2b4]"
+                    >
+                      <Share2 className="h-3.5 w-3.5" /> Telegram
+                    </a>
+                    <a
+                      href={`mailto:?subject=${encodeURIComponent(`Sponsor ${giftPlan.name}`)}&body=${encodeURIComponent(`You can sponsor this SubScript plan here:\n\n${giftRequestUrl}`)}`}
+                      className="dm-quick-button justify-center border-white/10 bg-white/[0.05] text-white/70"
+                    >
+                      <Mail className="h-3.5 w-3.5" /> Email
+                    </a>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handleCreateGiftPlanRequest} className="space-y-4">
+                  <p className="text-xs leading-relaxed text-white/55">
+                    This creates a shareable one-time checkout for the plan price and duration. It does not create a second recurring authorization.
+                  </p>
+                  <Field label="Lock to a friend's username (optional)">
+                    <input
+                      value={giftFriendUsername}
+                      onChange={(event) => setGiftFriendUsername(event.target.value)}
+                      placeholder="friend.sub or friend"
+                      className="subscript-input"
+                      disabled={giftRequestBusyPlanId !== null}
+                    />
+                  </Field>
+                  <p className="text-[10px] leading-relaxed text-white/40">
+                    Leave it blank to make a public link. If you enter a username, only that SubScript user can pay it.
+                  </p>
+                  {giftRequestError && <p className="text-[11px] font-bold text-red-300">{giftRequestError}</p>}
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setGiftPlan(null)}
+                      disabled={giftRequestBusyPlanId !== null}
+                      className="dm-quick-button min-w-0 border-white/10 bg-white/[0.06] text-white/55"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={giftRequestBusyPlanId !== null}
+                      className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white ${giftRequestBusyPlanId !== null ? "quick-action-loading" : ""}`}
+                    >
+                      {giftRequestBusyPlanId !== null ? "Creating..." : "Create link"}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {vaultActionOpen && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -5752,6 +5968,9 @@ function DmBubble({
   onThanks,
   onCancelPlan,
   onSurveySubmit,
+  onResumeService,
+  onTopUpCommit,
+  resumeBusy,
 }: {
   dm: DmMessage;
   focused: boolean;
@@ -5764,6 +5983,9 @@ function DmBubble({
   onThanks?: () => void;
   onCancelPlan?: () => void;
   onSurveySubmit?: (dm: DmMessage, response: string) => void;
+  onResumeService?: () => void;
+  onTopUpCommit?: () => void;
+  resumeBusy?: boolean;
 }) {
   const isPending = dm.status === "PENDING";
   const displayTitle = shortenWalletsInText(dm.title);
@@ -5858,6 +6080,60 @@ function DmBubble({
           <span className="px-2 text-[9px] font-bold text-white/35">
             {new Date(dm.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
           </span>
+        </div>
+      </motion.div>
+    );
+  }
+
+  /* Paused-service card: a full-width banner (not a chat bubble) in the merchant thread.
+     While the pause is unresolved it carries the Resume / Top-up actions; once resolved
+     (resume or a funding commit dismisses it) it stays as a quiet historical marker. */
+  if (dm.messageType === "SERVICE_PAUSED") {
+    return (
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0, y: 10 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        transition={bubbleSpring}
+        className="w-full"
+      >
+        <div className={`w-full rounded-[20px] border px-5 py-4 shadow-md ${isPending ? "border-orange-400/30 bg-orange-500/[0.08]" : "border-white/5 bg-black/25 opacity-70"}`}>
+          <div className="flex items-center gap-2">
+            <Lock className={`h-4 w-4 shrink-0 ${isPending ? "text-orange-300" : "text-white/35"}`} />
+            <p className={`text-[10px] font-black uppercase tracking-[0.16em] ${isPending ? "text-orange-300" : "text-white/45"}`}>
+              {isPending ? "Service plan paused" : "Service pause resolved"}
+            </p>
+          </div>
+          <p className={`mt-2 text-xs leading-relaxed ${isPending ? "text-white/75" : "text-white/40"}`}>
+            {isPending
+              ? "You paused payments for this service, so you can't use this merchant's service while paused. Resume it, or top up your commit if it's below the 2 USDC minimum."
+              : "This pause was resolved — the service is active again."}
+          </p>
+          {isPending && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {onResumeService && (
+                <button
+                  type="button"
+                  onClick={() => !resumeBusy && onResumeService()}
+                  disabled={resumeBusy}
+                  className={`relative overflow-hidden rounded-xl border px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${resumeBusy ? "quick-action-loading cursor-not-allowed border-emerald-300/20 bg-emerald-400/10 text-emerald-200/60" : "border-emerald-300/30 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20"}`}
+                >
+                  {resumeBusy ? "Resuming…" : "Resume"}
+                </button>
+              )}
+              {onTopUpCommit && (
+                <button
+                  type="button"
+                  onClick={onTopUpCommit}
+                  className="rounded-xl border border-[#ccff00]/30 bg-[#ccff00]/10 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#ccff00] hover:bg-[#ccff00]/25 transition"
+                >
+                  Top up commit
+                </button>
+              )}
+            </div>
+          )}
+          <p className="mt-2 text-[9px] font-bold text-white/30">
+            {new Date(dm.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+          </p>
         </div>
       </motion.div>
     );
@@ -6087,7 +6363,9 @@ function MerchantPlanManager({
   error,
   onToggle,
   onSubscribe,
+  onAskFriend,
   onCancel,
+  giftLoadingPlanId,
 }: {
   open: boolean;
   merchantLabel: string;
@@ -6099,7 +6377,9 @@ function MerchantPlanManager({
   error: string | null;
   onToggle: () => void;
   onSubscribe: (plan: MerchantPlan) => void;
+  onAskFriend: (plan: MerchantPlan) => void;
   onCancel: () => void;
+  giftLoadingPlanId?: string | null;
 }) {
   const hasActiveSubscription = !!activeSubscription;
   const activePlan = activeSubscription
@@ -6197,6 +6477,7 @@ function MerchantPlanManager({
                     }
                   }
                   const loadingKey = hasActiveSubscription ? `switch-plan-${plan.id}` : `subscribe-plan-${plan.id}`;
+                  const giftBusy = giftLoadingPlanId === plan.id;
                   return (
                     <motion.div
                       key={plan.id}
@@ -6260,6 +6541,17 @@ function MerchantPlanManager({
                             : hasActiveSubscription
                               ? "Upgrade"
                               : "Subscribe"}
+                      </motion.button>
+                      <motion.button
+                        whileHover={{ scale: 1.04 }}
+                        whileTap={{ scale: 0.93 }}
+                        transition={{ type: "spring", stiffness: 500, damping: 12, mass: 0.7 }}
+                        type="button"
+                        onClick={() => onAskFriend(plan)}
+                        disabled={giftBusy}
+                        className={`mt-2 w-full rounded-xl border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-[#00d2b4] transition hover:bg-[#00d2b4]/18 disabled:opacity-45 ${giftBusy ? "quick-action-loading" : ""}`}
+                      >
+                        {giftBusy ? "Creating link" : "Ask a Friend to Pay"}
                       </motion.button>
                     </motion.div>
                   );
@@ -7450,7 +7742,9 @@ function MeteredVaultRow({
   onWithdraw,
   onReclaim,
   onCancelService,
+  onResumeService,
   cancelBusy,
+  resumeBusy,
   reclaimBusy,
   balanceVisible,
 }: {
@@ -7459,7 +7753,9 @@ function MeteredVaultRow({
   onWithdraw: (vault: any) => void;
   onReclaim: (vault: any) => void;
   onCancelService: (vault: any) => void;
+  onResumeService: (vault: any) => void;
   cancelBusy: boolean;
+  resumeBusy: boolean;
   reclaimBusy: boolean;
   balanceVisible: boolean;
 }) {
@@ -7504,7 +7800,7 @@ function MeteredVaultRow({
           </div>
         </div>
         <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${blocked ? "bg-amber-500/15 text-amber-300" : disputed ? "bg-red-500/15 text-red-300" : cancelled ? "bg-orange-500/15 text-orange-300" : awaitingSettlement ? "bg-sky-500/15 text-sky-300" : "bg-emerald-500/15 text-emerald-300"}`}>
-          {blocked ? "Inactive" : disputed ? "Disputed" : cancelled ? "Cancelling" : awaitingSettlement ? "Settling" : "Active"}
+          {blocked ? "Inactive" : disputed ? "Disputed" : cancelled ? "Paused" : awaitingSettlement ? "Settling" : "Active"}
         </span>
       </div>
 
@@ -7542,16 +7838,39 @@ function MeteredVaultRow({
               {reclaimBusy ? "Reclaiming…" : "Reclaim escrow"}
             </button>
           )}
-          {/* Stop the service: only while it's active and not already cancelled/disputed. */}
+          {/* Stop the service: only while it's active and not already paused/disputed. The
+              busy state reuses the shimmer sweep (quick-action-loading needs relative+overflow). */}
           {!blocked && !cancelled && !disputed && (
             <button
               type="button"
               onClick={() => !cancelBusy && onCancelService(vault)}
               disabled={cancelBusy}
-              className={`rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${cancelBusy ? "cursor-not-allowed border-white/5 bg-black/20 text-white/30" : "border-red-400/30 bg-red-500/10 text-red-200 hover:bg-red-500/20"}`}
+              className={`relative overflow-hidden rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${cancelBusy ? "quick-action-loading cursor-not-allowed border-red-400/20 bg-red-500/10 text-red-200/60" : "border-red-400/30 bg-red-500/10 text-red-200 hover:bg-red-500/20"}`}
             >
-              {cancelBusy ? "Cancelling…" : "Cancel service"}
+              {cancelBusy ? "Stopping…" : "Stop service"}
             </button>
+          )}
+          {/* Paused: resume directly when the commit still meets the 2 USDC minimum,
+              otherwise route to a top-up (which resumes on success). */}
+          {cancelled && !disputed && (
+            balance >= STANDARD_COMMIT_MICROS ? (
+              <button
+                type="button"
+                onClick={() => !resumeBusy && onResumeService(vault)}
+                disabled={resumeBusy}
+                className={`relative overflow-hidden rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${resumeBusy ? "quick-action-loading cursor-not-allowed border-emerald-300/20 bg-emerald-400/10 text-emerald-200/60" : "border-emerald-300/30 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20"}`}
+              >
+                {resumeBusy ? "Resuming…" : "Resume"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onCommit(vault)}
+                className="rounded-xl border border-[#ccff00]/30 bg-[#ccff00]/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#ccff00] hover:bg-[#ccff00]/25 transition"
+              >
+                Top up to resume
+              </button>
+            )
           )}
         </div>
       </div>
@@ -7567,7 +7886,9 @@ function MeteredVaultRow({
 
       {cancelled && (
         <p className="text-[10px] leading-relaxed text-orange-200/70">
-          Service cancelled — the merchant has been told to stop rendering service and can no longer bill new usage. You&apos;re charged only for usage already reported this cycle. When the cycle ends after <span className="font-bold">{shortDate(lockedUntilDate)}</span>, the merchant is settled that amount and your unused balance returns to you automatically. Re-commit to restart the service.
+          Service plan paused — you can&apos;t use this merchant&apos;s service while paused, and it can&apos;t bill new usage. {balance >= STANDARD_COMMIT_MICROS
+            ? "Resume anytime — your committed balance still meets the 2 USDC platform minimum."
+            : "Your committed balance is below the 2 USDC platform minimum, so top up to resume."} If you stay paused, the cycle settles after <span className="font-bold">{shortDate(lockedUntilDate)}</span> and your unused balance returns automatically.
         </p>
       )}
       {locked && !blocked && !cancelled && (

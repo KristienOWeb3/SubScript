@@ -60,7 +60,7 @@ async function getPaymentLink(id: string) {
        deleted_at is filtered rather than selected: a soft-deleted checkout should read as gone. */
     const { data: link, error } = await supabase
         .from("payment_links")
-        .select("id, merchant_address, title, description, amount_usdc, active, sandbox_mode, simulation_only, settlement_chain_id, expires_at, max_uses, use_count, status, receipt_token, merchant_name_snapshot, external_reference, invoice_number, due_date, state_snapshot, paid_at, verified_tx_hash")
+        .select("id, merchant_address, title, description, amount_usdc, active, sandbox_mode, simulation_only, settlement_chain_id, expires_at, max_uses, use_count, status, receipt_token, merchant_name_snapshot, external_reference, invoice_number, due_date, beneficiary_address, state_snapshot, paid_at, verified_tx_hash")
         .eq("id", id)
         .is("deleted_at", null)
         .maybeSingle();
@@ -71,9 +71,11 @@ async function getPaymentLink(id: string) {
     }
     if (!link) return null;
 
+    const beneficiaryAddress = link.beneficiary_address ? String(link.beneficiary_address).toLowerCase() : null;
     const [
         { data: alias },
         { data: paymentSettings, error: paymentSettingsError },
+        { data: beneficiaryAlias },
     ] = await Promise.all([
         supabase
             .from("address_aliases")
@@ -84,11 +86,21 @@ async function getPaymentLink(id: string) {
             .from("system_settings")
             .select("hosted_payments_enabled")
             .maybeSingle(),
+        beneficiaryAddress
+            ? supabase
+                .from("address_aliases")
+                .select("alias, is_anonymous")
+                .eq("address", beneficiaryAddress)
+                .maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
     ]);
 
     return {
         ...link,
         merchant_display_name: merchantDisplayName(alias?.alias),
+        beneficiary_display_name: beneficiaryAlias?.alias && !beneficiaryAlias?.is_anonymous
+            ? `@${beneficiaryAlias.alias}`
+            : null,
         hosted_payments_enabled: !paymentSettingsError && paymentSettings?.hosted_payments_enabled !== false,
     };
 }
