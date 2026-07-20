@@ -21,7 +21,8 @@
         "hono": "4.12.27",
         "underscore": "1.13.8",
         "undici": "6.27.0",
-        "ws": "8.21.0"
+        "ws": "8.21.0",
+        "axios": "1.18.1"
     },
     "scripts": {
         "dev": "next dev",
