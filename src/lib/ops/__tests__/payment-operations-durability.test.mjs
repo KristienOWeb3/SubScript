@@ -94,13 +94,14 @@ test("migration runner never fabricates a baseline or hides privilege failures",
 test("Vercel configuration contains all required cron schedules", async () => {
     const config = JSON.parse(await source("vercel.json"));
     assert.deepEqual(config.crons, [
-        { path: "/api/cron/billing", schedule: "0 2 * * *" },
         { path: "/api/cron/customer-billing", schedule: "0 3 * * *" },
         { path: "/api/keeper/vault-draw", schedule: "0 4 * * *" },
-        { path: "/api/cron/reconcile", schedule: "*/10 * * * *" },
-        { path: "/api/internal/payroll", schedule: "0 5 * * *" },
-        { path: "/api/cron/kyc-expiry", schedule: "0 6 * * *" },
     ]);
+    const keepers = await source(".github/workflows/keepers.yml");
+    assert.match(keepers, /\/api\/cron\/reconcile/);
+    assert.match(keepers, /\/api\/cron\/billing/);
+    assert.match(keepers, /\/api\/internal\/payroll/);
+    assert.match(keepers, /\/api\/cron\/kyc-expiry/);
 });
 
 test("payroll uses one-payday authority, revokes on lifecycle changes, and recovers submitted transactions", async () => {
