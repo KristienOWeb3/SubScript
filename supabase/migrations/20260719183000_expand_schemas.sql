@@ -179,7 +179,7 @@ REVOKE ALL ON TABLE public.batch_send_items FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.batch_send_operations TO service_role, postgres;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.batch_send_items TO service_role, postgres;
 
--- 7. Webhook Endpoints Encryption Columns
+-- 7. Webhook Endpoints Encryption & Environment Columns
 ALTER TABLE public.webhook_endpoints
     ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ NULL,
     ADD COLUMN IF NOT EXISTS url_hash TEXT NULL,
@@ -187,7 +187,17 @@ ALTER TABLE public.webhook_endpoints
     ADD COLUMN IF NOT EXISTS nonce TEXT NULL,
     ADD COLUMN IF NOT EXISTS authentication_tag TEXT NULL,
     ADD COLUMN IF NOT EXISTS key_version TEXT NULL,
-    ADD COLUMN IF NOT EXISTS encryption_algorithm TEXT NULL;
+    ADD COLUMN IF NOT EXISTS encryption_algorithm TEXT NULL,
+    ADD COLUMN IF NOT EXISTS environment TEXT NOT NULL DEFAULT 'TEST',
+    ADD COLUMN IF NOT EXISTS enabled_events TEXT[] NOT NULL DEFAULT '{}',
+    ADD COLUMN IF NOT EXISTS api_version TEXT NULL,
+    ADD COLUMN IF NOT EXISTS description TEXT NULL,
+    ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'ACTIVE',
+    ADD COLUMN IF NOT EXISTS previous_ciphertext TEXT NULL,
+    ADD COLUMN IF NOT EXISTS previous_nonce TEXT NULL,
+    ADD COLUMN IF NOT EXISTS previous_authentication_tag TEXT NULL,
+    ADD COLUMN IF NOT EXISTS previous_key_version TEXT NULL,
+    ADD COLUMN IF NOT EXISTS previous_secret_expires_at TIMESTAMPTZ NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS webhook_endpoints_wallet_url_active_idx
 ON public.webhook_endpoints (wallet_address, url_hash)
