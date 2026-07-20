@@ -162,17 +162,48 @@ async function accrueUsageAtomically(
 
             const nextAccrued = accrued + amountMicros;
             if (nextAccrued > balance) {
-                const notification = await insertExhaustionNotification(
-                    client,
-                    merchantAddress,
-                    userAddress,
-                    commit,
+                const accruableAmount = balance > accrued ? balance - accrued : BigInt(0);
+                const actualNextAccrued = accrued + accruableAmount;
+
+                if (accruableAmount === BigInt(0)) {
+                    const notification = await insertExhaustionNotification(
+                        client,
+                        merchantAddress,
+                        userAddress,
+                        commit,
+                    );
+                    await client.query("commit");
+                    return {
+                        kind: "exhausted",
+                        vault,
+                        remaining: BigInt(0),
+                        notification,
+                    } as const;
+                }
+
+                const updated = await client.query(
+                    `update metered_vaults
+                        set accrued_usage_usdc = $1,
+                            updated_at = now()
+                      where id = $2
+                  returning id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active, usage_notified_bps`,
+                    [actualNextAccrued.toString(), vault.id],
                 );
+
+                await client.query(
+                    `insert into metered_usage_reports
+                         (vault_id, user_address, merchant_address, amount_usdc, accrued_after_usdc, balance_usdc, note, request_id, environment)
+                     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                    [vault.id, userAddress, merchantAddress, accruableAmount.toString(), actualNextAccrued.toString(), balance.toString(), note, requestId, vaultEnvironment],
+                );
+
+                const notification = await insertExhaustionNotification(client, merchantAddress, userAddress, commit);
+
                 await client.query("commit");
                 return {
                     kind: "exhausted",
-                    vault,
-                    remaining: balance > accrued ? balance - accrued : BigInt(0),
+                    vault: updated.rows[0] as VaultUsageRow,
+                    remaining: BigInt(0),
                     notification,
                 } as const;
             }
@@ -275,7 +306,7 @@ export async function POST(request: Request) {
             select: { tier: true }
         });
         if (!merchant || merchant.tier !== "PREMIUM") {
-            return NextResponse.json({ error: "Forbidden: API keys and usage reporting require a Premium (Tier 3) merchant plan." }, { status: 403 });
+            return NextResponse.json({ error: "Forbidden: API keys and usage reporting require a Premium merchant plan." }, { status: 403 });
         }
 
         const body = await request.json().catch(() => null);

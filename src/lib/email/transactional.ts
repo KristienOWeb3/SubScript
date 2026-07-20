@@ -119,7 +119,8 @@ async function sendTransactionalEmail(message: EmailMessage) {
         subject: message.subject,
         html: message.html,
         text: message.text,
-        headers: { "Idempotency-Key": message.idempotencyKey },
+    }, {
+        idempotencyKey: message.idempotencyKey,
     });
 
     if (response.error) {

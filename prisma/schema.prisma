@@ -37,13 +37,27 @@ model ApiKey {
 }
 
 model WebhookEndpoint {
-  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  walletAddress String         @map("wallet_address")
-  url           String
-  secret        String
-  active        Boolean        @default(true)
-  createdAt     DateTime       @default(now()) @map("created_at")
-  events        WebhookEvent[]
+  id                  String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletAddress       String         @map("wallet_address")
+  url                 String
+  ciphertext          String
+  nonce               String
+  authenticationTag   String         @map("authentication_tag")
+  keyVersion          String         @map("key_version")
+  encryptionAlgorithm String         @map("encryption_algorithm")
+  active              Boolean        @default(true)
+  environment      String   @default("TEST")
+  enabledEvents    String[] @default([]) @map("enabled_events")
+  apiVersion       String?  @map("api_version")
+  description      String?
+  status           String   @default("ACTIVE")
+  previousCiphertext        String?  @map("previous_ciphertext")
+  previousNonce             String?  @map("previous_nonce")
+  previousAuthenticationTag String?  @map("previous_authentication_tag")
+  previousKeyVersion        String?  @map("previous_key_version")
+  previousSecretExpiresAt   DateTime? @map("previous_secret_expires_at")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  events              WebhookEvent[]
 
   @@index([walletAddress])
   @@map("webhook_endpoints")
@@ -164,6 +178,7 @@ model Merchant {
   securityMultiSigEnabled Boolean          @default(false) @map("security_multi_sig_enabled")
   createdAt               DateTime         @default(now()) @map("created_at")
   updatedAt               DateTime         @default(now()) @updatedAt @map("updated_at")
+  closureStatus           String           @default("OPEN") @map("closure_status")
   subscriptions           Subscription[]
   paymentSessions         PaymentSession[]
   meteredVaults           MeteredVault[]
@@ -233,14 +248,14 @@ model PromotionRedemption {
 }
 
 model Subscription {
-  subscriptionId          BigInt    @id @map("subscription_id")
-  merchantAddress         String    @map("merchant_address")
-  merchant                Merchant  @relation(fields: [merchantAddress], references: [walletAddress], onDelete: Cascade)
-  currentNonce            Int       @default(0) @map("current_nonce")
-  lastSettlementTimestamp DateTime? @map("last_settlement_timestamp")
-  nextBillingDate         DateTime? @map("next_billing_date")
-  billingIntervalSeconds  BigInt    @map("billing_interval_seconds")
-  amountCapUsdc           Decimal   @map("amount_cap_usdc")
+  subscriptionId          BigInt   @id @map("subscription_id")
+  merchantAddress         String   @map("merchant_address")
+  merchant                Merchant @relation(fields: [merchantAddress], references: [walletAddress], onDelete: Cascade)
+  currentNonce            Int      @default(0) @map("current_nonce")
+  lastSettlementTimestamp DateTime @map("last_settlement_timestamp")
+  nextBillingDate         DateTime @map("next_billing_date")
+  billingIntervalSeconds  BigInt   @map("billing_interval_seconds")
+  amountCapUsdc           Decimal  @map("amount_cap_usdc")
   paymentTxHash           String?   @unique @map("payment_tx_hash")
   status                  String    @default("PENDING") @map("status")
   tier                    Int       @default(0) @map("tier")
@@ -401,6 +416,31 @@ model EventLog {
   @@map("event_log")
 }
 
+model MerchantEvent {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId         String   @unique @map("event_id")
+  merchantAddress String   @map("merchant_address")
+  environment     String   @default("TEST")
+  apiVersion      String   @map("api_version")
+  eventType       String   @map("event_type")
+  resourceType    String   @map("resource_type")
+  resourceId      String   @map("resource_id")
+  resourceVersion Int      @map("resource_version")
+  sequenceNumber  Int      @map("sequence_number")
+  correlationId   String   @map("correlation_id")
+  causationId     String?  @map("causation_id")
+  effectiveAt     DateTime @map("effective_at")
+  occurredAt      DateTime @map("occurred_at")
+  payload         Json
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([merchantAddress, environment], map: "merchant_events_wallet_env_idx")
+  @@index([resourceType, resourceId, sequenceNumber], map: "merchant_events_resource_seq_idx")
+  @@index([merchantAddress, createdAt], map: "merchant_events_wallet_created_idx")
+  @@index([eventType], map: "merchant_events_type_idx")
+  @@map("merchant_events")
+}
+
 model SystemSnapshot {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   entityId       String   @map("entity_id")
@@ -439,6 +479,8 @@ model WebhookDelivery {
   processingClaimId String?  @map("processing_claim_id") @db.Uuid
   lastError         String?  @map("last_error")
   responseBody      String?  @map("response_body")
+  nextAttemptAt    DateTime? @map("next_attempt_at")
+  httpStatus       Int?      @map("http_status")
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @default(now()) @map("updated_at")
 
@@ -446,6 +488,20 @@ model WebhookDelivery {
   @@index([status])
   @@unique([webhookEndpointId, eventId], map: "webhook_deliveries_endpoint_event_unique")
   @@map("webhook_deliveries")
+}
+
+model WebhookDeliveryAttempt {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  webhookDeliveryId String   @map("webhook_delivery_id") @db.Uuid
+  attemptNumber     Int      @map("attempt_number")
+  httpStatus        Int?     @map("http_status")
+  responseBody      String?  @map("response_body")
+  errorMessage      String?  @map("error_message")
+  durationMs        Int?     @map("duration_ms")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@index([webhookDeliveryId], map: "webhook_delivery_attempts_delivery_idx")
+  @@map("webhook_delivery_attempts")
 }
 
 model AuditEvent {
@@ -477,6 +533,7 @@ model Customer {
   securityShieldEnabled   Boolean        @default(false) @map("security_shield_enabled")
   securityMultiSigEnabled Boolean        @default(false) @map("security_multi_sig_enabled")
   createdAt               DateTime       @default(now()) @map("created_at")
+  closureStatus           String         @default("OPEN") @map("closure_status")
   meteredVaults           MeteredVault[]
 
   @@map("customers")
@@ -863,4 +920,107 @@ model Referral {
 
   @@index([referrerAddress])
   @@map("referrals")
+}
+
+model AuthIdentity {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider       String
+  issuer         String
+  subject        String
+  currentEmail   String?   @map("current_email")
+  walletAddress  String    @map("wallet_address")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  lastVerifiedAt DateTime  @default(now()) @map("last_verified_at")
+  disabledAt     DateTime? @map("disabled_at")
+  metadata       Json      @default("{}")
+
+  @@unique([provider, issuer, subject], map: "auth_identities_provider_subject_unique")
+  @@index([walletAddress], map: "auth_identities_wallet_address_idx")
+  @@map("auth_identities")
+}
+
+model SubscriptionAttempt {
+  attemptId              String    @id @default(dbgenerated("gen_random_uuid()")) @map("attempt_id") @db.Uuid
+  merchantAddress        String    @map("merchant_address")
+  subscriberAddress      String    @map("subscriber_address")
+  idempotencyKey         String    @map("idempotency_key")
+  requestFingerprint     String    @map("request_fingerprint")
+  providerIdempotencyKey String    @map("provider_idempotency_key")
+  promotionClaimId       String?   @map("promotion_claim_id") @db.Uuid
+  status                 String    @default("PREPARED")
+  leaseToken             String?   @map("lease_token")
+  leaseExpiresAt         DateTime? @map("lease_expires_at")
+  providerOperationId    String?   @map("provider_operation_id")
+  txHash                 String?   @map("tx_hash")
+  lastError              String?   @map("last_error")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at")
+  completedAt            DateTime? @map("completed_at")
+
+  @@unique([merchantAddress, idempotencyKey], map: "subscription_attempts_merchant_key")
+  @@index([subscriberAddress], map: "subscription_attempts_subscriber_idx")
+  @@index([leaseToken], map: "subscription_attempts_lease_idx")
+  @@map("subscription_attempts")
+}
+
+model SpendingLimitOperation {
+  id             String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userAddress    String                     @map("user_address")
+  amountUsdc     BigInt                     @map("amount_usdc")
+  operationKind  String                     @map("operation_kind")
+  status         String                     @default("PENDING") @map("status")
+  createdAt      DateTime                   @default(now()) @map("created_at")
+  finalizedAt    DateTime?                  @map("finalized_at")
+  reservations   SpendingLimitReservation[]
+
+  @@map("spending_limit_operations")
+}
+
+model SpendingLimitReservation {
+  id          String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  operationId String                 @map("operation_id") @db.Uuid
+  operation   SpendingLimitOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  userAddress String                 @map("user_address")
+  amountUsdc  BigInt                 @map("amount_usdc")
+  expiresAt   DateTime               @map("expires_at")
+  createdAt   DateTime               @default(now()) @map("created_at")
+
+  @@map("spending_limit_reservations")
+}
+
+model BatchSendOperation {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  merchantAddress String          @map("merchant_address")
+  idempotencyKey  String          @map("idempotency_key")
+  status          String          @default("PREPARED")
+  totalAmountUsdc BigInt          @map("total_amount_usdc")
+  itemCount       Int             @map("item_count")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @default(now()) @updatedAt @map("updated_at")
+  completedAt     DateTime?       @map("completed_at")
+  items           BatchSendItem[]
+
+  @@unique([merchantAddress, idempotencyKey], map: "batch_send_operations_key")
+  @@map("batch_send_operations")
+}
+
+model BatchSendItem {
+  id                     String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  operationId            String             @map("operation_id") @db.Uuid
+  operation              BatchSendOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  itemId                 String             @map("item_id")
+  originalPosition       Int                @map("original_position")
+  recipient              String
+  amountUsdc             BigInt             @map("amount_usdc")
+  requestFingerprint     String             @map("request_fingerprint")
+  providerIdempotencyKey String             @map("provider_idempotency_key")
+  status                 String             @default("PREPARED")
+  providerOperationId    String?            @map("provider_operation_id")
+  txHash                 String?            @map("tx_hash")
+  lastError              String?            @map("last_error")
+  createdAt              DateTime           @default(now()) @map("created_at")
+  updatedAt              DateTime           @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([operationId, itemId], map: "batch_send_items_op_item")
+  @@map("batch_send_items")
 }

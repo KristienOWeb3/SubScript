@@ -205,6 +205,61 @@ describe("SubScriptVault", function () {
         vault.connect(merchant).resolveDispute(user.address, merchant.address, true)
       ).to.be.reverted;
     });
+
+    it("should enforce at most one dispute per cycle, block reopenings, and allow new disputes after next cycle starts", async function () {
+      const { vault, owner, user, merchant } = await loadFixture(deployFixture);
+      
+      // 1. Can't raise dispute if cycle not active
+      await expect(
+        vault.connect(user).raiseDispute(merchant.address)
+      ).to.be.revertedWith("inactive");
+
+      // Commit to activate
+      await vault.connect(user).commit(merchant.address, STANDARD_COMMIT);
+
+      // Raise dispute
+      await expect(
+        vault.connect(user).raiseDispute(merchant.address)
+      ).to.emit(vault, "DisputeRaised").withArgs(user.address, merchant.address);
+
+      // 2. Can't raise again in same cycle
+      await expect(
+        vault.connect(user).raiseDispute(merchant.address)
+      ).to.be.revertedWith("already disputed");
+
+      // Resolve dispute
+      await vault.connect(owner).resolveDispute(user.address, merchant.address, false);
+
+      // 3. Resolved dispute cannot be reopened for the same cycle
+      await expect(
+        vault.connect(user).raiseDispute(merchant.address)
+      ).to.be.revertedWith("already disputed this cycle");
+
+      // Fast forward and trigger reclaim or draw to close the cycle
+      await time.increase(CYCLE + GRACE + 1);
+      await vault.connect(user).reclaimAbandonedEscrow(merchant.address);
+
+      // Start a new cycle
+      await vault.connect(user).commit(merchant.address, STANDARD_COMMIT);
+
+      // 4. Can raise dispute again for the new cycle
+      await expect(
+        vault.connect(user).raiseDispute(merchant.address)
+      ).to.emit(vault, "DisputeRaised").withArgs(user.address, merchant.address);
+    });
+
+    it("should reject disputes raised after the dispute window (reclaim grace) has closed", async function () {
+      const { vault, user, merchant } = await loadFixture(deployFixture);
+      await vault.connect(user).commit(merchant.address, STANDARD_COMMIT);
+
+      // Fast forward past the reclaim grace window
+      await time.increase(CYCLE + GRACE + 1);
+
+      // Raising dispute now should revert because reclaim window has opened
+      await expect(
+        vault.connect(user).raiseDispute(merchant.address)
+      ).to.be.revertedWith("dispute window closed");
+    });
   });
 
   describe("user reclaim and pause", function () {

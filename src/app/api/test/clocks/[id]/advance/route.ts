@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import crypto from "crypto";
 import { authenticateTestKey, serializeClock } from "@/lib/testClocks";
-import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
+import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 
 /* POST /api/test/clocks/:id/advance  { days? | seconds? }
@@ -59,9 +60,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         let dispatched = 0;
         for (let i = 1; i <= dueCount; i++) {
             const renewedAt = new Date(anchor + i * intervalMs);
-            const res = await dispatchMerchantWebhook(auth.merchantAddress, "subscription.renewed", {
+            const subId = `clock_${sub.id.slice(0, 8)}_${sub.renewalsFired + i}`;
+            const eventPayload = {
                 ...subscriptionWebhookData({
-                    subscriptionId: `clock_${sub.id.slice(0, 8)}_${sub.renewalsFired + i}`,
+                    subscriptionId: subId,
                     status: "active",
                     amountUsdcMicros: sub.amountUsdcMicros,
                     subscriber: sub.subscriberLabel,
@@ -71,8 +73,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 test_clock_id: clock.id,
                 testClockId: clock.id,
                 simulated_period_end: renewedAt.toISOString(),
-            }).catch(() => ({ dispatched: 0 }));
-            dispatched += res.dispatched;
+            };
+            const res = await recordMerchantEvent({
+                merchantAddress: auth.merchantAddress,
+                environment: "TEST",
+                eventType: "subscription.renewed",
+                resourceType: "subscription",
+                resourceId: subId,
+                resourceVersion: sub.renewalsFired + i,
+                data: eventPayload,
+                correlationId: crypto.randomUUID(),
+                transitionKey: `clocks_advance_renew_${sub.id}_${sub.renewalsFired + i}`,
+            }).catch((err) => {
+                console.error("Test clock advance recordMerchantEvent failed:", err);
+                return { eventId: "", queued: 0 };
+            });
+            dispatched += res.queued;
         }
 
         await prisma.testClockSubscription.update({

@@ -338,6 +338,7 @@ async function runPostSettlementEffects(
                 }),
                 tx_hash: job.tx_hash,
                 payment_link_id: job.payment_link_id,
+                dedupe_key: `receipt-debit-success:${job.receipt_id}`,
             }).catch((error) => console.error("[verify-worker] Receipt DM notification failed:", error));
         }
     }

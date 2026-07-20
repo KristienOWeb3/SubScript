@@ -5,7 +5,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { sanitizeInput } from "@/utils/security";
 import { cancelFromEmbedded, getSubscriptionOnChain } from "@/lib/subscriptions/onchain";
-import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
+import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { mirrorSubscriptionCanceled, mirrorSubscriptionCancelAtPeriodEnd } from "@/lib/subscriptions/mirror";
 import { triggerExitSurvey } from "@/lib/payments/email";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
@@ -54,15 +54,15 @@ export async function POST(request: Request) {
             let revocationTxHash: string | null = null;
             let requiresWalletCancellation = false;
             try {
-                await ensureSponsoredGas({
+                await requireSponsoredGas({
                     wallet: wallet.toLowerCase(),
                     action: "subscription_cancel",
                     requestKey: `cancel:${subscriptionId}`,
-                }).catch(() => { /* Circle SCA needs no top-up; legacy failure surfaces below */ });
+                });
                 revocationTxHash = await cancelFromEmbedded(wallet, subscriptionId);
             } catch (revokeError: any) {
-                const message = String(revokeError?.message || revokeError);
-                if (/no server-held key|connect a browser wallet/i.test(message)) {
+                const message = String(revokeError?.message || revokeError || "");
+                if (/no server-held key|connect a browser wallet|external_wallet/i.test(message)) {
                     /* External wallet: only the subscriber's own key can sign the revocation. */
                     requiresWalletCancellation = true;
                 } else {
@@ -137,11 +137,11 @@ export async function POST(request: Request) {
         }
 
         /* Period already lapsed — no remaining days to preserve, so cancel on-chain immediately. */
-        await ensureSponsoredGas({
+        await requireSponsoredGas({
             wallet: wallet.toLowerCase(),
             action: "subscription_cancel",
             requestKey: `cancel:${subscriptionId}`,
-        }).catch(() => { /* Circle SCA needs no top-up; a legacy failure surfaces from the cancel below */ });
+        });
 
         const txHash = await cancelFromEmbedded(wallet, subscriptionId);
 

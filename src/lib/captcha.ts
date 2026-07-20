@@ -10,7 +10,7 @@ import { assertProviderRateLimit } from "@/lib/providerRateLimit";
  */
 export async function verifyCaptchaToken(
     turnstileToken: string | null | undefined,
-    _ignoredCode?: string | null | undefined
+    clientIp?: string | null | undefined
 ): Promise<boolean> {
     const secret = process.env.TURNSTILE_SECRET_KEY;
     if (!secret) {
@@ -30,8 +30,8 @@ export async function verifyCaptchaToken(
     try {
         assertProviderRateLimit({
             provider: "captcha-verification",
-            key: "global",
-            limit: 300,
+            key: clientIp || "global",
+            limit: 50,
             windowMs: 60 * 1000,
         });
 

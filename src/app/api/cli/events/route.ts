@@ -6,11 +6,13 @@ import { checkProviderRateLimit } from "@/lib/providerRateLimit";
 
 /* Event feed for `subscript listen`.
  *
- * The CLI polls this with the merchant's secret API key and forwards each new webhook event
- * to a localhost endpoint, re-signed with a local session secret — so developers can build
- * and test webhook handlers without deploying a public URL. Events come from the same
- * `webhook_events` ledger the dashboard inspector reads, so what the CLI replays is exactly
- * what production delivery attempted.
+ * The CLI polls this with the merchant's secret API key and forwards each new event
+ * to a localhost endpoint, re-signed with a local session secret — so developers can
+ * build and test webhook handlers without deploying a public URL.
+ *
+ * Finding 84: Now reads from the canonical `merchant_events` ledger, not delivery logs.
+ * Finding 71: Events are filtered by API key mode (TEST keys see only TEST events).
+ * Finding 84: Invalid cursors now return 400, never silently reset.
  *
  * Cursor: `since` (ISO timestamp) + `after` (event id tiebreak for same-millisecond events).
  * The response's `cursor` is fed back verbatim on the next poll.
@@ -29,6 +31,9 @@ export async function GET(request: Request) {
         if (mode !== "test" && mode !== "live") {
             return NextResponse.json({ error: "Invalid API key format." }, { status: 401 });
         }
+        if (mode === "live") {
+            return NextResponse.json({ error: "sk_live_ keys are not enabled on this deployment." }, { status: 401 });
+        }
         const keyRecord = await prisma.apiKey.findFirst({
             where: {
                 revoked: false,
@@ -40,6 +45,9 @@ export async function GET(request: Request) {
         }
         const walletAddress = keyRecord.walletAddress.toLowerCase();
 
+        /* Derive environment from API key mode — Finding 71 */
+        const environment = mode === "live" ? "LIVE" : "TEST";
+
         /* Polling clients tick every couple of seconds; keep a hard ceiling per key. */
         const rl = checkProviderRateLimit({ provider: "cli-events", key: walletAddress, limit: 60, windowMs: 60_000 });
         if (!rl.ok) {
@@ -49,12 +57,26 @@ export async function GET(request: Request) {
         const { searchParams } = new URL(request.url);
         const sinceParam = searchParams.get("since");
         const afterId = searchParams.get("after") || undefined;
-        let since = sinceParam ? new Date(sinceParam) : new Date();
-        if (Number.isNaN(since.getTime())) since = new Date();
 
-        const events = await prisma.webhookEvent.findMany({
+        /* Finding 84: Invalid cursor returns 400, never silently resets. */
+        let since: Date;
+        if (sinceParam) {
+            since = new Date(sinceParam);
+            if (Number.isNaN(since.getTime())) {
+                return NextResponse.json({
+                    error: "invalid_cursor",
+                    message: "The 'since' parameter must be a valid ISO-8601 timestamp.",
+                }, { status: 400 });
+            }
+        } else {
+            since = new Date();
+        }
+
+        /* Finding 84: Read from canonical merchant_events ledger, not delivery logs. */
+        const events = await prisma.merchantEvent.findMany({
             where: {
-                endpoint: { walletAddress },
+                merchantAddress: walletAddress,
+                environment,
                 OR: [
                     { createdAt: { gt: since } },
                     ...(afterId ? [{ createdAt: since, id: { gt: afterId } }] : []),
@@ -64,10 +86,10 @@ export async function GET(request: Request) {
             take: PAGE_SIZE,
             select: {
                 id: true,
-                event: true,
+                eventId: true,
                 eventType: true,
                 payload: true,
-                status: true,
+                environment: true,
                 createdAt: true,
             },
         });
@@ -76,13 +98,14 @@ export async function GET(request: Request) {
         return NextResponse.json({
             success: true,
             serverTime: new Date().toISOString(),
+            environment,
             cursor: last
                 ? { since: last.createdAt.toISOString(), after: last.id }
                 : { since: since.toISOString(), after: afterId ?? null },
             events: events.map((e) => ({
-                id: e.id,
-                type: e.eventType || e.event || "unknown",
-                deliveredStatus: e.status,
+                id: e.eventId,
+                type: e.eventType,
+                environment: e.environment,
                 createdAt: e.createdAt.toISOString(),
                 payload: e.payload,
             })),

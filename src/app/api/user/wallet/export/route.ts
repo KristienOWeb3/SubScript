@@ -7,7 +7,28 @@ import { sanitizeInput } from "@/utils/security";
 type EmbeddedWalletExportRecord = {
     email: string | null;
     provider: string | null;
+    encrypted_private_key: string | null;
 };
+
+const ALGORITHM = "aes-256-gcm";
+
+function decryptPrivateKey(encryptedText: string, secret: string): string {
+    if (!secret) {
+        throw new Error("WALLET_ENCRYPTION_KEY is required to decrypt legacy keys.");
+    }
+    const key = crypto.scryptSync(secret, "subscript:wallet:v2", 32);
+    const [version, ivHex, authTagHex, encryptedHex] = encryptedText.split(":");
+    if (version !== "v2" || !ivHex || !authTagHex || !encryptedHex) {
+        throw new Error("Invalid encrypted format");
+    }
+    const iv = Buffer.from(ivHex, "hex");
+    const authTag = Buffer.from(authTagHex, "hex");
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+    decipher.setAuthTag(authTag);
+    let decrypted = decipher.update(encryptedHex, "hex", "utf8");
+    decrypted += decipher.final("utf8");
+    return decrypted;
+}
 
 function otpSecret() {
     const secret = process.env.OTP_SECRET || process.env.JWT_SECRET;
@@ -93,7 +114,7 @@ export async function POST(request: Request) {
 
         const normalizedWallet = wallet.toLowerCase();
         const record = await pgMaybeOne<EmbeddedWalletExportRecord>(
-            `select email, provider
+            `select email, provider, encrypted_private_key
                from user_embedded_wallets
               where wallet_address = $1
               limit 1`,
@@ -104,6 +125,32 @@ export async function POST(request: Request) {
             return NextResponse.json({
                 error: "This account is using an external wallet. Export the key from your wallet app instead.",
             }, { status: 404 });
+        }
+
+        if (record.encrypted_private_key) {
+            if (!record.email) {
+                return NextResponse.json({ error: "No email address associated with this wallet." }, { status: 400 });
+            }
+            const otpCheck = await verifyExportOtp(record.email, otpCode);
+            if (!otpCheck.ok) {
+                return otpCheck.response;
+            }
+
+            const encryptionSecret = process.env.WALLET_ENCRYPTION_KEY;
+            if (!encryptionSecret) {
+                return NextResponse.json({ error: "System Configuration Error: WALLET_ENCRYPTION_KEY missing" }, { status: 500 });
+            }
+
+            try {
+                const decryptedKey = decryptPrivateKey(record.encrypted_private_key, encryptionSecret);
+                return NextResponse.json({
+                    success: true,
+                    privateKey: decryptedKey,
+                }, { status: 200 });
+            } catch (err: any) {
+                console.error("Failed to decrypt legacy key during export:", err);
+                return NextResponse.json({ error: "Failed to decrypt private key." }, { status: 500 });
+            }
         }
 
         return NextResponse.json({

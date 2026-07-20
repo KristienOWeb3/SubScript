@@ -58,15 +58,34 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: Missing event or data payload" }, { status: 400 });
         }
 
-        const rawTxHash = data.txHash || data.transactionHash;
-        if (typeof rawTxHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(rawTxHash.trim())) {
-            return NextResponse.json({ error: "Bad Request: Missing or malformed txHash" }, { status: 400 });
-        }
-        const txHash = rawTxHash.trim().toLowerCase();
+        /* Finding 74: txHash is optional for non-settlement events (cancel_scheduled, etc.).
+           Finding 73: Deduplicate by event ID (body.id) when available, falling back to txHash. */
+        const rawTxHash = data.txHash || data.transactionHash || data.transaction_hash;
+        const txHash = typeof rawTxHash === "string" && /^0x[0-9a-fA-F]{64}$/.test(rawTxHash.trim())
+            ? rawTxHash.trim().toLowerCase()
+            : null;
 
-        const merchantAddress = typeof data.merchant === "string"
-            ? data.merchant.trim().toLowerCase()
-            : "";
+        const eventId = typeof body.id === "string" ? body.id.trim() : null;
+        const deduplicationKey = eventId || txHash;
+
+        const SETTLEMENT_EVENTS = [
+            "subscription.created", "subscription.activated", "subscription.renewed",
+            "payment.executed", "subscription.payment.executed",
+            "payment.succeeded", "payment.pending",
+        ];
+        if (!txHash && SETTLEMENT_EVENTS.includes(event)) {
+            return NextResponse.json({ error: "Bad Request: Missing or malformed txHash for settlement event" }, { status: 400 });
+        }
+        if (!deduplicationKey) {
+            return NextResponse.json({ error: "Bad Request: Missing event ID (body.id) or txHash for deduplication" }, { status: 400 });
+        }
+
+        /* Finding 73: Accept merchant_address from canonical field, falling back to data.merchant */
+        const merchantAddress = typeof data.merchant_address === "string"
+            ? data.merchant_address.trim().toLowerCase()
+            : typeof data.merchant === "string"
+                ? (data.merchant as string).trim().toLowerCase()
+                : "";
         if (!merchantAddress) {
             return NextResponse.json({ error: "Bad Request: Missing merchant address in data payload" }, { status: 400 });
         }
@@ -75,7 +94,7 @@ export async function POST(request: Request) {
             event,
             data,
             payload: body,
-            txHash,
+            txHash: txHash || deduplicationKey,
             merchantAddress,
         });
 

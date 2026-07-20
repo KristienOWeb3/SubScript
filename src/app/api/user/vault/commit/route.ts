@@ -51,7 +51,7 @@ export async function POST(request: Request) {
             select: { tier: true, verified: true }
         });
         if (!merchant || merchant.tier !== "PREMIUM") {
-            return NextResponse.json({ error: "Forbidden: Vault commits are only available for Premium (Tier 3) merchants." }, { status: 403 });
+            return NextResponse.json({ error: "Forbidden: Vault commits are only available for Premium merchants." }, { status: 403 });
         }
 
         /* Informed consent for unverified merchants: metered vaults let the merchant draw reported
@@ -150,7 +150,6 @@ export async function POST(request: Request) {
                 wallet: normalizedWallet,
                 action: "vault_commit",
                 requestKey: sponsorRequestKey,
-                principalRequiredWei: amount * BigInt(1_000_000_000_000),
             });
         } catch (sponsorError: unknown) {
             /* Structured definitive failures occurred before any financial submission, so the

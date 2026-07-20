@@ -42,12 +42,13 @@ const EXPECTED = [
         "nextSubscriptionId()", "subscriptions(uint256)",
     ]},
     { name: "SubScriptConfidential", address: addr("CONFIDENTIAL_CONTRACT_ADDRESS", "NEXT_PUBLIC_CONFIDENTIAL_CONTRACT_ADDRESS"), functions: [
-        "registerViewKey(bytes32)",
+        "registerViewKey(bytes32)", "getDecryptedBatchHistory(bytes32)", "getDecryptedBatchHistoryPaginated(bytes32,uint256,uint256)",
     ]},
     { name: "SubScriptVault", address: addr("SUBSCRIPT_VAULT_ADDRESS", "NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS"), functions: [
-        "commit(address,uint256)", "withdrawSurplus(address,uint256)", "drawUsage(address,uint256)",
-        "drawUsageFor(address,address,uint256)", "merchantClaim()", "setRequiredCommit(uint256)",
-        "getVault(address,address)", "requiredCommit(address)", "merchantClaimable(address)",
+        "commit(address,uint256)", "withdrawSurplus(address,uint256)",
+        "drawUsageFor(address,address,uint256)", "merchantClaim()",
+        "getVault(address,address)", "merchantClaimable(address)",
+        "cycleNonce(address,address)", "lastDisputedCycle(address,address)",
     ]},
     { name: "USDC (native)", address: addr("USDC_NATIVE_GAS_ADDRESS", "NEXT_PUBLIC_USDC_ADDRESS"), native: true, functions: ["balanceOf(address)"] },
 ];

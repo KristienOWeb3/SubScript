@@ -7,7 +7,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { sanitizeInput } from "@/utils/security";
 import { reclaimAbandonedFromEmbedded, syncVaultMirror } from "@/lib/vault/onchain";
-import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
+import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
 
 export const maxDuration = 120;
@@ -29,11 +29,11 @@ export async function POST(request: Request) {
 
         /* Reclaim returns the user's own escrow; the contract enforces the maturity + grace
            window and the dispute hold, so no additional server-side gate is needed. */
-        await ensureSponsoredGas({
+        await requireSponsoredGas({
             wallet: wallet.toLowerCase(),
             action: "execute_tx",
             requestKey: `vault-reclaim:${wallet.toLowerCase()}:${merchantAddress.toLowerCase()}`,
-        }).catch(() => { /* Circle SCA needs no top-up; a legacy failure surfaces below */ });
+        });
 
         const txHash = await reclaimAbandonedFromEmbedded(wallet, merchantAddress);
         const v = await syncVaultMirror(wallet, merchantAddress);

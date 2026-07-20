@@ -30,24 +30,38 @@ const PERMIT2_ABI = [
     "function transferFrom(address from, address to, uint160 amount, address token) external"
 ];
 
+function isAuthorized(request: Request) {
+    const authHeader = request.headers.get("Authorization") || "";
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    const presented = match?.[1] || "";
+    const configured = [process.env.CRON_SECRET, process.env.KEEPER_SECRET]
+        .filter((value): value is string => Boolean(value));
+    
+    if (presented.length === 0 || configured.length === 0) return false;
+
+    const digest = (val: string) => crypto.createHash("sha256").update(val, "utf8").digest();
+    const providedDigest = digest(presented);
+
+    return configured.some((value) => {
+        try {
+            return crypto.timingSafeEqual(providedDigest, digest(value));
+        } catch {
+            return false;
+        }
+    });
+}
+
 export async function POST(request: Request) {
     const requestId = crypto.randomUUID();
     
     try {
-        /* 1. Authenticate with the external keeper secret or Vercel's CRON_SECRET (the vercel.json
-           cron invokes this with `Authorization: Bearer ${CRON_SECRET}`); either may be set. */
-        const authHeader = request.headers.get("Authorization");
-        const keeperSecret = process.env.KEEPER_SECRET;
-        const cronSecret = process.env.CRON_SECRET;
-        if (!keeperSecret && !cronSecret) {
+        if (!process.env.KEEPER_SECRET && !process.env.CRON_SECRET) {
             return NextResponse.json(
                 { error: "Configuration Error: KEEPER_SECRET or CRON_SECRET must be configured" },
                 { status: 500 }
             );
         }
-        const presented = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-        const authorized = !!presented && ((!!keeperSecret && presented === keeperSecret) || (!!cronSecret && presented === cronSecret));
-        if (!authorized) {
+        if (!isAuthorized(request)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 

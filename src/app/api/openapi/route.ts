@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ALL_EVENT_TYPES } from "@/lib/events/types";
 
 /* Machine-readable contract for the public SubScript payments API. Served at /openapi.json
    (via a rewrite) and /api/openapi with permissive CORS so SDK generators, Postman, Swagger,
@@ -35,10 +36,14 @@ const spec = {
                 properties: {
                     error: { type: "string" },
                     code: { type: "string" },
+                    message: { type: "string" },
                     request_id: { type: "string" },
                     doc_url: { type: "string", format: "uri" },
+                    retryable: { type: "boolean", description: "Whether the client should retry this request." },
+                    retry_after: { type: "integer", description: "Seconds the client should wait before retrying." },
+                    details: { type: "array", items: { type: "object" }, description: "Machine-readable validation error details." },
                 },
-                required: ["error"],
+                required: ["error", "code", "message", "request_id"],
             },
             WebhookApiKeyLinkage: {
                 type: "object",
@@ -258,7 +263,7 @@ const spec = {
                     id: { type: "string" },
                     type: {
                         type: "string",
-                        enum: ["subscription.created", "subscription.updated", "subscription.renewed", "subscription.canceled", "subscription.payment_failed"],
+                        enum: [...ALL_EVENT_TYPES] as unknown as string[],
                         description: "Canonical event name.",
                     },
                     event: { type: "string", description: "Back-compat alias of `type`." },
@@ -911,7 +916,7 @@ const spec = {
                                 properties: {
                                     eventType: {
                                         type: "string",
-                                        enum: ["test", "payment.succeeded", "subscription.created"],
+                                        enum: ["payment.succeeded", "subscription.activated", "subscription.renewed", "subscription.canceled", "subscription.payment_failed", "checkout.created", "checkout.completed"],
                                     },
                                     endpointId: {
                                         type: "string",
@@ -935,7 +940,7 @@ const spec = {
                                         eventId: { type: "string" },
                                         eventType: {
                                             type: "string",
-                                            enum: ["test", "payment.succeeded", "subscription.created"],
+                                            enum: ["payment.succeeded", "subscription.activated", "subscription.renewed", "subscription.canceled", "subscription.payment_failed", "checkout.created", "checkout.completed"],
                                         },
                                         dispatchedCount: { type: "integer" },
                                         deliveries: {
@@ -1082,9 +1087,23 @@ const spec = {
                 responses: { "200": { description: "Return 2xx to acknowledge." } },
             },
         },
-        "subscription.created": {
+        "checkout.created": {
             post: {
-                summary: "Subscription created (awaiting on-chain activation)",
+                summary: "Checkout session created (awaiting payment)",
+                requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/SubscriptionWebhook" } } } },
+                responses: { "200": { description: "Return 2xx to acknowledge." } },
+            },
+        },
+        "checkout.completed": {
+            post: {
+                summary: "Checkout session completed (payment confirmed)",
+                requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/SubscriptionWebhook" } } } },
+                responses: { "200": { description: "Return 2xx to acknowledge." } },
+            },
+        },
+        "subscription.activated": {
+            post: {
+                summary: "Subscription activated (on-chain confirmation received)",
                 requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/SubscriptionWebhook" } } } },
                 responses: { "200": { description: "Return 2xx to acknowledge." } },
             },
@@ -1096,9 +1115,9 @@ const spec = {
                 responses: { "200": { description: "Return 2xx to acknowledge." } },
             },
         },
-        "subscription.payment_failed": {
+        "subscription.cancel_scheduled": {
             post: {
-                summary: "Subscription renewal payment failed (dunning)",
+                summary: "Subscription cancellation scheduled (will cancel at end of billing period)",
                 requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/SubscriptionWebhook" } } } },
                 responses: { "200": { description: "Return 2xx to acknowledge." } },
             },
@@ -1106,6 +1125,27 @@ const spec = {
         "subscription.canceled": {
             post: {
                 summary: "Subscription canceled",
+                requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/SubscriptionWebhook" } } } },
+                responses: { "200": { description: "Return 2xx to acknowledge." } },
+            },
+        },
+        "subscription.payment_failed": {
+            post: {
+                summary: "Subscription renewal payment failed (dunning)",
+                requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/SubscriptionWebhook" } } } },
+                responses: { "200": { description: "Return 2xx to acknowledge." } },
+            },
+        },
+        "subscription.recovered": {
+            post: {
+                summary: "Subscription recovered after failed payment",
+                requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/SubscriptionWebhook" } } } },
+                responses: { "200": { description: "Return 2xx to acknowledge." } },
+            },
+        },
+        "subscription.expired": {
+            post: {
+                summary: "Subscription expired (all retries exhausted)",
                 requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/SubscriptionWebhook" } } } },
                 responses: { "200": { description: "Return 2xx to acknowledge." } },
             },

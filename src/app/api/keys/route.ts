@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { hashSecretKey, secretKeyHint } from "@/lib/apiKeys";
 import { validateWebhookUrl } from "@/lib/webhookUrls";
+import { requireEnterpriseAndPremium } from "@/lib/v1/merchantAuth";
 
 function getSupabase() {
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -24,6 +25,8 @@ async function checkMerchantPremium(supabase: any, walletAddress: string): Promi
     return merchant.tier === "PREMIUM";
 }
 
+
+
 function redactSecretKey(secretKey: string | null | undefined): string {
     if (!secretKey) return "";
     return `${secretKey.slice(0, 8)}...${secretKey.slice(-4)}`;
@@ -37,11 +40,6 @@ export async function GET(request: Request) {
         }
 
         const supabase = getSupabase();
-        const isPremium = await checkMerchantPremium(supabase, wallet);
-        if (!isPremium) {
-            return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
-        }
-
         const { data: keys, error } = await supabase
             .from("api_keys")
             .select("*")
@@ -78,12 +76,13 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
+        const premiumCheck = await requireEnterpriseAndPremium(wallet);
+        if (!premiumCheck.ok) {
+            return NextResponse.json({ error: premiumCheck.error }, { status: premiumCheck.status });
+        }
+
         const walletLower = wallet.toLowerCase();
         const supabase = getSupabase();
-        const isPremium = await checkMerchantPremium(supabase, wallet);
-        if (!isPremium) {
-            return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
-        }
 
         const body = await request.json().catch(() => ({}));
         if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -200,10 +199,6 @@ export async function DELETE(request: Request) {
         }
 
         const supabase = getSupabase();
-        const isPremium = await checkMerchantPremium(supabase, wallet);
-        if (!isPremium) {
-            return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
-        }
         
         const { data: keyCheck, error: checkError } = await supabase
             .from("api_keys")

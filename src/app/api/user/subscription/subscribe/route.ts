@@ -176,440 +176,596 @@ export async function POST(request: Request) {
         /* Serialize subscription creation per user + merchant. Without this database-backed lock,
            two fast clicks can both pass the duplicate check before either on-chain transaction is
            mirrored. The second request waits, then sees the first active subscription. */
-        return await withPgClient(async (client) => {
-            await client.query("select pg_advisory_lock(hashtextextended($1, 0))", [lockKey]);
-            let checkoutClaimed = false;
-            let onChainSubmitted = false;
-            /* Introductory promotion this subscriber is redeeming (plan subscribes only).
-               Claimed atomically BEFORE the on-chain create; released if we fail before
-               broadcasting; confirmed with the subId once the subscription exists. */
-            let appliedPromo: { id: string; introAmountUsdc: bigint; introCycles: number } | null = null;
+        const requestFingerprint = crypto.createHash("sha256").update(JSON.stringify(body)).digest("hex");
+
+        const result = await prisma.$transaction(async (tx) => {
+            const lockAcquiredResult = await tx.$queryRaw<Array<{ acquired: boolean }>>`
+                SELECT pg_try_advisory_xact_lock(hashtextextended(${lockKey}, 0)) AS acquired
+            `;
+            const lockAcquired = lockAcquiredResult?.[0]?.acquired ?? false;
+            if (!lockAcquired) {
+                throw new Error("CONCURRENT_REQUEST");
+            }
+
+            if (checkoutSessionId && checkout?.status === "PROCESSING" && checkout.verifiedTxHash) {
+                return { status: "CHECKOUT_RECOVERY", attempt: null, appliedPromo: null };
+            }
+
+            const existing = await tx.subscription.findFirst({
+                where: {
+                    subscriber,
+                    merchantAddress: merchant,
+                    kind: "CUSTOMER",
+                    status: { in: ["ACTIVE", "PAST_DUE"] }
+                },
+                orderBy: { createdAt: "desc" }
+            });
+            if (existing) {
+                return { status: "ALREADY_SUBSCRIBED", existing, attempt: null, appliedPromo: null };
+            }
+
+            const generationResult = await tx.$queryRaw<Array<{ generation: bigint }>>`
+                SELECT count(*)::bigint AS generation
+                FROM subscriptions
+                WHERE subscriber = ${subscriber} AND merchant_address = ${merchant} AND kind = 'CUSTOMER'
+            `;
+            const generation = (generationResult?.[0]?.generation || BigInt(0)) + BigInt(1);
+
+            const idempotencyKey = checkoutSessionId
+                ? `subscribe-checkout:${checkoutSessionId}`
+                : `subscribe-plan:${subscriber}:${merchant}:${planId}:generation:${generation}`;
+
+            const existingAttempt = await tx.subscriptionAttempt.findUnique({
+                where: {
+                    merchantAddress_idempotencyKey: {
+                        merchantAddress: merchant,
+                        idempotencyKey
+                    }
+                }
+            });
+            if (existingAttempt) {
+                return { status: "ATTEMPT_EXISTS", attempt: existingAttempt, appliedPromo: null };
+            }
+
+            let appliedPromo: { id: string; introductoryAmountUsdc: bigint; introductoryCycles: number } | null = null;
+            if (!externalTxHash && !checkoutSessionId && merchantPlan) {
+                const promo = await findApplicablePromotion({
+                    planId: merchantPlan.id,
+                    merchantAddress: merchant,
+                    subscriber,
+                });
+                if (promo) {
+                    const claimed = await claimPromotionRedemption(promo.id, subscriber);
+                    if (claimed) {
+                        appliedPromo = promo;
+                    }
+                }
+            }
+
+            const newAttempt = await tx.subscriptionAttempt.create({
+                data: {
+                    merchantAddress: merchant,
+                    subscriberAddress: subscriber,
+                    idempotencyKey,
+                    requestFingerprint,
+                    providerIdempotencyKey: deterministicIdempotencyKey(idempotencyKey),
+                    promotionClaimId: appliedPromo?.id || null,
+                    status: "PREPARED",
+                }
+            });
+
+            return { status: "NEW", attempt: newAttempt, appliedPromo };
+        }).catch((err) => {
+            if (err.message === "CONCURRENT_REQUEST") {
+                return { status: "CONCURRENT" };
+            }
+            throw err;
+        });
+
+        if (result.status === "CONCURRENT") {
+            return NextResponse.json({
+                error: "Another subscription attempt is currently in progress. Please try again shortly.",
+                code: "CONCURRENT_REQUEST"
+            }, { status: 409 });
+        }
+
+        if (result.status === "ALREADY_SUBSCRIBED" && result.existing) {
+            const existing = result.existing;
+            const isSamePlan =
+                String(existing.amountCapUsdc) === plan.amountUsdc.toString()
+                && String(existing.billingIntervalSeconds) === plan.periodSeconds.toString();
+            return NextResponse.json({
+                error: isSamePlan
+                    ? "You are already subscribed to this plan."
+                    : "You already have an active subscription with this merchant. Manage that plan from your dashboard.",
+                code: isSamePlan ? "ALREADY_SUBSCRIBED" : "ACTIVE_MERCHANT_SUBSCRIPTION",
+                subscriptionId: String(existing.subscriptionId),
+            }, { status: 409 });
+        }
+
+        if (result.status === "CHECKOUT_RECOVERY") {
+            const recoveredId = await findActiveOnChainSubscriptionId(subscriber, merchant);
+            if (!recoveredId) {
+                await recordPaymentReconciliationRequired({
+                    dedupeKey: `subscription-recovery:${checkoutSessionId}:${checkout!.verifiedTxHash!.toLowerCase()}`,
+                    kind: "SUBSCRIPTION_ONCHAIN_RECOVERY",
+                    message: "confirmed checkout transaction still has no discoverable on-chain subscription",
+                    context: { ...subscriptionReconciliationContext, txHash: checkout!.verifiedTxHash!.toLowerCase() },
+                });
+                return NextResponse.json({
+                    error: "Your transaction is confirmed and subscription activation is still reconciling. Retry shortly; you will not be charged twice.",
+                    code: "RECONCILIATION_PENDING",
+                    txHash: checkout!.verifiedTxHash,
+                }, { status: 202 });
+            }
             try {
-                if (checkoutSessionId && checkout?.status === "PROCESSING" && checkout.verifiedTxHash) {
-                    const recoveredId = await findActiveOnChainSubscriptionId(subscriber, merchant);
-                    if (!recoveredId) {
-                        await recordPaymentReconciliationRequired({
-                            dedupeKey: `subscription-recovery:${checkoutSessionId}:${checkout.verifiedTxHash.toLowerCase()}`,
-                            kind: "SUBSCRIPTION_ONCHAIN_RECOVERY",
-                            message: "confirmed checkout transaction still has no discoverable on-chain subscription",
-                            context: { ...subscriptionReconciliationContext, txHash: checkout.verifiedTxHash.toLowerCase() },
-                        });
-                        return NextResponse.json({
-                            error: "Your transaction is confirmed and subscription activation is still reconciling. Retry shortly; you will not be charged twice.",
-                            code: "RECONCILIATION_PENDING",
-                            txHash: checkout.verifiedTxHash,
-                        }, { status: 202 });
-                    }
-                    try {
-                        await mirrorSubscriptionCreated({
-                            subscriptionId: recoveredId,
-                            merchantAddress: merchant,
-                            subscriber,
-                            amountUsdc: plan.amountUsdc,
-                            periodSeconds: plan.periodSeconds,
-                            beneficiaryAddress,
-                            minCommitmentSeconds: plan.minCommitmentSeconds,
-                            externalReference,
-                            sourceCheckoutId,
-                        });
-                        await prisma.paymentLink.update({
-                            where: { id: checkoutSessionId },
-                            data: { active: false, status: "PAID", paidAt: new Date() },
-                        });
-                        await deactivateConsumedApiPlan({
-                            sourceCheckoutId,
-                            subscriber,
-                        });
-                    } catch (reconciliationError) {
-                        await recordPaymentReconciliationRequired({
-                            dedupeKey: `subscription-recovery:${checkoutSessionId}:${checkout.verifiedTxHash.toLowerCase()}`,
-                            kind: "SUBSCRIPTION_ONCHAIN_RECOVERY",
-                            message: "confirmed subscription recovery could not update the local mirror",
-                            context: { ...subscriptionReconciliationContext, subscriptionId: recoveredId, txHash: checkout.verifiedTxHash.toLowerCase() },
-                            error: reconciliationError,
-                        });
-                        throw reconciliationError;
-                    }
-                    await dispatchDurableSubscriptionWebhook(merchant, "subscription.created", subscriptionWebhookData({
-                        subscriptionId: recoveredId,
-                        status: "active",
-                        amountUsdcMicros: plan.amountUsdc,
+                await mirrorSubscriptionCreated({
+                    subscriptionId: recoveredId,
+                    merchantAddress: merchant,
+                    subscriber,
+                    amountUsdc: plan.amountUsdc,
+                    periodSeconds: plan.periodSeconds,
+                    beneficiaryAddress,
+                    minCommitmentSeconds: plan.minCommitmentSeconds,
+                    externalReference,
+                    sourceCheckoutId,
+                });
+                await prisma.paymentLink.update({
+                    where: { id: checkoutSessionId },
+                    data: { active: false, status: "PAID", paidAt: new Date() },
+                });
+                await deactivateConsumedApiPlan({
+                    sourceCheckoutId,
+                    subscriber,
+                });
+            } catch (reconciliationError) {
+                await recordPaymentReconciliationRequired({
+                    dedupeKey: `subscription-recovery:${checkoutSessionId}:${checkout!.verifiedTxHash!.toLowerCase()}`,
+                    kind: "SUBSCRIPTION_ONCHAIN_RECOVERY",
+                    message: "confirmed subscription recovery could not update the local mirror",
+                    context: { ...subscriptionReconciliationContext, subscriptionId: recoveredId, txHash: checkout!.verifiedTxHash!.toLowerCase() },
+                    error: reconciliationError,
+                });
+                throw reconciliationError;
+            }
+            await dispatchDurableSubscriptionWebhook(merchant, "subscription.created", subscriptionWebhookData({
+                subscriptionId: recoveredId,
+                status: "active",
+                amountUsdcMicros: plan.amountUsdc,
+                subscriber,
+                merchantAddress: merchant,
+                beneficiary: beneficiaryAddress,
+                externalReference,
+                sourceCheckoutId,
+                txHash: checkout!.verifiedTxHash,
+            }), `created:${recoveredId}:${checkout!.verifiedTxHash!.toLowerCase()}`);
+            await createSubscriptionStartedDm({
+                merchantAddress: merchant,
+                subscriberAddress: subscriber,
+                planName: plan.name,
+                amountUsdc: plan.amountUsdc,
+                periodSeconds: plan.periodSeconds,
+            }).catch((err) => console.error("[subscription/subscribe] recovered DM creation failed:", err));
+            await markSubscriptionOfferAccepted(checkoutSessionId, subscriber);
+            return NextResponse.json({ success: true, txHash: checkout!.verifiedTxHash, subscriptionId: recoveredId, planName: plan.name });
+        }
+
+        let attempt = result.attempt!;
+        let appliedPromo = result.appliedPromo!;
+
+        if (result.status === "ATTEMPT_EXISTS" && attempt) {
+            if (attempt.status === "COMPLETED" || attempt.status === "CHAIN_CONFIRMED") {
+                const sub = await prisma.subscription.findFirst({
+                    where: {
                         subscriber,
                         merchantAddress: merchant,
-                        beneficiary: beneficiaryAddress,
-                        externalReference,
-                        sourceCheckoutId,
-                        txHash: checkout.verifiedTxHash,
-                    }), `created:${recoveredId}:${checkout.verifiedTxHash.toLowerCase()}`);
-                    await createSubscriptionStartedDm({
-                        merchantAddress: merchant,
-                        subscriberAddress: subscriber,
+                        kind: "CUSTOMER",
+                        status: { in: ["ACTIVE", "PAST_DUE"] }
+                    },
+                    orderBy: { createdAt: "desc" }
+                });
+                if (sub) {
+                    return NextResponse.json({
+                        success: true,
+                        txHash: attempt.txHash || sub.paymentTxHash,
+                        subscriptionId: String(sub.subscriptionId),
                         planName: plan.name,
-                        amountUsdc: plan.amountUsdc,
-                        periodSeconds: plan.periodSeconds,
-                    }).catch((err) => console.error("[subscription/subscribe] recovered DM creation failed:", err));
-                    await markSubscriptionOfferAccepted(checkoutSessionId, subscriber);
-                    return NextResponse.json({ success: true, txHash: checkout.verifiedTxHash, subscriptionId: recoveredId, planName: plan.name });
-                }
-
-                const existingResult = await client.query(
-                    `select subscription_id, amount_cap_usdc, billing_interval_seconds
-                       from subscriptions
-                      where subscriber = $1
-                        and merchant_address = $2
-                        and kind = 'CUSTOMER'
-                        and status in ('ACTIVE', 'PAST_DUE')
-                      order by created_at desc
-                      limit 1`,
-                    [subscriber, merchant]
-                );
-                const existing = existingResult.rows[0];
-                if (existing) {
-                    const isSamePlan =
-                        String(existing.amount_cap_usdc) === plan.amountUsdc.toString()
-                        && String(existing.billing_interval_seconds) === plan.periodSeconds.toString();
-                    return NextResponse.json({
-                        error: isSamePlan
-                            ? "You are already subscribed to this plan."
-                            : "You already have an active subscription with this merchant. Manage that plan from your dashboard.",
-                        code: isSamePlan ? "ALREADY_SUBSCRIBED" : "ACTIVE_MERCHANT_SUBSCRIPTION",
-                        subscriptionId: String(existing.subscription_id),
-                    }, { status: 409 });
-                }
-
-                /* An external transaction already exists on-chain before this request reaches us.
-                   Verify it before the duplicate scan so the scan can distinguish that intended
-                   subscription from an older, unmirrored active subscription. */
-                const verifiedExternal = externalTxHash
-                    ? await verifyExternalSubscriptionTx({
-                        txHash: externalTxHash,
-                        subscriber,
-                        merchant,
-                        amount: plan.amountUsdc,
-                        period: plan.periodSeconds,
-                    })
-                    : null;
-                if (verifiedExternal) onChainSubmitted = true;
-
-                /* Belt-and-suspenders: the mirror check above only sees subs we mirrored. Scan the
-                   chain for an already-active sub from this subscriber to this merchant so an
-                   unmirrored on-chain sub can't be duplicated. The verified external subscription
-                   itself is expected to appear in this scan and must continue to local mirroring. */
-                const onChainActiveId = await findActiveOnChainSubscriptionId(subscriber, merchant);
-                if (onChainActiveId && onChainActiveId !== verifiedExternal?.subId) {
-                    const onChain = await getSubscriptionOnChain(onChainActiveId);
-                    if (onChain && onChain.amount === plan.amountUsdc && onChain.period === plan.periodSeconds) {
-                        /* A promo sub whose mirror write failed still has its authorized intro
-                           terms on-chain; rebuild the snapshot from the authoritative source. */
-                        const recoveredIntro = await getIntroductoryTermsOnChain(onChainActiveId);
-                        await mirrorSubscriptionCreated({
-                            subscriptionId: onChainActiveId,
-                            merchantAddress: merchant,
-                            subscriber,
-                            amountUsdc: onChain.amount,
-                            periodSeconds: onChain.period,
-                            beneficiaryAddress,
-                            minCommitmentSeconds: plan.minCommitmentSeconds,
-                            promotion: recoveredIntro
-                                ? { promotionId: null, introAmountUsdc: recoveredIntro.introAmountUsdc, introCycles: recoveredIntro.introCycles }
-                                : null,
-                            externalReference,
-                            sourceCheckoutId,
-                        });
-                        if (checkoutSessionId) {
-                            await prisma.paymentLink.update({
-                                where: { id: checkoutSessionId },
-                                data: { active: false, status: "PAID", paidAt: new Date() },
-                            });
-                        }
-                        await deactivateConsumedApiPlan({
-                            sourceCheckoutId,
-                            subscriber,
-                        });
-                        await createSubscriptionStartedDm({
-                            merchantAddress: merchant,
-                            subscriberAddress: subscriber,
-                            planName: plan.name,
-                            amountUsdc: plan.amountUsdc,
-                            periodSeconds: plan.periodSeconds,
-                        }).catch((err) => console.error("[subscription/subscribe] reconciled DM creation failed:", err));
-                        await markSubscriptionOfferAccepted(checkoutSessionId, subscriber);
-                        await dispatchDurableSubscriptionWebhook(merchant, "subscription.created", subscriptionWebhookData({
-                            subscriptionId: onChainActiveId,
-                            status: "active",
-                            amountUsdcMicros: onChain.amount,
-                            subscriber,
-                            merchantAddress: merchant,
-                            beneficiary: beneficiaryAddress,
-                            externalReference,
-                            sourceCheckoutId,
-                            txHash: checkout?.verifiedTxHash || null,
-                        }), `reconciled-created:${onChainActiveId}:${sourceCheckoutId || plan.id}`);
-                        return NextResponse.json({ success: true, subscriptionId: onChainActiveId, planName: plan.name, reconciled: true });
-                    }
-                    return NextResponse.json({
-                        error: "You already have an active subscription with this merchant. Manage that plan from your dashboard.",
-                        code: "ACTIVE_MERCHANT_SUBSCRIPTION",
-                        subscriptionId: onChainActiveId,
-                    }, { status: 409 });
-                }
-
-                if (checkoutSessionId) {
-                    const claim = await prisma.paymentLink.updateMany({
-                        where: { id: checkoutSessionId, active: true, status: "PENDING" },
-                        data: { status: "PROCESSING" },
                     });
-                    if (claim.count !== 1) {
-                        return NextResponse.json({ error: "Subscription checkout is already being processed or completed" }, { status: 409 });
-                    }
-                    checkoutClaimed = true;
                 }
-
-                /* Resolve and claim the plan's live introductory promotion. Best-effort: a
-                   promotion that expired, hit its cap, or was already redeemed by this
-                   subscriber simply falls back to full price — checkout re-discloses the
-                   actual terms in the response, and nothing was charged yet. Must run before
-                   the sponsorship + subscribeFromEmbedded calls below, which read appliedPromo. */
-                if (!externalTxHash && !checkoutSessionId && merchantPlan) {
-                    const promo = await findApplicablePromotion({
-                        planId: merchantPlan.id,
-                        merchantAddress: merchant,
-                        subscriber,
-                    });
-                    if (promo) {
-                        const claimed = await claimPromotionRedemption(promo.id, subscriber);
-                        if (claimed) {
-                            appliedPromo = {
-                                id: promo.id,
-                                introAmountUsdc: promo.introductoryAmountUsdc,
-                                introCycles: promo.introductoryCycles,
-                            };
-                        }
-                    }
-                }
-
-                let txHash: string;
-                let subId: string | null;
-                if (verifiedExternal) {
-                    txHash = verifiedExternal.txHash;
-                    subId = verifiedExternal.subId;
-                } else {
-                    /* createSubscription charges the first payment, so a retry after a timed-out
-                       response must reuse the SAME Circle idempotency key or it double-charges.
-                       Checkout sessions are single-use → durable key on the session id. Direct plan
-                       subscribes derive a generation from durable subscription history under the
-                       advisory lock, so even clients without a retry header reuse the same attempt. */
-                    const generationResult = await client.query(
-                        `select count(*)::bigint AS generation
-                           from subscriptions
-                          where subscriber = $1 and merchant_address = $2 and kind = 'CUSTOMER'`,
-                        [subscriber, merchant],
-                    );
-                    const generation = BigInt(generationResult.rows[0]?.generation || 0) + BigInt(1);
-                    /* Custody-aware sponsorship, keyed on the same stable identity as the Circle
-                       idempotency key so a retried subscribe reuses the durable record. The first
-                       period's charge is declared as principal — never reclassified as gas. */
-                    await requireSponsoredGas({
-                        wallet: subscriber,
-                        action: "subscribe",
-                        requestKey: checkoutSessionId
-                            ? `subscribe-checkout:${checkoutSessionId}`
-                            : `subscribe-plan:${subscriber}:${merchant}:${planId}:generation:${generation}`,
-                        principalRequiredWei: BigInt(plan.amountUsdc) * BigInt(1_000_000_000_000),
-                    });
-                    const signed = await subscribeFromEmbedded(
-                        subscriber,
-                        merchant,
-                        plan.amountUsdc,
-                        plan.periodSeconds,
-                        checkoutSessionId
-                            ? deterministicIdempotencyKey(`subscribe-checkout:${checkoutSessionId}`)
-                            : deterministicIdempotencyKey(`subscribe-plan:${subscriber}:${merchant}:${planId}:generation:${generation}`),
-                        appliedPromo
-                            ? { introAmountUsdc: appliedPromo.introAmountUsdc, introCycles: appliedPromo.introCycles }
-                            : null,
-                    );
-                    txHash = signed.txHash;
-                    subId = signed.subId;
-                    onChainSubmitted = true;
-                }
-                if (checkoutSessionId) {
-                    try {
-                        await prisma.paymentLink.update({
-                            where: { id: checkoutSessionId },
-                            data: { verifiedTxHash: txHash.toLowerCase() },
-                        });
-                    } catch (reconciliationError) {
-                        await recordPaymentReconciliationRequired({
-                            dedupeKey: `subscription-checkout-transaction:${checkoutSessionId}:${txHash.toLowerCase()}`,
-                            kind: "SUBSCRIPTION_CHECKOUT_TRANSACTION_PERSISTENCE",
-                            message: "on-chain subscription confirmed but the checkout transaction was not persisted",
-                            context: { ...subscriptionReconciliationContext, subscriptionId: subId || null, txHash: txHash.toLowerCase() },
-                            error: reconciliationError,
-                        });
-                        throw new Error("Subscription transaction confirmed, but activation is still reconciling. Retry shortly; you will not be charged twice.");
-                    }
-                }
-                if (!subId) {
-                    await recordPaymentReconciliationRequired({
-                        dedupeKey: `subscription-missing-id:${txHash.toLowerCase()}`,
-                        kind: "SUBSCRIPTION_MISSING_ONCHAIN_ID",
-                        message: "confirmed subscription transaction returned no subscription id",
-                        context: { ...subscriptionReconciliationContext, txHash: txHash.toLowerCase() },
-                    });
-                    throw new Error("Subscription transaction confirmed, but activation is still reconciling. Retry shortly; you will not be charged twice.");
-                }
-
-                /* Mirror before releasing the advisory lock, so the next request observes this
-                   active subscription and cannot create a duplicate. */
-                try {
+                const recoveredId = await findActiveOnChainSubscriptionId(subscriber, merchant);
+                if (recoveredId) {
                     await mirrorSubscriptionCreated({
-                        subscriptionId: subId,
+                        subscriptionId: recoveredId,
                         merchantAddress: merchant,
                         subscriber,
                         amountUsdc: plan.amountUsdc,
                         periodSeconds: plan.periodSeconds,
                         beneficiaryAddress,
                         minCommitmentSeconds: plan.minCommitmentSeconds,
-                        promotion: appliedPromo
-                            ? {
-                                promotionId: appliedPromo.id,
-                                introAmountUsdc: appliedPromo.introAmountUsdc,
-                                introCycles: appliedPromo.introCycles,
-                            }
-                            : null,
+                        promotion: attempt.promotionClaimId ? {
+                            promotionId: attempt.promotionClaimId,
+                            introAmountUsdc: appliedPromo?.introductoryAmountUsdc || BigInt(0),
+                            introCycles: appliedPromo?.introductoryCycles || 0,
+                        } : null,
                         externalReference,
                         sourceCheckoutId,
                     });
-                    if (appliedPromo) {
-                        await confirmPromotionRedemption(appliedPromo.id, subscriber, BigInt(subId))
-                            .catch((err) => console.error("[subscription/subscribe] redemption confirm failed:", err));
-                    }
-                } catch (reconciliationError) {
-                    await recordPaymentReconciliationRequired({
-                        dedupeKey: `subscription-mirror:${subId}:${txHash.toLowerCase()}`,
-                        kind: "SUBSCRIPTION_LOCAL_MIRROR",
-                        message: "on-chain subscription confirmed but local mirroring failed",
-                        context: { ...subscriptionReconciliationContext, subscriptionId: subId, txHash: txHash.toLowerCase() },
-                        error: reconciliationError,
+                    return NextResponse.json({
+                        success: true,
+                        txHash: attempt.txHash,
+                        subscriptionId: recoveredId,
+                        planName: plan.name,
                     });
-                    throw new Error("Subscription transaction confirmed, but activation is still reconciling. Retry shortly; you will not be charged twice.");
                 }
+                return NextResponse.json({
+                    error: "Your transaction is confirmed and subscription activation is still reconciling. Retry shortly; you will not be charged twice.",
+                    code: "RECONCILIATION_PENDING",
+                    txHash: attempt.txHash,
+                }, { status: 202 });
+            }
 
-                /* Open the merchant→user DM thread for this subscription (best-effort). */
-                const firstRegularPaymentAt = appliedPromo
-                    ? new Date(Date.now() + appliedPromo.introCycles * Number(plan.periodSeconds) * 1000)
-                    : null;
+            if (attempt.status === "FAILED_TERMINAL") {
+                return NextResponse.json({
+                    error: attempt.lastError || "Subscription attempt failed.",
+                    code: "ATTEMPT_FAILED_TERMINAL"
+                }, { status: 400 });
+            }
+
+            if (attempt.status === "SUBMISSION_STARTED" || attempt.status === "SUBMISSION_UNKNOWN") {
+                const isLeaseActive = attempt.leaseExpiresAt && new Date(attempt.leaseExpiresAt) > new Date();
+                if (isLeaseActive) {
+                    return NextResponse.json({
+                        error: "Subscription is currently processing. Please wait.",
+                        code: "RECONCILIATION_PENDING"
+                    }, { status: 202 });
+                }
+            }
+        }
+
+        // Lease/lock claim to proceed or resume the prepared/expired attempt
+        const leaseToken = crypto.randomUUID();
+        const leaseUpdate = await prisma.subscriptionAttempt.updateMany({
+            where: {
+                attemptId: attempt.attemptId,
+                status: { in: ["PREPARED", "SUBMISSION_STARTED", "SUBMISSION_UNKNOWN"] },
+                OR: [
+                    { leaseExpiresAt: null },
+                    { leaseExpiresAt: { lt: new Date() } }
+                ]
+            },
+            data: {
+                status: "SUBMISSION_STARTED",
+                leaseToken,
+                leaseExpiresAt: new Date(Date.now() + 60000)
+            }
+        });
+        if (leaseUpdate.count !== 1) {
+            return NextResponse.json({
+                error: "This subscription attempt is currently being processed by another worker. Please try again shortly.",
+                code: "RECONCILIATION_PENDING"
+            }, { status: 202 });
+        }
+
+        // Check if there is an active on-chain subscription already (safety scan before Circle call)
+        const onChainActiveId = await findActiveOnChainSubscriptionId(subscriber, merchant);
+        if (onChainActiveId && !externalTxHash) {
+            const onChain = await getSubscriptionOnChain(onChainActiveId);
+            if (onChain && onChain.amount === plan.amountUsdc && onChain.period === plan.periodSeconds) {
+                const recoveredIntro = await getIntroductoryTermsOnChain(onChainActiveId);
+                await mirrorSubscriptionCreated({
+                    subscriptionId: onChainActiveId,
+                    merchantAddress: merchant,
+                    subscriber,
+                    amountUsdc: onChain.amount,
+                    periodSeconds: onChain.period,
+                    beneficiaryAddress,
+                    minCommitmentSeconds: plan.minCommitmentSeconds,
+                    promotion: recoveredIntro
+                        ? { promotionId: null, introAmountUsdc: recoveredIntro.introAmountUsdc, introCycles: recoveredIntro.introCycles }
+                        : null,
+                    externalReference,
+                    sourceCheckoutId,
+                });
+                if (checkoutSessionId) {
+                    await prisma.paymentLink.update({
+                        where: { id: checkoutSessionId },
+                        data: { active: false, status: "PAID", paidAt: new Date() },
+                    });
+                }
+                await deactivateConsumedApiPlan({
+                    sourceCheckoutId,
+                    subscriber,
+                });
                 await createSubscriptionStartedDm({
                     merchantAddress: merchant,
                     subscriberAddress: subscriber,
                     planName: plan.name,
                     amountUsdc: plan.amountUsdc,
                     periodSeconds: plan.periodSeconds,
-                    introTerms: appliedPromo && firstRegularPaymentAt
-                        ? {
-                            introAmountUsdc: appliedPromo.introAmountUsdc,
-                            introCycles: appliedPromo.introCycles,
-                            firstRegularPaymentAt,
-                        }
-                        : null,
-                }).catch((err) => console.error("[subscription/subscribe] DM creation failed:", err));
-
-                if (checkoutSessionId) {
-                    try {
-                        await prisma.paymentLink.update({
-                            where: { id: checkoutSessionId },
-                            data: {
-                                active: false,
-                                status: "PAID",
-                                paidAt: new Date(),
-                                verifiedTxHash: txHash.toLowerCase(),
-                            },
-                        });
-                    } catch (reconciliationError) {
-                        await recordPaymentReconciliationRequired({
-                            dedupeKey: `subscription-checkout-finalize:${checkoutSessionId}:${txHash.toLowerCase()}`,
-                            kind: "SUBSCRIPTION_CHECKOUT_FINALIZATION",
-                            message: "confirmed subscription was mirrored but the checkout could not be finalized",
-                            context: { ...subscriptionReconciliationContext, subscriptionId: subId, txHash: txHash.toLowerCase() },
-                            error: reconciliationError,
-                        });
-                        throw new Error("Subscription activated, but checkout finalization is still reconciling. Retry shortly; you will not be charged twice.");
-                    }
-                    checkoutClaimed = false;
-                }
-                await deactivateConsumedApiPlan({
-                    sourceCheckoutId,
-                    subscriber,
-                });
+                }).catch((err) => console.error("[subscription/subscribe] reconciled DM creation failed:", err));
                 await markSubscriptionOfferAccepted(checkoutSessionId, subscriber);
-
                 await dispatchDurableSubscriptionWebhook(merchant, "subscription.created", subscriptionWebhookData({
-                    subscriptionId: subId,
+                    subscriptionId: onChainActiveId,
                     status: "active",
-                    amountUsdcMicros: plan.amountUsdc,
+                    amountUsdcMicros: onChain.amount,
                     subscriber,
                     merchantAddress: merchant,
                     beneficiary: beneficiaryAddress,
                     externalReference,
                     sourceCheckoutId,
-                    txHash,
-                    pricing: appliedPromo
-                        ? {
-                            ...pricingPhaseFor({
-                                sequenceId: 0,
-                                regularAmountUsdc: plan.amountUsdc,
-                                introAmountUsdc: appliedPromo.introAmountUsdc,
-                                introCycles: appliedPromo.introCycles,
-                            }),
-                            regularAmountUsdcMicros: plan.amountUsdc,
-                        }
-                        : null,
-                }), `created:${subId}:${txHash.toLowerCase()}`);
+                    txHash: checkout?.verifiedTxHash || null,
+                }), `reconciled-created:${onChainActiveId}:${sourceCheckoutId || plan.id}`);
 
-                return NextResponse.json({
-                    success: true,
-                    txHash,
-                    subscriptionId: subId,
-                    planName: plan.name,
-                    ...(appliedPromo ? {
-                        promotion: {
-                            promotionId: appliedPromo.id,
-                            paidTodayUsdcMicros: appliedPromo.introAmountUsdc.toString(),
-                            introductoryCycles: appliedPromo.introCycles,
-                            regularAmountUsdcMicros: plan.amountUsdc.toString(),
-                            firstRegularPaymentAt: firstRegularPaymentAt?.toISOString() ?? null,
-                        },
-                    } : {}),
-                }, { status: 200 });
-            } catch (error) {
-                if (checkoutSessionId && checkoutClaimed && !onChainSubmitted) {
+                await prisma.subscriptionAttempt.update({
+                    where: { attemptId: attempt.attemptId },
+                    data: { status: "COMPLETED", txHash: checkout?.verifiedTxHash || null, completedAt: new Date() }
+                }).catch(() => {});
+
+                return NextResponse.json({ success: true, subscriptionId: onChainActiveId, planName: plan.name, reconciled: true });
+            }
+            return NextResponse.json({
+                error: "You already have an active subscription with this merchant. Manage that plan from your dashboard.",
+                code: "ACTIVE_MERCHANT_SUBSCRIPTION",
+                subscriptionId: onChainActiveId,
+            }, { status: 409 });
+        }
+
+        if (checkoutSessionId) {
+            const claim = await prisma.paymentLink.updateMany({
+                where: { id: checkoutSessionId, active: true, status: "PENDING" },
+                data: { status: "PROCESSING" },
+            });
+            if (claim.count !== 1 && !checkout?.verifiedTxHash) {
+                // If it's already processing/paid, we reject
+                const currentStatus = await prisma.paymentLink.findUnique({ where: { id: checkoutSessionId } });
+                if (currentStatus?.status !== "PROCESSING") {
+                    return NextResponse.json({ error: "Subscription checkout is already being processed or completed" }, { status: 409 });
+                }
+            }
+        }
+
+        let txHash: string;
+        let subId: string | null = null;
+        let onChainSubmitted = false;
+
+        try {
+            if (externalTxHash) {
+                const verifiedExternal = await verifyExternalSubscriptionTx({
+                    txHash: externalTxHash,
+                    subscriber,
+                    merchant,
+                    amount: plan.amountUsdc,
+                    period: plan.periodSeconds,
+                });
+                if (!verifiedExternal) {
+                    await prisma.subscriptionAttempt.update({
+                        where: { attemptId: attempt.attemptId },
+                        data: { status: "FAILED_TERMINAL", lastError: "External transaction verification failed." }
+                    }).catch(() => {});
+                    return NextResponse.json({ error: "Invalid external subscription transaction." }, { status: 400 });
+                }
+                txHash = verifiedExternal.txHash;
+                subId = verifiedExternal.subId;
+                if (onChainActiveId && onChainActiveId !== verifiedExternal?.subId) {
+                    return NextResponse.json({ error: "On-chain active subscription ID mismatch." }, { status: 400 });
+                }
+                onChainSubmitted = true;
+            } else {
+                await requireSponsoredGas({
+                    wallet: subscriber,
+                    action: "subscribe",
+                    requestKey: attempt.idempotencyKey,
+                });
+                const signed = await subscribeFromEmbedded(
+                    subscriber,
+                    merchant,
+                    plan.amountUsdc,
+                    plan.periodSeconds,
+                    attempt.providerIdempotencyKey,
+                    appliedPromo
+                        ? { introAmountUsdc: appliedPromo.introductoryAmountUsdc, introCycles: appliedPromo.introductoryCycles }
+                        : null,
+                );
+                txHash = signed.txHash;
+                subId = signed.subId;
+                onChainSubmitted = true;
+            }
+        } catch (execError: any) {
+            console.error("[subscription/subscribe] execution error:", execError);
+            const isTerminal = isTerminalCircleError(execError);
+            const nextStatus = isTerminal ? "FAILED_TERMINAL" : "SUBMISSION_UNKNOWN";
+            
+            await prisma.subscriptionAttempt.update({
+                where: { attemptId: attempt.attemptId },
+                data: { status: nextStatus, lastError: execError.message || String(execError) }
+            }).catch(() => {});
+
+            if (isTerminal) {
+                if (attempt.promotionClaimId) {
+                    await releasePromotionRedemption(attempt.promotionClaimId, subscriber).catch(() => {});
+                }
+                if (checkoutSessionId) {
                     await prisma.paymentLink.updateMany({
                         where: { id: checkoutSessionId, status: "PROCESSING" },
-                        data: { status: "PENDING" },
-                    }).catch((resetError: unknown) =>
-                        console.error("[subscription/subscribe] checkout claim reset failed:", resetError)
-                    );
+                        data: { status: "PENDING" }
+                    }).catch(() => {});
                 }
-                /* A redemption claimed for a create that never broadcast must be handed back,
-                   or a failed attempt would burn the customer's once-per-promo eligibility and
-                   a slot of the redemption cap. After broadcast the claim stands (funds moved). */
-                if (appliedPromo && !onChainSubmitted) {
-                    await releasePromotionRedemption(appliedPromo.id, subscriber)
-                        .catch((releaseError: unknown) =>
-                            console.error("[subscription/subscribe] promotion release failed:", releaseError)
-                        );
-                }
-                throw error;
-            } finally {
-                await client.query("select pg_advisory_unlock(hashtextextended($1, 0))", [lockKey])
-                    .catch((unlockError: unknown) =>
-                        console.error("[subscription/subscribe] advisory unlock failed:", unlockError)
-                    );
+                return NextResponse.json({ error: execError.message || "Failed to execute subscription transaction" }, { status: 400 });
+            } else {
+                return NextResponse.json({
+                    error: "The transaction status is currently unknown. We are verifying the state on-chain. Please do not retry immediately.",
+                    code: "SUBMISSION_UNKNOWN"
+                }, { status: 202 });
             }
+        }
+
+        // Once submitted, update the attempt
+        await prisma.subscriptionAttempt.update({
+            where: { attemptId: attempt.attemptId },
+            data: { status: "CHAIN_CONFIRMED", txHash: txHash.toLowerCase() }
+        }).catch(() => {});
+
+        if (checkoutSessionId) {
+            try {
+                await prisma.paymentLink.update({
+                    where: { id: checkoutSessionId },
+                    data: { verifiedTxHash: txHash.toLowerCase() },
+                });
+            } catch (reconciliationError) {
+                await recordPaymentReconciliationRequired({
+                    dedupeKey: `subscription-checkout-transaction:${checkoutSessionId}:${txHash.toLowerCase()}`,
+                    kind: "SUBSCRIPTION_CHECKOUT_TRANSACTION_PERSISTENCE",
+                    message: "on-chain subscription confirmed but the checkout transaction was not persisted",
+                    context: { ...subscriptionReconciliationContext, subscriptionId: subId || null, txHash: txHash.toLowerCase() },
+                    error: reconciliationError,
+                });
+                throw new Error("Subscription transaction confirmed, but activation is still reconciling. Retry shortly; you will not be charged twice.");
+            }
+        }
+        if (!subId) {
+            await recordPaymentReconciliationRequired({
+                dedupeKey: `subscription-missing-id:${txHash.toLowerCase()}`,
+                kind: "SUBSCRIPTION_MISSING_ONCHAIN_ID",
+                message: "confirmed subscription transaction returned no subscription id",
+                context: { ...subscriptionReconciliationContext, txHash: txHash.toLowerCase() },
+            });
+            throw new Error("Subscription transaction confirmed, but activation is still reconciling. Retry shortly; you will not be charged twice.");
+        }
+
+        try {
+            await mirrorSubscriptionCreated({
+                subscriptionId: subId,
+                merchantAddress: merchant,
+                subscriber,
+                amountUsdc: plan.amountUsdc,
+                periodSeconds: plan.periodSeconds,
+                beneficiaryAddress,
+                minCommitmentSeconds: plan.minCommitmentSeconds,
+                promotion: appliedPromo
+                    ? {
+                        promotionId: appliedPromo.id,
+                        introAmountUsdc: appliedPromo.introductoryAmountUsdc,
+                        introCycles: appliedPromo.introductoryCycles,
+                    }
+                    : null,
+                externalReference,
+                sourceCheckoutId,
+            });
+            if (appliedPromo) {
+                await confirmPromotionRedemption(appliedPromo.id, subscriber, BigInt(subId))
+                    .catch((err) => console.error("[subscription/subscribe] redemption confirm failed:", err));
+            }
+        } catch (reconciliationError) {
+            await recordPaymentReconciliationRequired({
+                dedupeKey: `subscription-mirror:${subId}:${txHash.toLowerCase()}`,
+                kind: "SUBSCRIPTION_LOCAL_MIRROR",
+                message: "on-chain subscription confirmed but local mirroring failed",
+                context: { ...subscriptionReconciliationContext, subscriptionId: subId, txHash: txHash.toLowerCase() },
+                error: reconciliationError,
+            });
+            throw new Error("Subscription transaction confirmed, but activation is still reconciling. Retry shortly; you will not be charged twice.");
+        }
+
+        await prisma.subscriptionAttempt.update({
+            where: { attemptId: attempt.attemptId },
+            data: { status: "COMPLETED", completedAt: new Date() }
+        }).catch(() => {});
+
+        /* Open the merchant→user DM thread for this subscription (best-effort). */
+        const firstRegularPaymentAt = appliedPromo
+            ? new Date(Date.now() + appliedPromo.introductoryCycles * Number(plan.periodSeconds) * 1000)
+            : null;
+        await createSubscriptionStartedDm({
+            merchantAddress: merchant,
+            subscriberAddress: subscriber,
+            planName: plan.name,
+            amountUsdc: plan.amountUsdc,
+            periodSeconds: plan.periodSeconds,
+            introTerms: appliedPromo && firstRegularPaymentAt
+                ? {
+                    introAmountUsdc: appliedPromo.introductoryAmountUsdc,
+                    introCycles: appliedPromo.introductoryCycles,
+                    firstRegularPaymentAt,
+                }
+                : null,
+        }).catch((err) => console.error("[subscription/subscribe] DM creation failed:", err));
+
+        if (checkoutSessionId) {
+            try {
+                await prisma.paymentLink.update({
+                    where: { id: checkoutSessionId },
+                    data: {
+                        active: false,
+                        status: "PAID",
+                        paidAt: new Date(),
+                        verifiedTxHash: txHash.toLowerCase(),
+                    },
+                });
+            } catch (reconciliationError) {
+                await recordPaymentReconciliationRequired({
+                    dedupeKey: `subscription-checkout-finalize:${checkoutSessionId}:${txHash.toLowerCase()}`,
+                    kind: "SUBSCRIPTION_CHECKOUT_FINALIZATION",
+                    message: "confirmed subscription was mirrored but the checkout could not be finalized",
+                    context: { ...subscriptionReconciliationContext, subscriptionId: subId, txHash: txHash.toLowerCase() },
+                    error: reconciliationError,
+                });
+                throw new Error("Subscription activated, but checkout finalization is still reconciling. Retry shortly; you will not be charged twice.");
+            }
+        }
+        await deactivateConsumedApiPlan({
+            sourceCheckoutId,
+            subscriber,
         });
+        await markSubscriptionOfferAccepted(checkoutSessionId, subscriber);
+
+        await dispatchDurableSubscriptionWebhook(merchant, "subscription.created", subscriptionWebhookData({
+            subscriptionId: subId,
+            status: "active",
+            amountUsdcMicros: plan.amountUsdc,
+            subscriber,
+            merchantAddress: merchant,
+            beneficiary: beneficiaryAddress,
+            externalReference,
+            sourceCheckoutId,
+            txHash,
+            pricing: appliedPromo
+                ? {
+                    ...pricingPhaseFor({
+                        sequenceId: 0,
+                        regularAmountUsdc: plan.amountUsdc,
+                        introAmountUsdc: appliedPromo.introductoryAmountUsdc,
+                        introCycles: appliedPromo.introductoryCycles,
+                    }),
+                    regularAmountUsdcMicros: plan.amountUsdc,
+                }
+                : null,
+        }), `created:${subId}:${txHash.toLowerCase()}`);
+
+        return NextResponse.json({
+            success: true,
+            txHash,
+            subscriptionId: subId,
+            planName: plan.name,
+            ...(appliedPromo ? {
+                promotion: {
+                    promotionId: appliedPromo.id,
+                    paidTodayUsdcMicros: appliedPromo.introductoryAmountUsdc.toString(),
+                    introductoryCycles: appliedPromo.introductoryCycles,
+                    regularAmountUsdcMicros: plan.amountUsdc.toString(),
+                    firstRegularPaymentAt: firstRegularPaymentAt?.toISOString() ?? null,
+                },
+            } : {}),
+        }, { status: 200 });
     } catch (error: any) {
         console.error("Subscribe failed:", error);
         return NextResponse.json({ error: error.message || "Failed to subscribe" }, { status: 500 });
     }
+}
+
+function isTerminalCircleError(error: any): boolean {
+    const msg = (error?.message || "").toLowerCase();
+    if (msg.includes("timeout") || msg.includes("network") || msg.includes("econnreset") || msg.includes("etimedout") || msg.includes("504") || msg.includes("502")) {
+        return false;
+    }
+    return true;
 }

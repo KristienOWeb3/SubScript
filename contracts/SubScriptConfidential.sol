@@ -154,7 +154,8 @@ contract SubScriptConfidential is SubScriptPSA, Ownable {
     function registerViewKey(bytes32 _viewKeyHash) external {
         require(_viewKeyHash != bytes32(0), "Invalid key hash");
         address current = viewKeyHashes[_viewKeyHash];
-        require(current == address(0) || current == msg.sender, "Key hash already registered");
+        require(current != address(0), "Must use commit-reveal for new registrations");
+        require(current == msg.sender, "Key hash already registered by another merchant");
         viewKeyHashes[_viewKeyHash] = msg.sender;
         viewKeyRegistrationBlock[_viewKeyHash] = block.number;
         emit ViewKeyRegistered(msg.sender, _viewKeyHash);
@@ -199,6 +200,10 @@ contract SubScriptConfidential is SubScriptPSA, Ownable {
            amounts also remain visible in this transaction's public calldata regardless — the
            precompile shields protocol-level state, not the submitted calldata. */
         if (isShielded) {
+            require(
+                block.chainid == 5042001 || block.chainid == 5042002 || block.chainid == 31337,
+                "Confidential shielding precompile is only available on Arc network or local Hardhat"
+            );
             address precompile = address(0x0000000000000000000000000000000000000088);
             bytes memory payload = abi.encode(recipients, amounts);
             bool success;
@@ -255,5 +260,37 @@ contract SubScriptConfidential is SubScriptPSA, Ownable {
         require(merchant != address(0), "Unauthorized: Invalid View Key");
         require(msg.sender == merchant, "Unauthorized: Caller is not the registered merchant");
         return batchHistory[merchant];
+    }
+
+    /**
+     * @notice Allows the registered merchant to retrieve a paginated slice of plaintext execution logs by view key hash.
+     *         For off-chain use via eth_call to avoid hitting gas/timeout limits as history grows.
+     */
+    function getDecryptedBatchHistoryPaginated(
+        bytes32 viewKeyHash,
+        uint256 offset,
+        uint256 limit
+    ) external view returns (BatchRecord[] memory records, uint256 totalCount) {
+        address merchant = viewKeyHashes[viewKeyHash];
+        require(merchant != address(0), "Unauthorized: Invalid View Key");
+        require(msg.sender == merchant, "Unauthorized: Caller is not the registered merchant");
+
+        uint256 total = batchHistory[merchant].length;
+        if (offset >= total || limit == 0) {
+            return (new BatchRecord[](0), total);
+        }
+
+        uint256 end = offset + limit;
+        if (end > total) {
+            end = total;
+        }
+
+        uint256 count = end - offset;
+        records = new BatchRecord[](count);
+        for (uint256 i = 0; i < count; i++) {
+            records[i] = batchHistory[merchant][offset + i];
+        }
+
+        return (records, total);
     }
 }

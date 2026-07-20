@@ -8,6 +8,8 @@ import { requireAccountRole } from "@/lib/accounts/roles";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { sanitizeInput } from "@/utils/security";
 import { withdrawFromEmbedded, syncVaultMirror } from "@/lib/vault/onchain";
+import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
+import crypto from "crypto";
 
 export const maxDuration = 120;
 
@@ -23,7 +25,7 @@ export async function POST(request: Request) {
         }
 
         const body = sanitizeInput(await request.json().catch(() => null));
-        const { merchantAddress, amountUsdc } = body || {};
+        const { merchantAddress, amountUsdc, requestId } = body || {};
         if (typeof merchantAddress !== "string" || !ethers.isAddress(merchantAddress)) {
             return NextResponse.json({ error: "Invalid merchant address" }, { status: 400 });
         }
@@ -31,6 +33,15 @@ export async function POST(request: Request) {
         if (amount <= BigInt(0)) {
             return NextResponse.json({ error: "Amount must be greater than 0" }, { status: 400 });
         }
+
+        const reqId = request.headers.get("x-request-id")?.trim() || requestId || crypto.randomUUID();
+        const sponsorRequestKey = `vault-withdraw:${reqId}:${wallet.toLowerCase()}:${merchantAddress.toLowerCase()}:${amount.toString()}`;
+
+        await requireSponsoredGas({
+            wallet: wallet.toLowerCase(),
+            action: "vault_withdraw",
+            requestKey: sponsorRequestKey,
+        });
 
         const txHash = await withdrawFromEmbedded(wallet, merchantAddress, amount);
         const v = await syncVaultMirror(wallet, merchantAddress);

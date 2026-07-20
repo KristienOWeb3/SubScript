@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import { Prisma } from "@prisma/client";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { validateWebhookUrl } from "@/lib/webhookUrls";
+import { requireEnterpriseAndPremium, authenticateMerchant } from "@/lib/v1/merchantAuth";
+import { encryptWebhookSecret } from "@/lib/webhooks";
 
 function getSupabase() {
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -13,16 +14,6 @@ function getSupabase() {
         throw new Error("Supabase is not configured on the server.");
     }
     return createClient(supabaseUrl, supabaseServiceKey);
-}
-
-async function checkMerchantPremium(supabase: any, walletAddress: string): Promise<boolean> {
-    const { data: merchant, error } = await supabase
-        .from("merchants")
-        .select("tier")
-        .eq("wallet_address", walletAddress.toLowerCase())
-        .maybeSingle();
-    if (error || !merchant) return false;
-    return merchant.tier === "PREMIUM";
 }
 
 function redactWebhookSecret(secret: string | null | undefined): string {
@@ -40,8 +31,6 @@ type LatestDeliveryRow = {
 
 async function getLatestDeliveriesByEndpoint(endpointIds: string[]): Promise<LatestDeliveryRow[]> {
     if (endpointIds.length === 0) return [];
-    /* The lateral LIMIT is applied independently for each endpoint in one query. A global LIMIT is
-       incorrect here: a noisy endpoint can fill the entire window and hide quieter endpoints. */
     return prisma.$queryRaw<LatestDeliveryRow[]>(Prisma.sql`
         WITH requested_endpoints(id) AS (
             VALUES ${Prisma.join(
@@ -67,16 +56,13 @@ async function getLatestDeliveriesByEndpoint(endpointIds: string[]): Promise<Lat
 
 export async function GET(request: Request) {
     try {
-        const wallet = await getSessionWallet(request.headers);
-        if (!wallet) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        const auth = await authenticateMerchant(request);
+        if (!auth.ok) {
+            return NextResponse.json({ error: auth.error }, { status: auth.status });
         }
+        const wallet = auth.merchantAddress;
 
         const supabase = getSupabase();
-        const isPremium = await checkMerchantPremium(supabase, wallet);
-        if (!isPremium) {
-            return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
-        }
 
         const { data: endpoints, error } = await supabase
             .from("webhook_endpoints")
@@ -117,7 +103,6 @@ export async function GET(request: Request) {
         try {
             deliveries = await getLatestDeliveriesByEndpoint(endpointIds);
         } catch (deliveryError) {
-            /* Endpoint configuration remains usable if observability history is unavailable. */
             console.error("GET latest webhook deliveries error:", deliveryError);
         }
         const latestDeliveryByEndpoint = new Map<string, LatestDeliveryRow>();
@@ -131,9 +116,14 @@ export async function GET(request: Request) {
                 id: e.id,
                 walletAddress: e.wallet_address,
                 url: e.url,
-                secret: redactWebhookSecret(e.secret),
+                secret: e.ciphertext ? "whsec_••••••••" : "",
                 secretAvailable: false,
                 active: e.active,
+                environment: e.environment || "TEST",
+                enabledEvents: e.enabled_events || [],
+                apiVersion: e.api_version || "2026-07-01",
+                description: e.description,
+                status: e.status || "ACTIVE",
                 createdAt: e.created_at,
                 apiKey,
                 latestDelivery: latestDelivery
@@ -162,15 +152,15 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
     try {
-        const wallet = await getSessionWallet(request.headers);
-        if (!wallet) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        const auth = await authenticateMerchant(request);
+        if (!auth.ok) {
+            return NextResponse.json({ error: auth.error }, { status: auth.status });
         }
+        const wallet = auth.merchantAddress;
 
-        const supabase = getSupabase();
-        const isPremium = await checkMerchantPremium(supabase, wallet);
-        if (!isPremium) {
-            return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
+        const premiumCheck = await requireEnterpriseAndPremium(wallet);
+        if (!premiumCheck.ok) {
+            return NextResponse.json({ error: premiumCheck.error }, { status: premiumCheck.status });
         }
 
         const body = await request.json().catch(() => null);
@@ -178,21 +168,43 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "URL is required" }, { status: 400 });
         }
 
-        const { url } = body;
+        const { url, environment, api_version, enabled_events, description } = body;
         const urlValidation = await validateWebhookUrl(url);
         if (!urlValidation.ok) {
             return NextResponse.json({ error: urlValidation.error }, { status: 400 });
         }
 
+        const env = environment === "LIVE" ? "LIVE" : "TEST";
+        if (auth.mode === "test" && env === "LIVE") {
+            return NextResponse.json({ error: "Forbidden: TEST API credentials cannot configure LIVE endpoints." }, { status: 400 });
+        }
+
+        const apiVersion = api_version || "2026-07-01";
+        const enabledEvents = Array.isArray(enabled_events) ? enabled_events : [];
+
+        const id = crypto.randomUUID();
         const secret = `whsec_${crypto.randomBytes(24).toString("hex")}`;
+        const encryption = encryptWebhookSecret(secret, id, wallet);
+
+        const supabase = getSupabase();
 
         const { data: endpoint, error: insertError } = await supabase
             .from("webhook_endpoints")
             .insert({
+                id,
                 wallet_address: wallet.toLowerCase(),
                 url: urlValidation.url,
-                secret,
+                ciphertext: encryption.ciphertext,
+                nonce: encryption.nonce,
+                authentication_tag: encryption.authenticationTag,
+                key_version: encryption.keyVersion,
+                encryption_algorithm: encryption.encryptionAlgorithm,
                 active: true,
+                environment: env,
+                enabled_events: enabledEvents,
+                api_version: apiVersion,
+                description: description || null,
+                status: "ACTIVE",
             })
             .select()
             .single();
@@ -206,9 +218,14 @@ export async function POST(request: Request) {
             id: endpoint.id,
             walletAddress: endpoint.wallet_address,
             url: endpoint.url,
-            secret: endpoint.secret,
+            secret,
             secretAvailable: true,
             active: endpoint.active,
+            environment: endpoint.environment,
+            enabledEvents: endpoint.enabled_events || [],
+            apiVersion: endpoint.api_version,
+            description: endpoint.description,
+            status: endpoint.status,
             createdAt: endpoint.created_at,
         };
 
@@ -221,10 +238,11 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
     try {
-        const wallet = await getSessionWallet(request.headers);
-        if (!wallet) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        const auth = await authenticateMerchant(request);
+        if (!auth.ok) {
+            return NextResponse.json({ error: auth.error }, { status: auth.status });
         }
+        const wallet = auth.merchantAddress;
 
         const { searchParams } = new URL(request.url);
         const id = searchParams.get("id");
@@ -234,10 +252,6 @@ export async function DELETE(request: Request) {
         }
 
         const supabase = getSupabase();
-        const isPremium = await checkMerchantPremium(supabase, wallet);
-        if (!isPremium) {
-            return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
-        }
         
         const { data: endpointCheck, error: checkError } = await supabase
             .from("webhook_endpoints")

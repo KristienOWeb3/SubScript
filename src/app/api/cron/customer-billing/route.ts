@@ -27,6 +27,7 @@ import { pricingPhaseFor } from "@/lib/subscriptions/promotions";
 import { cancelFromEmbedded } from "@/lib/subscriptions/onchain";
 import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
+import { getRpcProviderForWrite } from "@/lib/payments/rpc";
 
 export const maxDuration = 300;
 
@@ -116,21 +117,34 @@ async function createBillingDm({
     });
 }
 
+function isAuthorized(request: Request) {
+    const authHeader = request.headers.get("Authorization") || "";
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    const presented = match?.[1] || "";
+    const configured = [process.env.CRON_SECRET, process.env.KEEPER_SECRET]
+        .filter((value): value is string => Boolean(value));
+    
+    if (presented.length === 0 || configured.length === 0) return false;
+
+    const digest = (val: string) => crypto.createHash("sha256").update(val, "utf8").digest();
+    const providedDigest = digest(presented);
+
+    return configured.some((value) => {
+        try {
+            return crypto.timingSafeEqual(providedDigest, digest(value));
+        } catch {
+            return false;
+        }
+    });
+}
+
 export async function POST(request: Request) {
     const requestId = crypto.randomUUID();
     try {
-        /* 1. Auth — accept the keeper secret (external scheduler) or Vercel's CRON_SECRET. The
-           vercel.json cron invokes this path with `Authorization: Bearer ${CRON_SECRET}`; either
-           secret may be configured. */
-        const authHeader = request.headers.get("Authorization");
-        const keeperSecret = process.env.KEEPER_SECRET;
-        const cronSecret = process.env.CRON_SECRET;
-        if (!keeperSecret && !cronSecret) {
+        if (!process.env.KEEPER_SECRET && !process.env.CRON_SECRET) {
             return NextResponse.json({ error: "Internal Server Error: KEEPER_SECRET or CRON_SECRET must be configured" }, { status: 500 });
         }
-        const presented = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-        const authorized = !!presented && ((!!keeperSecret && presented === keeperSecret) || (!!cronSecret && presented === cronSecret));
-        if (!authorized) {
+        if (!isAuthorized(request)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
@@ -148,7 +162,7 @@ export async function POST(request: Request) {
         if (!adminPrivateKey) {
             return NextResponse.json({ error: "Configuration Error: Admin private key missing on server" }, { status: 500 });
         }
-        const provider = new ethers.JsonRpcProvider(rpcUrl);
+        const { provider } = await getRpcProviderForWrite();
         const adminWallet = new ethers.Wallet(adminPrivateKey, provider);
         const standardContract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, STANDARD_ABI, adminWallet);
         const usdcContract = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, USDC_ERC20_ABI, adminWallet);
@@ -207,6 +221,55 @@ export async function POST(request: Request) {
                 const subscriber: string = onChain[0];
                 const amountOnChain: bigint = BigInt(onChain[2]);
                 const isActiveOnChain: boolean = onChain[5];
+
+                const { data: custodyWallet, error: custodyError } = await supabase
+                    .from("user_embedded_wallets")
+                    .select("wallet_address")
+                    .eq("wallet_address", subscriber.toLowerCase())
+                    .maybeSingle();
+
+                if (custodyError) {
+                    throw new Error(`Failed to query custody for subscriber ${subscriber}: ${custodyError.message}`);
+                }
+
+                if (!custodyWallet) {
+                    /* External wallet — server-side charge attempts are impossible because we lack custody.
+                       Transition to USER_ACTION_REQUIRED, notify the user, and skip. */
+                    await supabase
+                        .from("subscriptions")
+                        .update({
+                            status: "USER_ACTION_REQUIRED",
+                            updated_at: new Date().toISOString(),
+                        })
+                        .eq("subscription_id", subId);
+
+                    await createBillingDm({
+                        supabase,
+                        senderAddress: merchantAddress,
+                        receiverAddress: subscriber,
+                        messageType: "EXPIRY_WARNING",
+                        amountUsdc: amountOnChain,
+                        title: "Action required to renew subscription",
+                        description: [
+                            "Your subscription renewal requires manual action.",
+                            "Reason: external wallet signatures cannot be automated server-side.",
+                            "Please visit your dashboard and confirm the renewal payment.",
+                        ].join("\n"),
+                    }).catch((e: any) => console.error("[customer-billing] external wallet warning DM failed:", e));
+
+                    await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.payment_failed", subscriptionWebhookData({
+                        subscriptionId: subId,
+                        status: "user_action_required",
+                        amountUsdcMicros: amountOnChain,
+                        subscriber,
+                        merchantAddress,
+                        ...lifecycleBinding(sub),
+                        reason: "External wallet requires manual signature",
+                    }), `customer-external-wallet-action:${subId}`);
+
+                    results.push({ subId, subscriber, action: "USER_ACTION_REQUIRED_TRANSITIONED", success: true });
+                    continue;
+                }
 
                 /* Cancelled directly on-chain -> reflect it in the mirror and notify, then stop. */
                 if (!isActiveOnChain) {

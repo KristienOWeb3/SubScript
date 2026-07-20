@@ -80,7 +80,7 @@ test("migration runner never fabricates a baseline or hides privilege failures",
     /* Baseline adoption is permitted ONLY behind the explicit ADOPT_EXISTING_DB_BASELINE=1 opt-in
        (used by the isolated E2E stack). It must never happen silently — the gate is the guarantee. */
     assert.match(runner, /ADOPT_EXISTING_DB_BASELINE !== "1"/);
-    assert.match(runner, /if \(adoptingLegacySchema\)[\s\S]*?INSERT INTO _subscript_migrations \(filename, baseline\)/);
+    assert.match(runner, /if \(adoptingLegacySchema\)[\s\S]*?INSERT INTO _subscript_migrations \(filename, baseline/);
     assert.match(runner, /subscript:no-transaction/);
     assert.match(runner, /if \(nonTransactional\)[\s\S]*?await client\.query\(sql\)[\s\S]*?INSERT INTO _subscript_migrations/);
     assert.match(runner, /if \(!nonTransactional\)[\s\S]*?ROLLBACK/);

@@ -39,9 +39,8 @@ async function main() {
   }
   console.log("Vault treasury:", treasury);
 
-  const initData = SubScriptVault.interface.encodeFunctionData("initializeV2", [treasury]);
   console.log("Executing atomic upgradeToAndCall...");
-  const tx = await proxy.upgradeToAndCall(newImplAddress, initData);
+  const tx = await proxy.upgradeToAndCall(newImplAddress, "0x");
   console.log("Tx:", tx.hash);
   const receipt = await tx.wait();
   console.log("Upgrade status:", receipt.status);

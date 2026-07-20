@@ -14,6 +14,7 @@
  * Cancellation is cleared automatically if the user later re-commits (see vault/commit).
  */
 import { after, NextResponse } from "next/server";
+import crypto from "crypto";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
@@ -21,7 +22,7 @@ import { sanitizeInput } from "@/utils/security";
 import { prisma } from "@/lib/prisma";
 import { withPgClient } from "@/lib/serverPg";
 import { insertPgDm, pushDmNotification } from "@/lib/dms/notifications";
-import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
+import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { ARC_TESTNET_CHAIN_ID } from "@/lib/contracts/constants";
 
 export async function POST(request: Request) {
@@ -108,13 +109,25 @@ export async function POST(request: Request) {
             if (dmNotification) {
                 await pushDmNotification(dmNotification).catch(() => { /* best-effort */ });
             }
-            await dispatchMerchantWebhook(merchant, "vault.service_canceled", {
-                userAddress: user,
+            await recordMerchantEvent({
                 merchantAddress: merchant,
-                vaultId: vault.id,
-                cancelRequestedAt: cancelledAt.toISOString(),
-                reason: cleanReason,
-                message: "Customer cancelled the metered service. Stop rendering service; new usage reports will be rejected.",
+                environment: "TEST",
+                eventType: "vault.service_canceled",
+                resourceType: "vault",
+                resourceId: vault.id,
+                resourceVersion: 1,
+                data: {
+                    userAddress: user,
+                    merchantAddress: merchant,
+                    vaultId: vault.id,
+                    cancelRequestedAt: cancelledAt.toISOString(),
+                    reason: cleanReason,
+                    message: "Customer cancelled the metered service. Stop rendering service; new usage reports will be rejected.",
+                },
+                correlationId: crypto.randomUUID(),
+                transitionKey: `vault_cancel_${vault.id}_${cancelledAt.getTime()}`,
+            }).catch((err) => {
+                console.error("cancel-service recordMerchantEvent failed:", err);
             });
         });
 

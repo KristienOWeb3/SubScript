@@ -4,6 +4,9 @@ import crypto from "node:crypto";
 import pg from "pg";
 import { initiateDeveloperControlledWalletsClient } from "@circle-fin/developer-controlled-wallets";
 import { supabaseDbCa } from "@/lib/supabaseCa";
+import { ethers } from "ethers";
+import { getRpcProviderForWrite } from "@/lib/payments/rpc";
+
 
 const { Client } = pg;
 const ALGORITHM = "aes-256-gcm";
@@ -174,6 +177,109 @@ export async function runLegacyWalletMigration(opts: MigrationOptions): Promise<
 
             log(`  New address target: ${newAddress}`);
 
+            // Address Collision Check
+            if (!isDryRun) {
+                const collisionCheck = await client.query(
+                    "select email from user_embedded_wallets where wallet_address = $1 limit 1",
+                    [newAddress.toLowerCase()]
+                );
+                if (collisionCheck.rows[0] && collisionCheck.rows[0].email !== record.email) {
+                    throw new Error(`Address collision detected: target address ${newAddress} is already registered to ${collisionCheck.rows[0].email}`);
+                }
+            }
+
+            // On-Chain Asset Sweep
+            if (!isDryRun) {
+                const sweepCheck = await client.query(
+                    "select sweep_status, sweep_tx_hash from circle_wallet_provisioning where ref_id = $1 limit 1",
+                    [refId]
+                );
+                const currentSweepStatus = sweepCheck.rows[0]?.sweep_status || 'PENDING';
+                if (currentSweepStatus === 'SWEEP_COMPLETED') {
+                    log(`  USDC Sweep already completed in a prior run (Tx: ${sweepCheck.rows[0]?.sweep_tx_hash}). Skipping sweep.`);
+                } else {
+                    log(`  Starting on-chain asset sweep from ${record.wallet_address} to ${newAddress}...`);
+                    const decryptedPkey = decryptPrivateKey(record.encrypted_private_key, encryptionSecret);
+                    const { provider } = await getRpcProviderForWrite();
+                    const eoaWallet = new ethers.Wallet(decryptedPkey, provider);
+                    const adminPrivateKey = process.env.ADMIN_PRIVATE_KEY || process.env.KEEPER_PRIVATE_KEY;
+                    if (!adminPrivateKey) {
+                        throw new Error("ADMIN_PRIVATE_KEY or KEEPER_PRIVATE_KEY must be configured on server to perform gas top-up.");
+                    }
+                    const adminWallet = new ethers.Wallet(adminPrivateKey, provider);
+
+                    const nativeBalance = await provider.getBalance(eoaWallet.address);
+                    const usdcContract: any = new ethers.Contract(
+                        "0x3600000000000000000000000000000000000000",
+                        [
+                            "function balanceOf(address) view returns (uint256)",
+                            "function transfer(address, uint256) returns (bool)"
+                        ],
+                        provider
+                    );
+                    const erc20Balance = await usdcContract.balanceOf(eoaWallet.address);
+                    log(`  EOA Native balance: ${ethers.formatUnits(nativeBalance, 18)} USDC, ERC-20 USDC balance: ${ethers.formatUnits(erc20Balance, 6)} USDC`);
+
+                    const feeData = await provider.getFeeData();
+                    const gasPrice = feeData.gasPrice || ethers.parseUnits("1", "gwei");
+                    const minGas = gasPrice * 100000n; // gas limit for ERC-20 transfer
+
+                    // Gas top-up if EOA balance is too low
+                    if (nativeBalance < minGas) {
+                        const topUpAmount = (gasPrice * 150000n) - nativeBalance;
+                        log(`  EOA gas balance too low. Topping up EOA with ${ethers.formatUnits(topUpAmount, 18)} native gas from admin...`);
+                        const topUpTx = await adminWallet.sendTransaction({
+                            to: eoaWallet.address,
+                            value: topUpAmount
+                        });
+                        log(`  Top-up transaction submitted: ${topUpTx.hash}. Waiting for confirmation...`);
+                        await topUpTx.wait();
+                        log(`  Top-up transaction confirmed.`);
+                    }
+
+                    let sweepTxHash = "";
+
+                    // Sweep ERC-20 USDC
+                    if (erc20Balance > 0n) {
+                        log(`  Sweeping ${ethers.formatUnits(erc20Balance, 6)} ERC-20 USDC to new Circle wallet ${newAddress}...`);
+                        const sweepErc20Tx = await usdcContract.connect(eoaWallet).transfer(newAddress, erc20Balance);
+                        log(`  ERC-20 Sweep transaction submitted: ${sweepErc20Tx.hash}. Waiting for confirmation...`);
+                        await sweepErc20Tx.wait();
+                        sweepTxHash = sweepErc20Tx.hash;
+                        log(`  ERC-20 Sweep transaction confirmed.`);
+                    }
+
+                    // Sweep native USDC (remaining gas)
+                    const remainingNative = await provider.getBalance(eoaWallet.address);
+                    const nativeSweepFee = 21000n * gasPrice;
+                    if (remainingNative > nativeSweepFee) {
+                        const sweepNativeAmount = remainingNative - nativeSweepFee;
+                        if (sweepNativeAmount > 0n) {
+                            log(`  Sweeping ${ethers.formatUnits(sweepNativeAmount, 18)} native USDC...`);
+                            const sweepNativeTx = await eoaWallet.sendTransaction({
+                                to: newAddress,
+                                value: sweepNativeAmount
+                            });
+                            log(`  Native Sweep transaction submitted: ${sweepNativeTx.hash}. Waiting for confirmation...`);
+                            await sweepNativeTx.wait();
+                            if (!sweepTxHash) sweepTxHash = sweepNativeTx.hash;
+                            log(`  Native Sweep transaction confirmed.`);
+                        }
+                    }
+
+                    if (!sweepTxHash) sweepTxHash = "completed_no_assets";
+
+                    // Update checkpoint state
+                    await client.query(
+                        "update circle_wallet_provisioning set sweep_status = 'SWEEP_COMPLETED', sweep_tx_hash = $2, updated_at = now() where ref_id = $1",
+                        [refId, sweepTxHash]
+                    );
+                    log(`  On-chain sweep completed and checkpoint updated.`);
+                }
+            } else {
+                log(`  [Dry-run] Would sweep on-chain assets from EOA to new wallet and update checkpoints.`);
+            }
+
             // Perform DB cascade updates in transaction
             if (!isDryRun) {
                 log(`  Updating database tables in a single transaction...`);
@@ -254,6 +360,22 @@ export async function runLegacyWalletMigration(opts: MigrationOptions): Promise<
                     await client.query("update payment_link_payments set payer_address = $2 where payer_address = $1", [oldAddr, newAddr]);
                     await client.query("update payment_link_payments set beneficiary_address = $2 where beneficiary_address = $1", [oldAddr, newAddr]);
                     await client.query("update payment_link_payments set merchant_address = $2 where merchant_address = $1", [oldAddr, newAddr]);
+
+                    // Add new cascade tables / columns
+                    await client.query("update subscript_dms set sender_address = $2 where sender_address = $1", [oldAddr, newAddr]);
+                    await client.query("update subscript_dms set receiver_address = $2 where receiver_address = $1", [oldAddr, newAddr]);
+                    await client.query("update referrals set referrer_address = $2 where referrer_address = $1", [oldAddr, newAddr]);
+                    await client.query("update referrals set referred_address = $2 where referred_address = $1", [oldAddr, newAddr]);
+                    await client.query("update payroll_campaigns set organization_address = $2 where organization_address = $1", [oldAddr, newAddr]);
+                    await client.query("update payroll_recipients set employee_wallet = $2 where employee_wallet = $1", [oldAddr, newAddr]);
+                    await client.query("update vault_commit_intents set user_address = $2 where user_address = $1", [oldAddr, newAddr]);
+                    await client.query("update vault_commit_intents set merchant_address = $2 where merchant_address = $1", [oldAddr, newAddr]);
+                    await client.query("update promotion_redemptions set subscriber_address = $2 where subscriber_address = $1", [oldAddr, newAddr]);
+                    await client.query("update fiat_funding_intents set wallet_address = $2 where wallet_address = $1", [oldAddr, newAddr]);
+                    await client.query("update fiat_funding_intents set destination_wallet = $2 where destination_wallet = $1", [oldAddr, newAddr]);
+                    await client.query("update merchant_reports set merchant_address = $2 where merchant_address = $1", [oldAddr, newAddr]);
+                    await client.query("update merchant_reports set reporter_address = $2 where reporter_address = $1", [oldAddr, newAddr]);
+                    await client.query("update push_subscriptions set wallet_address = $2 where wallet_address = $1", [oldAddr, newAddr]);
 
                     // Clean up old tables
                     await client.query("delete from merchants where wallet_address = $1", [oldAddr]);

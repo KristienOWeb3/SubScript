@@ -6054,10 +6054,10 @@ Please complete the following implementation tasks:
                                             : "bg-emerald-500/10 text-emerald-300 border border-emerald-500/25"
                                     }`}>
                                         {!userSettings.verified
-                                            ? "Tier 1: Unverified"
+                                            ? "Unverified"
                                             : userSettings.tier === "PREMIUM"
-                                            ? "Tier 3: Premium"
-                                            : "Tier 2: Verified"}
+                                            ? "Premium"
+                                            : "Verified"}
                                     </span>
                                 )}
                             </h1>

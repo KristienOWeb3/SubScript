@@ -1,5 +1,18 @@
 #!/usr/bin/env node
 
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+// If we are not already running inside ts-node / tsx, re-exec with ts-node
+if (!process.argv.some(arg => arg.includes("ts-node") || arg.includes("tsx")) && !process.env.TS_NODE_DEV) {
+    const scriptPath = fileURLToPath(import.meta.url);
+    const result = spawnSync("npx", ["ts-node", "--esm", scriptPath, ...process.argv.slice(2)], {
+        stdio: "inherit",
+        shell: true
+    });
+    process.exit(result.status ?? 0);
+}
+
 /*
  * Legacy wallet sweep migration script (Stage 2c/3).
  *

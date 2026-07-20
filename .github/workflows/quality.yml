@@ -26,6 +26,9 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
+      - name: Plaintext credential gate
+        run: npm run security:secrets
+
       - name: Typecheck
         run: npm run typecheck
 
