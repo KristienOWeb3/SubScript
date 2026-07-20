@@ -18,10 +18,12 @@ const dashboardBaseUrl = normalizePublicUrl(process.env.NEXT_PUBLIC_APP_URL || p
 
 /**
  * Machine-readable error envelope for every non-2xx API response:
- *   { error, code, message, request_id, doc_url }
+ *   { error, code, message, request_id, doc_url, retryable?, retry_after?, details? }
  * `error` stays the human-readable string older integrations already parse; `code` is the stable
  * identifier agents branch on. `request_id` lets a merchant quote one opaque ID in a support
  * request instead of us ever echoing ORM/DB internals.
+ *
+ * Finding 87: Added retryable, retry_after, details fields. X-Request-Id header on every response.
  */
 export function apiError(args: {
     status: number;
@@ -29,14 +31,41 @@ export function apiError(args: {
     message: string;
     requestId?: string;
     docUrl?: string;
+    /** Whether the client should retry this request */
+    retryable?: boolean;
+    /** Seconds the client should wait before retrying */
+    retryAfter?: number;
+    /** Machine-readable details for specific validation errors */
+    details?: Record<string, unknown>[];
 }) {
-    return NextResponse.json({
+    const requestId = args.requestId ?? crypto.randomUUID();
+
+    const body: Record<string, unknown> = {
         error: args.message,
         code: args.code,
         message: args.message,
-        request_id: args.requestId ?? crypto.randomUUID(),
+        request_id: requestId,
         doc_url: args.docUrl ?? `${dashboardBaseUrl}/docs#errors`,
-    }, { status: args.status });
+    };
+
+    if (args.retryable !== undefined) {
+        body.retryable = args.retryable;
+    }
+    if (args.retryAfter !== undefined && args.retryAfter > 0) {
+        body.retry_after = args.retryAfter;
+    }
+    if (args.details && args.details.length > 0) {
+        body.details = args.details;
+    }
+
+    const headers: Record<string, string> = {
+        "X-Request-Id": requestId,
+    };
+    if (args.retryAfter !== undefined && args.retryAfter > 0) {
+        headers["Retry-After"] = String(args.retryAfter);
+    }
+
+    return NextResponse.json(body, { status: args.status, headers });
 }
 
 export function merchantPayoutWalletMissingResponse() {

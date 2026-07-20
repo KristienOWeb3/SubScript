@@ -8,11 +8,14 @@ import { requireAccountRole, getAccountRole } from "@/lib/accounts/roles";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { sanitizeInput } from "@/utils/security";
 import { commitFromEmbedded, syncVaultMirror } from "@/lib/vault/onchain";
+import { SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
 import { deterministicIdempotencyKey } from "@/lib/custody";
 import { isSponsoredGasError, requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { prisma } from "@/lib/prisma";
 import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
+import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
+import crypto from "crypto";
 
 export const maxDuration = 120;
 
@@ -51,7 +54,7 @@ export async function POST(request: Request) {
             select: { tier: true, verified: true }
         });
         if (!merchant || merchant.tier !== "PREMIUM") {
-            return NextResponse.json({ error: "Forbidden: Vault commits are only available for Premium (Tier 3) merchants." }, { status: 403 });
+            return NextResponse.json({ error: "Forbidden: Vault commits are only available for Premium merchants." }, { status: 403 });
         }
 
         /* Informed consent for unverified merchants: metered vaults let the merchant draw reported
@@ -150,7 +153,6 @@ export async function POST(request: Request) {
                 wallet: normalizedWallet,
                 action: "vault_commit",
                 requestKey: sponsorRequestKey,
-                principalRequiredWei: amount * BigInt(1_000_000_000_000),
             });
         } catch (sponsorError: unknown) {
             /* Structured definitive failures occurred before any financial submission, so the
@@ -189,7 +191,7 @@ export async function POST(request: Request) {
         await prisma.vaultCommitIntent.update({
             where: { requestId },
             data: { status: "SUBMITTED", txHash: txHash.toLowerCase(), lastError: null },
-        }).catch((persistError) => {
+        }).catch((persistError: unknown) => {
             console.error("[vault-commit] CRITICAL: submitted commit not recorded durably:", persistError);
         });
 
@@ -202,8 +204,14 @@ export async function POST(request: Request) {
         /* A commit changes the balance denominator for usage thresholds, so re-arm the 50%/80%
            alerts against the new balance. Re-committing is also an explicit opt back in, so it
            clears any prior cancellation and lets the merchant resume reporting usage. */
+        const commitEnvironment = SUBSCRIPT_VAULT_CHAIN_ID === 5042001 ? "LIVE" : "TEST";
         await prisma.meteredVault.updateMany({
-            where: { userAddress: wallet.toLowerCase(), merchantAddress: merchantAddress.toLowerCase() },
+            where: {
+                userAddress: wallet.toLowerCase(),
+                merchantAddress: merchantAddress.toLowerCase(),
+                environment: commitEnvironment,
+                settlementChainId: BigInt(SUBSCRIPT_VAULT_CHAIN_ID),
+            },
             data: { usageNotifiedBps: 0, cancelRequestedAt: null, cancelReason: null },
         }).catch(() => {});
         if (v.active) {
@@ -219,6 +227,25 @@ export async function POST(request: Request) {
                 data: { status: "DISMISSED" },
             });
         }
+
+        await recordMerchantEvent({
+            merchantAddress: normalizedMerchant,
+            environment: commitEnvironment as "TEST" | "LIVE",
+            eventType: "vault.activated",
+            resourceType: "vault",
+            resourceId: `${normalizedWallet}:${normalizedMerchant}`,
+            resourceVersion: 1,
+            data: {
+                user_address: normalizedWallet,
+                merchant_address: normalizedMerchant,
+                amount_usdc_micros: amount.toString(),
+                vault_balance_usdc_micros: v.balance.toString(),
+                tx_hash: txHash,
+                active: v.active,
+            },
+            correlationId: requestId,
+            transitionKey: `vault_commit:${txHash.toLowerCase()}`,
+        }).catch(err => console.error("[vault/commit] webhook dispatch error:", err));
 
         return NextResponse.json({
             success: true,

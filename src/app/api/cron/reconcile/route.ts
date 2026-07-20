@@ -5,24 +5,40 @@ import { processPaymentLinkVerificationJobs } from "@/lib/payments/paymentLinkVe
 import { healSubscriptionDrift } from "@/lib/subscriptions/driftHealer";
 import { deliverPendingWebhookOutboxEvents } from "@/lib/webhookOutbox";
 import { processPaymentReconciliationEvents } from "@/lib/payments/reconciliationRetry";
+import { prisma } from "@/lib/prisma";
+import crypto from "crypto";
 
 /* Payment reconciliation + subscription drift healing both read the chain per row — give
    the combined pass generous headroom. */
 export const maxDuration = 300;
 
+function isAuthorized(request: Request) {
+    const authHeader = request.headers.get("Authorization") || "";
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    const presented = match?.[1] || "";
+    const configured = [process.env.CRON_SECRET, process.env.KEEPER_SECRET]
+        .filter((value): value is string => Boolean(value));
+    
+    if (presented.length === 0 || configured.length === 0) return false;
+
+    const digest = (val: string) => crypto.createHash("sha256").update(val, "utf8").digest();
+    const providedDigest = digest(presented);
+
+    return configured.some((value) => {
+        try {
+            return crypto.timingSafeEqual(providedDigest, digest(value));
+        } catch {
+            return false;
+        }
+    });
+}
+
 export async function POST(request: Request) {
     try {
-        /* Accept the external keeper secret or Vercel's CRON_SECRET (Vercel cron invokes this
-           path with `Authorization: Bearer ${CRON_SECRET}`); either may be configured. */
-        const authHeader = request.headers.get("Authorization");
-        const keeperSecret = process.env.KEEPER_SECRET;
-        const cronSecret = process.env.CRON_SECRET;
-        if (!keeperSecret && !cronSecret) {
+        if (!process.env.KEEPER_SECRET && !process.env.CRON_SECRET) {
             return NextResponse.json({ error: "Internal Server Error: KEEPER_SECRET or CRON_SECRET must be configured" }, { status: 500 });
         }
-        const presented = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-        const authorized = !!presented && ((!!keeperSecret && presented === keeperSecret) || (!!cronSecret && presented === cronSecret));
-        if (!authorized) {
+        if (!isAuthorized(request)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
@@ -66,6 +82,29 @@ export async function POST(request: Request) {
         } catch (driftErr: any) {
             console.error("[reconcile] drift healer failed:", driftErr?.message || driftErr);
             drift = { error: driftErr?.message || "drift healer failed" };
+        }
+
+        // Session cleanup: purge expired sessions older than 30 days (Finding 11)
+        try {
+            const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+            const purged = await prisma.session.deleteMany({
+                where: { createdAt: { lt: thirtyDaysAgo } },
+            });
+            if (purged.count > 0) {
+                console.log(`[reconcile] Purged ${purged.count} stale sessions older than 30 days.`);
+            }
+        } catch (sessionErr) {
+            console.error("[reconcile] Session cleanup error:", sessionErr);
+        }
+
+        // CLI session cleanup: purge expired CLI sessions
+        try {
+            const expiredCli = await prisma.$executeRaw`DELETE FROM cli_sessions WHERE expires_at < NOW()`;
+            if (expiredCli > 0) {
+                console.log(`[reconcile] Purged ${expiredCli} expired CLI sessions.`);
+            }
+        } catch (cliErr) {
+            console.error("[reconcile] CLI session cleanup error:", cliErr);
         }
 
         const workerHealthy = "error" in paymentLinkVerification

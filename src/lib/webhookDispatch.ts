@@ -1,12 +1,11 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import { sendWebhookRequest } from "@/lib/webhooks";
+import { sendWebhookRequest, decryptWebhookSecret } from "@/lib/webhooks";
 
 /**
  * Deliver an event to every active webhook endpoint a merchant has registered, signing each
- * with that endpoint's secret and logging the delivery. This NEVER throws — webhook delivery
- * must never break the caller (billing cron, API routes). The canonical event name is sent as
- * both `type` and `event` for parity with payment webhooks.
+ * with that endpoint's decrypted secret and logging the delivery. This NEVER throws — webhook
+ * delivery must never break the caller (billing cron, API routes).
  */
 export async function dispatchMerchantWebhook(
     walletAddress: string,
@@ -14,8 +13,9 @@ export async function dispatchMerchantWebhook(
     data: Record<string, unknown>
 ): Promise<{ dispatched: number }> {
     try {
+        const normalizedWallet = walletAddress.toLowerCase();
         const endpoints = await prisma.webhookEndpoint.findMany({
-            where: { walletAddress: walletAddress.toLowerCase(), active: true },
+            where: { walletAddress: normalizedWallet, active: true },
         });
         if (endpoints.length === 0) return { dispatched: 0 };
 
@@ -27,15 +27,21 @@ export async function dispatchMerchantWebhook(
             data,
         };
 
-        await Promise.all(endpoints.map(async (endpoint: { id: string; url: string; secret: string }) => {
+        await Promise.all(endpoints.map(async (endpoint) => {
             let status = 0;
             let responseText = "";
             try {
-                const result = await sendWebhookRequest(endpoint.url, payload, endpoint.secret);
+                const secret = decryptWebhookSecret({
+                    ciphertext: endpoint.ciphertext,
+                    nonce: endpoint.nonce,
+                    authenticationTag: endpoint.authenticationTag,
+                    endpointId: endpoint.id,
+                    merchantAddress: normalizedWallet,
+                });
+                const result = await sendWebhookRequest(endpoint.url, payload, secret);
                 status = result.status;
                 responseText = result.responseText;
             } catch (err) {
-                /* Record the failure too, so merchants can see failed delivery attempts. */
                 responseText = err instanceof Error ? err.message : String(err);
             }
             await prisma.webhookEvent.create({

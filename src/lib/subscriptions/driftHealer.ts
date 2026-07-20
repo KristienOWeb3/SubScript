@@ -19,6 +19,7 @@
  * oldest-checked first, so the whole book is swept across a few daily runs even if it grows.
  */
 import { ethers } from "ethers";
+import { executeWithRpcFallback } from "@/lib/payments/rpc";
 import { STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 import { cancelFromEmbedded } from "@/lib/subscriptions/onchain";
 import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
@@ -46,10 +47,6 @@ export async function healSubscriptionDrift(
     supabase: any,
     limit = 60,
 ): Promise<{ checked: number; healed: DriftResult[]; errors: number }> {
-    const rpcUrl = process.env.RPC_URL || "https://rpc.testnet.arc.network";
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
-    const contract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, STANDARD_ABI, provider);
-
     const healed: DriftResult[] = [];
     let checked = 0;
     let errors = 0;
@@ -83,7 +80,10 @@ export async function healSubscriptionDrift(
         if (!Number.isFinite(subId) || subId <= 0) continue;
         checked++;
         try {
-            const onChain = await contract.subscriptions(subId);
+            const { result: onChain } = await executeWithRpcFallback(async (provider) => {
+                const contract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, STANDARD_ABI, provider);
+                return await contract.subscriptions(subId);
+            });
             const subscriber: string = String(onChain[0]).toLowerCase();
             const period: bigint = BigInt(onChain[3]);
             const nextPayment: bigint = BigInt(onChain[4]);
@@ -144,6 +144,7 @@ export async function healSubscriptionDrift(
                                 `Please call cancelSubscription(${subId}) on the SubScript contract or revoke its USDC allowance from your wallet.`,
                             ].join("\n"),
                             tx_hash: null,
+                            dedupe_key: `external-revoke-advisory:${subId}`,
                         }).catch(() => { /* best-effort */ });
                         healed.push({ subId, action: "ADVISED_EXTERNAL_REVOKE" });
                     } else {
@@ -169,7 +170,11 @@ export async function healSubscriptionDrift(
                     const dueTime = new Date(Number(dueTimeSeconds) * 1000);
                     const lastSettlement = sub.last_settlement_timestamp ? new Date(sub.last_settlement_timestamp) : null;
                     const dbThinksUnpaid = !lastSettlement || lastSettlement < dueTime;
-                    if (dbThinksUnpaid && (await contract.isSequenceExecuted(subId, latestDueSeq))) {
+                    const { result: isExecuted } = await executeWithRpcFallback(async (provider) => {
+                        const contractInstance = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, STANDARD_ABI, provider);
+                        return await contractInstance.isSequenceExecuted(subId, latestDueSeq);
+                    });
+                    if (dbThinksUnpaid && isExecuted) {
                         await supabase
                             .from("subscriptions")
                             .update({

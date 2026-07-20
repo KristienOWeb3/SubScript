@@ -1,29 +1,47 @@
 #!/usr/bin/env node
 /*
- * Push every variable from the local .env onto Vercel (Production + Preview), overwriting in
- * place with `vercel env add --force`. Use this after rotating secrets in .env: the Vercel
- * dashboard ".env import" SKIPS variables that already exist, so a plain re-import silently
- * leaves the old (in our case, exposed) values in place. This resync guarantees the .env
- * values actually land on Vercel.
+ * Push explicitly selected variables from a local env file onto Vercel (Production + Preview),
+ * overwriting in place with `vercel env add --force`. Requiring `--keys` (or an explicit `--all`)
+ * prevents a single-secret rotation from accidentally republishing unrelated credentials that
+ * are still awaiting rotation.
  *
  * Safety:
- *   - Only touches keys present in .env, so Vercel-only vars (Sentry, Google, integrations) are
- *     left untouched — nothing is deleted.
+ *   - Only touches explicitly selected keys present in the chosen file. Nothing is deleted.
  *   - Values are streamed to the Vercel CLI over stdin and never printed.
  *   - Requires you to be logged in and linked: `vercel login` then `vercel link` (already done
  *     if `.vercel/project.json` exists).
  *
  * Env changes only take effect on the NEXT deployment — redeploy after this finishes.
  *
- * Usage:  node scripts/resync-vercel-env.mjs
- *         node scripts/resync-vercel-env.mjs --file .env.production   (alternate env file)
+ * Usage:  node scripts/resync-vercel-env.mjs --keys DATABASE_URL
+ *         node scripts/resync-vercel-env.mjs --keys DATABASE_URL,DIRECT_URL --file .env.production
+ *         node scripts/resync-vercel-env.mjs --all   (explicitly sync every variable)
  */
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
 const fileArgIdx = process.argv.indexOf("--file");
 const ENV_FILE = fileArgIdx !== -1 ? process.argv[fileArgIdx + 1] : ".env";
+const keysArgIdx = process.argv.indexOf("--keys");
+const requestedKeys = keysArgIdx !== -1
+  ? new Set(
+      String(process.argv[keysArgIdx + 1] || "")
+        .split(",")
+        .map((key) => key.trim())
+        .filter(Boolean),
+    )
+  : null;
+const syncAll = process.argv.includes("--all");
 const TARGETS = ["production", "preview"];
+
+if (requestedKeys && requestedKeys.size === 0) {
+  console.error("--keys requires a comma-separated list of environment variable names.");
+  process.exit(1);
+}
+if (!requestedKeys && !syncAll) {
+  console.error("Refusing to sync every credential implicitly. Pass --keys NAME[,NAME] or --all.");
+  process.exit(1);
+}
 
 function parseDotenv(text) {
   const out = [];
@@ -44,10 +62,21 @@ function parseDotenv(text) {
   return out;
 }
 
-const vars = parseDotenv(readFileSync(ENV_FILE, "utf8"));
+const parsedVars = parseDotenv(readFileSync(ENV_FILE, "utf8"));
+const vars = requestedKeys
+  ? parsedVars.filter(([key]) => requestedKeys.has(key))
+  : parsedVars;
 if (vars.length === 0) {
-  console.error(`No variables found in ${ENV_FILE}.`);
+  console.error(`None of the requested variables were found in ${ENV_FILE}.`);
   process.exit(1);
+}
+if (requestedKeys) {
+  const found = new Set(vars.map(([key]) => key));
+  const missing = [...requestedKeys].filter((key) => !found.has(key));
+  if (missing.length > 0) {
+    console.error(`Requested variables missing from ${ENV_FILE}: ${missing.join(", ")}`);
+    process.exit(1);
+  }
 }
 console.log(`Resyncing ${vars.length} variables from ${ENV_FILE} to: ${TARGETS.join(", ")}\n`);
 

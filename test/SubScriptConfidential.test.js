@@ -85,12 +85,31 @@ describe("SubScriptConfidential", function () {
   });
 
   describe("View Key Registration (Legacy)", function () {
-    it("should allow a merchant to register a view key hash via legacy method", async function () {
+    it("should reject a new registration via legacy method but allow it to update an existing one", async function () {
       const { confidentialContract, merchant } = await loadFixture(deployConfidentialFixture);
       
       const rawKey = ethers.randomBytes(32);
       const keyHash = ethers.keccak256(rawKey);
 
+      // Cannot register first-time via legacy registerViewKey
+      await expect(confidentialContract.connect(merchant).registerViewKey(keyHash))
+        .to.be.revertedWith("Must use commit-reveal for new registrations");
+
+      // Now register it properly via commit-reveal
+      const salt = ethers.hexlify(ethers.randomBytes(32));
+      const commitment = ethers.keccak256(
+        ethers.solidityPacked(["bytes32", "address", "bytes32"], [keyHash, merchant.address, salt])
+      );
+      await confidentialContract.connect(merchant).commitViewKey(commitment);
+      
+      // Fast forward 10 blocks
+      for (let i = 0; i < 10; i++) {
+        await ethers.provider.send("evm_mine", []);
+      }
+      
+      await confidentialContract.connect(merchant).revealViewKey(keyHash, salt);
+
+      // Now legacy method should work to update/re-assert it
       await expect(confidentialContract.connect(merchant).registerViewKey(keyHash))
         .to.emit(confidentialContract, "ViewKeyRegistered")
         .withArgs(merchant.address, keyHash);
@@ -102,12 +121,22 @@ describe("SubScriptConfidential", function () {
       const { confidentialContract, merchant, stranger } = await loadFixture(deployConfidentialFixture);
 
       const keyHash = ethers.keccak256(ethers.randomBytes(32));
-      await confidentialContract.connect(merchant).registerViewKey(keyHash);
+      
+      // Register via commit-reveal first
+      const salt = ethers.hexlify(ethers.randomBytes(32));
+      const commitment = ethers.keccak256(
+        ethers.solidityPacked(["bytes32", "address", "bytes32"], [keyHash, merchant.address, salt])
+      );
+      await confidentialContract.connect(merchant).commitViewKey(commitment);
+      for (let i = 0; i < 10; i++) {
+        await ethers.provider.send("evm_mine", []);
+      }
+      await confidentialContract.connect(merchant).revealViewKey(keyHash, salt);
 
-      /* A different account can never claim (or front-run onto) the same hash */
+      /* A different account can never claim the same hash */
       await expect(
         confidentialContract.connect(stranger).registerViewKey(keyHash)
-      ).to.be.revertedWith("Key hash already registered");
+      ).to.be.revertedWith("Key hash already registered by another merchant");
 
       /* The current holder may re-assert their own registration */
       await confidentialContract.connect(merchant).registerViewKey(keyHash);
@@ -302,7 +331,7 @@ describe("SubScriptConfidential", function () {
       ).to.be.revertedWith("No pending commitment");
     });
 
-    it("legacy registration that front-runs a reveal is taken over by the earlier commitment", async function () {
+    it("legacy registration that front-runs a reveal is blocked from registering new hashes", async function () {
       const { confidentialContract, merchant, stranger } = await loadFixture(deployConfidentialFixture);
 
       const rawKey = ethers.randomBytes(32);
@@ -316,20 +345,15 @@ describe("SubScriptConfidential", function () {
       await mine(10);
 
       /* The reveal transaction exposes keyHash in the mempool. Simulate an attacker who
-         saw it and won the race with the single-step registerViewKey before the reveal
-         mined — the exact hole the commit-reveal scheme must close. */
-      await confidentialContract.connect(stranger).registerViewKey(keyHash);
-      expect(await confidentialContract.viewKeyHashes(keyHash)).to.equal(stranger.address);
-
-      /* The merchant's reveal still succeeds: the attacker's registration is younger than
-         the merchant's commitment, so the earlier committer takes the hash over. */
-      await confidentialContract.connect(merchant).revealViewKey(keyHash, salt);
-      expect(await confidentialContract.viewKeyHashes(keyHash)).to.equal(merchant.address);
-
-      /* And the attacker cannot re-claim it afterwards. */
+         tries to win the race with the single-step registerViewKey. Since this is a new hash,
+         legacy registration is blocked. */
       await expect(
         confidentialContract.connect(stranger).registerViewKey(keyHash)
-      ).to.be.revertedWith("Key hash already registered");
+      ).to.be.revertedWith("Must use commit-reveal for new registrations");
+
+      /* The merchant's reveal still succeeds. */
+      await confidentialContract.connect(merchant).revealViewKey(keyHash, salt);
+      expect(await confidentialContract.viewKeyHashes(keyHash)).to.equal(merchant.address);
     });
 
     it("commit-reveal cannot steal a hash that was registered before the commitment", async function () {
@@ -338,8 +362,14 @@ describe("SubScriptConfidential", function () {
       const rawKey = ethers.randomBytes(32);
       const keyHash = ethers.keccak256(rawKey);
 
-      /* Legitimate long-standing legacy registration. */
-      await confidentialContract.connect(stranger).registerViewKey(keyHash);
+      /* Legitimate registration via commit-reveal by stranger first. */
+      const strangerSalt = ethers.hexlify(ethers.randomBytes(32));
+      const strangerCommitment = ethers.keccak256(
+        ethers.solidityPacked(["bytes32", "address", "bytes32"], [keyHash, stranger.address, strangerSalt])
+      );
+      await confidentialContract.connect(stranger).commitViewKey(strangerCommitment);
+      await mine(10);
+      await confidentialContract.connect(stranger).revealViewKey(keyHash, strangerSalt);
 
       /* A later committer (who could only have learned the hash after the fact) must not
          be able to use the takeover rule against a registration older than their commit. */
@@ -492,6 +522,46 @@ describe("SubScriptConfidential", function () {
       /* Stranger cannot read merchant's history even with the correct hash */
       await expect(
         confidentialContract.connect(stranger).getDecryptedBatchHistory(keyHash)
+      ).to.be.revertedWith("Unauthorized: Caller is not the registered merchant");
+    });
+
+    it("should support paginated batch-history reads and verify permissions", async function () {
+      const { confidentialContract, usdc, merchant, stranger, recipient1, recipient2 } = await loadFixture(deployConfidentialFixture);
+
+      const rawKey = ethers.randomBytes(32);
+      const { keyHash } = await commitRevealViewKey(confidentialContract, merchant, rawKey);
+
+      // Execute a batch payout to create a history record
+      await usdc.approve(await confidentialContract.getAddress(), ethers.parseUnits("125", 6));
+      await confidentialContract.executeBatchPayout(
+        [recipient1.address, recipient2.address],
+        [ethers.parseUnits("50", 6), ethers.parseUnits("75", 6)],
+        true,
+        keyHash
+      );
+
+      // Add another batch payout to make count = 2
+      await usdc.approve(await confidentialContract.getAddress(), ethers.parseUnits("100", 6));
+      await confidentialContract.executeBatchPayout(
+        [recipient1.address],
+        [ethers.parseUnits("100", 6)],
+        true,
+        keyHash
+      );
+
+      // Test paginated read
+      const [records, totalCount] = await confidentialContract.connect(merchant).getDecryptedBatchHistoryPaginated(keyHash, 0, 1);
+      expect(totalCount).to.equal(2);
+      expect(records.length).to.equal(1);
+      expect(records[0].isShielded).to.be.true;
+
+      const [recordsPage2] = await confidentialContract.connect(merchant).getDecryptedBatchHistoryPaginated(keyHash, 1, 1);
+      expect(recordsPage2.length).to.equal(1);
+      expect(recordsPage2[0].recipients[0]).to.equal(recipient1.address);
+
+      // Test unauthorized access
+      await expect(
+        confidentialContract.connect(stranger).getDecryptedBatchHistoryPaginated(keyHash, 0, 1)
       ).to.be.revertedWith("Unauthorized: Caller is not the registered merchant");
     });
   });

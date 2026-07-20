@@ -65,7 +65,7 @@ test("cancel-service route is user-authed, records the pause, and notifies both 
     /* Merchant is told to stop (DM + webhook) AND the user's thread gets the pause card. */
     assert.match(route, /message_type: "SERVICE_CANCELED"/);
     assert.match(route, /message_type: "SERVICE_PAUSED"/);
-    assert.match(route, /dispatchMerchantWebhook\(merchant, "vault\.service_canceled"/);
+    assert.match(route, /recordMerchantEvent\(\{[\s\S]*?eventType: "vault\.service_canceled"/);
 });
 
 test("resume-service enforces the 2 USDC platform minimum and notifies the merchant", () => {

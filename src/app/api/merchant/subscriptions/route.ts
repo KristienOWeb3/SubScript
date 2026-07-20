@@ -164,7 +164,7 @@ export async function GET(request: Request) {
             prisma.$queryRaw<AggregateRow[]>(Prisma.sql`
                 SELECT
                     COUNT(*)::bigint AS "totalCount",
-                    COUNT(*) FILTER (WHERE status = 'ACTIVE')::bigint AS "activeCount",
+                    COUNT(*) FILTER (WHERE status = 'ACTIVE' AND cancel_at_period_end = false)::bigint AS "activeCount",
                     COUNT(*) FILTER (WHERE ${renewingSql})::bigint AS "renewingCount",
                     COALESCE(SUM(
                         CASE WHEN ${renewingSql}

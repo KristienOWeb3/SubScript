@@ -18,6 +18,7 @@ import {
     pushDmNotification,
     type DmPushInput,
 } from "@/lib/dms/notifications";
+import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 
 type VaultUsageRow = {
     id: string;
@@ -162,17 +163,48 @@ async function accrueUsageAtomically(
 
             const nextAccrued = accrued + amountMicros;
             if (nextAccrued > balance) {
-                const notification = await insertExhaustionNotification(
-                    client,
-                    merchantAddress,
-                    userAddress,
-                    commit,
+                const accruableAmount = balance > accrued ? balance - accrued : BigInt(0);
+                const actualNextAccrued = accrued + accruableAmount;
+
+                if (accruableAmount === BigInt(0)) {
+                    const notification = await insertExhaustionNotification(
+                        client,
+                        merchantAddress,
+                        userAddress,
+                        commit,
+                    );
+                    await client.query("commit");
+                    return {
+                        kind: "exhausted",
+                        vault,
+                        remaining: BigInt(0),
+                        notification,
+                    } as const;
+                }
+
+                const updated = await client.query(
+                    `update metered_vaults
+                        set accrued_usage_usdc = $1,
+                            updated_at = now()
+                      where id = $2
+                  returning id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active, usage_notified_bps`,
+                    [actualNextAccrued.toString(), vault.id],
                 );
+
+                await client.query(
+                    `insert into metered_usage_reports
+                         (vault_id, user_address, merchant_address, amount_usdc, accrued_after_usdc, balance_usdc, note, request_id, environment)
+                     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                    [vault.id, userAddress, merchantAddress, accruableAmount.toString(), actualNextAccrued.toString(), balance.toString(), note, requestId, vaultEnvironment],
+                );
+
+                const notification = await insertExhaustionNotification(client, merchantAddress, userAddress, commit);
+
                 await client.query("commit");
                 return {
                     kind: "exhausted",
-                    vault,
-                    remaining: balance > accrued ? balance - accrued : BigInt(0),
+                    vault: updated.rows[0] as VaultUsageRow,
+                    remaining: BigInt(0),
                     notification,
                 } as const;
             }
@@ -275,7 +307,7 @@ export async function POST(request: Request) {
             select: { tier: true }
         });
         if (!merchant || merchant.tier !== "PREMIUM") {
-            return NextResponse.json({ error: "Forbidden: API keys and usage reporting require a Premium (Tier 3) merchant plan." }, { status: 403 });
+            return NextResponse.json({ error: "Forbidden: API keys and usage reporting require a Premium merchant plan." }, { status: 403 });
         }
 
         const body = await request.json().catch(() => null);
@@ -372,6 +404,48 @@ export async function POST(request: Request) {
 
         scheduleDmPush(result.notification);
         scheduleDmPush(result.thresholdNotification);
+
+        await recordMerchantEvent({
+            merchantAddress,
+            environment: "TEST",
+            eventType: "vault.usage_recorded",
+            resourceType: "vault",
+            resourceId: result.vault.id,
+            resourceVersion: 1,
+            data: {
+                user_address: normalizedUser,
+                merchant_address: merchantAddress,
+                amount_usdc_micros: amountMicros.toString(),
+                accrued_usage_usdc_micros: result.vault.accrued_usage_usdc,
+                balance_usdc_micros: result.vault.balance_usdc,
+                exhausted: result.exhausted,
+            },
+            correlationId: requestId,
+            transitionKey: `vault_usage:${requestId}`,
+        }).catch(err => console.error("[report-usage] webhook dispatch error:", err));
+
+        if (result.thresholdNotification) {
+            await recordMerchantEvent({
+                merchantAddress,
+                environment: "TEST",
+                eventType: "vault.threshold_reached",
+                resourceType: "vault",
+                resourceId: result.vault.id,
+                resourceVersion: 1,
+                data: {
+                    user_address: normalizedUser,
+                    merchant_address: merchantAddress,
+                    accrued_usage_usdc_micros: result.vault.accrued_usage_usdc,
+                    balance_usdc_micros: result.vault.balance_usdc,
+                    usage_percent: Number(
+                        (BigInt(result.vault.accrued_usage_usdc) * BigInt(100)) /
+                        BigInt(result.vault.balance_usdc),
+                    ),
+                },
+                correlationId: requestId,
+                transitionKey: `vault_threshold:${result.vault.id}:${result.vault.accrued_usage_usdc}`,
+            }).catch(err => console.error("[report-usage] threshold webhook dispatch error:", err));
+        }
 
         return NextResponse.json({
             success: true,

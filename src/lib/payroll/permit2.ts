@@ -46,9 +46,10 @@ export function payrollPermitWindow(frequencyDays: number, nowSeconds = Math.flo
     if (!Number.isInteger(frequencyDays) || frequencyDays < 1 || frequencyDays > MAX_FREQUENCY_DAYS) {
         throw new Error(`Payroll frequency must be between 1 and ${MAX_FREQUENCY_DAYS} days.`);
     }
+    const firstPaydaySeconds = nowSeconds + frequencyDays * 24 * 60 * 60;
     return {
-        expiration: BigInt(nowSeconds + frequencyDays * 24 * 60 * 60 + AUTHORIZATION_GRACE_SECONDS),
-        sigDeadline: BigInt(nowSeconds + SIGNATURE_WINDOW_SECONDS),
+        expiration: BigInt(firstPaydaySeconds + AUTHORIZATION_GRACE_SECONDS),
+        sigDeadline: BigInt(firstPaydaySeconds + AUTHORIZATION_GRACE_SECONDS),
     };
 }
 

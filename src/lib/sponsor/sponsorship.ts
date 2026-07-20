@@ -29,6 +29,7 @@ export type SponsorCustody = "CIRCLE_SCA" | "CIRCLE_EOA" | "LEGACY_EOA";
 export type SponsoredGasAction =
     | "execute_tx"
     | "vault_commit"
+    | "vault_withdraw"
     | "subscribe"
     | "subscription_change"
     | "subscription_cancel"

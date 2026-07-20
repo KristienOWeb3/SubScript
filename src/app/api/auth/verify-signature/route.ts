@@ -65,7 +65,8 @@ export async function POST(request: Request) {
 
         if (!role) {
             // New wallet signup requires CAPTCHA validation
-            const isValid = await verifyCaptchaToken(captchaToken);
+            const requesterIp = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+            const isValid = await verifyCaptchaToken(captchaToken, requesterIp);
             if (!isValid) {
                 return NextResponse.json({ error: "Incorrect or expired CAPTCHA code. Please try again." }, { status: 400 });
             }

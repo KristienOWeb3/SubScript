@@ -160,8 +160,17 @@ function isRetryableStatus(status: number): boolean {
 export async function sendWebhookRequest(
     url: string,
     payload: any,
-    secret: string
-): Promise<{ status: number; responseText: string }> {
+    secret: string,
+    options?: {
+        eventId?: string;
+        deliveryId?: string;
+        attempt?: number;
+        eventType?: string;
+        apiVersion?: string;
+        environment?: string;
+        requestId?: string;
+    }
+): Promise<{ status: number; responseText: string; headers?: Record<string, string> }> {
     const serializedPayload = JSON.stringify(payload);
 
     /* Validate + consume the destination rate limit once for the whole delivery (all retries go to
@@ -200,43 +209,54 @@ export async function sendWebhookRequest(
         },
     });
 
-    const BACKOFF_MS = [500, 1500];
-    const maxAttempts = BACKOFF_MS.length + 1;
-    let last: { status: number; responseText: string } = { status: 0, responseText: "" };
-
     try {
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
-            const timestamp = Math.floor(Date.now() / 1000);
-            const signature = crypto.createHmac("sha256", secret).update(`${timestamp}.${serializedPayload}`).digest("hex");
-            const signatureHeader = `t=${timestamp},v1=${signature}`;
+        const timestamp = Math.floor(Date.now() / 1000);
+        const signature = crypto.createHmac("sha256", secret).update(`${timestamp}.${serializedPayload}`).digest("hex");
+        const signatureHeader = `t=${timestamp},v1=${signature}`;
 
-            try {
-                const response = await undiciFetch(urlValidation.url, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "x-subscript-signature": signatureHeader,
-                        "User-Agent": "SubScript-Webhook-Dispatcher/1.0",
-                    },
-                    body: serializedPayload,
-                    signal: AbortSignal.timeout(10000),
-                    redirect: "manual",
-                    dispatcher: pinnedDispatcher,
-                });
-                const responseText = (await response.text().catch(() => "")).slice(0, 1000);
-                last = { status: response.status, responseText };
-                if (!isRetryableStatus(response.status)) return last;
-            } catch (err: any) {
-                console.warn(`Webhook delivery failure to ${destination} (attempt ${attempt + 1}/${maxAttempts}):`, err);
-                last = { status: 504, responseText: `Delivery failed: ${err.message || String(err)}` };
-            }
+        const reqHeaders: Record<string, string> = {
+            "Content-Type": "application/json",
+            "x-subscript-signature": signatureHeader,
+            "User-Agent": "SubScript-Webhook-Dispatcher/1.0",
+        };
 
-            if (attempt < maxAttempts - 1) {
-                await new Promise((resolve) => setTimeout(resolve, BACKOFF_MS[attempt]));
-            }
+        const eventId = options?.eventId || payload?.id;
+        const deliveryId = options?.deliveryId;
+        const attempt = options?.attempt;
+        const eventType = options?.eventType || payload?.type;
+        const apiVersion = options?.apiVersion || payload?.api_version;
+        const environment = options?.environment || payload?.environment;
+        const requestId = options?.requestId || payload?.correlation_id;
+
+        if (eventId) reqHeaders["SubScript-Event-Id"] = eventId;
+        if (deliveryId) reqHeaders["SubScript-Delivery-Id"] = deliveryId;
+        if (attempt !== undefined) reqHeaders["SubScript-Attempt"] = String(attempt);
+        if (eventType) reqHeaders["SubScript-Event-Type"] = eventType;
+        if (apiVersion) reqHeaders["SubScript-API-Version"] = apiVersion;
+        if (environment) reqHeaders["SubScript-Environment"] = environment;
+        if (requestId) reqHeaders["SubScript-Request-Id"] = requestId;
+
+        try {
+            const response = await undiciFetch(urlValidation.url, {
+                method: "POST",
+                headers: reqHeaders,
+                body: serializedPayload,
+                signal: AbortSignal.timeout(10000),
+                redirect: "manual",
+                dispatcher: pinnedDispatcher,
+            });
+            const responseText = (await response.text().catch(() => "")).slice(0, 1000);
+
+            const responseHeaders: Record<string, string> = {};
+            response.headers.forEach((value, key) => {
+                responseHeaders[key.toLowerCase()] = value;
+            });
+
+            return { status: response.status, responseText, headers: responseHeaders };
+        } catch (err: any) {
+            console.warn(`Webhook delivery failure to ${destination}:`, err);
+            return { status: 504, responseText: `Delivery failed: ${err.message || String(err)}` };
         }
-
-        return last;
     } finally {
         await pinnedDispatcher.close().catch(() => { /* connection cleanup is best-effort */ });
     }
@@ -297,4 +317,58 @@ export function verifyWebhookSignature(
         console.error("Webhook signature verification error:", err);
         return false;
     }
+}
+
+function getMasterKey(): string {
+    const key = process.env.WALLET_ENCRYPTION_KEY || process.env.JWT_SECRET;
+    if (!key) {
+        throw new Error("Webhook encryption requires WALLET_ENCRYPTION_KEY or JWT_SECRET to be configured");
+    }
+    return key;
+}
+
+function deriveEndpointKey(endpointId: string, merchantAddress: string): Buffer {
+    const masterKey = getMasterKey();
+    const salt = `${merchantAddress.toLowerCase()}:${endpointId}`;
+    return crypto.scryptSync(masterKey, salt, 32);
+}
+
+export function encryptWebhookSecret(
+    secret: string,
+    endpointId: string,
+    merchantAddress: string
+) {
+    const key = deriveEndpointKey(endpointId, merchantAddress);
+    const nonce = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv("aes-256-gcm", key, nonce);
+    let ciphertext = cipher.update(secret, "utf8", "hex");
+    ciphertext += cipher.final("hex");
+    const authenticationTag = cipher.getAuthTag().toString("hex");
+
+    return {
+        ciphertext,
+        nonce: nonce.toString("hex"),
+        authenticationTag,
+        keyVersion: "v1",
+        encryptionAlgorithm: "aes-256-gcm",
+    };
+}
+
+export function decryptWebhookSecret(params: {
+    ciphertext: string;
+    nonce: string;
+    authenticationTag: string;
+    endpointId: string;
+    merchantAddress: string;
+}): string {
+    const key = deriveEndpointKey(params.endpointId, params.merchantAddress);
+    const decipher = crypto.createDecipheriv(
+        "aes-256-gcm",
+        key,
+        Buffer.from(params.nonce, "hex")
+    );
+    decipher.setAuthTag(Buffer.from(params.authenticationTag, "hex"));
+    let decrypted = decipher.update(params.ciphertext, "hex", "utf8");
+    decrypted += decipher.final("utf8");
+    return decrypted;
 }

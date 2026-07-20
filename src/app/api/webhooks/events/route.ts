@@ -1,26 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
-import { createClient } from "@supabase/supabase-js";
+import { prisma } from "@/lib/prisma";
 
-function getSupabase() {
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-    if (!supabaseUrl || !supabaseServiceKey) {
-        throw new Error("Supabase is not configured on the server.");
-    }
-    return createClient(supabaseUrl, supabaseServiceKey);
-}
-
-async function checkMerchantPremium(supabase: any, walletAddress: string): Promise<boolean> {
-    const { data: merchant, error } = await supabase
-        .from("merchants")
-        .select("tier")
-        .eq("wallet_address", walletAddress.toLowerCase())
-        .maybeSingle();
-    if (error || !merchant) return false;
-    return merchant.tier === "PREMIUM";
-}
-
+/* Finding 82: Observability API — reads from canonical merchant_events ledger.
+   Returns ISO-8601 timestamps (not toLocaleString).
+   Supports cursor pagination and event-type filtering. */
 
 export async function GET(request: Request) {
     try {
@@ -28,54 +12,72 @@ export async function GET(request: Request) {
         if (!wallet) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
+        const normalizedWallet = wallet.toLowerCase();
 
-        const supabase = getSupabase();
-        const isPremium = await checkMerchantPremium(supabase, wallet);
-        if (!isPremium) {
-            return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
+        const { searchParams } = new URL(request.url);
+        const cursor = searchParams.get("cursor") || undefined;
+        const limitParam = searchParams.get("limit");
+        const limit = Math.min(Math.max(1, Number(limitParam) || 50), 100);
+        const eventTypeFilter = searchParams.get("type") || undefined;
+        const environmentFilter = searchParams.get("environment") || undefined;
+
+        /* Build the where clause */
+        const where: Record<string, unknown> = {
+            merchantAddress: normalizedWallet,
+        };
+        if (eventTypeFilter) {
+            where.eventType = eventTypeFilter;
         }
-        
-        
-        const { data: endpoints, error: endpointError } = await supabase
-            .from("webhook_endpoints")
-            .select("id, url")
-            .eq("wallet_address", wallet.toLowerCase());
-
-        if (endpointError || !endpoints) {
-            console.error("GET webhook endpoints error:", endpointError);
-            return NextResponse.json({ error: "Failed to retrieve webhook endpoints" }, { status: 500 });
+        if (environmentFilter === "TEST" || environmentFilter === "LIVE") {
+            where.environment = environmentFilter;
         }
-
-        if (endpoints.length === 0) {
-            return NextResponse.json({ events: [] }, { status: 200 });
-        }
-
-        const endpointIds = endpoints.map((e: any) => e.id);
-        const urlMap = new Map(endpoints.map((e: any) => [e.id, e.url]));
-
-        const { data: events, error: eventError } = await supabase
-            .from("webhook_events")
-            .select("*")
-            .in("webhook_endpoint_id", endpointIds)
-            .order("created_at", { ascending: false })
-            .limit(50);
-
-        if (eventError || !events) {
-            console.error("GET webhook events error:", eventError);
-            return NextResponse.json({ error: "Failed to retrieve webhook events" }, { status: 500 });
+        if (cursor) {
+            where.id = { gt: cursor };
         }
 
-        const mappedEvents = events.map((e: any) => ({
-            id: e.id,
-            event: e.event,
-            status: e.status,
-            time: e.created_at ? new Date(e.created_at).toLocaleString() : "",
-            endpointUrl: urlMap.get(e.webhook_endpoint_id) || "",
-            payload: e.payload,
-            responseBody: e.response_body,
-        }));
+        /* Read from canonical merchant_events ledger */
+        const events = await prisma.merchantEvent.findMany({
+            where,
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            take: limit + 1,
+            select: {
+                id: true,
+                eventId: true,
+                eventType: true,
+                environment: true,
+                resourceType: true,
+                resourceId: true,
+                resourceVersion: true,
+                correlationId: true,
+                payload: true,
+                createdAt: true,
+                effectiveAt: true,
+            },
+        });
 
-        return NextResponse.json({ events: mappedEvents }, { status: 200 });
+        const hasMore = events.length > limit;
+        const page = hasMore ? events.slice(0, limit) : events;
+        const nextCursor = hasMore ? page[page.length - 1].id : null;
+
+        return NextResponse.json({
+            events: page.map((e) => ({
+                id: e.eventId,
+                event: `${e.eventId}: ${e.eventType}`,
+                type: e.eventType,
+                environment: e.environment,
+                resource: {
+                    type: e.resourceType,
+                    id: e.resourceId,
+                    version: e.resourceVersion,
+                },
+                correlation_id: e.correlationId,
+                created_at: e.createdAt.toISOString(),
+                effective_at: e.effectiveAt.toISOString(),
+                payload: e.payload,
+            })),
+            has_more: hasMore,
+            next_cursor: nextCursor,
+        });
     } catch (error: any) {
         console.error("GET webhook events error:", error);
         return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });

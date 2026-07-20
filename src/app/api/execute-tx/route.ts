@@ -11,6 +11,7 @@ import {
     SUBSCRIPT_ROUTER_ADDRESS,
     USDC_NATIVE_GAS_ADDRESS
 } from "@/lib/contracts/constants";
+import { PREMIUM_PRICE } from "@/lib/payments/constants";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 
 /* Custody execution waits for on-chain confirmation (required for Circle SCA wallets,
@@ -144,6 +145,14 @@ export async function POST(request: Request) {
         }
 
         const { action, args } = body;
+
+        const FINANCIAL_ACTIONS = new Set(["transferUsdc", "createPremiumSubscription", "withdraw"]);
+        if (FINANCIAL_ACTIONS.has(action) && !request.headers.get("x-request-id")) {
+            return NextResponse.json({
+                error: "x-request-id header is required for financial operations to ensure idempotency.",
+                code: "MISSING_REQUEST_ID"
+            }, { status: 400 });
+        }
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -284,21 +293,20 @@ export async function POST(request: Request) {
                 break;
             }
             case "createPremiumSubscription": {
-                const { merchant, amount, period } = args;
+                const PREMIUM_PERIOD_SECONDS = 2592000;
+                const { merchant } = args;
                 if (!merchant || typeof merchant !== "string") {
                     return NextResponse.json({ error: "Invalid premium subscription recipient" }, { status: 400 });
                 }
                 if (merchant.toLowerCase() !== PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
                     return NextResponse.json({ error: "Unauthorized subscription recipient. Sponsored subscriptions can only target the SubScript premium account." }, { status: 400 });
                 }
-                if (amount === undefined || period === undefined) {
-                    return NextResponse.json({ error: "amount and period are required" }, { status: 400 });
-                }
 
                 contractAddress = STANDARD_CONTRACT_ADDRESS;
                 contractAbi = SUBSCRIPT_ABI;
                 functionName = "createSubscription";
-                finalArgs = [merchant, BigInt(amount), BigInt(period)];
+                finalArgs = [merchant, BigInt(PREMIUM_PRICE), BigInt(PREMIUM_PERIOD_SECONDS)];
+                durableIdempotencyKey = deterministicIdempotencyKey(`premium-sub:${wallet.toLowerCase()}:${requestId}`);
                 break;
             }
             case "withdraw": {
@@ -306,6 +314,7 @@ export async function POST(request: Request) {
                 contractAbi = SUBSCRIPT_ABI;
                 functionName = "withdraw";
                 finalArgs = [];
+                durableIdempotencyKey = deterministicIdempotencyKey(`withdraw:${wallet.toLowerCase()}:${requestId}`);
                 break;
             }
             case "cancelSubscription": {

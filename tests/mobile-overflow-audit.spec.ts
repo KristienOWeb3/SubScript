@@ -444,6 +444,19 @@ test.describe("mobile overflow audit", () => {
       await expect(link).toBeVisible();
     }
 
+    const menuScroll = await menuScroller.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+      return {
+        scrollTop: element.scrollTop,
+        scrollHeight: element.scrollHeight,
+        clientHeight: element.clientHeight,
+      };
+    });
+    expect(menuScroll.scrollHeight).toBeGreaterThanOrEqual(menuScroll.clientHeight);
+    if (menuScroll.scrollHeight > menuScroll.clientHeight) {
+      expect(menuScroll.scrollTop).toBeGreaterThan(0);
+    }
+
     const menuOverflowY = await menuScroller.evaluate(
       (element) => getComputedStyle(element).overflowY,
     );

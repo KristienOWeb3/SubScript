@@ -91,6 +91,12 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
      */
     mapping(address => mapping(address => bool)) public disputeHold;
 
+    /*
+     * V4 (append-only): cycle nonce and dispute tracking.
+     */
+    mapping(address => mapping(address => uint256)) public cycleNonce;
+    mapping(address => mapping(address => uint256)) public lastDisputedCycle;
+
     uint256 public constant PROTOCOL_FEE_BPS = 100; // 1%
     uint256 public constant BPS_DENOMINATOR = 10_000;
 
@@ -190,6 +196,7 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
             if (!wasActive) {
                 v.cycleStart = uint64(block.timestamp);
                 v.lockedUntil = uint64(block.timestamp + cycleLength);
+                cycleNonce[msg.sender][merchant]++;
             }
         }
 
@@ -252,7 +259,13 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
         Vault storage v = vaults[msg.sender][merchant];
         require(v.active, "inactive");
         require(!disputeHold[msg.sender][merchant], "already disputed");
+        require(v.lockedUntil != 0 && block.timestamp < uint256(v.lockedUntil) + RECLAIM_GRACE, "dispute window closed");
+        
+        uint256 currentCycle = cycleNonce[msg.sender][merchant];
+        require(lastDisputedCycle[msg.sender][merchant] < currentCycle, "already disputed this cycle");
+
         disputeHold[msg.sender][merchant] = true;
+        lastDisputedCycle[msg.sender][merchant] = currentCycle;
         emit DisputeRaised(msg.sender, merchant);
     }
 
@@ -268,7 +281,7 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
         Vault storage v = vaults[user][merchant];
         bool settlementReopened;
         if (reopenSettlement && v.active && v.lockedUntil != 0
-            && block.timestamp >= uint256(v.lockedUntil) + RECLAIM_GRACE) {
+            && block.timestamp >= uint256(v.lockedUntil)) {
             v.lockedUntil = uint64(block.timestamp);
             settlementReopened = true;
         }

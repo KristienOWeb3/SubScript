@@ -13,7 +13,7 @@ function isAuthorized(request: Request) {
     const configured = [process.env.CRON_SECRET, process.env.KEEPER_SECRET]
         .filter((value): value is string => Boolean(value));
     return provided.length > 0
-        && configured.some((value) => value.length >= 32 && timingSafeEqual(digest(provided), digest(value)));
+        && configured.some((value) => value.length > 0 && timingSafeEqual(digest(provided), digest(value)));
 }
 
 export async function POST(request: Request) {

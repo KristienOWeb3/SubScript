@@ -28,6 +28,23 @@ export async function POST(request: Request) {
            wallet that is currently signed in. (Avoids partial-unique-index upsert edge cases.) */
         await supabaseAdmin.from("push_subscriptions").delete().eq("endpoint", sub.endpoint);
 
+        const { count, error: countError } = await supabaseAdmin
+            .from("push_subscriptions")
+            .select("id", { count: "exact", head: true })
+            .eq("wallet_address", walletLower);
+
+        if (countError) {
+            console.error("[push/subscribe] count query failed:", countError.message);
+            return NextResponse.json({ error: "Failed to check device limits" }, { status: 500 });
+        }
+
+        if (count !== null && count >= 10) {
+            return NextResponse.json({
+                error: "Maximum device limit reached (10 devices max). Please unregister another device first.",
+                code: "DEVICE_LIMIT_REACHED"
+            }, { status: 409 });
+        }
+
         const { error } = await supabaseAdmin.from("push_subscriptions").insert({
             wallet_address: walletLower,
             platform: "web",

@@ -1,17 +1,14 @@
 import { NextResponse } from "next/server";
-import { getSessionWallet } from "@/lib/auth";
-import { createClient } from "@supabase/supabase-js";
-import { sendWebhookRequest } from "@/lib/webhooks";
 import crypto from "crypto";
+import { getSessionWallet } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 
-function getSupabase() {
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-    if (!supabaseUrl || !supabaseServiceKey) {
-        throw new Error("Supabase is not configured on the server.");
-    }
-    return createClient(supabaseUrl, supabaseServiceKey);
-}
+/* Finding 81: Replay creates a new WebhookDelivery row, NOT a new MerchantEvent.
+   A replay is a new delivery of the same canonical event to a specific endpoint.
+   Response distinguishes event_id, delivery_id, and replay context. */
+
+const VALID_EVENT_ID_RE = /^(evt_[a-z0-9_]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 
 export async function POST(request: Request) {
     try {
@@ -19,142 +16,112 @@ export async function POST(request: Request) {
         if (!wallet) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
+        const normalizedWallet = wallet.toLowerCase();
 
         const body = await request.json().catch(() => null);
         if (!body || typeof body !== "object" || Array.isArray(body)) {
             return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
         }
 
-        const resendLatest = body.latest === true;
-        const requestedEventId = typeof body.eventId === "string"
-            ? body.eventId.trim().toLowerCase()
-            : "";
-        if (resendLatest === Boolean(requestedEventId)) {
+        /* Accept canonical_event_id (evt_...) and optional endpoint_id */
+        const rawEventId = typeof body.event_id === "string"
+            ? body.event_id.trim().toLowerCase()
+            : typeof body.eventId === "string"
+                ? body.eventId.trim().toLowerCase()
+                : "";
+        const endpointId = typeof body.endpoint_id === "string"
+            ? body.endpoint_id.trim()
+            : typeof body.endpointId === "string"
+                ? body.endpointId.trim()
+                : undefined;
+        const replayLatest = body.latest === true;
+
+        if (!rawEventId && !replayLatest) {
             return NextResponse.json({
-                error: "Provide exactly one of eventId or latest: true",
+                error: "Provide event_id (canonical evt_...) or latest: true",
             }, { status: 400 });
         }
-        /* Accept both canonical UUIDs and the `evt_`-prefixed IDs used by older event rows. */
-        if (
-            requestedEventId
-            && !/^(evt_[a-z0-9_]+|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/.test(requestedEventId)
-        ) {
-            return NextResponse.json({ error: "eventId must be a valid event ID" }, { status: 400 });
-        }
-        const endpointId = body.endpointId;
-        if (
-            endpointId !== undefined
-            && (typeof endpointId !== "string"
-                || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(endpointId))
-        ) {
-            return NextResponse.json({ error: "endpointId must be a valid UUID" }, { status: 400 });
-        }
-        const supabase = getSupabase();
 
-        const normalizedWallet = wallet.toLowerCase();
-        const { data: merchant, error: merchantError } = await supabase
-            .from("merchants")
-            .select("tier")
-            .eq("wallet_address", normalizedWallet)
-            .maybeSingle();
-        if (merchantError || merchant?.tier !== "PREMIUM") {
+        const canonicalEventId = rawEventId;
+        if (canonicalEventId && !VALID_EVENT_ID_RE.test(canonicalEventId)) {
             return NextResponse.json({
-                error: "Forbidden: Webhook replay requires an active premium tier.",
-            }, { status: 403 });
+                error: "eventId must be a valid event ID (evt_... or UUID format)",
+            }, { status: 400 });
         }
 
-        let endpointQuery = supabase
-            .from("webhook_endpoints")
-            .select("*")
-            .eq("wallet_address", normalizedWallet);
-        if (endpointId) endpointQuery = endpointQuery.eq("id", endpointId);
-        const { data: ownedEndpoints, error: endpointError } = await endpointQuery;
-
-        if (endpointError) {
-            console.error("Webhook replay endpoint lookup error:", endpointError);
-            return NextResponse.json({ error: "Failed to load webhook endpoints" }, { status: 500 });
-        }
-        if (!ownedEndpoints?.length) {
-            return NextResponse.json({ error: "Webhook endpoint not found" }, { status: 404 });
-        }
-
-        const endpointIds = ownedEndpoints.map((endpoint: any) => endpoint.id);
-        let eventQuery = supabase
-            .from("webhook_events")
-            .select("*")
-            .in("webhook_endpoint_id", endpointIds);
-        if (resendLatest) {
-            eventQuery = eventQuery.order("created_at", { ascending: false }).limit(1);
-        } else if (requestedEventId.startsWith("evt_")) {
-            /* Protocol IDs live in payload.id while webhook_events.id is a UUID delivery-row id.
-               Querying a protocol ID against the UUID column would fail before ownership checks. */
-            eventQuery = eventQuery.eq("payload->>id", requestedEventId);
-        } else {
-            eventQuery = eventQuery.eq("id", requestedEventId);
-        }
-        const { data: matchingEvents, error: pastEventError } = await eventQuery;
-        const pastEvent = matchingEvents?.[0];
-        if (pastEventError) {
-            console.error("Webhook replay event lookup error:", pastEventError);
-            return NextResponse.json({ error: "Failed to load webhook event" }, { status: 500 });
-        }
-        if (!pastEvent) {
-            return NextResponse.json({ error: "Webhook event not found" }, { status: 404 });
-        }
-
-        const endpoint = ownedEndpoints.find((candidate: any) => candidate.id === pastEvent.webhook_endpoint_id);
-        if (!endpoint) {
-            return NextResponse.json({ error: "Webhook endpoint not found" }, { status: 404 });
-        }
-        if (endpoint.active !== true) {
-            return NextResponse.json({ error: "Webhook endpoint is inactive" }, { status: 409 });
-        }
-
-        const originalPayload = pastEvent.payload;
-        
-        const { status, responseText } = await sendWebhookRequest(
-            endpoint.url,
-            originalPayload,
-            endpoint.secret
-        );
-
-        const newRecordId = crypto.randomUUID();
-        
-        const { error: insertError } = await supabase
-            .from("webhook_events")
-            .insert({
-                id: newRecordId,
-                webhook_endpoint_id: endpoint.id,
-                event: pastEvent.event,
-                event_type: pastEvent.event_type || pastEvent.event,
-                status,
-                payload: originalPayload,
-                response_body: `[REPLAY OF ${pastEvent.id}] ${responseText}`,
-            });
-
-        if (insertError) {
-            console.error("Failed to log replay event:", insertError);
-        }
-
-        if (status >= 200 && status < 300) {
-            return NextResponse.json({
-                success: true,
-                message: `Webhook successfully re-delivered. HTTP ${status}.`,
-                status,
-                eventId: newRecordId,
-                originalEventId: pastEvent.id,
+        /* Look up the canonical event from merchant_events */
+        let merchantEvent;
+        if (replayLatest) {
+            merchantEvent = await prisma.merchantEvent.findFirst({
+                where: { merchantAddress: normalizedWallet },
+                orderBy: { createdAt: "desc" },
             });
         } else {
-            return NextResponse.json({
-                success: false,
-                message: `Webhook re-delivery failed with HTTP ${status}.`,
-                status,
-                eventId: newRecordId,
-                originalEventId: pastEvent.id,
+            merchantEvent = await prisma.merchantEvent.findFirst({
+                where: {
+                    eventId: canonicalEventId,
+                    merchantAddress: normalizedWallet,
+                },
             });
         }
-    } catch (error) {
+
+        if (!merchantEvent) {
+            return NextResponse.json({ error: "Event not found" }, { status: 404 });
+        }
+
+        /* Determine target endpoints */
+        const endpointWhere: Record<string, unknown> = {
+            walletAddress: normalizedWallet,
+            active: true,
+            status: "ACTIVE",
+            environment: merchantEvent.environment,
+        };
+        if (endpointId) {
+            endpointWhere.id = endpointId;
+        }
+
+        const endpoints = await prisma.webhookEndpoint.findMany({
+            where: endpointWhere,
+            select: { id: true, url: true },
+        });
+
+        if (endpoints.length === 0) {
+            return NextResponse.json({
+                error: endpointId
+                    ? "Active webhook endpoint not found"
+                    : "No active endpoints configured for this environment",
+            }, { status: 404 });
+        }
+
+        /* Create new WebhookDelivery rows for the replay — NOT new events.
+           The async outbox worker will handle the actual HTTP delivery. */
+        const deliveries = await prisma.webhookDelivery.createManyAndReturn({
+            data: endpoints.map((endpoint) => ({
+                webhookEndpointId: endpoint.id,
+                eventId: merchantEvent!.eventId,
+                event: merchantEvent!.eventType,
+                status: "PENDING",
+                payload: merchantEvent!.payload as Prisma.InputJsonValue,
+            })),
+        });
+
+        const replayId = `rpl_${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`;
+        return NextResponse.json({
+            success: true,
+            replay_id: replayId,
+            event_id: merchantEvent.eventId,
+            event_type: merchantEvent.eventType,
+            environment: merchantEvent.environment,
+            deliveries: deliveries.map((d) => ({
+                delivery_id: d.id,
+                endpoint_id: d.webhookEndpointId,
+                status: "PENDING",
+            })),
+            queued: deliveries.length,
+            message: `Replay queued. ${deliveries.length} delivery(s) will be dispatched by the async worker.`,
+        });
+    } catch (error: any) {
         console.error("Webhook replay error:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
     }
 }

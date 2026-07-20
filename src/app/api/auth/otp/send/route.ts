@@ -90,7 +90,7 @@ export async function POST(request: Request) {
            request. Otherwise an attacker can omit CAPTCHA and distinguish an existing email
            (code sent) from an unknown email (CAPTCHA error). */
         if (!isEmailBindingRequest) {
-            const isValid = await verifyCaptchaToken(captchaToken);
+            const isValid = await verifyCaptchaToken(captchaToken, requesterIp);
             if (!isValid) {
                 return NextResponse.json({ error: "Incorrect or expired CAPTCHA code. Please try again." }, { status: 400 });
             }
@@ -109,9 +109,10 @@ export async function POST(request: Request) {
         const code = crypto.randomInt(100000, 1000000).toString();
         const codeHash = hashOtp(emailLower, code);
         const expiresAt = new Date(Date.now() + OTP_TTL_MS);
+        let challengeId: string | null = null;
         const persistOtp = async () => {
-            await withPgClient(async (client) => {
-                await client.query(
+            const res = await withPgClient(async (client) => {
+                return await client.query(
                     `insert into otp_codes (email, code, expires_at, purpose, wallet_address)
                      values ($1, $2, $3, $4, $5)
                      on conflict (email)
@@ -120,8 +121,10 @@ export async function POST(request: Request) {
                         expires_at = excluded.expires_at,
                         purpose = excluded.purpose,
                         wallet_address = excluded.wallet_address,
+                        challenge_id = gen_random_uuid(),
                         failed_attempts = 0,
-                        created_at = now()`,
+                        created_at = now()
+                     returning challenge_id`,
                     [
                         emailLower,
                         codeHash,
@@ -131,28 +134,9 @@ export async function POST(request: Request) {
                     ]
                 );
             });
+            challengeId = res.rows[0]?.challenge_id || null;
+            return challengeId;
         };
-
-        /* Production anonymous OTP work continues after the uniform HTTP response. Known and
-           unknown sign-in emails therefore have the same request latency; only the mailbox owner
-           can observe whether a code was delivered. */
-        if (process.env.NODE_ENV === "production" && !isEmailBindingRequest) {
-            after(async () => {
-                if (isSignInRequest && !emailLoginAllowed) return;
-                try {
-                    await persistOtp();
-                    await sendAuthenticationCodeEmail(emailLower, code);
-                } catch (error) {
-                    console.error("Deferred OTP issue failed:", error instanceof Error ? error.message : error);
-                }
-            });
-            return NextResponse.json({ success: true, message: GENERIC_OTP_MESSAGE, email: emailLower });
-        }
-
-        /* Non-production keeps the synchronous path so local sandboxes can expose devOtpCode. */
-        if (isSignInRequest && !emailLoginAllowed) {
-            return NextResponse.json({ success: true, message: GENERIC_OTP_MESSAGE, email: emailLower });
-        }
 
         try {
             await persistOtp();
@@ -172,6 +156,27 @@ export async function POST(request: Request) {
             }
         }
 
+        const formattedChallengeId = challengeId ? `otp/${challengeId}` : null;
+
+        /* Production anonymous OTP work continues after the uniform HTTP response. Known and
+           unknown sign-in emails therefore have the same request latency; only the mailbox owner
+           can observe whether a code was delivered. */
+        if (process.env.NODE_ENV === "production" && !isEmailBindingRequest) {
+            after(async () => {
+                if (isSignInRequest && !emailLoginAllowed) return;
+                try {
+                    await sendAuthenticationCodeEmail(emailLower, code);
+                } catch (error) {
+                    console.error("Deferred OTP issue failed:", error instanceof Error ? error.message : error);
+                }
+            });
+            return NextResponse.json({ success: true, message: GENERIC_OTP_MESSAGE, email: emailLower, challengeId: formattedChallengeId });
+        }
+
+        /* Non-production keeps the synchronous path so local sandboxes can expose devOtpCode. */
+        if (isSignInRequest && !emailLoginAllowed) {
+            return NextResponse.json({ success: true, message: GENERIC_OTP_MESSAGE, email: emailLower, challengeId: formattedChallengeId });
+        }
 
         try {
             await sendAuthenticationCodeEmail(emailLower, code);
@@ -182,6 +187,7 @@ export async function POST(request: Request) {
                     success: true,
                     message: GENERIC_OTP_MESSAGE,
                     email: emailLower,
+                    challengeId: formattedChallengeId,
                     devOtpCode: code,
                 });
             }
@@ -191,7 +197,9 @@ export async function POST(request: Request) {
         return NextResponse.json({
             success: true, 
             message: GENERIC_OTP_MESSAGE,
-            email: emailLower
+            email: emailLower,
+            challengeId: formattedChallengeId,
+            ...(allowDevOtpFallback() ? { devOtpCode: code } : {})
         });
     } catch (err: any) {
         console.error("OTP send error:", err);

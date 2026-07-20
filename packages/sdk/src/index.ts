@@ -263,17 +263,26 @@ export class SubScript {
                 Authorization: `Bearer ${this.secretKey}`,
             },
             body: body !== undefined ? JSON.stringify(body) : undefined,
+            signal: AbortSignal.timeout(30_000),
         });
         const text = await res.text();
         let json: unknown;
         try {
             json = text ? JSON.parse(text) : {};
         } catch {
-            json = { raw: text };
+            /* Truncate large non-JSON response bodies to avoid leaking sensitive data in errors. */
+            json = { raw: text.length > 500 ? text.slice(0, 500) + "...[truncated]" : text };
         }
         if (!res.ok) {
             const message = (json as { error?: string })?.error ?? `SubScript request failed (${res.status})`;
-            throw new SubScriptError(message, res.status, json);
+            /* Sanitize: cap the error body size so stack traces / error reporters
+               don't inadvertently expose large API responses. */
+            let sanitizedBody = json;
+            const bodyStr = JSON.stringify(json);
+            if (bodyStr.length > 500) {
+                sanitizedBody = { _truncated: true, snippet: bodyStr.slice(0, 500) + "...[truncated]" };
+            }
+            throw new SubScriptError(message, res.status, sanitizedBody);
         }
         return json as T;
     }

@@ -80,6 +80,15 @@ export async function sendPushToWallet(
     if (!supabaseAdmin || !walletAddress) return result;
     const wallet = walletAddress.toLowerCase();
 
+    // Check push opt-out preference before loading subscriptions (Finding 55)
+    const [customerProfile, merchantProfile] = await Promise.all([
+        supabaseAdmin.from("customers").select("push_enabled").eq("wallet_address", wallet).maybeSingle(),
+        supabaseAdmin.from("merchants").select("push_enabled").eq("wallet_address", wallet).maybeSingle()
+    ]);
+    if (customerProfile.data?.push_enabled === false || merchantProfile.data?.push_enabled === false) {
+        return result;
+    }
+
     const { data: subs, error } = await supabaseAdmin
         .from("push_subscriptions")
         .select("id, platform, endpoint, p256dh, auth")

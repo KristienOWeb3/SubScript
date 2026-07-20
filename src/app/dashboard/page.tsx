@@ -213,8 +213,6 @@ export default function DashboardPage() {
     const { disconnect } = useDisconnect();
     const { writeContractAsync } = useWriteContract();
     const { switchChain, switchChainAsync } = useSwitchChain();
-    const [isTestMode, setIsTestMode] = useState(false);
-
     /* Soulbound Access Key (SBT) State removed because SBT infrastructure is deleted */
 
     /* Payment Links States */
@@ -298,11 +296,10 @@ export default function DashboardPage() {
     const [rememberMe, setRememberMe] = useState(true);
 
     const activeMerchantAddress = useMemo(() => {
-        if (isTestMode) return "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
         return embeddedWallet?.wallet || realAddress || sessionWallet || "";
-    }, [embeddedWallet, realAddress, isTestMode, sessionWallet]);
+    }, [embeddedWallet, realAddress, sessionWallet]);
 
-    const isConnected = realIsConnected || isTestMode || !!embeddedWallet || !!sessionWallet;
+    const isConnected = realIsConnected || !!embeddedWallet || !!sessionWallet;
     const address = activeMerchantAddress;
 
     const executeContractWrite = async ({
@@ -389,9 +386,6 @@ export default function DashboardPage() {
     useEffect(() => {
         setIsMounted(true);
         if (typeof window !== "undefined") {
-            setIsTestMode(
-                Boolean(window.navigator.webdriver || document.cookie.includes("subscript_e2e_test=true"))
-            );
             /* Check for upgrade success and show toast */
             const urlParams = new URLSearchParams(window.location.search);
             const tabParam = urlParams.get("tab");
@@ -1917,14 +1911,6 @@ export default function DashboardPage() {
         async function fetchOnChainData() {
             if (!merchantAddress) return;
             setIsLoadingContract(true);
-            if (isTestMode) {
-                setLedgers([]);
-                setLedgerPagination({ total: 0, totalPages: 1 });
-                setMerchantAnalytics(null);
-                setIsLoadingContract(false);
-                setInitialContractFetched(true);
-                return;
-            }
             try {
                 const cursorParam = ledgerCursor ? `&cursor=${encodeURIComponent(ledgerCursor)}` : "";
                 const mirrorResponse = await fetch(`/api/merchant/subscriptions?pageSize=5${cursorParam}`);
@@ -2005,7 +1991,7 @@ export default function DashboardPage() {
             isSubscribed = false;
             clearInterval(interval);
         };
-    }, [isConnected, address, isPremium, refreshTrigger, isTestMode, ledgerPage, ledgerCursor]);
+    }, [isConnected, address, isPremium, refreshTrigger, ledgerPage, ledgerCursor]);
 
     const handleCopy = (text: string, label: string) => {
         try {
@@ -2077,13 +2063,6 @@ export default function DashboardPage() {
         try {
             const userAddress = address as `0x${string}`;
             
-            if (isTestMode) {
-                console.log("Mocking retry charge for sub ID:", rawId);
-                await new Promise((resolve) => setTimeout(resolve, 1500));
-                setRefreshTrigger((prev) => prev + 1);
-                return;
-            }
-
             // Query the next unexecuted sequence ID
             let sequenceId = 1;
             while (true) {
@@ -4431,16 +4410,18 @@ Please complete the following implementation tasks:
                                                             <td className="py-4">{item.nextBilling}</td>
                                                             <td className="py-4">
                                                                 <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                                                                    item.active 
-                                                                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
-                                                                        : "bg-red-500/10 text-red-400 border border-red-500/20"
+                                                                    item.cancelAtPeriodEnd
+                                                                        ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                                                                        : item.active
+                                                                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                                                            : "bg-red-500/10 text-red-400 border border-red-500/20"
                                                                 }`}>
-                                                                    {item.active ? "Active" : "Revoked"}
+                                                                    {item.cancelAtPeriodEnd ? "Cancelling" : item.active ? "Active" : "Cancelled"}
                                                                 </span>
                                                             </td>
                                                             <td className="py-4 text-right">
                                                                 <span className="text-[9px] text-white/25 uppercase tracking-widest font-bold">
-                                                                    {item.active ? "Customer controlled" : "Ended"}
+                                                                    {item.cancelAtPeriodEnd ? "Expires at period end" : item.active ? "Customer controlled" : "Ended"}
                                                                 </span>
                                                             </td>
                                                         </tr>
@@ -4670,11 +4651,13 @@ Please complete the following implementation tasks:
                                                             <p className="text-[9px] font-mono text-white/40 mt-0.5">{item.displayAddress || item.shortSubAddress}</p>
                                                         </div>
                                                         <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider ${
-                                                            item.active 
-                                                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
-                                                                : "bg-red-500/10 text-red-400 border border-red-500/20"
+                                                            item.cancelAtPeriodEnd
+                                                                ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                                                                : item.active
+                                                                    ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                                                    : "bg-red-500/10 text-red-400 border border-red-500/20"
                                                         }`}>
-                                                            {item.active ? "Active" : "Revoked"}
+                                                            {item.cancelAtPeriodEnd ? "Cancelling" : item.active ? "Active" : "Cancelled"}
                                                         </span>
                                                     </div>
                                                     <div className="grid grid-cols-2 gap-3 pt-2.5 border-t border-white/5 text-[9px] text-white/50 font-mono">
@@ -4687,11 +4670,15 @@ Please complete the following implementation tasks:
                                                             <span className="text-white/70 block mt-0.5">{item.nextBilling}</span>
                                                         </div>
                                                     </div>
-                                                    {item.active && (
+                                                    {item.cancelAtPeriodEnd ? (
+                                                        <span className="block text-[8px] font-bold uppercase tracking-widest text-amber-400/50">
+                                                            Expires at period end
+                                                        </span>
+                                                    ) : item.active ? (
                                                         <span className="block text-[8px] font-bold uppercase tracking-widest text-white/20">
                                                             Only the customer can cancel
                                                         </span>
-                                                    )}
+                                                    ) : null}
                                                 </div>
                                             ));
                                         })()
@@ -6054,10 +6041,10 @@ Please complete the following implementation tasks:
                                             : "bg-emerald-500/10 text-emerald-300 border border-emerald-500/25"
                                     }`}>
                                         {!userSettings.verified
-                                            ? "Tier 1: Unverified"
+                                            ? "Unverified"
                                             : userSettings.tier === "PREMIUM"
-                                            ? "Tier 3: Premium"
-                                            : "Tier 2: Verified"}
+                                            ? "Premium"
+                                            : "Verified"}
                                     </span>
                                 )}
                             </h1>

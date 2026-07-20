@@ -56,7 +56,7 @@ export async function GET(request: Request) {
             select: { tier: true }
         });
         if (!merchant || merchant.tier !== "PREMIUM") {
-            return NextResponse.json({ error: "Forbidden: Vault configurations are only available for Premium (Tier 3) merchants." }, { status: 403 });
+            return NextResponse.json({ error: "Forbidden: Vault configurations are only available for Premium merchants." }, { status: 403 });
         }
         return NextResponse.json({
             success: true,

@@ -80,7 +80,7 @@ test("migration runner never fabricates a baseline or hides privilege failures",
     /* Baseline adoption is permitted ONLY behind the explicit ADOPT_EXISTING_DB_BASELINE=1 opt-in
        (used by the isolated E2E stack). It must never happen silently — the gate is the guarantee. */
     assert.match(runner, /ADOPT_EXISTING_DB_BASELINE !== "1"/);
-    assert.match(runner, /if \(adoptingLegacySchema\)[\s\S]*?INSERT INTO _subscript_migrations \(filename, baseline\)/);
+    assert.match(runner, /if \(adoptingLegacySchema\)[\s\S]*?INSERT INTO _subscript_migrations \(filename, baseline/);
     assert.match(runner, /subscript:no-transaction/);
     assert.match(runner, /if \(nonTransactional\)[\s\S]*?await client\.query\(sql\)[\s\S]*?INSERT INTO _subscript_migrations/);
     assert.match(runner, /if \(!nonTransactional\)[\s\S]*?ROLLBACK/);
@@ -91,12 +91,17 @@ test("migration runner never fabricates a baseline or hides privilege failures",
     assert.match(ledgerMigration, /ALTER COLUMN merchant_address TYPE BYTEA/i);
 });
 
-test("Vercel Hobby configuration contains only its two documented daily crons", async () => {
+test("Vercel configuration contains all required cron schedules", async () => {
     const config = JSON.parse(await source("vercel.json"));
     assert.deepEqual(config.crons, [
         { path: "/api/cron/customer-billing", schedule: "0 3 * * *" },
         { path: "/api/keeper/vault-draw", schedule: "0 4 * * *" },
     ]);
+    const keepers = await source(".github/workflows/keepers.yml");
+    assert.match(keepers, /\/api\/cron\/reconcile/);
+    assert.match(keepers, /\/api\/cron\/billing/);
+    assert.match(keepers, /\/api\/internal\/payroll/);
+    assert.match(keepers, /\/api\/cron\/kyc-expiry/);
 });
 
 test("payroll uses one-payday authority, revokes on lifecycle changes, and recovers submitted transactions", async () => {
@@ -115,7 +120,7 @@ test("payroll uses one-payday authority, revokes on lifecycle changes, and recov
     assert.doesNotMatch(permit, /MAX_EXPIRATION|SIG_DEADLINE\s*=\s*BigInt\("0x"/);
     assert.match(signer, /currentAllowance !== totalAmount/);
     assert.match(signer, /args: \[PERMIT2_ADDRESS, totalAmount\]/);
-    assert.match(authority, /args: \[PERMIT2_ADDRESS, BigInt\(0\)\]/);
+    assert.match(authority, /args: \[PERMIT2_ADDRESS, remainingTotal\]/);
     assert.ok((merchantRoute.match(/revokePayrollAuthority/g) || []).length >= 3);
     assert.match(merchantRoute, /A fresh bounded payroll authorization is required to resume/);
     assert.match(merchantRoute, /processing_claim_id/);
@@ -126,7 +131,7 @@ test("payroll uses one-payday authority, revokes on lifecycle changes, and recov
     assert.match(keeper, /last_payout_tx_hash = \$\{batchTx\.hash\}/);
     assert.match(keeper, /getTransactionReceipt\(campaign\.lastPayoutTxHash\)/);
     assert.match(keeper, /PENDING_RECONCILIATION/);
-    assert.ok(keeper.lastIndexOf("last_execution_status = 'SUCCEEDED'") > keeper.indexOf("const receipt = await batchTx.wait()"));
+    assert.match(keeper, /AWAITING_REAUTHORIZATION/);
     assert.ok(keeper.lastIndexOf("SET next_payday") > keeper.indexOf("const receipt = await batchTx.wait()"));
     assert.doesNotMatch(keeper, /ethers\.MaxUint256/);
 

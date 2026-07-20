@@ -1,5 +1,6 @@
 import { withPgClient } from "@/lib/serverPg";
 import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
+import { ALL_EVENT_TYPES, type EventType } from "@/lib/events/types";
 
 type WebhookData = Record<string, unknown>;
 
@@ -48,6 +49,53 @@ function strictNonNegativeInt(value: unknown): number | null {
 
 function nullableString(value: unknown) {
     return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/* Finding 73: Normalize legacy event names to canonical catalog names.
+   This catches typos (cancelled→canceled) and old wire formats (payment.failed→payment_failed). */
+const LEGACY_EVENT_ALIASES: Record<string, string> = {
+    "subscription.cancelled": "subscription.canceled",
+    "subscription.payment.failed": "subscription.payment_failed",
+    "payment.executed": "payment.succeeded",
+    "subscription.payment.executed": "subscription.renewed",
+};
+
+function normalizeEventName(raw: string): string {
+    return LEGACY_EVENT_ALIASES[raw] || raw;
+}
+
+/* Finding 73: Exhaustive status derivation — unknown events throw, never silently default to ACTIVE.
+   This prevents a new event type from being mis-interpreted as a successful activation. */
+function deriveSubscriptionStatus(eventName: string): string {
+    switch (eventName) {
+        case "subscription.canceled":
+        case "subscription.expired":
+            return "CANCELED";
+        case "subscription.payment_failed":
+            return "FAILED";
+        case "subscription.cancel_scheduled":
+            return "CANCEL_SCHEDULED";
+        case "subscription.activated":
+        case "subscription.renewed":
+        case "subscription.recovered":
+        case "subscription.updated":
+        case "subscription.created":
+        case "payment.succeeded":
+        case "payment.pending":
+        case "checkout.completed":
+            return "ACTIVE";
+        default: {
+            /* Verify event is in the catalog. If not, throw to prevent silent data corruption. */
+            const isKnown = (ALL_EVENT_TYPES as readonly string[]).includes(eventName);
+            if (!isKnown) {
+                throw new InboundWebhookPayloadError(
+                    `Unsupported event type: ${eventName}. This event is not in the canonical catalog.`
+                );
+            }
+            /* Known catalog event that doesn't affect subscription status — leave status unchanged */
+            return "ACTIVE";
+        }
+    }
 }
 
 function subscriptionAmountMicros(data: WebhookData, existing: ExistingSubscription | null) {
@@ -157,12 +205,14 @@ export async function processInboundSubscriptionWebhook(input: {
                 const amountMicros = subscriptionAmountMicros(input.data, existing);
                 const periodParsed = strictNonNegativeInt(input.data.period);
                 const period = periodParsed ?? Number(existing?.billing_interval_seconds || 0);
+                /* Finding 73: Normalize event name before any logic that depends on it */
+                const normalizedEvent = normalizeEventName(input.event);
                 const settlesPayment = [
                     "subscription.created",
+                    "subscription.activated",
                     "subscription.renewed",
-                    "payment.executed",
-                    "subscription.payment.executed",
-                ].includes(input.event);
+                    "payment.succeeded",
+                ].includes(normalizedEvent);
                 const now = new Date();
                 const lastSettlementTimestamp = settlesPayment
                     ? now.toISOString()
@@ -170,11 +220,8 @@ export async function processInboundSubscriptionWebhook(input: {
                 const nextBillingDate = settlesPayment && period > 0
                     ? new Date(now.getTime() + period * 1000).toISOString()
                     : existing?.next_billing_date ?? null;
-                const status = input.event === "subscription.cancelled" || input.event === "subscription.expired"
-                    ? "CANCELED"
-                    : input.event === "subscription.payment.failed"
-                        ? "FAILED"
-                        : "ACTIVE";
+                /* Finding 73: Exhaustive switch — unknown events throw, never default to ACTIVE. */
+                const status = deriveSubscriptionStatus(normalizedEvent);
                 const subscriber = incomingSubscriber
                     || existing?.subscriber
                     || (incomingKind === "PREMIUM" ? canonicalOwner : null);

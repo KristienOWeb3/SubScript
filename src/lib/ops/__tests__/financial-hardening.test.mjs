@@ -245,9 +245,10 @@ test("custody money-moving calls carry attempt-scoped deterministic idempotency 
     const vaultOnchain = source("src/lib/vault/onchain.ts");
     const commitRoute = source("src/app/api/user/vault/commit/route.ts");
 
-    /* Wallet send: per-recipient key bound to (request, position, recipient, amount). */
+    /* Wallet send: per-recipient key bound to (request, recipient, amount) — no batch index
+       so partial retries with shifted indices still dedupe correctly. */
     assert.match(send, /x-request-id/);
-    assert.match(send, /deterministicIdempotencyKey\(\s*`wallet-send:\$\{normalizedSender\}:\$\{requestId\}:\$\{i\}:\$\{item\.receiver\}:\$\{item\.amountMicros/);
+    assert.match(send, /deterministicIdempotencyKey\(\s*`wallet-send:\$\{normalizedSender\}:\$\{requestId\}:\$\{item\.receiver\}:\$\{item\.amountMicros/);
 
     /* Subscribe (charges the first payment): key on the single-use checkout session, or the
        client request id for plan subscribes — never just subscriber+merchant, which would make

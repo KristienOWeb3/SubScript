@@ -32,8 +32,29 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import crypto from "node:crypto";
+import { execSync } from "node:child_process";
 
 const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+function getCommitSha() {
+    if (process.env.VERCEL_GIT_COMMIT_SHA) return process.env.VERCEL_GIT_COMMIT_SHA;
+    if (process.env.GIT_COMMIT) return process.env.GIT_COMMIT;
+    try {
+        return execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
+    } catch {
+        return "unknown";
+    }
+}
+
+async function getMigrationMetadata(file) {
+    const content = await readFile(path.join(REPO_ROOT, file), "utf8");
+    const normalizedContent = content.replace(/\r\n/g, "\n");
+    const sha256 = crypto.createHash("sha256").update(normalizedContent, "utf8").digest("hex");
+    const byteLength = Buffer.byteLength(normalizedContent, "utf8");
+    return { sha256, byteLength };
+}
+
 
 /* Supabase database hosts present a chain rooted at the Supabase Root 2021 CA, which is NOT in
    Node's default trust store — so `rejectUnauthorized: true` fails with "self-signed certificate
@@ -133,6 +154,9 @@ async function listMigrationFiles({ freshBootstrap = false } = {}) {
 }
 
 async function main() {
+    const pkg = JSON.parse(readFileSync(path.join(REPO_ROOT, "package.json"), "utf8"));
+    const runnerVersion = pkg.version || "1.0.0";
+
     if (process.env.SKIP_DB_MIGRATIONS === "1") {
         console.log("[migrations] SKIP_DB_MIGRATIONS=1 — skipping migration step.");
         return;
@@ -212,7 +236,11 @@ async function main() {
                     CREATE TABLE _subscript_migrations (
                         filename   text PRIMARY KEY,
                         applied_at timestamptz NOT NULL DEFAULT now(),
-                        baseline   boolean NOT NULL DEFAULT false
+                        baseline   boolean NOT NULL DEFAULT false,
+                        sha256     text NULL,
+                        byte_length int NULL,
+                        application_commit text NULL,
+                        runner_version text NULL
                     );
                 `);
                 if (adoptingLegacySchema) {
@@ -221,9 +249,11 @@ async function main() {
                        any double-apply against the existing objects; genuinely new files added after
                        this run still apply normally on the next invocation. */
                     for (const file of await listMigrationFiles()) {
+                        const { sha256, byteLength } = await getMigrationMetadata(file);
+                        const commitSha = getCommitSha();
                         await client.query(
-                            "INSERT INTO _subscript_migrations (filename, baseline) VALUES ($1, true) ON CONFLICT (filename) DO NOTHING",
-                            [file]
+                            "INSERT INTO _subscript_migrations (filename, baseline, sha256, byte_length, application_commit, runner_version) VALUES ($1, true, $2, $3, $4, $5) ON CONFLICT (filename) DO NOTHING",
+                            [file, sha256, byteLength, commitSha, runnerVersion]
                         );
                     }
                 }
@@ -245,35 +275,88 @@ async function main() {
         }
 
         const files = await listMigrationFiles({ freshBootstrap });
-        const appliedRows = await client.query("SELECT filename FROM _subscript_migrations");
-        const applied = new Set(appliedRows.rows.map((r) => r.filename));
-        const pending = files.filter((f) => !applied.has(f));
+        
+        const getHasSha256Col = async () => {
+            const check = await client.query(`
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = '_subscript_migrations' AND column_name = 'sha256'
+            `);
+            return check.rows.length > 0;
+        };
+
+        const hasSha256Col = await getHasSha256Col();
+        const appliedRows = await client.query(
+            hasSha256Col
+                ? "SELECT filename, sha256 FROM _subscript_migrations"
+                : "SELECT filename, null AS sha256 FROM _subscript_migrations"
+        );
+        const appliedMap = new Map(appliedRows.rows.map((r) => [r.filename, r.sha256]));
+        const pending = [];
+
+        for (const file of files) {
+            const { sha256, byteLength } = await getMigrationMetadata(file);
+            if (appliedMap.has(file)) {
+                const storedSha = appliedMap.get(file);
+                if (storedSha !== null && storedSha !== undefined) {
+                    if (storedSha !== sha256) {
+                        throw new Error(
+                            `Migration checksum mismatch for file "${file}".\n` +
+                            `  Database stored: ${storedSha}\n` +
+                            `  Local file hash: ${sha256}\n` +
+                            `Aborting deployment to protect database integrity.`
+                        );
+                    }
+                } else if (hasSha256Col) {
+                    console.log(`[migrations] Backfilling checksum for already applied migration: ${file}`);
+                    await client.query(
+                        "UPDATE _subscript_migrations SET sha256 = $1, byte_length = $2 WHERE filename = $3",
+                        [sha256, byteLength, file]
+                    );
+                }
+            } else {
+                pending.push({ file, sha256, byteLength });
+            }
+        }
 
         if (pending.length === 0) {
             console.log(`[migrations] Up to date (${files.length} known, 0 pending).`);
         } else {
-            for (const file of pending) {
+            const commitSha = getCommitSha();
+            for (const { file, sha256, byteLength } of pending) {
                 const sql = await readFile(path.join(REPO_ROOT, file), "utf8");
                 const nonTransactional = /^\s*--\s*subscript:no-transaction\b/m.test(sql);
                 console.log(`[migrations] Applying ${file}...`);
                 try {
                     if (nonTransactional) {
-                        /* PostgreSQL forbids operations such as CREATE INDEX CONCURRENTLY inside
-                           a transaction. These migrations must be idempotent: if the ledger write
-                           fails after the SQL succeeds, the advisory-locked retry runs the SQL
-                           safely before recording it. */
                         await client.query(sql);
-                        await client.query(
-                            "INSERT INTO _subscript_migrations (filename) VALUES ($1)",
-                            [file]
-                        );
+                        const currentHasSha = await getHasSha256Col();
+                        if (currentHasSha) {
+                            await client.query(
+                                "INSERT INTO _subscript_migrations (filename, sha256, byte_length, application_commit, runner_version) VALUES ($1, $2, $3, $4, $5)",
+                                [file, sha256, byteLength, commitSha, runnerVersion]
+                            );
+                        } else {
+                            await client.query(
+                                "INSERT INTO _subscript_migrations (filename) VALUES ($1)",
+                                [file]
+                            );
+                        }
                     } else {
                         await client.query("BEGIN");
                         await client.query(sql);
-                        await client.query(
-                            "INSERT INTO _subscript_migrations (filename) VALUES ($1)",
-                            [file]
-                        );
+                        const currentHasSha = await getHasSha256Col();
+                        if (currentHasSha) {
+                            await client.query(
+                                "INSERT INTO _subscript_migrations (filename, sha256, byte_length, application_commit, runner_version) VALUES ($1, $2, $3, $4, $5)",
+                                [file, sha256, byteLength, commitSha, runnerVersion]
+                            );
+                        } else {
+                            await client.query(
+                                "INSERT INTO _subscript_migrations (filename) VALUES ($1)",
+                                [file]
+                            );
+                        }
                         await client.query("COMMIT");
                     }
                     console.log(`[migrations] Applied ${file}.`);

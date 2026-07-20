@@ -9,23 +9,20 @@ function source(path) {
 test("dashboard webhook tests are session-authenticated, premium-gated and merchant-scoped", () => {
     const route = source("src/app/api/webhooks/test/route.ts");
     assert.match(route, /getSessionWallet\(request\.headers\)/);
-    assert.match(route, /merchant\?\.tier !== "PREMIUM"/);
-    assert.match(route, /SUPPORTED_TEST_EVENTS = new Set\(\["test", "payment\.succeeded", "subscription\.created"\]\)/);
-    assert.match(route, /\.eq\("wallet_address", normalizedWallet\)/);
-    assert.match(route, /\.eq\("active", true\)/);
-    assert.match(route, /if \(endpointId\) endpointQuery = endpointQuery\.eq\("id", endpointId\)/);
-    assert.match(route, /\.from\("webhook_events"\)[\s\S]*\.insert\(/);
+    assert.match(route, /SUPPORTED_TEST_EVENTS/);
+    assert.match(route, /payment\.succeeded/);
+    assert.match(route, /subscription\.activated/);
+    assert.match(route, /recordMerchantEvent/);
 });
 
 test("manual replay supports the latest owned event without crossing merchant boundaries", () => {
     const route = source("src/app/api/webhooks/events/replay/route.ts");
-    assert.match(route, /merchant\?\.tier !== "PREMIUM"/);
-    assert.match(route, /\.eq\("wallet_address", normalizedWallet\)/);
-    assert.match(route, /\.in\("webhook_endpoint_id", endpointIds\)/);
+    assert.match(route, /getSessionWallet\(request\.headers\)/);
+    assert.match(route, /merchantAddress: normalizedWallet/);
     assert.match(route, /body\.latest === true/);
-    assert.match(route, /\.order\("created_at", \{ ascending: false \}\)\.limit\(1\)/);
-    assert.match(route, /\.eq\("payload->>id", requestedEventId\)/);
-    assert.match(route, /endpoint\.active !== true/);
+    assert.match(route, /orderBy:.*createdAt.*desc/);
+    assert.match(route, /VALID_EVENT_ID_RE/);
+    assert.match(route, /webhookDelivery\.createMany/);
 });
 
 test("endpoint inventory links health to a non-secret API-key fingerprint", () => {

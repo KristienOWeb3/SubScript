@@ -8,6 +8,8 @@ import { getKeeperSigner, syncVaultMirror, VAULT_ABI } from "@/lib/vault/onchain
 import { SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
 import { withPgClient } from "@/lib/serverPg";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
+import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
+import crypto from "crypto";
 
 export const maxDuration = 300;
 
@@ -20,14 +22,33 @@ export const maxDuration = 300;
    never submits a draw the contract would revert as "cycle not mature". */
 const CYCLE_SECONDS = Number(process.env.VAULT_DRAW_MIN_AGE_SECONDS) || 30 * 24 * 60 * 60;
 
+function isAuthorized(request: Request) {
+    const authHeader = request.headers.get("Authorization") || "";
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    const presented = match?.[1] || "";
+    const configured = [process.env.CRON_SECRET, process.env.KEEPER_SECRET]
+        .filter((value): value is string => Boolean(value));
+    
+    if (presented.length === 0 || configured.length === 0) return false;
+
+    const digest = (val: string) => crypto.createHash("sha256").update(val, "utf8").digest();
+    const providedDigest = digest(presented);
+
+    return configured.some((value) => {
+        try {
+            return crypto.timingSafeEqual(providedDigest, digest(value));
+        } catch {
+            return false;
+        }
+    });
+}
+
 async function runVaultDraw(request: Request) {
     try {
-        const allowedSecrets = [process.env.CRON_SECRET, process.env.KEEPER_SECRET].filter(Boolean);
-        if (allowedSecrets.length === 0) {
+        if (!process.env.CRON_SECRET && !process.env.KEEPER_SECRET) {
             return NextResponse.json({ error: "Cron or keeper secret not configured" }, { status: 500 });
         }
-        const authorization = request.headers.get("Authorization");
-        if (!allowedSecrets.some((secret) => authorization === `Bearer ${secret}`)) {
+        if (!isAuthorized(request)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
@@ -117,6 +138,23 @@ async function runVaultDraw(request: Request) {
 
                     try {
                         await syncVaultMirror(row.userAddress, row.merchantAddress);
+                        await recordMerchantEvent({
+                            merchantAddress: row.merchantAddress,
+                            environment: "TEST",
+                            eventType: "vault.settled",
+                            resourceType: "vault",
+                            resourceId: row.id,
+                            resourceVersion: 1,
+                            data: {
+                                user_address: row.userAddress,
+                                merchant_address: row.merchantAddress,
+                                amount_settled_usdc_micros: row.accruedUsageUsdc.toString(),
+                                tx_hash: submittedHash,
+                                vault_id: row.id,
+                            },
+                            correlationId: crypto.randomUUID(),
+                            transitionKey: `vault_draw:${submittedHash}`,
+                        }).catch(err => console.error("[vault-draw] webhook dispatch error:", err));
                         results.push({ id: row.id, txHash: submittedHash });
                     } catch (syncError: any) {
                         /* Money movement is final; never report it as an ordinary failed

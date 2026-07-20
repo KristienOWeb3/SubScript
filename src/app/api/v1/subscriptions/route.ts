@@ -11,7 +11,7 @@ import {
 } from "@/lib/contracts/constants";
 import { prisma } from "@/lib/prisma";
 import { apiError } from "@/lib/apiErrors";
-import { authenticateMerchant } from "@/lib/v1/merchantAuth";
+import { authenticateMerchant, requireEnterpriseAndPremium } from "@/lib/v1/merchantAuth";
 import { buildSubscribeUrl } from "@/lib/checkoutUrl";
 import { generateReceiptId } from "@/lib/arc/memo";
 import { sanitizeInput } from "@/utils/security";
@@ -78,6 +78,8 @@ export async function GET(request: Request) {
     try {
         const auth = await authenticateMerchant(request);
         if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+        const premiumCheck = await requireEnterpriseAndPremium(auth.merchantAddress);
+        if (!premiumCheck.ok) return NextResponse.json({ error: premiumCheck.error }, { status: premiumCheck.status });
         const merchantWallet = auth.merchantAddress;
 
         const { searchParams } = new URL(request.url);
@@ -220,6 +222,9 @@ export async function POST(request: Request) {
     try {
         const auth = await authenticateMerchant(request);
         if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+        const premiumCheck = await requireEnterpriseAndPremium(auth.merchantAddress);
+        if (!premiumCheck.ok) return NextResponse.json({ error: premiumCheck.error }, { status: premiumCheck.status });
+
         const merchantAddress = auth.merchantAddress;
 
         const raw = await request.json().catch(() => null);
@@ -474,7 +479,7 @@ export async function POST(request: Request) {
             : { link: await prisma.paymentLink.create({ data: linkData }), published: null };
         const link = created.link;
 
-        await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.created", subscriptionWebhookData({
+        await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.activated", subscriptionWebhookData({
             subscriptionId: link.id,
             status: "incomplete",
             amountUsdcMicros: amountMicros,
@@ -538,6 +543,8 @@ export async function DELETE(request: Request) {
     try {
         const auth = await authenticateMerchant(request);
         if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+        const premiumCheck = await requireEnterpriseAndPremium(auth.merchantAddress);
+        if (!premiumCheck.ok) return NextResponse.json({ error: premiumCheck.error }, { status: premiumCheck.status });
         const merchantAddress = auth.merchantAddress;
 
         const { searchParams } = new URL(request.url);

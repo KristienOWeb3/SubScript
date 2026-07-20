@@ -1,4 +1,4 @@
-import { sendWebhookRequest } from "@/lib/webhooks";
+import { sendWebhookRequest, decryptWebhookSecret } from "@/lib/webhooks";
 import { ProtocolConfig } from "@/lib/payments/config";
 import crypto from "crypto";
 
@@ -20,7 +20,7 @@ function isTransientWebhookStatus(status: number): boolean {
 export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId: string) {
     const { data: deliveries, error } = await supabase
         .from("webhook_deliveries")
-        .select("id, webhook_endpoint_id, event, status, payload, attempts, updated_at")
+        .select("id, webhook_endpoint_id, event, status, payload, attempts, updated_at, next_attempt_at")
         .eq("event_id", eventId)
         .neq("status", "SUCCESS");
     if (error) throw new Error(`Failed to load webhook outbox: ${error.message}`);
@@ -28,9 +28,15 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
 
     let delivered = 0;
     for (const delivery of deliveries) {
+        if (delivery.status === "FAILED" && delivery.next_attempt_at) {
+            if (new Date(delivery.next_attempt_at).getTime() > Date.now()) {
+                continue;
+            }
+        }
+
         const { data: endpoint, error: endpointError } = await supabase
             .from("webhook_endpoints")
-            .select("url, secret, active")
+            .select("id, url, secret, active, wallet_address, ciphertext, nonce, authentication_tag, environment")
             .eq("id", delivery.webhook_endpoint_id)
             .maybeSingle();
         /* A transient lookup error may recover — leave the row for the next scan. But a MISSING
@@ -48,6 +54,21 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
                    and the drainer would keep re-selecting it — permanently starving the queue. */
             }).eq("id", delivery.id).in("status", ["PENDING", "FAILED", "PROCESSING"]);
             continue;
+        }
+
+        let secret = endpoint.secret;
+        if (endpoint.ciphertext && endpoint.nonce && endpoint.authentication_tag) {
+            try {
+                secret = decryptWebhookSecret({
+                    ciphertext: endpoint.ciphertext,
+                    nonce: endpoint.nonce,
+                    authenticationTag: endpoint.authentication_tag,
+                    endpointId: endpoint.id,
+                    merchantAddress: endpoint.wallet_address,
+                });
+            } catch (decryptionError) {
+                console.error(`[webhook-outbox] Failed to decrypt webhook secret for endpoint ${endpoint.id}:`, decryptionError);
+            }
         }
 
         const attempts = Number(delivery.attempts || 0) + 1;
@@ -68,8 +89,49 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
         if (claimError) throw new Error(`Failed to claim webhook outbox row: ${claimError.message}`);
         if (!claimed) continue;
 
-        const result = await sendWebhookRequest(endpoint.url, delivery.payload, endpoint.secret);
+        const startTime = Date.now();
+        const result = await sendWebhookRequest(
+            endpoint.url,
+            delivery.payload,
+            secret,
+            {
+                eventId: delivery.payload?.id || eventId,
+                deliveryId: delivery.id,
+                attempt: attempts,
+                eventType: delivery.event,
+                apiVersion: delivery.payload?.api_version,
+                environment: endpoint.environment || delivery.payload?.environment,
+                requestId: delivery.payload?.correlation_id,
+            }
+        );
+        const durationMs = Date.now() - startTime;
         const success = result.status >= 200 && result.status < 300;
+
+        // Log the physical attempt in webhook_delivery_attempts
+        await supabase.from("webhook_delivery_attempts").insert({
+            webhook_delivery_id: delivery.id,
+            attempt_number: attempts,
+            http_status: result.status > 0 ? result.status : null,
+            response_body: result.responseText || null,
+            error_message: success ? null : result.responseText || "Delivery failed",
+            duration_ms: durationMs,
+        }).catch((err: any) => {
+            console.error("[webhook-outbox] Failed to log webhook delivery attempt:", err);
+        });
+
+        let retryAfterSeconds: number | null = null;
+        if (result.headers && result.headers["retry-after"]) {
+            const raw = result.headers["retry-after"];
+            if (/^\d+$/.test(raw)) {
+                retryAfterSeconds = parseInt(raw, 10);
+            } else {
+                const parsedDate = Date.parse(raw);
+                if (!Number.isNaN(parsedDate)) {
+                    retryAfterSeconds = Math.max(0, Math.ceil((parsedDate - Date.now()) / 1000));
+                }
+            }
+        }
+
         const maxRetries = Number(process.env.WEBHOOK_MAX_RETRIES) > 0
             ? Number(process.env.WEBHOOK_MAX_RETRIES)
             : ProtocolConfig.WEBHOOK_MAX_RETRIES;
@@ -78,14 +140,31 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
         const nextStatus = success ? "SUCCESS"
             : permanent || exhausted ? "DEAD_LETTER"
             : "FAILED";
+
+        let nextAttemptAt: string | null = null;
+        if (nextStatus === "FAILED") {
+            let delayMs = 0;
+            if (retryAfterSeconds !== null) {
+                delayMs = retryAfterSeconds * 1000;
+            } else {
+                // base delay: 1000ms, capped at 1 hour (3600000ms) with full jitter
+                const exponentialDelay = Math.min(3600000, 1000 * Math.pow(2, attempts - 1));
+                delayMs = Math.round(Math.random() * exponentialDelay);
+            }
+            nextAttemptAt = new Date(Date.now() + delayMs).toISOString();
+        }
+
         if (nextStatus === "DEAD_LETTER") {
             console.error(`[ALERT] [webhook-outbox] DEAD_LETTER delivery ${delivery.id} (${delivery.event}): ${permanent ? `permanent HTTP ${result.status}` : `exhausted ${attempts}/${maxRetries} attempts`}`);
         }
+
         const { data: finalized, error: updateError } = await supabase.from("webhook_deliveries").update({
             status: nextStatus,
             last_error: success ? null : `HTTP ${result.status}${permanent ? " (permanent)" : exhausted ? ` (exhausted after ${attempts} attempts)` : ""}: ${result.responseText || ""}`.slice(0, 2000),
             response_body: result.responseText,
             updated_at: new Date().toISOString(),
+            next_attempt_at: nextAttemptAt,
+            http_status: result.status > 0 ? result.status : null,
         })
             .eq("id", delivery.id)
             .eq("status", "PROCESSING")

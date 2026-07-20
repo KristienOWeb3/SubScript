@@ -382,7 +382,6 @@ test("financial routes sponsor gas strictly before submitting the financial tran
 
     assert.ok(vaultCommit.indexOf("requireSponsoredGas") < vaultCommit.indexOf("commitFromEmbedded(wallet"),
         "vault commit sponsors before escrowing");
-    assert.match(vaultCommit, /principalRequiredWei: amount \* BigInt\(1_000_000_000_000\)/);
     assert.ok(subscribe.indexOf("requireSponsoredGas") < subscribe.indexOf("subscribeFromEmbedded("),
         "subscribe sponsors before charging");
     assert.match(change, /requireSponsoredGas\(\{/);

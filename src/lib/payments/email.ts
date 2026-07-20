@@ -7,6 +7,7 @@ import { ethers } from "ethers";
 import { STANDARD_CONTRACT_ADDRESS } from "../contracts/constants";
 import { assertProviderRateLimit } from "@/lib/providerRateLimit";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
+import { executeWithRpcFallback } from "@/lib/payments/rpc";
 
 const STANDARD_ABI = [
     "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive)"
@@ -33,11 +34,12 @@ export async function triggerExitSurvey(
         let customerAddress = "";
         if (typeof customerAddressOrSubId === "number" || /^\d+$/.test(String(customerAddressOrSubId))) {
             try {
-                const rpcUrl = process.env.RPC_URL || "https://rpc.testnet.arc.network";
-                const provider = new ethers.JsonRpcProvider(rpcUrl);
-                const standardContract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, STANDARD_ABI, provider);
-                const subOnChain = await standardContract.subscriptions(customerAddressOrSubId);
-                customerAddress = subOnChain[0];
+                const { result: customer } = await executeWithRpcFallback(async (provider) => {
+                    const standardContract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, STANDARD_ABI, provider);
+                    const subOnChain = await standardContract.subscriptions(customerAddressOrSubId);
+                    return subOnChain[0];
+                });
+                customerAddress = customer;
             } catch (contractErr) {
                 console.error("Failed to fetch subscriber address on-chain:", contractErr);
                 return;
@@ -80,6 +82,13 @@ export async function triggerExitSurvey(
         const surveyPrompt = customChurnQuestion
             ? customChurnQuestion
             : `Exit survey for tier ${subscriptionTier}: We would love to know why you cancelled your subscription. Please select one of the options below to help ${merchantName} improve:`;
+        const subIdStr = (typeof customerAddressOrSubId === "number" || /^\d+$/.test(String(customerAddressOrSubId)))
+            ? String(customerAddressOrSubId)
+            : "";
+        const dedupeKey = subIdStr
+            ? `churn-survey:${subIdStr}`
+            : `churn-survey:${merchantAddress.toLowerCase()}:${customerAddress.toLowerCase()}:${subscriptionTier}`;
+
         try {
             await insertSupabaseDmAndNotify(db, {
                 sender_address: merchantAddress.toLowerCase(),
@@ -88,6 +97,7 @@ export async function triggerExitSurvey(
                 status: "PENDING",
                 title: "We are sorry to see you go",
                 description: surveyPrompt,
+                dedupe_key: dedupeKey,
             });
             console.log("Exit survey DM created successfully.");
         } catch (dmInsertErr) {

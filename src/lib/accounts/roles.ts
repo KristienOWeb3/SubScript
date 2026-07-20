@@ -75,7 +75,7 @@ export async function resolveAccountRoleWithBackfill(address: string | null | un
 }
 
 export async function requireAccountRole(address: string, expectedRole: AccountRoleName) {
-    const role = await getAccountRole(address);
+    const role = await resolveAccountRoleWithBackfill(address);
     if (!role) {
         return {
             ok: false as const,
