@@ -346,12 +346,12 @@ export async function POST(request: Request) {
                 planName: plan.name,
                 amountUsdc: plan.amountUsdc,
                 periodSeconds: plan.periodSeconds,
-            }).catch((err) => console.error("[subscription/subscribe] recovered DM creation failed:", err));
+            }).catch((err: unknown) => console.error("[subscription/subscribe] recovered DM creation failed:", err));
             if (merchant === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
                 await prisma.merchant.update({
                     where: { walletAddress: subscriber },
                     data: { tier: "PREMIUM" },
-                }).catch((err) => console.error("[subscription/subscribe] tier upgrade failed:", err));
+                }).catch((err: unknown) => console.error("[subscription/subscribe] tier upgrade failed:", err));
             }
             await markSubscriptionOfferAccepted(checkoutSessionId, subscriber);
             return NextResponse.json({ success: true, txHash: checkout!.verifiedTxHash, subscriptionId: recoveredId, planName: plan.name });
@@ -489,12 +489,12 @@ export async function POST(request: Request) {
                     planName: plan.name,
                     amountUsdc: plan.amountUsdc,
                     periodSeconds: plan.periodSeconds,
-                }).catch((err) => console.error("[subscription/subscribe] reconciled DM creation failed:", err));
+                }).catch((err: unknown) => console.error("[subscription/subscribe] reconciled DM creation failed:", err));
                 if (merchant === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
                     await prisma.merchant.update({
                         where: { walletAddress: subscriber },
                         data: { tier: "PREMIUM" },
-                    }).catch((err) => console.error("[subscription/subscribe] tier upgrade failed:", err));
+                    }).catch((err: unknown) => console.error("[subscription/subscribe] tier upgrade failed:", err));
                 }
                 await markSubscriptionOfferAccepted(checkoutSessionId, subscriber);
                 await dispatchDurableSubscriptionWebhook(merchant, "subscription.activated", subscriptionWebhookData({
@@ -666,7 +666,7 @@ export async function POST(request: Request) {
             });
             if (appliedPromo) {
                 await confirmPromotionRedemption(appliedPromo.id, subscriber, BigInt(subId))
-                    .catch((err) => console.error("[subscription/subscribe] redemption confirm failed:", err));
+                    .catch((err: unknown) => console.error("[subscription/subscribe] redemption confirm failed:", err));
             }
         } catch (reconciliationError) {
             await recordPaymentReconciliationRequired({
@@ -701,13 +701,13 @@ export async function POST(request: Request) {
                     firstRegularPaymentAt,
                 }
                 : null,
-        }).catch((err) => console.error("[subscription/subscribe] DM creation failed:", err));
+        }).catch((err: unknown) => console.error("[subscription/subscribe] DM creation failed:", err));
 
         if (merchant === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
             await prisma.merchant.update({
                 where: { walletAddress: subscriber },
                 data: { tier: "PREMIUM" },
-            }).catch((err) => console.error("[subscription/subscribe] tier upgrade failed:", err));
+            }).catch((err: unknown) => console.error("[subscription/subscribe] tier upgrade failed:", err));
         }
 
         if (checkoutSessionId) {

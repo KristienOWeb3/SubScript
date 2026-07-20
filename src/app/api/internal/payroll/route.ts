@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ethers } from "ethers";
-import { CONFIDENTIAL_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
+import { ARC_TESTNET_CHAIN_ID, CONFIDENTIAL_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 import { CONFIDENTIAL_CONTRACT_ABI } from "@/lib/contracts/abis";
+import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
+import { ProtocolConfig } from "@/lib/payments/config";
 import { getRpcProviderForWrite } from "@/lib/payments/rpc";
 import { buildPermitSingle } from "@/lib/payroll/permit2";
 import { revokePayrollAuthority } from "@/lib/payroll/authority";
@@ -521,6 +523,43 @@ export async function POST(request: Request) {
                     }
                 });
 
+                const payrollEnv = ProtocolConfig.CHAIN_ID === ARC_TESTNET_CHAIN_ID ? "TEST" : "LIVE" as const;
+
+                await recordMerchantEvent({
+                    merchantAddress: orgAddress,
+                    eventType: "payroll.execution_succeeded",
+                    environment: payrollEnv,
+                    resourceType: "payroll_campaign",
+                    resourceId: campaign.id,
+                    resourceVersion: 1,
+                    correlationId: requestId,
+                    transitionKey: `payroll-succeeded:${campaign.id}:${txHash}`,
+                    chainId: ProtocolConfig.CHAIN_ID,
+                    data: {
+                        campaign_id: campaign.id,
+                        tx_hash: txHash,
+                        total_amount_usdc_micros: totalPayrollAmount.toString(),
+                        recipient_count: recipientAddresses.length,
+                    },
+                }).catch((err: unknown) => console.error("[payroll] payroll.execution_succeeded webhook error:", err));
+
+                await recordMerchantEvent({
+                    merchantAddress: orgAddress,
+                    eventType: "payroll.authorization_required",
+                    environment: payrollEnv,
+                    resourceType: "payroll_campaign",
+                    resourceId: campaign.id,
+                    resourceVersion: 2,
+                    correlationId: requestId,
+                    transitionKey: `payroll-reauth:${campaign.id}:${txHash}`,
+                    chainId: ProtocolConfig.CHAIN_ID,
+                    data: {
+                        campaign_id: campaign.id,
+                        reason: "Payday completed; fresh Permit2 signature required for next cycle",
+                        next_payday: nextPaydayDate.toISOString(),
+                    },
+                }).catch((err: unknown) => console.error("[payroll] payroll.authorization_required webhook error:", err));
+
                 executionResults.push({
                     campaignId: campaign.id,
                     status: "SUCCESS",
@@ -587,6 +626,22 @@ export async function POST(request: Request) {
                         }
                     }
                 });
+
+                await recordMerchantEvent({
+                    merchantAddress: campaign.organizationAddress.toLowerCase(),
+                    eventType: "payroll.execution_failed",
+                    environment: ProtocolConfig.CHAIN_ID === ARC_TESTNET_CHAIN_ID ? "TEST" : "LIVE",
+                    resourceType: "payroll_campaign",
+                    resourceId: campaign.id,
+                    resourceVersion: 1,
+                    correlationId: requestId,
+                    transitionKey: `payroll-failed:${campaign.id}:${Date.now()}`,
+                    chainId: ProtocolConfig.CHAIN_ID,
+                    data: {
+                        campaign_id: campaign.id,
+                        reason: campaignErr.message || "Unknown execution error",
+                    },
+                }).catch((err: unknown) => console.error("[payroll] payroll.execution_failed webhook error:", err));
 
                 executionResults.push({
                     campaignId: campaign.id,

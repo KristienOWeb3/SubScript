@@ -10,6 +10,7 @@ import { arcReconciliation } from "@/lib/arc/reconciliation";
 import { checkProviderRateLimit } from "@/lib/providerRateLimit";
 import { ARC_TESTNET_CHAIN_ID, DEMO_MERCHANT_ADDRESS } from "@/lib/contracts/constants";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
+import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { normalizeMicrouscAmount, parsePaymentLinkExpiry } from "@/lib/paymentLinks/validation";
 import { inspectPaymentIntentSemantics } from "@/lib/paymentIntentSemantics";
 
@@ -339,6 +340,25 @@ export async function POST(request: Request) {
         });
 
         const settlement = arcReconciliation();
+
+        await recordMerchantEvent({
+            merchantAddress: merchantAddress.toLowerCase(),
+            eventType: "payment.pending",
+            environment: isSandboxRequest ? "TEST" : "LIVE",
+            resourceType: "payment",
+            resourceId: newLink.id,
+            resourceVersion: 1,
+            correlationId: requestId,
+            transitionKey: `payment-pending:${newLink.id}`,
+            chainId: settlementChainId,
+            data: {
+                payment_link_id: newLink.id,
+                amount_usdc_micros: newLink.amountUsdc.toString(),
+                title: newLink.title,
+                checkout_url: buildCheckoutUrl(newLink.id),
+            },
+        }).catch((err: unknown) => console.error("[intent] payment.pending webhook error:", err));
+
         return NextResponse.json({
             success: true,
             intent: {

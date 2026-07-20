@@ -52,9 +52,10 @@ export async function POST(request: Request) {
         const resourceId = String(data.resource_id || data.id || "");
         const resourceVersion = Number(data.resource_version || data.version || 1);
 
+        const dispatchEnvironment = (data.environment === "LIVE" || process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet") ? "LIVE" : "TEST";
         const result = await recordMerchantEvent({
             merchantAddress: normalizedWallet,
-            environment: "TEST",
+            environment: dispatchEnvironment as "TEST" | "LIVE",
             eventType: event as EventType,
             resourceType,
             resourceId,

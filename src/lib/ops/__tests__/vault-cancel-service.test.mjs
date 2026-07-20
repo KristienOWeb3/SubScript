@@ -64,7 +64,7 @@ test("cancel-service route is user-authed, records the cancel, and notifies the 
 
     /* Merchant is told to stop: in-app DM + webhook. */
     assert.match(route, /message_type: "SERVICE_CANCELED"/);
-    assert.match(route, /dispatchMerchantWebhook\(merchant, "vault\.service_canceled"/);
+    assert.match(route, /recordMerchantEvent\(\{[\s\S]*?eventType: "vault\.service_canceled"/);
 });
 
 test("re-committing clears the cancellation (explicit opt back in)", () => {

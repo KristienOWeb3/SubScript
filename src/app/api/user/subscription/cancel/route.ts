@@ -153,7 +153,7 @@ export async function POST(request: Request) {
             await prisma.merchant.update({
                 where: { walletAddress: wallet.toLowerCase() },
                 data: { tier: "FREE" },
-            }).catch((err) => console.error("[subscription/cancel] tier downgrade failed:", err));
+            }).catch((err: unknown) => console.error("[subscription/cancel] tier downgrade failed:", err));
         }
 
         try {

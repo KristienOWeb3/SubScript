@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import crypto from "crypto";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
@@ -6,6 +7,8 @@ import type { Prisma } from "@prisma/client";
 /* Finding 81: Replay creates a new WebhookDelivery row, NOT a new MerchantEvent.
    A replay is a new delivery of the same canonical event to a specific endpoint.
    Response distinguishes event_id, delivery_id, and replay context. */
+
+const VALID_EVENT_ID_RE = /^(evt_[a-z0-9_]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 
 export async function POST(request: Request) {
     try {
@@ -21,10 +24,10 @@ export async function POST(request: Request) {
         }
 
         /* Accept canonical_event_id (evt_...) and optional endpoint_id */
-        const canonicalEventId = typeof body.event_id === "string"
-            ? body.event_id.trim()
+        const rawEventId = typeof body.event_id === "string"
+            ? body.event_id.trim().toLowerCase()
             : typeof body.eventId === "string"
-                ? body.eventId.trim()
+                ? body.eventId.trim().toLowerCase()
                 : "";
         const endpointId = typeof body.endpoint_id === "string"
             ? body.endpoint_id.trim()
@@ -33,9 +36,16 @@ export async function POST(request: Request) {
                 : undefined;
         const replayLatest = body.latest === true;
 
-        if (!canonicalEventId && !replayLatest) {
+        if (!rawEventId && !replayLatest) {
             return NextResponse.json({
                 error: "Provide event_id (canonical evt_...) or latest: true",
+            }, { status: 400 });
+        }
+
+        const canonicalEventId = rawEventId;
+        if (canonicalEventId && !VALID_EVENT_ID_RE.test(canonicalEventId)) {
+            return NextResponse.json({
+                error: "eventId must be a valid event ID (evt_... or UUID format)",
             }, { status: 400 });
         }
 
@@ -95,8 +105,10 @@ export async function POST(request: Request) {
             })),
         });
 
+        const replayId = `rpl_${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`;
         return NextResponse.json({
             success: true,
+            replay_id: replayId,
             event_id: merchantEvent.eventId,
             event_type: merchantEvent.eventType,
             environment: merchantEvent.environment,

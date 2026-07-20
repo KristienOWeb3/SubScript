@@ -41,9 +41,9 @@ test("webhook deliveries classify failures and dead-letter on exhaustion or perm
     assert.match(outbox, /const exhausted = !success && attempts >= maxRetries/);
     assert.match(outbox, /permanent \|\| exhausted \? "DEAD_LETTER"/);
     assert.match(outbox, /\[ALERT\] \[webhook-outbox\] DEAD_LETTER/);
-    /* Merchant-visible manual replay exists. */
+    /* Merchant-visible manual replay exists — queues deliveries via the outbox. */
     const replay = source("src/app/api/webhooks/events/replay/route.ts");
-    assert.match(replay, /sendWebhookRequest/);
+    assert.match(replay, /webhookDelivery\.createManyAndReturn/);
 });
 
 test("webhook dispatch pins the vetted IP — DNS cannot rebind between validation and send", () => {

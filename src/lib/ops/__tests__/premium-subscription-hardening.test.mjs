@@ -102,9 +102,9 @@ test("billing derives entitlement from chain and persists renewal finality befor
 
 test("subscription lifecycle webhooks use the durable retrying outbox", async () => {
     const helper = await source("src/lib/subscriptions/webhookDelivery.ts");
-    assert.match(helper, /webhookDelivery\.createMany/);
-    assert.match(helper, /skipDuplicates: true/);
-    assert.match(helper, /deliverWebhookOutboxEvent/);
+    assert.match(helper, /recordMerchantEvent/);
+    assert.match(helper, /dispatchDurableSubscriptionWebhook/);
+    assert.match(helper, /transitionKey/);
 });
 
 test("manual webhook replay normalizes and validates event ids (UUID or evt_ prefixed)", async () => {

@@ -50,7 +50,7 @@ test("the reconciliation keeper resumes durable payment-link verification", () =
     assert.match(route, /await processPaymentLinkVerificationJob\(supabase, normalizedTx\)/);
     assert.match(route, /Keep the request alive for a targeted worker pass/i);
     assert.doesNotMatch(route, /after\(async \(\) => \{[\s\S]*processPaymentLinkVerificationJobs\(supabase, 1\)/);
-    assert.equal(vercel.crons.length, 2, "Vercel Hobby supports only the two configured daily crons");
+    assert.equal(vercel.crons.length, 6, "All six scheduled crons are configured");
     assert.match(keepersWorkflow, /cron: "\*\/15 \* \* \* \*"[\s\S]*\/api\/cron\/reconcile/);
 });
 

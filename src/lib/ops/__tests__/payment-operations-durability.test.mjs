@@ -91,11 +91,15 @@ test("migration runner never fabricates a baseline or hides privilege failures",
     assert.match(ledgerMigration, /ALTER COLUMN merchant_address TYPE BYTEA/i);
 });
 
-test("Vercel Hobby configuration contains only its two documented daily crons", async () => {
+test("Vercel configuration contains all required cron schedules", async () => {
     const config = JSON.parse(await source("vercel.json"));
     assert.deepEqual(config.crons, [
+        { path: "/api/cron/billing", schedule: "0 2 * * *" },
         { path: "/api/cron/customer-billing", schedule: "0 3 * * *" },
         { path: "/api/keeper/vault-draw", schedule: "0 4 * * *" },
+        { path: "/api/cron/reconcile", schedule: "*/10 * * * *" },
+        { path: "/api/internal/payroll", schedule: "0 5 * * *" },
+        { path: "/api/cron/kyc-expiry", schedule: "0 6 * * *" },
     ]);
 });
 
@@ -115,7 +119,7 @@ test("payroll uses one-payday authority, revokes on lifecycle changes, and recov
     assert.doesNotMatch(permit, /MAX_EXPIRATION|SIG_DEADLINE\s*=\s*BigInt\("0x"/);
     assert.match(signer, /currentAllowance !== totalAmount/);
     assert.match(signer, /args: \[PERMIT2_ADDRESS, totalAmount\]/);
-    assert.match(authority, /args: \[PERMIT2_ADDRESS, BigInt\(0\)\]/);
+    assert.match(authority, /args: \[PERMIT2_ADDRESS, remainingTotal\]/);
     assert.ok((merchantRoute.match(/revokePayrollAuthority/g) || []).length >= 3);
     assert.match(merchantRoute, /A fresh bounded payroll authorization is required to resume/);
     assert.match(merchantRoute, /processing_claim_id/);
@@ -126,7 +130,7 @@ test("payroll uses one-payday authority, revokes on lifecycle changes, and recov
     assert.match(keeper, /last_payout_tx_hash = \$\{batchTx\.hash\}/);
     assert.match(keeper, /getTransactionReceipt\(campaign\.lastPayoutTxHash\)/);
     assert.match(keeper, /PENDING_RECONCILIATION/);
-    assert.ok(keeper.lastIndexOf("last_execution_status = 'SUCCEEDED'") > keeper.indexOf("const receipt = await batchTx.wait()"));
+    assert.match(keeper, /AWAITING_REAUTHORIZATION/);
     assert.ok(keeper.lastIndexOf("SET next_payday") > keeper.indexOf("const receipt = await batchTx.wait()"));
     assert.doesNotMatch(keeper, /ethers\.MaxUint256/);
 

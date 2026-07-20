@@ -191,7 +191,7 @@ export async function POST(request: Request) {
         await prisma.vaultCommitIntent.update({
             where: { requestId },
             data: { status: "SUBMITTED", txHash: txHash.toLowerCase(), lastError: null },
-        }).catch((persistError) => {
+        }).catch((persistError: unknown) => {
             console.error("[vault-commit] CRITICAL: submitted commit not recorded durably:", persistError);
         });
 

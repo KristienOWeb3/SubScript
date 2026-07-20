@@ -3,10 +3,11 @@ import { randomUUID } from "crypto";
 import { ethers } from "ethers";
 
 import { ROUTER_DEPOSIT_INTERFACE, USDC_TRANSFER_INTERFACE, receiptUrl } from "@/lib/arc/memo";
-import { SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
+import { ARC_TESTNET_CHAIN_ID, SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
 import { buildReceiptDmDescription, safeReceiptPayeeLabel } from "@/lib/dms/receiptPresentation";
 import { sendPaymentReceiptEmails } from "@/lib/email/transactional";
+import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { createPaymentSucceededWebhook } from "@/lib/webhooks";
 import { deliverWebhookOutboxEvent } from "@/lib/webhookOutbox";
 import { ProtocolConfig } from "./config";
@@ -478,6 +479,28 @@ async function verifyAndFinalize(supabase: any, job: PaymentLinkVerificationJob)
 
             await bindCheckoutAttempt(supabase, job, paymentId);
             await runDurablePostSettlementEffects(supabase, job, paymentId, shareUrl);
+
+            const settlementChainId = Number(job.chain_id);
+            await recordMerchantEvent({
+                merchantAddress: job.merchant_address.toLowerCase(),
+                eventType: "checkout.completed",
+                environment: settlementChainId === ARC_TESTNET_CHAIN_ID ? "TEST" : "LIVE",
+                resourceType: "checkout",
+                resourceId: job.payment_link_id,
+                resourceVersion: 1,
+                correlationId: job.id,
+                transitionKey: `checkout-completed:${job.payment_link_id}:${job.tx_hash}`,
+                chainId: settlementChainId,
+                data: {
+                    checkout_session_id: job.payment_link_id,
+                    payment_id: paymentId,
+                    payment_status: "paid",
+                    tx_hash: job.tx_hash,
+                    amount_usdc_micros: job.amount_usdc.toString(),
+                    payer_address: job.payer_address,
+                },
+            }).catch((err: unknown) => console.error("[payment-verification] checkout.completed webhook error:", err));
+
             await completeJob(supabase, job);
             return;
         } catch (error) {
@@ -497,6 +520,26 @@ async function processClaimedJob(supabase: any, job: PaymentLinkVerificationJob)
         return { jobId: job.id, txHash: job.tx_hash, outcome: "COMPLETED" };
     } catch (error) {
         console.error(`[verify-worker] Durable job ${job.id} failed:`, messageOf(error));
+        if (error instanceof PermanentVerificationError) {
+            const chainId = Number(job.chain_id);
+            await recordMerchantEvent({
+                merchantAddress: job.merchant_address.toLowerCase(),
+                eventType: "payment.failed",
+                environment: chainId === ARC_TESTNET_CHAIN_ID ? "TEST" : "LIVE",
+                resourceType: "payment",
+                resourceId: job.payment_link_id,
+                resourceVersion: 1,
+                correlationId: job.id,
+                transitionKey: `payment-failed:${job.payment_link_id}:${job.tx_hash}`,
+                chainId,
+                data: {
+                    payment_link_id: job.payment_link_id,
+                    tx_hash: job.tx_hash,
+                    payer_address: job.payer_address,
+                    reason: messageOf(error),
+                },
+            }).catch((err: unknown) => console.error("[payment-verification] payment.failed webhook error:", err));
+        }
         return rescheduleJob(supabase, job, error, error instanceof PermanentVerificationError);
     }
 }
