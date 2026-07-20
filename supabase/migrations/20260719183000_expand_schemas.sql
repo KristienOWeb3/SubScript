@@ -194,6 +194,15 @@ ON public.webhook_endpoints (wallet_address, url_hash)
 WHERE deleted_at IS NULL;
 
 -- 8. Migration Ledger expansion for Checksum Integrity
+-- The _subscript_migrations table is created by scripts/apply-migrations.mjs (prod runner).
+-- Supabase's native runner (supabase db reset / E2E) doesn't create it, so ensure it exists first.
+CREATE TABLE IF NOT EXISTS public._subscript_migrations (
+    id SERIAL PRIMARY KEY,
+    filename TEXT NOT NULL UNIQUE,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    baseline BOOLEAN NOT NULL DEFAULT false
+);
+
 ALTER TABLE public._subscript_migrations
     ADD COLUMN IF NOT EXISTS sha256 TEXT NULL,
     ADD COLUMN IF NOT EXISTS byte_length INT NULL,
