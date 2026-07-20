@@ -8,6 +8,7 @@ import { getKeeperSigner, syncVaultMirror, VAULT_ABI } from "@/lib/vault/onchain
 import { SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
 import { withPgClient } from "@/lib/serverPg";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
+import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import crypto from "crypto";
 
 export const maxDuration = 300;
@@ -137,6 +138,23 @@ async function runVaultDraw(request: Request) {
 
                     try {
                         await syncVaultMirror(row.userAddress, row.merchantAddress);
+                        await recordMerchantEvent({
+                            merchantAddress: row.merchantAddress,
+                            environment: "TEST",
+                            eventType: "vault.settled",
+                            resourceType: "vault",
+                            resourceId: row.id,
+                            resourceVersion: 1,
+                            data: {
+                                user_address: row.userAddress,
+                                merchant_address: row.merchantAddress,
+                                amount_settled_usdc_micros: row.accruedUsageUsdc.toString(),
+                                tx_hash: submittedHash,
+                                vault_id: row.id,
+                            },
+                            correlationId: crypto.randomUUID(),
+                            transitionKey: `vault_draw:${submittedHash}`,
+                        }).catch(err => console.error("[vault-draw] webhook dispatch error:", err));
                         results.push({ id: row.id, txHash: submittedHash });
                     } catch (syncError: any) {
                         /* Money movement is final; never report it as an ordinary failed

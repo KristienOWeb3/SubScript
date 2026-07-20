@@ -20,7 +20,7 @@ import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import { STANDARD_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
+import { STANDARD_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS, PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
@@ -713,6 +713,13 @@ export async function POST(request: Request) {
                         data: { active: false, status: "SUSPENDED_DOWNGRADE" },
                     });
                     // Note: API keys use 'revoked' field - we don't hard-revoke, we'll check tier at auth time
+
+                    if (sub.merchant_address.toLowerCase() === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
+                        await prisma.merchant.update({
+                            where: { walletAddress: subscriber.toLowerCase() },
+                            data: { tier: "FREE" },
+                        }).catch((err: any) => console.error("[customer-billing] tier downgrade failed:", err));
+                    }
 
                     await dispatchDurableSubscriptionWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
                         subscriptionId: subId,

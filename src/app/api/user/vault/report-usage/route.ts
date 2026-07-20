@@ -18,6 +18,7 @@ import {
     pushDmNotification,
     type DmPushInput,
 } from "@/lib/dms/notifications";
+import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 
 type VaultUsageRow = {
     id: string;
@@ -403,6 +404,48 @@ export async function POST(request: Request) {
 
         scheduleDmPush(result.notification);
         scheduleDmPush(result.thresholdNotification);
+
+        await recordMerchantEvent({
+            merchantAddress,
+            environment: "TEST",
+            eventType: "vault.usage_recorded",
+            resourceType: "vault",
+            resourceId: result.vault.id,
+            resourceVersion: 1,
+            data: {
+                user_address: normalizedUser,
+                merchant_address: merchantAddress,
+                amount_usdc_micros: amountMicros.toString(),
+                accrued_usage_usdc_micros: result.vault.accrued_usage_usdc,
+                balance_usdc_micros: result.vault.balance_usdc,
+                exhausted: result.exhausted,
+            },
+            correlationId: requestId,
+            transitionKey: `vault_usage:${requestId}`,
+        }).catch(err => console.error("[report-usage] webhook dispatch error:", err));
+
+        if (result.thresholdNotification) {
+            await recordMerchantEvent({
+                merchantAddress,
+                environment: "TEST",
+                eventType: "vault.threshold_reached",
+                resourceType: "vault",
+                resourceId: result.vault.id,
+                resourceVersion: 1,
+                data: {
+                    user_address: normalizedUser,
+                    merchant_address: merchantAddress,
+                    accrued_usage_usdc_micros: result.vault.accrued_usage_usdc,
+                    balance_usdc_micros: result.vault.balance_usdc,
+                    usage_percent: Number(
+                        (BigInt(result.vault.accrued_usage_usdc) * BigInt(100)) /
+                        BigInt(result.vault.balance_usdc),
+                    ),
+                },
+                correlationId: requestId,
+                transitionKey: `vault_threshold:${result.vault.id}:${result.vault.accrued_usage_usdc}`,
+            }).catch(err => console.error("[report-usage] threshold webhook dispatch error:", err));
+        }
 
         return NextResponse.json({
             success: true,

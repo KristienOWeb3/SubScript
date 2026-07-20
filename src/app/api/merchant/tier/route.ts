@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 import { getSessionWallet } from "@/lib/auth";
+import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 
 export async function GET(request: Request) {
     try {
@@ -38,9 +38,12 @@ export async function GET(request: Request) {
             supabase
                 .from("subscriptions")
                 .select("subscription_id, cancel_at_period_end, next_billing_date, status, downgrade_failures")
-                .eq("merchant_address", PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase())
                 .eq("subscriber", address.toLowerCase())
+                .eq("merchant_address", PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase())
+                .in("kind", ["CUSTOMER", "PREMIUM"])
                 .in("status", ["ACTIVE", "FAILED", "PAST_DUE"])
+                .order("created_at", { ascending: false })
+                .limit(1)
                 .maybeSingle()
         ]);
 

@@ -14,6 +14,8 @@ import { isSponsoredGasError, requireSponsoredGas } from "@/lib/sponsor/sponsors
 import { prisma } from "@/lib/prisma";
 import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
+import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
+import crypto from "crypto";
 
 export const maxDuration = 120;
 
@@ -223,6 +225,25 @@ export async function POST(request: Request) {
                 data: { status: "DISMISSED" },
             });
         }
+
+        await recordMerchantEvent({
+            merchantAddress: normalizedMerchant,
+            environment: commitEnvironment as "TEST" | "LIVE",
+            eventType: "vault.activated",
+            resourceType: "vault",
+            resourceId: `${normalizedWallet}:${normalizedMerchant}`,
+            resourceVersion: 1,
+            data: {
+                user_address: normalizedWallet,
+                merchant_address: normalizedMerchant,
+                amount_usdc_micros: amount.toString(),
+                vault_balance_usdc_micros: v.balance.toString(),
+                tx_hash: txHash,
+                active: v.active,
+            },
+            correlationId: requestId,
+            transitionKey: `vault_commit:${txHash.toLowerCase()}`,
+        }).catch(err => console.error("[vault/commit] webhook dispatch error:", err));
 
         return NextResponse.json({
             success: true,

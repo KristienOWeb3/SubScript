@@ -9,6 +9,8 @@ import { sanitizeInput } from "@/utils/security";
 import { reclaimAbandonedFromEmbedded, syncVaultMirror } from "@/lib/vault/onchain";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
+import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
+import crypto from "crypto";
 
 export const maxDuration = 120;
 
@@ -37,6 +39,24 @@ export async function POST(request: Request) {
 
         const txHash = await reclaimAbandonedFromEmbedded(wallet, merchantAddress);
         const v = await syncVaultMirror(wallet, merchantAddress);
+
+        await recordMerchantEvent({
+            merchantAddress: merchantAddress.toLowerCase(),
+            environment: "TEST",
+            eventType: "vault.reclaimed",
+            resourceType: "vault",
+            resourceId: `${wallet.toLowerCase()}:${merchantAddress.toLowerCase()}`,
+            resourceVersion: 1,
+            data: {
+                user_address: wallet.toLowerCase(),
+                merchant_address: merchantAddress.toLowerCase(),
+                vault_balance_usdc_micros: v.balance.toString(),
+                tx_hash: txHash,
+                active: v.active,
+            },
+            correlationId: crypto.randomUUID(),
+            transitionKey: `vault_reclaim:${txHash.toLowerCase()}`,
+        }).catch(err => console.error("[vault/reclaim] webhook dispatch error:", err));
 
         return NextResponse.json({
             success: true,

@@ -479,7 +479,7 @@ export async function POST(request: Request) {
             : { link: await prisma.paymentLink.create({ data: linkData }), published: null };
         const link = created.link;
 
-        await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.created", subscriptionWebhookData({
+        await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.activated", subscriptionWebhookData({
             subscriptionId: link.id,
             status: "incomplete",
             amountUsdcMicros: amountMicros,

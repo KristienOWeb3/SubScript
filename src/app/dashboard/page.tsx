@@ -4410,16 +4410,18 @@ Please complete the following implementation tasks:
                                                             <td className="py-4">{item.nextBilling}</td>
                                                             <td className="py-4">
                                                                 <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                                                                    item.active 
-                                                                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
-                                                                        : "bg-red-500/10 text-red-400 border border-red-500/20"
+                                                                    item.cancelAtPeriodEnd
+                                                                        ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                                                                        : item.active
+                                                                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                                                            : "bg-red-500/10 text-red-400 border border-red-500/20"
                                                                 }`}>
-                                                                    {item.active ? "Active" : "Revoked"}
+                                                                    {item.cancelAtPeriodEnd ? "Cancelling" : item.active ? "Active" : "Cancelled"}
                                                                 </span>
                                                             </td>
                                                             <td className="py-4 text-right">
                                                                 <span className="text-[9px] text-white/25 uppercase tracking-widest font-bold">
-                                                                    {item.active ? "Customer controlled" : "Ended"}
+                                                                    {item.cancelAtPeriodEnd ? "Expires at period end" : item.active ? "Customer controlled" : "Ended"}
                                                                 </span>
                                                             </td>
                                                         </tr>
@@ -4649,11 +4651,13 @@ Please complete the following implementation tasks:
                                                             <p className="text-[9px] font-mono text-white/40 mt-0.5">{item.displayAddress || item.shortSubAddress}</p>
                                                         </div>
                                                         <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider ${
-                                                            item.active 
-                                                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
-                                                                : "bg-red-500/10 text-red-400 border border-red-500/20"
+                                                            item.cancelAtPeriodEnd
+                                                                ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                                                                : item.active
+                                                                    ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                                                    : "bg-red-500/10 text-red-400 border border-red-500/20"
                                                         }`}>
-                                                            {item.active ? "Active" : "Revoked"}
+                                                            {item.cancelAtPeriodEnd ? "Cancelling" : item.active ? "Active" : "Cancelled"}
                                                         </span>
                                                     </div>
                                                     <div className="grid grid-cols-2 gap-3 pt-2.5 border-t border-white/5 text-[9px] text-white/50 font-mono">
@@ -4666,11 +4670,15 @@ Please complete the following implementation tasks:
                                                             <span className="text-white/70 block mt-0.5">{item.nextBilling}</span>
                                                         </div>
                                                     </div>
-                                                    {item.active && (
+                                                    {item.cancelAtPeriodEnd ? (
+                                                        <span className="block text-[8px] font-bold uppercase tracking-widest text-amber-400/50">
+                                                            Expires at period end
+                                                        </span>
+                                                    ) : item.active ? (
                                                         <span className="block text-[8px] font-bold uppercase tracking-widest text-white/20">
                                                             Only the customer can cancel
                                                         </span>
-                                                    )}
+                                                    ) : null}
                                                 </div>
                                             ));
                                         })()

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Wallet, Copy, Check, PlugZap, Loader2, Shield, Eye, EyeOff, User } from "@/components/icons";
+import { Wallet, Copy, Check, PlugZap, Loader2, Eye, EyeOff, User } from "@/components/icons";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { createPublicClient, http, formatUnits } from "viem";
 import { activeArcChain } from "@/lib/wagmi";
@@ -312,7 +312,7 @@ export default function DashboardHeader({
                                     </div>
 
                                     {/* Claimable routed settlement */}
-                                    {isPremium && promptFlowMode === "private" && (
+                                    {vaultBalance > 0 && (
                                         <div className="hidden sm:block text-right px-2 sm:px-3 border-l border-white/5">
                                             <p className="text-[9px] text-[#00d2b4]/60 uppercase font-bold tracking-widest leading-none mb-0.5">Settlement</p>
                                             <p className="text-sm sm:text-base font-bold text-[#00d2b4] tracking-tight leading-none">
@@ -322,35 +322,22 @@ export default function DashboardHeader({
                                         </div>
                                     )}
 
-                                    {/* Deposit/Withdraw Button */}
-                                    {(() => {
-                                         if (!isPremium || promptFlowMode !== "private") return null;
-                                         const showWithdraw = vaultBalance > 0;
-                                         return showWithdraw ? (
-                                             <button
-                                                 onClick={onWithdraw}
-                                                 disabled={isWithdrawing}
-                                                 className="flex-shrink-0 px-3 sm:px-5 py-1.5 sm:py-2.5 bg-gradient-to-r from-red-500/10 via-pink-500/15 to-red-500/10 border border-red-500/30 hover:border-red-500/60 text-red-400 hover:text-red-300 text-[11px] font-bold uppercase tracking-wider rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 shadow-[0_0_10px_rgba(239,68,68,0.1)] hover:shadow-[0_0_20px_rgba(239,68,68,0.25)] hover:scale-[1.02] active:scale-[0.98]"
-                                             >
-                                                 {isWithdrawing ? (
-                                                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                 ) : (
-                                                     <Wallet className="w-3.5 h-3.5" />
-                                                 )}
-                                                 <span className="hidden sm:inline">Withdraw Routed Funds</span>
-                                                 <span className="inline sm:hidden">Withdraw</span>
-                                             </button>
-                                         ) : (
-                                               <button
-                                                   onClick={onDeposit}
-                                                   className="flex-shrink-0 px-3 sm:px-5 py-1.5 sm:py-2.5 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-[#111111] text-[11px] font-bold uppercase tracking-wider rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 shadow-[0_0_12px_rgba(0,210,180,0.25)] hover:shadow-[0_0_18px_rgba(0,210,180,0.45)] hover:scale-[1.02] active:scale-[0.98]"
-                                               >
-                                                   <Shield className="w-3.5 h-3.5" />
-                                                   <span className="hidden sm:inline">Activate Private Routing</span>
-                                                   <span className="inline sm:hidden">Activate</span>
-                                               </button>
-                                         );
-                                     })()}
+                                    {/* Withdraw Button — visible whenever merchant has claimable funds */}
+                                    {vaultBalance > 0 && (
+                                        <button
+                                            onClick={onWithdraw}
+                                            disabled={isWithdrawing}
+                                            className="flex-shrink-0 px-3 sm:px-5 py-1.5 sm:py-2.5 bg-gradient-to-r from-red-500/10 via-pink-500/15 to-red-500/10 border border-red-500/30 hover:border-red-500/60 text-red-400 hover:text-red-300 text-[11px] font-bold uppercase tracking-wider rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 shadow-[0_0_10px_rgba(239,68,68,0.1)] hover:shadow-[0_0_20px_rgba(239,68,68,0.25)] hover:scale-[1.02] active:scale-[0.98]"
+                                        >
+                                            {isWithdrawing ? (
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            ) : (
+                                                <Wallet className="w-3.5 h-3.5" />
+                                            )}
+                                            <span className="hidden sm:inline">Withdraw Routed Funds</span>
+                                            <span className="inline sm:hidden">Withdraw</span>
+                                        </button>
+                                    )}
 
                                     <button
                                         onClick={handleDisconnect}

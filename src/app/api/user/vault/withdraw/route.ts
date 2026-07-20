@@ -9,6 +9,7 @@ import { parseUsdcToMicros } from "@/lib/dms/system";
 import { sanitizeInput } from "@/utils/security";
 import { withdrawFromEmbedded, syncVaultMirror } from "@/lib/vault/onchain";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
+import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import crypto from "crypto";
 
 export const maxDuration = 120;
@@ -45,6 +46,25 @@ export async function POST(request: Request) {
 
         const txHash = await withdrawFromEmbedded(wallet, merchantAddress, amount);
         const v = await syncVaultMirror(wallet, merchantAddress);
+
+        await recordMerchantEvent({
+            merchantAddress: merchantAddress.toLowerCase(),
+            environment: "TEST",
+            eventType: "vault.paused",
+            resourceType: "vault",
+            resourceId: `${wallet.toLowerCase()}:${merchantAddress.toLowerCase()}`,
+            resourceVersion: 1,
+            data: {
+                user_address: wallet.toLowerCase(),
+                merchant_address: merchantAddress.toLowerCase(),
+                amount_withdrawn_usdc_micros: amount.toString(),
+                vault_balance_usdc_micros: v.balance.toString(),
+                tx_hash: txHash,
+                active: v.active,
+            },
+            correlationId: reqId,
+            transitionKey: `vault_withdraw:${txHash.toLowerCase()}`,
+        }).catch(err => console.error("[vault/withdraw] webhook dispatch error:", err));
 
         return NextResponse.json({
             success: true,

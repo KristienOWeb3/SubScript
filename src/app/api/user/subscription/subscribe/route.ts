@@ -7,6 +7,7 @@ import { getWalletCustody, isCustodialWallet } from "@/lib/auth/walletCustody";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
+import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import {
@@ -328,7 +329,7 @@ export async function POST(request: Request) {
                 });
                 throw reconciliationError;
             }
-            await dispatchDurableSubscriptionWebhook(merchant, "subscription.created", subscriptionWebhookData({
+            await dispatchDurableSubscriptionWebhook(merchant, "subscription.activated", subscriptionWebhookData({
                 subscriptionId: recoveredId,
                 status: "active",
                 amountUsdcMicros: plan.amountUsdc,
@@ -346,6 +347,12 @@ export async function POST(request: Request) {
                 amountUsdc: plan.amountUsdc,
                 periodSeconds: plan.periodSeconds,
             }).catch((err) => console.error("[subscription/subscribe] recovered DM creation failed:", err));
+            if (merchant === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
+                await prisma.merchant.update({
+                    where: { walletAddress: subscriber },
+                    data: { tier: "PREMIUM" },
+                }).catch((err) => console.error("[subscription/subscribe] tier upgrade failed:", err));
+            }
             await markSubscriptionOfferAccepted(checkoutSessionId, subscriber);
             return NextResponse.json({ success: true, txHash: checkout!.verifiedTxHash, subscriptionId: recoveredId, planName: plan.name });
         }
@@ -483,8 +490,14 @@ export async function POST(request: Request) {
                     amountUsdc: plan.amountUsdc,
                     periodSeconds: plan.periodSeconds,
                 }).catch((err) => console.error("[subscription/subscribe] reconciled DM creation failed:", err));
+                if (merchant === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
+                    await prisma.merchant.update({
+                        where: { walletAddress: subscriber },
+                        data: { tier: "PREMIUM" },
+                    }).catch((err) => console.error("[subscription/subscribe] tier upgrade failed:", err));
+                }
                 await markSubscriptionOfferAccepted(checkoutSessionId, subscriber);
-                await dispatchDurableSubscriptionWebhook(merchant, "subscription.created", subscriptionWebhookData({
+                await dispatchDurableSubscriptionWebhook(merchant, "subscription.activated", subscriptionWebhookData({
                     subscriptionId: onChainActiveId,
                     status: "active",
                     amountUsdcMicros: onChain.amount,
@@ -690,6 +703,13 @@ export async function POST(request: Request) {
                 : null,
         }).catch((err) => console.error("[subscription/subscribe] DM creation failed:", err));
 
+        if (merchant === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
+            await prisma.merchant.update({
+                where: { walletAddress: subscriber },
+                data: { tier: "PREMIUM" },
+            }).catch((err) => console.error("[subscription/subscribe] tier upgrade failed:", err));
+        }
+
         if (checkoutSessionId) {
             try {
                 await prisma.paymentLink.update({
@@ -718,7 +738,7 @@ export async function POST(request: Request) {
         });
         await markSubscriptionOfferAccepted(checkoutSessionId, subscriber);
 
-        await dispatchDurableSubscriptionWebhook(merchant, "subscription.created", subscriptionWebhookData({
+        await dispatchDurableSubscriptionWebhook(merchant, "subscription.activated", subscriptionWebhookData({
             subscriptionId: subId,
             status: "active",
             amountUsdcMicros: plan.amountUsdc,

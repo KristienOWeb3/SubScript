@@ -11,6 +11,7 @@ import { triggerExitSurvey } from "@/lib/payments/email";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { prisma } from "@/lib/prisma";
+import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 
 export const maxDuration = 120;
 
@@ -147,6 +148,13 @@ export async function POST(request: Request) {
 
         /* Reflect the cancellation in the dashboard mirror (best-effort). */
         await mirrorSubscriptionCanceled(subscriptionId);
+
+        if (sub.merchant === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
+            await prisma.merchant.update({
+                where: { walletAddress: wallet.toLowerCase() },
+                data: { tier: "FREE" },
+            }).catch((err) => console.error("[subscription/cancel] tier downgrade failed:", err));
+        }
 
         try {
             await dispatchDurableSubscriptionWebhook(sub.merchant, "subscription.canceled", subscriptionWebhookData({
