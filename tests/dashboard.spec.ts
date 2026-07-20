@@ -92,20 +92,26 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       });
     }
 
-    // Seed/Upsert the expected webhook event
-    const eventId = "00000000-0000-0000-0000-000000000003";
-    const existingEvent = await prisma.webhookEvent.findUnique({ where: { id: eventId } });
+    // Seed/Upsert the expected merchant event (webhook events API reads from merchant_events)
+    const merchantEventId = "00000000-0000-0000-0000-000000000003";
+    const existingEvent = await prisma.merchantEvent.findUnique({ where: { id: merchantEventId } });
     if (!existingEvent) {
-      await prisma.webhookEvent.create({
+      await prisma.merchantEvent.create({
         data: {
-          id: eventId,
-          webhookEndpointId: endpointId,
-          event: "evt_03: payment.failed",
-          status: 400,
-          payload: { id: "evt_03", type: "payment.failed", error: "INSUFFICIENT_USDC_BALANCE" },
-          responseBody: "Internal Server Error",
-          txHash: "0x1234567890123456789012345678901234567890123456789012345678901233",
+          id: merchantEventId,
+          eventId: "evt_03",
+          merchantAddress: testWallet,
+          environment: "TEST",
+          apiVersion: "v1",
           eventType: "payment.failed",
+          resourceType: "payment",
+          resourceId: "pay_test_001",
+          resourceVersion: 1,
+          sequenceNumber: 1,
+          correlationId: "corr_test_001",
+          effectiveAt: new Date(),
+          occurredAt: new Date(),
+          payload: { id: "evt_03", type: "payment.failed", error: "INSUFFICIENT_USDC_BALANCE" },
         }
       });
     }

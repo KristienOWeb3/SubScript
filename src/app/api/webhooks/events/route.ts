@@ -62,6 +62,7 @@ export async function GET(request: Request) {
         return NextResponse.json({
             events: page.map((e) => ({
                 id: e.eventId,
+                event: `${e.eventId}: ${e.eventType}`,
                 type: e.eventType,
                 environment: e.environment,
                 resource: {
