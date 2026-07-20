@@ -203,7 +203,59 @@ CREATE UNIQUE INDEX IF NOT EXISTS webhook_endpoints_wallet_url_active_idx
 ON public.webhook_endpoints (wallet_address, url_hash)
 WHERE deleted_at IS NULL;
 
--- 8. Migration Ledger expansion for Checksum Integrity
+-- 8. Merchant Events (event-sourced outbox for webhook dispatch)
+CREATE TABLE IF NOT EXISTS public.merchant_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id TEXT NOT NULL UNIQUE,
+    merchant_address TEXT NOT NULL,
+    environment TEXT NOT NULL DEFAULT 'TEST',
+    api_version TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    resource_id TEXT NOT NULL,
+    resource_version INT NOT NULL,
+    sequence_number INT NOT NULL,
+    correlation_id TEXT NOT NULL,
+    causation_id TEXT,
+    effective_at TIMESTAMPTZ NOT NULL,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    payload JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS merchant_events_wallet_env_idx ON public.merchant_events (merchant_address, environment);
+CREATE INDEX IF NOT EXISTS merchant_events_resource_seq_idx ON public.merchant_events (resource_type, resource_id, sequence_number);
+CREATE INDEX IF NOT EXISTS merchant_events_wallet_created_idx ON public.merchant_events (merchant_address, created_at);
+CREATE INDEX IF NOT EXISTS merchant_events_type_idx ON public.merchant_events (event_type);
+
+ALTER TABLE public.merchant_events ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.merchant_events FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.merchant_events TO service_role, postgres;
+
+-- 9. Webhook Deliveries expansion (missing columns)
+ALTER TABLE public.webhook_deliveries
+    ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ NULL,
+    ADD COLUMN IF NOT EXISTS http_status INT NULL;
+
+-- 10. Webhook Delivery Attempts (individual retry tracking)
+CREATE TABLE IF NOT EXISTS public.webhook_delivery_attempts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    webhook_delivery_id UUID NOT NULL REFERENCES public.webhook_deliveries(id) ON DELETE CASCADE,
+    attempt_number INT NOT NULL,
+    http_status INT,
+    response_body TEXT,
+    error_message TEXT,
+    duration_ms INT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS webhook_delivery_attempts_delivery_idx ON public.webhook_delivery_attempts (webhook_delivery_id);
+
+ALTER TABLE public.webhook_delivery_attempts ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.webhook_delivery_attempts FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.webhook_delivery_attempts TO service_role, postgres;
+
+-- 10. Migration Ledger expansion for Checksum Integrity
 -- The _subscript_migrations table is created by scripts/apply-migrations.mjs (prod runner).
 -- Supabase's native runner (supabase db reset / E2E) doesn't create it — skip gracefully.
 DO $$
