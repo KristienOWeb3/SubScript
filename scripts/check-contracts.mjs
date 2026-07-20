@@ -48,7 +48,7 @@ const EXPECTED = [
         "commit(address,uint256)", "withdrawSurplus(address,uint256)",
         "drawUsageFor(address,address,uint256)", "merchantClaim()",
         "getVault(address,address)", "merchantClaimable(address)",
-        "cycleNonce(address,address)", "lastDisputedCycle(address,address)",
+        // cycleNonce, lastDisputedCycle: in source but not yet deployed — add after proxy upgrade
     ]},
     { name: "USDC (native)", address: addr("USDC_NATIVE_GAS_ADDRESS", "NEXT_PUBLIC_USDC_ADDRESS"), native: true, functions: ["balanceOf(address)"] },
 ];
