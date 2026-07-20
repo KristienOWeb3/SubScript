@@ -186,8 +186,6 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
     const [loadError, setLoadError] = useState<string | null>(null);
     const [merchantTier, setMerchantTier] = useState<string | null>(null);
     const [isLoadingTier, setIsLoadingTier] = useState(true);
-    const [isTestMode, setIsTestMode] = useState(false);
-
     /* ----- Session & Embedded Wallet States ----- */
     const [embeddedWallet, setEmbeddedWallet] = useState<{ wallet: string; email: string } | null>(null);
     const [sessionWallet, setSessionWallet] = useState<string | null>(null);
@@ -195,11 +193,10 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
     const [isLoggingIn, setIsLoggingIn] = useState(false);
 
     const activeMerchantAddress = useMemo(() => {
-        if (isTestMode) return "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
         return embeddedWallet?.wallet || realAddress || sessionWallet || "";
-    }, [embeddedWallet, realAddress, isTestMode, sessionWallet]);
+    }, [embeddedWallet, realAddress, sessionWallet]);
 
-    const isConnected = realIsConnected || isTestMode || !!embeddedWallet || !!sessionWallet;
+    const isConnected = realIsConnected || !!embeddedWallet || !!sessionWallet;
     const address = activeMerchantAddress;
 
     /* ----- Header balances & modals states ----- */
@@ -244,11 +241,6 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
 
     useEffect(() => {
         setIsMounted(true);
-        if (typeof window !== "undefined") {
-            setIsTestMode(
-                Boolean(window.navigator.webdriver || document.cookie.includes("subscript_e2e_test=true"))
-            );
-        }
     }, []);
 
     useEffect(() => {

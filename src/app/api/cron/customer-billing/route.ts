@@ -19,6 +19,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
 import crypto from "crypto";
+import { prisma } from "@/lib/prisma";
 import { STANDARD_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
@@ -476,6 +477,13 @@ export async function POST(request: Request) {
                             throw new Error(`Failed to persist zombie revocation state: ${zombieStateError.message}`);
                         }
 
+                        // Suspend premium-only credentials on downgrade
+                        await prisma.webhookEndpoint.updateMany({
+                            where: { walletAddress: sub.merchant_address, active: true },
+                            data: { active: false, status: "SUSPENDED_DOWNGRADE" },
+                        });
+                        // Note: API keys use 'revoked' field - we don't hard-revoke, we'll check tier at auth time
+
                         await createBillingDm({
                             supabase,
                             senderAddress: merchantAddress,
@@ -698,6 +706,13 @@ export async function POST(request: Request) {
                     if (cancelStateError) {
                         throw new Error(`Failed to persist period-end cancellation: ${cancelStateError.message}`);
                     }
+
+                    // Suspend premium-only credentials on downgrade
+                    await prisma.webhookEndpoint.updateMany({
+                        where: { walletAddress: sub.merchant_address, active: true },
+                        data: { active: false, status: "SUSPENDED_DOWNGRADE" },
+                    });
+                    // Note: API keys use 'revoked' field - we don't hard-revoke, we'll check tier at auth time
 
                     await dispatchDurableSubscriptionWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
                         subscriptionId: subId,

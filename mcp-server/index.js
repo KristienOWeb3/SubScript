@@ -38,6 +38,15 @@ async function callSubscriptApi(path, { method = "GET", body } = {}) {
     const text = await res.text();
     let json;
     try { json = JSON.parse(text); } catch { json = { raw: text }; }
+
+    /* Rate-limit awareness: surface the retry-after hint so the caller can back off. */
+    if (res.status === 429) {
+      const retryAfter = res.headers.get("retry-after");
+      throw new Error(
+        `Rate limited by SubScript API (429).${retryAfter ? ` Retry after ${retryAfter}s.` : " Try again shortly."}`
+      );
+    }
+
     return { status: res.status, json };
   } finally {
     clearTimeout(timer);
@@ -278,6 +287,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "create_intent") {
       const { title, amountUsdcMicros, description, externalReference, successUrl, cancelUrl, idempotencyKey, confirmOneTime, sandbox } = request.params.arguments || {};
+      if (!title || typeof title !== "string") throw new Error("create_intent: 'title' is required and must be a string.");
+      if (!amountUsdcMicros || typeof amountUsdcMicros !== "string" || !/^\d+$/.test(amountUsdcMicros)) {
+        throw new Error("create_intent: 'amountUsdcMicros' is required and must be a digit-only string (e.g. '15000000').");
+      }
+      if (BigInt(amountUsdcMicros) <= 0n) throw new Error("create_intent: 'amountUsdcMicros' must be a positive amount.");
       const { status, json } = await callSubscriptApi("/api/intent", {
         method: "POST",
         body: { title, amountUsdcMicros, description, externalReference, successUrl, cancelUrl, idempotencyKey, confirmOneTime, sandbox },
@@ -287,6 +301,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "create_plan") {
       const args = request.params.arguments || {};
+      if (!args.name || typeof args.name !== "string") throw new Error("create_plan: 'name' is required and must be a string.");
+      if (!args.amountUsdcMicros || typeof args.amountUsdcMicros !== "string" || !/^\d+$/.test(args.amountUsdcMicros)) {
+        throw new Error("create_plan: 'amountUsdcMicros' is required and must be a digit-only string.");
+      }
+      if (!args.periodDays && !args.intervalSeconds) {
+        throw new Error("create_plan: either 'periodDays' or 'intervalSeconds' is required.");
+      }
       const { status, json } = await callSubscriptApi("/api/v1/plans", {
         method: "POST",
         body: args,
@@ -296,6 +317,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "list_plans") {
       const { active } = request.params.arguments || {};
+      if (active !== undefined && typeof active !== "boolean") {
+        throw new Error("list_plans: 'active' must be a boolean if provided.");
+      }
       const query = typeof active === "boolean" ? `?active=${active}` : "";
       const { status, json } = await callSubscriptApi(`/api/v1/plans${query}`);
       return jsonResult({ httpStatus: status, ...json });
@@ -303,6 +327,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "create_subscription") {
       const args = request.params.arguments || {};
+      if (!args.planId && !args.amountUsdcMicros) {
+        throw new Error("create_subscription: either 'planId' or 'amountUsdcMicros' is required.");
+      }
+      if (args.amountUsdcMicros && (typeof args.amountUsdcMicros !== "string" || !/^\d+$/.test(args.amountUsdcMicros))) {
+        throw new Error("create_subscription: 'amountUsdcMicros' must be a digit-only string.");
+      }
+      if (args.amountUsdcMicros && !args.planId && !args.interval && !args.intervalSeconds) {
+        throw new Error("create_subscription: 'interval' or 'intervalSeconds' is required when not using 'planId'.");
+      }
       const { status, json } = await callSubscriptApi("/api/v1/subscriptions", {
         method: "POST",
         body: args,
@@ -312,12 +345,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "get_payment_status") {
       const { id } = request.params.arguments || {};
-      const { status, json } = await callSubscriptApi(`/api/intent/status?id=${encodeURIComponent(id || "")}`);
+      if (!id || typeof id !== "string") throw new Error("get_payment_status: 'id' is required and must be a string.");
+      const { status, json } = await callSubscriptApi(`/api/intent/status?id=${encodeURIComponent(id)}`);
       return jsonResult({ httpStatus: status, ...json });
     }
 
     if (name === "report_usage") {
       const { userAddress, amountUsdcMicros } = request.params.arguments || {};
+      if (!userAddress || typeof userAddress !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(userAddress)) {
+        throw new Error("report_usage: 'userAddress' is required and must be a valid 0x-prefixed Ethereum address.");
+      }
+      if (!amountUsdcMicros || typeof amountUsdcMicros !== "string" || !/^\d+$/.test(amountUsdcMicros)) {
+        throw new Error("report_usage: 'amountUsdcMicros' is required and must be a digit-only string.");
+      }
+      if (BigInt(amountUsdcMicros) <= 0n) throw new Error("report_usage: 'amountUsdcMicros' must be a positive amount.");
       const { status, json } = await callSubscriptApi("/api/user/vault/report-usage", {
         method: "POST",
         body: { userAddress, amountUsdcMicros },
@@ -327,6 +368,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "verify_webhook") {
       const { rawBody, signatureHeader, secret, toleranceSeconds } = request.params.arguments || {};
+      if (typeof rawBody !== "string") throw new Error("verify_webhook: 'rawBody' is required and must be a string.");
+      if (typeof signatureHeader !== "string") throw new Error("verify_webhook: 'signatureHeader' is required and must be a string.");
+      if (typeof secret !== "string") throw new Error("verify_webhook: 'secret' is required and must be a string.");
+      if (toleranceSeconds !== undefined && (typeof toleranceSeconds !== "number" || toleranceSeconds <= 0)) {
+        throw new Error("verify_webhook: 'toleranceSeconds' must be a positive number if provided.");
+      }
       return jsonResult(verifyWebhookSignature(rawBody, signatureHeader, secret, toleranceSeconds ?? 300));
     }
 

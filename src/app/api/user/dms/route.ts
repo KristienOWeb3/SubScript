@@ -216,16 +216,27 @@ export async function POST(request: Request) {
                 create: { walletAddress: normalizedReceiver },
             });
 
-            const dm = await createDmAndNotify({
-                senderAddress: normalizedWallet,
-                receiverAddress: normalizedReceiver,
-                messageType: "PEER_TRANSFER",
-                status: "APPROVED",
-                amountUsdc: amountMicros,
-                txHash,
-                title: title || `${amountUsdc} USDC Sent`,
-                description: description || `Direct transfer of ${amountUsdc} USDC on-chain.`,
-            });
+            // Use dedupeKey to prevent TOCTOU race on txHash dedup (Finding 65)
+            let dm;
+            try {
+                dm = await createDmAndNotify({
+                    senderAddress: normalizedWallet,
+                    receiverAddress: normalizedReceiver,
+                    messageType: "PEER_TRANSFER",
+                    status: "APPROVED",
+                    amountUsdc: amountMicros,
+                    txHash,
+                    title: title || `${amountUsdc} USDC Sent`,
+                    description: description || `Direct transfer of ${amountUsdc} USDC on-chain.`,
+                    dedupeKey: `peer-transfer:${sanitizedBody.chainId || "default"}:${txHash.toLowerCase()}`,
+                });
+            } catch (err: any) {
+                // Unique constraint on dedupe_key fires when a concurrent request already inserted
+                if (err?.code === "P2002") {
+                    return NextResponse.json({ error: "This transaction has already been recorded." }, { status: 409 });
+                }
+                throw err;
+            }
 
             return NextResponse.json({ success: true, dmId: dm.id }, { status: 201 });
         }

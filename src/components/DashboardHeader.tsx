@@ -68,7 +68,6 @@ export default function DashboardHeader({
     const { address: realAddress, isConnected: realIsConnected } = useAccount();
     const { connect, connectors, isPending: isConnecting } = useConnect();
     const { disconnect } = useDisconnect();
-    const [isTestMode, setIsTestMode] = useState(false);
     const [scrolled, setScrolled] = useState(false);
     const [usdcBalance, setUsdcBalance] = useState("0.00");
     const [merchantAlias, setMerchantAlias] = useState<string | null>(propMerchantAlias || null);
@@ -85,21 +84,13 @@ export default function DashboardHeader({
     }, [propMerchantAlias]);
 
     useEffect(() => {
-        if (typeof window !== "undefined") {
-            setIsTestMode(
-                Boolean(window.navigator.webdriver || document.cookie.includes("subscript_e2e_test=true"))
-            );
-        }
-    }, [realAddress, realIsConnected]);
-
-    useEffect(() => {
         const handleScroll = () => setScrolled(window.scrollY > 30);
         window.addEventListener("scroll", handleScroll);
         return () => window.removeEventListener("scroll", handleScroll);
     }, []);
 
-    const isConnected = (mounted ? realIsConnected : false) || isTestMode || !!embeddedWallet;
-    const address = (mounted ? realAddress : undefined) || (isTestMode ? "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29" : embeddedWallet?.wallet);
+    const isConnected = (mounted ? realIsConnected : false) || !!embeddedWallet;
+    const address = (mounted ? realAddress : undefined) || embeddedWallet?.wallet;
 
     useEffect(() => {
         if (!address) return;

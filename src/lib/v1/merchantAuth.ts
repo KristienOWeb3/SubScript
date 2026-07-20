@@ -40,6 +40,14 @@ export async function authenticateMerchant(request: Request): Promise<MerchantAu
     if (keyRecord.mode !== "TEST") {
         return { ok: false, status: 403, error: "Forbidden: this API key's mode cannot settle on this deployment" };
     }
+    // Check current entitlement for API key access
+    const merchantTier = await prisma.merchant.findUnique({
+        where: { walletAddress: keyRecord.walletAddress.toLowerCase() },
+        select: { tier: true },
+    });
+    if (!merchantTier || merchantTier.tier !== "PREMIUM") {
+        return { ok: false, status: 403, error: "API key access requires an active Premium subscription." };
+    }
     return { ok: true, merchantAddress: keyRecord.walletAddress.toLowerCase(), mode };
 }
 

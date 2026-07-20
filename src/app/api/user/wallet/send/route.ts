@@ -7,6 +7,7 @@ import { parseUsdcToMicros } from "@/lib/dms/system";
 import { withPgClient } from "@/lib/serverPg";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
+import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 
 export const maxDuration = 120;
@@ -60,6 +61,11 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
         }
 
+        const requestId = request.headers.get("x-request-id");
+        if (!requestId) {
+            return NextResponse.json({ error: "x-request-id header is required for financial operations." }, { status: 400 });
+        }
+
         const normalizedSender = wallet.toLowerCase();
         const recipients = normalizeRecipients(body);
         if (recipients.length === 0 || recipients.length > 25) {
@@ -84,6 +90,35 @@ export async function POST(request: Request) {
             };
         });
 
+        // Spending limit enforcement (Finding 54)
+        const spendingCustomer = await prisma.customer.findFirst({
+            where: { walletAddress: normalizedSender },
+            select: { spendingLimitDaily: true, spendingLimitWeekly: true, spendingLimitMonthly: true },
+        });
+        if (spendingCustomer) {
+            const totalAmount = parsedRecipients.reduce(
+                (sum, r) => sum + r.amountMicros, BigInt(0)
+            );
+            if (spendingCustomer.spendingLimitDaily !== null && totalAmount > spendingCustomer.spendingLimitDaily) {
+                return NextResponse.json({
+                    error: "Transfer exceeds your daily spending limit.",
+                    code: "SPENDING_LIMIT_EXCEEDED"
+                }, { status: 403 });
+            }
+            if (spendingCustomer.spendingLimitWeekly !== null && totalAmount > spendingCustomer.spendingLimitWeekly) {
+                return NextResponse.json({
+                    error: "Transfer exceeds your weekly spending limit.",
+                    code: "SPENDING_LIMIT_EXCEEDED"
+                }, { status: 403 });
+            }
+            if (spendingCustomer.spendingLimitMonthly !== null && totalAmount > spendingCustomer.spendingLimitMonthly) {
+                return NextResponse.json({
+                    error: "Transfer exceeds your monthly spending limit.",
+                    code: "SPENDING_LIMIT_EXCEEDED"
+                }, { status: 403 });
+            }
+        }
+
         const walletRecord = await withPgClient(async (client) => {
             const result = await client.query(
                 `select encrypted_private_key, circle_wallet_id, provider
@@ -107,10 +142,10 @@ export async function POST(request: Request) {
         const txs: { receiverAddress: string; amountUsdc: string; txHash: string }[] = [];
 
         /* Transfers move funds, so each recipient gets a deterministic Circle idempotency key
-           scoped to (request, position, recipient, amount). A client that reuses its
-           x-request-id on retry dedupes at Circle instead of paying the same recipient twice;
-           two identical recipients WITHIN a batch stay distinct via the index. */
-        const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
+           scoped to (request, recipient, amount). A client that reuses its x-request-id on
+           retry dedupes at Circle instead of paying the same recipient twice. The index is
+           intentionally excluded so that partial-batch retries (where indices shift) still
+           dedupe correctly for already-settled recipients. */
 
         /* Transfers settle one-by-one and are irreversible once mined. If a later one fails we must
            NOT report a blanket failure — that hides the transfers already sent and invites a retry
@@ -125,7 +160,7 @@ export async function POST(request: Request) {
                     functionName: "transfer",
                     args: [item.receiver, item.amountMicros],
                     idempotencyKey: deterministicIdempotencyKey(
-                        `wallet-send:${normalizedSender}:${requestId}:${i}:${item.receiver}:${item.amountMicros.toString()}`
+                        `wallet-send:${normalizedSender}:${requestId}:${item.receiver}:${item.amountMicros.toString()}`
                     ),
                 });
                 txs.push({

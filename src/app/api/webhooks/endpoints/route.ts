@@ -163,6 +163,20 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: premiumCheck.error }, { status: premiumCheck.status });
         }
 
+        // Per-merchant endpoint cap (Finding 38)
+        const supabase = getSupabase();
+        const { count: existingCount } = await supabase
+            .from("webhook_endpoints")
+            .select("id", { count: "exact", head: true })
+            .eq("wallet_address", wallet.toLowerCase())
+            .eq("active", true);
+        const MAX_ENDPOINTS_PER_MERCHANT = 5;
+        if ((existingCount ?? 0) >= MAX_ENDPOINTS_PER_MERCHANT) {
+            return NextResponse.json({
+                error: `Maximum of ${MAX_ENDPOINTS_PER_MERCHANT} active webhook endpoints per merchant.`,
+            }, { status: 429 });
+        }
+
         const body = await request.json().catch(() => null);
         if (!body || typeof body !== "object" || !body.url) {
             return NextResponse.json({ error: "URL is required" }, { status: 400 });
@@ -185,8 +199,6 @@ export async function POST(request: Request) {
         const id = crypto.randomUUID();
         const secret = `whsec_${crypto.randomBytes(24).toString("hex")}`;
         const encryption = encryptWebhookSecret(secret, id, wallet);
-
-        const supabase = getSupabase();
 
         const { data: endpoint, error: insertError } = await supabase
             .from("webhook_endpoints")

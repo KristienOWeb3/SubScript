@@ -30,14 +30,24 @@ function sanitizePayload(data: any): any {
     }
 
     if (typeof val === "string") {
-      // Redact 66-character private keys or hashes
+      // Redact 0x-prefixed 64-hex-char values (private keys / tx hashes)
       if (/^0x[0-9a-fA-F]{64}$/.test(val)) {
         sanitized[key] = "[REDACTED_HASH]";
         continue;
       }
-      // Redact 42-character wallet signatures
+      // Redact 0x-prefixed 130-hex-char values (ECDSA signatures)
       if (/^0x[0-9a-fA-F]{130}$/.test(val)) {
         sanitized[key] = "[REDACTED_SIGNATURE]";
+        continue;
+      }
+      // Redact API secret keys (sk_test_... / sk_live_...)
+      if (/^sk_(test|live)_/i.test(val)) {
+        sanitized[key] = "[REDACTED_SECRET_KEY]";
+        continue;
+      }
+      // Redact JWTs (three base64url segments separated by dots)
+      if (/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(val) && val.length > 40) {
+        sanitized[key] = "[REDACTED_JWT]";
         continue;
       }
     }

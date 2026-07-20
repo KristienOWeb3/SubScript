@@ -8,6 +8,7 @@ import { requireAccountRole, getAccountRole } from "@/lib/accounts/roles";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { sanitizeInput } from "@/utils/security";
 import { commitFromEmbedded, syncVaultMirror } from "@/lib/vault/onchain";
+import { SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
 import { deterministicIdempotencyKey } from "@/lib/custody";
 import { isSponsoredGasError, requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { prisma } from "@/lib/prisma";
@@ -201,8 +202,14 @@ export async function POST(request: Request) {
         /* A commit changes the balance denominator for usage thresholds, so re-arm the 50%/80%
            alerts against the new balance. Re-committing is also an explicit opt back in, so it
            clears any prior cancellation and lets the merchant resume reporting usage. */
+        const commitEnvironment = SUBSCRIPT_VAULT_CHAIN_ID === 5042001 ? "LIVE" : "TEST";
         await prisma.meteredVault.updateMany({
-            where: { userAddress: wallet.toLowerCase(), merchantAddress: merchantAddress.toLowerCase() },
+            where: {
+                userAddress: wallet.toLowerCase(),
+                merchantAddress: merchantAddress.toLowerCase(),
+                environment: commitEnvironment,
+                settlementChainId: BigInt(SUBSCRIPT_VAULT_CHAIN_ID),
+            },
             data: { usageNotifiedBps: 0, cancelRequestedAt: null, cancelReason: null },
         }).catch(() => {});
         if (v.active) {

@@ -213,8 +213,6 @@ export default function DashboardPage() {
     const { disconnect } = useDisconnect();
     const { writeContractAsync } = useWriteContract();
     const { switchChain, switchChainAsync } = useSwitchChain();
-    const [isTestMode, setIsTestMode] = useState(false);
-
     /* Soulbound Access Key (SBT) State removed because SBT infrastructure is deleted */
 
     /* Payment Links States */
@@ -298,11 +296,10 @@ export default function DashboardPage() {
     const [rememberMe, setRememberMe] = useState(true);
 
     const activeMerchantAddress = useMemo(() => {
-        if (isTestMode) return "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
         return embeddedWallet?.wallet || realAddress || sessionWallet || "";
-    }, [embeddedWallet, realAddress, isTestMode, sessionWallet]);
+    }, [embeddedWallet, realAddress, sessionWallet]);
 
-    const isConnected = realIsConnected || isTestMode || !!embeddedWallet || !!sessionWallet;
+    const isConnected = realIsConnected || !!embeddedWallet || !!sessionWallet;
     const address = activeMerchantAddress;
 
     const executeContractWrite = async ({
@@ -389,9 +386,6 @@ export default function DashboardPage() {
     useEffect(() => {
         setIsMounted(true);
         if (typeof window !== "undefined") {
-            setIsTestMode(
-                Boolean(window.navigator.webdriver || document.cookie.includes("subscript_e2e_test=true"))
-            );
             /* Check for upgrade success and show toast */
             const urlParams = new URLSearchParams(window.location.search);
             const tabParam = urlParams.get("tab");
@@ -1917,14 +1911,6 @@ export default function DashboardPage() {
         async function fetchOnChainData() {
             if (!merchantAddress) return;
             setIsLoadingContract(true);
-            if (isTestMode) {
-                setLedgers([]);
-                setLedgerPagination({ total: 0, totalPages: 1 });
-                setMerchantAnalytics(null);
-                setIsLoadingContract(false);
-                setInitialContractFetched(true);
-                return;
-            }
             try {
                 const cursorParam = ledgerCursor ? `&cursor=${encodeURIComponent(ledgerCursor)}` : "";
                 const mirrorResponse = await fetch(`/api/merchant/subscriptions?pageSize=5${cursorParam}`);
@@ -2005,7 +1991,7 @@ export default function DashboardPage() {
             isSubscribed = false;
             clearInterval(interval);
         };
-    }, [isConnected, address, isPremium, refreshTrigger, isTestMode, ledgerPage, ledgerCursor]);
+    }, [isConnected, address, isPremium, refreshTrigger, ledgerPage, ledgerCursor]);
 
     const handleCopy = (text: string, label: string) => {
         try {
@@ -2077,13 +2063,6 @@ export default function DashboardPage() {
         try {
             const userAddress = address as `0x${string}`;
             
-            if (isTestMode) {
-                console.log("Mocking retry charge for sub ID:", rawId);
-                await new Promise((resolve) => setTimeout(resolve, 1500));
-                setRefreshTrigger((prev) => prev + 1);
-                return;
-            }
-
             // Query the next unexecuted sequence ID
             let sequenceId = 1;
             while (true) {

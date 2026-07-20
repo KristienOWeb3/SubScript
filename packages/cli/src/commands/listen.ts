@@ -11,7 +11,8 @@ import path from "node:path";
  */
 
 const DEFAULT_API_URL = "https://www.subscriptonarc.com";
-const POLL_MS = 2500;
+const MIN_POLL_MS = 2000;
+const POLL_MS = Math.max(2500, MIN_POLL_MS);
 
 function baseUrl(): string {
     const override = process.env.SUBSCRIPT_BASE_URL || process.env.NEXT_PUBLIC_APP_URL;

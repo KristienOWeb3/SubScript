@@ -108,7 +108,9 @@ export async function POST(request: Request) {
             },
             include: {
                 recipients: true
-            }
+            },
+            orderBy: { nextPayday: 'asc' },
+            take: 5,
         });
 
         const executionResults: any[] = [];
@@ -496,8 +498,9 @@ export async function POST(request: Request) {
                            permit2_nonce = NULL,
                            permit2_deadline = NULL,
                            permit2_expiration = NULL,
+                           status = 'PAUSED',
                            last_execution_tx_hash = ${txHash},
-                           last_execution_status = 'SUCCEEDED',
+                           last_execution_status = 'AWAITING_REAUTHORIZATION',
                            last_execution_error = NULL
                      WHERE id = ${campaign.id}::uuid
                        AND processing_claim_id = ${campaignClaimId}::uuid

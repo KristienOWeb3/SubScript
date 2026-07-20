@@ -5,6 +5,7 @@ import { processPaymentLinkVerificationJobs } from "@/lib/payments/paymentLinkVe
 import { healSubscriptionDrift } from "@/lib/subscriptions/driftHealer";
 import { deliverPendingWebhookOutboxEvents } from "@/lib/webhookOutbox";
 import { processPaymentReconciliationEvents } from "@/lib/payments/reconciliationRetry";
+import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 
 /* Payment reconciliation + subscription drift healing both read the chain per row — give
@@ -81,6 +82,29 @@ export async function POST(request: Request) {
         } catch (driftErr: any) {
             console.error("[reconcile] drift healer failed:", driftErr?.message || driftErr);
             drift = { error: driftErr?.message || "drift healer failed" };
+        }
+
+        // Session cleanup: purge expired sessions older than 30 days (Finding 11)
+        try {
+            const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+            const purged = await prisma.session.deleteMany({
+                where: { createdAt: { lt: thirtyDaysAgo } },
+            });
+            if (purged.count > 0) {
+                console.log(`[reconcile] Purged ${purged.count} stale sessions older than 30 days.`);
+            }
+        } catch (sessionErr) {
+            console.error("[reconcile] Session cleanup error:", sessionErr);
+        }
+
+        // CLI session cleanup: purge expired CLI sessions
+        try {
+            const expiredCli = await prisma.$executeRaw`DELETE FROM cli_sessions WHERE expires_at < NOW()`;
+            if (expiredCli > 0) {
+                console.log(`[reconcile] Purged ${expiredCli} expired CLI sessions.`);
+            }
+        } catch (cliErr) {
+            console.error("[reconcile] CLI session cleanup error:", cliErr);
         }
 
         const workerHealthy = "error" in paymentLinkVerification

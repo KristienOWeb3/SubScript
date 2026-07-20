@@ -78,7 +78,9 @@ export async function scaffoldIntegration(opts: ScaffoldOptions): Promise<{ next
     }
 
     /* Environment scaffold */
-    const envContent = `SUBSCRIPT_SECRET_KEY=${opts.secretKey}
+    const envContent = `# WARNING: This file contains secrets. Do NOT commit it to version control.
+# Ensure .env.local is listed in your .gitignore.
+SUBSCRIPT_SECRET_KEY=${opts.secretKey}
 SUBSCRIPT_WEBHOOK_SECRET=whsec_replace_me
 SUBSCRIPT_MERCHANT_ADDRESS=${opts.merchantWalletAddress}
 NEXT_PUBLIC_SUBSCRIPT_MERCHANT_ADDRESS=${opts.merchantWalletAddress}
