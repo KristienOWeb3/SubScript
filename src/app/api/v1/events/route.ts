@@ -48,7 +48,15 @@ export async function GET(request: Request) {
             where.eventType = typeFilter;
         }
         if (cursor) {
-            where.createdAt = { gt: new Date(cursor) };
+            const [cursorTime, cursorId] = cursor.split("|");
+            if (cursorTime && cursorId) {
+                where.OR = [
+                    { createdAt: { gt: new Date(cursorTime) } },
+                    { createdAt: new Date(cursorTime), id: { gt: cursorId } },
+                ];
+            } else {
+                where.createdAt = { gt: new Date(cursor) };
+            }
         }
 
         const events = await prisma.merchantEvent.findMany({
@@ -76,7 +84,8 @@ export async function GET(request: Request) {
 
         const hasMore = events.length > limit;
         const page = hasMore ? events.slice(0, limit) : events;
-        const nextCursor = hasMore ? page[page.length - 1].createdAt.toISOString() : null;
+        const last = page[page.length - 1];
+        const nextCursor = hasMore && last ? `${last.createdAt.toISOString()}|${last.id}` : null;
 
         return NextResponse.json({
             object: "list",
