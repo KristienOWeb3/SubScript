@@ -32,7 +32,7 @@ export async function GET(request: Request) {
             where.environment = environmentFilter;
         }
         if (cursor) {
-            where.id = { gt: cursor };
+            where.id = { lt: cursor };
         }
 
         /* Read from canonical merchant_events ledger */

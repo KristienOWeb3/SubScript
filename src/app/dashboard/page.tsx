@@ -294,6 +294,7 @@ export default function DashboardPage() {
     const [otpSuccess, setOtpSuccess] = useState(false);
     const [otpError, setOtpError] = useState<string | null>(null);
     const [rememberMe, setRememberMe] = useState(true);
+    const pendingRequestIdsRef = useRef<Record<string, string>>({});
 
     const activeMerchantAddress = useMemo(() => {
         return embeddedWallet?.wallet || realAddress || sessionWallet || "";
@@ -352,7 +353,10 @@ export default function DashboardPage() {
             const headers: Record<string, string> = { "Content-Type": "application/json" };
             const FINANCIAL_ACTIONS = new Set(["transferUsdc", "createPremiumSubscription", "withdraw"]);
             if (FINANCIAL_ACTIONS.has(action)) {
-                headers["x-request-id"] = crypto.randomUUID();
+                if (!pendingRequestIdsRef.current[action]) {
+                    pendingRequestIdsRef.current[action] = crypto.randomUUID();
+                }
+                headers["x-request-id"] = pendingRequestIdsRef.current[action];
             }
             const res = await fetch("/api/execute-tx", {
                 method: "POST",
@@ -363,6 +367,7 @@ export default function DashboardPage() {
             if (!res.ok || !data.success) {
                 throw new Error(data.error || "Server transaction execution failed");
             }
+            delete pendingRequestIdsRef.current[action];
             return data.txHash as string;
         } else {
             if (chainId !== activeArcChain.id) {

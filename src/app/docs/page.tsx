@@ -1127,9 +1127,9 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
               <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
                 <p className="font-bold text-white/85">Event-sourced webhook dispatch</p>
                 <p className="mt-2">
-                  Every webhook is recorded in an append-only <span className="font-mono">merchant_events</span> ledger before dispatch.
-                  Each delivery attempt is tracked individually in <span className="font-mono">webhook_delivery_attempts</span> with
-                  the HTTP status, response body, and attempt timestamp. Endpoints are environment-scoped (<span className="font-mono">TEST</span> or{" "}
+                  Every webhook is recorded in the <span className="font-mono">merchant_events</span> ledger before dispatch.
+                  Each delivery attempt is logged on a best-effort basis to <span className="font-mono">webhook_delivery_attempts</span> with
+                  the HTTP status, response body, and attempt timestamp; attempt rows may be missing if persistence fails after the HTTP request. Endpoints are environment-scoped (<span className="font-mono">TEST</span> or{" "}
                   <span className="font-mono">LIVE</span>) so sandbox and production traffic never cross.
                   Secret rotation is supported with a grace-period overlap &mdash; the previous signing secret stays valid until it expires,
                   giving you time to update your handler without missing events.
@@ -1195,10 +1195,10 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                 <p className="font-bold text-white/85">Delivery behavior</p>
                 <ul className="mt-3 list-disc space-y-2 pl-5">
                   <li>Return any <span className="font-mono">2xx</span> only after the event is durably claimed.</li>
-                  <li>SubScript retries timeouts, <span className="font-mono">408</span>, <span className="font-mono">429</span>, and <span className="font-mono">5xx</span> responses. Each attempt is recorded with its HTTP status and response body.</li>
+                  <li>SubScript retries timeouts, <span className="font-mono">408</span>, <span className="font-mono">429</span>, and <span className="font-mono">5xx</span> responses. Each attempt is logged on a best-effort basis with its HTTP status and response body.</li>
                   <li>Your handler must return <span className="font-mono">200</span> for an already-processed <span className="font-mono">event.id</span>.</li>
                   <li>Do slow email, analytics, or provisioning work after the durable claim, preferably through your own queue.</li>
-                  <li>The merchant dashboard shows every delivery attempt per event, so failed retries are visible immediately without server-side logging.</li>
+                  <li>The merchant dashboard shows delivery attempts per event on a best-effort basis, so most failed retries are visible without server-side logging.</li>
                 </ul>
               </div>
             </section>

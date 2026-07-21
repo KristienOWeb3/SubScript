@@ -80,6 +80,7 @@ const spec = {
                     secret: { type: "string", description: "Full signing secret on creation; redacted on later reads." },
                     secretAvailable: { type: "boolean", description: "True only when the full secret is present in this response." },
                     active: { type: "boolean" },
+                    environment: { type: "string", enum: ["TEST", "LIVE"], description: "Environment scope of this endpoint." },
                     createdAt: { type: "string", format: "date-time" },
                     apiKey: {
                         oneOf: [
@@ -830,7 +831,7 @@ const spec = {
             get: {
                 summary: "List merchant events from the event-sourced ledger",
                 description:
-                    "Reads from the canonical append-only merchant_events ledger. Supports cursor pagination (?cursor=), event-type filtering (?type=), and environment filtering (?environment=TEST|LIVE). Each event includes its resource type, correlation ID, and timestamps. Default limit is 50, max 100.",
+                    "Reads from the canonical merchant_events ledger. Supports cursor pagination (?cursor=), event-type filtering (?type=), and environment filtering (?environment=TEST|LIVE). Each event includes its resource type, correlation ID, and timestamps. Default limit is 50, max 100.",
                 security: [{ dashboardSession: [] }],
                 responses: {
                     "200": {

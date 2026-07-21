@@ -320,12 +320,14 @@ export async function POST(request: Request) {
                 contractAddress = SUBSCRIPT_ROUTER_ADDRESS;
                 contractAbi = SUBSCRIPT_ABI;
                 const withdrawTarget = args?.to;
-                if (withdrawTarget && typeof withdrawTarget === "string" && /^0x[0-9a-fA-F]{40}$/.test(withdrawTarget)) {
+                if (withdrawTarget === undefined || withdrawTarget === null || withdrawTarget === "") {
+                    functionName = "withdraw";
+                    finalArgs = [];
+                } else if (typeof withdrawTarget === "string" && /^0x[0-9a-fA-F]{40}$/.test(withdrawTarget)) {
                     functionName = "withdrawTo";
                     finalArgs = [withdrawTarget];
                 } else {
-                    functionName = "withdraw";
-                    finalArgs = [];
+                    return NextResponse.json({ error: "Invalid withdrawal recipient address" }, { status: 400 });
                 }
                 durableIdempotencyKey = deterministicIdempotencyKey(`withdraw:${wallet.toLowerCase()}:${requestId}`);
                 break;

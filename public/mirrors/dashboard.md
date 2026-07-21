@@ -20,7 +20,7 @@ The central command dashboard for merchants integrating the SubScript protocol.
 *   **Customization Panel:** Change plan name, plan description, price (USDC), and checkout layout parameters. The integration code updates dynamically.
 
 ### 4. Webhooks
-*   **Event-Sourced Ledger:** Every webhook is recorded in an append-only `merchant_events` ledger before dispatch. Each delivery attempt is tracked individually with HTTP status, response body, and timestamp.
+*   **Event-Sourced Ledger:** Every webhook is recorded in the `merchant_events` ledger before dispatch. Each delivery attempt is logged on a best-effort basis with HTTP status, response body, and timestamp; attempt rows may be missing if persistence fails after the HTTP request.
 *   **Environment Isolation:** Endpoints are scoped to TEST or LIVE so sandbox and production traffic never cross.
 *   **Secret Rotation:** Rotate signing secrets with a grace-period overlap — the previous secret stays valid until it expires.
 *   **Live Webhook Deliveries:** Inspect webhook payloads with cursor pagination and event-type / environment filters (e.g. `payment.succeeded`, `subscription.renewed`, `payment.failed`).

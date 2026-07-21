@@ -18,8 +18,8 @@ An interactive testing environment for developers integrating SubScript.
 *   Lists typical response objects like `subscription.session` with metadata.
 
 ### 3. Webhook Observability
-*   Events are recorded in an append-only `merchant_events` ledger before dispatch.
-*   Each delivery attempt is tracked individually with HTTP status, response body, and timestamp.
+*   Events are recorded in the `merchant_events` ledger before dispatch.
+*   Each delivery attempt is logged on a best-effort basis with HTTP status, response body, and timestamp; attempt rows may be absent if persistence fails after the HTTP request.
 *   Endpoints are environment-scoped (TEST/LIVE) so sandbox and production traffic are isolated.
 *   Secret rotation with grace-period overlap — the previous signing secret stays valid until expiry.
 *   Cursor-paginated event history with `?type=` and `?environment=` filters.
