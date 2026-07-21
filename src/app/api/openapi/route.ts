@@ -96,8 +96,31 @@ const spec = {
                     },
                 },
             },
-            WebhookEvent: {
+            MerchantEvent: {
                 type: "object",
+                description: "Canonical ledger event from the merchant_events table.",
+                properties: {
+                    id: { type: "string", description: "Event id (evt_…)." },
+                    event: { type: "string", description: "Human-readable label (`eventId: eventType`)." },
+                    type: { type: "string", description: "Canonical event type, e.g. `payment.succeeded`." },
+                    environment: { type: "string", enum: ["TEST", "LIVE"] },
+                    resource: {
+                        type: "object",
+                        properties: {
+                            type: { type: "string" },
+                            id: { type: "string" },
+                            version: { type: ["integer", "null"] },
+                        },
+                    },
+                    correlation_id: { type: ["string", "null"] },
+                    created_at: { type: "string", format: "date-time" },
+                    effective_at: { type: "string", format: "date-time" },
+                    payload: { type: "object", additionalProperties: true },
+                },
+            },
+            WebhookDeliveryAttempt: {
+                type: "object",
+                description: "A single webhook delivery attempt to a merchant endpoint.",
                 properties: {
                     id: { type: "string" },
                     event: { type: "string" },
@@ -815,10 +838,17 @@ const spec = {
         },
         "/api/webhooks/events": {
             get: {
-                summary: "List recent webhook delivery attempts",
+                summary: "List recent merchant events",
                 description:
-                    "Returns the latest 50 delivery attempts for the signed-in merchant, including the exact endpoint, HTTP status, response body, payload, and attempt time.",
+                    "Returns paginated events from the canonical merchant_events ledger for the signed-in merchant. " +
+                    "Supports cursor pagination (`cursor`, `limit`) and filtering by `type` and `environment`.",
                 security: [{ dashboardSession: [] }],
+                parameters: [
+                    { name: "cursor", in: "query", required: false, schema: { type: "string" }, description: "Opaque cursor for pagination." },
+                    { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 50 } },
+                    { name: "type", in: "query", required: false, schema: { type: "string" }, description: "Filter by event type, e.g. `payment.succeeded`." },
+                    { name: "environment", in: "query", required: false, schema: { type: "string", enum: ["TEST", "LIVE"] } },
+                ],
                 responses: {
                     "200": {
                         description: "OK",
@@ -829,8 +859,10 @@ const spec = {
                                     properties: {
                                         events: {
                                             type: "array",
-                                            items: { $ref: "#/components/schemas/WebhookEvent" },
+                                            items: { $ref: "#/components/schemas/MerchantEvent" },
                                         },
+                                        has_more: { type: "boolean" },
+                                        next_cursor: { type: ["string", "null"] },
                                     },
                                 },
                             },
