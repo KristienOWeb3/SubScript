@@ -34,7 +34,7 @@ UPA gives one-time checkout, subscriptions, usage events, invoices, sponsored pa
 - Checkout Intents for backend integrations.
 - Hosted Arc USDC payment links and QR-friendly checkout URLs.
 - Receipt tokens and human-readable receipt pages.
-- Signed webhook fulfillment.
+- Event-sourced signed webhook fulfillment with per-attempt delivery tracking, environment-scoped endpoints (TEST/LIVE), and secret rotation.
 - Metered vault usage reporting for API calls, AI tokens, storage, media, and pay-per-use products.
 - Google-powered embedded wallet onboarding.
 - DNS-style aliases for human-readable payment identities.

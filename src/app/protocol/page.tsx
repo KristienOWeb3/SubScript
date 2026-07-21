@@ -48,8 +48,8 @@ const liveCapabilities = [
     icon: ReceiptText,
   },
   {
-    title: "Signed Webhooks",
-    body: "Payment success events are signed with HMAC so merchants can unlock access by intent ID without trusting browser callbacks.",
+    title: "Event-Sourced Signed Webhooks",
+    body: "Payment events are written to an append-only merchant_events ledger before dispatch. Each delivery attempt is tracked individually with HTTP status and response body. Endpoints are environment-scoped (TEST/LIVE) with secret rotation and grace-period overlap. Merchants verify HMAC signatures and fulfill by intent ID without trusting browser callbacks.",
     icon: Webhook,
   },
   {

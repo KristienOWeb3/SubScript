@@ -37,6 +37,11 @@ export async function POST(request: Request) {
         }, { status: 200 });
     } catch (error: any) {
         console.error("Vault sync failed:", error);
-        return NextResponse.json({ error: error.message || "Failed to sync vault" }, { status: 500 });
+        const isCallException = error?.code === "CALL_EXCEPTION" || error?.message?.includes("CALL_EXCEPTION");
+        return NextResponse.json({
+            error: isCallException
+                ? "Vault contract is unreachable — the on-chain proxy may need to be upgraded. Your transaction may have succeeded; check the chain explorer."
+                : (error.message || "Failed to sync vault"),
+        }, { status: isCallException ? 503 : 500 });
     }
 }

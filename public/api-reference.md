@@ -238,7 +238,11 @@ subscription is stopped. Default 4.
 
 ## Webhooks
 
-Events are POSTed to your registered endpoint(s). Each request is signed:
+Events are POSTed to your registered endpoint(s). Every event is first written to an append-only
+`merchant_events` ledger, then dispatched. Each delivery attempt is tracked individually in
+`webhook_delivery_attempts` with the HTTP status, response body, and timestamp.
+
+Each request is signed:
 
 ```
 x-subscript-signature: t=<unix_timestamp>,v1=<hex_hmac>
@@ -262,6 +266,18 @@ Payment and subscription payloads include on-chain reconciliation fields: `chain
 Subscription lifecycle payloads also include `external_reference`/`merchant_customer_id` and
 `source_checkout_id` when the subscription originated from a merchant-assigned API plan.
 
+### Environment isolation
+
+Webhook endpoints are scoped to `TEST` or `LIVE`. Sandbox events are only dispatched to TEST
+endpoints, and production events only to LIVE endpoints. This prevents test traffic from hitting
+production handlers.
+
+### Secret rotation
+
+Endpoints support rotating the `whsec_…` signing secret with a grace-period overlap. When you
+rotate, the previous secret stays valid until it expires, giving you time to update your handler
+without failing to verify events during the transition.
+
 Verify signatures with the SDK:
 
 ```ts
@@ -279,12 +295,13 @@ These endpoints use the signed-in merchant dashboard session
   its webhook during the same setup flow. Returns `webhookEndpoint` or a recoverable
   `webhookWarning`.
 - `GET /api/webhooks/endpoints` — list endpoint URL, merchant wallet, active/inactive state,
-  redacted signing secret, and latest delivery health.
+  environment scope (TEST/LIVE), redacted signing secret, and latest delivery health.
 - `POST /api/webhooks/endpoints` `{ "url": "https://merchant.example/api/webhooks/subscript" }`
   — register an endpoint. The full `whsec_…` signing secret is returned once.
 - `DELETE /api/webhooks/endpoints?id=<endpoint-id>` — remove an owned endpoint.
-- `GET /api/webhooks/events` — list the latest 50 deliveries with event, endpoint, exact HTTP
-  status, response body, request payload, and timestamp.
+- `GET /api/webhooks/events` — reads from the canonical `merchant_events` ledger. Supports
+  cursor pagination (`?cursor=`), event-type filtering (`?type=`), and environment filtering
+  (`?environment=TEST|LIVE`). Default limit 50, max 100.
 - `POST /api/webhooks/events/replay` with `{ "eventId": "evt_…" }` or `{ "latest": true }` —
   resend a selected or latest stored delivery. Add `endpointId` with `latest: true` to choose
   the latest delivery for one owned endpoint.

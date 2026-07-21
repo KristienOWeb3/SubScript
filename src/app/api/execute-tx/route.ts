@@ -83,6 +83,13 @@ const SUBSCRIPT_ABI = [
     },
     {
         type: "function",
+        name: "withdrawTo",
+        stateMutability: "nonpayable",
+        inputs: [{ name: "_recipient", type: "address" }],
+        outputs: []
+    },
+    {
+        type: "function",
         name: "cancelSubscription",
         stateMutability: "nonpayable",
         inputs: [{ name: "_subId", type: "uint256" }],
@@ -312,8 +319,14 @@ export async function POST(request: Request) {
             case "withdraw": {
                 contractAddress = SUBSCRIPT_ROUTER_ADDRESS;
                 contractAbi = SUBSCRIPT_ABI;
-                functionName = "withdraw";
-                finalArgs = [];
+                const withdrawTarget = args?.to;
+                if (withdrawTarget && typeof withdrawTarget === "string" && /^0x[0-9a-fA-F]{40}$/.test(withdrawTarget)) {
+                    functionName = "withdrawTo";
+                    finalArgs = [withdrawTarget];
+                } else {
+                    functionName = "withdraw";
+                    finalArgs = [];
+                }
                 durableIdempotencyKey = deterministicIdempotencyKey(`withdraw:${wallet.toLowerCase()}:${requestId}`);
                 break;
             }

@@ -330,6 +330,9 @@ export default function DashboardPage() {
             } else if (functionName === "withdraw") {
                 action = "withdraw";
                 serializedArgs = {};
+            } else if (functionName === "withdrawTo") {
+                action = "withdraw";
+                serializedArgs = { to: args[0] };
             } else if (functionName === "transfer") {
                 action = "transferUsdc";
                 serializedArgs = { to: args[0], amount: args[1].toString() };
@@ -346,9 +349,14 @@ export default function DashboardPage() {
                 throw new Error(`Execution intent not allowlisted for embedded wallets: ${functionName}`);
             }
 
+            const headers: Record<string, string> = { "Content-Type": "application/json" };
+            const FINANCIAL_ACTIONS = new Set(["transferUsdc", "createPremiumSubscription", "withdraw"]);
+            if (FINANCIAL_ACTIONS.has(action)) {
+                headers["x-request-id"] = crypto.randomUUID();
+            }
             const res = await fetch("/api/execute-tx", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers,
                 body: JSON.stringify({ action, args: serializedArgs }),
             });
             const data = await res.json();
@@ -5997,12 +6005,9 @@ Please complete the following implementation tasks:
                     </div>
                 </div>
             )}
-            <DashboardHeader 
+            <DashboardHeader
                 embeddedWallet={embeddedWallet}
                 onDisconnect={handleLogout}
-                vaultBalance={vaultBalance}
-                onWithdraw={async () => setIsWithdrawOpen(true)}
-                isWithdrawing={isWithdrawing}
                 onDepositSuccess={handleDepositSuccess}
                 isPremium={isPremium}
                 promptFlowMode={promptFlowMode}
@@ -6091,7 +6096,7 @@ Please complete the following implementation tasks:
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-12 lg:grid-cols-4 gap-6 md:gap-8 items-start">
                         {/* Sidebar Navigation */}
-                        <div className="hidden md:block md:col-span-1 lg:col-span-1 space-y-2">
+                        <div className="hidden md:block md:col-span-1 lg:col-span-1 space-y-2 sticky top-24 overflow-y-auto max-h-[calc(100vh-7rem)]">
                             {tabs.map((tab) => {
                                 const hasHref = "href" in tab;
                                 const isSelected = activeTab === (tab.id as any);

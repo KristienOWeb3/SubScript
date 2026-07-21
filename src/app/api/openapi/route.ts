@@ -101,8 +101,21 @@ const spec = {
                 properties: {
                     id: { type: "string" },
                     event: { type: "string" },
+                    type: { type: "string", description: "Canonical event type (e.g. payment.succeeded)." },
+                    environment: { type: "string", enum: ["TEST", "LIVE"], description: "Environment scope of the event." },
+                    resource: {
+                        type: "object",
+                        properties: {
+                            type: { type: "string" },
+                            id: { type: "string" },
+                            version: { type: "integer" },
+                        },
+                    },
+                    correlation_id: { type: ["string", "null"] },
                     status: { type: "integer", description: "Exact HTTP response status." },
                     time: { type: "string", description: "Delivery attempt time." },
+                    created_at: { type: "string", format: "date-time" },
+                    effective_at: { type: "string", format: "date-time" },
                     endpointUrl: { type: "string", format: "uri" },
                     payload: { type: "object", additionalProperties: true },
                     responseBody: { type: ["string", "null"] },
@@ -724,7 +737,7 @@ const spec = {
             get: {
                 summary: "List webhook endpoints and delivery health",
                 description:
-                    "Dashboard-session endpoint for Premium merchants. Shows which merchant wallet owns each endpoint, whether it is active, and its latest delivery result.",
+                    "Dashboard-session endpoint for Premium merchants. Shows which merchant wallet owns each endpoint, whether it is active, its environment scope (TEST/LIVE), and its latest delivery result. Endpoints support secret rotation with grace-period overlap.",
                 security: [{ dashboardSession: [] }],
                 responses: {
                     "200": {
@@ -815,9 +828,9 @@ const spec = {
         },
         "/api/webhooks/events": {
             get: {
-                summary: "List recent webhook delivery attempts",
+                summary: "List merchant events from the event-sourced ledger",
                 description:
-                    "Returns the latest 50 delivery attempts for the signed-in merchant, including the exact endpoint, HTTP status, response body, payload, and attempt time.",
+                    "Reads from the canonical append-only merchant_events ledger. Supports cursor pagination (?cursor=), event-type filtering (?type=), and environment filtering (?environment=TEST|LIVE). Each event includes its resource type, correlation ID, and timestamps. Default limit is 50, max 100.",
                 security: [{ dashboardSession: [] }],
                 responses: {
                     "200": {

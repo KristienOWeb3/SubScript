@@ -12,7 +12,7 @@ SubScript is an Arc-native programmable USDC commerce layer that abstracts Web3,
 1. Continue with Google (or email) wallet onboarding through Circle developer-controlled MPC embedded wallets, with external self-custody wallets supported via SIWE.
 2. Hosted payment links and QR checkout for no-code merchant integration.
 3. Checkout Intent IDs that let merchants map off-chain users to on-chain payments without tracking payer wallets.
-4. Signed webhooks for secure merchant fulfillment.
+4. Event-sourced signed webhooks for secure merchant fulfillment, with per-attempt delivery tracking, environment-isolated endpoints (TEST/LIVE), and secret rotation.
 5. Human-readable receipt URLs backed by Arc transaction memos.
 6. Privacy-aware receipt access intended by default for payer, merchant, and SubScript.
 7. Transparent merchant pricing with an intended 1% processing fee on successful payment volume.

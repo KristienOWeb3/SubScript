@@ -63,9 +63,9 @@ Arc is the target foundation because it uses USDC as native gas and provides sub
 
 ### Live vs Deployment-Scoped Protocol Claims
 
-Live platform primitives include Checkout Intents, hosted Arc USDC payment links, receipt tokens, signed webhook fulfillment, metered vault usage reporting, DNS-style aliases, embedded Google wallet onboarding, premium merchant surfaces, and keeper-compatible API routes.
+Live platform primitives include Checkout Intents, hosted Arc USDC payment links, receipt tokens, event-sourced signed webhook fulfillment with delivery attempt tracking, metered vault usage reporting, DNS-style aliases, embedded Google wallet onboarding, premium merchant surfaces, and keeper-compatible API routes.
 
-Deployment-scoped protocol targets include direct fiat-to-USDC onramps, standalone invoice objects with reminder schedules, sponsor spending caps and revocation workflows, per-day dunning schedules, full Chainlink Automation, production Paymaster/Gas Station sponsorship, ArcaneVM confidentiality, and Arc quantum-resilience inheritance. Keep these caveated unless production configuration proves them live. Live in v1 form as of 2026-07-08: invoice fields on payment links, sponsored-subscription beneficiaries, commitment windows (≤ one billing period, disclosed before authorization), per-merchant dunning retry counts, sandbox test clocks, and the signup-free demo key. (Encrypted private-key export is live for exportable email wallets; it does not apply to Circle developer-controlled MPC wallets.)
+Deployment-scoped protocol targets include direct fiat-to-USDC onramps, standalone invoice objects with reminder schedules, sponsor spending caps and revocation workflows, per-day dunning schedules, full Chainlink Automation, production Paymaster/Gas Station sponsorship, ArcaneVM confidentiality, and Arc quantum-resilience inheritance. Keep these caveated unless production configuration proves them live. Live in v1 form as of 2026-07-20: invoice fields on payment links, sponsored-subscription beneficiaries, commitment windows (≤ one billing period, disclosed before authorization), per-merchant dunning retry counts, sandbox test clocks, the signup-free demo key, event-sourced merchant_events ledger, individual webhook_delivery_attempts tracking, environment-isolated webhook endpoints (TEST/LIVE), webhook secret rotation with grace-period overlap, stable auth identity binding, subscription attempt lifecycle tracking, spending limit operations and reservations, batch send operations, and profile closure state machine. (Encrypted private-key export is live for exportable email wallets; it does not apply to Circle developer-controlled MPC wallets.)
 
 ---
 
@@ -381,3 +381,18 @@ The canonical event name is `type: "payment.succeeded"`. The `event` field (`"pa
   }
 }
 ```
+
+### Event-Sourced Dispatch & Delivery Tracking
+
+Every webhook is written to an append-only `merchant_events` ledger before dispatch, providing a durable audit trail of all events generated for a merchant. Each delivery attempt is tracked individually in `webhook_delivery_attempts` with the HTTP status code, response body, and attempt timestamp. This means merchants can inspect exactly why a delivery failed and when it was retried.
+
+**Environment isolation:** Webhook endpoints are scoped to `TEST` or `LIVE`, ensuring sandbox traffic never crosses into production endpoints. The events API (`GET /api/webhooks/events`) supports cursor pagination via `?cursor=` and filtering by `?type=` and `?environment=`.
+
+**Secret rotation:** Endpoints support rotating the signing secret with a grace-period overlap. When you rotate, the previous `whsec_…` secret remains valid until it expires, giving you time to update your handler without missing or failing to verify events during the transition.
+
+**Additional schema additions (2026-07-20):**
+* `auth_identities` — stable identity binding across login methods (email, Google, SIWE), decoupling wallet address from auth provider.
+* `subscription_attempts` — lifecycle state machine for each subscription checkout, from creation through authorization to activation or failure.
+* `spending_limit_operations` and `spending_limit_reservations` — spending cap enforcement and reservation tracking.
+* `batch_send_operations` and `batch_send_items` — batch payout flows with per-item status.
+* `closure_status` on customers/merchants — staged profile closure state machine.

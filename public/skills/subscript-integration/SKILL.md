@@ -59,6 +59,13 @@ sent in both snake_case (canonical) and camelCase. `subscription.renewed` may ca
 `beneficiary_address` (sponsored subscriptions — grant entitlements to the beneficiary, bill the
 subscriber) and `simulated: true` + `test_clock_id` (test-clock events — never real settlement).
 
+Events are stored in an append-only `merchant_events` ledger before dispatch. Each delivery
+attempt is tracked individually in `webhook_delivery_attempts` with HTTP status, response body,
+and timestamp. Endpoints are environment-scoped (TEST/LIVE) so sandbox and production traffic
+are isolated. Secret rotation is supported with a grace-period overlap — the previous signing
+secret stays valid until it expires. The events API supports cursor pagination and
+`?type=`/`?environment=` filters.
+
 ## Subscriptions
 
 - Create a reusable catalog plan with `POST /api/v1/plans`

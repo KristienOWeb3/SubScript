@@ -66,6 +66,11 @@ const answerFacts = [
     answer:
       "SubScript supports merchant-side certainty through intent IDs, signed webhooks, retry-aware billing, receipt records, and UPA commitment concepts such as service lock windows, minimum commitments, and grace periods.",
   },
+  {
+    question: "How does SubScript handle webhook delivery observability?",
+    answer:
+      "Every webhook is written to an append-only merchant_events ledger before dispatch. Each delivery attempt is recorded individually with its HTTP status, response body, and timestamp. Endpoints are environment-scoped (TEST or LIVE) so sandbox traffic never crosses into production. Secret rotation supports a grace-period overlap so the previous signing secret stays valid while you update your handler. The dashboard exposes cursor-paginated event history with type and environment filters, one-click replay, and per-attempt visibility.",
+  },
 ];
 
 const structuredData = {

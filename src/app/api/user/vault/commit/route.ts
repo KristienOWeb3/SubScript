@@ -195,15 +195,19 @@ export async function POST(request: Request) {
             console.error("[vault-commit] CRITICAL: submitted commit not recorded durably:", persistError);
         });
 
-        const v = await syncVaultMirror(wallet, merchantAddress);
+        let v;
+        try {
+            v = await syncVaultMirror(wallet, merchantAddress);
+        } catch (syncError: unknown) {
+            console.error("[vault-commit] mirror sync failed after successful on-chain commit:", syncError);
+        }
 
-        await prisma.vaultCommitIntent.update({
-            where: { requestId },
-            data: { status: "MIRRORED" },
-        }).catch(() => { /* SUBMITTED remains resumable; the GET resolver reports it */ });
-        /* A commit changes the balance denominator for usage thresholds, so re-arm the 50%/80%
-           alerts against the new balance. Re-committing is also an explicit opt back in, so it
-           clears any prior cancellation and lets the merchant resume reporting usage. */
+        if (v) {
+            await prisma.vaultCommitIntent.update({
+                where: { requestId },
+                data: { status: "MIRRORED" },
+            }).catch(() => { /* SUBMITTED remains resumable; the GET resolver reports it */ });
+        }
         const commitEnvironment = SUBSCRIPT_VAULT_CHAIN_ID === 5042001 ? "LIVE" : "TEST";
         await prisma.meteredVault.updateMany({
             where: {
@@ -214,9 +218,7 @@ export async function POST(request: Request) {
             },
             data: { usageNotifiedBps: 0, cancelRequestedAt: null, cancelReason: null },
         }).catch(() => {});
-        if (v.active) {
-            /* A funding commit resolves both nag cards: the exhausted-balance one and the
-               paused-service one (the updateMany above already cleared the pause flag). */
+        if (v?.active) {
             await prisma.subscriptDm.updateMany({
                 where: {
                     senderAddress: merchantAddress.toLowerCase(),
@@ -239,9 +241,9 @@ export async function POST(request: Request) {
                 user_address: normalizedWallet,
                 merchant_address: normalizedMerchant,
                 amount_usdc_micros: amount.toString(),
-                vault_balance_usdc_micros: v.balance.toString(),
+                vault_balance_usdc_micros: v?.balance?.toString() ?? "unknown",
                 tx_hash: txHash,
-                active: v.active,
+                active: v?.active ?? null,
             },
             correlationId: requestId,
             transitionKey: `vault_commit:${txHash.toLowerCase()}`,
@@ -250,12 +252,16 @@ export async function POST(request: Request) {
         return NextResponse.json({
             success: true,
             txHash,
-            vault: {
-                balanceUsdc: v.balance.toString(),
-                owedUsdc: v.owed.toString(),
-                commitUsdc: v.commitNeeded.toString(),
-                active: v.active,
-            },
+            ...(v ? {
+                vault: {
+                    balanceUsdc: v.balance.toString(),
+                    owedUsdc: v.owed.toString(),
+                    commitUsdc: v.commitNeeded.toString(),
+                    active: v.active,
+                },
+            } : {
+                syncPending: true,
+            }),
         }, { status: 200 });
     } catch (error: any) {
         console.error("Vault commit failed:", error);

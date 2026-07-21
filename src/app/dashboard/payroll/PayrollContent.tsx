@@ -839,9 +839,6 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                 <DashboardHeader
                     embeddedWallet={embeddedWallet}
                     onDisconnect={handleLogout}
-                    vaultBalance={vaultBalance}
-                    onWithdraw={async () => setIsWithdrawOpen(true)}
-                    isWithdrawing={isWithdrawing}
                     onDepositSuccess={handleDepositSuccess}
                     isPremium={isPremium}
                     promptFlowMode={promptFlowMode}
