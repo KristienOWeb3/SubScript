@@ -6096,7 +6096,7 @@ Please complete the following implementation tasks:
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-12 lg:grid-cols-4 gap-6 md:gap-8 items-start">
                         {/* Sidebar Navigation */}
-                        <div className="hidden md:block md:col-span-1 lg:col-span-1 space-y-2 sticky top-24 overflow-y-auto max-h-[calc(100vh-7rem)]">
+                        <div className="hidden md:block md:col-span-1 lg:col-span-1 space-y-2 sticky top-24 overflow-y-auto max-h-[calc(100vh-16rem)]">
                             {tabs.map((tab) => {
                                 const hasHref = "href" in tab;
                                 const isSelected = activeTab === (tab.id as any);
