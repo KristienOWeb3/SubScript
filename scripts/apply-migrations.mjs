@@ -271,6 +271,20 @@ async function main() {
             if (ledgerCount.rows[0].n === 0 && !schemaPopulated) {
                 freshBootstrap = true;
                 console.log("[migrations] Empty ledger on an empty database — resuming fresh-bootstrap order.");
+            } else if (ledgerCount.rows[0].n === 0 && schemaPopulated && process.env.ADOPT_EXISTING_DB_BASELINE === "1") {
+                /* E2E scenario: the stub migration (ensure_migration_ledger) created the ledger
+                   table, then supabase applied all migration files — but no rows were recorded.
+                   Baseline every known file so apply-migrations doesn't try to re-apply them. */
+                console.log("[migrations] ADOPT_EXISTING_DB_BASELINE=1 — baselining empty ledger on populated schema.");
+                const commitSha = getCommitSha();
+                for (const file of await listMigrationFiles()) {
+                    const { sha256, byteLength } = await getMigrationMetadata(file);
+                    await client.query(
+                        `INSERT INTO _subscript_migrations (filename, baseline, sha256, byte_length, application_commit, runner_version)
+                         VALUES ($1, true, $2, $3, $4, $5) ON CONFLICT (filename) DO NOTHING`,
+                        [file, sha256, byteLength, commitSha, runnerVersion]
+                    );
+                }
             }
         }
 
