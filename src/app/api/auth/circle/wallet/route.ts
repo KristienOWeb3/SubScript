@@ -39,10 +39,13 @@ export async function POST(request: Request) {
             );
         }
 
-        if (authIntent === "signup" && existingRole) {
+        if (existingWallet) {
             return NextResponse.json({
-                error: "An account with this Google email already exists. Use Sign In to access it.",
-            }, { status: 409 });
+                requiresChallenge: false,
+                email,
+                role: existingRole?.role || null,
+                onboardingComplete: Boolean(existingRole?.role),
+            });
         }
 
         if (authIntent === "signin" && !existingWallet) {
