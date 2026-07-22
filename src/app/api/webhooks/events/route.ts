@@ -32,7 +32,13 @@ export async function GET(request: Request) {
             where.environment = environmentFilter;
         }
         if (cursor) {
-            where.id = { gt: cursor };
+            const [cursorTime, cursorId] = cursor.split("|");
+            if (cursorTime && cursorId) {
+                where.OR = [
+                    { createdAt: { lt: new Date(cursorTime) } },
+                    { createdAt: new Date(cursorTime), id: { lt: cursorId } },
+                ];
+            }
         }
 
         /* Read from canonical merchant_events ledger */
@@ -57,7 +63,8 @@ export async function GET(request: Request) {
 
         const hasMore = events.length > limit;
         const page = hasMore ? events.slice(0, limit) : events;
-        const nextCursor = hasMore ? page[page.length - 1].id : null;
+        const last = page[page.length - 1];
+        const nextCursor = hasMore && last ? `${last.createdAt.toISOString()}|${last.id}` : null;
 
         return NextResponse.json({
             events: page.map((e) => ({

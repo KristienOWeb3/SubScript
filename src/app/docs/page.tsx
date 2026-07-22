@@ -948,7 +948,7 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                       ["cancelUrl", "HTTPS URL", "No", "Where checkout sends the payer after cancellation."],
                       ["expiresAt", "ISO date or Unix time", "No", "When the hosted checkout should stop accepting payment."],
                       ["maxUses", "integer 1–10000", "No", "Maximum successful uses for a reusable link."],
-                      ["confirmOneTime", "boolean", "Only for ambiguous titles", "Set true only when wording such as “1 week pass” is intentionally non-renewing."],
+                      ["confirmOneTime", "boolean", "Only for ambiguous titles", 'Set true only when wording such as "1 week pass" is intentionally non-renewing.'],
                     ].map(([field, type, required, meaning]) => (
                       <tr key={field}>
                         <td className="px-4 py-3 font-mono font-semibold text-[#00d2b4]">{field}</td>
@@ -1125,17 +1125,31 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
               </p>
 
               <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
+                <p className="font-bold text-white/85">Event-sourced webhook dispatch</p>
+                <p className="mt-2">
+                  Every webhook is recorded in the <span className="font-mono">merchant_events</span> ledger before dispatch.
+                  Each delivery attempt is logged on a best-effort basis to <span className="font-mono">webhook_delivery_attempts</span> with
+                  the HTTP status, response body, and attempt timestamp; attempt rows may be missing if persistence fails after the HTTP request. Endpoints are environment-scoped (<span className="font-mono">TEST</span> or{" "}
+                  <span className="font-mono">LIVE</span>) so sandbox and production traffic never cross.
+                  Secret rotation is supported with a grace-period overlap &mdash; the previous signing secret stays valid until it expires,
+                  giving you time to update your handler without missing events.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
                 <p className="font-bold text-white/85">Dashboard delivery health APIs</p>
                 <p className="mt-2">
                   Signed-in Premium merchants can inspect <span className="font-mono">GET /api/webhooks/endpoints</span> and{" "}
-                  <span className="font-mono">GET /api/webhooks/events</span>, resend a selected event with{" "}
+                  <span className="font-mono">GET /api/webhooks/events</span> (with cursor pagination and{" "}
+                  <span className="font-mono">?type=</span> / <span className="font-mono">?environment=</span> filters),
+                  resend a selected event with{" "}
                   <span className="font-mono">POST /api/webhooks/events/replay</span>, or send a signed sample through{" "}
                   <span className="font-mono">POST /api/webhooks/test</span>. Test event types are{" "}
                   <span className="font-mono">test</span>, <span className="font-mono">payment.succeeded</span>, and{" "}
                   <span className="font-mono">subscription.created</span>. The dashboard shows the exact endpoint, HTTP status,
                   response body, and delivery time so a missing endpoint or failed response is visible immediately. Send{" "}
                   <span className="font-mono">{`{ "latest": true }`}</span> to the replay endpoint for the one-click
-                  “Resend latest” flow.
+                  &quot;Resend latest&quot; flow.
                 </p>
               </div>
 
@@ -1181,9 +1195,10 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                 <p className="font-bold text-white/85">Delivery behavior</p>
                 <ul className="mt-3 list-disc space-y-2 pl-5">
                   <li>Return any <span className="font-mono">2xx</span> only after the event is durably claimed.</li>
-                  <li>SubScript retries timeouts, <span className="font-mono">408</span>, <span className="font-mono">429</span>, and <span className="font-mono">5xx</span> responses.</li>
+                  <li>SubScript retries timeouts, <span className="font-mono">408</span>, <span className="font-mono">429</span>, and <span className="font-mono">5xx</span> responses. Each attempt is logged on a best-effort basis with its HTTP status and response body.</li>
                   <li>Your handler must return <span className="font-mono">200</span> for an already-processed <span className="font-mono">event.id</span>.</li>
                   <li>Do slow email, analytics, or provisioning work after the durable claim, preferably through your own queue.</li>
+                  <li>The merchant dashboard shows delivery attempts per event on a best-effort basis, so most failed retries are visible without server-side logging.</li>
                 </ul>
               </div>
             </section>

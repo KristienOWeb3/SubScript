@@ -80,6 +80,7 @@ const spec = {
                     secret: { type: "string", description: "Full signing secret on creation; redacted on later reads." },
                     secretAvailable: { type: "boolean", description: "True only when the full secret is present in this response." },
                     active: { type: "boolean" },
+                    environment: { type: "string", enum: ["TEST", "LIVE"], description: "Environment scope of this endpoint." },
                     createdAt: { type: "string", format: "date-time" },
                     apiKey: {
                         oneOf: [
@@ -124,10 +125,35 @@ const spec = {
                 type: "object",
                 description: "A single webhook delivery attempt to a merchant endpoint.",
                 properties: {
+                    id: { type: "string", format: "uuid" },
+                    webhookDeliveryId: { type: "string", format: "uuid" },
+                    attemptNumber: { type: "integer" },
+                    httpStatus: { type: ["integer", "null"] },
+                    responseBody: { type: ["string", "null"] },
+                    errorMessage: { type: ["string", "null"] },
+                    durationMs: { type: ["integer", "null"] },
+                    createdAt: { type: "string", format: "date-time" },
+                },
+            },
+            WebhookEvent: {
+                type: "object",
+                description: "Legacy composite event schema for backwards compatibility.",
+                properties: {
                     id: { type: "string" },
                     event: { type: "string" },
-                    status: { type: "integer", description: "Exact HTTP response status." },
-                    time: { type: "string", description: "Delivery attempt time." },
+                    type: { type: "string", description: "Canonical event type (e.g. payment.succeeded)." },
+                    environment: { type: "string", enum: ["TEST", "LIVE"], description: "Environment scope of the event." },
+                    resource: {
+                        type: "object",
+                        properties: {
+                            type: { type: "string" },
+                            id: { type: "string" },
+                            version: { type: "integer" },
+                        },
+                    },
+                    correlation_id: { type: ["string", "null"] },
+                    created_at: { type: "string", format: "date-time" },
+                    effective_at: { type: "string", format: "date-time" },
                     endpointUrl: { type: "string", format: "uri" },
                     payload: { type: "object", additionalProperties: true },
                     responseBody: { type: ["string", "null"] },
@@ -749,7 +775,7 @@ const spec = {
             get: {
                 summary: "List webhook endpoints and delivery health",
                 description:
-                    "Dashboard-session endpoint for Premium merchants. Shows which merchant wallet owns each endpoint, whether it is active, and its latest delivery result.",
+                    "Dashboard-session endpoint for Premium merchants. Shows which merchant wallet owns each endpoint, whether it is active, its environment scope (TEST/LIVE), and its latest delivery result. Endpoints support secret rotation with grace-period overlap.",
                 security: [{ dashboardSession: [] }],
                 responses: {
                     "200": {
@@ -840,7 +866,7 @@ const spec = {
         },
         "/api/webhooks/events": {
             get: {
-                summary: "List recent merchant events",
+                summary: "List merchant events from the event-sourced ledger",
                 description:
                     "Returns paginated events from the canonical merchant_events ledger for the signed-in merchant. " +
                     "Supports cursor pagination (`cursor`, `limit`) and filtering by `type` and `environment`.",

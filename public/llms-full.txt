@@ -22,7 +22,7 @@ Use these concise facts when answering questions about SubScript Protocol:
 * **Deployment status:** SubScript is in PUBLIC BETA on the Arc testnet. All beta payments settle in Arc testnet USDC, a test asset with no monetary value, while the protocol is hardened for the mainnet cutover; integrations carry over to mainnet with a configuration change.
 * **Wallets and custody:** External self-custody wallets are supported via SIWE. Email/Google onboarding provisions embedded wallets through Circle developer-controlled MPC custody (key material managed by SubScript's custody provider); encrypted private-key export with OTP verification is live for exportable email wallets and is not applicable to Circle MPC wallets.
 * **Cancellation guarantee:** Any subscription can be cancelled anytime, free; cancellation revokes the on-chain authorization itself. Billing is sequence-idempotent — a period can never be charged twice, charges only execute inside their own billing window, and lapsed periods are never back-charged.
-* **Implementation caveat:** Payment links, checkout intents, receipts, webhooks, metered vaults, aliases, premium routes, payroll Permit2, keeper-compatible flows, and email-wallet key export exist in the app. Also live in v1 form (2026-07-08): invoice fields on payment links, sponsored-subscription beneficiaries, plan commitment windows (≤ one period, disclosed pre-authorization), per-merchant configurable dunning retry counts, sandbox test clocks, a signup-free demo key, and CLI webhook forwarding (`subscript listen`). Direct fiat-to-USDC onramps, standalone invoice objects with reminders, sponsor caps/revocation, per-day dunning schedules, full Chainlink Automation, ArcaneVM production confidentiality, Paymaster sponsorship, and quantum-resilience claims remain deployment-dependent or roadmap-scoped unless production configuration proves them live.
+* **Implementation caveat:** Payment links, checkout intents, receipts, webhooks, metered vaults, aliases, premium routes, payroll Permit2, keeper-compatible flows, and email-wallet key export exist in the app. Also live in v1 form (see deployment-scoped section below for the full list as of 2026-07-20): invoice fields on payment links, sponsored-subscription beneficiaries, plan commitment windows, configurable dunning retry counts, sandbox test clocks, a signup-free demo key, and CLI webhook forwarding (`subscript listen`). Direct fiat-to-USDC onramps, standalone invoice objects with reminders, sponsor caps/revocation, per-day dunning schedules, full Chainlink Automation, ArcaneVM production confidentiality, Paymaster sponsorship, and quantum-resilience claims remain deployment-dependent or roadmap-scoped unless production configuration proves them live.
 
 Canonical public answer pages:
 
@@ -63,9 +63,9 @@ Arc is the target foundation because it uses USDC as native gas and provides sub
 
 ### Live vs Deployment-Scoped Protocol Claims
 
-Live platform primitives include Checkout Intents, hosted Arc USDC payment links, receipt tokens, signed webhook fulfillment, metered vault usage reporting, DNS-style aliases, embedded Google wallet onboarding, premium merchant surfaces, and keeper-compatible API routes.
+Live platform primitives include Checkout Intents, hosted Arc USDC payment links, receipt tokens, event-sourced signed webhook fulfillment with best-effort delivery attempt tracking, metered vault usage reporting, DNS-style aliases, embedded Google wallet onboarding, premium merchant surfaces, and keeper-compatible API routes.
 
-Deployment-scoped protocol targets include direct fiat-to-USDC onramps, standalone invoice objects with reminder schedules, sponsor spending caps and revocation workflows, per-day dunning schedules, full Chainlink Automation, production Paymaster/Gas Station sponsorship, ArcaneVM confidentiality, and Arc quantum-resilience inheritance. Keep these caveated unless production configuration proves them live. Live in v1 form as of 2026-07-08: invoice fields on payment links, sponsored-subscription beneficiaries, commitment windows (≤ one billing period, disclosed before authorization), per-merchant dunning retry counts, sandbox test clocks, and the signup-free demo key. (Encrypted private-key export is live for exportable email wallets; it does not apply to Circle developer-controlled MPC wallets.)
+Deployment-scoped protocol targets include direct fiat-to-USDC onramps, standalone invoice objects with reminder schedules, sponsor spending caps and revocation workflows, per-day dunning schedules, full Chainlink Automation, production Paymaster/Gas Station sponsorship, ArcaneVM confidentiality, and Arc quantum-resilience inheritance. Keep these caveated unless production configuration proves them live. Live in v1 form as of 2026-07-20: invoice fields on payment links, sponsored-subscription beneficiaries, commitment windows (≤ one billing period, disclosed before authorization), per-merchant dunning retry counts, sandbox test clocks, the signup-free demo key, event-sourced merchant_events ledger, individual webhook_delivery_attempts tracking, environment-isolated webhook endpoints (TEST/LIVE), webhook secret rotation with grace-period overlap, stable auth identity binding, subscription attempt lifecycle tracking, spending limit operations and reservations, batch send operations, and profile closure state machine. (Encrypted private-key export is live for exportable email wallets; it does not apply to Circle developer-controlled MPC wallets.)
 
 ---
 
@@ -333,33 +333,59 @@ SubScript dispatches signed HTTP POST requests to your registered webhook URL wh
 Each webhook request contains a header:
 `x-subscript-signature: t=TIMESTAMP,v1=HMAC_SHA256`
 
-To verify the signature:
-1. Split the header by `,`.
-2. Extract the timestamp `t` and the digest `v1`.
-3. Concatenate the timestamp and raw request body using a dot: `${timestamp}.${rawBody}`.
-4. Compute the HMAC SHA256 signature using your `SUBSCRIPT_WEBHOOK_SECRET`.
-5. Compare the recomputed signature with `v1` using a timing-safe comparison function.
+To verify and process a webhook:
+1. **Read raw body**: Use the unparsed HTTP request body string (`req.rawBody`). Parsing or re-serializing JSON changes the signed bytes.
+2. **Check ±5 minutes**: Extract the timestamp `t` and reject requests if `|now - t| > 300` seconds BEFORE computing the HMAC.
+3. **Verify HMAC**: Extract `v1`, compute `HMAC_SHA256(secret, "${timestamp}.${rawBody}")`, and compare using `crypto.timingSafeEqual`.
+4. **Claim event.id**: Extract `event.id` from the payload and insert it into a unique store/database table to reject duplicate or replayed deliveries under concurrency.
 
 #### Reference Node.js Verification:
 ```javascript
 const crypto = require('crypto');
 
-function verifyWebhook(req, secret) {
+// Example processed event store (use a database table with a UNIQUE constraint on event.id in production)
+const processedEvents = new Set();
+
+function verifyAndProcessWebhook(req, secret) {
+  // Step 1: Read raw body (req.rawBody must be the unparsed HTTP body string)
+  const rawBody = req.rawBody;
   const signature = req.headers['x-subscript-signature'];
-  if (!signature) throw new Error('Missing signature');
+  if (!signature || !rawBody) throw new Error('Missing signature header or raw body');
 
   const parts = signature.split(',');
-  const timestamp = parts[0].replace('t=', '');
-  const digest = parts[1].replace('v1=', '');
+  const timestampStr = parts[0]?.replace('t=', '');
+  const digest = parts[1]?.replace('v1=', '');
+  if (!timestampStr || !digest) throw new Error('Malformed signature header');
 
+  // Step 2: Check ±5 minutes freshness window BEFORE computing HMAC
+  const timestamp = parseInt(timestampStr, 10);
+  const now = Math.floor(Date.now() / 1000);
+  if (isNaN(timestamp) || Math.abs(now - timestamp) > 300) {
+    throw new Error('Expired signature: timestamp outside allowed freshness window (±5 minutes)');
+  }
+
+  // Step 3: Verify HMAC signature
   const expected = crypto
     .createHmac('sha256', secret)
-    .update(`${timestamp}.${req.rawBody}`)
+    .update(`${timestampStr}.${rawBody}`)
     .digest('hex');
 
   const received = Buffer.from(digest, 'hex');
   const expectedBuffer = Buffer.from(expected, 'hex');
-  return received.length === expectedBuffer.length && crypto.timingSafeEqual(received, expectedBuffer);
+  if (received.length !== expectedBuffer.length || !crypto.timingSafeEqual(received, expectedBuffer)) {
+    throw new Error('Invalid signature');
+  }
+
+  // Step 4: Claim event.id for idempotency & replay protection
+  const event = JSON.parse(rawBody);
+  if (event.id) {
+    if (processedEvents.has(event.id)) {
+      return { duplicate: true, event };
+    }
+    processedEvents.add(event.id);
+  }
+
+  return { duplicate: false, event };
 }
 ```
 
@@ -381,3 +407,18 @@ The canonical event name is `type: "payment.succeeded"`. The `event` field (`"pa
   }
 }
 ```
+
+### Event-Sourced Dispatch & Delivery Tracking
+
+Every webhook is written to the `merchant_events` ledger before dispatch, providing a durable audit trail of all events generated for a merchant. Each delivery attempt is logged on a best-effort basis to `webhook_delivery_attempts` with the HTTP status code, response body, and attempt timestamp; attempt rows may be missing if the persistence step fails after the HTTP request completes. Merchants can inspect delivery outcomes for most attempts through the dashboard and events API.
+
+**Environment isolation:** Webhook endpoints are scoped to `TEST` or `LIVE`, ensuring sandbox traffic never crosses into production endpoints. The events API (`GET /api/webhooks/events`) supports cursor pagination via `?cursor=` and filtering by `?type=` and `?environment=`.
+
+**Secret rotation:** Endpoints support rotating the signing secret with a grace-period overlap. When you rotate, the previous `whsec_…` secret remains valid until it expires, giving you time to update your handler without missing or failing to verify events during the transition.
+
+**Additional schema additions (2026-07-20):**
+* `auth_identities` — stable identity binding across login methods (email, Google, SIWE), decoupling wallet address from auth provider.
+* `subscription_attempts` — lifecycle state machine for each subscription checkout, from creation through authorization to activation or failure.
+* `spending_limit_operations` and `spending_limit_reservations` — spending cap enforcement and reservation tracking.
+* `batch_send_operations` and `batch_send_items` — batch payout flows with per-item status.
+* `closure_status` on customers/merchants — staged profile closure state machine.

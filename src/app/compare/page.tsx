@@ -24,7 +24,7 @@ const comparisons = [
   {
     name: "SubScript vs Coinbase Commerce",
     answer:
-      "Coinbase Commerce focuses on crypto checkout. SubScript adds recurring billing patterns, merchant intent IDs, webhook fulfillment, metered vaults, payment links, and Arc memo receipt infrastructure.",
+      "Coinbase Commerce focuses on crypto checkout. SubScript adds recurring billing patterns, merchant intent IDs, event-sourced webhook fulfillment with per-attempt delivery tracking, metered vaults, payment links, and Arc memo receipt infrastructure.",
   },
   {
     name: "SubScript vs manual USDC invoices",
