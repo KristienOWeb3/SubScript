@@ -19,6 +19,7 @@
     "overrides": {
         "form-data": "4.0.6",
         "hono": "4.12.27",
+        "sharp": "0.35.3",
         "underscore": "1.13.8",
         "undici": "6.27.0",
         "ws": "8.21.0",
