@@ -52,10 +52,16 @@ export async function lockMerchantPlanCatalog(
     tx: Prisma.TransactionClient,
     merchantAddress: string,
 ) {
+    /* Prisma cannot deserialize the PostgreSQL `void` column returned by calling
+       pg_advisory_xact_lock directly through $queryRaw. Wrap the lock call in
+       EXISTS so the transaction still blocks until the lock is acquired, but the
+       result set contains only a normal boolean. */
     await tx.$queryRaw`
-        SELECT pg_advisory_xact_lock(
-            hashtextextended(${`merchant-plan-catalog:${merchantAddress.toLowerCase()}`}, 0)
-        )
+        SELECT EXISTS(
+            SELECT pg_advisory_xact_lock(
+                hashtextextended(${`merchant-plan-catalog:${merchantAddress.toLowerCase()}`}, 0)
+            )
+        ) AS locked
     `;
 }
 

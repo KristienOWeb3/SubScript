@@ -56,6 +56,7 @@ test("publication and the active-plan ceiling are serialized atomically", () => 
     const route = source("src/app/api/merchant/plans/route.ts");
 
     assert.match(publisher, /pg_advisory_xact_lock/);
+    assert.match(publisher, /SELECT EXISTS\([\s\S]*pg_advisory_xact_lock/);
     assert.match(publisher, /FOR UPDATE/);
     assert.match(publisher, /prisma\.\$transaction/);
     assert.match(publisher, /if \(!meta\.subscriber\)[\s\S]*activePublicCount >= MAX_ACTIVE_MERCHANT_PLANS/);
