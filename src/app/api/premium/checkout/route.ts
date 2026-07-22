@@ -71,9 +71,8 @@ export async function POST(request: Request) {
             }, { status: 200 });
         }
 
-        /* Merchant creation, stale-session cleanup and active-session creation are one database
-           transaction. The partial unique index in the companion migration closes concurrent
-           double-click races across serverless instances. */
+        let session: { session_id: string; expires_at: string; status: string } | null = null;
+
         const { data: sessionResult, error: sessionError } = await supabase
             .rpc("get_or_create_premium_payment_session", {
                 p_merchant_address: userWallet,
@@ -81,13 +80,63 @@ export async function POST(request: Request) {
                 p_chain_id: ProtocolConfig.CHAIN_ID,
                 p_ttl_seconds: 30 * 60,
             })
-            .single();
+            .maybeSingle();
 
-        if (sessionError) {
-            console.error("[Premium Checkout] Payment session creation failed:", sessionError);
-            return NextResponse.json({ error: "Database Sync Error: Failed to register payment session" }, { status: 500 });
+        if (!sessionError && sessionResult) {
+            session = sessionResult as unknown as { session_id: string; expires_at: string; status: string };
+        } else {
+            console.warn("[Premium Checkout] RPC get_or_create_premium_payment_session failed, executing fallback:", sessionError?.message);
+
+            /* 1. Ensure merchant row exists */
+            await supabase
+                .from("merchants")
+                .upsert({ wallet_address: userWallet, tier: "FREE", updated_at: new Date().toISOString() }, { onConflict: "wallet_address" });
+
+            /* 2. Expire old pending/processing sessions */
+            const nowIso = new Date().toISOString();
+            await supabase
+                .from("payment_sessions")
+                .update({ status: "FAILED", last_error: "Premium checkout session expired.", failure_code: "SESSION_EXPIRED" })
+                .eq("merchant_address", userWallet)
+                .in("status", ["PENDING", "PROCESSING"])
+                .lte("expires_at", nowIso);
+
+            /* 3. Query existing active session */
+            const { data: existingSession } = await supabase
+                .from("payment_sessions")
+                .select("session_id, expires_at, status")
+                .eq("merchant_address", userWallet)
+                .in("status", ["PENDING", "PROCESSING"])
+                .gt("expires_at", nowIso)
+                .maybeSingle();
+
+            if (existingSession) {
+                session = existingSession as { session_id: string; expires_at: string; status: string };
+            } else {
+                /* 4. Insert fresh session */
+                const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+                const { data: newSession, error: insertError } = await supabase
+                    .from("payment_sessions")
+                    .insert({
+                        merchant_address: userWallet,
+                        amount_expected: PREMIUM_PRICE,
+                        chain_id: ProtocolConfig.CHAIN_ID,
+                        expires_at: expiresAt,
+                        status: "PENDING",
+                    })
+                    .select("session_id, expires_at, status")
+                    .single();
+
+                if (insertError || !newSession) {
+                    console.error("[Premium Checkout] Direct payment session creation failed:", insertError);
+                    return NextResponse.json({
+                        error: "Database Sync Error: Failed to register payment session",
+                        details: process.env.NODE_ENV === "production" ? undefined : insertError?.message,
+                    }, { status: 500 });
+                }
+                session = newSession as { session_id: string; expires_at: string; status: string };
+            }
         }
-        const session = sessionResult as unknown as { session_id: string; expires_at: string; status: string };
 
         console.log(`[Premium Checkout Created] New session. requestId: ${requestId}, merchantAddress: ${userWallet}, sessionId: ${session.session_id}`);
 
