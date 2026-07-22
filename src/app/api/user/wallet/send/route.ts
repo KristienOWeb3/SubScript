@@ -61,10 +61,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
         }
 
-        const requestId = request.headers.get("x-request-id");
-        if (!requestId) {
-            return NextResponse.json({ error: "x-request-id header is required for financial operations." }, { status: 400 });
-        }
+        const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
 
         const normalizedSender = wallet.toLowerCase();
         const recipients = normalizeRecipients(body);

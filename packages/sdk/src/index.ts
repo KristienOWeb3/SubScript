@@ -279,6 +279,7 @@ export class SubScript {
             headers: {
                 "Content-Type": "application/json",
                 Authorization: `Bearer ${this.secretKey}`,
+                "x-request-id": crypto.randomUUID(),
             },
             body: body !== undefined ? JSON.stringify(body) : undefined,
             signal: AbortSignal.timeout(30_000),

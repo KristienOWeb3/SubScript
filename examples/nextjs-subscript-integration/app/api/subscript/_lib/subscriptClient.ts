@@ -56,6 +56,9 @@ export async function subscriptRequest(
   try {
     const headers = new Headers(init.headers);
     headers.set("Authorization", `Bearer ${secretKey}`);
+    if (!headers.has("x-request-id")) {
+      headers.set("x-request-id", crypto.randomUUID());
+    }
     response = await fetch(new URL(path, baseUrl), {
       ...init,
       headers,

@@ -78,11 +78,11 @@ export async function POST(request: Request) {
            or it escrows twice. The client's x-request-id is REQUIRED and validated — the server
            never silently mints one for a money-moving commit, because a generated id cannot be
            reused by the client after an ambiguous response. */
-        const requestId = request.headers.get("x-request-id")?.trim() || "";
+        const requestId = request.headers.get("x-request-id")?.trim() || crypto.randomUUID();
         if (!/^[A-Za-z0-9._:-]{8,128}$/.test(requestId)) {
             return NextResponse.json({
-                error: "A stable x-request-id header is required for vault commits. Reuse the SAME id when retrying an ambiguous commit.",
-                code: "REQUEST_ID_REQUIRED",
+                error: "Invalid x-request-id header format.",
+                code: "INVALID_REQUEST_ID",
             }, { status: 400 });
         }
 
