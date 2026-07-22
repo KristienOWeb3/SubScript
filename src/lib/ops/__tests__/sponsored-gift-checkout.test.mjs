@@ -22,11 +22,14 @@ test("sponsored merchant-plan route creates single-use one-time gift checkouts w
 });
 
 test("friend-locked gift links are enforced server-side without leaking receiver_address publicly", async () => {
+    const giftRoute = await source("src/app/api/user/requests/merchant-plan/route.ts");
     const verifyRoute = await source("src/app/api/payment-links/verify/route.ts");
     const embeddedPayRoute = await source("src/app/api/user/payment-links/[id]/pay/route.ts");
     const payPage = await source("src/app/pay/[id]/page.tsx");
     const payClient = await source("src/app/pay/[id]/PublicPayClient.tsx");
 
+    assert.match(giftRoute, /let receiverAddress:[\s\S]*const pendingCount/);
+    assert.match(giftRoute, /const existing = await prisma\.paymentLink\.findFirst\([\s\S]*receiverAddress,/);
     assert.match(verifyRoute, /paymentLink\.receiver_address[\s\S]*locked to another SubScript user/);
     assert.match(embeddedPayRoute, /link\.receiverAddress[\s\S]*locked to another SubScript user/);
     assert.match(payPage, /beneficiary_address/);

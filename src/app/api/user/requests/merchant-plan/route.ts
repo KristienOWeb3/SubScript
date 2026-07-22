@@ -117,38 +117,6 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: requested amount does not match the merchant plan price" }, { status: 400 });
         }
 
-        const pendingCount = await prisma.paymentLink.count({
-            where: {
-                beneficiaryAddress: normalizedRequester,
-                active: true,
-                useCount: 0,
-                status: "PENDING",
-                stateSnapshot: { path: ["isSponsored"], equals: true },
-                OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-            },
-        });
-        if (pendingCount >= MAX_PENDING_SPONSORED_REQUESTS) {
-            return NextResponse.json({ error: "Too many active pending sponsored checkout links" }, { status: 429 });
-        }
-
-        const dedupeSince = new Date(Date.now() - DEDUPE_WINDOW_MS);
-        const existing = await prisma.paymentLink.findFirst({
-            where: {
-                beneficiaryAddress: normalizedRequester,
-                active: true,
-                useCount: 0,
-                status: "PENDING",
-                createdAt: { gte: dedupeSince },
-                expiresAt: { gt: new Date() },
-                stateSnapshot: { path: ["sponsoredPlanId"], equals: plan.id },
-            },
-            orderBy: { createdAt: "desc" },
-            select: { id: true },
-        });
-        if (existing) {
-            return NextResponse.json(sponsoredResponse(existing, true), { status: 200 });
-        }
-
         const requesterAlias = await prisma.addressAlias.findUnique({
             where: { address: normalizedRequester },
             select: { alias: true, isAnonymous: true },
@@ -174,6 +142,39 @@ export async function POST(request: Request) {
             if (friendRole !== "USER") {
                 return NextResponse.json({ error: "Friend username must belong to a SubScript user" }, { status: 400 });
             }
+        }
+
+        const pendingCount = await prisma.paymentLink.count({
+            where: {
+                beneficiaryAddress: normalizedRequester,
+                active: true,
+                useCount: 0,
+                status: "PENDING",
+                stateSnapshot: { path: ["isSponsored"], equals: true },
+                OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            },
+        });
+        if (pendingCount >= MAX_PENDING_SPONSORED_REQUESTS) {
+            return NextResponse.json({ error: "Too many active pending sponsored checkout links" }, { status: 429 });
+        }
+
+        const dedupeSince = new Date(Date.now() - DEDUPE_WINDOW_MS);
+        const existing = await prisma.paymentLink.findFirst({
+            where: {
+                beneficiaryAddress: normalizedRequester,
+                active: true,
+                useCount: 0,
+                status: "PENDING",
+                createdAt: { gte: dedupeSince },
+                expiresAt: { gt: new Date() },
+                receiverAddress,
+                stateSnapshot: { path: ["sponsoredPlanId"], equals: plan.id },
+            },
+            orderBy: { createdAt: "desc" },
+            select: { id: true },
+        });
+        if (existing) {
+            return NextResponse.json(sponsoredResponse(existing, true), { status: 200 });
         }
 
         const sourceCheckout = plan.sourceCheckoutId
