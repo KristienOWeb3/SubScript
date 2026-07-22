@@ -15,6 +15,7 @@ import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
 import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
+import SendWalletModal from "@/components/SendWalletModal";
 import ConfirmModal from "@/components/ConfirmModal";
 import DurationPicker from "@/components/DurationPicker";
 import SharePlanModal from "@/components/SharePlanModal";
@@ -36,7 +37,7 @@ import {
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
     Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
     Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, User, Share2,
-    ShieldCheck, Save, Home, SquaresFour, Broadcast, MessageSquare, HelpCircle
+    ShieldCheck, Save, Home, SquaresFour, Broadcast, MessageSquare, HelpCircle, Send
 } from "@/components/icons";
 import { QRCode } from "react-qrcode-logo";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
@@ -501,6 +502,8 @@ export default function DashboardPage() {
     const [isPremium, setIsPremium] = useState(false);
     const [promptFlowMode, setPromptFlowMode] = useState<"standard" | "private">("standard");
     const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
+    const [isSendWalletOpen, setIsSendWalletOpen] = useState(false);
+    const [isSendingWallet, setIsSendingWallet] = useState(false);
 
     /* Currency detection and real-time exchange rate states */
     const [detectedCurrency, setDetectedCurrency] = useState<{ code: string; symbol: string }>({ code: "USD", symbol: "$" });
@@ -4299,9 +4302,23 @@ Please complete the following implementation tasks:
                                     <p className="text-3xl font-extrabold text-white mb-1 tracking-tight">
                                         {balanceVisible ? `$${walletBalance.toFixed(2)}` : '•••••'}
                                     </p>
-                                    <p className="text-[10px] text-white/30 flex items-center gap-1">
-                                        <Wallet className="w-3 h-3 text-[#00d2b4]" /> USDC in connected wallet
-                                    </p>
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-[10px] text-white/30 flex items-center gap-1">
+                                            <Wallet className="w-3 h-3 text-[#00d2b4]" /> USDC in connected wallet
+                                        </p>
+                                        <button
+                                            onClick={() => setIsSendWalletOpen(true)}
+                                            disabled={walletBalance <= 0 || isSendingWallet}
+                                            className={`text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border transition-all flex items-center gap-1 ${
+                                                walletBalance > 0 
+                                                    ? "border-[#00d2b4]/30 text-[#00d2b4] hover:bg-[#00d2b4]/10 cursor-pointer" 
+                                                    : "border-white/5 text-white/20 cursor-not-allowed"
+                                            }`}
+                                        >
+                                            <Send className="w-2.5 h-2.5" />
+                                            Send Out
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {/* Claimable Settlement */}
@@ -6207,6 +6224,28 @@ Please complete the following implementation tasks:
                 }}
                 isWithdrawing={isWithdrawing}
                 isPremium={isPremium}
+            />
+            <SendWalletModal
+                isOpen={isSendWalletOpen}
+                onClose={() => setIsSendWalletOpen(false)}
+                walletBalance={walletBalance}
+                connectedAddress={address || ""}
+                isSending={isSendingWallet}
+                onConfirmSend={async (recipientAddress, amountUsdc) => {
+                    setIsSendingWallet(true);
+                    try {
+                        const microUsdc = BigInt(Math.round(amountUsdc * 1000000));
+                        await executeContractWrite({
+                            address: USDC_ADDRESS,
+                            abi: ERC20_ABI,
+                            functionName: "transfer",
+                            args: [recipientAddress, microUsdc],
+                        });
+                        await refetchBalancesAndTier();
+                    } finally {
+                        setIsSendingWallet(false);
+                    }
+                }}
             />
             <DepositModal
                 isOpen={isDepositOpen}
