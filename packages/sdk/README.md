@@ -79,6 +79,7 @@ switch (event.type) {
 - `subscript.intents.create(params)` / `.retrieve(id)`
 - `subscript.plans.create(params)` / `.list()` / `.update({ planId, active?, description?, detailsUrl? })`
 - `subscript.subscriptions.create(params)` / `.retrieve(id)` / `.list({ subscriber })` / `.cancel(id)`
+- `subscript.commits.create({ amountUsdc, successUrl?, cancelUrl? })`
 - `subscript.usage.report({ userAddress, amountUsdcMicros })`
 - `subscript.webhooks.verify(rawBody, sigHeader, secret)` / `.constructEvent(...)`
 - Helpers: `usdc(decimal)` → micro-USDC string, `fromMicros(micros)` → decimal string

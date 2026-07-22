@@ -22,14 +22,7 @@ function checkoutRequestLogic(billingMode: "one_time" | "subscription"): string 
   if (!Number.isSafeInteger(intervalSeconds) || intervalSeconds <= 0) {
     return { status: 400, body: { error: "intervalSeconds must be a positive integer for subscriptions" } };
   }
-  if (merchantCustomerId && !subscriber) {
-    return {
-      status: 400,
-      body: {
-        error: "subscriber is required when merchantCustomerId/externalReference is supplied for a subscription"
-      }
-    };
-  }
+
 `
     : "";
   const endpoint = billingMode === "subscription" ? "/api/v1/subscriptions" : "/api/intent";

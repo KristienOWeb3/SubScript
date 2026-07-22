@@ -419,7 +419,6 @@ export default function SubscribeClient({
                             {promo ? <> (at <span className="text-white/70 font-bold">{formatAmount(plan.amountUsdc)} USDC</span> once the introductory period ends)</> : null}. You can cancel
                             anytime from your SubScript dashboard.
                         </p>
-
                         {Number(plan.minCommitmentSeconds || 0) > 0 && (
                             <p className="rounded-xl border border-[#d4a853]/20 bg-[#d4a853]/5 px-4 py-3 text-[10px] leading-relaxed text-[#d4a853]">
                                 This plan has a minimum commitment of{" "}
@@ -432,26 +431,40 @@ export default function SubscribeClient({
                         {result ? (
                             <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-2xl p-5 text-center space-y-4 flex flex-col items-center">
                                 <CheckCircle className="w-8 h-8 text-emerald-400" />
-                                <p className="text-xs font-semibold text-white/80 leading-relaxed">
-                                    You&apos;re subscribed to {result.planName || plan.name}!{" "}
-                                    {promo && isFreeTrial
-                                        ? "Your free period has started — nothing was charged today."
-                                        : promo
-                                            ? `Your introductory payment of ${formatAmount(promo.introductoryAmountUsdc)} USDC has been taken.`
-                                            : "Your first payment has been taken."}
+                                <div className="space-y-1">
+                                    <p className="text-sm font-bold text-white">Subscribed to {result.planName || plan.name}!</p>
+                                    <p className="text-xs text-white/70 leading-relaxed">
+                                        {promo && isFreeTrial
+                                            ? "Your free period has started — nothing was charged today."
+                                            : promo
+                                                ? `Your introductory payment of ${formatAmount(promo.introductoryAmountUsdc)} USDC has been taken.`
+                                                : "Your payment was processed successfully."}
+                                    </p>
+                                </div>
+                                <p className="text-[10px] text-white/50 leading-relaxed bg-white/[0.02] border border-white/5 rounded-xl p-3">
+                                    Manage, upgrade, or pause your subscription anytime from your <span className="font-bold text-white">SubScript User Dashboard</span> (Merchant DM).
                                 </p>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const successUrl = plan.successUrl
-                                            ? buildMerchantSuccessUrl(plan.successUrl, plan.id, result)
-                                            : null;
-                                        successUrl ? window.location.assign(successUrl) : router.push("/user?tab=inbox");
-                                    }}
-                                    className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
-                                >
-                                    {plan.successUrl ? `Return to ${getHostname(plan.successUrl)}` : "Go to my dashboard"} <ArrowRight className="w-4 h-4" />
-                                </button>
+                                <div className="w-full space-y-2 pt-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => router.push(`/user?tab=inbox&peer=${encodeURIComponent(plan.merchantAddress)}`)}
+                                        className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(0,210,180,0.2)]"
+                                    >
+                                        Go to SubScript User Dashboard <ArrowRight className="w-4 h-4" />
+                                    </button>
+                                    {plan.successUrl && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const successUrl = buildMerchantSuccessUrl(plan.successUrl!, plan.id, result);
+                                                if (successUrl) window.location.assign(successUrl);
+                                            }}
+                                            className="w-full py-2.5 text-[10px] font-bold text-white/40 hover:text-white/80 transition"
+                                        >
+                                            Return to {getHostname(plan.successUrl)}
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         ) : !sessionLoaded ? (
                             <div className="flex items-center justify-center py-4">

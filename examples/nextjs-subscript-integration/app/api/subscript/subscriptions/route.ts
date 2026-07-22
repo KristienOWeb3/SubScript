@@ -9,13 +9,6 @@ import {
 export async function POST(request: Request) {
   try {
     const user = requireApplicationUser(request, { mutation: true });
-    if (!user.walletAddress) {
-      throw new ApplicationRouteError(
-        400,
-        "application_wallet_required",
-        "Link a wallet to your application account before subscribing",
-      );
-    }
     const configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL;
     if (!configuredAppUrl) {
       throw new ApplicationRouteError(
@@ -35,22 +28,28 @@ export async function POST(request: Request) {
       );
     }
 
-    // User id and subscriber wallet come from the server-verified application session.
-    // The browser cannot subscribe another account or alter the recurring financial terms.
+    // User id comes from the server-verified application session.
+    // If a wallet address is linked to the session, pass subscriber; if not, SubScript's hosted
+    // checkout page automatically binds the user's server-signed embedded wallet during checkout.
+    const bodyPayload: Record<string, unknown> = {
+      title: "Kris Script Pro",
+      amountUsdcMicros: "2000000",
+      interval: "weekly",
+      merchantCustomerId: user.id,
+      publishToDm: true,
+      idempotencyKey: `kris-script-pro:${user.id}`,
+      successUrl: new URL("/billing/subscription-success", appUrl).toString(),
+      cancelUrl: new URL("/billing/canceled", appUrl).toString(),
+    };
+
+    if (user.walletAddress) {
+      bodyPayload.subscriber = user.walletAddress;
+    }
+
     const result = await subscriptRequest("/api/v1/subscriptions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: "Kris Script Pro",
-        amountUsdcMicros: "2000000",
-        interval: "weekly",
-        subscriber: user.walletAddress,
-        merchantCustomerId: user.id,
-        publishToDm: true,
-        idempotencyKey: `kris-script-pro:${user.id}`,
-        successUrl: new URL("/billing/subscription-success", appUrl).toString(),
-        cancelUrl: new URL("/billing/canceled", appUrl).toString(),
-      }),
+      body: JSON.stringify(bodyPayload),
     });
     if (!result.ok) {
       return subscriptRejectedResponse(result, "SubScript subscription creation failed");

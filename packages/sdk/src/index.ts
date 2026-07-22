@@ -219,6 +219,24 @@ export interface VaultStatus {
     onboarding?: { dashboardUrl: string; action: string } | null;
 }
 
+export interface CreateCommitParams {
+    amountUsdc?: string | number;
+    externalReference?: string;
+    successUrl?: string;
+    cancelUrl?: string;
+}
+
+export interface CommitIntent {
+    success: boolean;
+    commitIntentId: string;
+    merchantAddress: string;
+    checkoutUrl: string;
+    amountUsdc: string;
+    successUrl?: string | null;
+    cancelUrl?: string | null;
+    externalReference?: string | null;
+}
+
 export interface WebhookEvent {
     id: string;
     type: string;
@@ -329,6 +347,12 @@ export class SubScript {
             this.request<Record<string, unknown>>("POST", "/api/user/vault/report-usage", stringifyMicros(params)),
         status: (userAddress: string): Promise<VaultStatus> =>
             this.request<VaultStatus>("GET", `/api/user/vault/status?userAddress=${encodeURIComponent(userAddress)}`),
+    };
+
+    /** Pay-As-You-Go Vault Commit hosted checkouts. */
+    readonly commits = {
+        create: (params: CreateCommitParams): Promise<CommitIntent> =>
+            this.request<CommitIntent>("POST", "/api/v1/commits", params),
     };
 
     /** Webhook signature verification (no network calls). */
