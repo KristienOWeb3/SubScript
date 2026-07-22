@@ -222,7 +222,7 @@ export async function POST(request: Request) {
     try {
         const auth = await authenticateMerchant(request);
         if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-        const premiumCheck = await requireEnterpriseAndPremium(auth.merchantAddress);
+        const premiumCheck = await requireEnterpriseAndPremium(auth.merchantAddress, auth.mode);
         if (!premiumCheck.ok) return NextResponse.json({ error: premiumCheck.error }, { status: premiumCheck.status });
 
         const merchantAddress = auth.merchantAddress;
