@@ -99,27 +99,31 @@ const spec = {
             },
             MerchantEvent: {
                 type: "object",
+                description: "Canonical ledger event from the merchant_events table.",
+                required: ["id", "event", "type", "environment", "resource", "correlation_id", "created_at", "effective_at", "payload"],
                 properties: {
-                    id: { type: "string" },
-                    event: { type: "string" },
-                    type: { type: "string", description: "Canonical event type (e.g. payment.succeeded)." },
-                    environment: { type: "string", enum: ["TEST", "LIVE"], description: "Environment scope of the event." },
+                    id: { type: "string", description: "Event id (evt_…)." },
+                    event: { type: "string", description: "Human-readable label (`eventId: eventType`)." },
+                    type: { type: "string", description: "Canonical event type, e.g. `payment.succeeded`." },
+                    environment: { type: "string", enum: ["TEST", "LIVE"] },
                     resource: {
                         type: "object",
+                        required: ["type", "id", "version"],
                         properties: {
                             type: { type: "string" },
                             id: { type: "string" },
                             version: { type: "integer" },
                         },
                     },
-                    correlation_id: { type: ["string", "null"] },
+                    correlation_id: { type: "string" },
                     created_at: { type: "string", format: "date-time" },
                     effective_at: { type: "string", format: "date-time" },
-                    payload: { type: "object", additionalProperties: true },
+                    payload: {},
                 },
             },
             WebhookDeliveryAttempt: {
                 type: "object",
+                description: "A single webhook delivery attempt to a merchant endpoint.",
                 properties: {
                     id: { type: "string", format: "uuid" },
                     webhookDeliveryId: { type: "string", format: "uuid" },
@@ -133,6 +137,7 @@ const spec = {
             },
             WebhookEvent: {
                 type: "object",
+                description: "Legacy composite event schema for backwards compatibility.",
                 properties: {
                     id: { type: "string" },
                     event: { type: "string" },
@@ -147,8 +152,6 @@ const spec = {
                         },
                     },
                     correlation_id: { type: ["string", "null"] },
-                    status: { type: "integer", description: "Exact HTTP response status." },
-                    time: { type: "string", description: "Delivery attempt time." },
                     created_at: { type: "string", format: "date-time" },
                     effective_at: { type: "string", format: "date-time" },
                     endpointUrl: { type: "string", format: "uri" },
@@ -865,8 +868,15 @@ const spec = {
             get: {
                 summary: "List merchant events from the event-sourced ledger",
                 description:
-                    "Reads from the canonical merchant_events ledger. Supports cursor pagination (?cursor=), event-type filtering (?type=), and environment filtering (?environment=TEST|LIVE). Each event includes its resource type, correlation ID, and timestamps. Default limit is 50, max 100.",
+                    "Returns paginated events from the canonical merchant_events ledger for the signed-in merchant. " +
+                    "Supports cursor pagination (`cursor`, `limit`) and filtering by `type` and `environment`.",
                 security: [{ dashboardSession: [] }],
+                parameters: [
+                    { name: "cursor", in: "query", required: false, schema: { type: "string" }, description: "Opaque cursor for pagination." },
+                    { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 50 } },
+                    { name: "type", in: "query", required: false, schema: { type: "string" }, description: "Filter by event type, e.g. `payment.succeeded`." },
+                    { name: "environment", in: "query", required: false, schema: { type: "string", enum: ["TEST", "LIVE"] } },
+                ],
                 responses: {
                     "200": {
                         description: "OK",
@@ -874,11 +884,14 @@ const spec = {
                             "application/json": {
                                 schema: {
                                     type: "object",
+                                    required: ["events", "has_more", "next_cursor"],
                                     properties: {
                                         events: {
                                             type: "array",
                                             items: { $ref: "#/components/schemas/MerchantEvent" },
                                         },
+                                        has_more: { type: "boolean" },
+                                        next_cursor: { type: ["string", "null"] },
                                     },
                                 },
                             },
