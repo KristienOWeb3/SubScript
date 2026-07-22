@@ -44,7 +44,7 @@ export function writeMockDb(data: MockDbSchema) {
     }
 }
 
-// Check if an error is a database connectivity/paused error
+// Check if an error is a database connectivity/paused/unconfigured error
 export function isConnectionError(err: any): boolean {
     const msg = String(err?.message || err || "").toLowerCase();
     const code = String(err?.code || "").toLowerCase();
@@ -61,7 +61,9 @@ export function isConnectionError(err: any): boolean {
         msg.includes("failed to connect") ||
         msg.includes("pool timeout") ||
         msg.includes("db.jkrlsjpsytzffwjpixue.supabase.co") ||
-        msg.includes("supabase client not initialized")
+        msg.includes("supabase client not initialized") ||
+        msg.includes("database_url") ||
+        msg.includes("database url")
     );
 }
 
