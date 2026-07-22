@@ -97,6 +97,40 @@ const spec = {
                     },
                 },
             },
+            MerchantEvent: {
+                type: "object",
+                properties: {
+                    id: { type: "string" },
+                    event: { type: "string" },
+                    type: { type: "string", description: "Canonical event type (e.g. payment.succeeded)." },
+                    environment: { type: "string", enum: ["TEST", "LIVE"], description: "Environment scope of the event." },
+                    resource: {
+                        type: "object",
+                        properties: {
+                            type: { type: "string" },
+                            id: { type: "string" },
+                            version: { type: "integer" },
+                        },
+                    },
+                    correlation_id: { type: ["string", "null"] },
+                    created_at: { type: "string", format: "date-time" },
+                    effective_at: { type: "string", format: "date-time" },
+                    payload: { type: "object", additionalProperties: true },
+                },
+            },
+            WebhookDeliveryAttempt: {
+                type: "object",
+                properties: {
+                    id: { type: "string", format: "uuid" },
+                    webhookDeliveryId: { type: "string", format: "uuid" },
+                    attemptNumber: { type: "integer" },
+                    httpStatus: { type: ["integer", "null"] },
+                    responseBody: { type: ["string", "null"] },
+                    errorMessage: { type: ["string", "null"] },
+                    durationMs: { type: ["integer", "null"] },
+                    createdAt: { type: "string", format: "date-time" },
+                },
+            },
             WebhookEvent: {
                 type: "object",
                 properties: {
@@ -843,7 +877,7 @@ const spec = {
                                     properties: {
                                         events: {
                                             type: "array",
-                                            items: { $ref: "#/components/schemas/WebhookEvent" },
+                                            items: { $ref: "#/components/schemas/MerchantEvent" },
                                         },
                                     },
                                 },

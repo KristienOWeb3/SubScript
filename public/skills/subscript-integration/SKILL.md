@@ -52,8 +52,51 @@ for a one-time pass.
 ## Webhook verification (never skip)
 
 Header: `x-subscript-signature: t=<unix>,v1=<hex>` where `v1 = HMAC_SHA256(secret, `${t}.${rawBody}`)`.
-Verify the HMAC over the RAW body, enforce a timestamp tolerance (±5 min), and enforce
-idempotency on the event `id`. Canonical event name is `type` (`payment.succeeded`,
+
+Must follow all 4 verification steps:
+1. **Read raw body**: Use the unparsed HTTP request body string (`rawBody`).
+2. **Check ±5 minutes**: Reject stale timestamps (`|now - t| > 300`s) BEFORE computing the HMAC.
+3. **Verify HMAC**: Recompute `HMAC_SHA256(secret, `${t}.${rawBody}`)` and compare using `crypto.timingSafeEqual`.
+4. **Claim event.id**: Use a unique insert/store on `event.id` to reject duplicate or replayed deliveries under concurrency.
+
+```javascript
+const crypto = require('crypto');
+
+function verifyAndProcessWebhook(req, secret, processedEventIdsStore) {
+  const rawBody = req.rawBody; // 1. Read raw body
+  const sigHeader = req.headers['x-subscript-signature'] || '';
+  const match = sigHeader.match(/^t=(\d+),v1=([a-f0-9]+)$/);
+  if (!match) throw new Error('Invalid signature header format');
+
+  const timestamp = parseInt(match[1], 10);
+  const digest = match[2];
+  const now = Math.floor(Date.now() / 1000);
+
+  // 2. Check ±5 minutes freshness window BEFORE computing HMAC
+  if (isNaN(timestamp) || Math.abs(now - timestamp) > 300) {
+    throw new Error('Expired signature: timestamp outside allowed freshness window (±5 min)');
+  }
+
+  // 3. Verify HMAC signature
+  const expected = crypto.createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex');
+  const received = Buffer.from(digest, 'hex');
+  const expectedBuf = Buffer.from(expected, 'hex');
+  if (received.length !== expectedBuf.length || !crypto.timingSafeEqual(received, expectedBuf)) {
+    throw new Error('Invalid signature');
+  }
+
+  // 4. Claim event.id to enforce idempotency and reject replays
+  const event = JSON.parse(rawBody);
+  if (event.id && processedEventIdsStore.has(event.id)) {
+    return { duplicate: true, event };
+  }
+  if (event.id) processedEventIdsStore.add(event.id);
+
+  return { duplicate: false, event };
+}
+```
+
+Canonical event name is `type` (`payment.succeeded`,
 `subscription.created|renewed|payment_failed|canceled`); `event` is a legacy alias. Fields are
 sent in both snake_case (canonical) and camelCase. `subscription.renewed` may carry
 `beneficiary_address` (sponsored subscriptions — grant entitlements to the beneficiary, bill the

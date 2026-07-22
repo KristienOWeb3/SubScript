@@ -333,33 +333,59 @@ SubScript dispatches signed HTTP POST requests to your registered webhook URL wh
 Each webhook request contains a header:
 `x-subscript-signature: t=TIMESTAMP,v1=HMAC_SHA256`
 
-To verify the signature:
-1. Split the header by `,`.
-2. Extract the timestamp `t` and the digest `v1`.
-3. Concatenate the timestamp and raw request body using a dot: `${timestamp}.${rawBody}`.
-4. Compute the HMAC SHA256 signature using your `SUBSCRIPT_WEBHOOK_SECRET`.
-5. Compare the recomputed signature with `v1` using a timing-safe comparison function.
+To verify and process a webhook:
+1. **Read raw body**: Use the unparsed HTTP request body string (`req.rawBody`). Parsing or re-serializing JSON changes the signed bytes.
+2. **Check ±5 minutes**: Extract the timestamp `t` and reject requests if `|now - t| > 300` seconds BEFORE computing the HMAC.
+3. **Verify HMAC**: Extract `v1`, compute `HMAC_SHA256(secret, "${timestamp}.${rawBody}")`, and compare using `crypto.timingSafeEqual`.
+4. **Claim event.id**: Extract `event.id` from the payload and insert it into a unique store/database table to reject duplicate or replayed deliveries under concurrency.
 
 #### Reference Node.js Verification:
 ```javascript
 const crypto = require('crypto');
 
-function verifyWebhook(req, secret) {
+// Example processed event store (use a database table with a UNIQUE constraint on event.id in production)
+const processedEvents = new Set();
+
+function verifyAndProcessWebhook(req, secret) {
+  // Step 1: Read raw body (req.rawBody must be the unparsed HTTP body string)
+  const rawBody = req.rawBody;
   const signature = req.headers['x-subscript-signature'];
-  if (!signature) throw new Error('Missing signature');
+  if (!signature || !rawBody) throw new Error('Missing signature header or raw body');
 
   const parts = signature.split(',');
-  const timestamp = parts[0].replace('t=', '');
-  const digest = parts[1].replace('v1=', '');
+  const timestampStr = parts[0]?.replace('t=', '');
+  const digest = parts[1]?.replace('v1=', '');
+  if (!timestampStr || !digest) throw new Error('Malformed signature header');
 
+  // Step 2: Check ±5 minutes freshness window BEFORE computing HMAC
+  const timestamp = parseInt(timestampStr, 10);
+  const now = Math.floor(Date.now() / 1000);
+  if (isNaN(timestamp) || Math.abs(now - timestamp) > 300) {
+    throw new Error('Expired signature: timestamp outside allowed freshness window (±5 minutes)');
+  }
+
+  // Step 3: Verify HMAC signature
   const expected = crypto
     .createHmac('sha256', secret)
-    .update(`${timestamp}.${req.rawBody}`)
+    .update(`${timestampStr}.${rawBody}`)
     .digest('hex');
 
   const received = Buffer.from(digest, 'hex');
   const expectedBuffer = Buffer.from(expected, 'hex');
-  return received.length === expectedBuffer.length && crypto.timingSafeEqual(received, expectedBuffer);
+  if (received.length !== expectedBuffer.length || !crypto.timingSafeEqual(received, expectedBuffer)) {
+    throw new Error('Invalid signature');
+  }
+
+  // Step 4: Claim event.id for idempotency & replay protection
+  const event = JSON.parse(rawBody);
+  if (event.id) {
+    if (processedEvents.has(event.id)) {
+      return { duplicate: true, event };
+    }
+    processedEvents.add(event.id);
+  }
+
+  return { duplicate: false, event };
 }
 ```
 
