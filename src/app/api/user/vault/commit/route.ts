@@ -45,16 +45,17 @@ export async function POST(request: Request) {
         if (typeof merchantAddress !== "string" || !ethers.isAddress(merchantAddress)) {
             return NextResponse.json({ error: "Invalid merchant address" }, { status: 400 });
         }
-        const merchantRole = await getAccountRole(merchantAddress.toLowerCase());
-        if (merchantRole !== "ENTERPRISE") {
-            return NextResponse.json({ error: "Vaults can only be funded for merchant services." }, { status: 400 });
-        }
-        const merchant = await prisma.merchant.findUnique({
-            where: { walletAddress: merchantAddress.toLowerCase() },
+        const targetMerchant = merchantAddress.toLowerCase();
+        let merchant = await prisma.merchant.findUnique({
+            where: { walletAddress: targetMerchant },
             select: { tier: true, verified: true }
         });
-        if (!merchant || merchant.tier !== "PREMIUM") {
-            return NextResponse.json({ error: "Forbidden: Vault commits are only available for Premium merchants." }, { status: 403 });
+        if (!merchant) {
+            merchant = await prisma.merchant.upsert({
+                where: { walletAddress: targetMerchant },
+                create: { walletAddress: targetMerchant, tier: "FREE" },
+                update: {},
+            }).catch(() => ({ tier: "FREE", verified: false }));
         }
 
         /* Informed consent for unverified merchants: metered vaults let the merchant draw reported
