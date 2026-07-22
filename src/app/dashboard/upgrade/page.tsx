@@ -203,9 +203,13 @@ export default function UpgradePage() {
                 throw new Error(`Execution intent not allowlisted for embedded wallets: ${functionName}`);
             }
 
+            const reqId = crypto.randomUUID();
             const res = await fetch("/api/execute-tx", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-request-id": reqId,
+                },
                 body: JSON.stringify({ action, args: serializedArgs }),
             });
             const data = await res.json();
