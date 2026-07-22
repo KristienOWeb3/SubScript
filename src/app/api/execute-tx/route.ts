@@ -154,12 +154,7 @@ export async function POST(request: Request) {
         const { action, args } = body;
 
         const FINANCIAL_ACTIONS = new Set(["transferUsdc", "createPremiumSubscription", "withdraw"]);
-        if (FINANCIAL_ACTIONS.has(action) && !request.headers.get("x-request-id")) {
-            return NextResponse.json({
-                error: "x-request-id header is required for financial operations to ensure idempotency.",
-                code: "MISSING_REQUEST_ID"
-            }, { status: 400 });
-        }
+        const effectiveRequestId = request.headers.get("x-request-id") || requestId;
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
