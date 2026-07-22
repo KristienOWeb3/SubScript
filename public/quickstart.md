@@ -163,15 +163,26 @@ changes are upgrade-only.
 Do not create a “Monthly”, “Weekly”, “Membership”, or “Subscription” product with
 `subscript.intents.create()`. A payment intent is always one-time, regardless of its title.
 
-## 8. Usage billing status (optional)
+## 8. Usage billing & hosted PAYG checkout (optional)
 
-For metered products, check the customer's vault before granting a session, then report usage:
+For metered products, check the customer's vault before granting access. If no vault exists or funds are low, redirect the user to a hosted PAYG Vault Commit checkout:
 
 ```ts
-const status = await subscript.usage.status("0xCustomerWallet...");
-if (!status.active) {
-  // Send the customer to status.onboarding?.dashboardUrl to commit or re-commit.
-}
+const commit = await subscript.commits.create({
+  amountUsdc: "2.00",
+  successUrl: "https://your.app/payg/success",
+  cancelUrl: "https://your.app/pricing",
+});
+// Redirect customer to commit.checkoutUrl to complete vault commitment without manual wallet address pasting
+```
+
+Report metered usage as services are consumed:
+
+```ts
+await subscript.usage.report({
+  userAddress: "0xCustomerWallet...",
+  amountUsdcMicros: usdc(0.50),
+});
 ```
 
 ## 9. Go live

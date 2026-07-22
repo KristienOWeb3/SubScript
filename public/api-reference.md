@@ -89,7 +89,8 @@ one-time intent into a subscription.
 | Public recurring plan | `POST /api/v1/plans` | Reusable tier shown in merchant plans, existing user DMs, and the public subscribe flow |
 | User-specific subscription checkout | `POST /api/v1/subscriptions` with `subscriber` | Recurring checkout and targeted offer for that user |
 | DM-visible subscription checkout | `POST /api/v1/subscriptions` with `publishToDm: true` | Recurring checkout whose product appears in the dashboard and DM plan flow |
-| Metered billing | `POST /api/user/vault/report-usage` | Accrues a usage charge against the user's merchant vault; no fixed recurring plan |
+| Hosted PAYG Vault Commit | `POST /api/v1/commits` | Hosted Pay-As-You-Go Vault Commit checkout URL (`/commit/[merchantAddress]`); no address pasting required |
+| Metered usage reporting | `POST /api/user/vault/report-usage` | Accrues a usage charge against the user's merchant vault; no fixed recurring plan |
 
 **Never use `/api/intent` to represent a recurring product.** A title such as
 `"Kris's Script Pro — 1 Week"` is still a one-time payment unless it is created through the
@@ -179,6 +180,13 @@ subscriptions; no params lists your subscription checkout sessions.
 Active `sub_<number>` authorizations are customer-controlled; the subscriber cancels them from
 their DM or user dashboard, where cancellation is normally scheduled for the end of the paid
 period.
+
+### `POST /api/v1/commits` — create a hosted Pay-As-You-Go Vault Commit checkout intent
+
+Merchant API key required. Generates a hosted checkout URL (`/commit/[merchantAddress]`) for setting up or topping up a metered PAYG vault commitment. The user completes the commitment on SubScript's hosted page using their server-signed embedded wallet, eliminating the risk of unauthenticated address pasting.
+
+Body: `amountUsdc?`, `externalReference?`, `successUrl?`, `cancelUrl?`.
+Returns: `checkoutUrl`, `commitIntentId`, `merchantAddress`, `amountUsdc`.
 
 ### `GET /api/user/vault/status?userAddress=<0x...>` — check metered vault status
 

@@ -87,13 +87,28 @@ export async function POST(request: Request) {
         } else {
             console.warn("[Premium Checkout] RPC get_or_create_premium_payment_session failed, executing fallback:", sessionError?.message);
 
-            /* 1. Ensure merchant row exists */
-            await supabase
-                .from("merchants")
-                .upsert({ wallet_address: userWallet, tier: "FREE", updated_at: new Date().toISOString() }, { onConflict: "wallet_address" });
+            /* 1. Ensure merchant row exists in both Prisma and Supabase */
+            const nowIso = new Date().toISOString();
+            try {
+                const { prisma } = await import("@/lib/prisma");
+                await prisma.merchant.upsert({
+                    where: { walletAddress: userWallet },
+                    create: { walletAddress: userWallet, tier: "FREE" },
+                    update: {},
+                });
+            } catch (err: any) {
+                console.warn("[Premium Checkout] Prisma merchant upsert fallback warning:", err?.message);
+            }
+
+            try {
+                await supabase
+                    .from("merchants")
+                    .upsert({ wallet_address: userWallet, tier: "FREE", updated_at: nowIso }, { onConflict: "wallet_address" });
+            } catch {
+                /* Ignore non-critical Supabase upsert error */
+            }
 
             /* 2. Expire old pending/processing sessions */
-            const nowIso = new Date().toISOString();
             await supabase
                 .from("payment_sessions")
                 .update({ status: "FAILED", last_error: "Premium checkout session expired.", failure_code: "SESSION_EXPIRED" })
@@ -113,11 +128,13 @@ export async function POST(request: Request) {
             if (existingSession) {
                 session = existingSession as { session_id: string; expires_at: string; status: string };
             } else {
-                /* 4. Insert fresh session */
+                /* 4. Insert fresh session with explicit UUID session_id */
+                const freshSessionId = crypto.randomUUID();
                 const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
                 const { data: newSession, error: insertError } = await supabase
                     .from("payment_sessions")
                     .insert({
+                        session_id: freshSessionId,
                         merchant_address: userWallet,
                         amount_expected: PREMIUM_PRICE,
                         chain_id: ProtocolConfig.CHAIN_ID,
@@ -128,13 +145,34 @@ export async function POST(request: Request) {
                     .single();
 
                 if (insertError || !newSession) {
-                    console.error("[Premium Checkout] Direct payment session creation failed:", insertError);
-                    return NextResponse.json({
-                        error: "Database Sync Error: Failed to register payment session",
-                        details: process.env.NODE_ENV === "production" ? undefined : insertError?.message,
-                    }, { status: 500 });
+                    console.warn("[Premium Checkout] Supabase payment session insert failed, trying Prisma fallback:", insertError);
+                    try {
+                        const { prisma } = await import("@/lib/prisma");
+                        const createdPrismaSession = await prisma.paymentSession.create({
+                            data: {
+                                sessionId: freshSessionId,
+                                merchantAddress: userWallet,
+                                amountExpected: BigInt(PREMIUM_PRICE),
+                                chainId: ProtocolConfig.CHAIN_ID,
+                                expiresAt: new Date(expiresAt),
+                                status: "PENDING",
+                            },
+                        });
+                        session = {
+                            session_id: createdPrismaSession.sessionId,
+                            expires_at: createdPrismaSession.expiresAt ? createdPrismaSession.expiresAt.toISOString() : expiresAt,
+                            status: createdPrismaSession.status,
+                        };
+                    } catch (prismaErr: any) {
+                        console.error("[Premium Checkout] Prisma fallback also failed:", prismaErr);
+                        return NextResponse.json({
+                            error: "Database Sync Error: Failed to register payment session",
+                            details: process.env.NODE_ENV === "production" ? undefined : (insertError?.message || prismaErr?.message),
+                        }, { status: 500 });
+                    }
+                } else {
+                    session = newSession as { session_id: string; expires_at: string; status: string };
                 }
-                session = newSession as { session_id: string; expires_at: string; status: string };
             }
         }
 
