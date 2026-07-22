@@ -6236,7 +6236,7 @@ Please complete the following implementation tasks:
                     try {
                         const microUsdc = BigInt(Math.round(amountUsdc * 1000000));
                         await executeContractWrite({
-                            address: USDC_ADDRESS,
+                            address: USDC_NATIVE_GAS_ADDRESS,
                             abi: ERC20_ABI,
                             functionName: "transfer",
                             args: [recipientAddress, microUsdc],
