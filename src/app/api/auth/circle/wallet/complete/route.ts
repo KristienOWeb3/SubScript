@@ -82,45 +82,56 @@ export async function POST(request: Request) {
                 console.error("Failed to update identity last_verified_at:", updateErr);
             }
         } else {
-            // Check if there is an existing wallet with this email (silent linking is forbidden)
+            // Check if there is an existing embedded wallet with this verified email
             const existingEmailWallet = await pgMaybeOne<{ wallet_address: string }>(
                 "select wallet_address from user_embedded_wallets where email = $1 limit 1",
                 [emailVal]
             );
 
             if (existingEmailWallet) {
-                return NextResponse.json(
-                    { error: "An account with this email already exists. Silent linking is not permitted." },
-                    { status: 409 }
-                );
-            }
+                walletAddress = existingEmailWallet.wallet_address;
+                try {
+                    await withPgClient(async (client) => {
+                        await client.query(
+                            `insert into auth_identities (provider, issuer, subject, current_email, wallet_address, created_at, last_verified_at)
+                             values ('google', $1, $2, $3, $4, now(), now())
+                             on conflict (provider, issuer, subject) do update set
+                                current_email = excluded.current_email,
+                                last_verified_at = now()`,
+                            [verifiedUser.iss, verifiedUser.sub, emailVal, walletAddress.toLowerCase()]
+                        );
+                    });
+                } catch (linkErr) {
+                    console.error("Failed to link Google identity to existing wallet:", linkErr);
+                }
+            } else {
+                // Provision a brand new embedded wallet for the new user
+                const refId = crypto.createHash("sha256").update(emailVal).digest("hex");
+                const provisioned = await provisionEmbeddedWallet({ refId });
+                walletAddress = provisioned.address;
 
-            // Provision a brand new embedded wallet for the new user
-            const refId = crypto.createHash("sha256").update(emailVal).digest("hex");
-            const provisioned = await provisionEmbeddedWallet({ refId });
-            walletAddress = provisioned.address;
+                try {
+                    await withPgClient(async (client) => {
+                        await client.query("BEGIN");
 
-            try {
-                await withPgClient(async (client) => {
-                    await client.query("BEGIN");
+                        await client.query(
+                            `insert into user_embedded_wallets (email, wallet_address, encrypted_private_key, circle_wallet_id, provider, email_verified_at, updated_at)
+                             values ($1, $2, $3, $4, 'circle_google', now(), now())`,
+                            [emailVal, walletAddress.toLowerCase(), provisioned.encryptedPrivateKey, provisioned.circleWalletId]
+                        );
 
-                    await client.query(
-                        `insert into user_embedded_wallets (email, wallet_address, encrypted_private_key, circle_wallet_id, provider, email_verified_at, updated_at)
-                         values ($1, $2, $3, $4, 'circle_google', now(), now())`,
-                        [emailVal, walletAddress.toLowerCase(), provisioned.encryptedPrivateKey, provisioned.circleWalletId]
-                    );
+                        await client.query(
+                            `insert into auth_identities (provider, issuer, subject, current_email, wallet_address, created_at, last_verified_at)
+                             values ('google', $1, $2, $3, $4, now(), now())`,
+                            [verifiedUser.iss, verifiedUser.sub, emailVal, walletAddress.toLowerCase()]
+                        );
 
-                    await client.query(
-                        `insert into auth_identities (provider, issuer, subject, current_email, wallet_address, created_at, last_verified_at)
-                         values ('google', $1, $2, $3, $4, now(), now())`,
-                        [verifiedUser.iss, verifiedUser.sub, emailVal, walletAddress.toLowerCase()]
-                    );
-
-                    await client.query("COMMIT");
-                });
-            } catch (dbErr) {
-                console.error("Failed to store Google embedded wallet and identity:", dbErr);
-                return NextResponse.json({ error: "Failed to save embedded wallet and identity." }, { status: 500 });
+                        await client.query("COMMIT");
+                    });
+                } catch (dbErr) {
+                    console.error("Failed to store Google embedded wallet and identity:", dbErr);
+                    return NextResponse.json({ error: "Failed to save embedded wallet and identity." }, { status: 500 });
+                }
             }
         }
 
