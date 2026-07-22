@@ -40,6 +40,10 @@ export function apiError(args: {
 }) {
     const requestId = args.requestId ?? crypto.randomUUID();
 
+    if (args.status >= 500) {
+        console.error(`[apiError ${args.status}] requestId=${requestId} code=${args.code} message="${args.message}"`);
+    }
+
     const body: Record<string, unknown> = {
         error: args.message,
         code: args.code,
