@@ -99,6 +99,7 @@ const spec = {
             MerchantEvent: {
                 type: "object",
                 description: "Canonical ledger event from the merchant_events table.",
+                required: ["id", "event", "type", "environment", "resource", "correlation_id", "created_at", "effective_at", "payload"],
                 properties: {
                     id: { type: "string", description: "Event id (evt_…)." },
                     event: { type: "string", description: "Human-readable label (`eventId: eventType`)." },
@@ -106,16 +107,17 @@ const spec = {
                     environment: { type: "string", enum: ["TEST", "LIVE"] },
                     resource: {
                         type: "object",
+                        required: ["type", "id", "version"],
                         properties: {
                             type: { type: "string" },
                             id: { type: "string" },
-                            version: { type: ["integer", "null"] },
+                            version: { type: "integer" },
                         },
                     },
-                    correlation_id: { type: ["string", "null"] },
+                    correlation_id: { type: "string" },
                     created_at: { type: "string", format: "date-time" },
                     effective_at: { type: "string", format: "date-time" },
-                    payload: { type: "object", additionalProperties: true },
+                    payload: {},
                 },
             },
             WebhookDeliveryAttempt: {
@@ -856,6 +858,7 @@ const spec = {
                             "application/json": {
                                 schema: {
                                     type: "object",
+                                    required: ["events", "has_more", "next_cursor"],
                                     properties: {
                                         events: {
                                             type: "array",
