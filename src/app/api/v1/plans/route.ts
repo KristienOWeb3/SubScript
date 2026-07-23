@@ -125,6 +125,7 @@ export async function POST(request: Request) {
             });
         }
 
+
         const body = sanitizeInput(await request.json().catch(() => null)) || {};
 
         const name = typeof body.name === "string" ? body.name.trim().slice(0, 60) : "";
@@ -229,6 +230,7 @@ export async function PATCH(request: Request) {
                 message: "The shared public demo key cannot modify the plan catalog. Create your own test key.",
             });
         }
+
 
         const body = sanitizeInput(await request.json().catch(() => null)) || {};
         const planId = typeof body.planId === "string" ? body.planId : "";

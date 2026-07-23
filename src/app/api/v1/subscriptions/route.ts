@@ -494,14 +494,18 @@ export async function POST(request: Request) {
         const published = created.published;
         const canonicalPlanId = published?.plan.id || subMeta.planId || null;
         if (published && subscriberAddress) {
-            await createSubscriptionOfferDm({
-                merchantAddress,
-                subscriberAddress,
-                checkoutSessionId: link.id,
-                planName: link.title,
-                amountUsdc: link.amountUsdc,
-                periodSeconds: subscriptionCheckoutPeriod(subMeta),
-            });
+            try {
+                await createSubscriptionOfferDm({
+                    merchantAddress,
+                    subscriberAddress,
+                    checkoutSessionId: link.id,
+                    planName: link.title,
+                    amountUsdc: link.amountUsdc,
+                    periodSeconds: subscriptionCheckoutPeriod(subMeta),
+                });
+            } catch (dmErr) {
+                console.error("[subscriptions] DM offer creation side-effect failed:", dmErr);
+            }
         }
 
         return NextResponse.json({
