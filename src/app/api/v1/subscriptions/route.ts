@@ -526,8 +526,12 @@ export async function POST(request: Request) {
             sandbox: isSandbox,
         }, { status: 201 });
     } catch (error: any) {
-        if (error instanceof SitePlanPublicationError) {
-            return apiError({ status: error.status, code: error.code.toLowerCase(), message: error.message });
+        if (error instanceof SitePlanPublicationError || error?.name === "SitePlanPublicationError" || (error?.status && error?.code)) {
+            return apiError({
+                status: Number(error.status) || 400,
+                code: String(error.code).toLowerCase(),
+                message: error.message || "Site plan publication error",
+            });
         }
         /* Never echo error.message — a raw ORM error in a 500 is how a schema gap goes public. */
         console.error("Subscriptions POST error:", error);

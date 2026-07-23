@@ -14,6 +14,7 @@ export const MAX_ACTIVE_MERCHANT_PLANS = 20;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export class SitePlanPublicationError extends Error {
+    override name = "SitePlanPublicationError";
     constructor(
         message: string,
         readonly status: number,
@@ -35,8 +36,11 @@ export function checkoutHasPrivatePlanTerms(
     },
     meta: NonNullable<ReturnType<typeof readSubscriptionCheckoutMeta>>,
 ) {
+    /* Custom externalReference tags like "pro:catalog:123" are permitted on catalog plans;
+       only invoice-specific terms (link.externalReference && !meta.subscriber when invoice-prefixed)
+       or explicit beneficiary/email terms classify as private checkout terms. */
     return Boolean(
-        (link.externalReference && !meta.subscriber)
+        (link.externalReference && link.externalReference.startsWith("invoice:") && !meta.subscriber)
         ||
         meta.beneficiary
         || link.beneficiaryAddress
