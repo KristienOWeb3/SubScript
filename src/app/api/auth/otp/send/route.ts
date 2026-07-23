@@ -135,29 +135,42 @@ export async function POST(request: Request) {
                         ]
                     );
                 } catch (dbErr: any) {
-                    if (dbErr.message?.includes('challenge_id')) {
+                    if (dbErr.message?.includes('challenge_id') || dbErr.message?.includes('column')) {
                         await client.query(`ALTER TABLE public.otp_codes ADD COLUMN IF NOT EXISTS challenge_id UUID NOT NULL DEFAULT gen_random_uuid()`).catch(() => {});
-                        return await client.query(
-                            `insert into otp_codes (email, code, expires_at, purpose, wallet_address)
-                             values ($1, $2, $3, $4, $5)
-                             on conflict (email)
-                             do update set
-                                code = excluded.code,
-                                expires_at = excluded.expires_at,
-                                purpose = excluded.purpose,
-                                wallet_address = excluded.wallet_address,
-                                challenge_id = gen_random_uuid(),
-                                failed_attempts = 0,
-                                created_at = now()
-                             returning challenge_id`,
-                            [
-                                emailLower,
-                                codeHash,
-                                expiresAt,
-                                isEmailBindingRequest ? "BIND_WALLET_EMAIL" : "LOGIN",
-                                bindingWallet,
-                            ]
-                        );
+                        try {
+                            return await client.query(
+                                `insert into otp_codes (email, code, expires_at, purpose, wallet_address)
+                                 values ($1, $2, $3, $4, $5)
+                                 on conflict (email)
+                                 do update set
+                                    code = excluded.code,
+                                    expires_at = excluded.expires_at,
+                                    purpose = excluded.purpose,
+                                    wallet_address = excluded.wallet_address,
+                                    challenge_id = gen_random_uuid(),
+                                    failed_attempts = 0,
+                                    created_at = now()
+                                 returning challenge_id`,
+                                [
+                                    emailLower,
+                                    codeHash,
+                                    expiresAt,
+                                    isEmailBindingRequest ? "BIND_WALLET_EMAIL" : "LOGIN",
+                                    bindingWallet,
+                                ]
+                            );
+                        } catch (_retryErr) {
+                            return await client.query(
+                                `insert into otp_codes (email, code, expires_at)
+                                 values ($1, $2, $3)
+                                 on conflict (email)
+                                 do update set
+                                    code = excluded.code,
+                                    expires_at = excluded.expires_at,
+                                    created_at = now()`,
+                                [emailLower, codeHash, expiresAt]
+                            );
+                        }
                     }
                     throw dbErr;
                 }
