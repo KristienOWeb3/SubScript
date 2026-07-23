@@ -1315,10 +1315,13 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
               </div>
 
               <div className="rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/10 p-5 text-xs leading-relaxed text-white/75">
-                <p className="font-bold text-white/85">Sponsored plan fulfillment</p>
+                <p className="font-bold text-white/85">Sponsored plan fulfillment &amp; Ask a Friend DMs</p>
                 <p className="mt-2">
-                  A user can generate a shareable gift checkout from a merchant plan with{" "}
-                  <span className="font-mono">POST /api/user/requests/merchant-plan</span>. The checkout is a one-time payment for the plan&apos;s regular price and one billing duration. In{" "}
+                  A user with zero balance or insufficient funds can request plan sponsorship via an in-app DM or shareable off-platform link with{" "}
+                  <span className="font-mono">POST /api/user/requests/merchant-plan</span> (accepting <span className="font-mono">sendDirectMessage: true</span> and <span className="font-mono">targetPeer</span>). This dispatches a <span className="font-mono">SPONSORED_PLAN_REQUEST</span> card in the User A ↔ Friend B DM thread. The single-use checkout is a one-time gift payment for the plan&apos;s regular price and one billing duration.
+                </p>
+                <p className="mt-2">
+                  Upon payment, SubScript dispatches a <span className="font-mono">SPONSORED_PLAN_CONFIRMED</span> Merchant DM to User A with a <span className="font-mono">resubscribePlanId</span> payload so User A can self-fund future renewals with a &quot;Resubscribe for Yourself&quot; button. In{" "}
                   <span className="font-mono">payment.succeeded</span>, check <span className="font-mono">data.isSponsored</span>,{" "}
                   <span className="font-mono">data.beneficiary_address</span>, <span className="font-mono">data.sponsoredPlanId</span>, and{" "}
                   <span className="font-mono">data.durationSeconds</span>. Credit the beneficiary, not necessarily the payer. If that beneficiary already has active access, extend the existing access window by{" "}

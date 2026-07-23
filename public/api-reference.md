@@ -213,11 +213,13 @@ webhook, or reconcile from `GET /api/intent/:id`.
 `payer_email?`. They ride the normal link → receipt → webhook lifecycle and render on the hosted
 checkout page, so a payment link can serve as an invoice.
 
-### Sponsored subscriptions
+### Sponsored subscriptions & "Ask a Friend" DM flow
 
 Subscription creation accepts `beneficiaryAddress?` — a wallet that receives the service while
 the caller pays. Renewal webhooks then carry `beneficiary_address` so you key entitlements off
 the beneficiary, not the payer. Billing and cancellation rights stay with the payer.
+
+Users with zero balance or insufficient funds can request plan sponsorship via `POST /api/user/requests/merchant-plan` (accepting `sendDirectMessage: true` and `targetPeer: string`). This sends a `SPONSORED_PLAN_REQUEST` card directly inside the User A ↔ Friend B DM conversation, or generates a single-use shareable link. Upon gift payment by Friend B, the Merchant dispatches a `SPONSORED_PLAN_CONFIRMED` confirmation DM to User A ("@[Friend B] sponsored your [Plan Name] subscription!"). This confirmation includes a `resubscribePlanId` payload powering a "Resubscribe for Yourself" button so User A can self-fund future renewals directly from their DM.
 
 ### Test clocks (sandbox) — simulate renewals without waiting
 
