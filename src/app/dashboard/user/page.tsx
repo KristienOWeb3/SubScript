@@ -3383,16 +3383,18 @@ export default function UserDashboard() {
                                   <ArrowLeft className="h-4 w-4" />
                                 </button>
                                 
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSendFundsRecipient(activeThreadLabel || selectedDmPeer);
-                                    setSendFundsOpen(true);
-                                  }}
-                                  className="px-3.5 py-1.5 bg-[#ccff00]/10 border border-[#ccff00]/30 text-white font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] active:scale-95 shrink-0"
-                                >
-                                  Send Funds
-                                </button>
+                                {!isActiveDmMerchant && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSendFundsRecipient(activeThreadLabel || selectedDmPeer);
+                                      setSendFundsOpen(true);
+                                    }}
+                                    className="px-3.5 py-1.5 bg-[#ccff00]/10 border border-[#ccff00]/30 text-white font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] active:scale-95 shrink-0"
+                                  >
+                                    Send Funds
+                                  </button>
+                                )}
                               </div>
                             </div>
 
