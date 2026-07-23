@@ -3626,11 +3626,11 @@ export default function UserDashboard() {
                   <SectionTitle title="Send Funds" subtitle="Transfer USDC to another user or execute a batch payout." />
                   
                   {/* Mode Selector */}
-                  <div className="relative flex gap-1 rounded-xl bg-black/40 p-1 border border-white/5 shrink-0 w-fit mx-auto sm:mx-0 sm:self-auto justify-center">
+                  <div className="relative flex gap-1 rounded-xl bg-black/40 p-1 border border-white/5 shrink-0 w-full sm:w-auto justify-center">
                     <button
                       type="button"
                       onClick={() => setSendMode("single")}
-                      className={`relative px-3.5 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg z-10 transition-colors duration-200 ${
+                      className={`relative flex-1 sm:flex-initial px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg z-10 transition-colors duration-200 ${
                         sendMode === "single" ? "text-black" : "text-white/50 hover:text-white/80"
                       }`}
                     >
@@ -3646,7 +3646,7 @@ export default function UserDashboard() {
                     <button
                       type="button"
                       onClick={() => setSendMode("batch")}
-                      className={`relative px-3.5 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg z-10 transition-colors duration-200 ${
+                      className={`relative flex-1 sm:flex-initial px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg z-10 transition-colors duration-200 ${
                         sendMode === "batch" ? "text-black" : "text-white/50 hover:text-white/80"
                       }`}
                     >
@@ -7194,7 +7194,7 @@ function DepositModal({
             
             {/* Tabs for non-menu active modes */}
             {activeSubMode !== "menu" && (
-              <div className="relative mb-6 flex gap-1 rounded-2xl bg-black/40 p-1 border border-white/5">
+              <div className="relative mb-6 grid grid-cols-2 w-full gap-1 rounded-2xl bg-black/40 p-1 border border-white/5">
                 {(["direct", "cctp"] as const).map((tab) => {
                   const isActive = activeSubMode === tab;
                   return (
@@ -7206,7 +7206,7 @@ function DepositModal({
                         setActiveSubMode(tab);
                         setCctpStatus("idle");
                       }}
-                      className={`relative flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-xl z-10 transition-colors duration-200 ${
+                      className={`relative flex items-center justify-center py-2.5 px-3 text-[10px] font-black uppercase tracking-wider rounded-xl z-10 transition-colors duration-200 ${
                         isActive ? "text-black" : "text-white/50 hover:text-white/85"
                       }`}
                     >
