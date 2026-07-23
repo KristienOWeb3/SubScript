@@ -3357,7 +3357,7 @@ export default function UserDashboard() {
                             {/* Desktop Chat Pane Header */}
                             <div
                               data-testid="desktop-dm-header"
-                              className="sticky top-0 z-20 flex shrink-0 items-center justify-between border-b border-white/5 bg-[#09090c]/95 pb-4 backdrop-blur-xl"
+                              className="sticky top-0 z-20 flex shrink-0 items-center justify-between border border-white/10 bg-black/40 px-4 py-3 rounded-2xl backdrop-blur-xl shadow-xl mb-3"
                             >
                               <div className="flex items-center gap-3">
                                 <Avatar profilePic={activeThread?.peerProfilePic || null} />
@@ -3398,12 +3398,12 @@ export default function UserDashboard() {
 
                             {/* Message bubbles pane */}
                             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain will-change-transform translate-z-0 pr-1 space-y-4">
-                              <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55 mt-3">
+                              <div className="mx-auto w-fit max-w-full rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-5 py-2 text-center text-[10px] font-black uppercase tracking-[0.16em] text-[#ccff00] backdrop-blur-md shadow-md mt-2">
                                 {isActiveDmMerchant
                                   ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
                                   : "Direct peer-to-peer system messages only"}
                               </div>
-                              <div className="mx-auto w-fit rounded-full bg-white/10 px-6 py-1 text-[10px] font-bold text-white/55">
+                              <div className="mx-auto w-fit rounded-full border border-white/10 bg-white/5 backdrop-blur-md px-5 py-1 text-[10px] font-bold text-white/60">
                                 {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                               </div>
                               {selectedThreadDms.map((dm) => (
@@ -3431,7 +3431,7 @@ export default function UserDashboard() {
                             {/* Bottom Action Footer for Desktop */}
                             <div
                               data-testid="desktop-dm-action-footer"
-                              className="sticky bottom-0 z-20 shrink-0 border-t border-white/5 bg-[#09090c]/95 pt-4 backdrop-blur-xl"
+                              className="sticky bottom-0 z-20 shrink-0 rounded-2xl border border-white/10 bg-black/40 p-3 backdrop-blur-xl shadow-2xl mt-3"
                             >
                               {isActiveDmMerchant ? (
                                 <MerchantPlanManager
@@ -6289,8 +6289,8 @@ function DmBubble({
         <div 
           className={`px-5 py-4 shadow-md select-none transition-all duration-200 ${
             incoming 
-              ? `${focused ? "border-[#ccff00]/40 bg-[#ccff00]/[0.08]" : "border-white/5 bg-[#262629]/95 text-white"} rounded-[20px] rounded-bl-[4px] border` 
-              : "bg-gradient-to-br from-[#00b2ff] to-[#007aff] text-white rounded-[20px] rounded-br-[4px] border-none shadow-[0_4px_16px_rgba(0,122,255,0.2)]"
+              ? `${focused ? "border-[#ccff00]/40 bg-[#ccff00]/[0.08]" : "border-white/10 bg-black/40 backdrop-blur-xl text-white"} rounded-[22px] rounded-bl-[4px] border shadow-xl` 
+              : "bg-gradient-to-br from-[#00b2ff] to-[#007aff] text-white rounded-[22px] rounded-br-[4px] border-none shadow-[0_4px_16px_rgba(0,122,255,0.2)]"
           }`}
         >
           <p 
