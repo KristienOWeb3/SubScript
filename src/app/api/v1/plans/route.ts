@@ -116,6 +116,7 @@ export async function POST(request: Request) {
         if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
         const premiumCheck = await requireEnterpriseAndPremium(auth.merchantAddress, auth.mode);
         if (!premiumCheck.ok) return NextResponse.json({ error: premiumCheck.error }, { status: premiumCheck.status });
+        const merchantAddress = auth.merchantAddress;
         if (auth.mode === "test" && merchantAddress === DEMO_MERCHANT_ADDRESS.toLowerCase()) {
             return apiError({
                 status: 403,
