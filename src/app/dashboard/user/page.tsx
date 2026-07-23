@@ -376,6 +376,8 @@ export default function UserDashboard() {
   const [planManagerStatus, setPlanManagerStatus] = useState<string | null>(null);
   const [planManagerError, setPlanManagerError] = useState<string | null>(null);
   const [giftPlan, setGiftPlan] = useState<MerchantPlan | null>(null);
+  const [giftTab, setGiftTab] = useState<"friends" | "link">("friends");
+  const [selectedGiftFriendAddress, setSelectedGiftFriendAddress] = useState<string>("");
   const [giftFriendUsername, setGiftFriendUsername] = useState("");
   const [giftRequestUrl, setGiftRequestUrl] = useState<string | null>(null);
   const [giftRequestError, setGiftRequestError] = useState<string | null>(null);
@@ -1284,6 +1286,8 @@ export default function UserDashboard() {
 
   const openGiftPlanModal = (plan: MerchantPlan) => {
     setGiftPlan(plan);
+    setGiftTab("friends");
+    setSelectedGiftFriendAddress("");
     setGiftFriendUsername("");
     setGiftRequestUrl(null);
     setGiftRequestError(null);
@@ -1312,18 +1316,26 @@ export default function UserDashboard() {
           amountUsdcMicros: giftPlan.amountUsdc,
           title: `Sponsor ${giftPlan.name}`,
           description: giftPlan.description || `Gift checkout for ${giftPlan.name}`,
+          targetAddress: selectedGiftFriendAddress || undefined,
           friendUsername: giftFriendUsername.trim() || undefined,
+          sendDirectMessage: giftTab === "friends",
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) throw new Error(data.error || "Could not create gift checkout.");
-      const absoluteUrl = typeof data.checkoutUrl === "string" && /^https?:\/\//i.test(data.checkoutUrl)
-        ? data.checkoutUrl
-        : `${window.location.origin}${data.checkoutUrl || `/pay/${data.paymentLinkId}`}`;
-      setGiftRequestUrl(absoluteUrl);
-      await copyGiftRequestUrl(absoluteUrl).catch(() => {});
+      if (!res.ok || !data.success) throw new Error(data.error || "Could not create gift request.");
+
+      if (giftTab === "friends") {
+        triggerToast("Sponsorship request sent to friend in DM!");
+        setGiftPlan(null);
+      } else {
+        const absoluteUrl = typeof data.checkoutUrl === "string" && /^https?:\/\//i.test(data.checkoutUrl)
+          ? data.checkoutUrl
+          : `${window.location.origin}${data.checkoutUrl || `/pay/${data.paymentLinkId}`}`;
+        setGiftRequestUrl(absoluteUrl);
+        await copyGiftRequestUrl(absoluteUrl).catch(() => {});
+      }
     } catch (err: any) {
-      setGiftRequestError(err.message || "Could not create gift checkout.");
+      setGiftRequestError(err.message || "Could not create gift request.");
     } finally {
       setGiftRequestBusyPlanId(null);
     }
@@ -5281,6 +5293,24 @@ export default function UserDashboard() {
                 </button>
               </div>
 
+              {/* Tab Selector */}
+              <div className="grid grid-cols-2 rounded-2xl bg-white/[0.04] p-1 border border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setGiftTab("friends")}
+                  className={`rounded-xl py-2 text-xs font-bold transition ${giftTab === "friends" ? "bg-[#00d2b4]/20 text-[#00d2b4] border border-[#00d2b4]/30" : "text-white/50 hover:text-white"}`}
+                >
+                  SubScript Friends
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGiftTab("link")}
+                  className={`rounded-xl py-2 text-xs font-bold transition ${giftTab === "link" ? "bg-[#00d2b4]/20 text-[#00d2b4] border border-[#00d2b4]/30" : "text-white/50 hover:text-white"}`}
+                >
+                  Shareable Link
+                </button>
+              </div>
+
               {giftRequestUrl ? (
                 <div className="space-y-4">
                   <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.06] p-4">
@@ -5321,10 +5351,84 @@ export default function UserDashboard() {
                     </a>
                   </div>
                 </div>
+              ) : giftTab === "friends" ? (
+                <form onSubmit={handleCreateGiftPlanRequest} className="space-y-4">
+                  <p className="text-xs leading-relaxed text-white/55">
+                    Select an active contact or type a username to send an actionable sponsorship request card directly to their DM inbox.
+                  </p>
+
+                  {/* Friends List from active DM threads */}
+                  {dmThreads.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-white/40">Active DM Contacts</p>
+                      <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+                        {dmThreads.map((thread) => {
+                          const isSelected = selectedGiftFriendAddress.toLowerCase() === thread.peerAddress.toLowerCase();
+                          return (
+                            <button
+                              key={thread.peerAddress}
+                              type="button"
+                              onClick={() => {
+                                setSelectedGiftFriendAddress(thread.peerAddress);
+                                setGiftFriendUsername("");
+                              }}
+                              className={`w-full flex items-center justify-between gap-3 rounded-2xl border p-2.5 text-left transition ${isSelected ? "border-[#00d2b4] bg-[#00d2b4]/10" : "border-white/5 bg-white/[0.02] hover:bg-white/5"}`}
+                            >
+                              <div className="flex items-center gap-2.5 overflow-hidden">
+                                <Avatar profilePic={thread.peerProfilePic} />
+                                <div className="truncate">
+                                  <p className="text-xs font-bold text-white truncate">
+                                    {formatPeerDisplayName(thread.peerName, thread.peerAddress)}
+                                  </p>
+                                  <p className="text-[10px] text-white/40 truncate">{thread.peerAddress}</p>
+                                </div>
+                              </div>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isSelected ? "bg-[#00d2b4] text-black" : "bg-white/5 text-white/40"}`}>
+                                {isSelected ? "Selected" : "Select"}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <Field label="Or type a friend's username">
+                    <input
+                      value={giftFriendUsername}
+                      onChange={(event) => {
+                        setGiftFriendUsername(event.target.value);
+                        if (event.target.value.trim()) setSelectedGiftFriendAddress("");
+                      }}
+                      placeholder="friend.sub or friend"
+                      className="subscript-input"
+                      disabled={giftRequestBusyPlanId !== null}
+                    />
+                  </Field>
+
+                  {giftRequestError && <p className="text-[11px] font-bold text-red-300">{giftRequestError}</p>}
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setGiftPlan(null)}
+                      disabled={giftRequestBusyPlanId !== null}
+                      className="dm-quick-button min-w-0 border-white/10 bg-white/[0.06] text-white/55"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={giftRequestBusyPlanId !== null || (!selectedGiftFriendAddress && !giftFriendUsername.trim())}
+                      className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white border-[#00d2b4]/30 bg-[#00d2b4]/20 hover:bg-[#00d2b4]/30 disabled:opacity-40 ${giftRequestBusyPlanId !== null ? "quick-action-loading" : ""}`}
+                    >
+                      {giftRequestBusyPlanId !== null ? "Sending DM..." : "Send Request in DM"}
+                    </button>
+                  </div>
+                </form>
               ) : (
                 <form onSubmit={handleCreateGiftPlanRequest} className="space-y-4">
                   <p className="text-xs leading-relaxed text-white/55">
-                    This creates a shareable one-time checkout for the plan price and duration. It does not create a second recurring authorization.
+                    Generates a shareable single-use gift checkout link. Send it to anyone on Telegram, WhatsApp, or Email.
                   </p>
                   <Field label="Lock to a friend's username (optional)">
                     <input
@@ -5336,7 +5440,7 @@ export default function UserDashboard() {
                     />
                   </Field>
                   <p className="text-[10px] leading-relaxed text-white/40">
-                    Leave it blank to make a public link. If you enter a username, only that SubScript user can pay it.
+                    Leave blank to make a public link. If specified, only that SubScript user can pay it.
                   </p>
                   {giftRequestError && <p className="text-[11px] font-bold text-red-300">{giftRequestError}</p>}
                   <div className="grid grid-cols-2 gap-2">
@@ -5353,7 +5457,7 @@ export default function UserDashboard() {
                       disabled={giftRequestBusyPlanId !== null}
                       className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white ${giftRequestBusyPlanId !== null ? "quick-action-loading" : ""}`}
                     >
-                      {giftRequestBusyPlanId !== null ? "Creating..." : "Create link"}
+                      {giftRequestBusyPlanId !== null ? "Creating..." : "Create Link"}
                     </button>
                   </div>
                 </form>
@@ -6014,11 +6118,11 @@ function DmBubble({
   const displayDescription = shortenWalletsInText(dm.description);
   const senderLabel = formatPeerDisplayName(dm.senderName, dm.senderAddress);
   const lines = splitDmDescription(displayDescription);
-  const canPay = incoming && isPending && Boolean(dm.paymentLinkId) && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
-  const canDecline = incoming && isPending && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
+  const canPay = incoming && isPending && Boolean(dm.paymentLinkId) && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER", "SPONSORED_PLAN_REQUEST"].includes(dm.messageType);
+  const canDecline = incoming && isPending && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER", "SPONSORED_PLAN_REQUEST"].includes(dm.messageType);
 
   /* Parse lines to show a beautiful checkout details card for payment requests */
-  const isRequest = ["PAYMENT_REQUEST", "PEER_REQUEST", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
+  const isRequest = ["PAYMENT_REQUEST", "PEER_REQUEST", "SUBSCRIPTION_OFFER", "SPONSORED_PLAN_REQUEST", "SPONSORED_PLAN_CONFIRMED"].includes(dm.messageType);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const actionItems: Array<{
     key: string;
@@ -6035,7 +6139,9 @@ function DmBubble({
         ? "Resubscribe"
         : dm.messageType === "SUBSCRIPTION_OFFER"
           ? "Review plan"
-          : "Confirm",
+          : dm.messageType === "SPONSORED_PLAN_REQUEST"
+            ? "Confirm & Pay"
+            : "Confirm",
       onClick: onPay,
       loadingKey: `pay-${dm.id}`,
     });
@@ -6046,6 +6152,14 @@ function DmBubble({
       label: dm.messageType === "EXPIRY_WARNING" ? "Cancel Plan" : "Decline",
       onClick: onDecline,
       loadingKey: `decline-${dm.id}`,
+    });
+  }
+  if (dm.messageType === "SPONSORED_PLAN_CONFIRMED" && onPay) {
+    actionItems.push({
+      key: "resubscribe-self",
+      label: "Resubscribe for Yourself",
+      onClick: onPay,
+      loadingKey: `resub-self-${dm.id}`,
     });
   }
   /* Only the recipient of a transfer can thank the sender — you don't thank yourself. */
