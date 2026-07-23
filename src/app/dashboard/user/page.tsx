@@ -3009,7 +3009,7 @@ export default function UserDashboard() {
                       <button
                         type="button"
                         onClick={() => setScannerOpen(true)}
-                        className="grid h-14 w-14 place-items-center rounded-full bg-[#171717] text-[#ccff00] border border-white/10 shadow-lg hover:scale-105 active:scale-95 transition-transform"
+                        className="md:hidden grid h-14 w-14 place-items-center rounded-full bg-[#171717] text-[#ccff00] border border-white/10 shadow-lg hover:scale-105 active:scale-95 transition-transform"
                         aria-label="Scan QR"
                       >
                         <QrCode className="h-6 w-6" />
@@ -5632,7 +5632,7 @@ function UserDesktopSidebar({
   onLogout: () => void;
 }) {
   return (
-    <aside className="hidden md:flex h-full w-20 lg:w-72 shrink-0 flex-col justify-between border-r border-white/5 bg-black/45 p-4 lg:p-5 backdrop-blur-2xl">
+    <aside className="hidden md:flex sticky top-0 h-screen max-h-screen w-20 lg:w-72 shrink-0 flex-col justify-between overflow-y-auto overscroll-contain border-r border-white/5 bg-black/45 p-4 lg:p-5 backdrop-blur-2xl">
       <div className="space-y-8">
         <div className="flex items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-3xl border border-white/5 bg-white/[0.03] p-2.5 lg:px-4 lg:py-3">
           <img

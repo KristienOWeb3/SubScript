@@ -2,10 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
-import { SUBSCRIPT_ROUTER_ADDRESS } from "@/lib/contracts/constants";
-import { SUBSCRIPT_ROUTER_ABI } from "@/lib/contracts/abis";
 import { triggerExitSurvey } from "@/lib/payments/email";
-
 
 export async function POST(request: Request) {
     try {
@@ -25,18 +22,24 @@ export async function POST(request: Request) {
         }
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-        /* 3. Query active premium subscription and merchant tier from database */
-        const { data: merchantData, error: merchantError } = await supabase
-            .from("merchants")
-            .select("tier")
-            .eq("wallet_address", normalizedUser)
-            .maybeSingle();
+        const nowIso = new Date().toISOString();
 
-        if (merchantError || !merchantData || merchantData.tier !== "PREMIUM") {
-            return NextResponse.json({ error: "Merchant does not have an active premium tier." }, { status: 400 });
+        /* 3. Update merchant tier to FREE and set cancellation flag */
+        const { error: merchantUpdateError } = await supabase
+            .from("merchants")
+            .update({
+                tier: "FREE",
+                cancel_at_period_end: true,
+                updated_at: nowIso
+            })
+            .eq("wallet_address", normalizedUser);
+
+        if (merchantUpdateError) {
+            console.warn("Merchant table tier update warning:", merchantUpdateError);
         }
 
-        const { data: subData, error: subError } = await supabase
+        /* 4. Update associated premium subscription rows if present */
+        const { data: subData } = await supabase
             .from("subscriptions")
             .select("subscription_id, next_billing_date")
             .eq("kind", "PREMIUM")
@@ -46,26 +49,15 @@ export async function POST(request: Request) {
             .limit(1)
             .maybeSingle();
 
-        if (subError || !subData) {
-            return NextResponse.json({ error: "No active premium subscription found for this merchant." }, { status: 404 });
-        }
-
-        const subId = Number(subData.subscription_id);
-        const nextBillingDate = subData.next_billing_date;
-
-        /* 4. Set cancel_at_period_end and cancel_requested_at in DB */
-        const { error: subUpdateError } = await supabase
-            .from("subscriptions")
-            .update({
-                cancel_at_period_end: true,
-                cancel_requested_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-            })
-            .eq("subscription_id", subId);
-
-        if (subUpdateError) {
-            console.error("Error updating subscription cancel flag in DB:", subUpdateError);
-            return NextResponse.json({ error: "Database Sync Error: Failed to schedule subscription cancellation" }, { status: 500 });
+        if (subData?.subscription_id) {
+            await supabase
+                .from("subscriptions")
+                .update({
+                    cancel_at_period_end: true,
+                    cancel_requested_at: nowIso,
+                    updated_at: nowIso
+                })
+                .eq("subscription_id", Number(subData.subscription_id));
         }
 
         const adminPrivateKey = process.env.PRIVATE_KEY || "";
@@ -81,9 +73,9 @@ export async function POST(request: Request) {
 
         return NextResponse.json({
             success: true,
-            message: "Premium subscription set to cancel at the end of the current period.",
+            message: "Privacy Premium has been cancelled successfully.",
             cancelAtPeriodEnd: true,
-            nextBillingDate
+            nextBillingDate: subData?.next_billing_date || null
         }, { status: 200 });
 
     } catch (error: any) {
@@ -91,4 +83,3 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
     }
 }
-

@@ -2260,7 +2260,10 @@ export default function DashboardPage() {
                     }
 
                     const dateStr = cancelData.nextBillingDate ? new Date(cancelData.nextBillingDate).toLocaleDateString() : "the end of the current period";
-                    setPremiumStatus(`Your Privacy Premium subscription will remain active until ${dateStr}. You can resume anytime before that date.`);
+                    setPremiumStatus(`Privacy Premium subscription has been cancelled. Active until ${dateStr}.`);
+                    setIsPremium(false);
+                    setCancelAtPeriodEnd(true);
+                    setMerchantTier(0);
                     await refetchBalancesAndTier();
                     setTimeout(() => setPremiumStatus(null), 8000);
                 } catch (err: any) {
@@ -4345,7 +4348,7 @@ Please complete the following implementation tasks:
                                                     : "border-white/5 text-white/20 cursor-not-allowed"
                                             }`}
                                         >
-                                            <ArrowDownToLine className="w-2.5 h-2.5" />
+                                            <ArrowDown className="w-2.5 h-2.5" />
                                             Withdraw
                                         </button>
                                     </div>
@@ -4534,7 +4537,7 @@ Please complete the following implementation tasks:
                                         className="w-10 h-10 rounded-full border border-white/20 bg-white/5 hover:bg-white/10 text-white flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
                                         title="Deposit funds"
                                     >
-                                        <ArrowDown className="w-4 h-4 rotate-180" />
+                                        <ArrowDownToLine className="w-4 h-4" />
                                     </button>
                                 </div>
                             </div>
