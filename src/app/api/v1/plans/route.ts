@@ -116,7 +116,6 @@ export async function POST(request: Request) {
         if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
         const premiumCheck = await requireEnterpriseAndPremium(auth.merchantAddress, auth.mode);
         if (!premiumCheck.ok) return NextResponse.json({ error: premiumCheck.error }, { status: premiumCheck.status });
-        const merchantAddress = auth.merchantAddress;
         if (auth.mode === "test" && merchantAddress === DEMO_MERCHANT_ADDRESS.toLowerCase()) {
             return apiError({
                 status: 403,
@@ -124,6 +123,7 @@ export async function POST(request: Request) {
                 message: "The shared public demo key cannot modify the plan catalog. Create your own test key.",
             });
         }
+
 
         const body = sanitizeInput(await request.json().catch(() => null)) || {};
 
@@ -229,6 +229,7 @@ export async function PATCH(request: Request) {
                 message: "The shared public demo key cannot modify the plan catalog. Create your own test key.",
             });
         }
+
 
         const body = sanitizeInput(await request.json().catch(() => null)) || {};
         const planId = typeof body.planId === "string" ? body.planId : "";
