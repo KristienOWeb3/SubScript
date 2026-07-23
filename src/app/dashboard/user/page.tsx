@@ -32,6 +32,7 @@ import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
 import ConfirmModal from "@/components/ConfirmModal";
+import QrScannerModal from "@/components/QrScannerModal";
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
 import { receiptHrefFromDescriptionLine } from "@/lib/dms/receiptPresentation";
@@ -343,6 +344,8 @@ export default function UserDashboard() {
   const [linkResultUrl, setLinkResultUrl] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
   const [linkQrShown, setLinkQrShown] = useState(false);
+  const [qrScannerOpen, setQrScannerOpen] = useState(false);
+  const [qrTargetIndex, setQrTargetIndex] = useState<number | null>(null); // null = single send, number = batch row index
   const [loading, setLoading] = useState(true);
   const [redirectMessage, setRedirectMessage] = useState<string | null>(null);
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
@@ -1942,6 +1945,16 @@ export default function UserDashboard() {
       }
     } finally {
       setVaultActionBusy(false);
+    }
+  };
+
+  const handleScanQrResult = (scannedText: string) => {
+    if (qrTargetIndex === null) {
+      setSingleRecipient(scannedText);
+    } else if (typeof qrTargetIndex === "number") {
+      setBatchRows((rows) =>
+        rows.map((row, idx) => (idx === qrTargetIndex ? { ...row, address: scannedText } : row))
+      );
     }
   };
 
@@ -3679,19 +3692,32 @@ export default function UserDashboard() {
                       {sendMode === "single" ? (
                   <form onSubmit={handleSingleSend} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
                     <Field label="Recipient Wallet Address or .sub Name">
-                      <div className="relative">
-                        <input
-                          value={singleRecipient}
-                          onChange={(event) => setSingleRecipient(event.target.value)}
-                          placeholder="alice.sub or 0x..."
-                          className="subscript-input pr-10"
-                          required
-                        />
-                        {singleResolving ? (
-                          <Loader2 className="absolute right-3.5 top-3.5 w-4 h-4 text-[#ccff00] animate-spin" />
-                        ) : (
-                          <User className="absolute right-3.5 top-3.5 w-4 h-4 text-white/30" />
-                        )}
+                      <div className="relative flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <input
+                            value={singleRecipient}
+                            onChange={(event) => setSingleRecipient(event.target.value)}
+                            placeholder="alice.sub or 0x..."
+                            className="subscript-input pr-10"
+                            required
+                          />
+                          {singleResolving ? (
+                            <Loader2 className="absolute right-3.5 top-3.5 w-4 h-4 text-[#ccff00] animate-spin" />
+                          ) : (
+                            <User className="absolute right-3.5 top-3.5 w-4 h-4 text-white/30" />
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQrTargetIndex(null);
+                            setQrScannerOpen(true);
+                          }}
+                          title="Scan QR Code"
+                          className="p-3.5 rounded-2xl bg-white/5 border border-white/10 hover:bg-[#ccff00]/10 hover:border-[#ccff00]/30 hover:text-[#ccff00] text-white/60 transition-all shrink-0 flex items-center justify-center h-12 w-12"
+                        >
+                          <QrCode className="w-5 h-5" />
+                        </button>
                       </div>
                     </Field>
 
@@ -3800,12 +3826,27 @@ export default function UserDashboard() {
                         
                         <div className="space-y-2">
                           <span className="text-[9px] uppercase font-bold text-white/35">Address or DNS name</span>
-                          <input
-                            value={row.address}
-                            onChange={(event) => setBatchRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, address: event.target.value } : item))}
-                            placeholder="alice.sub or 0x..."
-                            className="subscript-input"
-                          />
+                          <div className="relative flex items-center gap-2">
+                            <div className="relative flex-1">
+                              <input
+                                value={row.address}
+                                onChange={(event) => setBatchRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, address: event.target.value } : item))}
+                                placeholder="alice.sub or 0x..."
+                                className="subscript-input"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setQrTargetIndex(index);
+                                setQrScannerOpen(true);
+                              }}
+                              title={`Scan QR Code for Recipient #${index + 1}`}
+                              className="p-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-[#ccff00]/10 hover:border-[#ccff00]/30 hover:text-[#ccff00] text-white/60 transition-all shrink-0 flex items-center justify-center h-11 w-11"
+                            >
+                              <QrCode className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
 
                         <div className="space-y-2">
@@ -5592,6 +5633,13 @@ export default function UserDashboard() {
           onCancel={confirmModal.onCancel ?? (() => setConfirmModal(null))}
         />
       )}
+
+      <QrScannerModal
+        isOpen={qrScannerOpen}
+        onClose={() => setQrScannerOpen(false)}
+        onScan={handleScanQrResult}
+        title={qrTargetIndex !== null ? `Scan QR for Recipient #${qrTargetIndex + 1}` : "Scan Recipient QR Code"}
+      />
 
       {/* Blocking email capture — an email is required for receipts and notifications.
           Shown for accounts that don't have one yet (e.g. wallet-onboarded payers). */}
