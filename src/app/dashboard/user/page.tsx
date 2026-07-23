@@ -489,15 +489,17 @@ export default function UserDashboard() {
 
     const fetchGeoCurrencyAndRate = async () => {
       try {
-        const res = await fetch("/api/rates");
+        const res = await fetch(`/api/rates?currency=${encodeURIComponent(initialCurrency.code)}`);
         if (res.ok) {
           const data = await res.json();
           if (data.success) {
+            const resolvedCode = data.currency || initialCurrency.code;
+            const resolvedSymbol = resolvedCode === "NGN" ? "₦" : (data.symbol && data.symbol !== "E" ? data.symbol : initialCurrency.symbol);
             setDetectedCurrency({
-              code: data.currency,
-              symbol: data.symbol
+              code: resolvedCode,
+              symbol: resolvedSymbol
             });
-            setExchangeRate(Number(data.rate));
+            setExchangeRate(Number(data.rate) || 1.0);
           }
         }
       } catch (e) {
@@ -2603,14 +2605,34 @@ export default function UserDashboard() {
   /* ---- Home overview (derived from existing data; no dedicated analytics backend) ---- */
   // Display-only fiat estimate. Not a live oracle — clearly a rough naira reference for the balance.
   const localBalance = walletBalance * exchangeRate;
-  // "30-day spend" proxy: sum of active subscriptions normalised to a 30-day cost.
-  const monthlySpendUsdc = subscriptions
+  // "30-day spend": sum of actual settled transactions over the past 30 days.
+  const thirtyDaysAgoMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const subSettledSpend = subscriptions.reduce((sum, s) => {
+    const settlementTime = s.lastSettlementTimestamp ? new Date(s.lastSettlementTimestamp).getTime() : new Date(s.createdAt).getTime();
+    if (settlementTime >= thirtyDaysAgoMs) {
+      const amountUsdc = Number(s.amountCapUsdc) / 1_000_000;
+      return sum + (Number.isFinite(amountUsdc) ? amountUsdc : 0);
+    }
+    return sum;
+  }, 0);
+  const dmPaidSpend = dms.reduce((sum, d) => {
+    const isPaid = d.status === "PAID" || ["DEBIT_SUCCESS", "PAYMENT", "PEER_PAYMENT", "PAYMENT_SUCCESS", "PEER_TRANSFER"].includes(d.messageType);
+    const dmTime = new Date(d.createdAt).getTime();
+    if (isPaid && d.amountUsdc && dmTime >= thirtyDaysAgoMs) {
+      const amountUsdc = Number(d.amountUsdc) / 1_000_000;
+      return sum + (Number.isFinite(amountUsdc) ? amountUsdc : 0);
+    }
+    return sum;
+  }, 0);
+  const actual30DaySpend = subSettledSpend + dmPaidSpend;
+  const projectedMonthlySpend = subscriptions
     .filter((s) => s.status === "ACTIVE" && !s.cancelAtPeriodEnd)
     .reduce((sum, s) => {
       const period = Math.max(1, Number(s.billingIntervalSeconds));
       const monthly = (Number(s.amountCapUsdc) / 1_000_000) * (2_592_000 / period);
       return sum + (Number.isFinite(monthly) ? monthly : 0);
     }, 0);
+  const monthlySpendUsdc = actual30DaySpend > 0 ? actual30DaySpend : projectedMonthlySpend;
   // Total value currently locked across prepaid metered vaults.
   const totalCommitLockedUsdc = vaults.reduce(
     (sum, v: any) => sum + Number(v?.balanceUsdc || 0) / 1_000_000,

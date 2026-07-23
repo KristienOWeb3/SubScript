@@ -136,15 +136,17 @@ export default function UserTransactionsPage() {
 
     const fetchGeoCurrencyAndRate = async () => {
       try {
-        const res = await fetch("/api/rates");
+        const res = await fetch(`/api/rates?currency=${encodeURIComponent(initialCurrency.code)}`);
         if (res.ok) {
           const data = await res.json();
           if (data.success) {
+            const resolvedCode = data.currency || initialCurrency.code;
+            const resolvedSymbol = resolvedCode === "NGN" ? "₦" : (data.symbol && data.symbol !== "E" ? data.symbol : initialCurrency.symbol);
             setDetectedCurrency({
-              code: data.currency,
-              symbol: data.symbol
+              code: resolvedCode,
+              symbol: resolvedSymbol
             });
-            setExchangeRate(Number(data.rate));
+            setExchangeRate(Number(data.rate) || 1.0);
           }
         }
       } catch (e) {
