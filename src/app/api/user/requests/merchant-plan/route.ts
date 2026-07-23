@@ -160,8 +160,10 @@ export async function POST(request: Request) {
         const friendUsername = typeof body.friendUsername === "string"
             ? body.friendUsername.trim().replace(/^@/, "")
             : "";
-        let receiverAddress: string | null = null;
-        if (friendUsername) {
+        let receiverAddress: string | null = typeof body.targetAddress === "string" && ethers.isAddress(body.targetAddress.trim())
+            ? body.targetAddress.trim().toLowerCase()
+            : null;
+        if (!receiverAddress && friendUsername) {
             const friendAlias = await prisma.addressAlias.findUnique({
                 where: { alias: friendUsername },
                 select: { address: true },
@@ -170,9 +172,14 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: "Friend username was not found" }, { status: 404 });
             }
             receiverAddress = friendAlias.address.toLowerCase();
+        }
+        if (receiverAddress) {
             const friendRole = await getAccountRole(receiverAddress);
             if (friendRole !== "USER") {
-                return NextResponse.json({ error: "Friend username must belong to a SubScript user" }, { status: 400 });
+                return NextResponse.json({ error: "Friend address must belong to a SubScript user" }, { status: 400 });
+            }
+            if (receiverAddress === normalizedRequester) {
+                return NextResponse.json({ error: "You cannot request sponsorship from yourself" }, { status: 400 });
             }
         }
 
@@ -228,6 +235,24 @@ export async function POST(request: Request) {
             },
             select: { id: true },
         });
+
+        /* If targeted to a friend and DM notification is requested (or default), dispatch in-app DM card */
+        if (receiverAddress && body.sendDirectMessage !== false) {
+            const { createDmAndNotify } = await import("@/lib/dms/notifications");
+            await createDmAndNotify({
+                senderAddress: normalizedRequester,
+                receiverAddress: receiverAddress,
+                messageType: "SPONSORED_PLAN_REQUEST",
+                status: "PENDING",
+                amountUsdc: plan.amountUsdc,
+                paymentLinkId: link.id,
+                title: `${requesterLabel} requested payment for ${plan.name}`,
+                description: `One-time gift payment of ${plan.amountUsdc ? (Number(plan.amountUsdc) / 1_000_000).toFixed(2) : "0.00"} USDC for ${plan.name}`,
+                dedupeKey: `sponsor-dm:${link.id}`,
+            }).catch((dmErr) => {
+                console.error("[requests/merchant-plan] Failed to insert DM notification:", dmErr);
+            });
+        }
 
         return NextResponse.json(sponsoredResponse(link), { status: 201 });
     } catch (error: any) {
