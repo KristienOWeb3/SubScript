@@ -44,6 +44,7 @@ import {
   ArrowRight,
   ChevronLeft,
   ChevronRight,
+  Check,
   CheckCircle2,
   Copy,
   CreditCard,
@@ -7285,7 +7286,9 @@ function DepositModal({
                 >
                   {activeSubMode === "menu" && (
               <div className="space-y-5">
-                <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] text-lg font-black text-black">S</div>
+                <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] p-2.5 shadow-[0_0_20px_rgba(204,255,0,0.2)]">
+                  <img src="/logo.png" alt="SubScript Logo" className="h-full w-full object-contain" />
+                </div>
                 <div className="rounded-3xl border border-yellow-500/25 bg-yellow-500/5 p-4 text-left">
                   <p className="text-[9px] font-black uppercase tracking-[0.16em] text-yellow-400">External USDC Detected</p>
                   <p className="mt-1.5 text-[11px] text-white/70 leading-relaxed">
@@ -7328,16 +7331,16 @@ function DepositModal({
             )}
 
             {activeSubMode === "direct" && (
-              <div className="text-center">
-                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] p-2.5 shadow-[0_0_20px_rgba(204,255,0,0.2)]">
+              <div className="text-center space-y-3">
+                <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] p-2.5 shadow-[0_0_20px_rgba(204,255,0,0.2)]">
                   <img src="/logo.png" alt="SubScript Logo" className="h-full w-full object-contain" />
                 </div>
-                <p className="mt-2 text-xs text-white/45">Send native USDC on Arc Testnet to your SubScript wallet address.</p>
-                <p className="mt-2 rounded-xl border border-amber-400/20 bg-amber-400/[0.05] p-3 text-[10px] leading-relaxed text-amber-200/75">Arc Testnet only. Sending another token or using another network will not credit this balance.</p>
-                <div className="mx-auto my-6 w-fit rounded-3xl bg-white p-4">
+                <p className="text-xs text-white/45">Send native USDC on Arc Testnet to your SubScript wallet address.</p>
+                <p className="rounded-xl border border-amber-400/20 bg-amber-400/[0.05] p-2.5 text-[10px] leading-relaxed text-amber-200/75">Arc Testnet only. Sending another token or using another network will not credit this balance.</p>
+                <div className="mx-auto my-3 w-fit rounded-3xl bg-white p-3.5 shadow-lg">
                   <QRCode
                     value={userWallet}
-                    size={178}
+                    size={160}
                     ecLevel="H"
                     bgColor="#ffffff"
                     fgColor="#000000"
@@ -7348,14 +7351,23 @@ function DepositModal({
                       [10, 0, 10, 10]
                     ]}
                     logoImage="/logo.png"
-                    logoWidth={36}
-                    logoHeight={36}
+                    logoWidth={34}
+                    logoHeight={34}
                     removeQrCodeBehindLogo={true}
                     logoPadding={2}
                   />
                 </div>
-                <button type="button" onClick={onCopy} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black text-white/80">
-                  <Copy className="h-4 w-4" /> {copied ? "Copied" : formatAddress(userWallet)}
+                <button
+                  type="button"
+                  onClick={onCopy}
+                  className={`flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-xs font-black transition-all ${
+                    copied
+                      ? "border-[#ccff00]/40 bg-[#ccff00]/15 text-[#ccff00]"
+                      : "border-white/10 bg-white/[0.05] text-white/80 hover:bg-white/10 hover:border-white/20"
+                  }`}
+                >
+                  {copied ? <Check className="h-4 w-4 text-[#ccff00]" /> : <Copy className="h-4 w-4" />}
+                  {copied ? "Copied to clipboard!" : formatAddress(userWallet)}
                 </button>
               </div>
             )}
