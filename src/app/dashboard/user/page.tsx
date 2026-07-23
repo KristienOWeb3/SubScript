@@ -32,7 +32,11 @@ import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
 import ConfirmModal from "@/components/ConfirmModal";
+<<<<<<< HEAD
 import { QrScannerModal } from "@/components/QrScannerModal";
+=======
+import QrScannerModal from "@/components/QrScannerModal";
+>>>>>>> origin/main
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
 import { receiptHrefFromDescriptionLine } from "@/lib/dms/receiptPresentation";
@@ -344,6 +348,8 @@ export default function UserDashboard() {
   const [linkResultUrl, setLinkResultUrl] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
   const [linkQrShown, setLinkQrShown] = useState(false);
+  const [qrScannerOpen, setQrScannerOpen] = useState(false);
+  const [qrTargetIndex, setQrTargetIndex] = useState<number | null>(null); // null = single send, number = batch row index
   const [loading, setLoading] = useState(true);
   const [redirectMessage, setRedirectMessage] = useState<string | null>(null);
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
@@ -377,6 +383,8 @@ export default function UserDashboard() {
   const [planManagerStatus, setPlanManagerStatus] = useState<string | null>(null);
   const [planManagerError, setPlanManagerError] = useState<string | null>(null);
   const [giftPlan, setGiftPlan] = useState<MerchantPlan | null>(null);
+  const [giftTab, setGiftTab] = useState<"friends" | "link">("friends");
+  const [selectedGiftFriendAddress, setSelectedGiftFriendAddress] = useState<string>("");
   const [giftFriendUsername, setGiftFriendUsername] = useState("");
   const [giftRequestUrl, setGiftRequestUrl] = useState<string | null>(null);
   const [giftRequestError, setGiftRequestError] = useState<string | null>(null);
@@ -1288,6 +1296,8 @@ export default function UserDashboard() {
 
   const openGiftPlanModal = (plan: MerchantPlan) => {
     setGiftPlan(plan);
+    setGiftTab("friends");
+    setSelectedGiftFriendAddress("");
     setGiftFriendUsername("");
     setGiftRequestUrl(null);
     setGiftRequestError(null);
@@ -1316,18 +1326,26 @@ export default function UserDashboard() {
           amountUsdcMicros: giftPlan.amountUsdc,
           title: `Sponsor ${giftPlan.name}`,
           description: giftPlan.description || `Gift checkout for ${giftPlan.name}`,
+          targetAddress: selectedGiftFriendAddress || undefined,
           friendUsername: giftFriendUsername.trim() || undefined,
+          sendDirectMessage: giftTab === "friends",
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) throw new Error(data.error || "Could not create gift checkout.");
-      const absoluteUrl = typeof data.checkoutUrl === "string" && /^https?:\/\//i.test(data.checkoutUrl)
-        ? data.checkoutUrl
-        : `${window.location.origin}${data.checkoutUrl || `/pay/${data.paymentLinkId}`}`;
-      setGiftRequestUrl(absoluteUrl);
-      await copyGiftRequestUrl(absoluteUrl).catch(() => {});
+      if (!res.ok || !data.success) throw new Error(data.error || "Could not create gift request.");
+
+      if (giftTab === "friends") {
+        triggerToast("Sponsorship request sent to friend in DM!");
+        setGiftPlan(null);
+      } else {
+        const absoluteUrl = typeof data.checkoutUrl === "string" && /^https?:\/\//i.test(data.checkoutUrl)
+          ? data.checkoutUrl
+          : `${window.location.origin}${data.checkoutUrl || `/pay/${data.paymentLinkId}`}`;
+        setGiftRequestUrl(absoluteUrl);
+        await copyGiftRequestUrl(absoluteUrl).catch(() => {});
+      }
     } catch (err: any) {
-      setGiftRequestError(err.message || "Could not create gift checkout.");
+      setGiftRequestError(err.message || "Could not create gift request.");
     } finally {
       setGiftRequestBusyPlanId(null);
     }
@@ -1715,6 +1733,7 @@ export default function UserDashboard() {
         "We'll notify the merchant to pause your service and stop billing new usage — further usage reports are rejected immediately. You're charged only for usage already reported this cycle. Resume anytime while your committed balance is at least 2 USDC; below that, top up to resume.",
       confirmLabel: "Stop service",
       onConfirm: async () => {
+        setConfirmModal(null);
         const id = String(vault.id || vault.merchantAddress);
         setVaultCancelBusyId(id);
         try {
@@ -1731,7 +1750,6 @@ export default function UserDashboard() {
           triggerToast(err?.message || "Could not stop the service.");
         } finally {
           setVaultCancelBusyId(null);
-          setConfirmModal(null);
         }
       },
       onCancel: () => setConfirmModal(null),
@@ -1934,6 +1952,16 @@ export default function UserDashboard() {
       }
     } finally {
       setVaultActionBusy(false);
+    }
+  };
+
+  const handleScanQrResult = (scannedText: string) => {
+    if (qrTargetIndex === null) {
+      setSingleRecipient(scannedText);
+    } else if (typeof qrTargetIndex === "number") {
+      setBatchRows((rows) =>
+        rows.map((row, idx) => (idx === qrTargetIndex ? { ...row, address: scannedText } : row))
+      );
     }
   };
 
@@ -3280,7 +3308,7 @@ export default function UserDashboard() {
                         {/* Bottom Action Footer for Mobile — stays inside the DM while only messages scroll. */}
                         <div
                           data-testid="mobile-dm-action-footer"
-                          className="relative z-30 shrink-0 border-t border-white/5 bg-[#060608]/95 px-1 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-xl"
+                          className="relative z-30 shrink-0 border-t border-white/5 bg-black/30 px-1 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-xl rounded-t-2xl"
                         >
                           {isActiveDmMerchant ? (
                             <MerchantPlanManager
@@ -3349,7 +3377,7 @@ export default function UserDashboard() {
                             {/* Desktop Chat Pane Header */}
                             <div
                               data-testid="desktop-dm-header"
-                              className="sticky top-0 z-20 flex shrink-0 items-center justify-between border-b border-white/5 bg-[#09090c]/95 pb-4 backdrop-blur-xl"
+                              className="sticky top-0 z-20 flex shrink-0 items-center justify-between border border-white/10 bg-black/40 px-4 py-3 rounded-2xl backdrop-blur-xl shadow-xl mb-3"
                             >
                               <div className="flex items-center gap-3">
                                 <Avatar profilePic={activeThread?.peerProfilePic || null} />
@@ -3375,27 +3403,29 @@ export default function UserDashboard() {
                                   <ArrowLeft className="h-4 w-4" />
                                 </button>
                                 
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSendFundsRecipient(activeThreadLabel || selectedDmPeer);
-                                    setSendFundsOpen(true);
-                                  }}
-                                  className="px-3.5 py-1.5 bg-[#ccff00]/10 border border-[#ccff00]/30 text-white font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] active:scale-95 shrink-0"
-                                >
-                                  Send Funds
-                                </button>
+                                {!isActiveDmMerchant && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSendFundsRecipient(activeThreadLabel || selectedDmPeer);
+                                      setSendFundsOpen(true);
+                                    }}
+                                    className="px-3.5 py-1.5 bg-[#ccff00]/10 border border-[#ccff00]/30 text-white font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] active:scale-95 shrink-0"
+                                  >
+                                    Send Funds
+                                  </button>
+                                )}
                               </div>
                             </div>
 
                             {/* Message bubbles pane */}
                             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain will-change-transform translate-z-0 pr-1 space-y-4">
-                              <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55 mt-3">
+                              <div className="mx-auto w-fit max-w-full rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-5 py-2 text-center text-[10px] font-black uppercase tracking-[0.16em] text-[#ccff00] backdrop-blur-md shadow-md mt-2">
                                 {isActiveDmMerchant
                                   ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
                                   : "Direct peer-to-peer system messages only"}
                               </div>
-                              <div className="mx-auto w-fit rounded-full bg-white/10 px-6 py-1 text-[10px] font-bold text-white/55">
+                              <div className="mx-auto w-fit rounded-full border border-white/10 bg-white/5 backdrop-blur-md px-5 py-1 text-[10px] font-bold text-white/60">
                                 {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                               </div>
                               {selectedThreadDms.map((dm) => (
@@ -3423,7 +3453,7 @@ export default function UserDashboard() {
                             {/* Bottom Action Footer for Desktop */}
                             <div
                               data-testid="desktop-dm-action-footer"
-                              className="sticky bottom-0 z-20 shrink-0 border-t border-white/5 bg-[#09090c]/95 pt-4 backdrop-blur-xl"
+                              className="sticky bottom-0 z-20 shrink-0 rounded-2xl border border-white/10 bg-black/40 p-3 backdrop-blur-xl shadow-2xl mt-3"
                             >
                               {isActiveDmMerchant ? (
                                 <MerchantPlanManager
@@ -3603,11 +3633,11 @@ export default function UserDashboard() {
                   <SectionTitle title="Send Funds" subtitle="Transfer USDC to another user or execute a batch payout." />
                   
                   {/* Mode Selector */}
-                  <div className="relative flex gap-1 rounded-xl bg-black/40 p-1 border border-white/5 shrink-0 self-stretch sm:self-auto justify-center">
+                  <div className="relative flex gap-1 rounded-xl bg-black/40 p-1 border border-white/5 shrink-0 w-full sm:w-auto justify-center">
                     <button
                       type="button"
                       onClick={() => setSendMode("single")}
-                      className={`relative px-3.5 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg z-10 transition-colors duration-200 ${
+                      className={`relative flex-1 sm:flex-initial px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg z-10 transition-colors duration-200 ${
                         sendMode === "single" ? "text-black" : "text-white/50 hover:text-white/80"
                       }`}
                     >
@@ -3623,7 +3653,7 @@ export default function UserDashboard() {
                     <button
                       type="button"
                       onClick={() => setSendMode("batch")}
-                      className={`relative px-3.5 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg z-10 transition-colors duration-200 ${
+                      className={`relative flex-1 sm:flex-initial px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg z-10 transition-colors duration-200 ${
                         sendMode === "batch" ? "text-black" : "text-white/50 hover:text-white/80"
                       }`}
                     >
@@ -3687,6 +3717,7 @@ export default function UserDashboard() {
                         <button
                           type="button"
                           onClick={() => {
+<<<<<<< HEAD
                             setQrTargetBatchIndex(null);
                             setQrModalOpen(true);
                           }}
@@ -3694,6 +3725,15 @@ export default function UserDashboard() {
                           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:border-[#ccff00]/40 hover:bg-[#ccff00]/10 hover:text-[#ccff00] transition"
                         >
                           <QrCode className="h-5 w-5 text-[#ccff00]" />
+=======
+                            setQrTargetIndex(null);
+                            setQrScannerOpen(true);
+                          }}
+                          title="Scan QR Code"
+                          className="p-3.5 rounded-2xl bg-white/5 border border-white/10 hover:bg-[#ccff00]/10 hover:border-[#ccff00]/30 hover:text-[#ccff00] text-white/60 transition-all shrink-0 flex items-center justify-center h-12 w-12"
+                        >
+                          <QrCode className="w-5 h-5" />
+>>>>>>> origin/main
                         </button>
                       </div>
                     </Field>
@@ -3802,6 +3842,7 @@ export default function UserDashboard() {
                         <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">Recipient {index + 1}</p>
                         
                         <div className="space-y-2">
+<<<<<<< HEAD
                           <div className="flex items-center justify-between">
                             <span className="text-[9px] uppercase font-bold text-white/35">Address or DNS name</span>
                             <button
@@ -3832,6 +3873,28 @@ export default function UserDashboard() {
                               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:border-[#ccff00]/40 hover:bg-[#ccff00]/10 hover:text-[#ccff00] transition"
                             >
                               <QrCode className="h-4 w-4 text-[#ccff00]" />
+=======
+                          <span className="text-[9px] uppercase font-bold text-white/35">Address or DNS name</span>
+                          <div className="relative flex items-center gap-2">
+                            <div className="relative flex-1">
+                              <input
+                                value={row.address}
+                                onChange={(event) => setBatchRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, address: event.target.value } : item))}
+                                placeholder="alice.sub or 0x..."
+                                className="subscript-input"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setQrTargetIndex(index);
+                                setQrScannerOpen(true);
+                              }}
+                              title={`Scan QR Code for Recipient #${index + 1}`}
+                              className="p-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-[#ccff00]/10 hover:border-[#ccff00]/30 hover:text-[#ccff00] text-white/60 transition-all shrink-0 flex items-center justify-center h-11 w-11"
+                            >
+                              <QrCode className="w-4 h-4" />
+>>>>>>> origin/main
                             </button>
                           </div>
                         </div>
@@ -5323,6 +5386,24 @@ export default function UserDashboard() {
                 </button>
               </div>
 
+              {/* Tab Selector */}
+              <div className="grid grid-cols-2 rounded-2xl bg-white/[0.04] p-1 border border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setGiftTab("friends")}
+                  className={`rounded-xl py-2 text-xs font-bold transition ${giftTab === "friends" ? "bg-[#00d2b4]/20 text-[#00d2b4] border border-[#00d2b4]/30" : "text-white/50 hover:text-white"}`}
+                >
+                  SubScript Friends
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGiftTab("link")}
+                  className={`rounded-xl py-2 text-xs font-bold transition ${giftTab === "link" ? "bg-[#00d2b4]/20 text-[#00d2b4] border border-[#00d2b4]/30" : "text-white/50 hover:text-white"}`}
+                >
+                  Shareable Link
+                </button>
+              </div>
+
               {giftRequestUrl ? (
                 <div className="space-y-4">
                   <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.06] p-4">
@@ -5363,10 +5444,84 @@ export default function UserDashboard() {
                     </a>
                   </div>
                 </div>
+              ) : giftTab === "friends" ? (
+                <form onSubmit={handleCreateGiftPlanRequest} className="space-y-4">
+                  <p className="text-xs leading-relaxed text-white/55">
+                    Select an active contact or type a username to send an actionable sponsorship request card directly to their DM inbox.
+                  </p>
+
+                  {/* Friends List from active DM threads */}
+                  {dmThreads.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-white/40">Active DM Contacts</p>
+                      <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+                        {dmThreads.map((thread) => {
+                          const isSelected = selectedGiftFriendAddress.toLowerCase() === thread.peerAddress.toLowerCase();
+                          return (
+                            <button
+                              key={thread.peerAddress}
+                              type="button"
+                              onClick={() => {
+                                setSelectedGiftFriendAddress(thread.peerAddress);
+                                setGiftFriendUsername("");
+                              }}
+                              className={`w-full flex items-center justify-between gap-3 rounded-2xl border p-2.5 text-left transition ${isSelected ? "border-[#00d2b4] bg-[#00d2b4]/10" : "border-white/5 bg-white/[0.02] hover:bg-white/5"}`}
+                            >
+                              <div className="flex items-center gap-2.5 overflow-hidden">
+                                <Avatar profilePic={thread.peerProfilePic} />
+                                <div className="truncate">
+                                  <p className="text-xs font-bold text-white truncate">
+                                    {formatPeerDisplayName(thread.peerName, thread.peerAddress)}
+                                  </p>
+                                  <p className="text-[10px] text-white/40 truncate">{thread.peerAddress}</p>
+                                </div>
+                              </div>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isSelected ? "bg-[#00d2b4] text-black" : "bg-white/5 text-white/40"}`}>
+                                {isSelected ? "Selected" : "Select"}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <Field label="Or type a friend's username">
+                    <input
+                      value={giftFriendUsername}
+                      onChange={(event) => {
+                        setGiftFriendUsername(event.target.value);
+                        if (event.target.value.trim()) setSelectedGiftFriendAddress("");
+                      }}
+                      placeholder="friend.sub or friend"
+                      className="subscript-input"
+                      disabled={giftRequestBusyPlanId !== null}
+                    />
+                  </Field>
+
+                  {giftRequestError && <p className="text-[11px] font-bold text-red-300">{giftRequestError}</p>}
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setGiftPlan(null)}
+                      disabled={giftRequestBusyPlanId !== null}
+                      className="dm-quick-button min-w-0 border-white/10 bg-white/[0.06] text-white/55"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={giftRequestBusyPlanId !== null || (!selectedGiftFriendAddress && !giftFriendUsername.trim())}
+                      className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white border-[#00d2b4]/30 bg-[#00d2b4]/20 hover:bg-[#00d2b4]/30 disabled:opacity-40 ${giftRequestBusyPlanId !== null ? "quick-action-loading" : ""}`}
+                    >
+                      {giftRequestBusyPlanId !== null ? "Sending DM..." : "Send Request in DM"}
+                    </button>
+                  </div>
+                </form>
               ) : (
                 <form onSubmit={handleCreateGiftPlanRequest} className="space-y-4">
                   <p className="text-xs leading-relaxed text-white/55">
-                    This creates a shareable one-time checkout for the plan price and duration. It does not create a second recurring authorization.
+                    Generates a shareable single-use gift checkout link. Send it to anyone on Telegram, WhatsApp, or Email.
                   </p>
                   <Field label="Lock to a friend's username (optional)">
                     <input
@@ -5378,7 +5533,7 @@ export default function UserDashboard() {
                     />
                   </Field>
                   <p className="text-[10px] leading-relaxed text-white/40">
-                    Leave it blank to make a public link. If you enter a username, only that SubScript user can pay it.
+                    Leave blank to make a public link. If specified, only that SubScript user can pay it.
                   </p>
                   {giftRequestError && <p className="text-[11px] font-bold text-red-300">{giftRequestError}</p>}
                   <div className="grid grid-cols-2 gap-2">
@@ -5395,7 +5550,7 @@ export default function UserDashboard() {
                       disabled={giftRequestBusyPlanId !== null}
                       className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white ${giftRequestBusyPlanId !== null ? "quick-action-loading" : ""}`}
                     >
-                      {giftRequestBusyPlanId !== null ? "Creating..." : "Create link"}
+                      {giftRequestBusyPlanId !== null ? "Creating..." : "Create Link"}
                     </button>
                   </div>
                 </form>
@@ -5516,17 +5671,6 @@ export default function UserDashboard() {
         )}
       </AnimatePresence>
 
-      <ConfirmModal
-        isOpen={confirmModalConfig.isOpen}
-        title={confirmModalConfig.title}
-        message={confirmModalConfig.message}
-        confirmText={confirmModalConfig.confirmText}
-        cancelText={confirmModalConfig.cancelText}
-        variant={confirmModalConfig.variant}
-        onConfirm={confirmModalConfig.onConfirm}
-        onCancel={confirmModalConfig.onCancel}
-      />
-
       <QrScannerModal
         isOpen={qrModalOpen}
         onClose={() => setQrModalOpen(false)}
@@ -5555,6 +5699,13 @@ export default function UserDashboard() {
           onCancel={confirmModal.onCancel ?? (() => setConfirmModal(null))}
         />
       )}
+
+      <QrScannerModal
+        isOpen={qrScannerOpen}
+        onClose={() => setQrScannerOpen(false)}
+        onScan={handleScanQrResult}
+        title={qrTargetIndex !== null ? `Scan QR for Recipient #${qrTargetIndex + 1}` : "Scan Recipient QR Code"}
+      />
 
       {/* Blocking email capture — an email is required for receipts and notifications.
           Shown for accounts that don't have one yet (e.g. wallet-onboarded payers). */}
@@ -5877,7 +6028,7 @@ function ChatHeader({
   return (
     <div className="fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
       <header className="w-full max-w-md liquid-glass rounded-full px-5 py-3 pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/30 backdrop-blur-lg">
-        <div className="flex items-center justify-between w-full gap-2">
+        <div className="flex items-center justify-start w-full gap-2.5">
           {/* Back button */}
           <button
             type="button"
@@ -5890,7 +6041,7 @@ function ChatHeader({
           {/* Peer Info Capsule */}
           <div className="flex items-center gap-2 px-3 py-1 bg-white/[0.04] border border-white/5 rounded-full min-w-0">
             <Avatar profilePic={peerProfilePic} size="xs" />
-            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#ccff00] truncate max-w-[80px]">
+            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#ccff00] truncate max-w-[120px]">
               {peerName}
             </span>
             {isMerchant && <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />}
@@ -6083,11 +6234,11 @@ function DmBubble({
   const displayDescription = shortenWalletsInText(dm.description);
   const senderLabel = formatPeerDisplayName(dm.senderName, dm.senderAddress);
   const lines = splitDmDescription(displayDescription);
-  const canPay = incoming && isPending && Boolean(dm.paymentLinkId) && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
-  const canDecline = incoming && isPending && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
+  const canPay = incoming && isPending && Boolean(dm.paymentLinkId) && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER", "SPONSORED_PLAN_REQUEST"].includes(dm.messageType);
+  const canDecline = incoming && isPending && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER", "SPONSORED_PLAN_REQUEST"].includes(dm.messageType);
 
   /* Parse lines to show a beautiful checkout details card for payment requests */
-  const isRequest = ["PAYMENT_REQUEST", "PEER_REQUEST", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
+  const isRequest = ["PAYMENT_REQUEST", "PEER_REQUEST", "SUBSCRIPTION_OFFER", "SPONSORED_PLAN_REQUEST", "SPONSORED_PLAN_CONFIRMED"].includes(dm.messageType);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const actionItems: Array<{
     key: string;
@@ -6104,7 +6255,9 @@ function DmBubble({
         ? "Resubscribe"
         : dm.messageType === "SUBSCRIPTION_OFFER"
           ? "Review plan"
-          : "Confirm",
+          : dm.messageType === "SPONSORED_PLAN_REQUEST"
+            ? "Confirm & Pay"
+            : "Confirm",
       onClick: onPay,
       loadingKey: `pay-${dm.id}`,
     });
@@ -6115,6 +6268,14 @@ function DmBubble({
       label: dm.messageType === "EXPIRY_WARNING" ? "Cancel Plan" : "Decline",
       onClick: onDecline,
       loadingKey: `decline-${dm.id}`,
+    });
+  }
+  if (dm.messageType === "SPONSORED_PLAN_CONFIRMED" && onPay) {
+    actionItems.push({
+      key: "resubscribe-self",
+      label: "Resubscribe for Yourself",
+      onClick: onPay,
+      loadingKey: `resub-self-${dm.id}`,
     });
   }
   /* Only the recipient of a transfer can thank the sender — you don't thank yourself. */
@@ -6244,8 +6405,8 @@ function DmBubble({
         <div 
           className={`px-5 py-4 shadow-md select-none transition-all duration-200 w-full break-words [word-break:break-word] overflow-hidden ${
             incoming 
-              ? `${focused ? "border-[#ccff00]/40 bg-[#ccff00]/[0.08]" : "border-white/5 bg-[#262629]/95 text-white"} rounded-[20px] rounded-bl-[4px] border` 
-              : "bg-gradient-to-br from-[#00b2ff] to-[#007aff] text-white rounded-[20px] rounded-br-[4px] border-none shadow-[0_4px_16px_rgba(0,122,255,0.2)]"
+              ? `${focused ? "border-[#ccff00]/40 bg-[#ccff00]/[0.08]" : "border-white/10 bg-black/40 backdrop-blur-xl text-white"} rounded-[22px] rounded-bl-[4px] border shadow-xl` 
+              : "bg-gradient-to-br from-[#00b2ff] to-[#007aff] text-white rounded-[22px] rounded-br-[4px] border-none shadow-[0_4px_16px_rgba(0,122,255,0.2)]"
           }`}
         >
           <p 
@@ -7099,7 +7260,7 @@ function DepositModal({
             
             {/* Tabs for non-menu active modes */}
             {activeSubMode !== "menu" && (
-              <div className="relative mb-6 flex gap-1 rounded-2xl bg-black/40 p-1 border border-white/5">
+              <div className="relative mb-6 grid grid-cols-2 w-full gap-1 rounded-2xl bg-black/40 p-1 border border-white/5">
                 {(["direct", "cctp"] as const).map((tab) => {
                   const isActive = activeSubMode === tab;
                   return (
@@ -7111,7 +7272,7 @@ function DepositModal({
                         setActiveSubMode(tab);
                         setCctpStatus("idle");
                       }}
-                      className={`relative flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-xl z-10 transition-colors duration-200 ${
+                      className={`relative flex items-center justify-center py-2.5 px-3 text-[10px] font-black uppercase tracking-wider rounded-xl z-10 transition-colors duration-200 ${
                         isActive ? "text-black" : "text-white/50 hover:text-white/85"
                       }`}
                     >
@@ -7205,7 +7366,9 @@ function DepositModal({
 
             {activeSubMode === "direct" && (
               <div className="text-center">
-                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] text-lg font-black text-black">S</div>
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] p-2.5 shadow-[0_0_20px_rgba(204,255,0,0.2)]">
+                  <img src="/logo.png" alt="SubScript Logo" className="h-full w-full object-contain" />
+                </div>
                 <p className="mt-2 text-xs text-white/45">Send native USDC on Arc Testnet to your SubScript wallet address.</p>
                 <p className="mt-2 rounded-xl border border-amber-400/20 bg-amber-400/[0.05] p-3 text-[10px] leading-relaxed text-amber-200/75">Arc Testnet only. Sending another token or using another network will not credit this balance.</p>
                 <div className="mx-auto my-6 w-fit rounded-3xl bg-white p-4">

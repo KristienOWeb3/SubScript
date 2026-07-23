@@ -362,6 +362,39 @@ async function runPostSettlementEffects(
                 dedupe_key: `receipt-debit-success:${job.receipt_id}`,
             }).catch((error) => console.error("[verify-worker] Receipt DM notification failed:", error));
         }
+
+        /* If this was a sponsored gift checkout with a beneficiary (User A) distinct from the payer (Friend B) */
+        if (job.beneficiary_address && job.beneficiary_address.toLowerCase() !== job.payer_address.toLowerCase()) {
+            const { data: payerAlias } = await supabase
+                .from("address_aliases")
+                .select("alias, is_anonymous")
+                .eq("address", job.payer_address)
+                .maybeSingle();
+            const payerLabel = payerAlias?.alias && !payerAlias.is_anonymous
+                ? `@${payerAlias.alias}`
+                : `${job.payer_address.slice(0, 6)}...${job.payer_address.slice(-4)}`;
+
+            /* Mark the original request DM in User A ↔ Friend B thread as PAID */
+            await supabase
+                .from("subscript_dms")
+                .update({ status: "PAID" })
+                .eq("payment_link_id", job.payment_link_id)
+                .eq("message_type", "SPONSORED_PLAN_REQUEST");
+
+            /* Deliver confirmation DM from Merchant to Beneficiary (User A) with Resubscribe action */
+            await insertSupabaseDmAndNotify(supabase, {
+                sender_address: job.merchant_address,
+                receiver_address: job.beneficiary_address,
+                message_type: "SPONSORED_PLAN_CONFIRMED",
+                status: "PAID",
+                amount_usdc: job.amount_usdc.toString(),
+                title: `Sponsored Access Active: ${job.payment_title}`,
+                description: `${payerLabel} sponsored your ${job.payment_title} plan! Your access is active. You can take over and resubscribe for yourself anytime below.`,
+                tx_hash: job.tx_hash,
+                payment_link_id: job.payment_link_id,
+                dedupe_key: `sponsored-confirmed:${job.payment_link_id}`,
+            }).catch((error) => console.error("[verify-worker] Sponsored confirmation DM failed:", error));
+        }
     }
 
     await sendPaymentReceiptEmails({
