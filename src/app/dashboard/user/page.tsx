@@ -1723,6 +1723,7 @@ export default function UserDashboard() {
         "We'll notify the merchant to pause your service and stop billing new usage — further usage reports are rejected immediately. You're charged only for usage already reported this cycle. Resume anytime while your committed balance is at least 2 USDC; below that, top up to resume.",
       confirmLabel: "Stop service",
       onConfirm: async () => {
+        setConfirmModal(null);
         const id = String(vault.id || vault.merchantAddress);
         setVaultCancelBusyId(id);
         try {
@@ -1739,7 +1740,6 @@ export default function UserDashboard() {
           triggerToast(err?.message || "Could not stop the service.");
         } finally {
           setVaultCancelBusyId(null);
-          setConfirmModal(null);
         }
       },
       onCancel: () => setConfirmModal(null),

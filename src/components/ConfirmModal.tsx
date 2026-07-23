@@ -1,7 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
-import { AlertCircle, AlertTriangle, XCircle } from "@/components/icons";
+import { AlertCircle, AlertTriangle, XCircle, Loader2 } from "@/components/icons";
 
 interface ConfirmModalProps {
   open: boolean;
@@ -99,9 +98,15 @@ export default function ConfirmModal({
                 type="button"
                 onClick={onConfirm}
                 disabled={isLoading}
-                className={`flex-1 rounded-2xl py-3 text-xs font-bold uppercase tracking-wider shadow-lg transition-all disabled:opacity-50 ${config.confirmBg} ${config.confirmText}`}
+                className={`flex-1 rounded-2xl py-3 text-xs font-bold uppercase tracking-wider shadow-lg transition-all disabled:opacity-50 relative overflow-hidden flex items-center justify-center gap-2 ${config.confirmBg} ${config.confirmText} ${isLoading ? "quick-action-loading" : ""}`}
               >
-                {isLoading ? "Working…" : confirmLabel}
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Working…
+                  </>
+                ) : (
+                  confirmLabel
+                )}
               </button>
             </div>
           </motion.div>
