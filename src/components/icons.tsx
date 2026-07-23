@@ -29,6 +29,7 @@ export const BarChart3 = wrap(P.ChartBar);
 export const BookOpen = wrap(P.BookOpen);
 export const Building2 = wrap(P.Buildings);
 export const Calendar = wrap(P.Calendar);
+export const Camera = wrap(P.Camera);
 export const Check = wrap(P.Check);
 export const CheckCircle = wrap(P.CheckCircle);
 export const CheckCircle2 = wrap(P.CheckCircle);

@@ -222,10 +222,12 @@ export default function SignupPage() {
 
   const handleLoginSuccess = useCallback((data: { success: boolean; wallet: string; email?: string | null; role?: string | null }) => {
     setActiveMerchantAddress(data.wallet);
+    const userEmail = data.email || email;
     if (data.email) {
       setEmail(data.email);
       setRequiresEmailLinking(false);
     }
+
     if (data.role) {
       triggerReferralLogging().finally(() => {
         const next = getSafeNext();
@@ -233,17 +235,39 @@ export default function SignupPage() {
           ? next
           : getDashboardUrl(data.role as any, "/dashboard");
       });
+    } else if (selectedRole) {
+      // Role was chosen before authenticating -> register automatically without prompting again
+      fetch("/api/auth/register-role", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          role: selectedRole,
+          email: userEmail || undefined,
+          merchantSignupCode: selectedRole === "ENTERPRISE" ? merchantSignupCode : undefined,
+        }),
+      })
+        .then((res) => res.json())
+        .then((regData) => {
+          if (regData.success) {
+            triggerReferralLogging().finally(() => {
+              const next = getSafeNext();
+              window.location.href = (next && selectedRole === "USER")
+                ? next
+                : getDashboardUrl(selectedRole as any, "/dashboard");
+            });
+          } else {
+            setShowRoleSelector(true);
+          }
+        })
+        .catch(() => setShowRoleSelector(true));
     } else {
       if (!data.email && !email) {
-        /* No email on the login response is the SIWE / external-wallet path (OTP and Google always
-           return an email), so prompt for a push-notification email and flag it so the field stays
-           gated to this case — including on the very first SIWE success, before any reload. */
         setRequiresEmailLinking(true);
         setIsExternalWalletSignup(true);
       }
       setShowRoleSelector(true);
     }
-  }, [email, triggerReferralLogging]);
+  }, [email, selectedRole, merchantSignupCode, triggerReferralLogging]);
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
