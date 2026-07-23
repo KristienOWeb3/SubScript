@@ -32,11 +32,7 @@ import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
 import ConfirmModal from "@/components/ConfirmModal";
-<<<<<<< HEAD
-import { QrScannerModal } from "@/components/QrScannerModal";
-=======
 import QrScannerModal from "@/components/QrScannerModal";
->>>>>>> origin/main
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
 import { receiptHrefFromDescriptionLine } from "@/lib/dms/receiptPresentation";
@@ -3717,23 +3713,13 @@ export default function UserDashboard() {
                         <button
                           type="button"
                           onClick={() => {
-<<<<<<< HEAD
-                            setQrTargetBatchIndex(null);
-                            setQrModalOpen(true);
+                            setQrTargetIndex(null);
+                            setQrScannerOpen(true);
                           }}
                           title="Scan QR Code"
                           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:border-[#ccff00]/40 hover:bg-[#ccff00]/10 hover:text-[#ccff00] transition"
                         >
                           <QrCode className="h-5 w-5 text-[#ccff00]" />
-=======
-                            setQrTargetIndex(null);
-                            setQrScannerOpen(true);
-                          }}
-                          title="Scan QR Code"
-                          className="p-3.5 rounded-2xl bg-white/5 border border-white/10 hover:bg-[#ccff00]/10 hover:border-[#ccff00]/30 hover:text-[#ccff00] text-white/60 transition-all shrink-0 flex items-center justify-center h-12 w-12"
-                        >
-                          <QrCode className="w-5 h-5" />
->>>>>>> origin/main
                         </button>
                       </div>
                     </Field>
@@ -3842,14 +3828,13 @@ export default function UserDashboard() {
                         <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">Recipient {index + 1}</p>
                         
                         <div className="space-y-2">
-<<<<<<< HEAD
                           <div className="flex items-center justify-between">
                             <span className="text-[9px] uppercase font-bold text-white/35">Address or DNS name</span>
                             <button
                               type="button"
                               onClick={() => {
-                                setQrTargetBatchIndex(index);
-                                setQrModalOpen(true);
+                                setQrTargetIndex(index);
+                                setQrScannerOpen(true);
                               }}
                               className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-[#ccff00] hover:underline"
                             >
@@ -3866,35 +3851,13 @@ export default function UserDashboard() {
                             <button
                               type="button"
                               onClick={() => {
-                                setQrTargetBatchIndex(index);
-                                setQrModalOpen(true);
-                              }}
-                              title="Scan QR Code for Recipient"
-                              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:border-[#ccff00]/40 hover:bg-[#ccff00]/10 hover:text-[#ccff00] transition"
-                            >
-                              <QrCode className="h-4 w-4 text-[#ccff00]" />
-=======
-                          <span className="text-[9px] uppercase font-bold text-white/35">Address or DNS name</span>
-                          <div className="relative flex items-center gap-2">
-                            <div className="relative flex-1">
-                              <input
-                                value={row.address}
-                                onChange={(event) => setBatchRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, address: event.target.value } : item))}
-                                placeholder="alice.sub or 0x..."
-                                className="subscript-input"
-                              />
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
                                 setQrTargetIndex(index);
                                 setQrScannerOpen(true);
                               }}
                               title={`Scan QR Code for Recipient #${index + 1}`}
-                              className="p-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-[#ccff00]/10 hover:border-[#ccff00]/30 hover:text-[#ccff00] text-white/60 transition-all shrink-0 flex items-center justify-center h-11 w-11"
+                              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:border-[#ccff00]/40 hover:bg-[#ccff00]/10 hover:text-[#ccff00] transition"
                             >
-                              <QrCode className="w-4 h-4" />
->>>>>>> origin/main
+                              <QrCode className="h-4 w-4 text-[#ccff00]" />
                             </button>
                           </div>
                         </div>
