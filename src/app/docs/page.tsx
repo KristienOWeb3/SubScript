@@ -29,7 +29,60 @@ import {
 } from "@/components/icons";
 import { AnimatePresence, motion } from "framer-motion";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 import { getDashboardUrl } from "@/utils/navigation";
+
+const overlayVariants = {
+  hidden: { y: "-100%" },
+  visible: {
+    y: 0,
+    transition: {
+      type: "tween",
+      ease: [0.16, 1, 0.3, 1],
+      duration: 0.45,
+    },
+  },
+  exit: {
+    y: "-100%",
+    transition: {
+      type: "tween",
+      ease: [0.7, 0, 0.84, 0],
+      duration: 0.35,
+    },
+  },
+};
+
+const staggerContainerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.05,
+      delayChildren: 0.15,
+    },
+  },
+  exit: {
+    opacity: 0,
+    transition: {
+      staggerChildren: 0.03,
+      staggerDirection: -1,
+    },
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 15 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      type: "spring",
+      stiffness: 260,
+      damping: 24,
+    },
+  },
+  exit: { opacity: 0, y: 10 },
+};
 
 type Section = {
   id: string;
@@ -487,73 +540,162 @@ export default function DocsPage() {
       <AnimatedGradientBg />
 
       <div className="relative z-10 md:h-full">
-        <header className="fixed left-0 right-0 top-0 z-50 border-b border-white/5 bg-[#070709]/85 px-6 py-4 backdrop-blur-md">
-          <div className="mx-auto flex max-w-7xl items-center justify-between">
-            <div className="flex items-center gap-5">
-              <Link href="/" className="flex items-center gap-2.5">
-                <Image src="/logo.png" alt="SubScript" width={28} height={28} className="h-7 w-7 object-contain drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]" priority />
-                <span className="text-sm font-semibold uppercase tracking-wider">
+        {/* Floating Header Bar */}
+        <div className="fixed top-5 left-0 right-0 z-40 px-4 sm:px-6 flex justify-center pointer-events-none">
+          <nav className="w-full max-w-7xl liquid-glass rounded-full px-6 py-3.5 flex items-center justify-between pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/40 backdrop-blur-lg border border-white/10">
+            <LiquidGlassEffect />
+
+            {/* Left Logo */}
+            <div className="flex items-center gap-4">
+              <Link href="/" className="flex items-center gap-2.5 group">
+                <Image
+                  src="/logo.png"
+                  alt="SubScript Logo"
+                  width={32}
+                  height={32}
+                  className="w-8 h-8 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)] group-hover:scale-105 transition-transform"
+                  priority
+                />
+                <span className="text-base font-bold text-white tracking-tight group-hover:text-[#00d2b4] transition-colors">
                   SubScript <span className="font-serif font-normal italic lowercase text-[#00d2b4]">docs</span>
                 </span>
               </Link>
               <span className="hidden h-4 w-px bg-white/10 md:block" />
-              <span className="hidden text-[10px] font-semibold uppercase tracking-[0.18em] text-white/35 md:block">
-                Integration guide
+              <span className="hidden text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40 md:block">
+                Integration Guide
               </span>
             </div>
 
-            <div className="flex items-center gap-3">
+            {/* Desktop Actions */}
+            <div className="hidden md:flex items-center gap-4">
               <Link
                 href={getDashboardUrl("ENTERPRISE", "/merchant")}
-                className="hidden items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-white/10 sm:flex"
+                className="liquid-glass rounded-full px-4 py-2 text-xs font-semibold text-white hover:bg-white/10 transition-all duration-200 flex items-center gap-1.5"
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
                 Dashboard
               </Link>
+              <Link
+                href="/signup"
+                className="bg-[#00d2b4] text-[#111111] text-xs font-semibold px-4 py-2 rounded-full hover:brightness-110 shadow-[0_0_8px_rgba(0,210,180,0.25)] transition-all duration-200"
+              >
+                Sign up
+              </Link>
+            </div>
+
+            {/* Mobile Actions & Menu Toggle */}
+            <div className="md:hidden flex items-center gap-3">
+              <Link
+                href="/signup"
+                className="bg-[#00d2b4] text-[#111111] text-xs font-semibold px-3.5 py-1.5 rounded-full hover:brightness-110 shadow-[0_0_8px_rgba(0,210,180,0.25)] transition-all duration-200"
+              >
+                Sign up
+              </Link>
               <button
                 type="button"
-                onClick={() => setMobileMenuOpen((open) => !open)}
-                className="rounded-full border border-white/5 bg-white/5 p-2 text-white/70 transition hover:text-white md:hidden"
-                aria-label="Toggle documentation navigation"
+                onClick={() => setMobileMenuOpen(true)}
+                className="p-1.5 text-white/70 hover:text-white transition-colors"
+                aria-label="Open Navigation Menu"
               >
-                {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+                <Menu className="w-5 h-5" />
               </button>
             </div>
-          </div>
-        </header>
+          </nav>
+        </div>
 
+        {/* Mobile Fullscreen Menu Dropdown Overlay (Landing Page Look & Feel) */}
         <AnimatePresence>
           {mobileMenuOpen && (
             <motion.div
-              initial={{ opacity: 0, y: -14 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -14 }}
-              className="fixed left-0 right-0 top-16 z-40 max-h-[calc(100vh-4rem)] overflow-y-auto overscroll-contain border-b border-white/10 bg-[#070709] p-5 shadow-2xl md:hidden"
+              className="fixed inset-0 z-50 md:hidden flex flex-col bg-black/95 backdrop-blur-xl"
+              variants={overlayVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
             >
-              <nav className="flex flex-col gap-1">
-                {sections.map((section, index) => {
-                  const Icon = section.icon;
-                  return (
-                    <div key={section.id}>
-                      {(index === 0 || sections[index - 1].group !== section.group) && (
-                        <p className={`mb-1 px-4 text-[9px] font-semibold uppercase tracking-[0.18em] text-white/30 ${index === 0 ? "mt-0" : "mt-4"}`}>
-                          {section.group}
-                        </p>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => scrollToSection(section.id)}
-                        className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-xs font-bold uppercase tracking-wider transition ${
-                          activeSection === section.id ? "bg-[#00d2b4]/15 text-[#00d2b4]" : "text-white/60 hover:bg-white/5 hover:text-white"
-                        }`}
-                      >
-                        <Icon className="h-4 w-4" />
-                        {section.title}
-                      </button>
-                    </div>
-                  );
-                })}
-              </nav>
+              {/* Header inside Mobile Menu */}
+              <div className="flex items-center justify-between px-6 py-5 border-b border-white/5">
+                <Link href="/" className="flex items-center gap-2.5" onClick={() => setMobileMenuOpen(false)}>
+                  <Image
+                    src="/logo.png"
+                    alt="SubScript Logo"
+                    width={32}
+                    height={32}
+                    className="w-8 h-8 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]"
+                  />
+                  <span className="text-xl font-bold text-white tracking-tight">
+                    SubScript <span className="font-serif font-normal italic lowercase text-[#00d2b4]">docs</span>
+                  </span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="p-2 text-[#9ca3af] hover:text-white transition-colors"
+                  aria-label="Close Menu"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Staggered Sections Navigation */}
+              <motion.div
+                className="flex-1 flex flex-col min-h-0 max-h-[calc(100vh-4rem)]"
+                variants={staggerContainerVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+              >
+                <div className="flex-1 px-6 py-6 flex flex-col gap-2 overflow-y-auto overscroll-contain">
+                  {sections.map((section, index) => {
+                    const Icon = section.icon;
+                    const isNewGroup = index === 0 || sections[index - 1].group !== section.group;
+                    const active = activeSection === section.id;
+                    return (
+                      <motion.div key={section.id} variants={itemVariants}>
+                        {isNewGroup && (
+                          <p className={`mb-1.5 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-[#00d2b4] ${index === 0 ? "mt-0" : "mt-4"}`}>
+                            {section.group}
+                          </p>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => scrollToSection(section.id)}
+                          className={`flex w-full items-center justify-between rounded-xl px-4 py-3 text-left transition-all duration-200 ${
+                            active
+                              ? "bg-[#00d2b4]/15 border border-[#00d2b4]/30 text-[#00d2b4] font-semibold"
+                              : "bg-white/[0.03] border border-white/5 text-white/70 hover:bg-white/10 hover:text-white"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Icon className={`h-4 w-4 ${active ? "text-[#00d2b4]" : "text-white/40"}`} />
+                            <span className="text-sm tracking-wide">{section.title}</span>
+                          </div>
+                          {active && <span className="h-1.5 w-1.5 rounded-full bg-[#00d2b4] shadow-[0_0_6px_#00d2b4]" />}
+                        </button>
+                      </motion.div>
+                    );
+                  })}
+
+                  {/* Actions Footer inside Mobile Overlay */}
+                  <motion.div variants={itemVariants} className="pt-6 mt-4 border-t border-white/5 flex flex-col gap-3">
+                    <Link
+                      href={getDashboardUrl("ENTERPRISE", "/merchant")}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 py-3 text-sm font-semibold text-white hover:bg-white/10"
+                    >
+                      <ArrowLeft className="h-4 w-4" />
+                      Merchant Dashboard
+                    </Link>
+                    <Link
+                      href="/"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="block text-center py-2 text-sm font-medium text-white/50 hover:text-white"
+                    >
+                      Back to Homepage
+                    </Link>
+                  </motion.div>
+                </div>
+              </motion.div>
             </motion.div>
           )}
         </AnimatePresence>

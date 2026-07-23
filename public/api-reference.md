@@ -19,8 +19,8 @@ Authorization: Bearer sk_test_…   # sandbox
 Authorization: Bearer sk_live_…   # production
 ```
 
-`sk_test_` keys (and any request with `"sandbox": true`) run in sandbox mode and never move
-real funds. `GET /api/intent/:id` and `GET /api/intent/status` are public (no key required).
+`sk_test_` keys (and any request with `"sandbox": true`) run in sandbox mode on Arc testnet and never move
+real funds. `sk_test_` keys have full access to create test recurring subscription checkouts (`POST /api/v1/subscriptions`), publish catalog plans (`POST /api/v1/plans`), and send actionable DM offers without requiring an active Premium subscription tier during development. `GET /api/intent/:id` and `GET /api/intent/status` are public (no key required).
 
 Signed-in Premium merchants can create a key and register its webhook in one setup request:
 
