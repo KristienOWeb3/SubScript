@@ -131,7 +131,7 @@ npx @subscriptonarc/cli trigger subscription.payment_failed --url http://localho
 ## 7. Subscriptions (optional)
 
 For a reusable plan that appears in your merchant dashboard and users' DM plan picker, create
-the catalog entry first:
+the catalog entry first (your `sk_test_` key works out of the box for testnet plan creation and DM publishing without requiring an active Premium tier upgrade during development):
 
 ```ts
 const plan = await subscript.plans.create({
@@ -151,8 +151,7 @@ const sub = await subscript.subscriptions.create({
   publishToDm: true, // true is already the default
 });
 // sub.status is "incomplete" until the customer authorizes it on-chain at sub.checkoutUrl.
-// Handle subscription.created first, then subscription.renewed on each settled cycle
-// (and subscription.payment_failed / subscription.canceled).
+// When subscriber is passed, an actionable subscription DM offer is automatically created in the subscriber's DM inbox.
 ```
 
 Use `POST /api/v1/subscriptions` directly when you do not need a reusable catalog entry. API
