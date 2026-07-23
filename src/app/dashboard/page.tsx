@@ -5047,7 +5047,7 @@ Please complete the following implementation tasks:
                                             <button
                                                 onClick={handleTriggerKeeper}
                                                 disabled={isTriggeringKeeper}
-                                                className="px-5 py-3 bg-[#d4a853] text-black font-bold rounded-xl text-xs uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                                className={`px-5 py-3 bg-[#d4a853] text-black font-bold rounded-xl text-xs uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 relative overflow-hidden ${isTriggeringKeeper ? "quick-action-loading" : ""}`}
                                             >
                                                 {isTriggeringKeeper ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                                                 Run Keepers
@@ -5084,7 +5084,7 @@ Please complete the following implementation tasks:
                                                 <button
                                                     onClick={handleResumePremium}
                                                     disabled={isResumingPremium || !isPremium}
-                                                    className="px-5 py-3 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/30 rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                                    className={`px-5 py-3 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/30 rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 relative overflow-hidden ${isResumingPremium ? "quick-action-loading" : ""}`}
                                                 >
                                                     {isResumingPremium ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                                                     Resume Premium
@@ -5093,7 +5093,7 @@ Please complete the following implementation tasks:
                                                 <button
                                                     onClick={handleCancelPremium}
                                                     disabled={isCancellingPremium || !isPremium}
-                                                    className="px-5 py-3 bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold border border-red-500/30 rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                                    className={`px-5 py-3 bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold border border-red-500/30 rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 relative overflow-hidden ${isCancellingPremium ? "quick-action-loading" : ""}`}
                                                 >
                                                     {isCancellingPremium ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5" />}
                                                     Cancel Privacy Premium
@@ -5725,7 +5725,7 @@ Please complete the following implementation tasks:
                                 <button
                                     type="submit"
                                     disabled={isAddingWebhook || !webhookUrlInput}
-                                    className="px-6 py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/80 disabled:opacity-50 text-black text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 w-full sm:w-auto shrink-0"
+                                    className={`px-6 py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/80 disabled:opacity-50 text-black text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 w-full sm:w-auto shrink-0 relative overflow-hidden ${isAddingWebhook ? "quick-action-loading" : ""}`}
                                 >
                                     {isAddingWebhook ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlugZap className="w-3.5 h-3.5" />}
                                     Add Endpoint
@@ -5772,13 +5772,21 @@ Please complete the following implementation tasks:
                                                             >
                                                                 {revealWebhookSecret === ep.id ? "Hide" : "Reveal"}
                                                             </button>
-                                                            {revealWebhookSecret === ep.id && <button
-                                                            type="button"
-                                                            onClick={() => handleCopy(ep.secret, "Webhook Secret")}
-                                                            className="text-white/40 hover:text-white"
-                                                        >
-                                                            <Copy className="w-3 h-3" />
-                                                            </button>}
+                                                            {revealWebhookSecret === ep.id && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleCopy(ep.secret, `Webhook Secret ${ep.id}`)}
+                                                                    className="inline-flex items-center gap-1 text-[#00d2b4] hover:underline font-semibold"
+                                                                >
+                                                                    {copiedText === `Webhook Secret ${ep.id}` ? (
+                                                                        <span className="text-emerald-400 font-bold flex items-center gap-1"><Check className="w-3 h-3" /> Copied to clipboard!</span>
+                                                                    ) : (
+                                                                        <>
+                                                                            <Copy className="w-3 h-3" /> Copy secret
+                                                                        </>
+                                                                    )}
+                                                                </button>
+                                                            )}
                                                         </>
                                                     )}
                                                 </div>
