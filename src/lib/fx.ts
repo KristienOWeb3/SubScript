@@ -12,7 +12,7 @@ export const FALLBACK_RATES: Record<string, number> = {
     EUR: 0.92,
     GBP: 0.79,
     JPY: 160.5,
-    NGN: 1600.0,
+    NGN: 1370.0,
     INR: 83.5,
     CAD: 1.37,
     AUD: 1.50,

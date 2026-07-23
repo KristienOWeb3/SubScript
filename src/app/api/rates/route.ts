@@ -11,7 +11,12 @@ export async function GET(request: Request) {
         // If currency is not specified, detect from geo-IP country header
         if (!currency) {
             const headersList = await headers();
-            const country = headersList.get("x-user-country") || "US";
+            const country =
+                headersList.get("x-vercel-ip-country") ||
+                headersList.get("cf-ipcountry") ||
+                headersList.get("x-country-code") ||
+                headersList.get("x-user-country") ||
+                "US";
             currency = getCurrencyForCountry(country);
         }
 

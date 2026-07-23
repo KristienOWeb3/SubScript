@@ -144,7 +144,7 @@ test("money movement requires review and never exposes a cancel result after bro
 
     assert.match(withdrawal, /Review withdrawal/);
     assert.match(withdrawal, /on-chain transfer cannot be reversed/i);
-    assert.match(withdrawal, /Batch payouts unavailable/);
+    assert.doesNotMatch(withdrawal, /Batch payouts/);
 });
 
 test("a completed CCTP burn is resumable and cannot be presented as a fresh bridge", () => {

@@ -1,10 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Wallet, ShieldCheck, ArrowRight, Loader2, Upload, FileText, CheckCircle2, Lock } from "@/components/icons";
+import { X, Wallet, ShieldCheck, ArrowRight, Loader2 } from "@/components/icons";
 import { ethers } from "ethers";
-import Link from "next/link";
 
 interface WithdrawModalProps {
     isOpen: boolean;
@@ -25,120 +24,12 @@ export default function WithdrawModal({
     payoutDestination,
     onConfirmWithdraw,
     isWithdrawing,
-    isPremium = false,
 }: WithdrawModalProps) {
-    const [payoutMode, setPayoutMode] = useState<"single" | "batch">("single");
     const [destinationType, setDestinationType] = useState<"connected" | "configured" | "custom">("connected");
     const [customAddress, setCustomAddress] = useState("");
     const [confirmCustomAddress, setConfirmCustomAddress] = useState("");
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [singleReviewTarget, setSingleReviewTarget] = useState<string | null>(null);
-    const [batchReviewOpen, setBatchReviewOpen] = useState(false);
-
-    /* Manual entry state for batch mode */
-    const [batchInputMode, setBatchInputMode] = useState<'csv' | 'manual'>('csv');
-    const [manualRows, setManualRows] = useState<{address: string; amount: string}[]>([{address: '', amount: ''}, {address: '', amount: ''}]);
-
-    /* Batch payout state */
-    const [batchText, setBatchText] = useState("");
-    const [batchRecipients, setBatchRecipients] = useState<{ address: string; amount: string }[]>([]);
-    const [batchTotalUsdc, setBatchTotalUsdc] = useState(0);
-    const [batchTotalMicro, setBatchTotalMicro] = useState(BigInt(0));
-    const [invalidRows, setInvalidRows] = useState(0);
-    const [combinedRows, setCombinedRows] = useState(0);
-    const [isBatchExecuting, setIsBatchExecuting] = useState(false);
-    const [batchSuccessResult, setBatchSuccessResult] = useState<any | null>(null);
-    const batchRequestKey = useRef<string | null>(null);
-
-    const fileInputRef = useRef<HTMLInputElement>(null);
-
-    /* Parse CSV or raw text list of recipients */
-    const processBatchText = (text: string) => {
-        setErrorMsg(null);
-        setBatchSuccessResult(null);
-        setBatchReviewOpen(false);
-        const lines = text.split(/\r?\n/);
-        const recipientsMap = new Map<string, bigint>();
-        let invalidCount = 0;
-        let combinedCount = 0;
-
-        for (let line of lines) {
-            line = line.trim();
-            if (!line) continue;
-
-            const parts = line.split(/[;,\t\s]+/);
-            if (parts.length < 2) {
-                invalidCount++;
-                continue;
-            }
-
-            const rawAddr = parts[0].trim();
-            const rawAmt = parts[1].trim();
-
-            if (!rawAddr.startsWith("0x") || rawAddr.length !== 42 || !ethers.isAddress(rawAddr)) {
-                invalidCount++;
-                continue;
-            }
-
-            const normalizedAddr = rawAddr.toLowerCase();
-            const amtFloat = parseFloat(rawAmt);
-            if (isNaN(amtFloat) || amtFloat <= 0) {
-                invalidCount++;
-                continue;
-            }
-
-            /* Convert to micro-USDC (6 decimals) */
-            const amtMicro = BigInt(Math.round(amtFloat * 1000000));
-            if (recipientsMap.has(normalizedAddr)) {
-                recipientsMap.set(normalizedAddr, recipientsMap.get(normalizedAddr)! + amtMicro);
-                combinedCount++;
-            } else {
-                recipientsMap.set(normalizedAddr, amtMicro);
-            }
-        }
-
-        const list = Array.from(recipientsMap.entries()).map(([address, amount]) => ({
-            address,
-            amount: amount.toString()
-        }));
-
-        const total = Array.from(recipientsMap.values()).reduce((acc, val) => acc + val, BigInt(0));
-
-        setBatchRecipients(list);
-        setBatchTotalMicro(total);
-        setBatchTotalUsdc(Number(total) / 1000000);
-        setInvalidRows(invalidCount);
-        setCombinedRows(combinedCount);
-    };
-
-    const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        const text = e.target.value;
-        setBatchText(text);
-        processBatchText(text);
-    };
-
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setErrorMsg(null);
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        if (file.size > 200 * 1024) {
-            setErrorMsg("File size exceeds 200KB limit.");
-            return;
-        }
-
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const text = event.target?.result as string;
-            setBatchText(text);
-            processBatchText(text);
-        };
-        reader.readAsText(file);
-    };
-
-    const triggerFileSelect = () => {
-        fileInputRef.current?.click();
-    };
 
     const reviewSingleWithdrawal = () => {
         setErrorMsg(null);
@@ -183,80 +74,15 @@ export default function WithdrawModal({
         }
     };
 
-    const handleBatchConfirm = async () => {
-        setErrorMsg(null);
-        setBatchSuccessResult(null);
-
-        if (batchRecipients.length === 0) {
-            setErrorMsg("Please specify at least one valid recipient.");
-            return;
-        }
-
-        if (batchTotalUsdc > vaultBalance) {
-            setErrorMsg("Insufficient funds: total batch amount exceeds your claimable balance.");
-            return;
-        }
-
-        if (!batchReviewOpen) {
-            setBatchReviewOpen(true);
-            return;
-        }
-
-        setIsBatchExecuting(true);
-
-        try {
-            batchRequestKey.current ||= crypto.randomUUID();
-            const response = await fetch("/api/premium/withdraw/batch", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    recipients: batchRecipients,
-                    idempotencyKey: batchRequestKey.current,
-                })
-            });
-
-            const data = await response.json();
-            if (!response.ok) {
-                throw new Error(data.error || "Batch execution failed.");
-            }
-
-            setBatchSuccessResult(data);
-            batchRequestKey.current = null;
-            setBatchReviewOpen(false);
-            setBatchText("");
-            setBatchRecipients([]);
-            setBatchTotalMicro(BigInt(0));
-            setBatchTotalUsdc(0);
-            setCombinedRows(0);
-            setInvalidRows(0);
-
-        } catch (err: any) {
-            setErrorMsg(err.message || "Batch payout failed.");
-        } finally {
-            setIsBatchExecuting(false);
-        }
-    };
-
     const resetStates = useCallback(() => {
-        if (isWithdrawing || isBatchExecuting) return;
+        if (isWithdrawing) return;
         setErrorMsg(null);
         setDestinationType("connected");
         setCustomAddress("");
         setConfirmCustomAddress("");
-        setBatchText("");
-        setBatchRecipients([]);
-        setBatchTotalMicro(BigInt(0));
-        setBatchTotalUsdc(0);
-        setCombinedRows(0);
-        setInvalidRows(0);
-        setBatchSuccessResult(null);
         setSingleReviewTarget(null);
-        setBatchReviewOpen(false);
-        setPayoutMode("single");
         onClose();
-    }, [isWithdrawing, isBatchExecuting, onClose]);
+    }, [isWithdrawing, onClose]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -291,424 +117,174 @@ export default function WithdrawModal({
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="withdraw-dialog-title"
-                        className="relative max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain bg-[#0a0a0c] border border-white/5 rounded-[32px] p-6 sm:p-8 shadow-2xl z-10 text-white"
+                        className="relative max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overflow-x-hidden overscroll-contain liquid-glass border border-white/10 rounded-[32px] p-6 sm:p-8 shadow-2xl z-10 text-white bg-black/85 backdrop-blur-2xl"
                     >
                         {/* Background glowing glow */}
-                        <div className="absolute -top-24 -right-24 w-48 h-48 bg-red-500/5 rounded-full blur-[80px] pointer-events-none" />
+                        <div className="absolute -top-24 -right-24 w-48 h-48 bg-[#00d2b4]/10 rounded-full blur-[80px] pointer-events-none" />
 
                         {/* Header */}
-                        <div className="flex justify-between items-center mb-6">
+                        <div className="flex justify-between items-center mb-6 relative z-10">
                             <div className="flex items-center gap-2.5">
-                                <div className="w-8 h-8 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center justify-center">
-                                    <Wallet className="w-4 h-4 text-red-400" />
+                                <div className="w-9 h-9 bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-xl flex items-center justify-center shadow-lg shadow-[#00d2b4]/5">
+                                    <Wallet className="w-4.5 h-4.5 text-[#00d2b4]" />
                                 </div>
                                 <div>
-                                    <h3 id="withdraw-dialog-title" className="text-sm font-bold uppercase tracking-wider">Withdraw settlement</h3>
+                                    <h3 id="withdraw-dialog-title" className="text-sm font-bold uppercase tracking-wider text-white">Withdraw Settlement</h3>
                                     <p className="text-[10px] text-white/40 font-mono mt-0.5">On-chain USDC payout · Arc Network</p>
                                 </div>
                             </div>
                             <button
                                 onClick={resetStates}
-                                disabled={isWithdrawing || isBatchExecuting}
+                                disabled={isWithdrawing}
                                 aria-label="Close withdrawal dialog"
-                                className="p-1.5 hover:bg-white/5 border border-transparent hover:border-white/10 rounded-xl transition-all text-white/50 hover:text-white"
+                                className="p-2 hover:bg-white/5 border border-transparent hover:border-white/10 rounded-xl transition-all text-white/50 hover:text-white"
                             >
-                                <X className="w-4.5 h-4.5" />
+                                <X className="w-4 h-4" />
                             </button>
                         </div>
 
                         {/* Claimable Balance Display */}
-                        <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-5 mb-5 text-center">
-                            <p className="text-[10px] text-white/35 uppercase font-bold tracking-widest leading-none mb-1.5">Claimable Balance</p>
-                            <p className="text-2xl font-black text-white leading-none">
-                                {vaultBalance.toFixed(2)}
-                                <span className="text-[10px] text-white/40 font-normal ml-1">USDC</span>
+                        <div className="bg-white/[0.02] border border-white/10 rounded-2xl p-5 mb-6 text-center backdrop-blur-md relative z-10">
+                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest leading-none mb-2">Claimable Settlement Balance</p>
+                            <p className="text-3xl font-black text-white leading-none tracking-tight">
+                                {vaultBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                <span className="text-xs text-[#00d2b4] font-bold ml-1.5 font-mono">USDC</span>
                             </p>
                         </div>
 
-                        {/* Tab Switcher */}
-                        <div className="flex bg-white/[0.02] border border-white/5 p-1 rounded-xl mb-6">
-                            <button
-                                type="button"
-                                onClick={() => { setPayoutMode("single"); setErrorMsg(null); setBatchSuccessResult(null); }}
-                                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
-                                    payoutMode === "single"
-                                        ? "bg-white/5 border border-white/10 text-white shadow-sm"
-                                        : "text-white/40 hover:text-white/70"
-                                }`}
-                            >
-                                Single Withdrawal
-                            </button>
-                            <button
-                                type="button"
-                                disabled
-                                aria-disabled="true"
-                                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
-                                    payoutMode === "batch"
-                                        ? "bg-white/5 border border-white/10 text-white shadow-sm"
-                                        : "text-white/40 hover:text-white/70"
-                                }`}
-                            >
-                                Batch payouts unavailable
-                            </button>
-                        </div>
-
-                        {payoutMode === "single" ? (
-                            /* Single Withdrawal Interface */
-                            <div>
-                                {/* Destination Picker */}
-                                <div className="space-y-3 mb-6 font-sans text-xs">
-                                    <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-1.5">Select Payout Target</p>
-                                    
-                                    <button
-                                        type="button"
-                                        onClick={() => { setDestinationType("connected"); setErrorMsg(null); setSingleReviewTarget(null); }}
-                                        className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center justify-between ${
-                                            destinationType === "connected"
-                                                ? "border-[#00d2b4]/30 bg-[#00d2b4]/5 text-white"
-                                                : "border-white/5 bg-white/[0.01] hover:bg-white/[0.03] text-white/70"
-                                        }`}
-                                    >
-                                        <div>
-                                            <p className="font-semibold mb-0.5">Connected Merchant Wallet</p>
-                                            <p className="text-[10px] font-mono opacity-50">{connectedAddress ? `${connectedAddress.slice(0, 10)}...${connectedAddress.slice(-8)}` : "None connected"}</p>
-                                        </div>
-                                        <ShieldCheck className={`w-4 h-4 ${destinationType === "connected" ? "text-[#00d2b4]" : "opacity-0"}`} />
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => { setDestinationType("configured"); setErrorMsg(null); setSingleReviewTarget(null); }}
-                                        disabled={!hasConfiguredPayout}
-                                        className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center justify-between ${
-                                            !hasConfiguredPayout
-                                                ? "opacity-40 cursor-not-allowed border-white/5 bg-white/[0.01]"
-                                                : destinationType === "configured"
-                                                    ? "border-[#00d2b4]/30 bg-[#00d2b4]/5 text-white"
-                                                    : "border-white/5 bg-white/[0.01] hover:bg-white/[0.03] text-white/70"
-                                        }`}
-                                    >
-                                        <div>
-                                            <p className="font-semibold mb-0.5">Saved Payout Destination</p>
-                                            <p className="text-[10px] font-mono opacity-50">
-                                                {hasConfiguredPayout
-                                                    ? `${payoutDestination!.slice(0, 10)}...${payoutDestination!.slice(-8)}` 
-                                                    : "No payout destination configured"
-                                                }
-                                            </p>
-                                        </div>
-                                        <ShieldCheck className={`w-4 h-4 ${destinationType === "configured" ? "text-[#00d2b4]" : "opacity-0"}`} />
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => { setDestinationType("custom"); setErrorMsg(null); setSingleReviewTarget(null); }}
-                                        className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center justify-between ${
-                                            destinationType === "custom"
-                                                ? "border-[#00d2b4]/30 bg-[#00d2b4]/5 text-white"
-                                                : "border-white/5 bg-white/[0.01] hover:bg-white/[0.03] text-white/70"
-                                        }`}
-                                    >
-                                        <div>
-                                            <p className="font-semibold mb-0.5">Custom Payout Wallet Address</p>
-                                            <p className="text-[10px] opacity-50">Send the full claimable balance to an external wallet</p>
-                                        </div>
-                                        <ShieldCheck className={`w-4 h-4 ${destinationType === "custom" ? "text-[#00d2b4]" : "opacity-0"}`} />
-                                    </button>
-
-                                    <AnimatePresence>
-                                        {destinationType === "custom" && (
-                                            <motion.div
-                                                initial={{ height: 0, opacity: 0 }}
-                                                animate={{ height: "auto", opacity: 1 }}
-                                                exit={{ height: 0, opacity: 0 }}
-                                                className="overflow-hidden space-y-2.5"
-                                            >
-                                                <input
-                                                    type="text"
-                                                    placeholder="Enter target wallet address (0x...)"
-                                                    value={customAddress}
-                                                    onChange={(e) => { setCustomAddress(e.target.value); setErrorMsg(null); setSingleReviewTarget(null); }}
-                                                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-xs text-white placeholder-white/20 focus:outline-none focus:border-[#00d2b4] transition-colors font-mono"
-                                                />
-                                                <input
-                                                    type="text"
-                                                    placeholder="Confirm target wallet address (0x...)"
-                                                    value={confirmCustomAddress}
-                                                    onChange={(e) => { setConfirmCustomAddress(e.target.value); setErrorMsg(null); setSingleReviewTarget(null); }}
-                                                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-xs text-white placeholder-white/20 focus:outline-none focus:border-[#00d2b4] transition-colors font-mono"
-                                                />
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-                                </div>
-
-                                {vaultBalance < 1.0 && (
-                                    <p className="text-amber-500 text-[10px] mb-4 font-semibold">Minimum withdrawal amount is 1.00 USDC.</p>
-                                )}
-                                {errorMsg && (
-                                    <p className="text-red-400 text-[10px] mb-4 font-mono font-semibold">{errorMsg}</p>
-                                )}
-
-                                {singleReviewTarget && (
-                                    <div className="mb-4 space-y-3 rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-xs">
-                                        <div className="flex items-center justify-between gap-3">
-                                            <span className="text-white/45">Amount</span>
-                                            <span className="font-bold text-white">{vaultBalance.toFixed(2)} USDC</span>
-                                        </div>
-                                        <div className="space-y-1">
-                                            <span className="text-white/45">Destination</span>
-                                            <p className="break-all font-mono text-[10px] text-white/80">{singleReviewTarget}</p>
-                                        </div>
-                                        <p className="border-t border-white/10 pt-3 text-[10px] leading-relaxed text-amber-200/80">
-                                            This on-chain transfer cannot be reversed. Verify the full destination before confirming.
-                                        </p>
-                                        <button type="button" onClick={() => setSingleReviewTarget(null)} className="text-[10px] font-bold uppercase tracking-wider text-white/55 hover:text-white">
-                                            Back to edit
-                                        </button>
+                        {/* Single Withdrawal Interface */}
+                        <div className="relative z-10">
+                            {/* Destination Picker */}
+                            <div className="space-y-3 mb-6 font-sans text-xs">
+                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-1.5">Select Payout Destination</p>
+                                
+                                <button
+                                    type="button"
+                                    onClick={() => { setDestinationType("connected"); setErrorMsg(null); setSingleReviewTarget(null); }}
+                                    className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center justify-between ${
+                                        destinationType === "connected"
+                                            ? "border-[#00d2b4]/40 bg-[#00d2b4]/10 text-white shadow-lg shadow-[#00d2b4]/5"
+                                            : "border-white/5 bg-white/[0.01] hover:bg-white/[0.03] text-white/70"
+                                    }`}
+                                >
+                                    <div>
+                                        <p className="font-semibold mb-0.5 text-white">Connected Merchant Wallet</p>
+                                        <p className="text-[10px] font-mono opacity-50">{connectedAddress ? `${connectedAddress.slice(0, 10)}...${connectedAddress.slice(-8)}` : "None connected"}</p>
                                     </div>
-                                )}
+                                    <ShieldCheck className={`w-4.5 h-4.5 ${destinationType === "connected" ? "text-[#00d2b4]" : "opacity-0"}`} />
+                                </button>
 
                                 <button
                                     type="button"
-                                    onClick={singleReviewTarget ? handleSingleConfirm : reviewSingleWithdrawal}
-                                    disabled={isWithdrawing || vaultBalance < 1.0}
-                                    className="w-full py-3.5 bg-gradient-to-r from-red-500 to-pink-500 hover:brightness-110 disabled:opacity-40 text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(239,68,68,0.2)]"
+                                    onClick={() => { setDestinationType("configured"); setErrorMsg(null); setSingleReviewTarget(null); }}
+                                    disabled={!hasConfiguredPayout}
+                                    className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center justify-between ${
+                                        !hasConfiguredPayout
+                                            ? "opacity-40 cursor-not-allowed border-white/5 bg-white/[0.01]"
+                                            : destinationType === "configured"
+                                                ? "border-[#00d2b4]/40 bg-[#00d2b4]/10 text-white shadow-lg shadow-[#00d2b4]/5"
+                                                : "border-white/5 bg-white/[0.01] hover:bg-white/[0.03] text-white/70"
+                                    }`}
                                 >
-                                    {isWithdrawing ? (
-                                        <>
-                                            Waiting for on-chain confirmation...
-                                        </>
-                                    ) : (
-                                        <>
-                                            {singleReviewTarget ? "Withdraw USDC now" : "Review withdrawal"} <ArrowRight className="w-4 h-4" />
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        ) : (
-                            /* Batch Payout Interface */
-                            <div>
-                                {!isPremium ? (
-                                    <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-xl min-h-[300px] flex flex-col items-center justify-center text-center gap-4 relative overflow-hidden bg-[#0a0a0c]/90 backdrop-blur-md z-20">
-                                        <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl">
-                                            <Lock className="w-6 h-6" />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <h3 className="text-xs font-bold text-white uppercase tracking-wider">Privacy Premium Feature</h3>
-                                            <p className="text-[10px] text-white/55 max-w-xs leading-relaxed">
-                                                High-throughput Batch Payouts via CSV upload are exclusive to the Privacy Premium tier. Upgrade your account to unlock batch withdrawals.
-                                            </p>
-                                        </div>
-                                        <Link
-                                            href="/merchant/upgrade"
-                                            onClick={resetStates}
-                                            className="px-6 py-2.5 bg-[#d4a853] hover:brightness-105 text-black rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all shadow-lg shadow-[#d4a853]/15 text-center"
-                                        >
-                                            Upgrade Now
-                                        </Link>
-                                    </div>
-                                ) : (
                                     <div>
-                                        {/* Batch Input Mode Toggle */}
-                                        <div className="flex items-center gap-2 mb-4">
-                                            <button
-                                                onClick={() => setBatchInputMode('csv')}
-                                                className={`flex-1 text-[10px] font-bold uppercase tracking-wider py-2 rounded-xl border transition-all ${
-                                                    batchInputMode === 'csv'
-                                                        ? 'bg-[#00d2b4]/10 border-[#00d2b4]/30 text-[#00d2b4]'
-                                                        : 'bg-white/[0.02] border-white/5 text-white/40 hover:text-white/60'
-                                                }`}
-                                            >
-                                                CSV Upload
-                                            </button>
-                                            <button
-                                                onClick={() => setBatchInputMode('manual')}
-                                                className={`flex-1 text-[10px] font-bold uppercase tracking-wider py-2 rounded-xl border transition-all ${
-                                                    batchInputMode === 'manual'
-                                                        ? 'bg-[#00d2b4]/10 border-[#00d2b4]/30 text-[#00d2b4]'
-                                                        : 'bg-white/[0.02] border-white/5 text-white/40 hover:text-white/60'
-                                                }`}
-                                            >
-                                                Manual Entry
-                                            </button>
-                                        </div>
-
-                                        {batchInputMode === 'manual' ? (
-                                            <div className="space-y-3 mb-5">
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Recipients ({manualRows.length})</span>
-                                                    <button
-                                                        onClick={() => setManualRows(prev => [...prev, {address: '', amount: ''}])}
-                                                        className="text-[10px] text-[#00d2b4] font-bold hover:text-[#00d2b4]/80 transition-colors"
-                                                    >
-                                                        + Add Row
-                                                    </button>
-                                                </div>
-                                                {manualRows.map((row, idx) => (
-                                                    <div key={idx} className="flex gap-2 items-center">
-                                                        <input
-                                                            type="text"
-                                                            placeholder="0x... recipient address"
-                                                            value={row.address}
-                                                            onChange={(e) => {
-                                                                const updated = [...manualRows];
-                                                                updated[idx].address = e.target.value;
-                                                                setManualRows(updated);
-                                                            }}
-                                                            className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white placeholder-white/20 focus:outline-none focus:border-[#00d2b4]/30 font-mono"
-                                                        />
-                                                        <input
-                                                            type="text"
-                                                            placeholder="Amount (USDC)"
-                                                            value={row.amount}
-                                                            onChange={(e) => {
-                                                                const updated = [...manualRows];
-                                                                updated[idx].amount = e.target.value;
-                                                                setManualRows(updated);
-                                                            }}
-                                                            className="w-28 bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white placeholder-white/20 focus:outline-none focus:border-[#00d2b4]/30"
-                                                        />
-                                                        {manualRows.length > 1 && (
-                                                            <button
-                                                                onClick={() => setManualRows(prev => prev.filter((_, i) => i !== idx))}
-                                                                className="text-white/20 hover:text-red-400 transition-colors p-1"
-                                                            >
-                                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                                <button
-                                                    onClick={() => {
-                                                        const text = manualRows
-                                                            .filter(r => r.address && r.amount)
-                                                            .map(r => `${r.address},${r.amount}`)
-                                                            .join('\n');
-                                                        setBatchText(text);
-                                                        processBatchText(text);
-                                                    }}
-                                                    className="w-full py-2.5 bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-[#00d2b4] text-[10px] font-bold uppercase tracking-wider rounded-xl hover:bg-[#00d2b4]/20 transition-all"
-                                                >
-                                                    Process Recipients
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-4 mb-5">
-                                                <div className="flex justify-between items-center">
-                                                    <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Recipients & Amounts (CSV)</p>
-                                                    <button
-                                                        type="button"
-                                                        onClick={triggerFileSelect}
-                                                        className="flex items-center gap-1.5 text-[10px] text-red-400 hover:text-red-300 font-bold uppercase transition"
-                                                    >
-                                                        <Upload className="w-3.5 h-3.5" /> Upload CSV File
-                                                    </button>
-                                                    <input
-                                                        type="file"
-                                                        ref={fileInputRef}
-                                                        onChange={handleFileUpload}
-                                                        accept=".csv,.txt"
-                                                        className="hidden"
-                                                    />
-                                                </div>
-
-                                                <textarea
-                                                    rows={5}
-                                                    placeholder={"0xaddress1, 10.50\n0xaddress2, 25.00"}
-                                                    value={batchText}
-                                                    onChange={handleTextChange}
-                                                    className="w-full bg-black border border-white/10 rounded-2xl p-4 text-xs font-mono text-white placeholder-white/15 focus:outline-none focus:border-red-500 transition-colors"
-                                                />
-                                                <p className="text-[9px] text-white/30 font-mono leading-normal mt-0.5">Format: one entry per line, comma or space separated. Example: 0x71C...8976F, 12.34</p>
-                                            </div>
-                                        )}
-
-                                        {/* Batch Summary Panel */}
-                                        {batchRecipients.length > 0 && (
-                                            <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-4 mb-5 space-y-2.5 font-sans text-xs">
-                                                <div className="flex justify-between">
-                                                    <span className="text-white/40">Total Recipients:</span>
-                                                    <span className="font-bold text-white">{batchRecipients.length}</span>
-                                                </div>
-                                                <div className="flex justify-between">
-                                                    <span className="text-white/40">Total Payout Amount:</span>
-                                                    <span className="font-bold text-red-400">${batchTotalUsdc.toFixed(2)} USDC</span>
-                                                </div>
-                                                {(invalidRows > 0 || combinedRows > 0) && (
-                                                    <div className="pt-2 border-t border-white/5 flex gap-3 text-[9px] font-mono">
-                                                        {combinedRows > 0 && (
-                                                            <span className="text-amber-400 font-semibold">{combinedRows} duplicate entries merged</span>
-                                                        )}
-                                                        {invalidRows > 0 && (
-                                                            <span className="text-red-400 font-semibold">{invalidRows} invalid rows ignored</span>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-
-                                        {/* Success Receipt */}
-                                        {batchSuccessResult && (
-                                            <div className="bg-[#10b981]/5 border border-[#10b981]/15 rounded-2xl p-4 mb-5 text-xs text-white/80 space-y-2 flex flex-col items-center">
-                                                <CheckCircle2 className={`w-8 h-8 mb-1 ${batchSuccessResult.failedCount > 0 ? "text-amber-300" : "text-[#10b981]"}`} />
-                                                <p className={`font-bold text-sm text-center ${batchSuccessResult.failedCount > 0 ? "text-amber-300" : "text-[#10b981]"}`}>{batchSuccessResult.failedCount > 0 ? "Batch completed with failures" : "Batch payout confirmed"}</p>
-                                                <div className="w-full space-y-1.5 pt-2 border-t border-[#10b981]/10">
-                                                    <div className="flex justify-between">
-                                                        <span className="text-white/40">Batch Status:</span>
-                                                        <span className="font-bold uppercase text-[#10b981]">{batchSuccessResult.status}</span>
-                                                    </div>
-                                                    {batchSuccessResult.failedCount > 0 && <p className="pt-2 text-[10px] leading-relaxed text-amber-200/80">Review the failed transfers in payout history and retry only those recipients. Successful transfers must not be submitted again.</p>}
-                                                    <div className="flex justify-between">
-                                                        <span className="text-white/40">Sent:</span>
-                                                        <span>{batchSuccessResult.successfulCount} transfers</span>
-                                                    </div>
-                                                    <div className="flex justify-between">
-                                                        <span className="text-white/40">Failed:</span>
-                                                        <span>{batchSuccessResult.failedCount} transfers</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {errorMsg && (
-                                            <p className="text-red-400 text-[10px] mb-4 font-mono font-semibold">{errorMsg}</p>
-                                        )}
-
-                                        {batchReviewOpen && (
-                                            <div className="mb-4 space-y-3 rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-xs">
-                                                <div className="flex justify-between gap-3"><span className="text-white/45">Recipients</span><span className="font-bold">{batchRecipients.length}</span></div>
-                                                <div className="flex justify-between gap-3"><span className="text-white/45">Total</span><span className="font-bold">{batchTotalUsdc.toFixed(2)} USDC</span></div>
-                                                <div className="max-h-32 space-y-1 overflow-y-auto border-y border-white/10 py-2">
-                                                    {batchRecipients.map((recipient) => <div key={recipient.address} className="flex justify-between gap-3 font-mono text-[9px]"><span className="truncate text-white/55">{recipient.address}</span><span className="shrink-0 text-white/80">{(Number(recipient.amount) / 1_000_000).toFixed(2)} USDC</span></div>)}
-                                                </div>
-                                                <p className="border-t border-white/10 pt-3 text-[10px] leading-relaxed text-amber-200/80">
-                                                    These on-chain transfers cannot be reversed. Invalid rows are excluded; review the recipient count and total before sending.
-                                                </p>
-                                                <button type="button" onClick={() => setBatchReviewOpen(false)} className="text-[10px] font-bold uppercase tracking-wider text-white/55 hover:text-white">Back to edit</button>
-                                            </div>
-                                        )}
-
-                                        <button
-                                            type="button"
-                                            onClick={handleBatchConfirm}
-                                            disabled={isBatchExecuting || batchRecipients.length === 0 || batchTotalUsdc > vaultBalance}
-                                            className="w-full py-3.5 bg-gradient-to-r from-red-500 to-pink-500 hover:brightness-110 disabled:opacity-40 text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(239,68,68,0.2)]"
-                                        >
-                                            {isBatchExecuting ? (
-                                                <>
-                                                    Processing Batch Transfers...
-                                                </>
-                                            ) : (
-                                                <>
-                                                    {batchReviewOpen ? "Send batch now" : "Review batch payout"} <ArrowRight className="w-4 h-4" />
-                                                </>
-                                            )}
-                                        </button>
+                                        <p className="font-semibold mb-0.5 text-white">Saved Payout Destination</p>
+                                        <p className="text-[10px] font-mono opacity-50">
+                                            {hasConfiguredPayout
+                                                ? `${payoutDestination!.slice(0, 10)}...${payoutDestination!.slice(-8)}` 
+                                                : "No payout destination configured"
+                                            }
+                                        </p>
                                     </div>
-                                )}
+                                    <ShieldCheck className={`w-4.5 h-4.5 ${destinationType === "configured" ? "text-[#00d2b4]" : "opacity-0"}`} />
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => { setDestinationType("custom"); setErrorMsg(null); setSingleReviewTarget(null); }}
+                                    className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center justify-between ${
+                                        destinationType === "custom"
+                                            ? "border-[#00d2b4]/40 bg-[#00d2b4]/10 text-white shadow-lg shadow-[#00d2b4]/5"
+                                            : "border-white/5 bg-white/[0.01] hover:bg-white/[0.03] text-white/70"
+                                    }`}
+                                >
+                                    <div>
+                                        <p className="font-semibold mb-0.5 text-white">Custom Payout Wallet Address</p>
+                                        <p className="text-[10px] opacity-50">Send claimable settlement balance to an external wallet</p>
+                                    </div>
+                                    <ShieldCheck className={`w-4.5 h-4.5 ${destinationType === "custom" ? "text-[#00d2b4]" : "opacity-0"}`} />
+                                </button>
+
+                                <AnimatePresence>
+                                    {destinationType === "custom" && (
+                                        <motion.div
+                                            initial={{ height: 0, opacity: 0 }}
+                                            animate={{ height: "auto", opacity: 1 }}
+                                            exit={{ height: 0, opacity: 0 }}
+                                            className="overflow-hidden space-y-2.5 pt-1"
+                                        >
+                                            <input
+                                                type="text"
+                                                placeholder="Enter target wallet address (0x...)"
+                                                value={customAddress}
+                                                onChange={(e) => { setCustomAddress(e.target.value); setErrorMsg(null); setSingleReviewTarget(null); }}
+                                                className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-xs text-white placeholder-white/20 focus:outline-none focus:border-[#00d2b4] transition-colors font-mono box-border"
+                                            />
+                                            <input
+                                                type="text"
+                                                placeholder="Confirm target wallet address (0x...)"
+                                                value={confirmCustomAddress}
+                                                onChange={(e) => { setConfirmCustomAddress(e.target.value); setErrorMsg(null); setSingleReviewTarget(null); }}
+                                                className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-xs text-white placeholder-white/20 focus:outline-none focus:border-[#00d2b4] transition-colors font-mono box-border"
+                                            />
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </div>
-                        )}
+
+                            {vaultBalance < 1.0 && (
+                                <p className="text-amber-400 text-[10px] mb-4 font-semibold">Minimum withdrawal amount is 1.00 USDC.</p>
+                            )}
+                            {errorMsg && (
+                                <p className="text-red-400 text-[10px] mb-4 font-mono font-semibold">{errorMsg}</p>
+                            )}
+
+                            {singleReviewTarget && (
+                                <div className="mb-5 space-y-3 rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-xs">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <span className="text-white/45">Amount</span>
+                                        <span className="font-bold text-white">{vaultBalance.toFixed(2)} USDC</span>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <span className="text-white/45">Destination</span>
+                                        <p className="break-all font-mono text-[10px] text-white/90">{singleReviewTarget}</p>
+                                    </div>
+                                    <p className="border-t border-white/10 pt-3 text-[10px] leading-relaxed text-amber-200/80">
+                                        This on-chain transfer cannot be reversed. Verify the destination address before confirming.
+                                    </p>
+                                    <button type="button" onClick={() => setSingleReviewTarget(null)} className="text-[10px] font-bold uppercase tracking-wider text-white/60 hover:text-white transition-colors">
+                                        ← Back to edit
+                                    </button>
+                                </div>
+                            )}
+
+                            <button
+                                type="button"
+                                onClick={singleReviewTarget ? handleSingleConfirm : reviewSingleWithdrawal}
+                                disabled={isWithdrawing || vaultBalance < 1.0}
+                                className="w-full py-3.5 bg-[#00d2b4] hover:bg-[#00d2b4]/90 disabled:opacity-40 text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_25px_rgba(0,210,180,0.25)] hover:scale-[1.01] active:scale-[0.99]"
+                            >
+                                {isWithdrawing ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin text-black" />
+                                        Waiting for on-chain confirmation...
+                                    </>
+                                ) : (
+                                    <>
+                                        {singleReviewTarget ? "Confirm & Withdraw USDC" : "Review withdrawal"} <ArrowRight className="w-4 h-4" />
+                                    </>
+                                )}
+                            </button>
+                        </div>
                     </motion.div>
                 </div>
             )}

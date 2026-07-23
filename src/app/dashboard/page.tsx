@@ -475,15 +475,17 @@ export default function DashboardPage() {
 
         const fetchGeoCurrencyAndRate = async () => {
             try {
-                const res = await fetch("/api/rates");
+                const res = await fetch(`/api/rates?currency=${encodeURIComponent(initialCurrency.code)}`);
                 if (res.ok) {
                     const data = await res.json();
                     if (data.success) {
+                        const resolvedCode = data.currency || initialCurrency.code;
+                        const resolvedSymbol = resolvedCode === "NGN" ? "₦" : (data.symbol && data.symbol !== "E" ? data.symbol : initialCurrency.symbol);
                         setDetectedCurrency({
-                            code: data.currency,
-                            symbol: data.symbol
+                            code: resolvedCode,
+                            symbol: resolvedSymbol
                         });
-                        setExchangeRate(Number(data.rate));
+                        setExchangeRate(Number(data.rate) || 1.0);
                     }
                 }
             } catch (e) {
@@ -4440,13 +4442,11 @@ Please complete the following implementation tasks:
                                                             <td className="py-4">{item.nextBilling}</td>
                                                             <td className="py-4">
                                                                 <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                                                                    item.cancelAtPeriodEnd
-                                                                        ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                                                                        : item.active
-                                                                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                                                                            : "bg-red-500/10 text-red-400 border border-red-500/20"
+                                                                    item.cancelAtPeriodEnd || !item.active
+                                                                        ? "bg-red-500/10 text-red-400 border border-red-500/20"
+                                                                        : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                                                                 }`}>
-                                                                    {item.cancelAtPeriodEnd ? "Cancelling" : item.active ? "Active" : "Cancelled"}
+                                                                    {item.cancelAtPeriodEnd ? "Cancelled" : item.active ? "Active" : "Cancelled"}
                                                                 </span>
                                                             </td>
                                                             <td className="py-4 text-right">
@@ -4520,13 +4520,21 @@ Please complete the following implementation tasks:
                                         {balanceVisible ? `${detectedCurrency.symbol}${(walletBalance * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '•••••'}
                                     </span>
                                 </div>
-                                <div className="relative z-10">
+                                <div className="relative z-10 flex items-center gap-2">
+                                    <button
+                                        onClick={() => setIsSendWalletOpen(true)}
+                                        disabled={walletBalance <= 0 || isSendingWallet}
+                                        className="w-10 h-10 rounded-full border border-[#00d2b4]/30 bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 text-[#00d2b4] flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+                                        title="Withdraw / Send Out wallet balance"
+                                    >
+                                        <Send className="w-4 h-4" />
+                                    </button>
                                     <button
                                         onClick={() => setIsDepositOpen(true)}
-                                        className="w-12 h-12 rounded-full border border-white/20 bg-white/5 hover:bg-white/10 text-white flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
+                                        className="w-10 h-10 rounded-full border border-white/20 bg-white/5 hover:bg-white/10 text-white flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
                                         title="Deposit funds"
                                     >
-                                        <ArrowDown className="w-5 h-5 rotate-180" />
+                                        <ArrowDown className="w-4 h-4 rotate-180" />
                                     </button>
                                 </div>
                             </div>
@@ -4681,13 +4689,11 @@ Please complete the following implementation tasks:
                                                             <p className="text-[9px] font-mono text-white/40 mt-0.5">{item.displayAddress || item.shortSubAddress}</p>
                                                         </div>
                                                         <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider ${
-                                                            item.cancelAtPeriodEnd
-                                                                ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                                                                : item.active
-                                                                    ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                                                                    : "bg-red-500/10 text-red-400 border border-red-500/20"
+                                                            item.cancelAtPeriodEnd || !item.active
+                                                                ? "bg-red-500/10 text-red-400 border border-red-500/20"
+                                                                : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                                                         }`}>
-                                                            {item.cancelAtPeriodEnd ? "Cancelling" : item.active ? "Active" : "Cancelled"}
+                                                            {item.cancelAtPeriodEnd || !item.active ? "Cancelled" : "Active"}
                                                         </span>
                                                     </div>
                                                     <div className="grid grid-cols-2 gap-3 pt-2.5 border-t border-white/5 text-[9px] text-white/50 font-mono">
