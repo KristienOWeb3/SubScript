@@ -74,6 +74,7 @@ export const PlugZap = wrap(P.Plug);
 export const Plus = wrap(P.Plus);
 export const Power = wrap(P.Power);
 export const QrCode = wrap(P.QrCode);
+export const Camera = wrap(P.Camera);
 export const ReceiptText = wrap(P.Receipt);
 export const RefreshCcw = wrap(P.ArrowCounterClockwise);
 export const RefreshCw = wrap(P.ArrowsClockwise);

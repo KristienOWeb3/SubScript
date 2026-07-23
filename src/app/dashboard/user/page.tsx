@@ -32,6 +32,7 @@ import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
 import ConfirmModal from "@/components/ConfirmModal";
+import { QrScannerModal } from "@/components/QrScannerModal";
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
 import { receiptHrefFromDescriptionLine } from "@/lib/dms/receiptPresentation";
@@ -817,6 +818,9 @@ export default function UserDashboard() {
   const [batchSendStatus, setBatchSendStatus] = useState<string | null>(null);
   const [batchSendLoading, setBatchSendLoading] = useState(false);
   const [batchProgress, setBatchProgress] = useState<string | null>(null);
+
+  const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [qrTargetBatchIndex, setQrTargetBatchIndex] = useState<number | null>(null);
 
   const { address: accountAddress, chainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
@@ -3665,19 +3669,32 @@ export default function UserDashboard() {
                       {sendMode === "single" ? (
                   <form onSubmit={handleSingleSend} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
                     <Field label="Recipient Wallet Address or .sub Name">
-                      <div className="relative">
-                        <input
-                          value={singleRecipient}
-                          onChange={(event) => setSingleRecipient(event.target.value)}
-                          placeholder="alice.sub or 0x..."
-                          className="subscript-input pr-10"
-                          required
-                        />
-                        {singleResolving ? (
-                          <Loader2 className="absolute right-3.5 top-3.5 w-4 h-4 text-[#ccff00] animate-spin" />
-                        ) : (
-                          <User className="absolute right-3.5 top-3.5 w-4 h-4 text-white/30" />
-                        )}
+                      <div className="relative flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <input
+                            value={singleRecipient}
+                            onChange={(event) => setSingleRecipient(event.target.value)}
+                            placeholder="alice.sub or 0x..."
+                            className="subscript-input pr-10"
+                            required
+                          />
+                          {singleResolving ? (
+                            <Loader2 className="absolute right-3.5 top-3.5 w-4 h-4 text-[#ccff00] animate-spin" />
+                          ) : (
+                            <User className="absolute right-3.5 top-3.5 w-4 h-4 text-white/30" />
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQrTargetBatchIndex(null);
+                            setQrModalOpen(true);
+                          }}
+                          title="Scan QR Code"
+                          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:border-[#ccff00]/40 hover:bg-[#ccff00]/10 hover:text-[#ccff00] transition"
+                        >
+                          <QrCode className="h-5 w-5 text-[#ccff00]" />
+                        </button>
                       </div>
                     </Field>
 
@@ -3785,13 +3802,38 @@ export default function UserDashboard() {
                         <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">Recipient {index + 1}</p>
                         
                         <div className="space-y-2">
-                          <span className="text-[9px] uppercase font-bold text-white/35">Address or DNS name</span>
-                          <input
-                            value={row.address}
-                            onChange={(event) => setBatchRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, address: event.target.value } : item))}
-                            placeholder="alice.sub or 0x..."
-                            className="subscript-input"
-                          />
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] uppercase font-bold text-white/35">Address or DNS name</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setQrTargetBatchIndex(index);
+                                setQrModalOpen(true);
+                              }}
+                              className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-[#ccff00] hover:underline"
+                            >
+                              <QrCode className="h-3.5 w-3.5 text-[#ccff00]" /> Scan QR
+                            </button>
+                          </div>
+                          <div className="relative flex items-center gap-2">
+                            <input
+                              value={row.address}
+                              onChange={(event) => setBatchRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, address: event.target.value } : item))}
+                              placeholder="alice.sub or 0x..."
+                              className="subscript-input"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setQrTargetBatchIndex(index);
+                                setQrModalOpen(true);
+                              }}
+                              title="Scan QR Code for Recipient"
+                              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:border-[#ccff00]/40 hover:bg-[#ccff00]/10 hover:text-[#ccff00] transition"
+                            >
+                              <QrCode className="h-4 w-4 text-[#ccff00]" />
+                            </button>
+                          </div>
                         </div>
 
                         <div className="space-y-2">
@@ -5474,6 +5516,33 @@ export default function UserDashboard() {
         )}
       </AnimatePresence>
 
+      <ConfirmModal
+        isOpen={confirmModalConfig.isOpen}
+        title={confirmModalConfig.title}
+        message={confirmModalConfig.message}
+        confirmText={confirmModalConfig.confirmText}
+        cancelText={confirmModalConfig.cancelText}
+        variant={confirmModalConfig.variant}
+        onConfirm={confirmModalConfig.onConfirm}
+        onCancel={confirmModalConfig.onCancel}
+      />
+
+      <QrScannerModal
+        isOpen={qrModalOpen}
+        onClose={() => setQrModalOpen(false)}
+        onScan={(scannedAddress) => {
+          if (qrTargetBatchIndex === null) {
+            setSingleRecipient(scannedAddress);
+          } else {
+            setBatchRows((rows) =>
+              rows.map((row, idx) =>
+                idx === qrTargetBatchIndex ? { ...row, address: scannedAddress } : row
+              )
+            );
+          }
+        }}
+      />
+
       {confirmModal && (
         <ConfirmModal
           open={confirmModal.open}
@@ -6171,9 +6240,9 @@ function DmBubble({
       className={`flex gap-2.5 ${incoming ? "justify-start" : "justify-end"}`}
     >
       {incoming && <Avatar profilePic={dm.senderProfilePic} />}
-      <div className={`max-w-[75%] ${incoming ? "items-start" : "items-end"} flex flex-col gap-1.5`}>
+      <div className={`max-w-[85%] sm:max-w-[75%] ${incoming ? "items-start" : "items-end"} flex flex-col gap-1.5 min-w-0`}>
         <div 
-          className={`px-5 py-4 shadow-md select-none transition-all duration-200 ${
+          className={`px-5 py-4 shadow-md select-none transition-all duration-200 w-full break-words [word-break:break-word] overflow-hidden ${
             incoming 
               ? `${focused ? "border-[#ccff00]/40 bg-[#ccff00]/[0.08]" : "border-white/5 bg-[#262629]/95 text-white"} rounded-[20px] rounded-bl-[4px] border` 
               : "bg-gradient-to-br from-[#00b2ff] to-[#007aff] text-white rounded-[20px] rounded-br-[4px] border-none shadow-[0_4px_16px_rgba(0,122,255,0.2)]"
@@ -6214,13 +6283,13 @@ function DmBubble({
                   }`}
                 >
                   <span className={`block uppercase tracking-widest text-[8px] mb-1 ${incoming ? "text-white/40" : "text-white/60"}`}>Details</span>
-                  <p className="text-white/90 text-[10px] leading-relaxed whitespace-pre-wrap">{displayDescription}</p>
+                  <p className="text-white/90 text-[10px] leading-relaxed whitespace-pre-wrap break-words [word-break:break-word]">{displayDescription}</p>
                 </div>
               )}
             </div>
           ) : (
             <>
-              <h3 className="text-base font-black uppercase leading-snug text-white">{displayTitle || "SubScript message"}</h3>
+              <h3 className="text-base font-black uppercase leading-snug text-white break-words [word-break:break-word]">{displayTitle || "SubScript message"}</h3>
               <div className="mt-3 space-y-1.5">
                 {lines.length > 0 ? lines.map((line) => {
                   /* Receipt references read as noise in a chat bubble — show a same-origin
@@ -6244,9 +6313,9 @@ function DmBubble({
                      line is simply dropped rather than linked to an external explorer. */
                   if (/^transaction\b/i.test(line)) return null;
                   return (
-                    <p key={line} className={`text-xs leading-relaxed ${incoming ? "text-white/70" : "text-white/90"}`}>{line}</p>
+                    <p key={line} className={`text-xs leading-relaxed break-words [word-break:break-word] ${incoming ? "text-white/70" : "text-white/90"}`}>{line}</p>
                   );
-                }) : <p className={`text-xs leading-relaxed ${incoming ? "text-white/70" : "text-white/90"}`}>System-generated SubScript payment update.</p>}
+                }) : <p className={`text-xs leading-relaxed break-words [word-break:break-word] ${incoming ? "text-white/70" : "text-white/90"}`}>System-generated SubScript payment update.</p>}
               </div>
             </>
           )}
