@@ -3288,7 +3288,7 @@ export default function UserDashboard() {
                         {/* Bottom Action Footer for Mobile — stays inside the DM while only messages scroll. */}
                         <div
                           data-testid="mobile-dm-action-footer"
-                          className="relative z-30 shrink-0 border-t border-white/5 bg-[#060608]/95 px-1 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-xl"
+                          className="relative z-30 shrink-0 border-t border-white/5 bg-black/30 px-1 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-xl rounded-t-2xl"
                         >
                           {isActiveDmMerchant ? (
                             <MerchantPlanManager
@@ -3613,7 +3613,7 @@ export default function UserDashboard() {
                   <SectionTitle title="Send Funds" subtitle="Transfer USDC to another user or execute a batch payout." />
                   
                   {/* Mode Selector */}
-                  <div className="relative flex gap-1 rounded-xl bg-black/40 p-1 border border-white/5 shrink-0 self-stretch sm:self-auto justify-center">
+                  <div className="relative flex gap-1 rounded-xl bg-black/40 p-1 border border-white/5 shrink-0 w-fit mx-auto sm:mx-0 sm:self-auto justify-center">
                     <button
                       type="button"
                       onClick={() => setSendMode("single")}
@@ -5914,7 +5914,7 @@ function ChatHeader({
   return (
     <div className="fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
       <header className="w-full max-w-md liquid-glass rounded-full px-5 py-3 pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/30 backdrop-blur-lg">
-        <div className="flex items-center justify-between w-full gap-2">
+        <div className="flex items-center justify-start w-full gap-2.5">
           {/* Back button */}
           <button
             type="button"
@@ -5927,7 +5927,7 @@ function ChatHeader({
           {/* Peer Info Capsule */}
           <div className="flex items-center gap-2 px-3 py-1 bg-white/[0.04] border border-white/5 rounded-full min-w-0">
             <Avatar profilePic={peerProfilePic} size="xs" />
-            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#ccff00] truncate max-w-[80px]">
+            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#ccff00] truncate max-w-[120px]">
               {peerName}
             </span>
             {isMerchant && <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />}
@@ -7252,7 +7252,9 @@ function DepositModal({
 
             {activeSubMode === "direct" && (
               <div className="text-center">
-                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] text-lg font-black text-black">S</div>
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] p-2.5 shadow-[0_0_20px_rgba(204,255,0,0.2)]">
+                  <img src="/logo.png" alt="SubScript Logo" className="h-full w-full object-contain" />
+                </div>
                 <p className="mt-2 text-xs text-white/45">Send native USDC on Arc Testnet to your SubScript wallet address.</p>
                 <p className="mt-2 rounded-xl border border-amber-400/20 bg-amber-400/[0.05] p-3 text-[10px] leading-relaxed text-amber-200/75">Arc Testnet only. Sending another token or using another network will not credit this balance.</p>
                 <div className="mx-auto my-6 w-fit rounded-3xl bg-white p-4">
