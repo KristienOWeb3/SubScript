@@ -8,7 +8,7 @@ import { getWalletCustody, isCustodialWallet } from "@/lib/auth/walletCustody";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
-import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
+import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS, STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import {
@@ -17,7 +17,9 @@ import {
     getSubscriptionOnChain,
     getIntroductoryTermsOnChain,
     verifyExternalSubscriptionTx,
+    horizonAllowance,
 } from "@/lib/subscriptions/onchain";
+import { ensureUsdcAllowance } from "@/lib/vault/onchain";
 import {
     findApplicablePromotion,
     claimPromotionRedemption,
@@ -207,6 +209,42 @@ export async function POST(request: Request) {
                 return { status: "ALREADY_SUBSCRIBED", existing, attempt: null, appliedPromo: null };
             }
 
+            /* Resubscribing to the SAME PLAN when remaining duration is > 1 day:
+               re-activate existing subscription without charging initial payment again. */
+            const existingCanceledSamePlan = await tx.subscription.findFirst({
+                where: {
+                    subscriber,
+                    merchantAddress: merchant,
+                    kind: "CUSTOMER",
+                    cancelAtPeriodEnd: true,
+                    amountCapUsdc: plan.amountUsdc.toString(),
+                    billingIntervalSeconds: plan.periodSeconds,
+                },
+                orderBy: { createdAt: "desc" }
+            });
+
+            if (existingCanceledSamePlan && existingCanceledSamePlan.nextBillingDate) {
+                const remainingMs = existingCanceledSamePlan.nextBillingDate.getTime() - Date.now();
+                const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+                if (remainingMs > ONE_DAY_MS) {
+                    await tx.subscription.update({
+                        where: { subscriptionId: existingCanceledSamePlan.subscriptionId },
+                        data: {
+                            cancelAtPeriodEnd: false,
+                            status: "ACTIVE",
+                            revocationPending: false,
+                            updatedAt: new Date(),
+                        }
+                    });
+                    return {
+                        status: "RESUMED_SAME_PLAN",
+                        existing: existingCanceledSamePlan,
+                        attempt: null,
+                        appliedPromo: null
+                    };
+                }
+            }
+
             const generationResult = await tx.$queryRaw<Array<{ generation: bigint }>>`
                 SELECT count(*)::bigint AS generation
                 FROM subscriptions
@@ -284,6 +322,66 @@ export async function POST(request: Request) {
                 code: isSamePlan ? "ALREADY_SUBSCRIBED" : "ACTIVE_MERCHANT_SUBSCRIPTION",
                 subscriptionId: String(existing.subscriptionId),
             }, { status: 409 });
+        }
+
+        if (result.status === "RESUMED_SAME_PLAN" && result.existing) {
+            const resumedSub = result.existing;
+            /* Re-ensure USDC allowance for custodial wallets so automated keepers can bill future renewals */
+            if (isCustodialWallet(await getWalletCustody(subscriber))) {
+                try {
+                    const custody = await getWalletCustody(subscriber);
+                    await ensureUsdcAllowance(custody, STANDARD_CONTRACT_ADDRESS, horizonAllowance(plan.amountUsdc, plan.periodSeconds));
+                } catch (allowanceErr) {
+                    console.warn("[subscription/subscribe] USDC allowance re-authorization failed:", allowanceErr);
+                }
+            }
+
+            if (checkoutSessionId) {
+                await prisma.paymentLink.update({
+                    where: { id: checkoutSessionId },
+                    data: { active: false, status: "PAID", paidAt: new Date() },
+                }).catch(() => {});
+            }
+            await deactivateConsumedApiPlan({ sourceCheckoutId, subscriber }).catch(() => {});
+
+            await createSubscriptionStartedDm({
+                merchantAddress: merchant,
+                subscriberAddress: subscriber,
+                planName: plan.name,
+                amountUsdc: plan.amountUsdc,
+                periodSeconds: plan.periodSeconds,
+            }).catch((err: unknown) => console.error("[subscription/subscribe] resumed DM creation failed:", err));
+
+            if (merchant === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
+                await prisma.merchant.update({
+                    where: { walletAddress: subscriber },
+                    data: { tier: "PREMIUM" },
+                }).catch(() => {});
+            }
+
+            await markSubscriptionOfferAccepted(checkoutSessionId, subscriber);
+
+            await dispatchDurableSubscriptionWebhook(merchant, "subscription.activated", subscriptionWebhookData({
+                subscriptionId: String(resumedSub.subscriptionId),
+                status: "active",
+                amountUsdcMicros: plan.amountUsdc,
+                subscriber,
+                merchantAddress: merchant,
+                beneficiary: beneficiaryAddress,
+                externalReference,
+                sourceCheckoutId,
+                txHash: null,
+            }), `resumed-same-plan:${resumedSub.subscriptionId}:${Date.now()}`).catch(() => {});
+
+            return NextResponse.json({
+                success: true,
+                resumed: true,
+                chargeSkipped: true,
+                subscriptionId: String(resumedSub.subscriptionId),
+                planName: plan.name,
+                accessUntil: resumedSub.nextBillingDate ? resumedSub.nextBillingDate.toISOString() : null,
+                message: "Your subscription to this plan has been resumed without additional charges since your active period still has more than 1 day remaining.",
+            }, { status: 200 });
         }
 
         if (result.status === "CHECKOUT_RECOVERY") {

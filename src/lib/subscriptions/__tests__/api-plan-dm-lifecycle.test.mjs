@@ -102,3 +102,17 @@ test("sponsored plan requests dispatch in-app DM cards and merchant confirmation
     assert.match(dashboard, /SPONSORED_PLAN_CONFIRMED/);
     assert.match(dashboard, /Resubscribe for Yourself/);
 });
+
+test("resubscribing to the same plan with > 1 day remaining reactivates without extra initial charge", () => {
+    const subscribe = source("src/app/api/user/subscription/subscribe/route.ts");
+
+    assert.match(subscribe, /existingCanceledSamePlan = await tx\.subscription\.findFirst/);
+    assert.match(subscribe, /cancelAtPeriodEnd: true/);
+    assert.match(subscribe, /amountCapUsdc: plan\.amountUsdc\.toString\(\)/);
+    assert.match(subscribe, /billingIntervalSeconds: plan\.periodSeconds/);
+    assert.match(subscribe, /remainingMs > ONE_DAY_MS/);
+    assert.match(subscribe, /status: "RESUMED_SAME_PLAN"/);
+    assert.match(subscribe, /chargeSkipped: true/);
+    assert.match(subscribe, /horizonAllowance/);
+});
+
