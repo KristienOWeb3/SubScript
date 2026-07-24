@@ -3203,13 +3203,28 @@ export default function UserDashboard() {
                         </button>
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => openVaultCommit()}
-                      className="self-start rounded-xl border border-[#ccff00]/30 bg-[#ccff00]/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#ccff00] transition hover:bg-[#ccff00]/20"
-                    >
-                      + Commit to a service
-                    </button>
+                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await loadVaults();
+                          triggerToast("Commit usage updated");
+                        }}
+                        disabled={isVaultsLoading}
+                        className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white/70 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:opacity-50"
+                        title="Refresh vault usage for committed apps"
+                      >
+                        <RefreshCw className={`h-3.5 w-3.5 ${isVaultsLoading ? "animate-spin text-[#ccff00]" : ""}`} />
+                        <span>{isVaultsLoading ? "Refreshing..." : "Refresh Usage"}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openVaultCommit()}
+                        className="rounded-xl border border-[#ccff00]/30 bg-[#ccff00]/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#ccff00] transition hover:bg-[#ccff00]/20"
+                      >
+                        + Commit to a service
+                      </button>
+                    </div>
                   </div>
 
                   {isVaultsLoading ? (

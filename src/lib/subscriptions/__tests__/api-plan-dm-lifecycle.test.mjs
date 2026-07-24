@@ -116,3 +116,13 @@ test("resubscribing to the same plan with > 1 day remaining reactivates without 
     assert.match(subscribe, /horizonAllowance/);
 });
 
+test("manage commit page provides a refresh usage button to update app commitments", () => {
+    const dashboard = source("src/app/dashboard/user/page.tsx");
+
+    assert.match(dashboard, /title="Refresh vault usage for committed apps"/);
+    assert.match(dashboard, /await loadVaults\(\)/);
+    assert.match(dashboard, /triggerToast\("Commit usage updated"\)/);
+    assert.match(dashboard, /Refresh Usage/);
+});
+
+
