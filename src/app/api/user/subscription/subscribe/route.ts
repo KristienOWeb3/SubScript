@@ -198,7 +198,8 @@ export async function POST(request: Request) {
                     subscriber,
                     merchantAddress: merchant,
                     kind: "CUSTOMER",
-                    status: { in: ["ACTIVE", "PAST_DUE"] }
+                    status: { in: ["ACTIVE", "PAST_DUE"] },
+                    cancelAtPeriodEnd: false,
                 },
                 orderBy: { createdAt: "desc" }
             });
@@ -368,7 +369,8 @@ export async function POST(request: Request) {
                         subscriber,
                         merchantAddress: merchant,
                         kind: "CUSTOMER",
-                        status: { in: ["ACTIVE", "PAST_DUE"] }
+                        status: { in: ["ACTIVE", "PAST_DUE"] },
+                        cancelAtPeriodEnd: false,
                     },
                     orderBy: { createdAt: "desc" }
                 });
