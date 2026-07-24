@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import jsQR from "jsqr";
-import { Camera, Upload, X, QrCode, RefreshCw, AlertCircle } from "@/components/icons";
+import { X, QrCode, AlertCircle } from "@/components/icons";
 
 interface QrScannerModalProps {
   isOpen: boolean;
@@ -24,7 +24,6 @@ export function QrScannerModal({
 
   const [cameraActive, setCameraActive] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
 
   const parseScannedData = (raw: string): string => {
     let result = raw.trim();
@@ -67,47 +66,54 @@ export function QrScannerModal({
     setCameraActive(false);
   }, []);
 
-  const startCamera = useCallback(
-    async (mode: "environment" | "user" = facingMode) => {
-      stopCamera();
-      setErrorMsg(null);
+  const startCamera = useCallback(async () => {
+    stopCamera();
+    setErrorMsg(null);
 
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Mobile camera API is not supported on this browser context.");
+      }
+
+      let mediaStream: MediaStream;
       try {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          throw new Error("Mobile camera API is not supported on this browser context.");
-        }
-
-        const mediaStream = await navigator.mediaDevices.getUserMedia({
+        // Phones: default strictly to rear/back camera (environment facingMode)
+        mediaStream = await navigator.mediaDevices.getUserMedia({
           video: {
-            facingMode: { ideal: mode },
+            facingMode: { ideal: "environment" },
             width: { ideal: 1280 },
             height: { ideal: 720 },
           },
           audio: false,
         });
-
-        streamRef.current = mediaStream;
-        setCameraActive(true);
-
-        if (videoRef.current) {
-          videoRef.current.srcObject = mediaStream;
-          videoRef.current.setAttribute("playsinline", "true"); // Mobile iOS Safari native inline video
-          videoRef.current.setAttribute("autoplay", "true");
-          videoRef.current.setAttribute("muted", "true");
-          await videoRef.current.play().catch(() => {});
-        }
-      } catch (err: any) {
-        console.warn("Mobile camera initialization error:", err);
-        setErrorMsg(
-          err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError"
-            ? "Camera permission denied. Allow camera access in site settings or upload a QR image below."
-            : "Camera unavailable on this device. Upload a QR image below."
-        );
-        setCameraActive(false);
+      } catch {
+        // Fallback for devices without a designated rear camera (e.g. desktop webcams)
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
       }
-    },
-    [facingMode, stopCamera]
-  );
+
+      streamRef.current = mediaStream;
+      setCameraActive(true);
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+        videoRef.current.setAttribute("playsinline", "true"); // Mobile iOS Safari native inline video
+        videoRef.current.setAttribute("autoplay", "true");
+        videoRef.current.setAttribute("muted", "true");
+        await videoRef.current.play().catch(() => {});
+      }
+    } catch (err: any) {
+      console.warn("Mobile camera initialization error:", err);
+      setErrorMsg(
+        err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError"
+          ? "Camera permission denied. Allow camera access in site settings to scan QR codes."
+          : "Camera unavailable on this device."
+      );
+      setCameraActive(false);
+    }
+  }, [stopCamera]);
 
   const handleScanSuccess = useCallback(
     (rawResult: string) => {
@@ -191,48 +197,14 @@ export function QrScannerModal({
 
   useEffect(() => {
     if (isOpen) {
-      startCamera(facingMode);
+      startCamera();
     } else {
       stopCamera();
     }
     return () => {
       stopCamera();
     };
-  }, [isOpen, facingMode, startCamera, stopCamera]);
-
-  const toggleFacingMode = () => {
-    const nextMode = facingMode === "environment" ? "user" : "environment";
-    setFacingMode(nextMode);
-    startCamera(nextMode);
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        canvas.width = img.width;
-        canvas.height = img.height;
-        if (ctx) {
-          ctx.drawImage(img, 0, 0);
-          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const code = jsQR(imageData.data, imageData.width, imageData.height);
-          if (code && code.data) {
-            handleScanSuccess(code.data);
-          } else {
-            alert("No valid QR code detected in the selected image.");
-          }
-        }
-      };
-      img.src = event.target?.result as string;
-    };
-    reader.readAsDataURL(file);
-  };
+  }, [isOpen, startCamera, stopCamera]);
 
   if (!isOpen) return null;
 
@@ -285,29 +257,6 @@ export function QrScannerModal({
               <p className="text-xs text-white/70 leading-relaxed">{errorMsg}</p>
             </div>
           )}
-        </div>
-
-        {/* Controls Bar */}
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={toggleFacingMode}
-            className="flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 py-3 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-white/10"
-          >
-            <RefreshCw className="h-4 w-4 text-[#ccff00]" />
-            {facingMode === "environment" ? "Front Lens" : "Rear Lens"}
-          </button>
-
-          <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 py-3 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-white/10">
-            <Upload className="h-4 w-4 text-[#ccff00]" />
-            Upload Image
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleFileUpload}
-            />
-          </label>
         </div>
       </div>
     </div>

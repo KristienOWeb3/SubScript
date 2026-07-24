@@ -5659,8 +5659,16 @@ export default function UserDashboard() {
           confirmLabel={confirmModal.confirmLabel}
           cancelLabel={confirmModal.cancelLabel}
           variant={confirmModal.variant}
-          onConfirm={confirmModal.onConfirm}
-          onCancel={confirmModal.onCancel ?? (() => setConfirmModal(null))}
+          onConfirm={() => {
+            const action = confirmModal.onConfirm;
+            setConfirmModal(null);
+            if (action) action();
+          }}
+          onCancel={() => {
+            const action = confirmModal.onCancel;
+            setConfirmModal(null);
+            if (action) action();
+          }}
         />
       )}
 
