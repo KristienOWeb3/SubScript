@@ -76,6 +76,8 @@ export async function createSubscriptionStartedDm({
     amountUsdc,
     periodSeconds,
     isChange = false,
+    isResubscription = false,
+    resubscriptionAccessUntil = null,
     introTerms = null,
 }: {
     merchantAddress: string;
@@ -84,6 +86,8 @@ export async function createSubscriptionStartedDm({
     amountUsdc: bigint;
     periodSeconds: bigint;
     isChange?: boolean;
+    isResubscription?: boolean;
+    resubscriptionAccessUntil?: Date | string | null;
     /* Introductory terms the subscriber authorized: full disclosure of the price they paid
        today, how long the discount lasts, and when the regular price begins. */
     introTerms?: {
@@ -100,7 +104,17 @@ export async function createSubscriptionStartedDm({
     const amount = formatUsdcFromMicros(amountUsdc);
     const cadence = formatPeriodLabel(periodSeconds);
 
-    const pricingLines = introTerms
+    const formattedAccessUntil = resubscriptionAccessUntil
+        ? (typeof resubscriptionAccessUntil === "string" ? resubscriptionAccessUntil.slice(0, 10) : resubscriptionAccessUntil.toISOString().slice(0, 10))
+        : null;
+
+    const pricingLines = isResubscription
+        ? [
+            "Paid today: 0.00 USDC (active period still valid)",
+            ...(formattedAccessUntil ? [`Next billing date: ${formattedAccessUntil}`] : []),
+            `Recurring: ${amount} USDC / ${cadence}`,
+        ]
+        : introTerms
         ? [
             introTerms.introAmountUsdc === BigInt(0)
                 ? `Paid today: 0 USDC (free ${introTerms.introCycles > 1 ? `${introTerms.introCycles} cycles` : "first cycle"})`
@@ -110,13 +124,19 @@ export async function createSubscriptionStartedDm({
         ]
         : [`Amount: ${amount} USDC / ${cadence}`];
 
+    const title = isResubscription
+        ? `Resubscribed to ${planName}`
+        : isChange
+        ? `Plan changed to ${planName}`
+        : `Subscribed to ${planName}`;
+
     const dm = await createDmAndNotify({
         senderAddress: merchant,
         receiverAddress: subscriber,
         messageType: "SUBSCRIPTION_STARTED",
         status: "APPROVED",
-        amountUsdc: introTerms ? introTerms.introAmountUsdc : amountUsdc,
-        title: isChange ? `Plan changed to ${planName}` : `Subscribed to ${planName}`,
+        amountUsdc: isResubscription ? BigInt(0) : (introTerms ? introTerms.introAmountUsdc : amountUsdc),
+        title,
         description: [
             `Merchant: ${merchantName}`,
             `Plan: ${planName}`,

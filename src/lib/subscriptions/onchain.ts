@@ -108,7 +108,7 @@ export async function findActiveOnChainSubscriptionId(
    needs one period for the first charge, but the keeper debits each cycle against this
    same allowance (see cron/billing), so approving one period means the sub dies after
    one cycle. Approve ~1 year of cycles so recurring billing keeps working. */
-function horizonAllowance(amount: bigint, period: bigint): bigint {
+export function horizonAllowance(amount: bigint, period: bigint): bigint {
     const seconds = Number(period);
     const cyclesPerYear = Number.isFinite(seconds) && seconds > 0
         ? Math.max(1, Math.round((365.25 * 24 * 60 * 60) / seconds))
