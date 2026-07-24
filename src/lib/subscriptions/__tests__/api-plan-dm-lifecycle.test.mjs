@@ -125,4 +125,14 @@ test("manage commit page provides a refresh usage button to update app commitmen
     assert.match(dashboard, /Refresh Usage/);
 });
 
+test("dashboard displays canceled subscriptions as Canceled (Period Active) and provides Resubscribe action", () => {
+    const dashboard = source("src/app/dashboard/user/page.tsx");
+
+    assert.match(dashboard, /isCanceledAtPeriodEnd = Boolean\(activeSubscription\?\.cancelAtPeriodEnd\)/);
+    assert.match(dashboard, /Canceled · Access active/);
+    assert.match(dashboard, /Canceled \(Period Active\)/);
+    assert.match(dashboard, /Resubscribe/);
+});
+
+
 

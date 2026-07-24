@@ -1147,7 +1147,7 @@ export default function UserDashboard() {
   const getActiveSubscriptionForMerchant = (merchantAddress: string | null | undefined) => {
     if (!merchantAddress) return null;
     return subscriptions.find(
-      (sub) => sub.merchantAddress.toLowerCase() === merchantAddress.toLowerCase() && sub.status === "ACTIVE" && !sub.cancelAtPeriodEnd
+      (sub) => sub.merchantAddress.toLowerCase() === merchantAddress.toLowerCase() && sub.status === "ACTIVE"
     ) || null;
   };
 
@@ -1161,16 +1161,15 @@ export default function UserDashboard() {
     const peer = selectedDmPeer.toLowerCase();
     if (reconciledPeersRef.current.has(peer)) return;
     const hasActive = subscriptions.some(
-      (sub) => sub.merchantAddress.toLowerCase() === peer && sub.status === "ACTIVE" && !sub.cancelAtPeriodEnd
+      (sub) => sub.merchantAddress.toLowerCase() === peer && sub.status === "ACTIVE"
     );
     if (hasActive) return;
     reconciledPeersRef.current.add(peer);
     fetch(`/api/user/subscriptions?reconcileMerchant=${encodeURIComponent(peer)}`)
       .then((res) => res.json())
       .then((data) => { if (data.success) setSubscriptions(data.subscriptions); })
-      .catch(() => { /* best-effort; the normal list already loaded */ });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDmPeer, userWallet]);
+      .catch((err) => console.error("[dashboard] merchant reconcile failed:", err));
+  }, [selectedDmPeer, userWallet, subscriptions]);
 
   const loadPlansForMerchant = async (merchantAddress: string) => {
     setIsThreadPlansLoading(true);
@@ -1209,7 +1208,7 @@ export default function UserDashboard() {
     /* Plan reductions are intentionally unavailable. Compare normalized recurring rates so a
        longer billing period cannot disguise a cheaper tier as an upgrade. */
     let isUpgrade = false;
-    if (activeSub) {
+    if (activeSub && !activeSub.cancelAtPeriodEnd) {
       try {
         const comparison = compareRecurringRates(
           BigInt(plan.amountUsdc),
@@ -1234,12 +1233,13 @@ export default function UserDashboard() {
     }
 
     const applyPlanChange = async (mode: "scheduled" | "immediate") => {
-      const actionKey = activeSub ? `switch-plan-${plan.id}` : `subscribe-plan-${plan.id}`;
+      const isSwitch = activeSub && !activeSub.cancelAtPeriodEnd;
+      const actionKey = isSwitch ? `switch-plan-${plan.id}` : `subscribe-plan-${plan.id}`;
       await runAction(actionKey, async () => {
-        setPlanManagerStatus(activeSub ? "Switching plan on-chain..." : "Creating subscription on-chain...");
+        setPlanManagerStatus(isSwitch ? "Switching plan on-chain..." : "Creating subscription on-chain...");
         setPlanManagerError(null);
-        const endpoint = activeSub ? "/api/user/subscription/change" : "/api/user/subscription/subscribe";
-        const body = activeSub
+        const endpoint = isSwitch ? "/api/user/subscription/change" : "/api/user/subscription/subscribe";
+        const body = isSwitch
           ? { fromSubscriptionId: activeSub.subscriptionId, planId: plan.id, mode }
           : plan.checkoutSessionId
             ? { checkoutSessionId: plan.checkoutSessionId }
@@ -2624,7 +2624,7 @@ export default function UserDashboard() {
   }
 
   const sortedSubscriptions = [...subscriptions]
-    .filter((s) => s.status === "ACTIVE" && !s.cancelAtPeriodEnd)
+    .filter((s) => s.status === "ACTIVE")
     .sort((a, b) => {
       const aNext = a.lastSettlementTimestamp ? new Date(a.lastSettlementTimestamp).getTime() + Number(a.billingIntervalSeconds) * 1000 : Infinity;
       const bNext = b.lastSettlementTimestamp ? new Date(b.lastSettlementTimestamp).getTime() + Number(b.billingIntervalSeconds) * 1000 : Infinity;
@@ -6147,14 +6147,18 @@ function SubscriptionRow({ subscription, balanceVisible }: { subscription: Subsc
             <p className="truncate text-xs font-black uppercase tracking-[0.1em] text-white">{subscription.merchantName}</p>
             {subscription.merchantVerified && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />}
           </div>
-          <p className="mt-1 text-[10px] text-white/40">Renews every {intervalDays} days</p>
+          <p className={`mt-1 text-[10px] ${subscription.cancelAtPeriodEnd ? "font-bold text-amber-400" : "text-white/40"}`}>
+            {subscription.cancelAtPeriodEnd ? "Canceled · Access active until period end" : `Renews every ${intervalDays} days`}
+          </p>
         </div>
       </div>
       <div className="text-right">
         <p className="text-xs font-black text-[#ccff00]">
           {balanceVisible ? `${formatUsdc(subscription.amountCapUsdc)} USDC` : "•••• USDC"}
         </p>
-        <p className="text-[9px] uppercase text-white/35">{humanSubscriptionStatus(subscription.status)}</p>
+        <p className={`text-[9px] uppercase ${subscription.cancelAtPeriodEnd ? "font-bold text-amber-400" : "text-white/35"}`}>
+          {subscription.cancelAtPeriodEnd ? "Canceled (Period Active)" : humanSubscriptionStatus(subscription.status)}
+        </p>
       </div>
     </div>
   );
@@ -6678,6 +6682,7 @@ function MerchantPlanManager({
   giftLoadingPlanId?: string | null;
 }) {
   const hasActiveSubscription = !!activeSubscription;
+  const isCanceledAtPeriodEnd = Boolean(activeSubscription?.cancelAtPeriodEnd);
   const activePlan = activeSubscription
     ? plans.find(
         (p) =>
@@ -6695,31 +6700,49 @@ function MerchantPlanManager({
         className="order-2 flex flex-wrap items-center gap-2 rounded-2xl border border-[#ccff00]/15 bg-[#ccff00]/[0.06] p-3"
       >
         <div className="min-w-0 flex-1">
-          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ccff00]/70">
-            {hasActiveSubscription ? planLabel : "Merchant Plan Controls"}
+          <p className={`text-[9px] font-black uppercase tracking-[0.16em] ${isCanceledAtPeriodEnd ? "text-amber-400" : "text-[#ccff00]/70"}`}>
+            {hasActiveSubscription
+              ? (isCanceledAtPeriodEnd ? `${planLabel} (Canceled)` : planLabel)
+              : "Merchant Plan Controls"}
           </p>
           <p className="truncate text-xs font-bold text-white">
             {hasActiveSubscription
-              ? `${formatUsdc(activeSubscription.amountCapUsdc)} USDC / ${formatPlanPeriod(activeSubscription.billingIntervalSeconds)}`
+              ? `${formatUsdc(activeSubscription.amountCapUsdc)} USDC / ${formatPlanPeriod(activeSubscription.billingIntervalSeconds)}${isCanceledAtPeriodEnd ? " · Access active" : ""}`
               : `Choose a plan from ${merchantLabel}`}
           </p>
         </div>
         {hasActiveSubscription && (
-          <motion.button
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            whileHover={{ scale: 1.06 }}
-            whileTap={{ scale: 0.92 }}
-            transition={{ type: "spring", stiffness: 500, damping: 12, mass: 0.7 }}
-            type="button"
-            onClick={onCancel}
-            disabled={loadingAction === `cancel-sub-${activeSubscription.subscriptionId}`}
-            className={`dm-quick-button flex-1 min-w-0 text-center truncate relative overflow-hidden border-red-400/20 bg-red-500/10 text-red-200 ${
-              loadingAction === `cancel-sub-${activeSubscription.subscriptionId}` ? "quick-action-loading" : ""
-            }`}
-          >
-            Cancel current plan
-          </motion.button>
+          isCanceledAtPeriodEnd ? (
+            <motion.button
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              whileHover={{ scale: 1.06 }}
+              whileTap={{ scale: 0.92 }}
+              transition={{ type: "spring", stiffness: 500, damping: 12, mass: 0.7 }}
+              type="button"
+              onClick={() => activePlan && onSubscribe(activePlan)}
+              disabled={loadingAction === `subscribe-plan-${activePlan?.id}`}
+              className="dm-quick-button flex-1 min-w-0 text-center truncate relative overflow-hidden border-[#ccff00]/30 bg-[#ccff00]/10 text-[#ccff00]"
+            >
+              Resubscribe
+            </motion.button>
+          ) : (
+            <motion.button
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              whileHover={{ scale: 1.06 }}
+              whileTap={{ scale: 0.92 }}
+              transition={{ type: "spring", stiffness: 500, damping: 12, mass: 0.7 }}
+              type="button"
+              onClick={onCancel}
+              disabled={loadingAction === `cancel-sub-${activeSubscription.subscriptionId}`}
+              className={`dm-quick-button flex-1 min-w-0 text-center truncate relative overflow-hidden border-red-400/20 bg-red-500/10 text-red-200 ${
+                loadingAction === `cancel-sub-${activeSubscription.subscriptionId}` ? "quick-action-loading" : ""
+              }`}
+            >
+              Cancel current plan
+            </motion.button>
+          )
         )}
         <motion.button
           whileHover={{ scale: 1.06 }}
@@ -6729,7 +6752,7 @@ function MerchantPlanManager({
           onClick={onToggle}
           className={`dm-quick-button dm-action-menu-trigger relative overflow-hidden ${hasActiveSubscription ? "flex-1 min-w-0 text-center truncate" : ""}`}
         >
-          {open ? "Hide Plans" : hasActiveSubscription ? "Manage Plan" : "Subscribe"}
+          {open ? "Hide Plans" : hasActiveSubscription ? (isCanceledAtPeriodEnd ? "Reactivate Plan" : "Manage Plan") : "Subscribe"}
         </motion.button>
       </motion.div>
 
