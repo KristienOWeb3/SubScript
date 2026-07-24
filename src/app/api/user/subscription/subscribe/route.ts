@@ -27,7 +27,7 @@ import {
     confirmPromotionRedemption,
     pricingPhaseFor,
 } from "@/lib/subscriptions/promotions";
-import { deterministicIdempotencyKey } from "@/lib/custody";
+import { deterministicIdempotencyKey, getWalletCustody as getCustodyForAllowance } from "@/lib/custody";
 import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
 import { createSubscriptionStartedDm } from "@/lib/dms/system";
 import { withPgClient } from "@/lib/serverPg";
@@ -327,9 +327,10 @@ export async function POST(request: Request) {
         if (result.status === "RESUMED_SAME_PLAN" && result.existing) {
             const resumedSub = result.existing;
             /* Re-ensure USDC allowance for custodial wallets so automated keepers can bill future renewals */
-            if (isCustodialWallet(await getWalletCustody(subscriber))) {
+            const walletCustody = await getWalletCustody(subscriber);
+            if (isCustodialWallet(walletCustody)) {
                 try {
-                    const custody = await getWalletCustody(subscriber);
+                    const custody = await getCustodyForAllowance(subscriber);
                     await ensureUsdcAllowance(custody, STANDARD_CONTRACT_ADDRESS, horizonAllowance(plan.amountUsdc, plan.periodSeconds));
                 } catch (allowanceErr) {
                     console.warn("[subscription/subscribe] USDC allowance re-authorization failed:", allowanceErr);
