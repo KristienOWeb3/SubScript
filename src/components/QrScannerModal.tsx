@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import jsQR from "jsqr";
-import { X, Camera, Upload, AlertCircle, RefreshCw } from "@/components/icons";
+import { X, QrCode, AlertCircle } from "@/components/icons";
 
 interface QrScannerModalProps {
   isOpen: boolean;
@@ -11,7 +11,7 @@ interface QrScannerModalProps {
   title?: string;
 }
 
-export default function QrScannerModal({
+export function QrScannerModal({
   isOpen,
   onClose,
   onScan,
@@ -20,17 +20,16 @@ export default function QrScannerModal({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animFrameIdRef = useRef<number | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   const [cameraActive, setCameraActive] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("environment");
-  const [stream, setStream] = useState<MediaStream | null>(null);
 
   const parseScannedData = (raw: string): string => {
     let result = raw.trim();
     // EIP-681 ethereum:0x... parsing
     if (result.toLowerCase().startsWith("ethereum:")) {
-      result = result.replace(/^ethereum:/i, "").split("?")[0].split("/")[0];
+      result = result.replace(/^ethereum:/i, "").split("?")[0].split("/")[0].split("@")[0];
     }
     // URL format https://.../pay?address=0x...
     if (result.includes("address=")) {
@@ -45,233 +44,223 @@ export default function QrScannerModal({
     return result;
   };
 
+  const triggerHaptic = () => {
+    try {
+      if (typeof navigator !== "undefined" && navigator.vibrate) {
+        navigator.vibrate([40, 30, 40]);
+      }
+    } catch {
+      // Haptics unavailable
+    }
+  };
+
   const stopCamera = useCallback(() => {
     if (animFrameIdRef.current) {
       cancelAnimationFrame(animFrameIdRef.current);
       animFrameIdRef.current = null;
     }
-    if (stream) {
-      stream.getTracks().forEach((track) => track.stop());
-      setStream(null);
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
     }
     setCameraActive(false);
-  }, [stream]);
+  }, []);
 
-  const startCamera = useCallback(async (facing: "environment" | "user" = "environment") => {
+  const startCamera = useCallback(async () => {
     stopCamera();
     setErrorMsg(null);
 
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error("Camera API is not supported on this browser or context.");
+        throw new Error("Mobile camera API is not supported on this browser context.");
       }
 
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facing },
-      });
+      let mediaStream: MediaStream;
+      try {
+        // Phones: default strictly to rear/back camera (environment facingMode)
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+      } catch {
+        // Fallback for devices without a designated rear camera (e.g. desktop webcams)
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
 
-      setStream(mediaStream);
+      streamRef.current = mediaStream;
       setCameraActive(true);
 
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
-        videoRef.current.setAttribute("playsinline", "true"); // required for iOS Safari
-        videoRef.current.play().catch(() => {});
+        videoRef.current.setAttribute("playsinline", "true"); // Mobile iOS Safari native inline video
+        videoRef.current.setAttribute("autoplay", "true");
+        videoRef.current.setAttribute("muted", "true");
+        await videoRef.current.play().catch(() => {});
       }
     } catch (err: any) {
-      console.warn("Camera access failed:", err);
+      console.warn("Mobile camera initialization error:", err);
       setErrorMsg(
         err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError"
-          ? "Camera permission denied. You can upload an image containing a QR code below."
-          : err?.message || "Unable to access camera. Use image upload fallback below."
+          ? "Camera permission denied. Allow camera access in site settings to scan QR codes."
+          : "Camera unavailable on this device."
       );
       setCameraActive(false);
     }
   }, [stopCamera]);
 
-  // Continuously scan video frames
+  const handleScanSuccess = useCallback(
+    (rawResult: string) => {
+      const parsed = parseScannedData(rawResult);
+      if (parsed) {
+        triggerHaptic();
+        stopCamera();
+        onScan(parsed);
+        onClose();
+      }
+    },
+    [onScan, onClose, stopCamera]
+  );
+
+  // Scan frame loop using BarcodeDetector (native OS hardware engine) or jsQR fallback
   useEffect(() => {
     if (!cameraActive || !isOpen) return;
+
+    let active = true;
+    let barcodeDetector: any = null;
+
+    if (typeof window !== "undefined" && "BarcodeDetector" in window) {
+      try {
+        barcodeDetector = new (window as any).BarcodeDetector({ formats: ["qr_code"] });
+      } catch {
+        barcodeDetector = null;
+      }
+    }
 
     const canvas = canvasRef.current || document.createElement("canvas");
     canvasRef.current = canvas;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
-    const scanFrame = () => {
+    const scanFrame = async () => {
+      if (!active) return;
       const video = videoRef.current;
-      if (video && video.readyState === video.HAVE_ENOUGH_DATA && ctx) {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: "dontInvert",
-        });
+      if (video && video.readyState === video.HAVE_ENOUGH_DATA) {
+        // Option A: Mobile Native BarcodeDetector API (iOS Safari 17+ / Android Chrome hardware scanner)
+        if (barcodeDetector) {
+          try {
+            const barcodes = await barcodeDetector.detect(video);
+            if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+              handleScanSuccess(barcodes[0].rawValue);
+              return;
+            }
+          } catch {
+            // Fall back to canvas + jsQR below
+          }
+        }
 
-        if (code && code.data) {
-          const parsed = parseScannedData(code.data);
-          if (parsed) {
-            onScan(parsed);
-            stopCamera();
-            onClose();
+        // Option B: Canvas + jsQR fallback
+        if (ctx) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: "dontInvert",
+          });
+
+          if (code && code.data) {
+            handleScanSuccess(code.data);
             return;
           }
         }
       }
+
       animFrameIdRef.current = requestAnimationFrame(scanFrame);
     };
 
     animFrameIdRef.current = requestAnimationFrame(scanFrame);
 
     return () => {
+      active = false;
       if (animFrameIdRef.current) {
         cancelAnimationFrame(animFrameIdRef.current);
       }
     };
-  }, [cameraActive, isOpen, onClose, onScan, stopCamera]);
+  }, [cameraActive, isOpen, handleScanSuccess]);
 
   useEffect(() => {
     if (isOpen) {
-      startCamera(cameraFacing);
+      startCamera();
     } else {
       stopCamera();
     }
     return () => {
       stopCamera();
     };
-  }, [isOpen]);
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        ctx.drawImage(img, 0, 0);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: "dontInvert",
-        });
-
-        if (code && code.data) {
-          const parsed = parseScannedData(code.data);
-          onScan(parsed);
-          onClose();
-        } else {
-          setErrorMsg("Could not detect a valid QR code in the uploaded image.");
-        }
-      };
-      img.src = event.target?.result as string;
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const toggleCameraFacing = () => {
-    const nextFacing = cameraFacing === "environment" ? "user" : "environment";
-    setCameraFacing(nextFacing);
-    startCamera(nextFacing);
-  };
+  }, [isOpen, startCamera, stopCamera]);
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="relative w-full max-w-sm rounded-3xl border border-white/10 bg-[#0d0d12] p-6 shadow-2xl space-y-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-xl p-4 sm:p-6 animate-in fade-in duration-200">
+      <div className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-white/10 bg-[#0d0e11] p-5 sm:p-6 shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-[#ccff00]/10 text-[#ccff00] border border-[#ccff00]/20">
-              <Camera className="w-4 h-4" />
-            </div>
-            <h3 className="text-xs font-black uppercase tracking-[0.14em] text-white">
-              {title}
-            </h3>
+        <div className="flex items-center justify-between pb-4 border-b border-white/10">
+          <div className="flex items-center gap-2 text-white">
+            <QrCode className="h-5 w-5 text-[#ccff00]" />
+            <h3 className="text-sm font-black uppercase tracking-wider">{title}</h3>
           </div>
           <button
             type="button"
-            onClick={() => {
-              stopCamera();
-              onClose();
-            }}
-            className="p-2 text-white/50 hover:text-white bg-white/5 border border-white/10 rounded-full transition-all"
+            onClick={onClose}
+            className="rounded-full p-2 text-white/50 hover:bg-white/10 hover:text-white transition"
           >
-            <X className="w-4 h-4" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Video Viewport / Reticle */}
-        <div className="relative w-full aspect-square bg-black rounded-2xl border border-white/10 overflow-hidden flex items-center justify-center">
+        {/* Viewfinder Viewport */}
+        <div className="relative mt-4 aspect-square w-full overflow-hidden rounded-2xl border border-white/10 bg-black/80 flex items-center justify-center">
           <video
             ref={videoRef}
-            className="w-full h-full object-cover"
-            muted
+            className="h-full w-full object-cover"
             playsInline
+            autoPlay
+            muted
           />
+          <canvas ref={canvasRef} className="hidden" />
 
-          {/* Scanner Reticle Overlay */}
+          {/* Mobile Native Camera Viewfinder Box */}
           {cameraActive && (
-            <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <div className="w-48 h-48 border-2 border-[#ccff00] rounded-2xl relative shadow-[0_0_30px_rgba(204,255,0,0.3)]">
-                {/* Reticle corner accents */}
-                <div className="absolute -top-1 -left-1 w-4 h-4 border-t-4 border-l-4 border-[#ccff00] rounded-tl-lg" />
-                <div className="absolute -top-1 -right-1 w-4 h-4 border-t-4 border-r-4 border-[#ccff00] rounded-tr-lg" />
-                <div className="absolute -bottom-1 -left-1 w-4 h-4 border-b-4 border-l-4 border-[#ccff00] rounded-bl-lg" />
-                <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-4 border-r-4 border-[#ccff00] rounded-br-lg" />
-                
-                {/* Laser scan line animation */}
-                <div className="absolute inset-x-0 h-0.5 bg-[#ccff00] shadow-[0_0_15px_#ccff00] animate-pulse top-1/2 -translate-y-1/2" />
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <div className="relative h-48 w-48 rounded-3xl border-2 border-[#ccff00] shadow-[0_0_30px_rgba(204,255,0,0.35)]">
+                <div className="absolute top-0 left-0 h-4 w-4 border-t-4 border-l-4 border-[#ccff00] rounded-tl-lg" />
+                <div className="absolute top-0 right-0 h-4 w-4 border-t-4 border-r-4 border-[#ccff00] rounded-tr-lg" />
+                <div className="absolute bottom-0 left-0 h-4 w-4 border-b-4 border-l-4 border-[#ccff00] rounded-bl-lg" />
+                <div className="absolute bottom-0 right-0 h-4 w-4 border-b-4 border-r-4 border-[#ccff00] rounded-br-lg" />
+                <div className="h-full w-full animate-pulse bg-[#ccff00]/5 rounded-3xl" />
               </div>
             </div>
           )}
 
-          {!cameraActive && !errorMsg && (
-            <div className="flex flex-col items-center gap-2 text-white/40">
-              <Camera className="w-8 h-8 animate-pulse" />
-              <span className="text-[10px] uppercase font-bold tracking-wider">Starting camera...</span>
-            </div>
-          )}
-
+          {/* Camera Error / Fallback State */}
           {errorMsg && (
-            <div className="p-4 text-center space-y-2">
-              <AlertCircle className="w-6 h-6 text-amber-400 mx-auto" />
-              <p className="text-xs text-amber-200/90 leading-relaxed">{errorMsg}</p>
+            <div className="p-6 text-center space-y-3">
+              <AlertCircle className="mx-auto h-10 w-10 text-orange-400" />
+              <p className="text-xs text-white/70 leading-relaxed">{errorMsg}</p>
             </div>
           )}
-        </div>
-
-        {/* Controls */}
-        <div className="space-y-3">
-          {cameraActive && (
-            <button
-              type="button"
-              onClick={toggleCameraFacing}
-              className="w-full py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-bold uppercase tracking-wider text-white/80 flex items-center justify-center gap-2 transition"
-            >
-              <RefreshCw className="w-3.5 h-3.5" /> Switch Camera ({cameraFacing})
-            </button>
-          )}
-
-          {/* Upload Fallback */}
-          <label className="w-full py-3 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 border border-[#ccff00]/30 rounded-2xl text-xs font-black uppercase tracking-[0.14em] text-white flex items-center justify-center gap-2 cursor-pointer transition shadow-[0_0_15px_rgba(204,255,0,0.1)]">
-            <Upload className="w-4 h-4 text-[#ccff00]" />
-            Upload QR Image
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleFileUpload}
-            />
-          </label>
         </div>
       </div>
     </div>
   );
 }
+
+export default QrScannerModal;

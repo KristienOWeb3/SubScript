@@ -320,7 +320,7 @@ Accrues usage against a user's prepaid vault. Use this for flexible usage-based 
 * **API Token Consumption**: Deduct micro-USDC for each API call, agent run, or AI token bundle.
 * **Dynamic Cloud Storage**: Charge users for the amount of storage capacity they actively occupy.
 * **Pay-Per-View / Article Access**: Settle small payments for individual articles, videos, downloads, or premium actions.
-* **Sponsored Subscriptions**: Model a sponsor-funded relationship where a third party covers recurring costs without exposing all user data to the sponsor.
+* **Sponsored Subscriptions & "Ask a Friend" DM Flow**: Model a sponsor-funded relationship where a third party (friend, parent, employer) covers recurring costs. Users with zero/low balance can send in-app `SPONSORED_PLAN_REQUEST` cards in SubScript DMs via `POST /api/user/requests/merchant-plan` or generate shareable off-platform links. Upon payment, the merchant dispatches a `SPONSORED_PLAN_CONFIRMED` confirmation DM to the requester with an actionable `resubscribePlanId` button ("Resubscribe for Yourself") so the beneficiary can self-fund future renewals.
 * **SubScript DNS**: Let users and merchants resolve human-readable aliases instead of copying raw wallet addresses.
 
 ---

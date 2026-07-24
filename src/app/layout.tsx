@@ -64,7 +64,11 @@ export const viewport: Viewport = {
     width: "device-width",
     initialScale: 1,
     viewportFit: "cover",
-    themeColor: "#000000",
+    themeColor: [
+        { media: "(prefers-color-scheme: light)", color: "#000000" },
+        { media: "(prefers-color-scheme: dark)", color: "#000000" },
+    ],
+    colorScheme: "dark",
 };
 
 const configuredAppUrl = normalizePublicUrl(process.env.NEXT_PUBLIC_APP_URL);
@@ -278,8 +282,19 @@ export default async function RootLayout({
     const nonce = (await headers()).get("x-nonce") || undefined;
 
     return (
-        <html lang="en" suppressHydrationWarning>
-            <body className={`${sukar.variable} ${inter.variable} ${instrumentSerif.variable} font-sans antialiased`}>
+        <html lang="en" suppressHydrationWarning style={{ backgroundColor: "#000000", colorScheme: "dark" }}>
+            <head>
+                <meta name="theme-color" content="#000000" />
+                <meta name="background-color" content="#000000" />
+                <meta name="color-scheme" content="dark" />
+                <style
+                    nonce={nonce}
+                    dangerouslySetInnerHTML={{
+                        __html: `html,body{background-color:#000000 !important;color:#ffffff !important;color-scheme:dark !important;}`,
+                    }}
+                />
+            </head>
+            <body className={`${sukar.variable} ${inter.variable} ${instrumentSerif.variable} font-sans antialiased`} style={{ backgroundColor: "#000000" }}>
                 <script
                     nonce={nonce}
                     suppressHydrationWarning
