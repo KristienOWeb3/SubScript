@@ -350,6 +350,8 @@ export async function POST(request: Request) {
                 planName: plan.name,
                 amountUsdc: plan.amountUsdc,
                 periodSeconds: plan.periodSeconds,
+                isResubscription: true,
+                resubscriptionAccessUntil: resumedSub.nextBillingDate,
             }).catch((err: unknown) => console.error("[subscription/subscribe] resumed DM creation failed:", err));
 
             if (merchant === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
