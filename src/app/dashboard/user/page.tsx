@@ -3718,7 +3718,7 @@ export default function UserDashboard() {
                             setQrScannerOpen(true);
                           }}
                           title="Scan QR Code"
-                          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:border-[#ccff00]/40 hover:bg-[#ccff00]/10 hover:text-[#ccff00] transition"
+                          className="flex md:hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:border-[#ccff00]/40 hover:bg-[#ccff00]/10 hover:text-[#ccff00] transition"
                         >
                           <QrCode className="h-5 w-5 text-[#ccff00]" />
                         </button>
@@ -3763,14 +3763,27 @@ export default function UserDashboard() {
                     )}
 
                     <Field label="USDC Amount">
-                      <input
-                        value={singleAmount}
-                        onChange={(event) => setSingleAmount(event.target.value)}
-                        placeholder="5.00"
-                        inputMode="decimal"
-                        className="subscript-input"
-                        required
-                      />
+                      <div className="relative flex items-center">
+                        <input
+                          value={singleAmount}
+                          onChange={(event) => setSingleAmount(event.target.value)}
+                          placeholder="5.00"
+                          inputMode="decimal"
+                          className="subscript-input pr-16 font-mono"
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (walletBalance > 0) {
+                              setSingleAmount(walletBalance.toString());
+                            }
+                          }}
+                          className="absolute right-2.5 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-lg bg-[#ccff00]/10 text-[#ccff00] hover:bg-[#ccff00]/20 border border-[#ccff00]/30 transition z-10"
+                        >
+                          Max
+                        </button>
+                      </div>
                     </Field>
 
                     <BalanceRoutingNotice
@@ -3837,7 +3850,7 @@ export default function UserDashboard() {
                                 setQrTargetIndex(index);
                                 setQrScannerOpen(true);
                               }}
-                              className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-[#ccff00] hover:underline"
+                              className="flex md:hidden items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-[#ccff00] hover:underline"
                             >
                               <QrCode className="h-3.5 w-3.5 text-[#ccff00]" /> Scan QR
                             </button>
@@ -3856,7 +3869,7 @@ export default function UserDashboard() {
                                 setQrScannerOpen(true);
                               }}
                               title={`Scan QR Code for Recipient #${index + 1}`}
-                              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:border-[#ccff00]/40 hover:bg-[#ccff00]/10 hover:text-[#ccff00] transition"
+                              className="flex md:hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:border-[#ccff00]/40 hover:bg-[#ccff00]/10 hover:text-[#ccff00] transition"
                             >
                               <QrCode className="h-4 w-4 text-[#ccff00]" />
                             </button>
@@ -3864,13 +3877,57 @@ export default function UserDashboard() {
                         </div>
 
                         <div className="space-y-2">
-                          <span className="text-[9px] uppercase font-bold text-white/35">USDC Amount</span>
-                          <input
-                            value={row.amount}
-                            onChange={(event) => setBatchRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, amount: event.target.value } : item))}
-                            placeholder="USDC amount"
-                            className="subscript-input"
-                          />
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] uppercase font-bold text-white/35">USDC Amount</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const otherRowsSum = batchRows.reduce((sum, item, itemIdx) => {
+                                  if (itemIdx === index) return sum;
+                                  const val = parseFloat(item.amount);
+                                  return sum + (isNaN(val) ? 0 : val);
+                                }, 0);
+                                const remainder = Math.max(0, walletBalance - otherRowsSum);
+                                const formatted = remainder > 0 ? parseFloat(remainder.toFixed(6)).toString() : "0";
+                                setBatchRows((rows) =>
+                                  rows.map((item, itemIdx) =>
+                                    itemIdx === index ? { ...item, amount: formatted } : item
+                                  )
+                                );
+                              }}
+                              className="text-[9px] font-black uppercase tracking-wider text-[#ccff00] hover:underline"
+                            >
+                              The Rest
+                            </button>
+                          </div>
+                          <div className="relative flex items-center">
+                            <input
+                              value={row.amount}
+                              onChange={(event) => setBatchRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, amount: event.target.value } : item))}
+                              placeholder="USDC amount"
+                              className="subscript-input pr-20 font-mono"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const otherRowsSum = batchRows.reduce((sum, item, itemIdx) => {
+                                  if (itemIdx === index) return sum;
+                                  const val = parseFloat(item.amount);
+                                  return sum + (isNaN(val) ? 0 : val);
+                                }, 0);
+                                const remainder = Math.max(0, walletBalance - otherRowsSum);
+                                const formatted = remainder > 0 ? parseFloat(remainder.toFixed(6)).toString() : "0";
+                                setBatchRows((rows) =>
+                                  rows.map((item, itemIdx) =>
+                                    itemIdx === index ? { ...item, amount: formatted } : item
+                                  )
+                                );
+                              }}
+                              className="absolute right-2.5 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg bg-[#ccff00]/10 text-[#ccff00] hover:bg-[#ccff00]/20 border border-[#ccff00]/30 transition z-10"
+                            >
+                              The Rest
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -7221,18 +7278,19 @@ function DepositModal({
   return (
     <AnimatePresence>
       {open && userWallet && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 backdrop-blur-xl">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} role="dialog" aria-modal="true" aria-labelledby="deposit-dialog-title" className="relative max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-3xl border border-white/10 bg-black/50 p-6 shadow-2xl backdrop-blur-xl liquid-glass" {...depositSwipe}>
-            <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4 sm:p-5 backdrop-blur-xl">
+          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} role="dialog" aria-modal="true" aria-labelledby="deposit-dialog-title" className="relative flex flex-col max-h-[85vh] sm:max-h-[90vh] w-full max-w-sm overflow-hidden rounded-3xl border border-white/10 bg-[#0d0e11] p-5 sm:p-6 shadow-2xl backdrop-blur-xl liquid-glass" {...depositSwipe}>
+            {/* Header (Pinned) */}
+            <div className="shrink-0 flex items-center justify-between mb-3 border-b border-white/5 pb-3">
               <h3 id="deposit-dialog-title" className="text-sm font-black uppercase tracking-wider text-white">
                 {activeSubMode === "menu" ? "Deposit USDC" : activeSubMode === "direct" ? "Direct Deposit" : "Circle CCTP Bridge"}
               </h3>
               <button type="button" onClick={closeDepositModal} disabled={cctpInProgress} aria-label="Close deposit dialog" className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30 transition-all"><X className="h-4 w-4" /></button>
             </div>
             
-            {/* Tabs for non-menu active modes */}
+            {/* Tabs for non-menu active modes (Pinned) */}
             {activeSubMode !== "menu" && (
-              <div className="relative mb-6 grid grid-cols-2 w-full gap-1 rounded-2xl bg-black/40 p-1 border border-white/5">
+              <div className="shrink-0 relative mb-4 grid grid-cols-2 w-full gap-1 rounded-2xl bg-black/40 p-1 border border-white/5">
                 {(["direct", "cctp"] as const).map((tab) => {
                   const isActive = activeSubMode === tab;
                   return (
@@ -7244,7 +7302,7 @@ function DepositModal({
                         setActiveSubMode(tab);
                         setCctpStatus("idle");
                       }}
-                      className={`relative flex items-center justify-center py-2.5 px-3 text-[10px] font-black uppercase tracking-wider rounded-xl z-10 transition-colors duration-200 ${
+                      className={`relative flex items-center justify-center py-2 px-3 text-[10px] font-black uppercase tracking-wider rounded-xl z-10 transition-colors duration-200 ${
                         isActive ? "text-black" : "text-white/50 hover:text-white/85"
                       }`}
                     >
@@ -7264,7 +7322,8 @@ function DepositModal({
               </div>
             )}
 
-            <div className="overflow-hidden w-full relative">
+            {/* Scrollable Body Content */}
+            <div className="flex-1 overflow-y-auto min-h-0 w-full relative pr-0.5 custom-scrollbar">
               <AnimatePresence mode="wait" initial={false} custom={subDirection}>
                 <motion.div
                   key={activeSubMode}
@@ -7293,8 +7352,8 @@ function DepositModal({
                   className="w-full"
                 >
                   {activeSubMode === "menu" && (
-              <div className="space-y-5">
-                <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] p-2.5 shadow-[0_0_20px_rgba(204,255,0,0.2)]">
+              <div className="space-y-4 py-1">
+                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-[#ccff00] p-2.5 shadow-[0_0_20px_rgba(204,255,0,0.2)]">
                   <img src="/logo.png" alt="SubScript Logo" className="h-full w-full object-contain" />
                 </div>
                 <div className="rounded-3xl border border-yellow-500/25 bg-yellow-500/5 p-4 text-left">
@@ -7303,14 +7362,14 @@ function DepositModal({
                     We found <strong>{(sepoliaUsdc + mainnetUsdc).toFixed(2)} USDC</strong> outside Arc. Sepolia USDC can be bridged here; Mainnet bridging is not yet available.
                   </p>
                 </div>
-                <div className="space-y-3 pt-2">
+                <div className="space-y-3 pt-1">
                   <button
                     type="button"
                     onClick={() => setActiveSubMode("cctp")}
                     disabled={sepoliaUsdc <= 0}
-                    className="flex w-full items-center gap-4 rounded-3xl border border-[#ccff00]/20 bg-[#ccff00]/5 p-5 text-left hover:bg-[#ccff00]/10 transition-all group"
+                    className="flex w-full items-center gap-4 rounded-3xl border border-[#ccff00]/20 bg-[#ccff00]/5 p-4 text-left hover:bg-[#ccff00]/10 transition-all group"
                   >
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#ccff00] text-black group-hover:scale-105 transition-all shrink-0">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#ccff00] text-black group-hover:scale-105 transition-all shrink-0">
                       <Globe className="h-5 w-5" />
                     </div>
                     <div className="flex-1">
@@ -7323,9 +7382,9 @@ function DepositModal({
                   <button
                     type="button"
                     onClick={() => setActiveSubMode("direct")}
-                    className="flex w-full items-center gap-4 rounded-3xl border border-white/10 bg-white/[0.035] p-5 text-left hover:bg-white/[0.06] transition-all group"
+                    className="flex w-full items-center gap-4 rounded-3xl border border-white/10 bg-white/[0.035] p-4 text-left hover:bg-white/[0.06] transition-all group"
                   >
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white/80 group-hover:scale-105 transition-all shrink-0">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10 text-white/80 group-hover:scale-105 transition-all shrink-0">
                       <Wallet className="h-5 w-5" />
                     </div>
                     <div className="flex-1">
@@ -7339,16 +7398,16 @@ function DepositModal({
             )}
 
             {activeSubMode === "direct" && (
-              <div className="text-center space-y-3">
-                <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] p-2.5 shadow-[0_0_20px_rgba(204,255,0,0.2)]">
+              <div className="text-center space-y-2.5 py-1">
+                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-[#ccff00] p-2 shadow-[0_0_20px_rgba(204,255,0,0.2)]">
                   <img src="/logo.png" alt="SubScript Logo" className="h-full w-full object-contain" />
                 </div>
-                <p className="text-xs text-white/45">Send native USDC on Arc Testnet to your SubScript wallet address.</p>
-                <p className="rounded-xl border border-amber-400/20 bg-amber-400/[0.05] p-2.5 text-[10px] leading-relaxed text-amber-200/75">Arc Testnet only. Sending another token or using another network will not credit this balance.</p>
-                <div className="mx-auto my-3 w-fit rounded-3xl bg-white p-3.5 shadow-lg">
+                <p className="text-[11px] text-white/50 leading-tight">Send native USDC on Arc Testnet to your SubScript wallet address.</p>
+                <p className="rounded-xl border border-amber-400/20 bg-amber-400/[0.05] p-2 text-[10px] leading-relaxed text-amber-200/75">Arc Testnet only. Sending another token or using another network will not credit this balance.</p>
+                <div className="mx-auto my-2 w-fit rounded-2xl bg-white p-3 shadow-lg">
                   <QRCode
                     value={userWallet}
-                    size={160}
+                    size={140}
                     ecLevel="H"
                     bgColor="#ffffff"
                     fgColor="#000000"
@@ -7359,8 +7418,8 @@ function DepositModal({
                       [10, 0, 10, 10]
                     ]}
                     logoImage="/logo.png"
-                    logoWidth={34}
-                    logoHeight={34}
+                    logoWidth={30}
+                    logoHeight={30}
                     removeQrCodeBehindLogo={true}
                     logoPadding={2}
                   />
@@ -7368,7 +7427,7 @@ function DepositModal({
                 <button
                   type="button"
                   onClick={onCopy}
-                  className={`flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-xs font-black transition-all ${
+                  className={`flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-2.5 text-xs font-black transition-all ${
                     copied
                       ? "border-[#ccff00]/40 bg-[#ccff00]/15 text-[#ccff00]"
                       : "border-white/10 bg-white/[0.05] text-white/80 hover:bg-white/10 hover:border-white/20"
