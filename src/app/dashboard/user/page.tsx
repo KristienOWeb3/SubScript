@@ -6406,7 +6406,7 @@ function DmBubble({
           <p className={`mt-2 text-xs leading-relaxed ${isPending ? "text-white/75" : "text-white/40"}`}>
             {isPending
               ? "You paused payments for this service, so you can't use this merchant's service while paused. Resume it, or top up your commit if it's below the 2 USDC minimum."
-              : "This pause was resolved — the service is active again."}
+              : "This pause was resolved: the service is active again."}
           </p>
           {isPending && (
             <div className="mt-3 flex flex-wrap items-center gap-2">

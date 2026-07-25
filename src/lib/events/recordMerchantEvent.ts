@@ -133,7 +133,8 @@ export async function recordMerchantEvent(
 
     /* Step 2: Fan out to matching active endpoints.
        Endpoints must match environment. If enabledEvents is non-empty,
-       the event type must be in the list. */
+       the event type must be in the list, or match category.* or *. */
+    const category = params.eventType.split(".")[0];
     const endpoints = await prisma.webhookEndpoint.findMany({
         where: {
             walletAddress: normalizedWallet,
@@ -142,7 +143,7 @@ export async function recordMerchantEvent(
             environment: params.environment,
             OR: [
                 { enabledEvents: { isEmpty: true } },
-                { enabledEvents: { has: params.eventType } },
+                { enabledEvents: { hasSome: [params.eventType, `${category}.*`, "*"] } },
             ],
         },
         select: { id: true },

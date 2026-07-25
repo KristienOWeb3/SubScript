@@ -56,7 +56,19 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
             continue;
         }
 
+        const eventEnv = delivery.payload?.environment || "LIVE";
+        const endpointEnv = endpoint.environment || "LIVE";
+        if (eventEnv !== endpointEnv) {
+            await supabase.from("webhook_deliveries").update({
+                status: "DEAD_LETTER",
+                last_error: `ENVIRONMENT_MISMATCH: event (${eventEnv}) does not match endpoint environment (${endpointEnv})`,
+                updated_at: new Date().toISOString(),
+            }).eq("id", delivery.id);
+            continue;
+        }
+
         let secret = endpoint.secret;
+        let decryptionFailed = false;
         if (endpoint.ciphertext && endpoint.nonce && endpoint.authentication_tag) {
             try {
                 secret = decryptWebhookSecret({
@@ -68,7 +80,16 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
                 });
             } catch (decryptionError) {
                 console.error(`[webhook-outbox] Failed to decrypt webhook secret for endpoint ${endpoint.id}:`, decryptionError);
+                decryptionFailed = true;
             }
+        }
+        if (decryptionFailed) {
+            await supabase.from("webhook_deliveries").update({
+                status: "FAILED",
+                last_error: "ENDPOINT_SECRET_DECRYPTION_FAILED",
+                updated_at: new Date().toISOString(),
+            }).eq("id", delivery.id);
+            continue;
         }
 
         const attempts = Number(delivery.attempts || 0) + 1;
@@ -181,6 +202,7 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
             status: result.status,
             payload: delivery.payload,
             response_body: result.responseText,
+            environment: delivery.payload?.environment || "LIVE",
         });
         if (success) delivered++;
     }

@@ -37,7 +37,7 @@ import {
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
     Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
     Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, User, Share2,
-    ShieldCheck, Save, Home, SquaresFour, Broadcast, MessageSquare, HelpCircle, Send
+    ShieldCheck, Save, Home, SquaresFour, Broadcast, MessageSquare, HelpCircle, Send, Terminal, Bell
 } from "@/components/icons";
 import { QRCode } from "react-qrcode-logo";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
@@ -5194,6 +5194,71 @@ Please complete the following implementation tasks:
                                 </div>
                             </div>
                         )}
+
+                        {/* Quick Jump Developer Portal & Merchant Operations */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
+                            {/* Merchant KYC / Verification Status */}
+                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                        <Shield className="w-4 h-4 text-[#00d2b4]" /> Business Verification
+                                    </h4>
+                                    {userSettings.verified ? (
+                                        <span className="px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Verified</span>
+                                    ) : (
+                                        <span className="px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">Unverified</span>
+                                    )}
+                                </div>
+                                <p className="text-xs text-white/50 leading-relaxed">
+                                    {userSettings.verified
+                                        ? "Your merchant account is verified. Checkout links will display a verified trust badge to customers."
+                                        : "Complete business verification to gain verified status and remove checkout warnings."}
+                                </p>
+                            </div>
+
+                            {/* Developer Portal Quick Jump */}
+                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
+                                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                    <Terminal className="w-4 h-4 text-[#00d2b4]" /> Developer Quick-Jump
+                                </h4>
+                                <p className="text-xs text-white/50 leading-relaxed">Access backend API keys, webhooks outbox, and SDK documentation.</p>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => setActiveTab("apikeys")}
+                                        className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition border border-white/10 flex items-center justify-center gap-1.5"
+                                    >
+                                        <Key className="w-3.5 h-3.5 text-[#00d2b4]" /> API Keys
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveTab("webhooks")}
+                                        className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition border border-white/10 flex items-center justify-center gap-1.5"
+                                    >
+                                        <Webhook className="w-3.5 h-3.5 text-[#00d2b4]" /> Webhooks
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Notification Preferences */}
+                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
+                                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                    <Bell className="w-4 h-4 text-[#00d2b4]" /> Notification Toggles
+                                </h4>
+                                <div className="space-y-2 text-xs text-white/70">
+                                    <label className="flex items-center justify-between p-2 rounded-xl bg-white/[0.02] border border-white/5 cursor-pointer">
+                                        <span>New Subscriptions</span>
+                                        <input type="checkbox" defaultChecked className="accent-[#00d2b4] w-4 h-4" />
+                                    </label>
+                                    <label className="flex items-center justify-between p-2 rounded-xl bg-white/[0.02] border border-white/5 cursor-pointer">
+                                        <span>Successful Payments</span>
+                                        <input type="checkbox" defaultChecked className="accent-[#00d2b4] w-4 h-4" />
+                                    </label>
+                                    <label className="flex items-center justify-between p-2 rounded-xl bg-white/[0.02] border border-white/5 cursor-pointer">
+                                        <span>Failed Renewals</span>
+                                        <input type="checkbox" defaultChecked className="accent-[#00d2b4] w-4 h-4" />
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 );
 

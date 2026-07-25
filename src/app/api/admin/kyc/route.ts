@@ -151,16 +151,14 @@ export async function POST(request: Request) {
                     },
                 },
             });
-            if (updated.kind === "BUSINESS") {
-                await tx.merchant.upsert({
-                    where: { walletAddress: updated.walletAddress },
-                    update: { verified: payload.data.status === "APPROVED" },
-                    create: {
-                        walletAddress: updated.walletAddress,
-                        verified: payload.data.status === "APPROVED",
-                    },
-                });
-            }
+            await tx.merchant.upsert({
+                where: { walletAddress: updated.walletAddress },
+                update: { verified: payload.data.status === "APPROVED" },
+                create: {
+                    walletAddress: updated.walletAddress,
+                    verified: payload.data.status === "APPROVED",
+                },
+            });
             return updated;
         });
 
