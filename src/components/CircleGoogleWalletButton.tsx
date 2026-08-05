@@ -124,7 +124,57 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
         setIsLoading(false);
     };
 
-    useEffect(() => clearWatchdog, []);
+    const preloadedSdkRef = useRef<{
+        sdk: W3SSdk;
+        config: CircleGoogleConfig;
+    } | null>(null);
+
+    useEffect(() => {
+        let isMounted = true;
+        async function preloadToken() {
+            try {
+                const configRes = await fetch("/api/auth/circle/google/config", { cache: "no-store" });
+                const config: CircleGoogleConfig & { error?: string } = await configRes.json();
+                if (!configRes.ok || !isMounted) return;
+
+                const googleConfig = {
+                    clientId: config.googleClientId,
+                    redirectUri: config.redirectUri,
+                    selectAccountPrompt: true,
+                };
+                const tempSdk = new W3SSdk({
+                    appSettings: { appId: config.appId },
+                    loginConfigs: { deviceToken: "", deviceEncryptionKey: "", google: googleConfig },
+                }, () => {});
+                const deviceId = await tempSdk.getDeviceId();
+                const dtRes = await fetch("/api/auth/circle/google/device-token", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ deviceId }),
+                });
+                const dt = await dtRes.json().catch(() => ({}));
+                if (!dtRes.ok || !dt.deviceToken || !dt.deviceEncryptionKey || !isMounted) return;
+                persistCircleDevice(dt.deviceToken, dt.deviceEncryptionKey);
+
+                tempSdk.updateConfigs({
+                    appSettings: { appId: config.appId },
+                    loginConfigs: {
+                        deviceToken: dt.deviceToken,
+                        deviceEncryptionKey: dt.deviceEncryptionKey,
+                        google: googleConfig,
+                    },
+                }, () => {});
+                preloadedSdkRef.current = { sdk: tempSdk, config };
+            } catch (e) {
+                console.warn("[CircleGoogleWalletButton] Preload error:", e);
+            }
+        }
+        preloadToken();
+        return () => {
+            isMounted = false;
+            clearWatchdog();
+        };
+    }, []);
 
     const completeCircleLogin = async (session: CircleSession) => {
         clearWatchdog();
@@ -161,12 +211,6 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
         armWatchdog();
 
         try {
-            const configRes = await fetch("/api/auth/circle/google/config", { cache: "no-store" });
-            const config: CircleGoogleConfig & { error?: string } = await configRes.json();
-            if (!configRes.ok) {
-                throw new Error(config.error || "Circle Google login is not configured.");
-            }
-
             window.localStorage.setItem("subscript_circle_auth_intent", getAuthIntent());
 
             const onLoginComplete: LoginCompleteCallback = async (loginError, result) => {
@@ -187,10 +231,6 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
                     };
                     persistCircleSession(session);
 
-                    /* Google verifies the email; the account is a server-managed embedded wallet
-                       (the same model as email/OTP, keyed by email — one account per email). We
-                       deliberately skip Circle's PIN wallet challenge: sdk.execute() was the step that
-                       failed with "Error encrypting data" and also created a separate account. */
                     await completeCircleLogin(session);
                 } catch (err: any) {
                     stopLoading();
@@ -198,13 +238,36 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
                 }
             };
 
+            if (preloadedSdkRef.current) {
+                const { sdk, config } = preloadedSdkRef.current;
+                sdk.updateConfigs({
+                    appSettings: { appId: config.appId },
+                    loginConfigs: {
+                        deviceToken: cookieString("circle_device_token"),
+                        deviceEncryptionKey: cookieString("circle_device_encryption_key"),
+                        google: {
+                            clientId: config.googleClientId,
+                            redirectUri: config.redirectUri,
+                            selectAccountPrompt: true,
+                        },
+                    },
+                }, onLoginComplete);
+                await sdk.performLogin(SocialLoginProvider.GOOGLE);
+                return;
+            }
+
+            const configRes = await fetch("/api/auth/circle/google/config", { cache: "no-store" });
+            const config: CircleGoogleConfig & { error?: string } = await configRes.json();
+            if (!configRes.ok) {
+                throw new Error(config.error || "Circle Google login is not configured.");
+            }
+
             const googleConfig = {
                 clientId: config.googleClientId,
                 redirectUri: config.redirectUri,
                 selectAccountPrompt: true,
             };
 
-            /* Start with placeholder device fields just to obtain the deviceId. */
             const sdk = new W3SSdk({
                 appSettings: { appId: config.appId },
                 loginConfigs: { deviceToken: "", deviceEncryptionKey: "", google: googleConfig },
@@ -212,8 +275,6 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
 
             const deviceId = await sdk.getDeviceId();
 
-            /* Mint the real device token + encryption key from Circle for this device.
-               (A client-generated UUID here is what caused "Error encrypting data".) */
             const dtRes = await fetch("/api/auth/circle/google/device-token", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },

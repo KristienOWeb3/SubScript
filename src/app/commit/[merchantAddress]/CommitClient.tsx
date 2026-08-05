@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
-    Loader2, CheckCircle, AlertTriangle, ArrowRight, Lock, Shield, ShieldAlert, Zap, MessageSquare
+    Loader2, CheckCircle, AlertTriangle, ArrowRight, Lock, Shield, ShieldAlert, Zap, MessageSquare, RefreshCw
 } from "@/components/icons";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 
@@ -39,9 +39,10 @@ export default function CommitClient({
     const router = useRouter();
 
     const [merchant] = useState<MerchantInfo | null>(initialMerchant);
-    const [amountUsdc, setAmountUsdc] = useState(initialAmount || "2.00");
+    const amountUsdc = "2.00"; // Fixed 2.00 Platform Commit Price (STANDARD_COMMIT_MICROS = 2000000)
     const [session, setSession] = useState<SessionInfo | null>(null);
     const [sessionLoaded, setSessionLoaded] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     const [isCommitting, setIsCommitting] = useState(false);
     const [commitError, setCommitError] = useState<string | null>(null);
@@ -50,6 +51,20 @@ export default function CommitClient({
 
     const commitRequestKey = useRef<string | null>(null);
     const commitInFlight = useRef(false);
+
+    const handleRefresh = async () => {
+        setIsRefreshing(true);
+        try {
+            const res = await fetch("/api/auth/session");
+            const data = await res.json().catch(() => null);
+            if (data) setSession(data);
+            router.refresh();
+        } catch (err) {
+            console.error("[CommitClient] refresh error:", err);
+        } finally {
+            setIsRefreshing(false);
+        }
+    };
 
     useEffect(() => {
         let cancelled = false;
@@ -110,7 +125,7 @@ export default function CommitClient({
         <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4] flex items-center justify-center p-4 sm:p-6 relative font-sans">
             <AnimatedGradientBg />
 
-            <div className="relative z-10 w-full max-w-md">
+            <div className="relative z-10 w-full max-w-xl my-auto">
                 <div className="text-center mb-8">
                     <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
                         SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">commit</span>
@@ -118,7 +133,7 @@ export default function CommitClient({
                     <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Pay-As-You-Go Vault Escrow</p>
                 </div>
 
-                <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40">
+                <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 max-h-[85vh] overflow-y-auto">
 
                     {/* Merchant Identity */}
                     <div className="flex items-center gap-3">
@@ -129,17 +144,28 @@ export default function CommitClient({
                             <p className="text-[9px] font-bold text-white/30 uppercase tracking-widest">Pay-As-You-Go Service</p>
                             <p className="truncate font-mono text-sm font-bold text-white">{merchant?.name || merchantAddress.slice(0, 8)}</p>
                         </div>
-                        {merchant?.verified ? (
-                            <div className="ml-auto flex items-center gap-1 bg-emerald-500/[0.06] border border-emerald-500/20 rounded-lg px-2 py-1">
-                                <Shield className="w-3 h-3 text-emerald-400" />
-                                <span className="text-[8px] font-bold text-emerald-400 uppercase tracking-wider">Verified</span>
-                            </div>
-                        ) : (
-                            <div className="ml-auto flex items-center gap-1 bg-amber-500/[0.06] border border-amber-500/20 rounded-lg px-2 py-1">
-                                <AlertTriangle className="w-3 h-3 text-amber-400" />
-                                <span className="text-[8px] font-bold text-amber-400 uppercase tracking-wider">Unverified</span>
-                            </div>
-                        )}
+                        <div className="ml-auto flex items-center gap-2">
+                            {merchant?.verified ? (
+                                <div className="flex items-center gap-1 bg-emerald-500/[0.06] border border-emerald-500/20 rounded-lg px-2 py-1">
+                                    <Shield className="w-3 h-3 text-emerald-400" />
+                                    <span className="text-[8px] font-bold text-emerald-400 uppercase tracking-wider">Verified</span>
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-1 bg-amber-500/[0.06] border border-amber-500/20 rounded-lg px-2 py-1">
+                                    <AlertTriangle className="w-3 h-3 text-amber-400" />
+                                    <span className="text-[8px] font-bold text-amber-400 uppercase tracking-wider">Unverified</span>
+                                </div>
+                            )}
+                            <button
+                                type="button"
+                                onClick={handleRefresh}
+                                disabled={isRefreshing}
+                                title="Refresh Session & State"
+                                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition disabled:opacity-50"
+                            >
+                                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin text-[#00d2b4]" : ""}`} />
+                            </button>
+                        </div>
                     </div>
 
                     <div className="space-y-2">

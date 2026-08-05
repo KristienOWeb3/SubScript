@@ -25,6 +25,7 @@ export const ArrowRightLeft = wrap(P.ArrowsLeftRight);
 export const ArrowUp = wrap(P.ArrowUp);
 export const ArrowUpRight = wrap(P.ArrowUpRight);
 export const Award = wrap(P.Trophy);
+export const Bell = wrap(P.Bell);
 export const BarChart3 = wrap(P.ChartBar);
 export const BookOpen = wrap(P.BookOpen);
 export const Building2 = wrap(P.Buildings);

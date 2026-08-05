@@ -29,6 +29,7 @@ import {
     SitePlanPublicationError,
 } from "@/lib/subscriptions/sitePlans";
 import { createSubscriptionOfferDm } from "@/lib/dms/system";
+import { createDmAndNotify } from "@/lib/dms/notifications";
 
 const SUBSCRIPT_ABI = [
     {
@@ -561,12 +562,43 @@ export async function DELETE(request: Request) {
             return NextResponse.json({ error: "Bad Request: missing subscription id" }, { status: 400 });
         }
 
-        // An active on-chain authorization belongs to the subscriber. Merchants can deactivate
-        // plans and unaccepted checkout sessions, but cannot revoke customer access.
+        // An active on-chain authorization belongs to the subscriber. Merchants can set
+        // cancelAtPeriodEnd = true on active subscriptions and notify the DM thread.
         if (/^\d+$/.test(idParam)) {
+            const sub = await prisma.subscription.findFirst({
+                where: { subscriptionId: BigInt(idParam), merchantAddress },
+            });
+            if (!sub) {
+                return NextResponse.json({ error: "Subscription not found for this merchant" }, { status: 404 });
+            }
+            await prisma.subscription.update({
+                where: { subscriptionId: sub.subscriptionId },
+                data: { cancelAtPeriodEnd: true, updatedAt: new Date() },
+            });
+            await createDmAndNotify({
+                senderAddress: merchantAddress,
+                receiverAddress: sub.subscriber || "",
+                messageType: "SUBSCRIPTION_CANCELED",
+                status: "APPROVED",
+                title: "Subscription Canceled by Merchant",
+                description: `Subscription sub_${idParam} was set to cancel at period end by the merchant. Access continues through your paid period.`,
+            }).catch((err) => console.error("[v1/subscriptions] DM notification error:", err));
+
+            await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.cancel_scheduled", subscriptionWebhookData({
+                subscriptionId: idParam,
+                status: "cancel_scheduled",
+                amountUsdcMicros: sub.amountCapUsdc.toString(),
+                subscriber: sub.subscriber || "",
+                merchantAddress,
+                reason: "Canceled by merchant via API",
+            }), `merchant-cancel-scheduled:${idParam}`);
+
             return NextResponse.json({
-                error: "Forbidden: active subscriptions can only be canceled by the subscriber.",
-            }, { status: 403 });
+                id: `sub_${idParam}`,
+                object: "subscription",
+                status: "cancel_scheduled",
+                cancelAtPeriodEnd: true,
+            }, { status: 200 });
         }
 
         // Checkout-session subscription (uuid): cancel it only if it hasn't activated on-chain.

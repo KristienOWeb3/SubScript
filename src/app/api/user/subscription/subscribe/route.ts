@@ -201,12 +201,20 @@ export async function POST(request: Request) {
                     merchantAddress: merchant,
                     kind: "CUSTOMER",
                     status: { in: ["ACTIVE", "PAST_DUE"] },
-                    cancelAtPeriodEnd: false,
                 },
                 orderBy: { createdAt: "desc" }
             });
             if (existing) {
-                return { status: "ALREADY_SUBSCRIBED", existing, attempt: null, appliedPromo: null };
+                if (existing.nextBillingDate) {
+                    const remainingMs = existing.nextBillingDate.getTime() - Date.now();
+                    const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+                    if (remainingMs > SIX_HOURS_MS) {
+                        return { status: "RESUBSCRIPTION_TOO_EARLY", existing, attempt: null, appliedPromo: null };
+                    }
+                }
+                if (!existing.cancelAtPeriodEnd) {
+                    return { status: "ALREADY_SUBSCRIBED", existing, attempt: null, appliedPromo: null };
+                }
             }
 
             /* Resubscribing to the SAME PLAN when remaining duration is > 1 day:
@@ -307,6 +315,17 @@ export async function POST(request: Request) {
             return NextResponse.json({
                 error: "Another subscription attempt is currently in progress. Please try again shortly.",
                 code: "CONCURRENT_REQUEST"
+            }, { status: 409 });
+        }
+
+        if (result.status === "RESUBSCRIPTION_TOO_EARLY" && result.existing) {
+            const existingSub = result.existing;
+            const remainingMs = existingSub.nextBillingDate ? existingSub.nextBillingDate.getTime() - Date.now() : 0;
+            const hoursLeft = Math.round(remainingMs / (60 * 60 * 1000));
+            return NextResponse.json({
+                error: `Your subscription is currently active with ~${hoursLeft} hours remaining. It will automatically renew within 6 hours of expiry.`,
+                code: "RESUBSCRIPTION_TOO_EARLY",
+                nextBillingDate: existingSub.nextBillingDate,
             }, { status: 409 });
         }
 

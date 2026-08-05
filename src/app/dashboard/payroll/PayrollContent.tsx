@@ -557,7 +557,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
             }
 
             /* External wallet: sign the keeper-spender authorization built from the shared module, with
-               the keeper address and current on-chain Permit2 nonce — so the signed message is
+               the keeper address and current on-chain Permit2 nonce: so the signed message is
                byte-identical to what the keeper submits. Assumes USDC is already approved to Permit2. */
             const keeperRes = await fetch("/api/merchant/payroll/keeper");
             const keeperData = await keeperRes.json();
@@ -874,7 +874,12 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                     )}
 
                     {/* Check if connected */}
-                    {!isConnected ? (
+                    {pageIsLoading ? (
+                        <div className="py-20 flex flex-col items-center justify-center gap-4 text-center">
+                            <Loader2 className="w-8 h-8 animate-spin text-[#00d2b4]" />
+                            <p className="text-xs text-white/50 uppercase tracking-widest">Restoring session...</p>
+                        </div>
+                    ) : !isConnected ? (
                         <div className="space-y-8">
                             <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
                                 <div className="p-4 rounded-3xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-300">

@@ -48,7 +48,7 @@ interface KycResponse {
    Verification itself launches with mainnet. */
 const USER_TIER_PERKS = [
     {
-        name: "Tier 0 — Basic",
+        name: "Tier 0: Basic",
         requirement: "No verification needed",
         perks: [
             "Send and receive USDC payments",
@@ -57,7 +57,7 @@ const USER_TIER_PERKS = [
         ],
     },
     {
-        name: "Tier 1 — Verified",
+        name: "Tier 1: Verified",
         requirement: "Identity verification (KYC)",
         perks: [
             "Higher transaction and spending limits",

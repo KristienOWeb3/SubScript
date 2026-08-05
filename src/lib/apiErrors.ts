@@ -89,3 +89,34 @@ export function getSecretKeyMode(secretKey: string) {
     const mode = resolveSecretKeyMode(secretKey);
     return mode === "TEST" ? "test" : mode === "LIVE" ? "live" : "unknown";
 }
+
+/**
+ * Stripe-compatible error envelope helper:
+ * { error: { message, type, code, param, doc_url, request_id } }
+ */
+export function stripeErrorResponse(args: {
+    status: number;
+    message: string;
+    type?: string;
+    code?: string;
+    param?: string;
+    requestId?: string;
+    docUrl?: string;
+}) {
+    const requestId = args.requestId ?? crypto.randomUUID();
+    const docUrl = args.docUrl ?? `${dashboardBaseUrl}/docs#errors`;
+
+    return NextResponse.json({
+        error: {
+            message: args.message,
+            type: args.type ?? "invalid_request_error",
+            code: args.code ?? "invalid_request",
+            param: args.param,
+            doc_url: docUrl,
+            request_id: requestId,
+        }
+    }, {
+        status: args.status,
+        headers: { "X-Request-Id": requestId }
+    });
+}

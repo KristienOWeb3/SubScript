@@ -564,6 +564,26 @@ async function verifyAndFinalize(supabase: any, job: PaymentLinkVerificationJob)
                 },
             }).catch((err: unknown) => console.error("[payment-verification] checkout.completed webhook error:", err));
 
+            await recordMerchantEvent({
+                merchantAddress: job.merchant_address.toLowerCase(),
+                eventType: "payment.succeeded",
+                environment: settlementChainId === ARC_TESTNET_CHAIN_ID ? "TEST" : "LIVE",
+                resourceType: "payment",
+                resourceId: paymentId,
+                resourceVersion: 1,
+                correlationId: job.id,
+                transitionKey: `payment-succeeded:${paymentId}:${job.tx_hash}`,
+                chainId: settlementChainId,
+                data: {
+                    payment_id: paymentId,
+                    checkout_session_id: job.payment_link_id,
+                    amount_usdc_micros: job.amount_usdc.toString(),
+                    payer_address: job.payer_address,
+                    merchant_address: job.merchant_address.toLowerCase(),
+                    tx_hash: job.tx_hash,
+                },
+            }).catch((err: unknown) => console.error("[payment-verification] payment.succeeded webhook error:", err));
+
             await completeJob(supabase, job);
             return;
         } catch (error) {

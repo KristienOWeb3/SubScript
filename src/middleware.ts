@@ -203,6 +203,22 @@ const MAX_PAYLOAD_SIZE = 1048576;
 
 export async function middleware(request: NextRequest) {
     const pathname = request.nextUrl.pathname;
+    if (
+        pathname.startsWith("/_next") ||
+        pathname.startsWith("/images") ||
+        pathname.startsWith("/fonts") ||
+        pathname === "/favicon.ico" ||
+        pathname === "/manifest.json" ||
+        pathname === "/manifest.webmanifest" ||
+        pathname === "/site.webmanifest" ||
+        pathname === "/robots.txt" ||
+        pathname === "/api/health" ||
+        pathname === "/api/heartbeat" ||
+        pathname === "/api/ping" ||
+        pathname === "/healthz"
+    ) {
+        return NextResponse.next();
+    }
     const isApiRoute = pathname === "/api" || pathname.startsWith("/api/");
     const host = (request.headers.get("x-forwarded-host") || request.headers.get("host") || "")
         .split(",")[0]

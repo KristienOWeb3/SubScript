@@ -12,6 +12,7 @@ import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookD
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { prisma } from "@/lib/prisma";
 import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
+import { createDmAndNotify } from "@/lib/dms/notifications";
 
 export const maxDuration = 120;
 
@@ -172,6 +173,15 @@ export async function POST(request: Request) {
         } catch (webhookError) {
             console.error("[ALERT] cancellation webhook enqueue failed after state committed:", webhookError);
         }
+
+        await createDmAndNotify({
+            senderAddress: wallet.toLowerCase(),
+            receiverAddress: sub.merchant,
+            messageType: "SUBSCRIPTION_CANCELED",
+            status: "APPROVED",
+            title: "Subscription Canceled",
+            description: `Subscription sub_${subscriptionId} was canceled by the subscriber.`,
+        }).catch((err) => console.error("[subscription/cancel] DM notification failed:", err));
 
         /* Fire the merchant's exit survey (no-op if the merchant disabled it). */
         await triggerExitSurvey(sub.merchant, wallet.toLowerCase(), subscriptionId).catch((err) =>

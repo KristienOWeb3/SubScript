@@ -4,6 +4,8 @@ import { validateWebhookUrl } from "@/lib/webhookUrls";
 import { arcReconciliation } from "@/lib/arc/reconciliation";
 import { paymentIdentityMetadata } from "@/lib/paymentLinks/beneficiary";
 
+const agentPool = new Map<string, any>();
+
 function formatUsdc(value: bigint | string | number) {
     const amount = typeof value === "bigint" ? value : BigInt(value);
     const unit = BigInt(1_000_000);
@@ -195,19 +197,25 @@ export async function sendWebhookRequest(
         return { status: 429, responseText: err?.message || "Webhook destination rate limit exceeded" };
     }
 
-    /* DNS-rebinding defense: dial the exact vetted IP while TLS keeps verifying the original
-       hostname (SNI/cert come from the URL). A resolver that answered public for validation
+    /* Dispatch to the resolved target IP through Undici's pinned lookup.
+       This prevents Time-of-Check to Time-of-Use DNS rebinding, because Node
        cannot swap in a private address for the actual connection, because the connection
        never resolves again. */
     const pinned = urlValidation.addresses[0];
-    const { Agent: UndiciAgent, fetch: undiciFetch } = await import("undici");
-    const pinnedDispatcher = new UndiciAgent({
-        connect: {
-            lookup: (_hostname: string, _options: unknown, callback: (err: Error | null, address: string, family: number) => void) => {
-                callback(null, pinned.address, pinned.family);
+    const poolKey = `${pinned.address}:${pinned.family}`;
+    let pinnedDispatcher = agentPool.get(poolKey);
+    if (!pinnedDispatcher) {
+        const { Agent: UndiciAgent } = await import("undici");
+        pinnedDispatcher = new UndiciAgent({
+            connect: {
+                lookup: (_hostname: string, _options: unknown, callback: (err: Error | null, address: string, family: number) => void) => {
+                    callback(null, pinned.address, pinned.family);
+                },
             },
-        },
-    });
+        });
+        agentPool.set(poolKey, pinnedDispatcher);
+    }
+    const { fetch: undiciFetch } = await import("undici");
 
     try {
         const timestamp = Math.floor(Date.now() / 1000);
@@ -258,7 +266,7 @@ export async function sendWebhookRequest(
             return { status: 504, responseText: `Delivery failed: ${err.message || String(err)}` };
         }
     } finally {
-        await pinnedDispatcher.close().catch(() => { /* connection cleanup is best-effort */ });
+        /* Pinned dispatcher remains active in agentPool for connection reuse */
     }
 }
 
@@ -268,7 +276,7 @@ export async function sendWebhookRequest(
  */
 export function verifyWebhookSignature(
     rawBody: string,
-    signatureHeader: string,
+    signatureHeader: string | null,
     secret: string,
     toleranceSeconds: number = 300
 ): boolean {
@@ -287,13 +295,17 @@ export function verifyWebhookSignature(
 
     if (!timestampStr || !signature) return false;
 
-    // Verify timestamp within tolerance window
+    // Verify timestamp within directional tolerance window
     const timestamp = parseInt(timestampStr, 10);
     if (isNaN(timestamp)) return false;
 
     const now = Math.floor(Date.now() / 1000);
-    if (Math.abs(now - timestamp) > toleranceSeconds) {
-        console.warn("Webhook signature timestamp is outside tolerance range");
+    if (now - timestamp > toleranceSeconds) {
+        console.warn("Webhook signature timestamp is expired");
+        return false;
+    }
+    if (timestamp - now > 5) {
+        console.warn("Webhook signature timestamp is in the future");
         return false;
     }
 

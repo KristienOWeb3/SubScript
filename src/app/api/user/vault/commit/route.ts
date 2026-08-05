@@ -41,11 +41,25 @@ export async function POST(request: Request) {
         }
 
         const body = sanitizeInput(await request.json().catch(() => null));
-        const { merchantAddress, amountUsdc, acknowledgeUnverified } = body || {};
-        if (typeof merchantAddress !== "string" || !ethers.isAddress(merchantAddress)) {
+        const { merchantAddress: rawMerchantAddress, amountUsdc, acknowledgeUnverified } = body || {};
+        if (typeof rawMerchantAddress !== "string") {
             return NextResponse.json({ error: "Invalid merchant address" }, { status: 400 });
         }
-        const targetMerchant = merchantAddress.toLowerCase();
+        let targetMerchant = rawMerchantAddress.toLowerCase();
+        const aliasRecord = await prisma.addressAlias.findFirst({
+            where: {
+                OR: [
+                    { address: targetMerchant },
+                    { alias: { equals: targetMerchant, mode: "insensitive" } },
+                ]
+            }
+        });
+        if (aliasRecord) {
+            targetMerchant = aliasRecord.address.toLowerCase();
+        } else if (!ethers.isAddress(targetMerchant)) {
+            return NextResponse.json({ error: "Invalid merchant address" }, { status: 400 });
+        }
+        const merchantAddress = targetMerchant;
         let merchant = await prisma.merchant.findUnique({
             where: { walletAddress: targetMerchant },
             select: { tier: true, verified: true }

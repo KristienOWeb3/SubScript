@@ -18,20 +18,23 @@ async function getMerchant(address: string) {
 
     const { data: aliasData } = await supabase
         .from("address_aliases")
-        .select("alias")
-        .eq("address", normalized)
+        .select("address, alias")
+        .or(`address.eq.${normalized},alias.ilike.${normalized}`)
         .maybeSingle();
+
+    const resolvedAddress = (aliasData?.address || normalized).toLowerCase();
+    const aliasName = aliasData?.alias || null;
 
     const { data: merchantData } = await supabase
         .from("merchants")
         .select("wallet_address, tier, verified")
-        .eq("wallet_address", normalized)
+        .eq("wallet_address", resolvedAddress)
         .maybeSingle();
 
     return {
-        address: normalized,
-        name: merchantDisplayName(aliasData?.alias || null),
-        alias: aliasData?.alias || null,
+        address: resolvedAddress,
+        name: merchantDisplayName(aliasName),
+        alias: aliasName,
         verified: merchantData?.verified ?? false,
         tier: merchantData?.tier || "FREE",
     };
@@ -42,7 +45,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     const merchant = await getMerchant(merchantAddress);
     const merchantName = merchant?.name || "Merchant";
 
-    const title = `Vault Commit for ${merchantName} — SubScript`;
+    const title = `Vault Commit for ${merchantName}: SubScript`;
     const description = `Set up or top up your Pay-As-You-Go metered service balance for ${merchantName} via SubScript.`;
 
     return {
