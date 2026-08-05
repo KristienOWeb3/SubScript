@@ -56,34 +56,47 @@ Responsibilities:
 - Cache entitlement results in Redis (TTL = 300 seconds), evicting cached records on grant or revoke.
 - CRITICAL: Entitlements must never rely on background cleanup jobs. resolveAccess() must treat expired records (validUntil <= now()) as revoked even if the database status remains ACTIVE.
 - Derive entitlement duration strictly from database plan definitions (never accept duration from caller inputs).
+MISSION 1 : DATABASE SCHEMA & RELATIONS
+Responsibilities:
+- Create normalized PostgreSQL schemas (via Prisma) for: users, wallets, subscriptions, entitlements, subscription_events, payment_events, webhook_events, and audit_logs.
+- Implement relational constraints, foreign keys, and indexes supporting lookups (entitlement, subscription, wallet) and webhook idempotency.
+- Enforce unique constraints on webhook events (e.g., event hash/provider ID + destination endpoint) for DB-level deduplication.
+- Design database queries to be row-locking compatible.
 
-MISSION 3 — SERVER RELAYER ENGINE
+MISSION 2 : ENTITLEMENT ENGINE & REDIS CACHE
+Responsibilities:
+- Implement resolveAccess(), grantEntitlement(), and revokeEntitlement() with row-level locks on writes.
+- Cache entitlement results in Redis (TTL = 300 seconds), evicting cached records on grant or revoke.
+- CRITICAL: Entitlements must never rely on background cleanup jobs. resolveAccess() must treat expired records (validUntil <= now()) as revoked even if the database status remains ACTIVE.
+- Derive entitlement duration strictly from database plan definitions (never accept duration from caller inputs).
+
+MISSION 3 : SERVER RELAYER ENGINE
 Responsibilities:
 - Implement burner activation relay flow using viem on the server to execute verifyAndActivate().
 - Server signs activation transaction; frontend burner wallet never funds gas.
 - CRITICAL: Relayer state must survive process restarts. The nonce source of truth must not be in-memory. Persist nonce coordination using Redis or database locking.
 - Manage tx propagation, handling RPC failures, dropped transactions, replacements (gas speed-up), and chain reorgs.
 
-MISSION 4 — DETERMINISTIC CRYPTOGRAPHY & FRONTEND HOOKS
+MISSION 4 : DETERMINISTIC CRYPTOGRAPHY & FRONTEND HOOKS
 Responsibilities:
 - Implement useSubscriptCheckout() to create or consume Checkout Intents, approve the SubScript router, execute the payment, verify the receipt, and handle webhook fulfillment.
 - Derive AES key from deterministic EIP-191 signature. Encrypt secret, store ciphertext only.
 - CRITICAL: The signature itself must never be stored. Only derived key material or ciphertext metadata may persist.
 - Implement wallet reconnect, multi-device, and browser refresh recovery.
 
-MISSION 5 — IDEMPOTENT WEBHOOK PROCESSOR
+MISSION 5 : IDEMPOTENT WEBHOOK PROCESSOR
 Responsibilities:
 - Create a POST /api/webhooks route to ingest webhook events.
 - Verify HMAC-SHA256 signature using the configured webhook_secret_key. Reject invalid signatures.
 - Process subscription events: activated, payment.succeeded, payment.failed, cancelled, expired, updating entitlements.
 - CRITICAL: A database unique constraint is required for idempotency. Application-level deduplication (e.g. cache lookups) alone is insufficient.
 
-MISSION 6 — MIDDLEWARE & ACCESS CONTROL
+MISSION 6 : MIDDLEWARE & ACCESS CONTROL
 Responsibilities:
 - Protect all premium routes using Next.js middleware by evaluating entitlement status (Redis first, DB second).
 - CRITICAL: Middleware must not instantiate PrismaClient or open TCP database connections directly. Middleware may only use Redis, an HTTP API route, or an Edge-compatible database endpoint.
 
-MISSION 7 — SYSTEM INTEGRATION VERIFICATION
+MISSION 7 : SYSTEM INTEGRATION VERIFICATION
 Responsibilities:
 - Write comprehensive integration tests to verify: subscription activation, entitlement creation, relayer execution, webhook replay resistance, entitlement expiration, middleware route protection, cache invalidation, and multi-device recovery.
 - Implement concurrency tests, replay attack tests, and relayer nonce collision tests.`;
@@ -103,21 +116,21 @@ To implement this project, follow this sequential 6-mission roadmap. Each missio
 
 ---
 
-MISSION 1 — DATABASE SCHEMA & RELATIONS
+MISSION 1 : DATABASE SCHEMA & RELATIONS
 Responsibilities:
 - Create normalized PostgreSQL schemas (via Prisma) for: users, wallets, subscriptions, entitlements, subscription_events, payment_events, webhook_events, and audit_logs.
 - Implement relational constraints, foreign keys, and indexes supporting lookups (entitlement, subscription, wallet) and webhook idempotency.
 - Enforce unique constraints on webhook events (e.g., event hash/provider ID + destination endpoint) for DB-level deduplication.
 - Design database queries to be row-locking compatible.
 
-MISSION 2 — ENTITLEMENT ENGINE & REDIS CACHE
+MISSION 2 : ENTITLEMENT ENGINE & REDIS CACHE
 Responsibilities:
 - Implement resolveAccess(), grantEntitlement(), and revokeEntitlement() with row-level locks on writes.
 - Cache entitlement results in Redis (TTL = 300 seconds), evicting cached records on grant or revoke.
 - CRITICAL: Entitlements must never rely on background cleanup jobs. resolveAccess() must treat expired records (validUntil <= now()) as revoked even if the database status remains ACTIVE.
 - Derive entitlement duration strictly from database plan definitions (never accept duration from caller inputs).
 
-MISSION 3 — FRONTEND CHECKOUT HOOK
+MISSION 3 : FRONTEND CHECKOUT HOOK
 Responsibilities:
 - Implement a React hook useSubscriptCheckout() using viem.
 - Handle standard transparent checkout flow:
@@ -125,19 +138,19 @@ Responsibilities:
   2. Call createSubscription(merchant, amount, periodSeconds) from user's connected wallet.
 - Display transaction states (approving, executing, success, error) with clean, minimal text/loaders.
 
-MISSION 4 — IDEMPOTENT WEBHOOK PROCESSOR
+MISSION 4 : IDEMPOTENT WEBHOOK PROCESSOR
 Responsibilities:
 - Create a POST /api/webhooks route to ingest webhook events.
 - Verify HMAC-SHA256 signature using the configured webhook_secret_key. Reject invalid signatures.
 - Process subscription events: activated, payment.succeeded, payment.failed, cancelled, expired, updating entitlements.
 - CRITICAL: A database unique constraint is required for idempotency. Application-level deduplication (e.g. cache lookups) alone is insufficient.
 
-MISSION 5 — MIDDLEWARE & ACCESS CONTROL
+MISSION 5 : MIDDLEWARE & ACCESS CONTROL
 Responsibilities:
 - Protect all premium routes using Next.js middleware by evaluating entitlement status (Redis first, DB second).
 - CRITICAL: Middleware must not instantiate PrismaClient or open TCP database connections directly. Middleware may only use Redis, an HTTP API route, or an Edge-compatible database endpoint.
 
-MISSION 6 — SYSTEM INTEGRATION VERIFICATION
+MISSION 6 : SYSTEM INTEGRATION VERIFICATION
 Responsibilities:
 - Write comprehensive integration tests to verify: subscription activation, entitlement creation, webhook replay resistance, passive entitlement expiration, middleware route protection, and cache invalidation.
 - Implement concurrency tests and replay attack verification.`;

@@ -184,7 +184,7 @@ if (intent.status === "PAID") {
   // Fulfillment should still be idempotent and webhook-driven.
 }`;
 
-const checkoutIntentCode = `// Run this on your server — never in a browser component.
+const checkoutIntentCode = `// Run this on your server: never in a browser component.
 const response = await fetch("https://www.subscriptonarc.com/api/intent", {
   method: "POST",
   headers: {
@@ -221,7 +221,7 @@ const receiptToken = payload.intent.receiptToken;`;
 const frontendEmbedCode = `// Frontend: open hosted checkout in a new tab so your app keeps its state.
 // After settlement, checkout routes the payer back to your successUrl with
 // ?subscript_status=success&subscript_checkout_id=...&subscript_receipt_id=...&subscript_tx_hash=...
-// (treat those as navigation hints only — confirm payment via webhook or the intent status API).
+// (treat those as navigation hints only: confirm payment via webhook or the intent status API).
 export function UpgradeButton({ checkoutUrl }) {
   return (
     <a href={checkoutUrl} target="_blank" rel="noopener" className="subscript-button">
@@ -281,7 +281,7 @@ const response = await fetch("https://www.subscriptonarc.com/api/v1/plans", {
     "Content-Type": "application/json",
   },
   body: JSON.stringify({
-    name: "Kris's Script Pro — Weekly",
+    name: "Kris's Script Pro: Weekly",
     amountUsdcMicros: "7000000",
     periodDays: 7,
     description: "Recurring weekly Pro access",
@@ -437,7 +437,7 @@ await walletClient.writeContract({
 
 const meteredUsageCode = `// Merchant backend: check readiness, then ALWAYS call report-usage BEFORE
 // you serve the unit of work. report-usage both ACCRUES the charge and tells
-// you whether access is allowed — treat any non-200 as "do not serve".
+// you whether access is allowed: treat any non-200 as "do not serve".
 // The customer commits to your vault once; you never collect per call.
 
 const statusRes = await fetch(
@@ -467,14 +467,14 @@ if (res.status === 402) {
   // Two "do not serve" cases:
   //  - VAULT_INACTIVE:    owes a balance or dropped below your required commit.
   //  - COMMIT_EXHAUSTED:  this charge would exceed their remaining escrow. The
-  //    whole request is rejected — nothing accrues, so a customer can never be
+  //    whole request is rejected: nothing accrues, so a customer can never be
   //    charged past what they committed. body.remainingUsdc tells you what's
   //    left; you may retry with a smaller unit (<= remainingUsdc) if that fits.
   return denySession(body); // ask them to re-commit (or serve a smaller unit)
 }
 
 const usage = await res.json();
-// 200 == accrued and within escrow — safe to serve.
+// 200 == accrued and within escrow: safe to serve.
 // usage.active === true, usage.accruedUsageUsdc grows over the 30-day cycle.
 grantSession();
 
@@ -781,7 +781,7 @@ export default function DocsPage() {
               </div>
 
               <div className="rounded-2xl border border-amber-300/30 bg-amber-300/10 p-5 text-xs leading-relaxed text-amber-50/85">
-                <p className="font-bold text-amber-100">Endpoint decision — make this before writing the request</p>
+                <p className="font-bold text-amber-100">Endpoint decision: make this before writing the request</p>
                 <p className="mt-2">
                   <span className="font-mono">/api/intent</span> is one-time only and never appears in DM plan controls.
                   Use <span className="font-mono">/api/v1/plans</span> for reusable recurring tiers and{" "}
@@ -861,7 +861,7 @@ export default function DocsPage() {
               </div>
 
               <CodeBlock
-                code={`# .env.local — server only
+                code={`# .env.local: server only
 SUBSCRIPT_SECRET_KEY=sk_test_your_secret_key
 SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                 language="dotenv"
@@ -895,7 +895,7 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
               <CodeBlock code={intentResponseCode} language="json" />
 
               <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[0.08] p-5 text-xs leading-relaxed text-amber-50/85">
-                <span className="font-bold text-amber-100">Fulfillment rule:</span> never unlock from the success redirect alone. A settled checkout adds <span className="font-mono">subscript_verification_status=settled</span>, but that confirms SubScript settlement—not webhook delivery or fulfillment in your application. Unlock only after a valid, idempotently processed <span className="font-mono">payment.succeeded</span> webhook, or reconcile from <span className="font-mono">GET /api/intent/:id</span>.
+                <span className="font-bold text-amber-100">Fulfillment rule:</span> never unlock from the success redirect alone. A settled checkout adds <span className="font-mono">subscript_verification_status=settled</span>, but that confirms SubScript settlement, not webhook delivery or fulfillment in your application. Unlock only after a valid, idempotently processed <span className="font-mono">payment.succeeded</span> webhook, or reconcile from <span className="font-mono">GET /api/intent/:id</span>.
               </div>
             </section>
 
@@ -1108,7 +1108,7 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
               <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
                 <p className="font-bold text-white/85">Status polling</p>
                 <p className="mt-2">
-                  Use <span className="font-mono">GET /api/intent/:id</span> for support tools, dashboards, and agent-driven test loops. The legacy query form <span className="font-mono">GET /api/intent/status?id=...</span> remains supported. Anonymous calls return aggregate status only; pass your <span className="font-mono">Authorization: Bearer sk_...</span> key (or call from a signed-in dashboard session) to also receive <span className="font-mono">latestPayment</span> — payer identity and transaction proof are visible only to the merchant who owns the checkout. Fulfillment should still happen from the signed webhook.
+                  Use <span className="font-mono">GET /api/intent/:id</span> for support tools, dashboards, and agent-driven test loops. The legacy query form <span className="font-mono">GET /api/intent/status?id=...</span> remains supported. Anonymous calls return aggregate status only; pass your <span className="font-mono">Authorization: Bearer sk_...</span> key (or call from a signed-in dashboard session) to also receive <span className="font-mono">latestPayment</span>: payer identity and transaction proof are visible only to the merchant who owns the checkout. Fulfillment should still happen from the signed webhook.
                 </p>
               </div>
               <CodeBlock code={intentStatusCode} language="javascript" />
@@ -1226,12 +1226,12 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
             <section id="usage" className="scroll-mt-24 space-y-6">
               <h2 className="text-2xl font-bold tracking-tight text-white">Pay-per-use billing with commit vaults</h2>
               <p className="text-sm leading-relaxed text-white/70">
-                For metered products that do not fit fixed monthly plans, SubScript uses on-chain <span className="font-bold text-white/90">commit vaults</span>. The platform fixes the commitment at 2 USDC; the customer escrows it once per cycle, and their service stays active while you report usage. Funds are guaranteed up to the committed balance — you are not chasing per-call card charges.
+                For metered products that do not fit fixed monthly plans, SubScript uses on-chain <span className="font-bold text-white/90">commit vaults</span>. The platform fixes the commitment at 2 USDC; the customer escrows it once per cycle, and their service stays active while you report usage. Funds are guaranteed up to the committed balance: you are not chasing per-call card charges.
               </p>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
                 {[
                   ["API & AI tokens", "Bill API calls, model tokens, or agent runs as they happen instead of forcing every customer into a static tier.", Terminal],
-                  ["Per-session access", "Charge per session, render, or job — gate each one on the vault status in a single request.", Server],
+                  ["Per-session access", "Charge per session, render, or job: gate each one on the vault status in a single request.", Server],
                   ["Pay-per-view items", "Settle small purchases for articles, clips, data exports, or premium actions without an all-access plan.", FileText],
                 ].map(([title, text, Icon]) => (
                   <div key={String(title)} className="rounded-2xl border border-white/5 bg-black/30 p-5">
@@ -1247,7 +1247,7 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                 <li><span className="font-bold text-white/85">Customer commits once per cycle.</span> They open <span className="font-mono">/dashboard/user?tab=commit</span>, choose your merchant address, and escrow the standard 2 USDC from their SubScript wallet. The vault goes <span className="text-emerald-300 font-bold">active</span> for the 30-day cycle; settlement closes it, so the next cycle requires a fresh commitment.</li>
                 <li><span className="font-bold text-white/85">Check readiness.</span> Call <span className="font-mono">GET /api/user/vault/status?userAddress=0x...</span> with your secret key before rendering a metered session. It returns <span className="font-mono">NO_VAULT</span>, <span className="font-mono">VAULT_INACTIVE</span>, or <span className="font-mono">VAULT_ACTIVE</span>, plus a dashboard URL to show the customer when they need to commit.</li>
                 <li><span className="font-bold text-white/85">Report before you serve.</span> Call <span className="font-mono">POST /api/user/vault/report-usage</span> with your secret key <span className="font-bold text-white/85">before rendering each unit</span>, and serve only on a <span className="font-mono">200</span>. A <span className="font-mono">402</span> means do not serve: either the vault is inactive (<span className="font-mono">VAULT_INACTIVE</span>) or the charge would exceed the remaining escrow (<span className="font-mono">COMMIT_EXHAUSTED</span>). Reporting after you serve risks eating the last unit's cost yourself.</li>
-                <li><span className="font-bold text-white/85">Get paid at cycle end.</span> SubScript's keeper draws the accrued total from escrow; you withdraw with <span className="font-mono">merchantClaim</span>. A report that would exceed escrow is rejected outright and the response's <span className="font-mono">remainingUsdc</span> shows what's left, so the customer can never be charged past what they committed — and funds are never pulled from their main wallet.</li>
+                <li><span className="font-bold text-white/85">Get paid at cycle end.</span> SubScript's keeper draws the accrued total from escrow; you withdraw with <span className="font-mono">merchantClaim</span>. A report that would exceed escrow is rejected outright and the response's <span className="font-mono">remainingUsdc</span> shows what's left, so the customer can never be charged past what they committed, and funds are never pulled from their main wallet.</li>
               </ol>
               <CodeBlock code={meteredUsageCode} language="javascript" />
               <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
@@ -1355,7 +1355,7 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                 </p>
                 <h2 className="mt-3 text-3xl font-bold tracking-tight text-white">Test, observe, and go live deliberately</h2>
                 <p className="mt-3 max-w-3xl text-sm leading-relaxed text-white/70">
-                  Build the complete test flow before swapping credentials. Test and live modes use the same API shape, so your code should change configuration—not logic.
+                  Build the complete test flow before swapping credentials. Test and live modes use the same API shape, so your code should change configuration: not logic.
                 </p>
               </div>
 
@@ -1457,7 +1457,7 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
             <section id="errors" className="scroll-mt-24 space-y-6">
               <h2 className="text-2xl font-bold tracking-tight text-white">Error responses</h2>
               <p className="text-sm leading-relaxed text-white/70">
-                Every non-2xx response from the API carries a machine-readable envelope. Branch on `code` (stable identifier), show `message` to humans, and quote `request_id` when contacting support — server logs are indexed by it.
+                Every non-2xx response from the API carries a machine-readable envelope. Branch on `code` (stable identifier), show `message` to humans, and quote `request_id` when contacting support: server logs are indexed by it.
               </p>
               <CodeBlock
                 code={`{
@@ -1472,13 +1472,13 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
               <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
                 <p className="font-bold text-white/85 mb-2">Common codes</p>
                 <ul className="space-y-1">
-                  <li><span className="font-mono text-[#00d2b4]">unauthorized</span> — missing/invalid `Authorization: Bearer sk_…` header. Keys live in Dashboard → Developers → API keys.</li>
-                  <li><span className="font-mono text-[#00d2b4]">invalid_json</span> — request body is not valid JSON.</li>
-                  <li><span className="font-mono text-[#00d2b4]">missing_title</span> / <span className="font-mono text-[#00d2b4]">invalid_amount</span> — validation failures return `400` with the field named in `message`.</li>
-                  <li><span className="font-mono text-[#00d2b4]">merchant_payout_wallet_missing</span> — live key with no payout wallet configured; `resolution_url` points at the settings page.</li>
-                  <li><span className="font-mono text-[#00d2b4]">quota_exceeded</span> — active-link tier limit reached (`403`).</li>
-                  <li><span className="font-mono text-[#00d2b4]">idempotency_key_conflict</span> — the key was already used for a different resource (`409`).</li>
-                  <li><span className="font-mono text-[#00d2b4]">internal_error</span> — a `500` with no internals leaked; report the `request_id`.</li>
+                  <li><span className="font-mono text-[#00d2b4]">unauthorized</span>: missing/invalid `Authorization: Bearer sk_…` header. Keys live in Dashboard → Developers → API keys.</li>
+                  <li><span className="font-mono text-[#00d2b4]">invalid_json</span>: request body is not valid JSON.</li>
+                  <li><span className="font-mono text-[#00d2b4]">missing_title</span> / <span className="font-mono text-[#00d2b4]">invalid_amount</span>: validation failures return `400` with the field named in `message`.</li>
+                  <li><span className="font-mono text-[#00d2b4]">merchant_payout_wallet_missing</span>: live key with no payout wallet configured; `resolution_url` points at the settings page.</li>
+                  <li><span className="font-mono text-[#00d2b4]">quota_exceeded</span>: active-link tier limit reached (`403`).</li>
+                  <li><span className="font-mono text-[#00d2b4]">idempotency_key_conflict</span>: the key was already used for a different resource (`409`).</li>
+                  <li><span className="font-mono text-[#00d2b4]">internal_error</span>: a `500` with no internals leaked; report the `request_id`.</li>
                 </ul>
               </div>
             </section>

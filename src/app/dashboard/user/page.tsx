@@ -4657,7 +4657,7 @@ export default function UserDashboard() {
                       <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
                         <Activity className="h-4 w-4 text-[#ccff00]" /> Recent Transactions History
                       </h3>
-                      <div className="overflow-x-auto">
+                      <div className="overflow-x-auto hidden md:block">
                         <table className="w-full text-left font-sans text-xs">
                           <thead>
                             <tr className="border-b border-white/5 text-white/40 uppercase text-[9px] tracking-wider">
@@ -4721,6 +4721,40 @@ export default function UserDashboard() {
                             )}
                           </tbody>
                         </table>
+                      </div>
+
+                      {/* Mobile Card-Stack View */}
+                      <div className="block md:hidden space-y-3">
+                        {settingsTransactions.length === 0 ? (
+                          <div className="text-center py-6 text-white/30 text-xs font-sans">
+                            No payments yet.
+                          </div>
+                        ) : (
+                          settingsTransactions.map((tx) => {
+                            const counterparty = tx.counterpartyName
+                              || formatAddress(tx.direction === "sent" ? tx.merchantAddress : tx.payerAddress);
+                            return (
+                              <div key={tx.receiptId} className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2 text-xs font-mono">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-bold text-white/90">
+                                    {tx.direction === "sent" ? `Paid ${counterparty}` : `Received ${counterparty}`}
+                                  </span>
+                                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-500/15 text-amber-400"}`}>
+                                    {humanStatus(tx.status)}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between text-[11px] pt-1">
+                                  <span className="text-white/40">{new Date(tx.createdAt).toLocaleDateString()}</span>
+                                  <span className="font-bold text-white">${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC</span>
+                                </div>
+                                <div className="pt-2 flex items-center justify-end gap-3 border-t border-white/5 text-[10px]">
+                                  <a href={`/receipt/${tx.receiptId}`} target="_blank" rel="noopener noreferrer" className="text-[#ccff00]">View receipt</a>
+                                  <a href={`/receipt/${tx.receiptId}?invite=1`} target="_blank" rel="noopener noreferrer" className="text-white/60">Share</a>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
                       </div>
                     </div>
                   </div>

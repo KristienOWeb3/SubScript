@@ -483,7 +483,7 @@ export default function AnalyticsDashboard({
                             : subscription.cancelAtPeriodEnd
                                 ? "Ends at renewal"
                                 : subscription.status === "PAST_DUE"
-                                    ? "Past due — paused"
+                                    ? "Past due: paused"
                                     : subscription.status === "CANCELED"
                                         ? "Canceled"
                                         : "Payment overdue",

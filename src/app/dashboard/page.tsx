@@ -4410,7 +4410,8 @@ Please complete the following implementation tasks:
                                     <Activity className={`w-4 h-4 ${primaryColorText}`} />
                                     Customer / Agent Ledger
                                 </h2>
-                                <div className="overflow-x-auto">
+                                {/* Desktop Table */}
+                                <div className="overflow-x-auto hidden md:block">
                                     <table className="w-full text-left border-collapse">
                                         <thead>
                                             <tr className="border-b border-white/5 text-white/40 text-[10px] uppercase font-bold tracking-wider">
@@ -4463,6 +4464,39 @@ Please complete the following implementation tasks:
                                             )}
                                         </tbody>
                                     </table>
+                                </div>
+
+                                {/* Mobile Card-Stack View */}
+                                <div className="block md:hidden space-y-3">
+                                    {isLoadingContract ? (
+                                        <div className="py-8 text-center text-white/40 flex items-center justify-center gap-2">
+                                            <Loader2 className="w-4 h-4 animate-spin" /> Fetching on-chain state...
+                                        </div>
+                                    ) : ledgers.length === 0 ? (
+                                        <div className="py-8 text-center text-white/30 font-sans text-xs">
+                                            No active recurring allowances detected for this merchant address.
+                                        </div>
+                                    ) : (
+                                        ledgers.map((item) => (
+                                            <div key={item.id} className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2 text-xs font-mono">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="font-bold text-white">ID #{item.id}</span>
+                                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                                                        item.cancelAtPeriodEnd || !item.active
+                                                            ? "bg-red-500/10 text-red-400 border border-red-500/20"
+                                                            : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                                    }`}>
+                                                        {item.cancelAtPeriodEnd ? "Cancelled" : item.active ? "Active" : "Cancelled"}
+                                                    </span>
+                                                </div>
+                                                <div className="text-white/50 text-[10px] truncate">{item.displayAddress || item.shortSubAddress}</div>
+                                                <div className="flex items-center justify-between text-[11px] pt-1">
+                                                    <span className="text-white/40">Allowance: <span className="text-[#d4a853] font-bold">{item.limit}</span></span>
+                                                    <span className="text-white/40">Next: <span className="text-white/70">{item.nextBilling}</span></span>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
                                 </div>
 
                                 {(() => {
@@ -6200,11 +6234,11 @@ Please complete the following implementation tasks:
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-12 lg:grid-cols-4 gap-6 md:gap-8 items-start">
                         {/* Sidebar Navigation */}
-                        <div className="hidden md:block md:col-span-1 lg:col-span-1 space-y-2 sticky top-24 overflow-y-auto max-h-[calc(100vh-16rem)]">
+                        <div className="hidden md:block md:col-span-3 lg:col-span-1 space-y-2 sticky top-24 overflow-y-auto max-h-[calc(100vh-16rem)]">
                             {tabs.map((tab) => {
                                 const hasHref = "href" in tab;
                                 const isSelected = activeTab === (tab.id as any);
-                                const itemClasses = `w-full flex items-center justify-center lg:justify-start gap-3.5 px-4 py-4 lg:px-5 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left ${
+                                const itemClasses = `w-full flex items-center justify-start gap-3.5 px-4 py-4 lg:px-5 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left ${
                                     isSelected
                                         ? tab.id === "premium"
                                             ? "bg-[#d4a853]/10 border-[#d4a853]/30 text-white shadow-lg shadow-[#d4a853]/5"
@@ -6221,9 +6255,9 @@ Please complete the following implementation tasks:
                                 const content = (
                                     <>
                                         <tab.icon className={iconClasses} />
-                                        <span className="hidden lg:inline">{tab.label}</span>
+                                        <span className="hidden md:inline">{tab.label}</span>
                                         {tab.id === "premium" && isPremium && (
-                                            <span className="hidden lg:inline-flex ml-auto text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-[#d4a853]/10 text-[#d4a853] border border-[#d4a853]/20">PRO</span>
+                                            <span className="hidden md:inline-flex ml-auto text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-[#d4a853]/10 text-[#d4a853] border border-[#d4a853]/20">PRO</span>
                                         )}
                                     </>
                                 );
@@ -6257,16 +6291,16 @@ Please complete the following implementation tasks:
                                 href="/support"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="w-full flex items-center justify-center lg:justify-start gap-3.5 px-4 py-4 lg:px-5 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left bg-white/[0.01] border-white/5 text-white/50 hover:text-white hover:bg-[#00d2b4]/5 hover:border-[#00d2b4]/20"
+                                className="w-full flex items-center justify-start gap-3.5 px-4 py-4 lg:px-5 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left bg-white/[0.01] border-white/5 text-white/50 hover:text-white hover:bg-[#00d2b4]/5 hover:border-[#00d2b4]/20"
                                 title="Help & Support"
                             >
                                 <HelpCircle className="w-4 h-4 shrink-0 text-white/40" />
-                                <span className="hidden lg:inline">Support</span>
+                                <span className="hidden md:inline">Support</span>
                             </a>
                         </div>
 
                         {/* View Content */}
-                        <div className="md:col-span-11 lg:col-span-3 min-h-[500px]">
+                        <div className="md:col-span-9 lg:col-span-3 min-h-[500px]">
                             {/* Keyed enter-only animation — deliberately NO AnimatePresence/exit here.
                                 mode="wait" gated the incoming tab on the outgoing exit spring, which
                                 dropped the presence on interrupted switches (slow mobile frames) and
