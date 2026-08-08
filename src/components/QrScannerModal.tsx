@@ -11,6 +11,14 @@ interface QrScannerModalProps {
   title?: string;
 }
 
+/* The names browsers use when the user (or a policy) refuses the camera. Distinct from
+   OverconstrainedError/NotFoundError, which mean "not with those constraints" and are the only
+   failures worth retrying with a looser request. */
+const isPermissionError = (err: unknown): boolean => {
+  const name = (err as { name?: unknown } | null)?.name;
+  return name === "NotAllowedError" || name === "PermissionDeniedError" || name === "SecurityError";
+};
+
 export function QrScannerModal({
   isOpen,
   onClose,
@@ -89,14 +97,19 @@ export function QrScannerModal({
           },
           audio: false,
         });
-      } catch {
+      } catch (rearError: any) {
+        /* A denial is terminal: retrying getUserMedia re-prompts on browsers that ask per call,
+           so the payer would dismiss up to three dialogs before seeing the real message. Only a
+           constraint failure ("this lens cannot do that") is worth relaxing and retrying. */
+        if (isPermissionError(rearError)) throw rearError;
         try {
           // Rear camera exists but cannot hit 1080p — keep the lens, relax the resolution.
           mediaStream = await navigator.mediaDevices.getUserMedia({
             video: { facingMode: { exact: "environment" } },
             audio: false,
           });
-        } catch {
+        } catch (relaxedError: any) {
+          if (isPermissionError(relaxedError)) throw relaxedError;
           // Fallback for devices without a designated rear camera (e.g. desktop webcams)
           mediaStream = await navigator.mediaDevices.getUserMedia({
             video: true,
@@ -118,7 +131,7 @@ export function QrScannerModal({
     } catch (err: any) {
       console.warn("Mobile camera initialization error:", err);
       setErrorMsg(
-        err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError"
+        isPermissionError(err)
           ? "Camera permission denied. Allow camera access in site settings to scan QR codes."
           : "Camera unavailable on this device."
       );

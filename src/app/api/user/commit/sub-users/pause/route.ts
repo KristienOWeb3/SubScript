@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
-import { CommitAccessError, pauseSubUser, resumeSubUser } from "@/lib/commitId";
+import { CommitAccessError, isCommitId, pauseSubUser, resumeSubUser } from "@/lib/commitId";
 
 async function readCommitId(request: Request): Promise<string | null> {
     const body = await request.json().catch(() => ({}));
     const commitId = typeof body.commitId === "string" ? body.commitId.trim() : "";
+    /* Shape-check before the lookup so a malformed ID returns a precise 400 instead of a 404
+       that implies the sub-user exists somewhere. isCommitId is the same pattern the migration
+       enforces as a CHECK, so anything that passes here is at least well-formed. */
+    if (commitId && !isCommitId(commitId)) {
+        throw new CommitAccessError("That commit ID is not valid");
+    }
     return commitId || null;
 }
 
@@ -26,7 +32,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ commitId: subUser.commitId, status: subUser.status });
     } catch (error) {
         if (error instanceof CommitAccessError) {
-            return NextResponse.json({ error: error.message }, { status: 404 });
+            return NextResponse.json({ error: error.message }, { status: error.httpStatus });
         }
         console.error("Failed to pause sub-user:", error);
         return NextResponse.json({ error: "Could not pause sub-user" }, { status: 500 });
@@ -49,7 +55,7 @@ export async function DELETE(request: Request) {
         return NextResponse.json({ commitId: subUser.commitId, status: subUser.status });
     } catch (error) {
         if (error instanceof CommitAccessError) {
-            return NextResponse.json({ error: error.message }, { status: 404 });
+            return NextResponse.json({ error: error.message }, { status: error.httpStatus });
         }
         console.error("Failed to resume sub-user:", error);
         return NextResponse.json({ error: "Could not resume sub-user" }, { status: 500 });

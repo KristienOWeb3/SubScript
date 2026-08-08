@@ -9,27 +9,34 @@ import type { CommitStatus } from "@/lib/commitId";
 export type { CommitStatus };
 
 /* One node in the commit hierarchy, as returned by /api/user/commit/sub-users.
-   Mirrors serializeSubUser() in that route — keep the two in step. */
+   Mirrors serializeSubUser() in that route — keep the two in step.
+
+   Timestamps are plain strings, not `string | Date`: NextResponse.json() always emits ISO
+   strings, so a Date branch would only force callers to narrow a case the network cannot
+   deliver. Deserialize to Date at the point of use if a consumer needs one. */
 export interface UserCommit {
     commitId: string;
     walletAddress: string | null;
     displayName: string;
-    status: CommitStatus | string;
+    /* Constrained to the same three values as the column's CHECK, so a switch on this field
+       gets exhaustiveness checking. A `| string` widening here would collapse to plain
+       `string` and let "revoked" or "REVOKED " past a gate that controls spending. */
+    status: CommitStatus;
     /* USDC micros as a decimal string; null means "no cap". */
     spendLimitUsdc: string | null;
     spentUsdc: string;
     /* null whenever spendLimitUsdc is null — an uncapped commit has no remainder. */
     remainingUsdc: string | null;
-    pausedAt: string | Date | null;
-    revokedAt: string | Date | null;
-    createdAt: string | Date;
+    pausedAt: string | null;
+    revokedAt: string | null;
+    createdAt: string;
 }
 
 /* Rolled-up spend for a sub-user, for dashboards that show usage without the full record. */
 export interface SubUserSpendSummary {
     commitId: string;
     displayName: string;
-    status: CommitStatus | string;
+    status: CommitStatus;
     spentUsdc: string;
     spendLimitUsdc: string | null;
     remainingUsdc: string | null;

@@ -382,7 +382,12 @@ async function auditOverflow(page: Page, label: string) {
       const isTextOrControl =
         ["a", "button", "code", "dd", "dt", "figcaption", "h1", "h2", "h3", "h4", "h5", "h6", "input", "label", "li", "p", "pre", "span", "textarea"].includes(tag) ||
         Boolean(htmlElement.getAttribute("role"));
+      const isClamped =
+        Boolean(style.webkitLineClamp && style.webkitLineClamp !== "none") ||
+        className.includes("line-clamp") ||
+        className.includes("truncate");
       const clipsVertical =
+        !isClamped &&
         !["visible", "auto", "scroll"].includes(style.overflowY) &&
         htmlElement.scrollHeight > htmlElement.clientHeight + 3;
 
@@ -553,14 +558,24 @@ test.describe("mobile overflow audit", () => {
        stacked underneath rather than removed. Funding the vault still lives behind the Commit
        tab, so its call to action must not leak onto Home. */
     await expect(mobileSubscriptionsTitle).toBeVisible();
-    const [mobileWalletBox, mobileSubscriptionsBox] = await Promise.all([
+    /* The wallet section's parent is the whole left column (wallet card + the two square cards),
+       which is the edge the collapsed layout has to clear. */
+    const mobileLeftColumn = mobileWalletLabel.locator("xpath=ancestor::section[1]/..");
+    const [mobileWalletBox, mobileLeftColumnBox, mobileSubscriptionsBox] = await Promise.all([
       mobileWalletLabel.locator("xpath=ancestor::section[1]").boundingBox(),
+      mobileLeftColumn.boundingBox(),
       mobileSubscriptionsTitle.locator("xpath=ancestor::section[1]").boundingBox(),
     ]);
     expect(mobileWalletBox).not.toBeNull();
+    expect(mobileLeftColumnBox).not.toBeNull();
     expect(mobileSubscriptionsBox).not.toBeNull();
     expect(Math.abs(mobileSubscriptionsBox!.x - mobileWalletBox!.x)).toBeLessThan(4);
-    expect(mobileSubscriptionsBox!.y).toBeGreaterThan(mobileWalletBox!.y);
+    /* Compare against the left column's BOTTOM, not the wallet card's top: `subscriptions.y >
+       wallet.y` also holds when the two panels overlap almost entirely, so it would pass on a
+       broken single-column collapse. 1px of slack absorbs sub-pixel bounding-box rounding. */
+    expect(mobileSubscriptionsBox!.y).toBeGreaterThanOrEqual(
+      mobileLeftColumnBox!.y + mobileLeftColumnBox!.height - 1
+    );
     await expect(mobilePage.getByText("+ Commit to a service", { exact: true })).toHaveCount(0);
 
     const bottomNav = mobilePage.locator('nav[aria-label="Primary navigation"]');

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { jwtVerify } from "jose";
 import { Redis } from "@upstash/redis/cloudflare";
 import { Ratelimit } from "@upstash/ratelimit";
 
@@ -10,6 +11,50 @@ const CHECKOUT_HOST = "pay.subscriptonarc.com";
 const DOCS_HOST = "docs.subscriptonarc.com";
 const ADMIN_HOST = "admin.subscriptonarc.com";
 const PUBLIC_ORIGIN = `https://${PUBLIC_HOST}`;
+
+/* Must match createSessionToken() in @/lib/auth — a token minted for a different issuer or
+   audience must not authorize anything here. */
+const SESSION_ISSUER = "subscriptonarc.com";
+const SESSION_AUDIENCE = "subscript-app";
+
+/* Comma-separated wallets permitted to reach /admin. Unset means nobody, so a deploy that
+   forgets the variable locks the console rather than opening it. */
+function adminWalletAllowlist(): Set<string> {
+    return new Set(
+        (process.env.ADMIN_WALLET_ADDRESSES || process.env.ADMIN_WALLET_ADDRESS || "")
+            .split(",")
+            .map((entry) => entry.trim().toLowerCase())
+            .filter(Boolean),
+    );
+}
+
+/* Cookie presence proves nothing — any string satisfies it — so the JWT is verified with the
+   same parameters that minted it and the wallet inside is matched against the allowlist.
+
+   Deliberately does not consult the sessions table: middleware runs on every request and a
+   database round trip here would tax the whole site, so a token revoked by signing out stays
+   accepted until it expires. Treat this as a gate, not the authority. The authoritative check
+   belongs in the /admin layout once that tree exists; /api/admin handlers already authenticate
+   independently (ADMIN_API_KEY or KEEPER_SECRET), which is why they bypass this. */
+async function isAuthorizedAdmin(request: NextRequest): Promise<boolean> {
+    const allowlist = adminWalletAllowlist();
+    if (allowlist.size === 0) return false;
+
+    const token = request.cookies.get("subscript_session_token")?.value;
+    const secret = process.env.JWT_SECRET;
+    if (!token || !secret) return false;
+
+    try {
+        const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), {
+            issuer: SESSION_ISSUER,
+            audience: SESSION_AUDIENCE,
+        });
+        const address = typeof payload.address === "string" ? payload.address.trim().toLowerCase() : "";
+        return address.length > 0 && allowlist.has(address);
+    } catch {
+        return false;
+    }
+}
 
 /* Initialize Upstash Redis REST client */
 const redis = new Redis({
@@ -264,15 +309,25 @@ export async function middleware(request: NextRequest) {
         }
     }
 
-    /* admin.subscriptonarc.com is gated on a session cookie before anything renders. The
-       page tree under /admin does not exist yet (only /api/admin does), so this currently
-       resolves to the 404 page for signed-in operators rather than exposing anything. */
-    if (!isApiRoute && isAdminHost) {
-        const token = request.cookies.get("subscript_session_token")?.value;
-        if (!token) {
-            return NextResponse.redirect(`${PUBLIC_ORIGIN}/login`);
+    /* /admin is gated by path as well as by host. www.subscriptonarc.com/admin resolves to the
+       same route tree, so a host-only check would leave the canonical domain ungated the moment
+       those pages exist — the subdomain is a routing convenience, not a security boundary.
+
+       Non-admins get 404 rather than 403 so the console's existence is not advertised to anyone
+       who guesses the path. The page tree under /admin does not exist yet (only /api/admin does),
+       so today this returns 404 either way; the gate is here so it cannot be forgotten later. */
+    const isAdminPath = pathname === "/admin" || pathname.startsWith("/admin/");
+    if (!isApiRoute && (isAdminHost || isAdminPath)) {
+        if (!(await isAuthorizedAdmin(request))) {
+            /* An anonymous caller on the admin host most likely just needs to sign in; anyone
+               already carrying a session is being told nothing more than "no such page". */
+            const hasSession = Boolean(request.cookies.get("subscript_session_token")?.value);
+            if (isAdminHost && !hasSession) {
+                return NextResponse.redirect(`${PUBLIC_ORIGIN}/login`);
+            }
+            return new NextResponse("Not Found", { status: 404 });
         }
-        if (pathname !== "/admin" && !pathname.startsWith("/admin/")) {
+        if (isAdminHost && !isAdminPath) {
             const adminUrl = request.nextUrl.clone();
             adminUrl.pathname = pathname === "/" ? "/admin" : `/admin${pathname}`;
             return NextResponse.rewrite(adminUrl);

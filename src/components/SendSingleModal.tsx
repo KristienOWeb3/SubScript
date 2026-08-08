@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, type ReactNode } from "react";
+import React, { useEffect, useRef, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, QrCode, Send, User, X } from "@/components/icons";
 
@@ -24,6 +24,10 @@ type SendSingleModalProps = {
     loading: boolean;
     status: string | null;
     walletBalance: number;
+    /* False while the Arc balance query is still in flight. `walletBalance` reads 0 in that
+       window, which is indistinguishable from a genuinely empty wallet — without this the submit
+       guard below would refuse every amount until the read lands. */
+    balanceKnown?: boolean;
     onScanQr: () => void;
     /* Rendered by the parent so the modal doesn't duplicate the Arc/CCTP routing rules that
        live in BalanceRoutingNotice next to the batch form. */
@@ -53,9 +57,13 @@ export default function SendSingleModal({
     loading,
     status,
     walletBalance,
+    balanceKnown = true,
     onScanQr,
     routingNotice,
 }: SendSingleModalProps) {
+    const recipientInputRef = useRef<HTMLInputElement | null>(null);
+    const triggerRef = useRef<HTMLElement | null>(null);
+
     /* Escape closes, and the body is locked so the dashboard behind the sheet can't scroll on
        iOS. A send in flight ignores both — tearing down mid-transaction would strand the user
        without the confirmation or the error. */
@@ -75,6 +83,29 @@ export default function SendSingleModal({
             window.removeEventListener("keydown", handleKeyDown);
         };
     }, [open, loading, onClose]);
+
+    /* Opening the sheet moves focus into it and closing hands focus back to whatever opened it.
+       Without this a keyboard or screen-reader user stays parked on the dashboard behind the
+       overlay: they'd tab through the page they can't see before reaching the recipient field,
+       and on close land back at the top of the document. */
+    useEffect(() => {
+        if (!open) return;
+        triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        const focusTimer = window.setTimeout(() => recipientInputRef.current?.focus(), 0);
+        return () => {
+            window.clearTimeout(focusTimer);
+            triggerRef.current?.focus();
+            triggerRef.current = null;
+        };
+    }, [open]);
+
+    /* A single send is submitted directly on Arc, so anything above the Arc balance can only fail
+       on-chain. BalanceRoutingNotice already explains the bridge step; blocking here stops the
+       user from firing an unfundable transfer and waiting for a chain-level error to say so. */
+    const numericAmount = Number(amount);
+    const amountIsValid = amount.trim() !== "" && Number.isFinite(numericAmount) && numericAmount > 0;
+    const exceedsBalance = amountIsValid && balanceKnown && numericAmount > walletBalance;
+    const submitBlocked = loading || !resolved?.address || selfSend || !amountIsValid || exceedsBalance;
 
     return (
         <AnimatePresence>
@@ -121,6 +152,7 @@ export default function SendSingleModal({
                                 <div className="relative flex items-center gap-2">
                                     <div className="relative flex-1">
                                         <input
+                                            ref={recipientInputRef}
                                             value={recipient}
                                             onChange={(event) => onRecipientChange(event.target.value)}
                                             placeholder="alice.sub or 0x..."
@@ -228,9 +260,9 @@ export default function SendSingleModal({
 
                             <button
                                 type="submit"
-                                disabled={loading || !resolved?.address || selfSend}
+                                disabled={submitBlocked}
                                 className={`flex w-full items-center justify-center gap-2 rounded-2xl border border-[#ccff00]/30 bg-[#ccff00]/10 py-3.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-[0_0_15px_rgba(204,255,0,0.15)] transition hover:border-[#ccff00]/50 hover:bg-[#ccff00]/20 ${
-                                    loading || !resolved?.address || selfSend ? "cursor-not-allowed opacity-60" : ""
+                                    submitBlocked ? "cursor-not-allowed opacity-60" : ""
                                 }`}
                             >
                                 {loading ? (

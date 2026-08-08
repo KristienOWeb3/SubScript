@@ -543,12 +543,20 @@ model Customer {
 // child rows pointing at it, so a parent can hand out spend authority without sharing keys.
 // Children are hard-capped by spendLimitUsdc and can be paused (reversible) or revoked
 // (terminal) by the parent — see src/lib/commitId.ts.
+//
+// WARNING: eight CHECK constraints (commit ID format, non-negative money, spent-within-limit,
+// display-name length, status domain, no self-parent, root-uncapped, status/timestamp coherence)
+// live ONLY in supabase/migrations/20260808120000_add_user_commit_framework.sql. Prisma cannot
+// express them, so `migrate dev` or `db push` against this model would recreate the table
+// without a single guard. This repo applies flat SQL via scripts/apply-migrations.mjs — keep it
+// that way for this table.
 model UserCommit {
   id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   commitId       String       @unique @map("commit_id")
-  // Null while a sub-user is invited but has not been provisioned a wallet yet. Root
-  // commits always carry one, and the unique constraint keeps it to one commit per wallet.
+  // Null until the invited holder claims this commit with their own authenticated wallet — a
+  // parent naming someone else's address would reserve it under this unique constraint.
   walletAddress  String?      @unique @map("wallet_address")
+  // Capped at 128 chars by the API handler and a matching SQL CHECK.
   displayName    String?      @map("display_name")
   parentCommitId String?      @map("parent_commit_id") @db.Uuid
   parent         UserCommit?  @relation("CommitHierarchy", fields: [parentCommitId], references: [id], onDelete: Cascade)

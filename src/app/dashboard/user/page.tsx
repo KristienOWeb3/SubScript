@@ -171,6 +171,16 @@ interface MerchantPlan {
 }
 
 type UserTab = "home" | "commit" | "links" | "batch" | "inbox" | "dns" | "referrals";
+type AccountSubView =
+  | "menu"
+  | "profile"
+  | "kyc"
+  | "limits"
+  | "transactions"
+  | "notifications"
+  | "security"
+  | "support"
+  | "spend-analysis";
 
 const userBottomTabs = [
   { id: "home", label: "Home", icon: Home },
@@ -595,11 +605,27 @@ export default function UserDashboard() {
   const [referralsLoading, setReferralsLoading] = useState<boolean>(false);
   const [referralCopySuccess, setReferralCopySuccess] = useState<boolean>(false);
 
-  const [accountSubView, setAccountSubView] = useState<"menu" | "profile" | "kyc" | "limits" | "transactions" | "notifications" | "security" | "support" | "spend-analysis">("menu");
+  const [accountSubView, setAccountSubView] = useState<AccountSubView>("menu");
   const [spendSearchQuery, setSpendSearchQuery] = useState("");
 
+  /* Cross-tab navigation aims at a sub-view, but the reset below fires on every activeTab
+     change and would clobber it. Parking the intent here lets the reset itself perform the
+     handoff, in order — the previous setTimeout only worked because the effect happened to
+     flush first, which a slow frame or an edit to that effect would silently break. */
+  const pendingAccountSubView = useRef<AccountSubView | null>(null);
+
+  const goToAccountSubView = useCallback((tab: UserTab, subView: AccountSubView) => {
+    pendingAccountSubView.current = subView;
+    setActiveTab(tab);
+    /* Also applied directly, so the navigation still lands when activeTab is already `tab`
+       and the effect never runs. Both paths set the same value, so ordering cannot matter. */
+    setAccountSubView(subView);
+  }, []);
+
   useEffect(() => {
-    setAccountSubView("menu");
+    const pending = pendingAccountSubView.current;
+    pendingAccountSubView.current = null;
+    setAccountSubView(pending ?? "menu");
   }, [activeTab]);
 
   useEffect(() => {
@@ -1307,7 +1333,10 @@ export default function UserDashboard() {
          than silently subscribing to different terms, hand the user to the thread's plan picker. */
       if (!match) {
         triggerToast("That plan is no longer offered — pick a current plan from the merchant.");
-        setSelectedDmPeer(subscription.merchantAddress);
+        /* Lowercased to match every consumer of selectedDmPeer, which compares against
+           already-normalized addresses. A checksummed merchantAddress from the API would open
+           an empty thread with no plan picker — precisely the recovery this branch promises. */
+        setSelectedDmPeer(subscription.merchantAddress.toLowerCase());
         setActiveTab("inbox");
         return;
       }
@@ -2222,12 +2251,17 @@ export default function UserDashboard() {
         singleSendRequestKey.current = null;
         const txHash = transfers[0]?.txHash;
         setSingleSendStatus(`Success! Transfer transaction submitted: ${txHash || "confirmed"}`);
-        recordOptimisticTx({
-          txHash: txHash || null,
-          recipientAddress: singleResolved.address,
-          recipientLabel: singleResolved.alias || formatAddress(singleResolved.address),
-          amountUsdc: singleAmount,
-        });
+        /* Only recorded when the embedded wallet returned a hash. reconcileOptimisticTxs()
+           matches on hash alone, so a hashless row could never be retired and would sit next to
+           the confirmed DM entry reading "Sending" for the full five-minute TTL. */
+        if (txHash) {
+          recordOptimisticTx({
+            txHash,
+            recipientAddress: singleResolved.address,
+            recipientLabel: singleResolved.alias || formatAddress(singleResolved.address),
+            amountUsdc: singleAmount,
+          });
+        }
         setSingleRecipient("");
         setSingleAmount("");
         if (txHash) {
@@ -2802,6 +2836,14 @@ export default function UserDashboard() {
     (sum, v: any) => sum + Number(v?.balanceUsdc || 0) / 1_000_000,
     0,
   );
+  /* The Home panel is headed "Active Subscriptions & Commits" — a label the Master Spec wireframe
+     fixes — so the commits half has to actually appear under it. Full commit management
+     (commit / withdraw / reclaim / cancel) stays on the Commit tab; these are read-only rows that
+     link there. A vault with a residual balance is still the user's money, so it is listed even
+     once the service goes inactive. */
+  const homeCommitRows = vaults.filter(
+    (v: any) => Boolean(v?.active) || Number(v?.balanceUsdc || 0) > 0,
+  );
   // Unified recent-activity feed: subscriptions are "recurring", paid/settled payment DMs are "one-time".
   const recentTransactions = [
     ...subscriptions.map((s) => {
@@ -3137,7 +3179,7 @@ export default function UserDashboard() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => { setActiveTab("dns"); setTimeout(() => setAccountSubView("spend-analysis"), 50); }}
+                          onClick={() => goToAccountSubView("dns", "spend-analysis")}
                           className="mt-2 flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[#ccff00] hover:opacity-70 transition-opacity"
                         >
                           Manage Spending <ArrowUpRight className="h-3 w-3" />
@@ -3166,15 +3208,16 @@ export default function UserDashboard() {
                     <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
                       <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions &amp; Commits</h2>
                       <span className="w-fit rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00]">
-                        {subscriptions.filter((s) => s.status === "ACTIVE" && !s.cancelAtPeriodEnd).length} active
+                        {subscriptions.filter((s) => s.status === "ACTIVE" && !s.cancelAtPeriodEnd).length
+                          + homeCommitRows.filter((v: any) => Boolean(v?.active)).length} active
                       </span>
                     </div>
 
                     <div className="min-h-0 flex-1 overflow-y-auto pr-1 scrollbar-thin">
-                      {sortedSubscriptions.length === 0 ? (
+                      {sortedSubscriptions.length === 0 && homeCommitRows.length === 0 ? (
                         <div className="flex h-full min-h-[180px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center">
                           <CreditCard className="mb-3 h-8 w-8 text-white/25" />
-                          <p className="text-xs text-white/45">No active subscription streams yet.</p>
+                          <p className="text-xs text-white/45">No active subscription streams or commits yet.</p>
                         </div>
                       ) : (
                         <div className="space-y-3">
@@ -3186,6 +3229,26 @@ export default function UserDashboard() {
                               onResume={handleResumeSubscription}
                               resuming={resumingSubscriptionId === sub.subscriptionId}
                             />
+                          ))}
+                          {homeCommitRows.map((vault: any) => (
+                            <button
+                              key={`home-commit-${vault.id}`}
+                              type="button"
+                              onClick={() => setActiveTab("commit")}
+                              className="flex w-full min-w-0 items-center justify-between gap-3 rounded-2xl border border-white/5 bg-black/20 p-3.5 text-left transition hover:border-[#ccff00]/20 hover:bg-black/30"
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate text-xs font-bold text-white">
+                                  {merchantDisplayName(vault.merchantName)}
+                                </p>
+                                <p className="mt-0.5 truncate font-mono text-[10px] font-black uppercase tracking-wider text-white/45">
+                                  Commit • {vault.active ? "Locked" : "Inactive"}
+                                </p>
+                              </div>
+                              <span className="shrink-0 font-mono text-xs font-black text-[#ccff00]">
+                                {balanceVisible ? `$${formatUsdc(vault.balanceUsdc)}` : "••••"}
+                              </span>
+                            </button>
                           ))}
                         </div>
                       )}
@@ -3223,7 +3286,10 @@ export default function UserDashboard() {
                               {new Date(thread.latestTime).toLocaleString()}
                             </span>
                           </div>
-                          <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-white/55">
+                          {/* Wraps instead of clamping: at 320px a two-line clamp silently cuts the
+                              third line off, and only two threads render here so the row can afford
+                              the height. Matches the wireframe's unclamped ledger preview. */}
+                          <p className="mt-1 text-[11px] leading-relaxed text-white/55">
                             {shortenWalletsInText(thread.latest.description || thread.latest.title || "Message")}
                           </p>
                         </button>
@@ -5714,6 +5780,7 @@ export default function UserDashboard() {
         loading={singleSendLoading}
         status={singleSendStatus}
         walletBalance={walletBalance}
+        balanceKnown={usdcBalance !== undefined}
         onScanQr={() => {
           setQrTargetIndex(null);
           setQrScannerOpen(true);
@@ -5938,9 +6005,10 @@ function UserDesktopSidebar({
               <button
                 type="button"
                 onClick={() => setShowPromo(false)}
-                className="text-xs font-bold text-white/50 hover:text-white"
+                aria-label="Dismiss promotion"
+                className="text-white/50 transition-colors hover:text-white"
               >
-                x
+                <X className="h-3.5 w-3.5" />
               </button>
             </div>
             <p className="text-xs font-extrabold text-white leading-tight">New Campaign Unlocked</p>

@@ -35,18 +35,62 @@ declare global {
 /* Survives the Google OAuth redirect, which remounts this page and clears React state. */
 const PRESELECTED_ROLE_KEY = "subscript_preselected_role";
 
+/* The role here selects an account type that cannot be changed afterwards, so the value is only
+   allowed to live as long as one authentication hand-off plausibly takes. Anything older is a
+   leftover from an abandoned attempt and must not auto-register whoever authenticates next in
+   this browser — they fall back to the picker instead, which costs one tap. */
+const ROLE_ARM_TTL_MS = 10 * 60 * 1000;
+
+type ArmedRole = { role: "USER" | "ENTERPRISE"; armedAt: number };
+
 const clearPreselectedRole = () => {
   if (typeof window !== "undefined") {
     window.localStorage.removeItem(PRESELECTED_ROLE_KEY);
   }
 };
 
+/* Written only when an authentication that navigates away is actually starting — never on a mere
+   card click. Selecting a card lives in React state; if the user abandons signup there, nothing
+   was persisted and there is nothing to go stale. */
+const armPreselectedRole = (role: "USER" | "ENTERPRISE") => {
+  if (typeof window === "undefined") return;
+  const armed: ArmedRole = { role, armedAt: Date.now() };
+  window.localStorage.setItem(PRESELECTED_ROLE_KEY, JSON.stringify(armed));
+};
+
 /* Read synchronously rather than relying on the restore effect — handleLoginSuccess can fire
-   from the mount-time session check before that effect has committed the state update. */
+   from the mount-time session check before that effect has committed the state update.
+   Every rejection path also erases the value, so a malformed or expired record cannot linger and
+   be re-evaluated on the next visit. Records written by the previous plain-string format have no
+   timestamp to age, so they parse as invalid and are dropped — failing to the picker. */
 const readPreselectedRole = (): "USER" | "ENTERPRISE" | null => {
   if (typeof window === "undefined") return null;
   const stored = window.localStorage.getItem(PRESELECTED_ROLE_KEY);
-  return stored === "USER" || stored === "ENTERPRISE" ? stored : null;
+  if (!stored) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stored);
+  } catch {
+    clearPreselectedRole();
+    return null;
+  }
+
+  const armed = parsed as Partial<ArmedRole> | null;
+  const role = armed?.role;
+  const armedAt = armed?.armedAt;
+  if ((role !== "USER" && role !== "ENTERPRISE") || typeof armedAt !== "number") {
+    clearPreselectedRole();
+    return null;
+  }
+  /* A clock rolled backwards (timezone change, NTP correction) makes armedAt look like the future.
+     Treat that as untrustworthy rather than as an indefinitely valid record. */
+  const age = Date.now() - armedAt;
+  if (age < 0 || age > ROLE_ARM_TTL_MS) {
+    clearPreselectedRole();
+    return null;
+  }
+  return role;
 };
 
 export default function SignupPage() {
@@ -79,14 +123,13 @@ export default function SignupPage() {
   /* Role selection states */
   const [showRoleSelector, setShowRoleSelector] = useState(false);
   const [selectedRole, setSelectedRole] = useState<"USER" | "ENTERPRISE" | null>(null);
-  /* Google OAuth navigates away and remounts this page, wiping React state. The role the user
-     picked before leaving has to survive that round trip or they land back on the picker (or,
-     worse, in the wrong hub), so mirror it into localStorage and re-read it on return. */
+  /* Picking a card is only an intent, so it stays in React state. Persisting here instead would
+     outlive the page: abandon signup, hit Sign In, sign out, or hand the laptop over, and the next
+     person to authenticate in this browser gets silently registered into a role they never chose —
+     and the account type cannot be changed afterwards. The value is armed at the auth hand-off
+     (see armPreselectedRole) where it is bound to an attempt actually in flight. */
   const persistRoleChoice = (role: "USER" | "ENTERPRISE") => {
     setSelectedRole(role);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(PRESELECTED_ROLE_KEY, role);
-    }
   };
   const [roleLoading, setRoleLoading] = useState(false);
   const [roleError, setRoleError] = useState<string | null>(null);
@@ -203,16 +246,16 @@ export default function SignupPage() {
     const merchantIntent = ["merchant", "enterprise", "business"].includes(roleHint);
     setMerchantSignupIntent(merchantIntent);
     /* Arrived via the merchant funnel (/signup?role=merchant) → pre-select the merchant card so
-       the intended account type is chosen for them and the role picker reads correctly. */
+       the intended account type is chosen for them and the role picker reads correctly. Kept in
+       React state only: the URL declared an intent, not a started authentication. */
     if (merchantIntent) {
       setSelectedRole("ENTERPRISE");
-      window.localStorage.setItem(PRESELECTED_ROLE_KEY, "ENTERPRISE");
     } else {
       /* Returning from the Google OAuth redirect: React state was destroyed by the navigation,
-         so restore the role the user picked before they left. Without this the auto-register
-         branch in handleLoginSuccess sees a null role and re-prompts the picker. */
-      const storedRole = window.localStorage.getItem(PRESELECTED_ROLE_KEY);
-      if (storedRole === "USER" || storedRole === "ENTERPRISE") {
+         so restore the role armed at the hand-off. readPreselectedRole drops anything expired or
+         malformed, so a stale choice from an abandoned attempt lands on the picker instead. */
+      const storedRole = readPreselectedRole();
+      if (storedRole) {
         setSelectedRole(storedRole);
       }
     }
@@ -300,15 +343,23 @@ export default function SignupPage() {
                 : getDashboardUrl(intendedRole as any, "/dashboard");
             });
           } else {
+            /* Reopening the picker without the reason reads as "your choice didn't take" — the
+               user re-picks the same card and hits the same rejection. A bad merchant code, for
+               instance, is only fixable once it's named. */
             clearPreselectedRole();
+            setRoleError(regData.error || "Failed to register account type.");
             setShowRoleSelector(true);
           }
         })
         .catch(() => {
           clearPreselectedRole();
+          setRoleError("Network error registering account type. Please select your account type again.");
           setShowRoleSelector(true);
         });
     } else {
+      /* Authenticated with no role to apply: whatever may still be armed is now moot, and the
+         picker below is about to ask explicitly. */
+      clearPreselectedRole();
       if (!data.email && !email) {
         setRequiresEmailLinking(true);
         setIsExternalWalletSignup(true);
@@ -505,6 +556,14 @@ export default function SignupPage() {
     setShowRoleSelector(false);
   };
 
+  /* Leaving for Sign In abandons this signup — an existing account already has a role, so nothing
+     armed here should survive to be applied to it. Declared above the early returns below, which
+     render Sign In links and would otherwise reference it before initialization. */
+  const goToSignIn = () => {
+    clearPreselectedRole();
+    router.push("/signin");
+  };
+
   useEffect(() => {
     if (walletAuthRequested && isConnected && address) {
       performSiwe();
@@ -648,7 +707,7 @@ export default function SignupPage() {
             <p className="text-center text-xs text-white/40 pt-1">
               Already have an account?{" "}
               <button
-                onClick={() => router.push("/signin")}
+                onClick={goToSignIn}
                 className="text-[#00d2b4] hover:text-[#00d2b4]/80 font-semibold transition-colors"
               >
                 Sign In
@@ -662,6 +721,10 @@ export default function SignupPage() {
 
   const handleLogout = async () => {
     setIsSigningOut(true);
+    /* Signing out ends any signup attempt this browser had in flight. Leaving the armed role behind
+       would let it apply to whoever authenticates next on this device. */
+    clearPreselectedRole();
+    setSelectedRole(null);
     try {
       await fetch("/api/auth/logout", { method: "POST" });
       setActiveSession(null);
@@ -808,7 +871,15 @@ export default function SignupPage() {
               </p>
 
               {CIRCLE_GOOGLE_ENABLED && (
-                <div onClick={() => posthog.capture("signup_method_selected", { method: "circle_google" })}>
+                /* The one auth path that can navigate away and remount this page, taking React
+                   state with it — so the chosen role is armed here, at the hand-off, and nowhere
+                   earlier. The write is bound to an attempt actually starting and expires with it. */
+                <div
+                  onClick={() => {
+                    posthog.capture("signup_method_selected", { method: "circle_google" });
+                    if (selectedRole) armPreselectedRole(selectedRole);
+                  }}
+                >
                   <CircleGoogleWalletButton onSuccess={handleLoginSuccess} />
                 </div>
               )}
@@ -896,7 +967,7 @@ export default function SignupPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => router.push("/signin")}
+                        onClick={goToSignIn}
                         className="py-3 bg-white/5 border border-white/10 rounded-xl font-bold text-[10px] uppercase tracking-wider text-white"
                       >
                         Sign In
@@ -1021,7 +1092,7 @@ export default function SignupPage() {
               <p className="text-xs text-white/40">
                 Already have an account?{" "}
                 <button 
-                  onClick={() => router.push("/signin")} 
+                  onClick={goToSignIn} 
                   className="text-[#00d2b4] font-bold hover:underline"
                 >
                   Sign In

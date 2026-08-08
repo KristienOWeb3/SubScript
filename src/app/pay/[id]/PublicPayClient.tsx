@@ -926,6 +926,10 @@ export default function PublicPayClient({
         }
         if (merchantVerified === false && !unverifiedAccepted && !isUserRequest) {
             paymentSubmissionGuardRef.current = false;
+            /* handlePay is the connected-wallet execution path, so record that mode before the
+               modal opens. Without it "Accept & Continue" finds pendingPaymentMode null, closes
+               the dialog, and leaves the payer back on the button they already pressed. */
+            setPendingPaymentMode("wallet");
             setShowUnverifiedWarning(true);
             return;
         }
@@ -2198,7 +2202,13 @@ export default function PublicPayClient({
                                         ) : (merchantVerified === false && !unverifiedAccepted && !isUserRequest) ? (
                                             <button
                                                 type="button"
-                                                onClick={() => setShowUnverifiedWarning(true)}
+                                                /* Same mode as the pay button this branch replaces, so
+                                                   "Accept & Continue" carries straight into the wallet
+                                                   review instead of dismissing to an unchanged screen. */
+                                                onClick={() => {
+                                                    setPendingPaymentMode("wallet");
+                                                    setShowUnverifiedWarning(true);
+                                                }}
                                                 className="w-full py-4 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
                                             >
                                                 <ShieldAlert className="w-4 h-4" /> Review Unverified Merchant Warning

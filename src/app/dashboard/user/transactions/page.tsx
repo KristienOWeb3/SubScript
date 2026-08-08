@@ -17,7 +17,7 @@ import {
 import AnimatedGradientBg from "@/components/DashboardSkeleton"; // Using layout background
 import FinancialStatusBadge from "@/components/FinancialStatusBadge";
 import { humanStatus, humanSubscriptionStatus } from "@/lib/transactionLabels";
-import { readOptimisticTxs, reconcileOptimisticTxs, type OptimisticTx } from "@/lib/optimisticTx";
+import { isOptimisticTxId, readOptimisticTxs, reconcileOptimisticTxs, type OptimisticTx } from "@/lib/optimisticTx";
 
 interface Subscription {
   subscriptionId: string;
@@ -383,7 +383,7 @@ export default function UserTransactionsPage() {
                 <div
                   key={tx.id}
                   className={`flex items-center justify-between py-4 first:pt-0 last:pb-0 ${
-                    tx.id.startsWith("optimistic-") ? "animate-pulse opacity-80" : ""
+                    isOptimisticTxId(tx.id) ? "animate-pulse opacity-80" : ""
                   }`}
                 >
                   <div className="flex min-w-0 items-center gap-3">

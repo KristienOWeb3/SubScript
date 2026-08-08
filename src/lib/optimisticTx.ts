@@ -17,6 +17,15 @@ export type OptimisticTx = {
 
 const STORAGE_KEY = "subscript_optimistic_txs";
 
+/* The transactions page merges these rows into the confirmed ledger and identifies them by this
+   prefix to apply the pending treatment. Exported (and consumed via isOptimisticTxId) so the
+   producer and the consumer share one definition instead of two string literals that can drift. */
+export const OPTIMISTIC_ID_PREFIX = "optimistic-";
+
+export function isOptimisticTxId(id: string | null | undefined): boolean {
+    return typeof id === "string" && id.startsWith(OPTIMISTIC_ID_PREFIX);
+}
+
 /* Long enough to cover indexer lag on a slow network, short enough that a genuinely failed
    submission stops being advertised as pending. */
 const TTL_MS = 5 * 60 * 1000;
@@ -32,11 +41,17 @@ function read(): OptimisticTx[] {
         if (!raw) return [];
         const parsed = JSON.parse(raw);
         if (!Array.isArray(parsed)) return [];
+        /* Every field is checked, not just the ones this function touches: corrupted storage
+           reaches reconcileOptimisticTxs(), which calls tx.txHash.toLowerCase() outside this
+           try/catch, so a non-string hash that slipped past the guard would throw into the
+           caller's load path rather than degrading to "no optimistic rows". */
         return parsed.filter(
             (tx): tx is OptimisticTx =>
                 Boolean(tx) &&
                 typeof tx.id === "string" &&
+                (tx.txHash === null || typeof tx.txHash === "string") &&
                 typeof tx.recipientAddress === "string" &&
+                typeof tx.recipientLabel === "string" &&
                 typeof tx.amountUsdcMicros === "string" &&
                 typeof tx.createdAt === "number"
         );
@@ -78,12 +93,16 @@ export function recordOptimisticTx({
 }): void {
     const now = Date.now();
     const micros = Math.round(Number(amountUsdc) * 1_000_000);
+    /* Skip the row rather than storing "0": the transactions page would render it as
+       "-$0.00 · Sending", reporting a real transfer as worthless. No optimistic row is the
+       better failure — the DM log still supplies the authoritative one a moment later. */
+    if (!Number.isFinite(micros) || micros <= 0) return;
     const entry: OptimisticTx = {
-        id: `optimistic-${txHash || now}`,
+        id: `${OPTIMISTIC_ID_PREFIX}${txHash || now}`,
         txHash,
         recipientAddress,
         recipientLabel,
-        amountUsdcMicros: Number.isFinite(micros) && micros > 0 ? String(micros) : "0",
+        amountUsdcMicros: String(micros),
         createdAt: now,
     };
     /* Re-submitting the same hash replaces rather than duplicates. */
