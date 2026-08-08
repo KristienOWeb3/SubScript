@@ -120,6 +120,10 @@ export default function PublicPayClient({
     const [showUnverifiedWarning, setShowUnverifiedWarning] = useState(false);
     const [unverifiedAccepted, setUnverifiedAccepted] = useState(false);
     const [reviewPaymentMode, setReviewPaymentMode] = useState<"embedded" | "wallet" | null>(null);
+    /* The unverified-merchant gate opens a modal instead of setting reviewPaymentMode. Remember
+       which payment path (embedded vs wallet) the user was on so "Accept & Continue" can drop
+       them straight into the final review instead of leaving them at the pay button. */
+    const [pendingPaymentMode, setPendingPaymentMode] = useState<"embedded" | "wallet" | null>(null);
 
     const { data: balanceData } = useBalance({
         address: address,
@@ -1355,7 +1359,10 @@ export default function PublicPayClient({
         );
     }, [clientIntentId, isPaymentSettled, linkData?.id, pendingVerification, startVerification, verifiedHash]);
 
-    const beginPaymentReview = (mode: "embedded" | "wallet") => {
+    const beginPaymentReview = (
+        mode: "embedded" | "wallet",
+        options?: { unverifiedAcknowledged?: boolean },
+    ) => {
         setVerificationError(null);
         setWalletAuthenticationError(null);
         if (!pendingVerificationHydrated) {
@@ -1375,7 +1382,12 @@ export default function PublicPayClient({
             setVerificationError("Merchant accounts cannot pay checkout links. Sign in with a user account.");
             return;
         }
-        if (merchantVerified === false && !unverifiedAccepted && !isUserRequest) {
+        /* When re-entered from the warning modal's "Accept & Continue", the acknowledgment arrives
+           as an argument: the setUnverifiedAccepted(true) that triggered it has not re-rendered
+           yet, so reading the state here would bounce the user back into the same modal. */
+        const merchantAcknowledged = unverifiedAccepted || options?.unverifiedAcknowledged === true;
+        if (merchantVerified === false && !merchantAcknowledged && !isUserRequest) {
+            setPendingPaymentMode(mode);
             setShowUnverifiedWarning(true);
             return;
         }
@@ -2378,7 +2390,10 @@ export default function PublicPayClient({
                             <div className="flex gap-3 pt-2">
                                 <button
                                     type="button"
-                                    onClick={() => setShowUnverifiedWarning(false)}
+                                    onClick={() => {
+                                        setPendingPaymentMode(null);
+                                        setShowUnverifiedWarning(false);
+                                    }}
                                     className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold rounded-2xl text-xs uppercase tracking-wider transition-all"
                                 >
                                     Cancel
@@ -2388,6 +2403,13 @@ export default function PublicPayClient({
                                     onClick={() => {
                                         setUnverifiedAccepted(true);
                                         setShowUnverifiedWarning(false);
+                                        /* Chain straight into the final review rather than dropping the
+                                           user back on the pay button to click it a second time. */
+                                        if (pendingPaymentMode) {
+                                            const mode = pendingPaymentMode;
+                                            setPendingPaymentMode(null);
+                                            beginPaymentReview(mode, { unverifiedAcknowledged: true });
+                                        }
                                     }}
                                     className="flex-1 py-3 bg-amber-500 text-black font-bold rounded-2xl text-xs uppercase tracking-wider hover:brightness-110 transition-all shadow-[0_0_20px_rgba(245,158,11,0.2)]"
                                 >

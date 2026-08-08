@@ -17,6 +17,7 @@ import {
 import AnimatedGradientBg from "@/components/DashboardSkeleton"; // Using layout background
 import FinancialStatusBadge from "@/components/FinancialStatusBadge";
 import { humanStatus, humanSubscriptionStatus } from "@/lib/transactionLabels";
+import { readOptimisticTxs, reconcileOptimisticTxs, type OptimisticTx } from "@/lib/optimisticTx";
 
 interface Subscription {
   subscriptionId: string;
@@ -57,6 +58,8 @@ export default function UserTransactionsPage() {
   const router = useRouter();
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [dms, setDms] = useState<DmMessage[]>([]);
+  /* Transfers submitted on the dashboard that the DM log hasn't surfaced yet. */
+  const [optimisticTxs, setOptimisticTxs] = useState<OptimisticTx[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -175,6 +178,13 @@ export default function UserTransactionsPage() {
       if (subData.success) setSubscriptions(subData.subscriptions);
       if (dmData.success) setDms(dmData.dms);
       if (sessionData.loggedIn && sessionData.wallet) setUserWallet(sessionData.wallet);
+
+      /* Reconcile against whatever the server just returned, so a transfer that has landed in
+         the DM log stops being rendered twice. */
+      const serverHashes: Array<string | null | undefined> = (dmData.success ? dmData.dms : []).map(
+        (m: DmMessage) => m.txHash
+      );
+      setOptimisticTxs(reconcileOptimisticTxs(serverHashes));
     } catch (err) {
       console.error("Failed to load transactions data:", err);
       setLoadError(err instanceof Error ? err.message : "Transaction history is temporarily unavailable.");
@@ -186,6 +196,12 @@ export default function UserTransactionsPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  /* Hydrate before (and independently of) the network call, so a submitted transfer is still
+     visible if the history fetch itself fails. */
+  useEffect(() => {
+    setOptimisticTxs(readOptimisticTxs());
+  }, []);
 
   const formatUsdc = (amountStr: string | null | undefined) => {
     if (!amountStr) return "0.00";
@@ -211,6 +227,22 @@ export default function UserTransactionsPage() {
 
   // Build unified transactions array
   const allTransactions = [
+    /* Pending sends first — they're always the newest thing the user did, and the sort below
+       keeps them on top anyway since createdAt is the submit time. */
+    ...optimisticTxs.map((tx) => ({
+      id: tx.id,
+      kind: "one-time" as const,
+      name: tx.recipientLabel || "Recipient",
+      pic: null as string | null,
+      detail: "Sending • Awaiting confirmation",
+      amountUsdc: tx.amountUsdcMicros,
+      amountLabel: `-$${formatUsdc(tx.amountUsdcMicros)}`,
+      localAmountLabel: `-${getLocalValueLabel(tx.amountUsdcMicros)}`,
+      time: tx.createdAt,
+      incoming: false,
+      status: "PENDING",
+      txHash: tx.txHash,
+    })),
     ...subscriptions.map((s) => ({
       id: `sub-${s.subscriptionId}`,
       kind: "recurring" as const,
@@ -348,7 +380,12 @@ export default function UserTransactionsPage() {
           ) : (
             <div className="divide-y divide-white/[0.06]">
               {filteredTransactions.map((tx) => (
-                <div key={tx.id} className="flex items-center justify-between py-4 first:pt-0 last:pb-0">
+                <div
+                  key={tx.id}
+                  className={`flex items-center justify-between py-4 first:pt-0 last:pb-0 ${
+                    tx.id.startsWith("optimistic-") ? "animate-pulse opacity-80" : ""
+                  }`}
+                >
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="h-10 w-10 shrink-0 rounded-xl bg-white/[0.04] border border-white/5 flex items-center justify-center overflow-hidden">
                       {tx.pic ? (

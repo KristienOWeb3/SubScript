@@ -71,6 +71,16 @@ const answerFacts = [
     answer:
       "Every webhook is written to the merchant_events ledger before dispatch. Each delivery attempt is logged on a best-effort basis with its HTTP status, response body, and timestamp; attempt rows may be missing if persistence fails after the HTTP request. Endpoints are environment-scoped (TEST or LIVE) so sandbox traffic never crosses into production. Secret rotation supports a grace-period overlap so the previous signing secret stays valid while you update your handler. The dashboard exposes cursor-paginated event history with type and environment filters, one-click replay, and per-attempt visibility for most delivery attempts.",
   },
+  {
+    question: "What is a SubScript Commit ID?",
+    answer:
+      "A Commit ID is SubScript's stable identifier for a spending identity, formatted as `cmt_` followed by ten Crockford base32 characters. The alphabet omits I, L, O, and U so an ID read aloud or copied off a screen cannot be transcribed into a different valid ID. Every user wallet owns exactly one root Commit ID, allocated on first use with no backfill required, and each Commit ID can own sub-user commits beneath it. Because the identifier is separate from the wallet address, a sub-user can be created and given a spending budget before any wallet is attached to it.",
+  },
+  {
+    question: "Can I let someone else spend from my SubScript account?",
+    answer:
+      "Yes. A parent Commit ID can create sub-user commits, each with an optional display name, an optional wallet address, and an optional USDC spend limit; a sub-user with no limit is uncapped. Sub-users are ACTIVE, PAUSED, or REVOKED. Pausing blocks further spending and is reversible; revocation is terminal, so reopening a delegation means creating a fresh sub-user and a fresh spend ledger rather than resurrecting the old balance. Pause and revoke authority is proven by the parent wallet owning the target's parent commit, so a sub-user can never pause or revoke a sibling, and a paused or revoked parent cascades to its children. Spend limits are enforced atomically at debit time with an overshoot rollback, so two concurrent charges cannot both observe headroom and jointly exceed the cap.",
+  },
 ];
 
 const structuredData = {
@@ -119,6 +129,8 @@ export const metadata: Metadata = {
     "crypto subscription billing",
     "Web3 payment links",
     "metered vault billing",
+    "SubScript Commit ID",
+    "delegated USDC spending limits",
     "AI answer engine optimization",
   ],
 };

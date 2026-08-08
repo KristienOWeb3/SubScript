@@ -7,6 +7,8 @@ const PUBLIC_HOST = "www.subscriptonarc.com";
 const APEX_HOST = "subscriptonarc.com";
 const DASHBOARD_HOST = "dashboard.subscriptonarc.com";
 const CHECKOUT_HOST = "pay.subscriptonarc.com";
+const DOCS_HOST = "docs.subscriptonarc.com";
+const ADMIN_HOST = "admin.subscriptonarc.com";
 const PUBLIC_ORIGIN = `https://${PUBLIC_HOST}`;
 
 /* Initialize Upstash Redis REST client */
@@ -227,6 +229,8 @@ export async function middleware(request: NextRequest) {
         .replace(/:\d+$/, "");
     const isDashboardHost = host === DASHBOARD_HOST;
     const isCheckoutHost = host === CHECKOUT_HOST;
+    const isDocsHost = host === DOCS_HOST;
+    const isAdminHost = host === ADMIN_HOST;
     const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "::1";
     const isDashboardPath =
         pathname === "/dashboard" || pathname.startsWith("/dashboard/") ||
@@ -238,13 +242,41 @@ export async function middleware(request: NextRequest) {
     const isProductionDomain = host === APEX_HOST
         || host === PUBLIC_HOST
         || isDashboardHost
-        || isCheckoutHost;
+        || isCheckoutHost
+        || isDocsHost
+        || isAdminHost;
 
     if (!isApiRoute && host === APEX_HOST) {
         const canonicalUrl = request.nextUrl.clone();
         canonicalUrl.host = PUBLIC_HOST;
         canonicalUrl.protocol = "https:";
         return NextResponse.redirect(canonicalUrl, 308);
+    }
+
+    /* docs.subscriptonarc.com serves /docs at its own root, so the subdomain's "/" maps to
+       /docs rather than the marketing landing page. Paths that already start with /docs are
+       left alone so docs.../docs/x doesn't become /docs/docs/x. */
+    if (!isApiRoute && isDocsHost) {
+        if (pathname !== "/docs" && !pathname.startsWith("/docs/")) {
+            const docsUrl = request.nextUrl.clone();
+            docsUrl.pathname = pathname === "/" ? "/docs" : `/docs${pathname}`;
+            return NextResponse.rewrite(docsUrl);
+        }
+    }
+
+    /* admin.subscriptonarc.com is gated on a session cookie before anything renders. The
+       page tree under /admin does not exist yet (only /api/admin does), so this currently
+       resolves to the 404 page for signed-in operators rather than exposing anything. */
+    if (!isApiRoute && isAdminHost) {
+        const token = request.cookies.get("subscript_session_token")?.value;
+        if (!token) {
+            return NextResponse.redirect(`${PUBLIC_ORIGIN}/login`);
+        }
+        if (pathname !== "/admin" && !pathname.startsWith("/admin/")) {
+            const adminUrl = request.nextUrl.clone();
+            adminUrl.pathname = pathname === "/" ? "/admin" : `/admin${pathname}`;
+            return NextResponse.rewrite(adminUrl);
+        }
     }
 
     if (!isApiRoute && isCheckoutHost) {

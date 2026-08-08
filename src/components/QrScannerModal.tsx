@@ -77,21 +77,32 @@ export function QrScannerModal({
 
       let mediaStream: MediaStream;
       try {
-        // Phones: default strictly to rear/back camera (environment facingMode)
+        /* Phones: bind strictly to the rear camera. `exact` (not `ideal`) stops the browser
+           from silently substituting a front or auxiliary lens, and asking for 1080p biases
+           multi-lens phones toward the 1x main sensor — ultrawide modules cap out lower, so
+           they get filtered by the resolution constraint rather than chosen as the default. */
         mediaStream = await navigator.mediaDevices.getUserMedia({
           video: {
-            facingMode: { ideal: "environment" },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            facingMode: { exact: "environment" },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
           },
           audio: false,
         });
       } catch {
-        // Fallback for devices without a designated rear camera (e.g. desktop webcams)
-        mediaStream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: false,
-        });
+        try {
+          // Rear camera exists but cannot hit 1080p — keep the lens, relax the resolution.
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { exact: "environment" } },
+            audio: false,
+          });
+        } catch {
+          // Fallback for devices without a designated rear camera (e.g. desktop webcams)
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+        }
       }
 
       streamRef.current = mediaStream;

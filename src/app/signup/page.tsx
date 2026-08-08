@@ -32,6 +32,23 @@ declare global {
   }
 }
 
+/* Survives the Google OAuth redirect, which remounts this page and clears React state. */
+const PRESELECTED_ROLE_KEY = "subscript_preselected_role";
+
+const clearPreselectedRole = () => {
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(PRESELECTED_ROLE_KEY);
+  }
+};
+
+/* Read synchronously rather than relying on the restore effect — handleLoginSuccess can fire
+   from the mount-time session check before that effect has committed the state update. */
+const readPreselectedRole = (): "USER" | "ENTERPRISE" | null => {
+  if (typeof window === "undefined") return null;
+  const stored = window.localStorage.getItem(PRESELECTED_ROLE_KEY);
+  return stored === "USER" || stored === "ENTERPRISE" ? stored : null;
+};
+
 export default function SignupPage() {
   const router = useRouter();
   /* Optional post-onboarding destination (e.g. a /subscribe/[planId] link a new
@@ -62,6 +79,15 @@ export default function SignupPage() {
   /* Role selection states */
   const [showRoleSelector, setShowRoleSelector] = useState(false);
   const [selectedRole, setSelectedRole] = useState<"USER" | "ENTERPRISE" | null>(null);
+  /* Google OAuth navigates away and remounts this page, wiping React state. The role the user
+     picked before leaving has to survive that round trip or they land back on the picker (or,
+     worse, in the wrong hub), so mirror it into localStorage and re-read it on return. */
+  const persistRoleChoice = (role: "USER" | "ENTERPRISE") => {
+    setSelectedRole(role);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(PRESELECTED_ROLE_KEY, role);
+    }
+  };
   const [roleLoading, setRoleLoading] = useState(false);
   const [roleError, setRoleError] = useState<string | null>(null);
   const [requiresEmailLinking, setRequiresEmailLinking] = useState(false);
@@ -178,7 +204,18 @@ export default function SignupPage() {
     setMerchantSignupIntent(merchantIntent);
     /* Arrived via the merchant funnel (/signup?role=merchant) → pre-select the merchant card so
        the intended account type is chosen for them and the role picker reads correctly. */
-    if (merchantIntent) setSelectedRole("ENTERPRISE");
+    if (merchantIntent) {
+      setSelectedRole("ENTERPRISE");
+      window.localStorage.setItem(PRESELECTED_ROLE_KEY, "ENTERPRISE");
+    } else {
+      /* Returning from the Google OAuth redirect: React state was destroyed by the navigation,
+         so restore the role the user picked before they left. Without this the auto-register
+         branch in handleLoginSuccess sees a null role and re-prompts the picker. */
+      const storedRole = window.localStorage.getItem(PRESELECTED_ROLE_KEY);
+      if (storedRole === "USER" || storedRole === "ENTERPRISE") {
+        setSelectedRole(storedRole);
+      }
+    }
     setMerchantSignupCode(params.get("merchantCode") || params.get("invite") || "");
 
     const refParam = params.get("ref") || params.get("referral");
@@ -228,38 +265,49 @@ export default function SignupPage() {
       setRequiresEmailLinking(false);
     }
 
+    /* The OAuth redirect wipes React state, so fall back to the persisted choice from before
+       the hand-off. Either way the role has now been consumed — drop it so a later visit to
+       /signup for a different account type isn't silently auto-registered into the old role. */
+    const intendedRole = selectedRole ?? readPreselectedRole();
+
     if (data.role) {
+      clearPreselectedRole();
       triggerReferralLogging().finally(() => {
         const next = getSafeNext();
         window.location.href = (next && data.role === "USER")
           ? next
           : getDashboardUrl(data.role as any, "/dashboard");
       });
-    } else if (selectedRole) {
+    } else if (intendedRole) {
       // Role was chosen before authenticating -> register automatically without prompting again
       fetch("/api/auth/register-role", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          role: selectedRole,
+          role: intendedRole,
           email: userEmail || undefined,
-          merchantSignupCode: selectedRole === "ENTERPRISE" ? merchantSignupCode : undefined,
+          merchantSignupCode: intendedRole === "ENTERPRISE" ? merchantSignupCode : undefined,
         }),
       })
         .then((res) => res.json())
         .then((regData) => {
           if (regData.success) {
+            clearPreselectedRole();
             triggerReferralLogging().finally(() => {
               const next = getSafeNext();
-              window.location.href = (next && selectedRole === "USER")
+              window.location.href = (next && intendedRole === "USER")
                 ? next
-                : getDashboardUrl(selectedRole as any, "/dashboard");
+                : getDashboardUrl(intendedRole as any, "/dashboard");
             });
           } else {
+            clearPreselectedRole();
             setShowRoleSelector(true);
           }
         })
-        .catch(() => setShowRoleSelector(true));
+        .catch(() => {
+          clearPreselectedRole();
+          setShowRoleSelector(true);
+        });
     } else {
       if (!data.email && !email) {
         setRequiresEmailLinking(true);
@@ -430,6 +478,7 @@ export default function SignupPage() {
       });
       const data = await res.json();
       if (data.success) {
+        clearPreselectedRole();
         triggerReferralLogging().finally(() => {
           const next = getSafeNext();
           window.location.href = (next && selectedRole === "USER")
@@ -491,7 +540,7 @@ export default function SignupPage() {
             <div className="space-y-4">
               {/* Individual User Option */}
               <button
-                onClick={() => setSelectedRole("USER")}
+                onClick={() => persistRoleChoice("USER")}
                 className={`w-full p-5 border text-left rounded-2xl transition-all duration-300 relative overflow-hidden group ${
                   selectedRole === "USER"
                     ? "border-[#00d2b4] bg-[#00d2b4]/5 shadow-[0_0_20px_rgba(0,210,180,0.15)]"
@@ -512,7 +561,7 @@ export default function SignupPage() {
                     }`}>
                       Individual User
                     </h3>
-                    <span className="text-[9px] text-[#00d2b4] uppercase font-bold tracking-wider">Routes to User Hub</span>
+                    <span className="text-[9px] text-[#00d2b4] uppercase font-bold tracking-wider">Personal Hub</span>
                   </div>
                 </div>
                 <p className="text-[11px] text-white/50 mt-3 leading-relaxed">
@@ -522,7 +571,7 @@ export default function SignupPage() {
 
               {/* Enterprise Merchant Option */}
               <button
-                onClick={() => setSelectedRole("ENTERPRISE")}
+                onClick={() => persistRoleChoice("ENTERPRISE")}
                 className={`w-full p-5 border text-left rounded-2xl transition-all duration-300 relative overflow-hidden group ${
                   selectedRole === "ENTERPRISE"
                     ? "border-[#00d2b4] bg-[#00d2b4]/5 shadow-[0_0_20px_rgba(0,210,180,0.15)]"
@@ -543,7 +592,7 @@ export default function SignupPage() {
                     }`}>
                       Enterprise Merchant
                     </h3>
-                    <span className="text-[9px] text-[#00d2b4] uppercase font-bold tracking-wider">Routes to Control Center</span>
+                    <span className="text-[9px] text-[#00d2b4] uppercase font-bold tracking-wider">Merchant Dashboard</span>
                   </div>
                 </div>
                 <p className="text-[11px] text-white/50 mt-3 leading-relaxed">

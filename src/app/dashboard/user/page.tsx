@@ -33,6 +33,7 @@ import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
 import ConfirmModal from "@/components/ConfirmModal";
 import QrScannerModal from "@/components/QrScannerModal";
+import SendSingleModal from "@/components/SendSingleModal";
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
 import { receiptHrefFromDescriptionLine } from "@/lib/dms/receiptPresentation";
@@ -53,6 +54,7 @@ import {
   Globe,
   HelpCircle,
   Home,
+  Layers,
   Link2,
   Loader2,
   LogOut,
@@ -86,6 +88,7 @@ import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
 import { humanStatus, humanSubscriptionStatus } from "@/lib/transactionLabels";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 import { accountDisplayName, merchantDisplayName } from "@/lib/identityDisplay";
+import { recordOptimisticTx } from "@/lib/optimisticTx";
 
 const comingSoonUserSettings = new Set(["emailEnabled", "securityShieldEnabled", "securityMultiSigEnabled"]);
 
@@ -177,12 +180,11 @@ const userBottomTabs = [
 ] as const;
 
 const userDesktopTabs = [
-  { id: "home", label: "Home Hub", icon: Home },
-  { id: "commit", label: "Manage Commit", icon: Shield },
+  { id: "home", label: "Dashboard", icon: Home },
+  { id: "commit", label: "Vault & Commits", icon: Shield },
+  { id: "batch", label: "Batch Payments", icon: Layers },
   { id: "links", label: "Payment Links", icon: Link2 },
-  { id: "batch", label: "Send Out", icon: Send },
   { id: "inbox", label: "Direct Messages", icon: MessageSquare },
-  { id: "dns", label: "Profile & DNS", icon: Globe },
   { id: "referrals", label: "Refer & Earn", icon: Gift },
 ] as const;
 
@@ -289,6 +291,7 @@ export default function UserDashboard() {
   const router = useRouter();
   const { disconnect } = useDisconnect();
   const dmBottomRef = useRef<HTMLDivElement | null>(null);
+  const desktopDmScrollRef = useRef<HTMLDivElement | null>(null);
 
   const [isMobile, setIsMobile] = useState(false);
 
@@ -804,15 +807,9 @@ export default function UserDashboard() {
 
   const [batchRows, setBatchRows] = useState([{ address: "", amount: "" }]);
 
-  const [sendMode, setSendMode] = useState<"single" | "batch">("single");
-  /* Thumb-swipe between the Single / Batch send sub-tabs (tap still works). Pointer-based, so a
-     55px drag is needed — harmless on desktop, natural on mobile. */
-  const sendSwipe = useSwipeTabs(["single", "batch"] as const, sendMode, setSendMode);
-  const [prevSendMode, setPrevSendMode] = useState<"single" | "batch">("single");
-  if (sendMode !== prevSendMode) {
-    setPrevSendMode(sendMode);
-  }
-  const sendDirection = sendMode === "batch" ? 1 : -1;
+  /* Single Send lives in a pop-up modal now, so the tab body is dedicated to Batch Payouts.
+     The single/batch sub-tab swap (and its swipe handler) is gone with it. */
+  const [sendSingleModalOpen, setSendSingleModalOpen] = useState(false);
   const [singleRecipient, setSingleRecipient] = useState("");
   const [singleAmount, setSingleAmount] = useState("");
   const [singleResolved, setSingleResolved] = useState<{ address: string | null; alias: string | null; profilePic: string | null } | null>(null);
@@ -1038,14 +1035,6 @@ export default function UserDashboard() {
     setPlanManagerStatus(null);
     setPlanManagerError(null);
   }, [selectedDmPeer]);
-
-  useEffect(() => {
-    if (activeTab !== "inbox" || !selectedDmPeer) return;
-    const timer = window.setTimeout(() => {
-      dmBottomRef.current?.scrollIntoView({ block: "end" });
-    }, 60);
-    return () => window.clearTimeout(timer);
-  }, [activeTab, selectedDmPeer, dms.length]);
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -1289,6 +1278,46 @@ export default function UserDashboard() {
     }
 
     await applyPlanChange("scheduled");
+  };
+
+  /* Resume a subscription the user canceled but is still inside the paid period.
+     Cancel revokes the on-chain PSA authorization immediately (see subscription/cancel), so
+     "resume" is a genuine re-subscribe, not a flag flip — we resolve the merchant plan that
+     matches the canceled terms and run it through the normal subscribe path so the first-charge
+     idempotency key and the post-subscribe reloads stay in one place. */
+  const [resumingSubscriptionId, setResumingSubscriptionId] = useState<string | null>(null);
+
+  const handleResumeSubscription = async (subscription: Subscription) => {
+    if (resumingSubscriptionId) return;
+    setResumingSubscriptionId(subscription.subscriptionId);
+    try {
+      const res = await fetch(`/api/merchant/plans?merchantAddress=${encodeURIComponent(subscription.merchantAddress)}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || "Could not load this merchant's plans.");
+
+      const plans: MerchantPlan[] = data.plans || [];
+      const match = plans.find(
+        (p) =>
+          p.active !== false &&
+          Number(p.amountUsdc) === Number(subscription.amountCapUsdc) &&
+          Number(p.periodSeconds) === Number(subscription.billingIntervalSeconds)
+      );
+
+      /* The merchant may have retired the old tier while the cancellation was pending. Rather
+         than silently subscribing to different terms, hand the user to the thread's plan picker. */
+      if (!match) {
+        triggerToast("That plan is no longer offered — pick a current plan from the merchant.");
+        setSelectedDmPeer(subscription.merchantAddress);
+        setActiveTab("inbox");
+        return;
+      }
+
+      await handleSubscribeOrSwitchPlan(match);
+    } catch (err: any) {
+      triggerToast(err?.message || "Could not resume this subscription.");
+    } finally {
+      setResumingSubscriptionId(null);
+    }
   };
 
   const openGiftPlanModal = (plan: MerchantPlan) => {
@@ -2193,6 +2222,12 @@ export default function UserDashboard() {
         singleSendRequestKey.current = null;
         const txHash = transfers[0]?.txHash;
         setSingleSendStatus(`Success! Transfer transaction submitted: ${txHash || "confirmed"}`);
+        recordOptimisticTx({
+          txHash: txHash || null,
+          recipientAddress: singleResolved.address,
+          recipientLabel: singleResolved.alias || formatAddress(singleResolved.address),
+          amountUsdc: singleAmount,
+        });
         setSingleRecipient("");
         setSingleAmount("");
         if (txHash) {
@@ -2244,6 +2279,12 @@ export default function UserDashboard() {
       });
 
       setSingleSendStatus(`Success! Transfer transaction submitted: ${txHash}`);
+      recordOptimisticTx({
+        txHash: txHash || null,
+        recipientAddress: singleResolved.address,
+        recipientLabel: singleResolved.alias || formatAddress(singleResolved.address),
+        amountUsdc: singleAmount,
+      });
       setSingleRecipient("");
       setSingleAmount("");
       if (txHash) {
@@ -2429,10 +2470,104 @@ export default function UserDashboard() {
     }
   };
 
+  /* The badge should reflect only what needs the user's attention: incoming PENDING requests they
+     can actually act on. Outgoing requests can't be settled from this side, and informational
+     notices (e.g. DEBIT_SUCCESS renewal receipts) are created PENDING but aren't "action needed" —
+     neither should keep the badge lit. */
+  const isActionableDm = (dm: DmMessage) =>
+    dm.status === "PENDING" &&
+    dm.receiverAddress.toLowerCase() === userWallet?.toLowerCase() &&
+    ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
+  const pendingDmCount = dms.filter(isActionableDm).length;
+  const dmThreads = Array.from(dms.reduce((threads, dm) => {
+    const peerAddress = getDmPeerAddress(dm, userWallet).toLowerCase();
+    const existing = threads.get(peerAddress);
+    const latestTime = new Date(dm.createdAt).getTime();
+    const actionable = isActionableDm(dm);
+    if (!existing) {
+      threads.set(peerAddress, {
+        peerAddress,
+        peerName: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverName : dm.senderName,
+        peerRole: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverRole : dm.senderRole,
+        peerProfilePic: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverProfilePic : dm.senderProfilePic,
+        latest: dm,
+        latestTime,
+        pendingCount: actionable ? 1 : 0,
+        totalCount: 1,
+      });
+    } else {
+      existing.totalCount += 1;
+      if (actionable) existing.pendingCount += 1;
+      if (latestTime > existing.latestTime) {
+        existing.latest = dm;
+        existing.latestTime = latestTime;
+        const isOwnSender = dm.senderAddress.toLowerCase() === userWallet?.toLowerCase();
+        existing.peerName = isOwnSender ? dm.receiverName : dm.senderName;
+        existing.peerRole = isOwnSender ? dm.receiverRole : dm.senderRole;
+        existing.peerProfilePic = isOwnSender ? dm.receiverProfilePic : dm.senderProfilePic;
+      }
+    }
+    return threads;
+  }, new Map<string, {
+    peerAddress: string;
+    peerName: string;
+    peerRole: string | null;
+    peerProfilePic: string | null;
+    latest: DmMessage;
+    latestTime: number;
+    pendingCount: number;
+    totalCount: number;
+  }>()).values()).sort((a, b) => b.latestTime - a.latestTime);
+  const selectedThreadDms = selectedDmPeer
+    ? dms
+        .filter((dm) => getDmPeerAddress(dm, userWallet).toLowerCase() === selectedDmPeer)
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    : [];
+  const activeThread = selectedDmPeer
+    ? dmThreads.find((t) => t.peerAddress.toLowerCase() === selectedDmPeer)
+    : null;
+  const activeThreadLabel = selectedDmPeer ? formatPeerDisplayName(activeThread?.peerName, selectedDmPeer) : "";
+  const isActiveDmMerchant = selectedDmPeer
+    ? activeThread?.peerRole === "ENTERPRISE" ||
+      subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) ||
+      (activeThreadLabel.endsWith(".hq") || activeThreadLabel.endsWith(".biz"))
+    : false;
+  const activeThreadSubscription = selectedDmPeer ? getActiveSubscriptionForMerchant(selectedDmPeer) : null;
+  const isActiveMobileDm = isMobile && activeTab === "inbox" && Boolean(selectedDmPeer);
+  /* Sending to your own wallet burns gas for a no-op, so both send surfaces block it up front.
+     The batch variant keeps each offending row's original index so the warning can name the
+     recipient by its position in the form. */
   const singleSelfSend = Boolean(singleResolved?.address && isOwnWalletAddress(singleResolved.address));
   const batchSelfSendRows = batchRows
-    .map((row, index) => ({ index, address: row.address.trim() }))
-    .filter((row) => /^0x[a-fA-F0-9]{40}$/.test(row.address) && isOwnWalletAddress(row.address));
+    .map((row, index) => ({ ...row, index }))
+    .filter((row) => isOwnWalletAddress(row.address));
+
+  /* Open every thread at the newest message. The old version waited a flat 60ms and keyed off
+     the global dms.length — but on desktop the pane's entrance animation is still running at
+     60ms, and switching threads doesn't change the global count, so the effect never re-fired
+     and the pane sat at the top. Scroll the container directly (scrollIntoView is a no-op while
+     the animating ancestor has no layout height yet), key off this thread's own message count,
+     and repeat across a frame and a post-animation timeout to catch the settled layout. */
+  useEffect(() => {
+    if (activeTab !== "inbox" || !selectedDmPeer) return;
+
+    const scrollToBottom = () => {
+      const container = desktopDmScrollRef.current;
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
+      dmBottomRef.current?.scrollIntoView({ block: "end" });
+    };
+
+    scrollToBottom();
+    const rafId = requestAnimationFrame(scrollToBottom);
+    const timer = window.setTimeout(scrollToBottom, 150);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.clearTimeout(timer);
+    };
+  }, [activeTab, selectedDmPeer, selectedThreadDms.length]);
 
   if (loading) {
     return (
@@ -2709,73 +2844,12 @@ export default function UserDashboard() {
   const filteredTransactions = recentTransactions.filter(
     (t) => txFilter === "all" || t.kind === txFilter,
   );
-  /* The badge should reflect only what needs the user's attention: incoming PENDING requests they
-     can actually act on. Outgoing requests can't be settled from this side, and informational
-     notices (e.g. DEBIT_SUCCESS renewal receipts) are created PENDING but aren't "action needed" —
-     neither should keep the badge lit. */
-  const isActionableDm = (dm: DmMessage) =>
-    dm.status === "PENDING" &&
-    dm.receiverAddress.toLowerCase() === userWallet?.toLowerCase() &&
-    ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
-  const pendingDmCount = dms.filter(isActionableDm).length;
-  const dmThreads = Array.from(dms.reduce((threads, dm) => {
-    const peerAddress = getDmPeerAddress(dm, userWallet).toLowerCase();
-    const existing = threads.get(peerAddress);
-    const latestTime = new Date(dm.createdAt).getTime();
-    const actionable = isActionableDm(dm);
-    if (!existing) {
-      threads.set(peerAddress, {
-        peerAddress,
-        peerName: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverName : dm.senderName,
-        peerRole: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverRole : dm.senderRole,
-        peerProfilePic: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverProfilePic : dm.senderProfilePic,
-        latest: dm,
-        latestTime,
-        pendingCount: actionable ? 1 : 0,
-        totalCount: 1,
-      });
-    } else {
-      existing.totalCount += 1;
-      if (actionable) existing.pendingCount += 1;
-      if (latestTime > existing.latestTime) {
-        existing.latest = dm;
-        existing.latestTime = latestTime;
-        const isOwnSender = dm.senderAddress.toLowerCase() === userWallet?.toLowerCase();
-        existing.peerName = isOwnSender ? dm.receiverName : dm.senderName;
-        existing.peerRole = isOwnSender ? dm.receiverRole : dm.senderRole;
-        existing.peerProfilePic = isOwnSender ? dm.receiverProfilePic : dm.senderProfilePic;
-      }
-    }
-    return threads;
-  }, new Map<string, {
-    peerAddress: string;
-    peerName: string;
-    peerRole: string | null;
-    peerProfilePic: string | null;
-    latest: DmMessage;
-    latestTime: number;
-    pendingCount: number;
-    totalCount: number;
-  }>()).values()).sort((a, b) => b.latestTime - a.latestTime);
-  const selectedThreadDms = selectedDmPeer
-    ? dms
-        .filter((dm) => getDmPeerAddress(dm, userWallet).toLowerCase() === selectedDmPeer)
-        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-    : [];
-  const activeThread = selectedDmPeer
-    ? dmThreads.find((t) => t.peerAddress.toLowerCase() === selectedDmPeer)
-    : null;
-  const activeThreadLabel = selectedDmPeer ? formatPeerDisplayName(activeThread?.peerName, selectedDmPeer) : "";
-  const isActiveDmMerchant = selectedDmPeer
-    ? activeThread?.peerRole === "ENTERPRISE" ||
-      subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) ||
-      (activeThreadLabel.endsWith(".hq") || activeThreadLabel.endsWith(".biz"))
-    : false;
-  const activeThreadSubscription = selectedDmPeer ? getActiveSubscriptionForMerchant(selectedDmPeer) : null;
-  const isActiveMobileDm = isMobile && activeTab === "inbox" && Boolean(selectedDmPeer);
+
+
+
 
   return (
-    <div className={`relative overflow-x-hidden bg-[#060608] text-white selection:bg-[#ccff00]/30 selection:text-white border-t-4 border-[#ccff00] md:h-[100dvh] md:overflow-hidden ${
+    <div className={`relative overflow-x-hidden bg-[#08080a] text-white selection:bg-[#ccff00]/30 selection:text-black md:h-[100dvh] md:overflow-hidden ${
       isActiveMobileDm ? "h-[100dvh] overflow-hidden" : "min-h-[100dvh]"
     }`}>
       <AnimatedGradientBg variant="dashboard" />
@@ -2917,7 +2991,9 @@ export default function UserDashboard() {
           />
         )}
 
-        <div className={`min-w-0 flex-1 md:h-full ${isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : ""} ${activeTab === "inbox" ? "md:overflow-hidden" : "md:overflow-y-auto"}`}>
+        {/* The wireframe's 14px top slit + 28px inner radius, kept on the existing dark surface
+            so the lime-on-black content palette still reads. */}
+        <div className={`min-w-0 flex-1 md:mt-[14px] md:h-[calc(100vh-14px)] bg-[#0b0b0e] md:rounded-tl-[28px] shadow-[-8px_0_24px_rgba(0,0,0,0.45)] ${isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : ""} ${activeTab === "inbox" ? "md:overflow-hidden" : "md:overflow-y-auto"}`}>
           {/* Mobile headers (only shown on small screens) */}
           {isMobile && (
             <div className="w-full">
@@ -2984,122 +3060,132 @@ export default function UserDashboard() {
               className={isActiveMobileDm ? "h-full min-h-0" : "min-h-0"}
             >
             {activeTab === "home" && (
-              <div className="grid grid-cols-1 gap-7 md:grid-cols-2 items-stretch">
-                {/* Left Column Stack */}
-                <div className="flex flex-col gap-7 md:col-span-1 order-1">
-                  {/* ===== Overview: Connected wallet balance (mockup) ===== */}
-                  <div className="flex items-stretch gap-3">
-                    <section className="liquid-glass border border-white/5 bg-black/40 text-white flex-1 min-w-0 rounded-[28px] px-6 py-5 shadow-2xl relative overflow-hidden backdrop-blur-xl flex flex-col justify-center">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ccff00]/85">Connected Wallet Balance</span>
+              /* Wireframe layout: a 46fr/54fr two-column grid (left stack + tall panel) with a
+                 full-width ledger beneath. Collapses to one column at <1024px, per the mock. */
+              <div className="flex flex-col gap-5">
+                <div className="grid grid-cols-1 gap-5 lg:grid-cols-[46fr_54fr]">
+                  {/* LEFT COLUMN */}
+                  <div className="flex min-w-0 flex-col gap-4">
+                    {/* ===== Wallet balance: figures left, stacked circle actions right ===== */}
+                    <section className="liquid-glass relative flex items-center justify-between gap-4 overflow-hidden rounded-[20px] border border-white/5 bg-black/40 px-6 py-[22px] text-white shadow-2xl backdrop-blur-xl">
+                      <div className="flex min-w-0 flex-col">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[10px] font-black uppercase tracking-[0.08em] text-[#ccff00]/85">Wallet Balance</span>
+                          <button
+                            type="button"
+                            onClick={toggleBalanceVisible}
+                            className="text-white/40 hover:text-white transition-colors"
+                            aria-label="Toggle balance visibility"
+                          >
+                            {balanceVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleManualRefreshBalances}
+                            disabled={isRefreshingBalances}
+                            className="text-white/40 hover:text-white disabled:opacity-50 transition-all"
+                            title="Refresh balance"
+                          >
+                            <RefreshCw className={`h-3 w-3 ${isRefreshingBalances ? "animate-spin" : ""}`} />
+                          </button>
+                        </div>
+                        <div className="mt-1.5 truncate text-[32px] font-extrabold leading-none tracking-[-0.8px] text-white select-all sm:text-[38px]">
+                          {balanceVisible ? `$${formatHeadlineAmount(walletBalance)}` : "••••••"}
+                        </div>
+                        <p className="mt-1.5 font-mono text-xs font-bold text-white/55">
+                          {balanceVisible ? `${detectedCurrency.symbol}${formatHeadlineAmount(localBalance)}` : "••••"}
+                        </p>
+                      </div>
+
+                      <div className="flex shrink-0 flex-col gap-2.5">
                         <button
                           type="button"
-                          onClick={toggleBalanceVisible}
-                          className="text-white/40 hover:text-white transition-colors"
-                          aria-label="Toggle balance visibility"
+                          onClick={() => { setSelectedDmPeer(null); setActiveTab("batch"); }}
+                          className="grid h-[38px] w-[38px] place-items-center rounded-full border-[1.5px] border-[#ccff00]/50 text-[#ccff00] transition-all hover:scale-105 hover:bg-[#ccff00] hover:text-black active:scale-95"
+                          aria-label="Send"
                         >
-                          {balanceVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                          <ArrowUpRight className="h-4 w-4" />
                         </button>
                         <button
                           type="button"
-                          onClick={handleManualRefreshBalances}
-                          disabled={isRefreshingBalances}
-                          className="text-white/40 hover:text-white disabled:opacity-50 transition-all"
-                          title="Refresh balance"
+                          onClick={() => setReceiveOpen(true)}
+                          className="grid h-[38px] w-[38px] place-items-center rounded-full border-[1.5px] border-[#ccff00]/50 text-[#ccff00] transition-all hover:scale-105 hover:bg-[#ccff00] hover:text-black active:scale-95"
+                          aria-label="Deposit"
                         >
-                          <RefreshCw className={`h-3 w-3 ${isRefreshingBalances ? "animate-spin" : ""}`} />
+                          <ArrowDown className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setScannerOpen(true)}
+                          className="md:hidden grid h-[38px] w-[38px] place-items-center rounded-full border-[1.5px] border-[#ccff00]/50 text-[#ccff00] transition-all hover:scale-105 hover:bg-[#ccff00] hover:text-black active:scale-95"
+                          aria-label="Scan QR"
+                        >
+                          <QrCode className="h-4 w-4" />
                         </button>
                       </div>
-                      <div className="mt-3 text-[52px] leading-none sm:text-6xl font-extrabold tracking-tight text-white select-all">
-                        {balanceVisible ? `$${formatHeadlineAmount(walletBalance)}` : "••••••"}
-                      </div>
-                      <p className="mt-3 text-xl sm:text-2xl font-extrabold text-white/55">
-                        {balanceVisible ? `${detectedCurrency.symbol}${formatHeadlineAmount(localBalance)}` : "••••"}
-                      </p>
                     </section>
 
-                    <div className="flex flex-col justify-start gap-3 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => { setSelectedDmPeer(null); setActiveTab("batch"); }}
-                        className="grid h-14 w-14 place-items-center rounded-full bg-[#171717] text-[#ccff00] border border-white/10 shadow-lg hover:scale-105 active:scale-95 transition-transform"
-                        aria-label="Send"
-                      >
-                        <ArrowUpRight className="h-6 w-6" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setReceiveOpen(true)}
-                        className="grid h-14 w-14 place-items-center rounded-full bg-[#171717] text-[#ccff00] border border-white/10 shadow-lg hover:scale-105 active:scale-95 transition-transform"
-                        aria-label="Deposit"
-                      >
-                        <ArrowDown className="h-6 w-6" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setScannerOpen(true)}
-                        className="md:hidden grid h-14 w-14 place-items-center rounded-full bg-[#171717] text-[#ccff00] border border-white/10 shadow-lg hover:scale-105 active:scale-95 transition-transform"
-                        aria-label="Scan QR"
-                      >
-                        <QrCode className="h-6 w-6" />
-                      </button>
+                    {/* ===== Two equal square cards ===== */}
+                    <div className="grid grid-cols-2 gap-3.5">
+                      <div className="liquid-glass flex min-h-[120px] flex-col justify-between rounded-[18px] border border-white/5 bg-black/40 p-[18px] text-white shadow-xl backdrop-blur-xl">
+                        <div>
+                          <p className="font-mono text-[10px] font-black uppercase tracking-[0.06em] text-white/50">Spending past (USDC)</p>
+                          <p className="mt-2 text-[11px] font-black text-white/40">30D</p>
+                          <p className="mt-0.5 text-xl font-extrabold tracking-tight text-white">
+                            {balanceVisible ? `$${formatHeadlineAmount(monthlySpendUsdc)}` : "••••"}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => { setActiveTab("dns"); setTimeout(() => setAccountSubView("spend-analysis"), 50); }}
+                          className="mt-2 flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[#ccff00] hover:opacity-70 transition-opacity"
+                        >
+                          Manage Spending <ArrowUpRight className="h-3 w-3" />
+                        </button>
+                      </div>
+                      <div className="liquid-glass flex min-h-[120px] flex-col justify-between rounded-[18px] border border-white/5 bg-black/40 p-[18px] text-white shadow-xl backdrop-blur-xl">
+                        <div>
+                          <p className="font-mono text-[10px] font-black uppercase tracking-[0.06em] text-white/50">Total Commit (LOCKED)</p>
+                          <p className="mt-2 text-xl font-extrabold tracking-tight text-white">
+                            {balanceVisible ? `$${formatHeadlineAmount(totalCommitLockedUsdc)}` : "••••"}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => openVaultCommit()}
+                          className="mt-2 flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[#ccff00] hover:opacity-70 transition-opacity"
+                        >
+                          Manage Commits <ArrowUpRight className="h-3 w-3" />
+                        </button>
+                      </div>
                     </div>
                   </div>
 
-                  {/* ===== Overview: Spending + Total commit ===== */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="liquid-glass rounded-[24px] p-5 border border-white/5 bg-black/40 text-white shadow-xl flex flex-col justify-between min-h-[150px] backdrop-blur-xl">
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/50">Spending past (USDC)</p>
-                        <p className="mt-3 text-[11px] font-black text-white/40">30D</p>
-                        <p className="mt-1 text-3xl font-extrabold tracking-tight text-white">
-                          {balanceVisible ? `$${formatHeadlineAmount(monthlySpendUsdc)}` : "••••"}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => { setActiveTab("dns"); setTimeout(() => setAccountSubView("spend-analysis"), 50); }}
-                        className="mt-3 flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-[#ccff00] hover:opacity-70 transition-opacity"
-                      >
-                        Manage Spending <ArrowUpRight className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                    <div className="liquid-glass rounded-[24px] p-5 border border-white/5 bg-black/40 text-white shadow-xl flex flex-col justify-between min-h-[150px] backdrop-blur-xl">
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/50">Total Commit (LOCKED)</p>
-                        <p className="mt-3 text-3xl font-extrabold tracking-tight text-white">
-                          {balanceVisible ? `$${formatHeadlineAmount(totalCommitLockedUsdc)}` : "••••"}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => openVaultCommit()}
-                        className="mt-3 flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-[#ccff00] hover:opacity-70 transition-opacity"
-                      >
-                        Manage Commits <ArrowUpRight className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right Column: Active Subscriptions */}
-                <div className="hidden md:block md:col-span-1 md:h-[330px] order-3 md:order-2">
-                  <section className="h-full rounded-3xl border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl liquid-glass sm:p-8 flex flex-col">
-                    <div className="mb-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between shrink-0">
-                      <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions</h2>
-                      <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00] border border-[#ccff00]/20 w-fit">{subscriptions.filter((s) => s.status === "ACTIVE" && !s.cancelAtPeriodEnd).length} active</span>
+                  {/* RIGHT TALL PANEL */}
+                  <section className="liquid-glass flex min-h-[260px] flex-col rounded-[20px] border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl">
+                    <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
+                      <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions &amp; Commits</h2>
+                      <span className="w-fit rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00]">
+                        {subscriptions.filter((s) => s.status === "ACTIVE" && !s.cancelAtPeriodEnd).length} active
+                      </span>
                     </div>
 
-                    <div className="flex-1 min-h-0 overflow-y-auto pr-1 scrollbar-thin">
+                    <div className="min-h-0 flex-1 overflow-y-auto pr-1 scrollbar-thin">
                       {sortedSubscriptions.length === 0 ? (
-                        <div className="flex h-56 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center">
+                        <div className="flex h-full min-h-[180px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center">
                           <CreditCard className="mb-3 h-8 w-8 text-white/25" />
                           <p className="text-xs text-white/45">No active subscription streams yet.</p>
                         </div>
                       ) : (
                         <div className="space-y-3">
                           {sortedSubscriptions.map((sub) => (
-                            <SubscriptionRow key={sub.subscriptionId} subscription={sub} balanceVisible={balanceVisible} />
+                            <SubscriptionRow
+                              key={sub.subscriptionId}
+                              subscription={sub}
+                              balanceVisible={balanceVisible}
+                              onResume={handleResumeSubscription}
+                              resuming={resumingSubscriptionId === sub.subscriptionId}
+                            />
                           ))}
                         </div>
                       )}
@@ -3107,71 +3193,95 @@ export default function UserDashboard() {
                   </section>
                 </div>
 
-                {/* ===== Overview: Recent transactions (spanning full width on desktop) ===== */}
-                <div className="col-span-1 md:col-span-2 order-2 md:order-3">
-                  <section className="liquid-glass rounded-[28px] border border-white/5 bg-black/40 p-5 text-white shadow-2xl backdrop-blur-xl">
-                    <div className="flex items-center justify-between">
-                      <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-white/70">Recent Transactions</h2>
-                      <Link
-                        href="/dashboard/user/transactions"
-                        className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-white/45 hover:text-[#ccff00] transition-colors"
-                      >
-                        View All <ArrowUpRight className="h-3 w-3" />
-                      </Link>
-                    </div>
+                {/* ===== Bottom full-width panel ===== */}
+                <section className="liquid-glass rounded-[20px] border border-white/5 bg-black/40 p-5 text-white shadow-2xl backdrop-blur-xl">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-white/70">Direct Messages &amp; System Activity Ledger</h2>
+                    <Link
+                      href="/dashboard/user/transactions"
+                      className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-white/45 hover:text-[#ccff00] transition-colors"
+                    >
+                      View All <ArrowUpRight className="h-3 w-3" />
+                    </Link>
+                  </div>
 
-                    <div className="mt-4 flex gap-2">
-                      {([["all", "All"], ["recurring", "Recurring"], ["one-time", "One Time"]] as const).map(([value, label]) => (
+                  {/* Newest DM per thread — the "direct messages" half of the ledger. */}
+                  {dmThreads.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      {dmThreads.slice(0, 2).map((thread) => (
                         <button
-                          key={value}
+                          key={thread.peerAddress}
                           type="button"
-                          onClick={() => setTxFilter(value)}
-                          className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all ${
-                            txFilter === value
-                              ? "bg-[#ccff00] text-black"
-                              : "bg-white/[0.06] text-white/50 hover:bg-white/10"
-                          }`}
+                          onClick={() => { setSelectedDmPeer(thread.peerAddress); setActiveTab("inbox"); }}
+                          className="w-full rounded-2xl border border-white/5 bg-black/20 p-3.5 text-left transition hover:border-[#ccff00]/20 hover:bg-black/30"
                         >
-                          {label}
+                          <div className="flex items-center justify-between gap-3 font-mono text-[10px]">
+                            <span className="truncate font-bold text-white">
+                              {formatPeerDisplayName(thread.peerName, thread.peerAddress)}
+                            </span>
+                            <span className="shrink-0 text-white/40">
+                              {new Date(thread.latestTime).toLocaleString()}
+                            </span>
+                          </div>
+                          <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-white/55">
+                            {shortenWalletsInText(thread.latest.description || thread.latest.title || "Message")}
+                          </p>
                         </button>
                       ))}
                     </div>
+                  )}
 
-                    <div className="mt-4 divide-y divide-white/[0.06]">
-                      {filteredTransactions.length === 0 ? (
-                        <div className="flex h-24 items-center justify-center text-center text-xs text-white/40">
-                          No {txFilter === "all" ? "" : txFilter === "recurring" ? "recurring " : "one-time "}transactions yet.
-                        </div>
-                      ) : (
-                        filteredTransactions.slice(0, 6).map((tx) => (
-                          <div key={tx.id} className="flex items-center gap-3 py-3">
-                            <div className="h-10 w-10 shrink-0 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center overflow-hidden">
-                              {tx.pic ? (
-                                <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
-                              ) : (
-                                <span className="text-sm font-black text-[#ccff00]">{(tx.name || "?").charAt(0).toUpperCase()}</span>
-                              )}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-black text-white">{tx.name}</p>
-                              <p className="truncate text-[10px] font-bold text-white/40">
-                                {tx.detail} • {new Date(tx.time).toLocaleString()}
-                              </p>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <span className={`block text-xs font-black ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>
-                                {balanceVisible ? tx.amountLabel : "••••"}
-                              </span>
-                              <span className="block text-[9px] font-bold text-[#ccff00] mt-0.5">
-                                {balanceVisible ? tx.localAmountLabel : "••••"}
-                              </span>
-                            </div>
+                  <div className="mt-4 flex gap-2">
+                    {([["all", "All"], ["recurring", "Recurring"], ["one-time", "One Time"]] as const).map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setTxFilter(value)}
+                        className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all ${
+                          txFilter === value
+                            ? "bg-[#ccff00] text-black"
+                            : "bg-white/[0.06] text-white/50 hover:bg-white/10"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 divide-y divide-white/[0.06]">
+                    {filteredTransactions.length === 0 ? (
+                      <div className="flex h-24 items-center justify-center text-center text-xs text-white/40">
+                        No {txFilter === "all" ? "" : txFilter === "recurring" ? "recurring " : "one-time "}transactions yet.
+                      </div>
+                    ) : (
+                      filteredTransactions.slice(0, 6).map((tx) => (
+                        <div key={tx.id} className="flex items-center gap-3 py-3">
+                          <div className="h-10 w-10 shrink-0 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center overflow-hidden">
+                            {tx.pic ? (
+                              <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
+                            ) : (
+                              <span className="text-sm font-black text-[#ccff00]">{(tx.name || "?").charAt(0).toUpperCase()}</span>
+                            )}
                           </div>
-                        ))
-                      )}
-                    </div>
-                  </section>
-                </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-black text-white">{tx.name}</p>
+                            <p className="truncate text-[10px] font-bold text-white/40">
+                              {tx.detail} • {new Date(tx.time).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span className={`block text-xs font-black ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>
+                              {balanceVisible ? tx.amountLabel : "••••"}
+                            </span>
+                            <span className="block text-[9px] font-bold text-[#ccff00] mt-0.5">
+                              {balanceVisible ? tx.localAmountLabel : "••••"}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </section>
               </div>
             )}
 
@@ -3431,7 +3541,7 @@ export default function UserDashboard() {
                             </div>
 
                             {/* Message bubbles pane */}
-                            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain will-change-transform translate-z-0 pr-1 space-y-4">
+                            <div ref={desktopDmScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain will-change-transform translate-z-0 pr-1 space-y-4">
                               <div className="mx-auto w-fit max-w-full rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-5 py-2 text-center text-[10px] font-black uppercase tracking-[0.16em] text-[#ccff00] backdrop-blur-md shadow-md mt-2">
                                 {isActiveDmMerchant
                                   ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
@@ -3637,211 +3747,18 @@ export default function UserDashboard() {
             )}
 
             {activeTab === "batch" && (
-              <section
-                className="space-y-5 max-w-lg pb-6 lg:pb-0"
-                {...sendSwipe}
-              >
+              <section className="space-y-5 max-w-lg pb-6 lg:pb-0">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                  <SectionTitle title="Send Funds" subtitle="Transfer USDC to another user or execute a batch payout." />
-                  
-                  {/* Mode Selector */}
-                  <div className="relative flex gap-1 rounded-xl bg-black/40 p-1 border border-white/5 shrink-0 w-full sm:w-auto justify-center">
-                    <button
-                      type="button"
-                      onClick={() => setSendMode("single")}
-                      className={`relative flex-1 sm:flex-initial px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg z-10 transition-colors duration-200 ${
-                        sendMode === "single" ? "text-black" : "text-white/50 hover:text-white/80"
-                      }`}
-                    >
-                      {sendMode === "single" && (
-                        <motion.div
-                          layoutId="sendActivePill"
-                          className="absolute inset-0 bg-[#ccff00] rounded-lg -z-10 shadow-md"
-                          transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                        />
-                      )}
-                      <span className="relative z-20">Single</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSendMode("batch")}
-                      className={`relative flex-1 sm:flex-initial px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg z-10 transition-colors duration-200 ${
-                        sendMode === "batch" ? "text-black" : "text-white/50 hover:text-white/80"
-                      }`}
-                    >
-                      {sendMode === "batch" && (
-                        <motion.div
-                          layoutId="sendActivePill"
-                          className="absolute inset-0 bg-[#ccff00] rounded-lg -z-10 shadow-md"
-                          transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                        />
-                      )}
-                      <span className="relative z-20">Batch</span>
-                    </button>
-                  </div>
+                  <SectionTitle title="Batch Payouts" subtitle="Pay many recipients in one run, or send to just one." />
+
+                  <button
+                    type="button"
+                    onClick={() => setSendSingleModalOpen(true)}
+                    className="flex w-full sm:w-auto shrink-0 items-center justify-center gap-2 rounded-xl border border-[#ccff00]/30 bg-[#ccff00]/10 px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-[#ccff00] transition hover:border-[#ccff00]/50 hover:bg-[#ccff00]/20"
+                  >
+                    <Send className="h-3.5 w-3.5" /> Single Send
+                  </button>
                 </div>
-                <div className="overflow-hidden w-full relative">
-                  <AnimatePresence mode="wait" initial={false} custom={sendDirection}>
-                    <motion.div
-                      key={sendMode}
-                      custom={sendDirection}
-                      variants={{
-                        enter: (dir: number) => ({
-                          x: dir > 0 ? "100%" : "-100%",
-                          opacity: 0,
-                        }),
-                        center: {
-                          x: 0,
-                          opacity: 1,
-                        },
-                        exit: (dir: number) => ({
-                          x: dir < 0 ? "100%" : "-100%",
-                          opacity: 0,
-                        }),
-                      }}
-                      initial="enter"
-                      animate="center"
-                      exit="exit"
-                      transition={{
-                        x: { type: "spring", stiffness: 300, damping: 30 },
-                        opacity: { duration: 0.2 },
-                      }}
-                      className="w-full"
-                    >
-                      {sendMode === "single" ? (
-                  <form onSubmit={handleSingleSend} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
-                    <Field label="Recipient Wallet Address or .sub Name">
-                      <div className="relative flex items-center gap-2">
-                        <div className="relative flex-1">
-                          <input
-                            value={singleRecipient}
-                            onChange={(event) => setSingleRecipient(event.target.value)}
-                            placeholder="alice.sub or 0x..."
-                            className="subscript-input pr-10"
-                            required
-                          />
-                          {singleResolving ? (
-                            <Loader2 className="absolute right-3.5 top-3.5 w-4 h-4 text-[#ccff00] animate-spin" />
-                          ) : (
-                            <User className="absolute right-3.5 top-3.5 w-4 h-4 text-white/30" />
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setQrTargetIndex(null);
-                            setQrScannerOpen(true);
-                          }}
-                          title="Scan QR Code"
-                          className="flex md:hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:border-[#ccff00]/40 hover:bg-[#ccff00]/10 hover:text-[#ccff00] transition"
-                        >
-                          <QrCode className="h-5 w-5 text-[#ccff00]" />
-                        </button>
-                      </div>
-                    </Field>
-
-                    {/* Resolved feedback card */}
-                    {singleResolved && (
-                      <div className={`rounded-2xl border p-4 text-xs flex items-center justify-between transition-all duration-300 ${
-                        singleResolved.address 
-                          ? "bg-[#ccff00]/5 border-[#ccff00]/20 text-white/80" 
-                          : "bg-red-500/5 border-red-500/20 text-red-400"
-                      }`}>
-                        <div className="flex items-center gap-3 min-w-0">
-                          {singleResolved.address && (
-                            <div className="h-9 w-9 flex items-center justify-center overflow-hidden rounded-full border border-white/10 bg-black/30 shrink-0">
-                              {singleResolved.profilePic ? (
-                                <img src={singleResolved.profilePic} alt="Resolved avatar" className="h-full w-full object-cover" />
-                              ) : (
-                                <User className="h-4 h-4 text-white/40" />
-                              )}
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            {singleResolved.address ? (
-                              <>
-                                <p className="font-bold text-white uppercase tracking-wider text-[9px] flex items-center gap-1.5">
-                                  {singleResolved.alias ? `Resolved ${singleResolved.alias}` : "Address Validated"}
-                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                </p>
-                                <p className="font-mono text-[10px] text-white/50 truncate mt-0.5">{singleResolved.address}</p>
-                              </>
-                            ) : (
-                              <>
-                                <p className="font-bold uppercase tracking-wider text-[9px]">Resolution Error</p>
-                                <p className="text-[10px] text-white/50 mt-0.5">Could not find address alias matching "{singleResolved.alias}"</p>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <Field label="USDC Amount">
-                      <div className="relative flex items-center">
-                        <input
-                          value={singleAmount}
-                          onChange={(event) => setSingleAmount(event.target.value)}
-                          placeholder="5.00"
-                          inputMode="decimal"
-                          className="subscript-input pr-16 font-mono"
-                          required
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (walletBalance > 0) {
-                              setSingleAmount(walletBalance.toString());
-                            }
-                          }}
-                          className="absolute right-2.5 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-lg bg-[#ccff00]/10 text-[#ccff00] hover:bg-[#ccff00]/20 border border-[#ccff00]/30 transition z-10"
-                        >
-                          Max
-                        </button>
-                      </div>
-                    </Field>
-
-                    <BalanceRoutingNotice
-                      amount={singleAmount}
-                      walletBalance={walletBalance}
-                      sepoliaUsdc={sepoliaUsdc}
-                    />
-
-                    {singleSendStatus && (
-                      <p className={`rounded-2xl border p-3 text-[11px] leading-relaxed ${
-                        singleSendStatus.startsWith("Success") 
-                          ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" 
-                          : "bg-red-500/10 border-red-500/20 text-red-400"
-                      }`}>
-                        {singleSendStatus}
-                      </p>
-                    )}
-
-                    {singleSelfSend && (
-                      <div className="rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-[11px] leading-relaxed text-red-300">
-                        This is your connected wallet address. Enter another recipient before sending.
-                      </div>
-                    )}
-
-                    <button
-                      type="submit"
-                      disabled={singleSendLoading || !singleResolved?.address || singleSelfSend}
-                      className={`w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] ${
-                        singleSendLoading ? "opacity-60 cursor-not-allowed" : ""
-                      }`}
-                    >
-                      {singleSendLoading ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" /> Sending...
-                        </>
-                      ) : (
-                        <>
-                          <Send className="h-4 w-4" /> Send USDC
-                        </>
-                      )}
-                    </button>
-                  </form>
-                ) : (
                   <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
                     {batchRows.map((row, index) => (
                       <div key={index} className="rounded-3xl border border-white/5 bg-black/20 p-4 space-y-3 relative">
@@ -4003,10 +3920,6 @@ export default function UserDashboard() {
                       )}
                     </button>
                   </div>
-                )}
-                    </motion.div>
-                  </AnimatePresence>
-                </div>
               </section>
             )}
 
@@ -4158,7 +4071,7 @@ export default function UserDashboard() {
                           </div>
                           <div>
                             <span className="block text-xs font-bold text-white uppercase tracking-wide">Support</span>
-                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Talk to Us</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Support</span>
                           </div>
                         </div>
                         <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
@@ -5785,6 +5698,35 @@ export default function UserDashboard() {
         title={qrTargetIndex !== null ? `Scan QR for Recipient #${qrTargetIndex + 1}` : "Scan Recipient QR Code"}
       />
 
+      {/* Single Send is a modal now; the Send tab body belongs to Batch Payouts. The routing
+          notice is passed down rather than re-derived so Arc/CCTP rules live in one place. */}
+      <SendSingleModal
+        open={sendSingleModalOpen}
+        onClose={() => setSendSingleModalOpen(false)}
+        onSubmit={handleSingleSend}
+        recipient={singleRecipient}
+        onRecipientChange={setSingleRecipient}
+        amount={singleAmount}
+        onAmountChange={setSingleAmount}
+        resolving={singleResolving}
+        resolved={singleResolved}
+        selfSend={singleSelfSend}
+        loading={singleSendLoading}
+        status={singleSendStatus}
+        walletBalance={walletBalance}
+        onScanQr={() => {
+          setQrTargetIndex(null);
+          setQrScannerOpen(true);
+        }}
+        routingNotice={
+          <BalanceRoutingNotice
+            amount={singleAmount}
+            walletBalance={walletBalance}
+            sepoliaUsdc={sepoliaUsdc}
+          />
+        }
+      />
+
       {/* Blocking email capture — an email is required for receipts and notifications.
           Shown for accounts that don't have one yet (e.g. wallet-onboarded payers). */}
       {!loading && userWallet && !userEmail && (
@@ -5929,22 +5871,32 @@ function UserDesktopSidebar({
   onTabChange: (tab: UserTab) => void;
   onLogout: () => void;
 }) {
-  return (
-    <aside className="hidden md:flex h-full max-h-screen w-20 lg:w-72 shrink-0 flex-col justify-between overflow-y-auto overscroll-contain border-r border-white/5 bg-black/45 p-4 lg:p-5 backdrop-blur-2xl">
-      <div className="space-y-8">
-        <div className="flex items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-3xl border border-white/5 bg-white/[0.03] p-2.5 lg:px-4 lg:py-3">
-          <img
-            src="/logo.png"
-            alt="SubScript Logo"
-            className="h-9 w-9 shrink-0 object-contain drop-shadow-[0_0_10px_rgba(0,210,180,0.35)]"
-          />
-          <div className="hidden lg:block min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#ccff00]">SubScript</p>
-            <p className="truncate text-xs font-bold text-white/55">User account</p>
-          </div>
-        </div>
+  const [showPromo, setShowPromo] = useState(true);
 
-        <nav className="space-y-2" aria-label="User dashboard navigation">
+  return (
+    <aside className="hidden md:flex h-full max-h-screen w-20 lg:w-64 shrink-0 flex-col justify-between overflow-y-auto overscroll-contain bg-[#08080a] p-4 lg:p-5 text-white/90 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="space-y-6">
+        {/* Profile pill — wireframe places identity top-left above the nav. */}
+        <button
+          type="button"
+          onClick={() => onTabChange("dns")}
+          className="inline-flex items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1.5 shadow-sm transition hover:border-[#ccff00]/30 hover:bg-white/10 text-left max-w-full"
+          title={registeredDomain || "Your account"}
+        >
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#ccff00] text-[11px] font-bold text-black">
+            {profilePic ? (
+              <img src={profilePic} alt="" className="h-full w-full object-cover" />
+            ) : (
+              registeredDomain ? registeredDomain[0].toUpperCase() : "S"
+            )}
+          </div>
+          <span className="hidden lg:inline truncate text-[11px] font-bold font-mono text-white">
+            {registeredDomain || formatAddress(userWallet) || "Your account"}
+          </span>
+        </button>
+
+        {/* Navigation items with context-matching icons */}
+        <nav className="space-y-1.5" aria-label="User dashboard navigation">
           {userDesktopTabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -5953,21 +5905,21 @@ function UserDesktopSidebar({
                 key={tab.id}
                 type="button"
                 onClick={() => onTabChange(tab.id)}
-                className={`group flex w-full items-center justify-center lg:justify-between rounded-full lg:rounded-2xl border p-3.5 lg:px-4 lg:py-3.5 text-left text-xs font-black uppercase tracking-[0.13em] transition-all relative ${
+                /* The active pill bleeds right into the content panel (negative margin + extra
+                   right padding), which is what makes the wireframe's tab-into-page seam work. */
+                className={`group flex w-full items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-l-full lg:rounded-r-none py-3 px-3.5 lg:px-4 text-left text-xs font-semibold transition-all relative ${
                   isActive
-                    ? "border-[#ccff00]/30 bg-[#ccff00]/10 text-white shadow-[0_0_28px_rgba(204,255,0,0.08)]"
-                    : "border-white/5 bg-white/[0.015] text-white/45 hover:border-white/10 hover:bg-white/[0.04] hover:text-white"
+                    ? "bg-[#0b0b0e] text-[#ccff00] font-bold lg:-mr-5 lg:pr-7"
+                    : "text-white/70 hover:bg-white/[0.06] hover:text-white"
                 }`}
                 title={tab.label}
               >
-                <span className="flex min-w-0 items-center justify-center lg:justify-start gap-3">
-                  <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-[#ccff00]" : "text-white/35 group-hover:text-white/70"}`} />
-                  <span className="hidden lg:inline truncate">{tab.label}</span>
-                </span>
+                <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? "text-[#ccff00]" : "text-white/60 group-hover:text-white"}`} />
+                <span className="hidden lg:inline truncate">{tab.label}</span>
                 {tab.id === "inbox" && pendingDmCount > 0 && (
-                  <span className={`lg:ml-3 flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[9px] font-black ${
+                  <span className={`ml-auto flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[9px] font-bold ${
                     isActive ? "bg-[#ccff00] text-black" : "bg-red-500 text-white"
-                  } ${isActive ? "" : "absolute -top-1 -right-1 lg:static"}`}>
+                  }`}>
                     {pendingDmCount > 9 ? "9+" : pendingDmCount}
                   </span>
                 )}
@@ -5977,47 +5929,57 @@ function UserDesktopSidebar({
         </nav>
       </div>
 
-      <div className="space-y-4 flex flex-col items-center lg:items-stretch">
-        <div className="hidden lg:block rounded-3xl border border-[#ccff00]/15 bg-[#ccff00]/[0.04] p-4">
-          <p className="text-[9px] font-black uppercase tracking-[0.18em] text-white/35">Arc USDC Balance</p>
-          <p className="mt-2 text-2xl font-black tracking-tight text-white">${walletBalance.toLocaleString("en-US", { maximumFractionDigits: 2 })}</p>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => onTabChange("dns")}
-          className="flex items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-2xl border border-white/5 bg-black/25 p-3 lg:px-3 lg:py-3 text-left transition hover:border-[#ccff00]/20 hover:bg-[#ccff00]/5"
-          title={registeredDomain || "Profile & DNS"}
-        >
-          <Avatar profilePic={profilePic} size="xs" />
-          <div className="hidden lg:block min-w-0">
-            <p className="truncate text-[11px] font-black uppercase tracking-[0.1em] text-white">
-              {registeredDomain || "Profile & DNS"}
-            </p>
-            <p className="mt-0.5 truncate text-[10px] font-mono text-white/35">{formatAddress(userWallet)}</p>
+      <div className="space-y-4 mt-6">
+        {/* Promo Card from Image */}
+        {showPromo && (
+          <div className="hidden lg:block rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/[0.06] p-3.5 text-white shadow-sm relative">
+            <div className="flex items-center justify-between mb-2">
+              <span className="rounded bg-[#ccff00] px-2 py-0.5 text-[10px] font-bold text-black">New</span>
+              <button
+                type="button"
+                onClick={() => setShowPromo(false)}
+                className="text-xs font-bold text-white/50 hover:text-white"
+              >
+                x
+              </button>
+            </div>
+            <p className="text-xs font-extrabold text-white leading-tight">New Campaign Unlocked</p>
+            <p className="mt-1 text-[10px] text-white/50 leading-snug">Run your own affiliate program with zero overhead</p>
+            <button
+              type="button"
+              onClick={() => onTabChange("referrals")}
+              className="mt-2.5 rounded-md bg-[#ccff00] px-3 py-1 text-[10px] font-bold text-black transition hover:bg-[#ccff00]/80"
+            >
+              Try it
+            </button>
           </div>
-        </button>
+        )}
 
-        <a
-          href="/support"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex w-full items-center justify-center gap-2 rounded-full lg:rounded-2xl border border-white/5 bg-white/[0.02] p-3.5 lg:px-4 lg:py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/45 transition hover:border-[#00d2b4]/25 hover:bg-[#00d2b4]/10 hover:text-[#00d2b4]"
-          title="Help & Support"
-        >
-          <HelpCircle className="h-4 w-4 shrink-0" />
-          <span className="hidden lg:inline">Support</span>
-        </a>
+        {/* Bottom Nav Links */}
+        <div className="space-y-1">
+          <button
+            type="button"
+            onClick={() => onTabChange("dns")}
+            className={`flex w-full items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-l-full lg:rounded-r-none py-2.5 px-3.5 lg:px-4 text-xs font-medium text-white/70 transition hover:bg-white/[0.06] hover:text-white ${
+              activeTab === "dns" ? "bg-[#0b0b0e] text-[#ccff00] font-bold lg:-mr-5 lg:pr-7" : ""
+            }`}
+            title="Settings"
+          >
+            <Sliders className="h-4.5 w-4.5 shrink-0" />
+            <span className="hidden lg:inline truncate">Settings</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={onLogout}
-          className="flex w-full items-center justify-center gap-2 rounded-full lg:rounded-2xl border border-white/5 bg-white/[0.02] p-3.5 lg:px-4 lg:py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/45 transition hover:border-red-500/25 hover:bg-red-500/10 hover:text-red-300"
-          title="Logout"
-        >
-          <LogOut className="h-4 w-4 shrink-0" />
-          <span className="hidden lg:inline">Logout</span>
-        </button>
+          <a
+            href="/support"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex w-full items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-l-full lg:rounded-r-none py-2.5 px-3.5 lg:px-4 text-xs font-medium text-white/70 transition hover:bg-white/[0.06] hover:text-white"
+            title="Help Center"
+          >
+            <HelpCircle className="h-4.5 w-4.5 shrink-0" />
+            <span className="hidden lg:inline truncate">Help Center</span>
+          </a>
+        </div>
       </div>
     </aside>
   );
@@ -6168,7 +6130,17 @@ function RoundAction({ icon: Icon, label, onClick }: { icon: LucideIcon; label: 
   );
 }
 
-function SubscriptionRow({ subscription, balanceVisible }: { subscription: Subscription; balanceVisible: boolean }) {
+function SubscriptionRow({
+  subscription,
+  balanceVisible,
+  onResume,
+  resuming,
+}: {
+  subscription: Subscription;
+  balanceVisible: boolean;
+  onResume?: (subscription: Subscription) => void;
+  resuming?: boolean;
+}) {
   const intervalDays = Math.max(1, Math.round(Number(subscription.billingIntervalSeconds) / 86400));
   return (
     <div className="flex items-center justify-between rounded-2xl border border-white/5 bg-black/20 hover:bg-black/35 hover:border-white/10 transition px-4 py-3.5">
@@ -6184,6 +6156,23 @@ function SubscriptionRow({ subscription, balanceVisible }: { subscription: Subsc
           <p className={`mt-1 text-[10px] ${subscription.cancelAtPeriodEnd ? "font-bold text-amber-400" : "text-white/40"}`}>
             {subscription.cancelAtPeriodEnd ? "Canceled · Access active until period end" : `Renews every ${intervalDays} days`}
           </p>
+          {/* Inline recovery while the paid period is still running — no need to open the DM. */}
+          {subscription.cancelAtPeriodEnd && onResume && (
+            <motion.button
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              whileHover={{ scale: 1.06 }}
+              whileTap={{ scale: 0.92 }}
+              transition={{ type: "spring", stiffness: 450, damping: 32 }}
+              type="button"
+              onClick={() => onResume(subscription)}
+              disabled={resuming}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-[#ccff00]/30 bg-[#ccff00]/10 px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition hover:border-[#ccff00]/50 hover:bg-[#ccff00]/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {resuming ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+              {resuming ? "Resuming..." : "Resume Subscription"}
+            </motion.button>
+          )}
         </div>
       </div>
       <div className="text-right">
@@ -6244,7 +6233,7 @@ function DmThreadSelect({
                 key={thread.peerAddress}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.96 }}
-                transition={{ type: "spring", stiffness: 450, damping: 16 }}
+                transition={{ type: "spring", stiffness: 450, damping: 32 }}
                 type="button"
                 onClick={() => onSelect(thread.peerAddress)}
                 className={`flex w-full items-center gap-4 rounded-3xl border p-4 text-left shadow-xl transition-colors duration-300 ${
@@ -6382,11 +6371,11 @@ function DmBubble({
   }
   const hasActionMenu = actionItems.length > 1;
 
-  /* iMessage-style entrance: bubbles pop in from their own corner with a soft
-     spring overshoot. Outgoing messages get a touch more bounce, like a sent text. */
+  /* Crisp pop entrance: bubbles scale in from their own corner and settle immediately.
+     Damping is kept near-critical so they land clean instead of rubber-banding. */
   const bubbleSpring = incoming
-    ? { type: "spring" as const, stiffness: 380, damping: 14, mass: 0.8 }
-    : { type: "spring" as const, stiffness: 420, damping: 12, mass: 0.85 };
+    ? { type: "spring" as const, stiffness: 420, damping: 30 }
+    : { type: "spring" as const, stiffness: 450, damping: 32 };
   const bubbleOrigin = incoming ? "bottom left" : "bottom right";
 
   if (isReactionMessage(dm.messageType)) {
@@ -6396,7 +6385,7 @@ function DmBubble({
         animate={{ scale: 1, opacity: 1, y: 0 }}
         whileHover={{ scale: 1.04 }}
         whileTap={{ scale: 0.95 }}
-        transition={{ type: "spring", stiffness: 600, damping: 15, mass: 0.7 }}
+        transition={{ type: "spring", stiffness: 450, damping: 32 }}
         style={{ transformOrigin: bubbleOrigin }}
         className={`flex gap-2.5 ${incoming ? "justify-start" : "justify-end"}`}
       >
@@ -6752,7 +6741,7 @@ function MerchantPlanManager({
               animate={{ opacity: 1, scale: 1 }}
               whileHover={{ scale: 1.06 }}
               whileTap={{ scale: 0.92 }}
-              transition={{ type: "spring", stiffness: 500, damping: 12, mass: 0.7 }}
+              transition={{ type: "spring", stiffness: 450, damping: 32 }}
               type="button"
               onClick={() => activePlan && onSubscribe(activePlan)}
               disabled={loadingAction === `subscribe-plan-${activePlan?.id}`}
@@ -6766,7 +6755,7 @@ function MerchantPlanManager({
               animate={{ opacity: 1, scale: 1 }}
               whileHover={{ scale: 1.06 }}
               whileTap={{ scale: 0.92 }}
-              transition={{ type: "spring", stiffness: 500, damping: 12, mass: 0.7 }}
+              transition={{ type: "spring", stiffness: 450, damping: 32 }}
               type="button"
               onClick={onCancel}
               disabled={loadingAction === `cancel-sub-${activeSubscription.subscriptionId}`}
@@ -6781,7 +6770,7 @@ function MerchantPlanManager({
         <motion.button
           whileHover={{ scale: 1.06 }}
           whileTap={{ scale: 0.92 }}
-          transition={{ type: "spring", stiffness: 500, damping: 12, mass: 0.7 }}
+          transition={{ type: "spring", stiffness: 450, damping: 32 }}
           type="button"
           onClick={onToggle}
           className={`dm-quick-button dm-action-menu-trigger relative overflow-hidden ${hasActiveSubscription ? "flex-1 min-w-0 text-center truncate" : ""}`}
@@ -6796,7 +6785,7 @@ function MerchantPlanManager({
             initial={{ opacity: 0, y: 16, scale: 0.92, scaleY: 0.85 }}
             animate={{ opacity: 1, y: 0, scale: 1, scaleY: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.95, scaleY: 0.9 }}
-            transition={{ type: "spring", stiffness: 380, damping: 16, mass: 0.7 }}
+            transition={{ type: "spring", stiffness: 420, damping: 30 }}
             style={{ transformOrigin: "top center" }}
             className="order-1 max-h-[min(48dvh,28rem)] space-y-3 overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-black/45 p-3"
           >
@@ -6836,7 +6825,7 @@ function MerchantPlanManager({
                       key={plan.id}
                       initial={{ opacity: 0, y: 10, scale: 0.92 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
-                      transition={{ type: "spring", stiffness: 420, damping: 18, mass: 0.7, delay: index * 0.04 }}
+                      transition={{ type: "spring", stiffness: 420, damping: 30, delay: index * 0.04 }}
                       whileHover={{ scale: 1.025, y: -2 }}
                       whileTap={{ scale: 0.98 }}
                       className="rounded-xl border border-white/10 bg-white/[0.03] p-3"
@@ -6877,7 +6866,7 @@ function MerchantPlanManager({
                       <motion.button
                         whileHover={{ scale: 1.04 }}
                         whileTap={{ scale: 0.93 }}
-                        transition={{ type: "spring", stiffness: 500, damping: 12, mass: 0.7 }}
+                        transition={{ type: "spring", stiffness: 450, damping: 32 }}
                         type="button"
                         onClick={() => onSubscribe(plan)}
                         disabled={isCurrent || isUnavailableChange || loadingAction === loadingKey}
@@ -6898,7 +6887,7 @@ function MerchantPlanManager({
                       <motion.button
                         whileHover={{ scale: 1.04 }}
                         whileTap={{ scale: 0.93 }}
-                        transition={{ type: "spring", stiffness: 500, damping: 12, mass: 0.7 }}
+                        transition={{ type: "spring", stiffness: 450, damping: 32 }}
                         type="button"
                         onClick={() => onAskFriend(plan)}
                         disabled={giftBusy}
@@ -7004,7 +6993,7 @@ function DmRequestComposer({
               <motion.button
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.96 }}
-                transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                transition={{ type: "spring", stiffness: 450, damping: 32 }}
                 type="button"
                 onClick={onToggle}
                 disabled={loading}
@@ -7015,7 +7004,7 @@ function DmRequestComposer({
               <motion.button
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.96 }}
-                transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                transition={{ type: "spring", stiffness: 450, damping: 32 }}
                 type="submit"
                 disabled={loading}
                 className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white ${loading ? "quick-action-loading" : ""}`}
@@ -7037,7 +7026,7 @@ function DmRequestComposer({
       <motion.button
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.97 }}
-        transition={{ type: "spring", stiffness: 500, damping: 15 }}
+        transition={{ type: "spring", stiffness: 450, damping: 32 }}
         type="button"
         onClick={onToggle}
         disabled={loading}
