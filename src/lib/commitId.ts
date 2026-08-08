@@ -197,6 +197,12 @@ export async function validateSubUserCanSpend(
 
     if (!commit) return { allowed: false, reason: "Unknown commit ID", remainingUsdc: null };
 
+    /* Checked before the root shortcut below: a non-positive amount would otherwise sail
+       through on a root commit and decrement spent_usdc past the column's >= 0 CHECK. */
+    if (amountUsdc <= 0n) {
+        return { allowed: false, reason: "Amount must be greater than zero", remainingUsdc: null };
+    }
+
     // Root commits spend their own wallet balance; the delegation cap doesn't apply.
     if (!commit.parentCommitId) return { allowed: true, remainingUsdc: null };
 
@@ -213,10 +219,6 @@ export async function validateSubUserCanSpend(
         return { allowed: false, reason: "The parent account is not active", remainingUsdc: null };
     }
 
-    if (amountUsdc <= 0n) {
-        return { allowed: false, reason: "Amount must be greater than zero", remainingUsdc: null };
-    }
-
     if (commit.spendLimitUsdc === null) return { allowed: true, remainingUsdc: null };
 
     const remaining = commit.spendLimitUsdc - commit.spentUsdc;
@@ -227,45 +229,52 @@ export async function validateSubUserCanSpend(
     return { allowed: true, remainingUsdc: remaining - amountUsdc };
 }
 
-/* Atomically reserve budget. The cap lives in the WHERE clause, so two concurrent debits
-   can't both observe headroom and jointly overspend — the loser matches zero rows. */
+/* Atomically reserve budget. The cap is evaluated against the post-increment total inside a
+   single UPDATE, so Postgres' row lock serialises concurrent debits: the loser re-checks the
+   predicate against the winner's committed value and matches zero rows. The precheck above is
+   only for its specific error message — this statement is the enforcement. */
 export async function recordSubUserSpend(
     commitId: string,
     amountUsdc: bigint,
 ): Promise<SpendValidation> {
+    /* A negative amount would credit the ledger and widen the cap, so it is rejected here rather
+       than in SQL — the statement below also guards it, but this keeps the reason honest. */
+    if (amountUsdc <= 0n) {
+        return { allowed: false, reason: "Spend amount must be greater than zero", remainingUsdc: null };
+    }
+
     const precheck = await validateSubUserCanSpend(commitId, amountUsdc);
     if (!precheck.allowed) return precheck;
 
-    const updated = await prisma.userCommit.updateMany({
-        where: {
-            commitId,
-            status: "ACTIVE",
-            OR: [
-                { spendLimitUsdc: null },
-                { spendLimitUsdc: { gte: amountUsdc } },
-            ],
-        },
-        data: { spentUsdc: { increment: amountUsdc } },
-    });
+    const rows = await prisma.$queryRaw<
+        { spend_limit_usdc: bigint | null; spent_usdc: bigint }[]
+    >`
+        UPDATE user_commits AS c
+           SET spent_usdc = c.spent_usdc + ${amountUsdc}::bigint,
+               updated_at = now()
+         WHERE c.commit_id = ${commitId}
+           AND c.status = 'ACTIVE'
+           AND ${amountUsdc}::bigint > 0
+           AND (
+                c.spend_limit_usdc IS NULL
+                OR c.spent_usdc + ${amountUsdc}::bigint <= c.spend_limit_usdc
+               )
+           AND (
+                c.parent_commit_id IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM user_commits AS p
+                     WHERE p.id = c.parent_commit_id AND p.status = 'ACTIVE'
+                )
+               )
+        RETURNING c.spend_limit_usdc, c.spent_usdc
+    `;
 
-    if (updated.count === 0) {
+    const row = rows[0];
+    if (!row) {
         return { allowed: false, reason: "This spend exceeds the sub-user's limit", remainingUsdc: null };
     }
 
-    const after = await prisma.userCommit.findUnique({ where: { commitId } });
-
-    /* increment can't be bounded in SQL, so a race can push spent past the cap. Roll the
-       overshoot back and reject rather than letting the excess stand. */
-    if (after?.spendLimitUsdc != null && after.spentUsdc > after.spendLimitUsdc) {
-        await prisma.userCommit.update({
-            where: { commitId },
-            data: { spentUsdc: { decrement: amountUsdc } },
-        });
-        return { allowed: false, reason: "This spend exceeds the sub-user's limit", remainingUsdc: null };
-    }
-
-    const remaining =
-        after?.spendLimitUsdc != null ? after.spendLimitUsdc - after.spentUsdc : null;
+    const remaining = row.spend_limit_usdc != null ? row.spend_limit_usdc - row.spent_usdc : null;
     return { allowed: true, remainingUsdc: remaining };
 }
 

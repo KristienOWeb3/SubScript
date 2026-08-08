@@ -79,7 +79,7 @@ const answerFacts = [
   {
     question: "Can I let someone else spend from my SubScript account?",
     answer:
-      "Yes. A parent Commit ID can create sub-user commits, each with an optional display name, an optional wallet address, and an optional USDC spend limit; a sub-user with no limit is uncapped. Sub-users are ACTIVE, PAUSED, or REVOKED. Pausing blocks further spending and is reversible; revocation is terminal, so reopening a delegation means creating a fresh sub-user and a fresh spend ledger rather than resurrecting the old balance. Pause and revoke authority is proven by the parent wallet owning the target's parent commit, so a sub-user can never pause or revoke a sibling, and a paused or revoked parent cascades to its children. Spend limits are enforced atomically at debit time with an overshoot rollback, so two concurrent charges cannot both observe headroom and jointly exceed the cap.",
+      "Yes. A parent Commit ID can create sub-user commits, each with an optional display name, an optional wallet address, and an optional USDC spend limit; a sub-user with no limit is uncapped. Sub-users are ACTIVE, PAUSED, or REVOKED. Pausing blocks further spending and is reversible; revocation is terminal, so reopening a delegation means creating a fresh sub-user and a fresh spend ledger rather than resurrecting the old balance. Pause and revoke authority is proven by the parent wallet owning the target's parent commit, so a sub-user can never pause or revoke a sibling, and a paused or revoked parent cascades to its children. Spend limits are enforced atomically at debit time by a single conditional UPDATE, so two concurrent charges cannot both observe headroom and jointly exceed the cap.",
   },
 ];
 
