@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
@@ -69,10 +70,16 @@ function loadVaultSharing(initialVault, initialCommits = []) {
         TypeError,
         Error,
         process,
+        crypto,
         exports: {},
         module: { exports: {} },
         require: (specifier) => {
+            if (specifier === "crypto" || specifier === "node:crypto") {
+                const c = { ...crypto, default: crypto };
+                return c;
+            }
             if (specifier === "@/lib/prisma") return { prisma };
+            if (specifier === "@/lib/identityDisplay") return { accountDisplayName: (x) => x.displayName || x.walletAddress };
             if (specifier === "@/lib/commitId") {
                 const commitIdExports = {};
                 const commitIdModule = { exports: commitIdExports };
@@ -80,7 +87,7 @@ function loadVaultSharing(initialVault, initialCommits = []) {
                     `(function(exports, module, require){ ${compiledCommitId} })`,
                     context,
                 );
-                commitIdFn(commitIdExports, commitIdModule, (s) => (s === "@/lib/prisma" ? { prisma } : {}));
+                commitIdFn(commitIdExports, commitIdModule, context.require);
                 return commitIdModule.exports;
             }
             throw new Error(`Unhandled import in test: ${specifier}`);
