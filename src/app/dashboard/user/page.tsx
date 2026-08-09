@@ -48,6 +48,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
+  Building2,
   CheckCircle2,
   Copy,
   CreditCard,
@@ -8326,7 +8327,7 @@ function MeteredVaultRow({
             {vault.merchantPic ? (
               <img src={vault.merchantPic} alt={vault.merchantName} className="h-full w-full object-cover" />
             ) : (
-              <Home className="h-5 w-5 text-[#ccff00]" />
+              <Building2 className="h-5 w-5 text-[#ccff00]" />
             )}
           </div>
           <div className="min-w-0">
