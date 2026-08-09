@@ -8276,6 +8276,7 @@ function MeteredVaultRow({
     : "-";
 
   const isPaused = blocked || cancelled;
+  const remainingBalanceUsdc = String(Math.max(0, Number(vault.balanceUsdc || 0) - Number(vault.accruedUsageUsdc || 0)));
 
   return (
     <div className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-black/30 p-4 sm:p-5 transition hover:border-white/20 hover:bg-black/40">
@@ -8365,7 +8366,7 @@ function MeteredVaultRow({
               <span className="text-[10px] font-bold uppercase tracking-wider text-white/50">Vault Balance</span>
               <div className="mt-1">
                 <p className="text-xl sm:text-2xl font-black text-white tracking-tight">
-                  {balanceVisible ? `${formatUsdc(vault.balanceUsdc)} USDC` : "•••• USDC"}
+                  {balanceVisible ? `${formatUsdc(remainingBalanceUsdc)} USDC` : "•••• USDC"}
                 </p>
                 <p className="text-[11px] font-medium text-white/50 mt-0.5">
                   Used: {balanceVisible ? `${formatUsdc(vault.accruedUsageUsdc)} USDC` : "••• USDC"}
