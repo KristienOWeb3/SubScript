@@ -225,9 +225,13 @@ export default function VaultShareManager({
                         )}
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-2">
-                        <code className="truncate font-mono text-xs font-bold text-[#00d2b4] sm:text-sm">
-                            {data?.rootCommitId || (loading ? "Loading..." : "cmt_pending")}
-                        </code>
+                        {data?.rootCommitId ? (
+                            <code className="truncate font-mono text-xs font-bold text-[#00d2b4] sm:text-sm">
+                                {data.rootCommitId}
+                            </code>
+                        ) : (
+                            <div className="h-5 w-36 rounded-md subscript-skeleton" />
+                        )}
                         {data?.rootCommitId && (
                             <button
                                 type="button"
@@ -248,30 +252,37 @@ export default function VaultShareManager({
             {/* Friends Avatar Row Section */}
             <div className="pt-2">
                 <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-none">
-                    {liveSharesList.map((share) => {
-                        const initial = share.displayName ? share.displayName[0].toUpperCase() : "A";
-                        return (
-                            <div
-                                key={share.commitId}
-                                onClick={() => setOpen(true)}
-                                className="flex min-w-[90px] cursor-pointer shrink-0 flex-col items-center justify-center rounded-2xl border border-white/10 bg-black/40 p-3 text-center transition hover:border-[#00d2b4]/40 hover:bg-black/60"
-                            >
-                                <div className="mb-1.5 flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white/10 text-sm font-black text-white shrink-0">
-                                    {share.profilePic ? (
-                                        <img src={share.profilePic} alt={share.displayName || "Friend"} className="h-full w-full object-cover" />
-                                    ) : (
-                                        initial
-                                    )}
+                    {loading && !data ? (
+                        <>
+                            <div className="flex h-[92px] w-[90px] shrink-0 flex-col items-center justify-center rounded-2xl border border-white/10 bg-black/40 p-3 subscript-skeleton" />
+                            <div className="flex h-[92px] w-[90px] shrink-0 flex-col items-center justify-center rounded-2xl border border-white/10 bg-black/40 p-3 subscript-skeleton" />
+                        </>
+                    ) : (
+                        liveSharesList.map((share) => {
+                            const initial = share.displayName ? share.displayName[0].toUpperCase() : "A";
+                            return (
+                                <div
+                                    key={share.commitId}
+                                    onClick={() => setOpen(true)}
+                                    className="flex min-w-[90px] cursor-pointer shrink-0 flex-col items-center justify-center rounded-2xl border border-white/10 bg-black/40 p-3 text-center transition hover:border-[#00d2b4]/40 hover:bg-black/60"
+                                >
+                                    <div className="mb-1.5 flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white/10 text-sm font-black text-white shrink-0">
+                                        {share.profilePic ? (
+                                            <img src={share.profilePic} alt={share.displayName || "Friend"} className="h-full w-full object-cover" />
+                                        ) : (
+                                            initial
+                                        )}
+                                    </div>
+                                    <span className="w-full truncate text-[11px] font-bold text-white">
+                                        {share.displayName || "Friend"}
+                                    </span>
+                                    <span className="mt-0.5 text-[9px] font-medium uppercase tracking-wider text-white/50">
+                                        {formatUsdc(share.spentUsdc)} USED
+                                    </span>
                                 </div>
-                                <span className="w-full truncate text-[11px] font-bold text-white">
-                                    {share.displayName || "Friend"}
-                                </span>
-                                <span className="mt-0.5 text-[9px] font-medium uppercase tracking-wider text-white/50">
-                                    {formatUsdc(share.spentUsdc)} USED
-                                </span>
-                            </div>
-                        );
-                    })}
+                            );
+                        })
+                    )}
 
                     {/* Add a Friend Card */}
                     <button

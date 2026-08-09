@@ -3421,8 +3421,9 @@ export default function UserDashboard() {
                   </div>
 
                   {isVaultsLoading ? (
-                    <div className="flex h-36 items-center justify-center">
-                      <Loader2 className="h-6 w-6 animate-spin text-[#ccff00]" />
+                    <div className="space-y-3">
+                      <VaultCardSkeleton />
+                      <VaultCardSkeleton />
                     </div>
                   ) : vaults.length === 0 ? (
                     <div className="flex h-36 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 p-4 text-center">
@@ -8221,6 +8222,44 @@ function BalanceRoutingNotice({
         You need {numericAmount.toFixed(2)} USDC. You have {combinedBalance.toFixed(2)} USDC total
         ({walletBalance.toFixed(2)} USDC on Arc, {sepoliaUsdc.toFixed(2)} USDC on Sepolia). Deposit or bridge more before sending.
       </p>
+    </div>
+  );
+}
+
+function VaultCardSkeleton() {
+  return (
+    <div className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-black/30 p-4 sm:p-5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="h-11 w-11 rounded-2xl subscript-skeleton shrink-0" />
+          <div className="space-y-2">
+            <div className="h-4 w-36 rounded-lg subscript-skeleton" />
+            <div className="h-3 w-16 rounded-full subscript-skeleton" />
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="h-10 w-24 rounded-2xl subscript-skeleton" />
+          <div className="h-10 w-24 rounded-2xl subscript-skeleton" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="flex flex-col justify-between rounded-2xl border border-white/10 bg-black/40 p-4 min-h-[96px] subscript-skeleton">
+          <div className="h-3 w-20 rounded-md bg-white/10" />
+          <div className="h-6 w-32 rounded-lg bg-white/10 mt-2" />
+        </div>
+        <div className="flex flex-col justify-between rounded-2xl border border-white/10 bg-black/40 p-4 min-h-[96px] subscript-skeleton">
+          <div className="h-3 w-20 rounded-md bg-white/10" />
+          <div className="h-6 w-40 rounded-lg bg-white/10 mt-2" />
+        </div>
+      </div>
+
+      <div className="h-16 rounded-2xl border border-white/5 bg-black/20 subscript-skeleton" />
+
+      <div className="flex items-center gap-3 pt-2">
+        <div className="h-[92px] w-[90px] rounded-2xl subscript-skeleton shrink-0" />
+        <div className="h-[92px] w-[90px] rounded-2xl subscript-skeleton shrink-0" />
+      </div>
     </div>
   );
 }
