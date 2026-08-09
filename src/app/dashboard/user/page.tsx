@@ -8264,7 +8264,7 @@ function MeteredVaultRow({
   const awaitingSettlement = !blocked && !disputed && lockedUntilDate !== null
     && now >= lockedUntilDate.getTime() && (reclaimDate === null || now < reclaimDate.getTime());
   const canReclaim = !blocked && !disputed && balance > 0 && reclaimDate !== null && now >= reclaimDate.getTime();
-  const STANDARD_COMMIT_MICROS = 2_000_000;
+  const drawableExposure = Math.min(balance, STANDARD_COMMIT_MICROS);
 
   const numericDate = (date: Date | null) => date
     ? date.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric", timeZone: "UTC" })
@@ -8348,7 +8348,7 @@ function MeteredVaultRow({
               disabled={reclaimBusy}
               className={`rounded-2xl border px-3 py-2 text-[10px] font-black uppercase tracking-wider transition ${reclaimBusy ? "cursor-not-allowed border-white/5 bg-black/20 text-white/30" : "bg-amber-400/10 border-amber-300/30 text-amber-200 hover:bg-amber-400/20"}`}
             >
-              {reclaimBusy ? "Reclaiming…" : "Reclaim"}
+              {reclaimBusy ? "Reclaiming…" : "Reclaim escrow"}
             </button>
           )}
         </div>
@@ -8373,12 +8373,16 @@ function MeteredVaultRow({
             </div>
           }
           datesBox={
-            <div className="space-y-1 rounded-2xl border border-white/5 bg-black/20 p-3.5 text-xs text-white/60">
-              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-                <p><span className="font-semibold text-white/40">Lock date:</span> <span className="font-mono text-white/90">{numericDate(cycleStartDate)}</span></p>
-                <p><span className="font-semibold text-white/40">Release date:</span> <span className="font-mono text-white/90">{numericDate(lockedUntilDate)}</span></p>
+            <div className="space-y-2 rounded-2xl border border-white/5 bg-black/20 p-3.5 text-xs text-white/60">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px] text-white/50 sm:grid-cols-3">
+                <p>Lock date / Cycle started <span className="font-mono font-bold text-white/80">{numericDate(cycleStartDate)}</span></p>
+                <p>Release date / Cycle matures <span className="font-mono font-bold text-white/80">{numericDate(lockedUntilDate)}</span></p>
+                <p>Reported usage <span className="font-bold text-white/80">{balanceVisible ? formatUsdc(vault.accruedUsageUsdc) : "•••"} USDC</span></p>
+                <p>Max drawable <span className="font-bold text-white/80">{balanceVisible ? formatUsdc(String(drawableExposure)) : "•••"} USDC</span></p>
+                <p>Settlement due by <span className="font-mono font-bold text-white/80">{numericDate(reclaimDate)}</span></p>
+                <p>Reclaimable from <span className="font-mono font-bold text-white/80">{numericDate(reclaimDate)}</span></p>
               </div>
-              <p className="text-[10px] leading-relaxed text-white/45 mt-1.5 border-t border-white/5 pt-1.5">
+              <p className="text-[10px] leading-relaxed text-white/45 border-t border-white/5 pt-1.5">
                 The keeper settles usage after <span className="font-semibold text-white/70">{textDate(lockedUntilDate)}</span> and unused escrow returns to you automatically.
               </p>
             </div>
