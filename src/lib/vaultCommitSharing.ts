@@ -316,6 +316,28 @@ export function revokeVaultShare(userAddress: string, commitId: string) {
     return setVaultShareStatus(userAddress, commitId, "REVOKED");
 }
 
+export async function withdrawVaultShare(userAddress: string, commitId: string) {
+    const share = await requireOwnedShare(userAddress, commitId);
+
+    const shareCreated = new Date(share.createdAt).getTime();
+    const thirtyDaysLater = shareCreated + 30 * 24 * 60 * 60 * 1000;
+    if (Date.now() < thirtyDaysLater) {
+        throw new CommitAccessError("Share cannot be withdrawn until 30 days after creation.", 409);
+    }
+
+    if (share.status === "REVOKED") {
+        throw new CommitAccessError("This share has been revoked and cannot be changed", 409);
+    }
+
+    return prisma.userCommit.update({
+        where: { id: share.id },
+        data: {
+            status: "REVOKED",
+            revokedAt: new Date(),
+        },
+    });
+}
+
 /* What the merchant's usage report resolves a pasted Commit ID to. `vaultId` is the escrow the
    usage accrues against; `commitId` is null for a root (the primary using their own commitment),
    in which case no per-share cap applies — the escrow itself is the only ceiling. */

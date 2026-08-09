@@ -133,10 +133,12 @@ export default function VaultShareManager({
         }
     };
 
-    const runAction = async (commitId: string, action: "pause" | "resume" | "revoke") => {
-        /* Revocation is irreversible — the row stays for history but the ID can never spend again,
-           so it gets a confirm while pause/resume do not. */
+    const runAction = async (commitId: string, action: "pause" | "resume" | "revoke" | "withdraw") => {
+        /* Revocation and withdrawal are irreversible. */
         if (action === "revoke" && !window.confirm("Revoke this commit ID for good? This cannot be undone.")) {
+            return;
+        }
+        if (action === "withdraw" && !window.confirm("Withdraw and revoke this share? Unspent funds will return to your unallocated escrow.")) {
             return;
         }
         setBusy({ commitId, action });
@@ -305,6 +307,11 @@ export default function VaultShareManager({
                                             const pct = utilizationPercent(share);
                                             const isRevoked = share.status === "REVOKED";
                                             const rowBusy = busy?.commitId === share.commitId;
+
+                                            const shareCreated = new Date(share.createdAt).getTime();
+                                            const thirtyDaysLater = shareCreated + 30 * 24 * 60 * 60 * 1000;
+                                            const canWithdraw = Date.now() >= thirtyDaysLater;
+                                            const daysLeft = Math.ceil((thirtyDaysLater - Date.now()) / (1000 * 60 * 60 * 24));
                                             return (
                                                 <div
                                                     key={share.commitId}
@@ -397,6 +404,19 @@ export default function VaultShareManager({
                                                                 disabled={rowBusy}
                                                                 onClick={() => runAction(share.commitId, "revoke")}
                                                             />
+                                                            {canWithdraw ? (
+                                                                <RowAction
+                                                                    label="Withdraw / Reclaim"
+                                                                    danger
+                                                                    busy={rowBusy && busy?.action === "withdraw"}
+                                                                    disabled={rowBusy}
+                                                                    onClick={() => runAction(share.commitId, "withdraw")}
+                                                                />
+                                                            ) : (
+                                                                <span className="flex items-center rounded-xl bg-white/5 px-2 py-1 text-[8px] font-black uppercase tracking-wider text-white/40">
+                                                                    Withdrawal unlocks in {daysLeft}d
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     )}
                                                 </div>
