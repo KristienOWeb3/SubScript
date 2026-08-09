@@ -73,11 +73,11 @@ async function runWizard() {
     const secretKey = secretKeyResult as string;
 
     const walletResult = await text({
-        message: "Enter your SubScript Merchant Wallet Address (For Payment Settlement):",
+        message: "Enter your SubScript Merchant Primary Commit ID (For Payment Settlement):",
         placeholder: "0x...",
         validate(value) {
             if (!value || value.trim().length === 0) {
-                return "Wallet address is required.";
+                return "Primary Commit ID is required.";
             }
             if (!/^0x[a-fA-F0-9]{40}$/.test(value)) {
                 return "Invalid Ethereum address format (must start with 0x and be 42 characters hex).";
@@ -240,15 +240,15 @@ async function runInitFlags(args: ParsedArgs) {
     if (!merchant) {
         fail({
             code: "missing_flag",
-            message: "Non-interactive init needs --merchant <0x...> (your payout wallet address).",
-            fix: "Pass --merchant 0xYourWalletAddress, or use --offline to scaffold with a placeholder.",
+            message: "Non-interactive init needs --merchant <0x...> (your merchant primary commit ID).",
+            fix: "Pass --merchant 0xYourCommitID, or use --offline to scaffold with a placeholder.",
         });
     }
     if (!offline && !/^0x[a-fA-F0-9]{40}$/.test(merchant)) {
         fail({
             code: "invalid_flag",
-            message: `--merchant "${merchant}" is not a valid Ethereum address.`,
-            fix: "Pass a 42-character 0x-prefixed hex address (your payout wallet from the dashboard settings page).",
+            message: `Invalid --merchant argument: "${merchant}"`,
+            fix: "Pass a 42-character 0x-prefixed hex string (your primary commit ID from the dashboard).",
         });
     }
 
@@ -412,7 +412,7 @@ Options:
   --json                Emit a single machine-readable JSON result on stdout
                         ({ ok, command, files_written, error }); progress goes to stderr.
   --key <sk_...>        init: secret key (from Dashboard → Developers → API keys).
-  --merchant <0x...>    init: merchant payout wallet address.
+  --merchant <0x...>    init: merchant primary commit ID.
   --framework <name>    init/add: next-app | next-pages | react-spa | express (skips auto-detect).
   --mode <mode>         "standard" (default) or "privacy-routed".
   --plan-name <name>    init: recurring subscription plan name (default "Premium Subscription").
