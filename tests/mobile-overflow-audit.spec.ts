@@ -382,7 +382,15 @@ async function auditOverflow(page: Page, label: string) {
       const isTextOrControl =
         ["a", "button", "code", "dd", "dt", "figcaption", "h1", "h2", "h3", "h4", "h5", "h6", "input", "label", "li", "p", "pre", "span", "textarea"].includes(tag) ||
         Boolean(htmlElement.getAttribute("role"));
+      /* getAttribute rather than .className: on SVG elements className is an
+         SVGAnimatedString, whose toString() is "[object SVGAnimatedString]". */
+      const classAttr = htmlElement.getAttribute("class") || "";
+      const isClamped =
+        Boolean(style.webkitLineClamp && style.webkitLineClamp !== "none") ||
+        classAttr.includes("line-clamp") ||
+        classAttr.includes("truncate");
       const clipsVertical =
+        !isClamped &&
         !["visible", "auto", "scroll"].includes(style.overflowY) &&
         htmlElement.scrollHeight > htmlElement.clientHeight + 3;
 
@@ -485,6 +493,10 @@ test.describe("mobile overflow audit", () => {
     await context.close();
   });
 
+  /* Labels track the wireframe adopted in Master Spec v2.0 (user-dashboard.html): the wallet
+     card reads "Wallet Balance" and the tall right panel is "Active Subscriptions & Commits".
+     The structural assertions below are the real contract — sidebar, then the two cards side by
+     side on the same row at desktop width, stacked in one column on mobile. */
   test("uses the requested responsive user-home layout", async ({ browser }, testInfo) => {
     const desktopContext = await newAuditContext(
       browser,
@@ -495,13 +507,20 @@ test.describe("mobile overflow audit", () => {
     await desktopPage.goto(`${baseURL}/dashboard/user`, { waitUntil: "domcontentloaded" });
 
     const sidebar = desktopPage.getByRole("complementary");
-    const walletLabel = desktopPage.getByText("Connected Wallet Balance", { exact: true });
-    const subscriptionsTitle = desktopPage.getByText("Active Subscriptions", { exact: true });
+    const walletLabel = desktopPage.getByText("Wallet Balance", { exact: true });
+    const spendingLabel = desktopPage.getByText("Spending past (USDC)", { exact: true });
+    const commitLabel = desktopPage.getByText("Total Commit (LOCKED)", { exact: true });
+    const subscriptionsTitle = desktopPage.getByText("Active Subscriptions & Commits", { exact: true });
+    const ledgerTitle = desktopPage.getByText("Direct Messages & System Activity Ledger", { exact: true });
 
     await expect(sidebar).toBeVisible();
     await expect(walletLabel).toBeVisible({ timeout: 120_000 });
+    await expect(spendingLabel).toBeVisible();
+    await expect(commitLabel).toBeVisible();
     await expect(subscriptionsTitle).toBeVisible();
-    await expect(desktopPage.getByRole("button", { name: "Manage Commit", exact: true })).toBeVisible();
+    await expect(ledgerTitle).toBeVisible();
+    await expect(desktopPage.getByRole("button", { name: "Manage Spending", exact: true })).toBeVisible();
+    await expect(desktopPage.getByRole("button", { name: "Manage Commits", exact: true })).toBeVisible();
 
     const walletCard = walletLabel.locator("xpath=ancestor::section[1]");
     const subscriptionsCard = subscriptionsTitle.locator("xpath=ancestor::section[1]");
@@ -527,8 +546,39 @@ test.describe("mobile overflow audit", () => {
     const mobilePage = await mobileContext.newPage();
     await mobilePage.goto(`${baseURL}/dashboard/user`, { waitUntil: "domcontentloaded" });
 
-    await expect(mobilePage.getByText("Connected Wallet Balance", { exact: true })).toBeVisible({ timeout: 120_000 });
-    await expect(mobilePage.getByText("Active Subscriptions", { exact: true })).toBeHidden();
+    const mobileWalletLabel = mobilePage.getByText("Wallet Balance", { exact: true });
+    const mobileSpendingLabel = mobilePage.getByText("Spending past (USDC)", { exact: true });
+    const mobileCommitLabel = mobilePage.getByText("Total Commit (LOCKED)", { exact: true });
+    const mobileSubscriptionsTitle = mobilePage.getByText("Active Subscriptions & Commits", { exact: true });
+    const mobileLedgerTitle = mobilePage.getByText("Direct Messages & System Activity Ledger", { exact: true });
+    await expect(mobileWalletLabel).toBeVisible({ timeout: 120_000 });
+    await expect(mobileSpendingLabel).toBeVisible();
+    await expect(mobileCommitLabel).toBeVisible();
+    await expect(mobileSubscriptionsTitle).toBeVisible();
+    await expect(mobileLedgerTitle).toBeVisible();
+
+    /* The wireframe collapses the 46fr/54fr grid to a single column below lg, so the panel is
+       stacked underneath rather than removed. Funding the vault still lives behind the Commit
+       tab, so its call to action must not leak onto Home. */
+    await expect(mobileSubscriptionsTitle).toBeVisible();
+    /* The wallet section's parent is the whole left column (wallet card + the two square cards),
+       which is the edge the collapsed layout has to clear. */
+    const mobileLeftColumn = mobileWalletLabel.locator("xpath=ancestor::section[1]/..");
+    const [mobileWalletBox, mobileLeftColumnBox, mobileSubscriptionsBox] = await Promise.all([
+      mobileWalletLabel.locator("xpath=ancestor::section[1]").boundingBox(),
+      mobileLeftColumn.boundingBox(),
+      mobileSubscriptionsTitle.locator("xpath=ancestor::section[1]").boundingBox(),
+    ]);
+    expect(mobileWalletBox).not.toBeNull();
+    expect(mobileLeftColumnBox).not.toBeNull();
+    expect(mobileSubscriptionsBox).not.toBeNull();
+    expect(Math.abs(mobileSubscriptionsBox!.x - mobileWalletBox!.x)).toBeLessThan(4);
+    /* Compare against the left column's BOTTOM, not the wallet card's top: `subscriptions.y >
+       wallet.y` also holds when the two panels overlap almost entirely, so it would pass on a
+       broken single-column collapse. 1px of slack absorbs sub-pixel bounding-box rounding. */
+    expect(mobileSubscriptionsBox!.y).toBeGreaterThanOrEqual(
+      mobileLeftColumnBox!.y + mobileLeftColumnBox!.height - 1
+    );
     await expect(mobilePage.getByText("+ Commit to a service", { exact: true })).toHaveCount(0);
 
     const bottomNav = mobilePage.locator('nav[aria-label="Primary navigation"]');

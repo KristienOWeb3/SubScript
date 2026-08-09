@@ -108,10 +108,29 @@ export default function AnimatedGradientBg({ variant = "brand" }: { variant?: "b
             animationId = requestAnimationFrame(draw);
         };
 
-        draw();
+        /* Mounting in a background tab would otherwise start an rAF loop that browsers throttle
+           but never stop, burning the GPU surface until the first visibility transition. */
+        if (!document.hidden) {
+            draw();
+        }
+
+        /* Installed PWAs get their GPU surface torn down while backgrounded; the additive
+           "lighter" orb passes then resume against a stale buffer and smear. Stop the loop
+           while hidden and re-establish the canvas from scratch on resume. */
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                cancelAnimationFrame(animationId);
+            } else {
+                cancelAnimationFrame(animationId);
+                resize();
+                draw();
+            }
+        };
+        document.addEventListener("visibilitychange", handleVisibilityChange);
 
         return () => {
             window.removeEventListener("resize", resize);
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
             cancelAnimationFrame(animationId);
         };
     }, [variant]);

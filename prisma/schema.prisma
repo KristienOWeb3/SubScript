@@ -539,6 +539,43 @@ model Customer {
   @@map("customers")
 }
 
+// Commit ID identity. Every user wallet gets one root commit; delegated "sub-users" are
+// child rows pointing at it, so a parent can hand out spend authority without sharing keys.
+// Children are hard-capped by spendLimitUsdc and can be paused (reversible) or revoked
+// (terminal) by the parent — see src/lib/commitId.ts.
+//
+// WARNING: eight CHECK constraints (commit ID format, non-negative money, spent-within-limit,
+// display-name length, status domain, no self-parent, root-uncapped, status/timestamp coherence)
+// live ONLY in supabase/migrations/20260808120000_add_user_commit_framework.sql. Prisma cannot
+// express them, so `migrate dev` or `db push` against this model would recreate the table
+// without a single guard. This repo applies flat SQL via scripts/apply-migrations.mjs — keep it
+// that way for this table.
+model UserCommit {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  commitId       String       @unique @map("commit_id")
+  // Null until the invited holder claims this commit with their own authenticated wallet — a
+  // parent naming someone else's address would reserve it under this unique constraint.
+  walletAddress  String?      @unique @map("wallet_address")
+  // Capped at 128 chars by the API handler and a matching SQL CHECK.
+  displayName    String?      @map("display_name")
+  parentCommitId String?      @map("parent_commit_id") @db.Uuid
+  parent         UserCommit?  @relation("CommitHierarchy", fields: [parentCommitId], references: [id], onDelete: Cascade)
+  children       UserCommit[] @relation("CommitHierarchy")
+  // USDC 6-decimals, as BigInt like the rest of the money columns. Null on root commits
+  // (the wallet owner spends their own balance) and on uncapped children.
+  spendLimitUsdc BigInt?      @map("spend_limit_usdc")
+  spentUsdc      BigInt       @default(0) @map("spent_usdc")
+  // "ACTIVE" | "PAUSED" | "REVOKED"
+  status         String       @default("ACTIVE") @map("status")
+  pausedAt       DateTime?    @map("paused_at")
+  revokedAt      DateTime?    @map("revoked_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @default(now()) @updatedAt @map("updated_at")
+
+  @@index([parentCommitId, status], map: "user_commits_parent_status_idx")
+  @@map("user_commits")
+}
+
 model UserEmbeddedWallet {
   id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   email               String    @unique

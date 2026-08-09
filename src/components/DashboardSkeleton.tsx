@@ -8,9 +8,13 @@ import {
 
 interface DashboardSkeletonProps {
     activeTab: "overview" | "premium" | "apikeys" | "checkout" | "webhooks" | "analytics" | "payment-links" | "plans" | "settings" | "payroll" | "offramp";
+    /* The dashboard renders its real bottom nav as soon as the wallet is connected, which is
+       before data finishes loading. Skip the placeholder bar in that window so the two fixed,
+       z-40 bars don't stack on top of each other on mobile. */
+    isConnected?: boolean;
 }
 
-export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps) {
+export default function DashboardSkeleton({ activeTab, isConnected = false }: DashboardSkeletonProps) {
     const tabs = [
         { id: "overview", label: "Overview", icon: Home },
         { id: "premium", label: "Premium", icon: Crown },
@@ -537,12 +541,14 @@ export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps)
                 {renderContentSkeleton()}
             </div>
 
-            {/* Bottom Nav Bar */}
-            <div className="fixed bottom-6 left-1/2 z-40 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-around rounded-full border border-white/5 bg-black/60 px-3 py-3.5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-xl">
-                {[1, 2, 3, 4, 5].map((item) => (
-                    <Skeleton key={item} circle className="h-10 w-10" />
-                ))}
-            </div>
+            {/* Bottom Nav Bar — suppressed once the live nav is on screen (see isConnected above). */}
+            {!isConnected && (
+                <div className="fixed bottom-6 left-1/2 z-40 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-around rounded-full border border-white/5 bg-black/60 px-3 py-3.5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-xl">
+                    {[1, 2, 3, 4, 5].map((item) => (
+                        <Skeleton key={item} circle className="h-10 w-10" />
+                    ))}
+                </div>
+            )}
         </div>
 
         <div className="hidden md:grid grid-cols-1 md:grid-cols-12 lg:grid-cols-4 gap-6 md:gap-8 items-start">

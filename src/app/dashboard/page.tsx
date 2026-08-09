@@ -6199,7 +6199,7 @@ Please complete the following implementation tasks:
                 </div>
 
                 {isLoading ? (
-                    <DashboardSkeleton activeTab={activeTab} />
+                    <DashboardSkeleton activeTab={activeTab} isConnected={isConnected} />
                 ) : !isConnected ? (
                     <div className="space-y-8">
                         <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">

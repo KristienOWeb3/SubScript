@@ -15,6 +15,9 @@ const revenueBars = [38, 52, 46, 64, 58, 74, 82, 78, 90, 86, 96, 100];
 
 export default function MockupDashboardCard() {
     const [isMobile, setIsMobile] = useState(true);
+    /* The float below repeats forever. Left unchecked it keeps compositing in a background
+       tab, so the loop is parked at its resting pose whenever the page is hidden. */
+    const [isHidden, setIsHidden] = useState(false);
 
     useEffect(() => {
         const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -22,6 +25,19 @@ export default function MockupDashboardCard() {
         window.addEventListener("resize", checkMobile);
         return () => window.removeEventListener("resize", checkMobile);
     }, []);
+
+    useEffect(() => {
+        const handleVisibility = () => setIsHidden(document.hidden);
+        handleVisibility();
+        document.addEventListener("visibilitychange", handleVisibility);
+        return () => document.removeEventListener("visibilitychange", handleVisibility);
+    }, []);
+
+    /* The first frame of each keyframe track, so parking and resuming don't jump. */
+    const restingPose = isMobile ? { y: 0 } : { y: 0, rotateX: 8, rotateY: -12 };
+    const floatingPose = isMobile
+        ? { y: [0, -6, 0] }
+        : { y: [0, -10, 0], rotateX: [8, 6, 8], rotateY: [-12, -9, -12] };
 
     return (
         <motion.div
@@ -32,12 +48,8 @@ export default function MockupDashboardCard() {
         >
             <motion.div
                 className="relative w-full max-w-[440px] sm:max-w-[480px]"
-                animate={isMobile ? { y: [0, -6, 0] } : {
-                    y: [0, -10, 0],
-                    rotateX: [8, 6, 8],
-                    rotateY: [-12, -9, -12],
-                }}
-                transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+                animate={isHidden ? restingPose : floatingPose}
+                transition={isHidden ? { duration: 0 } : { duration: 6, repeat: Infinity, ease: "easeInOut" }}
                 style={{ transformStyle: "preserve-3d", willChange: "transform" }}
                 whileHover={isMobile ? {} : {
                     scale: 1.03,
