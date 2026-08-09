@@ -153,7 +153,7 @@ export default function VaultShareManager({
 
     const handleRecap = async (share: Share) => {
         const entered = window.prompt(
-            `New spend cap in USDC for ${share.displayName || "this person"} (already spent ${formatUsdc(share.spentUsdc)}):`,
+            `New spend cap in USDC for ${share.displayName || "this friend"} (already spent ${formatUsdc(share.spentUsdc)}):`,
             share.spendLimitUsdc ? formatUsdc(share.spendLimitUsdc) : "",
         );
         if (entered === null) return;
@@ -205,7 +205,7 @@ export default function VaultShareManager({
                 <span className="flex items-center gap-2">
                     <Shield className="h-3.5 w-3.5 text-[#00d2b4]" />
                     <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/60">
-                        Share with people
+                        Share with friends
                     </span>
                     {liveShares > 0 && (
                         <span className="rounded-full border border-white/10 bg-white/[0.06] px-2 py-0.5 text-[9px] font-bold text-white/60">
@@ -261,7 +261,7 @@ export default function VaultShareManager({
                                 <>
                                     {data?.shares.length === 0 && (
                                         <p className="px-1 py-2 text-[10px] text-white/35">
-                                            Not shared with anyone yet.
+                                            Not shared with any friends yet.
                                         </p>
                                     )}
 
@@ -371,7 +371,7 @@ export default function VaultShareManager({
 
                                     <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-3">
                                         <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-white/45">
-                                            Share with someone new
+                                            Share with a new friend
                                         </p>
                                         <div className="flex flex-col gap-2 sm:flex-row">
                                             <input
@@ -403,7 +403,7 @@ export default function VaultShareManager({
                                         )}
                                         {atCeiling && (
                                             <p className="mt-2 text-[10px] text-amber-300">
-                                                You have reached the {data?.maxShares}-person limit for this
+                                                You have reached the {data?.maxShares}-friend limit for this
                                                 commitment. Revoke a share to free a slot.
                                             </p>
                                         )}

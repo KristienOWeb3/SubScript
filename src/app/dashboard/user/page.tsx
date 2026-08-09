@@ -2909,7 +2909,7 @@ export default function UserDashboard() {
       isActiveMobileDm ? "h-[100dvh] overflow-hidden" : "min-h-[100dvh]"
     }`}>
       <AnimatedGradientBg variant="dashboard" />
-      <div className="fixed inset-0 pointer-events-none z-0 bg-gradient-to-b from-black/75 via-black/55 to-black/85" />
+      <div className="fixed inset-0 pointer-events-none z-0 bg-gradient-to-b from-black/35 via-black/15 to-black/45" />
 
       <div className={`relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0 ${
         isActiveMobileDm ? "h-full overflow-hidden" : ""
@@ -3048,9 +3048,8 @@ export default function UserDashboard() {
           />
         )}
 
-        {/* The wireframe's 14px top slit + 28px inner radius, kept on the existing dark surface
-            so the lime-on-black content palette still reads. */}
-        <div className={`relative z-10 min-w-0 flex-1 md:mt-[14px] md:h-[calc(100vh-14px)] bg-[#0b0b0e]/95 backdrop-blur-md md:rounded-tl-[28px] shadow-[-8px_0_24px_rgba(0,0,0,0.45)] ${isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : "overflow-y-auto"}`}>
+        {/* The wireframe's 14px top slit + 28px inner radius, with a refined translucent surface. */}
+        <div className={`relative z-10 min-w-0 flex-1 md:mt-[14px] md:h-[calc(100vh-14px)] bg-[#131522]/90 backdrop-blur-xl md:rounded-tl-[28px] border-t border-l border-white/10 shadow-[-8px_0_24px_rgba(0,0,0,0.36)] ${isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : "md:overflow-y-auto"}`}>
           {/* Mobile headers (only shown on small screens) */}
           {isMobile && (
             <div className="w-full">
@@ -5994,7 +5993,7 @@ function UserDesktopSidebar({
                    right padding), which is what makes the wireframe's tab-into-page seam work. */
                 className={`group flex w-full items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-l-full lg:rounded-r-none py-3 px-3.5 lg:px-4 text-left text-xs font-semibold transition-all relative ${
                   isActive
-                    ? "bg-[#0b0b0e] text-[#ccff00] font-bold lg:-mr-5 lg:pr-7"
+                    ? "bg-[#131522] text-[#ccff00] font-bold lg:-mr-5 lg:pr-7"
                     : "text-white/70 hover:bg-white/[0.06] hover:text-white"
                 }`}
                 title={tab.label}
