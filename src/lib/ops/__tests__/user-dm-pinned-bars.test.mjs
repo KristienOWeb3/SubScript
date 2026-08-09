@@ -16,7 +16,7 @@ function elementWithTestId(testId) {
 test("active mobile DMs lock the page and scroll only the message history", () => {
     assert.match(
         dashboard,
-        /isActiveMobileDm \? "h-\[100dvh\] overflow-hidden" : "min-h-\[100dvh\]"/,
+        /isActiveMobileDm \? "h-\[100dvh\] overflow-hidden" : "h-\[100dvh\] overflow-y-auto overscroll-y-contain md:h-auto md:overflow-y-auto"/,
     );
     assert.match(
         dashboard,
