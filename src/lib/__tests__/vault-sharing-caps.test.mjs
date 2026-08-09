@@ -11,13 +11,18 @@ function source(path) {
 
 function loadVaultSharing(initialVault, initialCommits = []) {
     const vault = { ...initialVault };
-    const commits = new Map(initialCommits.map((c) => [c.id || c.commitId, { ...c }]));
+    const commits = new Map(initialCommits.map((c) => [c.commitId || c.id, { ...c }]));
 
     const prisma = {
         meteredVault: {
             findUnique: async () => vault,
         },
         userCommit: {
+            findUnique: async ({ where }) => {
+                if (where.commitId) return commits.get(where.commitId) || null;
+                if (where.id) return commits.get(where.id) || null;
+                return null;
+            },
             findFirst: async ({ where }) => {
                 for (const row of commits.values()) {
                     if (row.vaultId === where.vaultId && row.parentCommitId === where.parentCommitId) {
@@ -155,3 +160,26 @@ test("createVaultShare prevents assigning a cap greater than unallocated escrow 
     });
     assert.equal(share.spendLimitUsdc, 500_000n);
 });
+
+test("resolveVaultCommitForMerchant resolves Root Commit ID for primary commiter", async () => {
+    const vault = {
+        id: "v_123",
+        userAddress: "0xPrimary",
+        merchantAddress: "0xMerchant",
+        balanceUsdc: 2_000_000n,
+        accruedUsageUsdc: 0n,
+    };
+
+    const lib = loadVaultSharing(vault, [
+        { id: "root_1", commitId: "cmt_root_123", vaultId: "v_123", parentCommitId: null, status: "ACTIVE", vault },
+    ]);
+
+    const resolved = await lib.resolveVaultCommitForMerchant("cmt_root_123", "0xMerchant");
+    assert.notEqual(resolved, null);
+    assert.equal(resolved.vaultId, "v_123");
+    assert.equal(resolved.userAddress, "0xPrimary");
+    assert.equal(resolved.merchantAddress, "0xMerchant");
+    assert.equal(resolved.commitId, null);
+    assert.equal(resolved.capped, false);
+});
+

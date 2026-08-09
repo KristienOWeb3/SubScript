@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { createDmAndNotify } from "@/lib/dms/notifications";
+import { merchantDisplayName } from "@/lib/identityDisplay";
 import { consumeDistributedRateLimit } from "@/lib/distributedRateLimit";
 import { CommitAccessError, isCommitId, resolveDisplayName } from "@/lib/commitId";
 import {
@@ -167,7 +170,66 @@ export async function POST(request: Request) {
             spendLimitUsdc: parsed.value,
         });
 
-        return NextResponse.json({ share: serializeShare(share) }, { status: 201 });
+        let dmSent = false;
+        if (displayName) {
+            const friendHandle = displayName.replace(/^@/, "").replace(/\.subscript$/i, "").trim().toLowerCase();
+            const friendAlias = await prisma.addressAlias.findFirst({
+                where: {
+                    OR: [
+                        { alias: { equals: friendHandle, mode: "insensitive" } },
+                        { alias: { equals: `${friendHandle}.subscript`, mode: "insensitive" } },
+                    ],
+                },
+                select: { address: true },
+            });
+            if (friendAlias?.address) {
+                const friendAddress = friendAlias.address.toLowerCase();
+                const primaryAddress = walletAddress.toLowerCase();
+                const openDm = await prisma.subscriptDm.findFirst({
+                    where: {
+                        OR: [
+                            { senderAddress: primaryAddress, receiverAddress: friendAddress },
+                            { senderAddress: friendAddress, receiverAddress: primaryAddress },
+                        ],
+                    },
+                });
+                if (openDm) {
+                    const vault = await prisma.meteredVault.findUnique({
+                        where: { id: vaultId },
+                        select: { merchantAddress: true },
+                    });
+                    let merchantLabel = "this merchant";
+                    if (vault?.merchantAddress) {
+                        const merchantAliasRecord = await prisma.addressAlias.findUnique({
+                            where: { address: vault.merchantAddress.toLowerCase() },
+                            select: { alias: true },
+                        });
+                        merchantLabel = merchantDisplayName(merchantAliasRecord?.alias);
+                    }
+                    const primaryAliasRecord = await prisma.addressAlias.findUnique({
+                        where: { address: primaryAddress },
+                        select: { alias: true, isAnonymous: true },
+                    });
+                    const primaryLabel = primaryAliasRecord?.alias && !primaryAliasRecord.isAnonymous
+                        ? `@${primaryAliasRecord.alias}`
+                        : `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
+                    const formatUsdcNum = (micros: bigint) => (Number(micros) / 1_000_000).toFixed(2);
+
+                    await createDmAndNotify({
+                        senderAddress: primaryAddress,
+                        receiverAddress: friendAddress,
+                        messageType: "SHARE_COMMIT",
+                        status: "PENDING",
+                        amountUsdc: parsed.value,
+                        title: `Shared Commitment: ${merchantLabel}`,
+                        description: `${primaryLabel} shared a ${formatUsdcNum(parsed.value)} USDC commitment for ${merchantLabel}. Commit ID: ${share.commitId}`,
+                    });
+                    dmSent = true;
+                }
+            }
+        }
+
+        return NextResponse.json({ share: serializeShare(share), dmSent }, { status: 201 });
     } catch (error) {
         if (error instanceof CommitAccessError) {
             return NextResponse.json({ error: error.message }, { status: error.httpStatus });
