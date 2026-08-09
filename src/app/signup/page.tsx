@@ -849,7 +849,7 @@ export default function SignupPage() {
               <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 text-[10px] leading-relaxed text-emerald-300 flex items-start gap-2">
                 <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                 <span>
-                  <strong>Recommended:</strong> Register with Email{CIRCLE_GOOGLE_ENABLED ? " or Google" : ""} to create a secure <strong>Server-Signed Wallet</strong>. This will be fully compatible with our upcoming mobile app. Web3 connected wallets are web-only.
+                  <strong>Recommended</strong>
                 </span>
               </div>
 
