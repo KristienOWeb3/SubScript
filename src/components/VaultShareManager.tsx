@@ -70,6 +70,7 @@ export default function VaultShareManager({
     const [name, setName] = useState("");
     const [cap, setCap] = useState("");
     const [formError, setFormError] = useState<string | null>(null);
+    const [successMsg, setSuccessMsg] = useState<string | null>(null);
     const [creating, setCreating] = useState(false);
 
     const load = useCallback(async () => {
@@ -97,6 +98,7 @@ export default function VaultShareManager({
 
     const handleCreate = async () => {
         setFormError(null);
+        setSuccessMsg(null);
         const parsed = parseUsdcToMicros(cap);
         if ("error" in parsed) {
             setFormError(parsed.error);
@@ -118,6 +120,11 @@ export default function VaultShareManager({
             if (!res.ok) throw new Error(json.error || "Could not create share");
             setName("");
             setCap("");
+            setSuccessMsg(
+                json.dmSent
+                    ? "Share created! Notification card sent to your open DM thread with this friend."
+                    : "Share created successfully.",
+            );
             await load();
         } catch (err: any) {
             setFormError(err.message || "Could not create share");
@@ -233,6 +240,34 @@ export default function VaultShareManager({
                                 this commitment — no wallet or account needed on their side. They can never
                                 spend past the cap you set.
                             </p>
+
+                            {data?.rootCommitId && (
+                                <div className="rounded-2xl border border-[#00d2b4]/25 bg-[#00d2b4]/[0.06] p-3 space-y-2">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className="text-[9px] font-black uppercase tracking-[0.16em] text-[#00d2b4]">
+                                            Primary Commit ID (Privacy First)
+                                        </span>
+                                        <span className="rounded-full border border-[#00d2b4]/30 bg-[#00d2b4]/10 px-2 py-0.5 text-[8px] font-bold text-[#00d2b4]">
+                                            Root Credential
+                                        </span>
+                                    </div>
+                                    <p className="text-[10px] text-white/60 leading-relaxed">
+                                        Use this Primary Commit ID instead of your wallet address when checking out or reporting usage on merchant services.
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => copyId(data.rootCommitId)}
+                                        className="flex w-full items-center justify-between gap-2 rounded-xl border border-[#00d2b4]/20 bg-black/40 px-3 py-2 text-left transition-colors hover:border-[#00d2b4]/50"
+                                    >
+                                        <code className="truncate font-mono text-[11px] font-bold text-[#00d2b4]">
+                                            {data.rootCommitId}
+                                        </code>
+                                        <span className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-[#00d2b4]">
+                                            {copiedId === data.rootCommitId ? "Copied" : "Copy Primary ID"}
+                                        </span>
+                                    </button>
+                                </div>
+                            )}
 
                             {data && (
                                 <div className="flex flex-wrap gap-x-4 gap-y-1 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2">
@@ -377,7 +412,7 @@ export default function VaultShareManager({
                                             <input
                                                 value={name}
                                                 onChange={(e) => setName(e.target.value)}
-                                                placeholder="Their name"
+                                                placeholder="Their name or @DNS (e.g. alex.subscript)"
                                                 maxLength={128}
                                                 className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[11px] text-white placeholder:text-white/25 focus:border-[#00d2b4]/40 focus:outline-none"
                                             />
@@ -398,6 +433,12 @@ export default function VaultShareManager({
                                                 Share
                                             </button>
                                         </div>
+                                        <p className="mt-1.5 text-[9px] leading-normal text-white/35">
+                                            Input a name or SubScript DNS handle. If you have an open DM thread with them, a share card will be sent directly to your chat.
+                                        </p>
+                                        {successMsg && (
+                                            <p className="mt-2 text-[10px] font-medium text-[#00d2b4]">{successMsg}</p>
+                                        )}
                                         {formError && (
                                             <p className="mt-2 text-[10px] text-red-300">{formError}</p>
                                         )}

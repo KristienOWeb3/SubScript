@@ -1,0 +1,1433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SubScript Protocol — Merchant Control Center</title>
+    <style>
+        /* RESET & BASE STYLES */
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg-dark: #08090c;
+            --sidebar-bg: #0d0e12;
+            --card-bg: rgba(18, 20, 26, 0.75);
+            --card-hover: rgba(26, 30, 40, 0.85);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-hover: rgba(255, 255, 255, 0.16);
+            --teal: #00d2b4;
+            --teal-glow: rgba(0, 210, 180, 0.15);
+            --teal-border: rgba(0, 210, 180, 0.35);
+            --gold: #d4a853;
+            --gold-glow: rgba(212, 168, 83, 0.15);
+            --gold-border: rgba(212, 168, 83, 0.35);
+            --purple: #a855f7;
+            --emerald: #10b981;
+            --rose: #f43f5e;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            font-family: var(--font-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-image: 
+                radial-gradient(at 10% 10%, rgba(0, 210, 180, 0.04) 0px, transparent 40%),
+                radial-gradient(at 90% 90%, rgba(212, 168, 83, 0.03) 0px, transparent 40%);
+            background-attachment: fixed;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* HEADER */
+        .top-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 64px;
+            background: rgba(8, 9, 12, 0.85);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border-color);
+            z-index: 40;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+        }
+
+        .brand-group {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-box {
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--teal), var(--gold));
+            padding: 2px;
+            box-shadow: 0 0 16px var(--teal-glow);
+        }
+
+        .logo-inner {
+            width: 100%;
+            height: 100%;
+            background: var(--bg-dark);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 16px;
+            color: var(--teal);
+        }
+
+        .brand-title {
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: -0.2px;
+        }
+
+        .brand-subtitle {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-left: 6px;
+            font-weight: 400;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .pill-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            font-size: 11px;
+            font-family: var(--font-mono);
+            color: var(--text-secondary);
+        }
+
+        .pulse-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--emerald);
+            box-shadow: 0 0 8px var(--emerald);
+        }
+
+        .btn-primary {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 12px;
+            background: var(--teal);
+            color: #000;
+            font-size: 12px;
+            font-weight: 700;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 0 16px var(--teal-glow);
+        }
+
+        .btn-primary:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        .btn-glass {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-glass:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: var(--border-hover);
+        }
+
+        /* MAIN LAYOUT */
+        .app-container {
+            display: flex;
+            flex: 1;
+            margin-top: 64px;
+        }
+
+        /* ========================================================= */
+        /* ENHANCED SIDEBAR ("The Spine of Your Product" from Video) */
+        /* ========================================================= */
+        .sidebar {
+            width: 270px;
+            background: rgba(13, 14, 18, 0.95);
+            backdrop-filter: blur(20px);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: fixed;
+            top: 64px;
+            bottom: 0;
+            left: 0;
+            overflow-y: auto;
+            z-index: 30;
+            padding: 16px;
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .sidebar.collapsed {
+            width: 76px;
+            padding: 16px 10px;
+        }
+
+        .sidebar.collapsed .hide-on-collapse,
+        .sidebar.collapsed .nav-label,
+        .sidebar.collapsed .profile-text,
+        .sidebar.collapsed .promo-widget,
+        .sidebar.collapsed .badge-count,
+        .sidebar.collapsed .badge-tag {
+            display: none !important;
+        }
+
+        .sidebar.collapsed .nav-link {
+            justify-content: center;
+            padding: 12px;
+        }
+
+        .sidebar.collapsed .profile-card {
+            justify-content: center;
+            padding: 8px;
+        }
+
+        /* Workspace Selector Dropdown Header */
+        .workspace-card {
+            padding: 10px 12px;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            margin-bottom: 14px;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .workspace-card:hover {
+            border-color: var(--teal-border);
+            background: rgba(255, 255, 255, 0.06);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+        }
+
+        .workspace-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .workspace-avatar {
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--teal), #0284c7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            color: #000;
+            font-size: 15px;
+            box-shadow: 0 0 10px var(--teal-glow);
+            position: relative;
+        }
+
+        .workspace-avatar::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            width: 10px;
+            height: 10px;
+            background: var(--emerald);
+            border: 2px solid var(--sidebar-bg);
+            border-radius: 50%;
+        }
+
+        .workspace-text h4 {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .workspace-text p {
+            font-size: 10px;
+            font-family: var(--font-mono);
+            color: var(--text-muted);
+        }
+
+        .plan-chip {
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: var(--gold-glow);
+            border: 1px solid var(--gold-border);
+            color: var(--gold);
+            font-size: 9px;
+            font-weight: 800;
+            font-family: var(--font-mono);
+        }
+
+        /* Sidebar Quick Search Command Input */
+        .sidebar-search {
+            position: relative;
+            margin-bottom: 16px;
+        }
+
+        .sidebar-search input {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 7px 10px 7px 30px;
+            font-size: 11px;
+            color: var(--text-primary);
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .sidebar-search input:focus {
+            border-color: var(--teal-border);
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .sidebar-search svg {
+            position: absolute;
+            left: 9px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            pointer-events: none;
+        }
+
+        .sidebar-search kbd {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 1px 5px;
+            font-size: 9px;
+            font-family: var(--font-mono);
+            color: var(--text-muted);
+        }
+
+        /* Nav Group Styling */
+        .nav-section {
+            margin-bottom: 18px;
+        }
+
+        .nav-label {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+            padding: 0 8px;
+            margin-bottom: 6px;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 9px 12px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-decoration: none;
+            margin-bottom: 3px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+
+        .nav-link-content {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .nav-link:hover {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.05);
+            transform: translateX(2px);
+        }
+
+        .nav-link.active-teal {
+            background: var(--teal-glow);
+            border: 1px solid var(--teal-border);
+            color: #ffffff;
+            box-shadow: 0 0 14px var(--teal-glow);
+        }
+
+        .nav-link.active-teal::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 6px;
+            bottom: 6px;
+            width: 3px;
+            border-radius: 0 3px 3px 0;
+            background: var(--teal);
+            box-shadow: 0 0 8px var(--teal);
+        }
+
+        .nav-link.active-teal svg {
+            color: var(--teal);
+        }
+
+        .badge-count {
+            padding: 2px 7px;
+            border-radius: 10px;
+            background: var(--teal-glow);
+            color: var(--teal);
+            font-size: 10px;
+            font-family: var(--font-mono);
+            font-weight: 700;
+            border: 1px solid var(--teal-border);
+        }
+
+        .badge-tag {
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: var(--purple);
+            color: #fff;
+            font-size: 9px;
+            font-weight: 800;
+            font-family: var(--font-mono);
+            text-transform: uppercase;
+        }
+
+        /* Sub-navigation Accordion */
+        .sub-nav {
+            margin-left: 28px;
+            border-left: 1px solid var(--border-color);
+            padding-left: 10px;
+            margin-top: 2px;
+            margin-bottom: 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .sub-nav-link {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 5px 8px;
+            border-radius: 6px;
+            transition: all 0.2s;
+            display: block;
+        }
+
+        .sub-nav-link:hover {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        /* Sidebar Bottom Pinned Area */
+        .sidebar-bottom {
+            border-top: 1px solid var(--border-color);
+            padding-top: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .promo-banner {
+            padding: 12px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--gold-glow), rgba(18, 20, 26, 0.8));
+            border: 1px solid var(--gold-border);
+            position: relative;
+        }
+
+        .promo-banner h5 {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--gold);
+            margin-bottom: 3px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .promo-banner p {
+            font-size: 10px;
+            color: var(--text-secondary);
+            line-height: 1.35;
+        }
+
+        .promo-banner a {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--gold);
+            text-decoration: none;
+            margin-top: 6px;
+        }
+
+        .promo-banner a:hover {
+            text-decoration: underline;
+        }
+
+        .collapse-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 8px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 11px;
+            font-family: var(--font-mono);
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 4px;
+        }
+
+        .collapse-toggle:hover {
+            color: var(--text-primary);
+            border-color: var(--border-hover);
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        /* MAIN CONTENT AREA */
+        .main-content {
+            margin-left: 270px;
+            flex: 1;
+            padding: 32px;
+            max-width: 1280px;
+            display: flex;
+            flex-direction: column;
+            gap: 28px;
+            transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .main-content.expanded {
+            margin-left: 76px;
+        }
+
+        .page-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 16px;
+        }
+
+        .page-header h1 {
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: -0.3px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .page-header p {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .tier-tag {
+            padding: 3px 10px;
+            border-radius: 20px;
+            background: var(--gold-glow);
+            border: 1px solid var(--gold-border);
+            color: var(--gold);
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            font-family: var(--font-mono);
+        }
+
+        /* CARDS GRID (4 System from Video) */
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+        }
+
+        .metric-card {
+            padding: 20px;
+            border-radius: 16px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            backdrop-filter: blur(12px);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: all 0.2s;
+        }
+
+        .metric-card:hover {
+            border-color: var(--border-hover);
+            background: var(--card-hover);
+        }
+
+        .card-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .card-title {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+        }
+
+        .card-value {
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            margin-bottom: 6px;
+        }
+
+        .card-footer {
+            font-size: 11px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .trend-up {
+            color: var(--emerald);
+            font-weight: 700;
+            font-size: 11px;
+        }
+
+        /* CHARTS SECTION */
+        .charts-row {
+            display: grid;
+            grid-template-columns: 7fr 5fr;
+            gap: 20px;
+        }
+
+        .chart-card {
+            padding: 24px;
+            border-radius: 18px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            backdrop-filter: blur(12px);
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .chart-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .chart-title h3 {
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .chart-title p {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+        }
+
+        .timeframe-picker {
+            display: flex;
+            background: rgba(255, 255, 255, 0.04);
+            padding: 3px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+        }
+
+        .timeframe-btn {
+            padding: 4px 10px;
+            font-size: 11px;
+            font-family: var(--font-mono);
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-radius: 8px;
+        }
+
+        .timeframe-btn.active {
+            background: var(--teal-glow);
+            color: var(--teal);
+            font-weight: 700;
+            border: 1px solid var(--teal-border);
+        }
+
+        .svg-chart-container {
+            width: 100%;
+            height: 220px;
+            position: relative;
+        }
+
+        .bar-list {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            margin-top: 8px;
+        }
+
+        .bar-row {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .bar-row-info {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 12px;
+            font-family: var(--font-mono);
+        }
+
+        .bar-track {
+            height: 8px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* TABLE SECTION */
+        .table-card {
+            padding: 24px;
+            border-radius: 18px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .table-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .search-input {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 8px 12px 8px 34px;
+            font-size: 12px;
+            color: var(--text-primary);
+            outline: none;
+            width: 240px;
+        }
+
+        .search-wrap {
+            position: relative;
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            pointer-events: none;
+        }
+
+        .select-filter {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 8px 12px;
+            font-size: 12px;
+            color: var(--text-primary);
+            outline: none;
+            font-family: var(--font-mono);
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .data-table th {
+            text-align: left;
+            padding: 10px 12px;
+            font-size: 10px;
+            font-family: var(--font-mono);
+            text-transform: uppercase;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border-color);
+            letter-spacing: 0.5px;
+        }
+
+        .data-table td {
+            padding: 14px 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            font-family: var(--font-mono);
+            color: var(--text-secondary);
+        }
+
+        .data-table tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+            color: var(--text-primary);
+        }
+
+        .status-pill {
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .status-active {
+            background: rgba(16, 185, 129, 0.12);
+            color: var(--emerald);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .status-cancelled {
+            background: rgba(244, 63, 94, 0.12);
+            color: var(--rose);
+            border: 1px solid rgba(244, 63, 94, 0.3);
+        }
+
+        /* MODAL & TOAST */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(8px);
+            z-index: 50;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease;
+        }
+
+        .modal-overlay.open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal-card {
+            background: #12141a;
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            width: 100%;
+            max-width: 440px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 12px;
+        }
+
+        .toast-box {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 60;
+            background: #12141a;
+            border: 1px solid var(--teal-border);
+            padding: 12px 18px;
+            border-radius: 14px;
+            font-size: 12px;
+            font-family: var(--font-mono);
+            color: var(--text-primary);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transform: translateY(20px);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .toast-box.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        /* RESPONSIVE */
+        @media (max-width: 1024px) {
+            .cards-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .charts-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+            .main-content {
+                margin-left: 0;
+                padding: 16px;
+            }
+            .cards-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- TOP HEADER -->
+    <header class="top-header">
+        <div class="brand-group">
+            <div class="logo-box">
+                <div class="logo-inner">S</div>
+            </div>
+            <span class="brand-title">SubScript <span class="brand-subtitle">Merchant</span></span>
+        </div>
+
+        <div class="header-actions">
+            <div class="pill-badge">
+                <span class="pulse-dot"></span>
+                <span>Arc Network</span>
+            </div>
+
+            <button class="btn-primary" onclick="openModal('createModal')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                <span>Create Link</span>
+            </button>
+
+            <button class="btn-glass" style="font-family: var(--font-mono)">
+                <span>0x7F...4a29</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- APP CONTAINER -->
+    <div class="app-container">
+
+        <!-- ========================================================= -->
+        <!-- UPGRADED SIDEBAR NAVIGATION ("Spine of Your Product")     -->
+        <!-- ========================================================= -->
+        <aside id="mainSidebar" class="sidebar">
+            <div>
+                <!-- Workspace / Account Header Dropdown -->
+                <div class="workspace-card" onclick="showToast('Workspace Switcher Menu')">
+                    <div class="workspace-info">
+                        <div class="workspace-avatar">K</div>
+                        <div class="workspace-text hide-on-collapse">
+                            <h4>Kangaroo Inc. <span class="plan-chip">PRO</span></h4>
+                            <p>admin@kangaroo.io</p>
+                        </div>
+                    </div>
+                    <svg class="hide-on-collapse" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted)"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg>
+                </div>
+
+                <!-- Sidebar Command / Quick Search -->
+                <div class="sidebar-search hide-on-collapse">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                    <input type="text" placeholder="Quick search links or API...">
+                    <kbd>⌘K</kbd>
+                </div>
+
+                <!-- NAV GROUP 1: CORE -->
+                <div class="nav-section">
+                    <div class="nav-label">Core</div>
+                    <a href="#" class="nav-link active-teal">
+                        <div class="nav-link-content">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
+                            <span class="hide-on-collapse">Overview</span>
+                        </div>
+                    </a>
+                    <a href="#" class="nav-link">
+                        <div class="nav-link-content">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+                            <span class="hide-on-collapse">Analytics</span>
+                        </div>
+                        <span class="badge-count hide-on-collapse">+14%</span>
+                    </a>
+                </div>
+
+                <!-- NAV GROUP 2: MONETIZATION -->
+                <div class="nav-section">
+                    <div class="nav-label">Monetization</div>
+                    <a href="#" class="nav-link">
+                        <div class="nav-link-content">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                            <span class="hide-on-collapse">Payments & Links</span>
+                        </div>
+                        <span class="badge-count hide-on-collapse">12</span>
+                    </a>
+                    <a href="#" class="nav-link" onclick="toggleSubNav('plansSubNav')">
+                        <div class="nav-link-content">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+                            <span class="hide-on-collapse">Subscription Plans</span>
+                        </div>
+                        <svg class="hide-on-collapse" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted)"><path d="m6 9 6 6 6-6"/></svg>
+                    </a>
+                    <!-- Sub-navigation Accordion Links -->
+                    <div id="plansSubNav" class="sub-nav hide-on-collapse">
+                        <a href="#" class="sub-nav-link">&bull; Active Recurring Plans</a>
+                        <a href="#" class="sub-nav-link">&bull; Plan Promotions</a>
+                        <a href="#" class="sub-nav-link">&bull; Dunning & Retry Rules</a>
+                    </div>
+
+                    <a href="#" class="nav-link">
+                        <div class="nav-link-content">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="8" x2="16" y1="10" y2="10"/></svg>
+                            <span class="hide-on-collapse">Payroll & Keeper</span>
+                        </div>
+                        <span class="badge-tag hide-on-collapse">NEW</span>
+                    </a>
+                </div>
+
+                <!-- NAV GROUP 3: DEVELOPER -->
+                <div class="nav-section">
+                    <div class="nav-label">Developer</div>
+                    <a href="#" class="nav-link">
+                        <div class="nav-link-content">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3"/></svg>
+                            <span class="hide-on-collapse">API Keys</span>
+                        </div>
+                    </a>
+                    <a href="#" class="nav-link">
+                        <div class="nav-link-content">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                            <span class="hide-on-collapse">Webhooks</span>
+                        </div>
+                    </a>
+                    <a href="#" class="nav-link">
+                        <div class="nav-link-content">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                            <span class="hide-on-collapse">Checkout Builder</span>
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+            <!-- PINNED BOTTOM AREA -->
+            <div class="sidebar-bottom">
+                <a href="#" class="nav-link">
+                    <div class="nav-link-content">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+                        <span class="hide-on-collapse">Settings & DNS</span>
+                    </div>
+                </a>
+
+                <a href="#" class="nav-link">
+                    <div class="nav-link-content">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>
+                        <span class="hide-on-collapse">Help Center & Docs</span>
+                    </div>
+                </a>
+
+                <!-- Feature Promo Banner -->
+                <div class="promo-banner hide-on-collapse">
+                    <h5>Partner Affiliate Program <span style="cursor: pointer; color: var(--text-muted)" onclick="this.parentElement.parentElement.remove()">&times;</span></h5>
+                    <p>Run your own partner program with 0% protocol overhead.</p>
+                    <a href="#">Try it out &rarr;</a>
+                </div>
+
+                <!-- Collapse / Expand Sidebar Toggle -->
+                <button class="collapse-toggle" onclick="toggleSidebarCollapse()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+                    <span class="hide-on-collapse">Collapse Sidebar</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- MAIN DASHBOARD CONTENT -->
+        <main id="mainContent" class="main-content">
+
+            <!-- PAGE TITLE HEADER -->
+            <div class="page-header">
+                <div>
+                    <h1>
+                        Merchant Control <span style="font-family: Georgia, serif; font-style: italic; color: var(--teal); font-weight: 400">center</span>
+                        <span class="tier-tag">PREMIUM TIER</span>
+                    </h1>
+                    <p>Real-time revenue monitoring, vault settlements, and subscriber allowances.</p>
+                </div>
+
+                <button class="btn-glass" onclick="openModal('withdrawModal')" style="color: var(--teal); border-color: var(--teal-border)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 17V3"/><path d="m6 11 6 6 6-6"/><path d="M19 21H5"/></svg>
+                    <span>Withdraw Vault</span>
+                </button>
+            </div>
+
+            <!-- METRICS CARDS GRID (4 System) -->
+            <div class="cards-grid">
+                
+                <!-- CARD 1 -->
+                <div class="metric-card">
+                    <div class="card-top">
+                        <span class="card-title">Wallet Balance</span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted); cursor: pointer" onclick="toggleMask()"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </div>
+                    <div class="card-value balance-val">$12,450.80</div>
+                    <div class="card-footer">
+                        <span>USDC on Arc</span>
+                        <span class="trend-up">+14.2% &uarr;</span>
+                    </div>
+                </div>
+
+                <!-- CARD 2 -->
+                <div class="metric-card" style="border-color: var(--teal-border)">
+                    <div class="card-top">
+                        <span class="card-title" style="color: var(--teal)">Claimable Vault</span>
+                        <span class="pulse-dot"></span>
+                    </div>
+                    <div class="card-value balance-val" style="color: var(--teal)">$8,732.50</div>
+                    <div class="card-footer">
+                        <span>Ready to pay out</span>
+                        <button class="btn-primary" style="padding: 4px 8px; font-size: 10px" onclick="openModal('withdrawModal')">Claim</button>
+                    </div>
+                </div>
+
+                <!-- CARD 3 -->
+                <div class="metric-card">
+                    <div class="card-top">
+                        <span class="card-title">Active Allowances</span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--emerald)"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    </div>
+                    <div class="card-value">48</div>
+                    <div class="card-footer">
+                        <span>M2M Subscriptions</span>
+                        <span style="color: var(--emerald); font-weight: 700">Healthy</span>
+                    </div>
+                </div>
+
+                <!-- CARD 4 -->
+                <div class="metric-card">
+                    <div class="card-top">
+                        <span class="card-title">30-Day Volume</span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--gold)"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
+                    </div>
+                    <div class="card-value" style="color: var(--gold)">$312,134.00</div>
+                    <div class="card-footer">
+                        <span>Projected Monthly</span>
+                        <span class="trend-up">+8.5% &uarr;</span>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- CHARTS ROW -->
+            <div class="charts-row">
+                
+                <!-- LINE GRAPH CARD -->
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <div class="chart-title">
+                            <h3>Total Settlement Volume</h3>
+                            <p>Aggregate USDC volume collected over time</p>
+                        </div>
+
+                        <div class="timeframe-picker">
+                            <button class="timeframe-btn">1D</button>
+                            <button class="timeframe-btn">1W</button>
+                            <button class="timeframe-btn active">1M</button>
+                            <button class="timeframe-btn">6M</button>
+                        </div>
+                    </div>
+
+                    <!-- Clean SVG Line Graph -->
+                    <div class="svg-chart-container">
+                        <svg width="100%" height="100%" viewBox="0 0 500 200" preserveAspectRatio="none">
+                            <defs>
+                                <linearGradient id="tealGrad" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stop-color="#00d2b4" stop-opacity="0.3"/>
+                                    <stop offset="100%" stop-color="#00d2b4" stop-opacity="0.0"/>
+                                </linearGradient>
+                            </defs>
+                            <!-- Grid lines -->
+                            <line x1="0" y1="40" x2="500" y2="40" stroke="rgba(255,255,255,0.04)" stroke-dasharray="4"/>
+                            <line x1="0" y1="90" x2="500" y2="90" stroke="rgba(255,255,255,0.04)" stroke-dasharray="4"/>
+                            <line x1="0" y1="140" x2="500" y2="140" stroke="rgba(255,255,255,0.04)" stroke-dasharray="4"/>
+
+                            <!-- Area fill -->
+                            <path d="M0,160 Q 100,120 200,135 T 400,60 T 500,30 L 500,200 L 0,200 Z" fill="url(#tealGrad)"/>
+                            <!-- Stroke line -->
+                            <path d="M0,160 Q 100,120 200,135 T 400,60 T 500,30" fill="none" stroke="#00d2b4" stroke-width="3"/>
+
+                            <!-- Interactive Points -->
+                            <circle cx="200" cy="135" r="5" fill="#00d2b4" stroke="#08090c" stroke-width="2"/>
+                            <circle cx="400" cy="60" r="5" fill="#00d2b4" stroke="#08090c" stroke-width="2"/>
+                            <circle cx="500" cy="30" r="6" fill="#00d2b4" stroke="#fff" stroke-width="2"/>
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- BAR CHART CARD (With Micro-interaction Hover Dimming) -->
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <div class="chart-title">
+                            <h3>Performance by Link</h3>
+                            <p>Top performing checkout targets</p>
+                        </div>
+                    </div>
+
+                    <div class="bar-list">
+                        <div class="bar-row">
+                            <div class="bar-row-info">
+                                <span style="color: var(--text-primary)">Pro Subscription Plan</span>
+                                <span style="color: var(--teal); font-weight: 700">124 clicks</span>
+                            </div>
+                            <div class="bar-track">
+                                <div class="bar-fill" style="width: 85%; background: var(--teal)"></div>
+                            </div>
+                        </div>
+
+                        <div class="bar-row">
+                            <div class="bar-row-info">
+                                <span style="color: var(--text-primary)">API Credit Tier 2</span>
+                                <span style="color: var(--gold); font-weight: 700">86 clicks</span>
+                            </div>
+                            <div class="bar-track">
+                                <div class="bar-fill" style="width: 62%; background: var(--gold)"></div>
+                            </div>
+                        </div>
+
+                        <div class="bar-row">
+                            <div class="bar-row-info">
+                                <span style="color: var(--text-primary)">Dev Tier Annual Pass</span>
+                                <span style="color: var(--purple); font-weight: 700">51 clicks</span>
+                            </div>
+                            <div class="bar-track">
+                                <div class="bar-fill" style="width: 42%; background: var(--purple)"></div>
+                            </div>
+                        </div>
+
+                        <div class="bar-row">
+                            <div class="bar-row-info">
+                                <span style="color: var(--text-primary)">Instagram Funnel #2</span>
+                                <span style="color: #3b82f6; font-weight: 700">34 clicks</span>
+                            </div>
+                            <div class="bar-track">
+                                <div class="bar-fill" style="width: 25%; background: #3b82f6"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- TABLE SECTION: CUSTOMER & AGENT LEDGER -->
+            <div class="table-card">
+                <div class="table-toolbar">
+                    <div>
+                        <h3 style="font-size: 14px; font-weight: 700">Customer & Agent Ledger</h3>
+                        <p style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono)">48 Total authorized recurring contracts</p>
+                    </div>
+
+                    <div style="display: flex; gap: 10px">
+                        <div class="search-wrap">
+                            <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                            <input type="text" placeholder="Search address or alias..." class="search-input">
+                        </div>
+
+                        <select class="select-filter">
+                            <option>All Statuses</option>
+                            <option>Active</option>
+                            <option>Cancelled</option>
+                        </select>
+                    </div>
+                </div>
+
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Sub ID</th>
+                            <th>Subscriber Address</th>
+                            <th>Plan Details</th>
+                            <th>Allowance</th>
+                            <th>Next Renewal</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="font-weight: 700; color: var(--text-primary)">#SUB-8921</td>
+                            <td style="color: var(--text-primary)">alex.eth <span style="color: var(--text-muted); font-size: 10px">(0x3a...8f91)</span></td>
+                            <td>Pro Tier Monthly ($49.00)</td>
+                            <td style="color: var(--teal); font-weight: 700">$49.00 USDC</td>
+                            <td>Aug 14, 2026</td>
+                            <td><span class="status-pill status-active">Active</span></td>
+                        </tr>
+                        <tr>
+                            <td style="font-weight: 700; color: var(--text-primary)">#SUB-8922</td>
+                            <td style="color: var(--text-primary)">agent_matrix_7 <span style="color: var(--text-muted); font-size: 10px">(0x9b...1c04)</span></td>
+                            <td>API Volume Unlimited ($299.00)</td>
+                            <td style="color: var(--gold); font-weight: 700">$299.00 USDC</td>
+                            <td>Aug 18, 2026</td>
+                            <td><span class="status-pill status-active">Active</span></td>
+                        </tr>
+                        <tr>
+                            <td style="font-weight: 700; color: var(--text-primary)">#SUB-8923</td>
+                            <td style="color: var(--text-primary)">crypto_trader_x <span style="color: var(--text-muted); font-size: 10px">(0x1f...9e44)</span></td>
+                            <td>Starter Plan ($19.00)</td>
+                            <td style="color: var(--teal); font-weight: 700">$19.00 USDC</td>
+                            <td>Period End</td>
+                            <td><span class="status-pill status-cancelled">Cancelled</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- MODAL: WITHDRAW SETTLEMENT -->
+    <div id="withdrawModal" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 style="font-size: 14px; font-weight: 700; color: var(--text-primary)">Withdraw Vault Settlement</h3>
+                <span style="cursor: pointer; color: var(--text-muted); font-size: 18px" onclick="closeModal('withdrawModal')">&times;</span>
+            </div>
+
+            <div style="font-size: 12px; font-family: var(--font-mono)">
+                <div style="padding: 12px; background: var(--teal-glow); border: 1px solid var(--teal-border); border-radius: 12px; display: flex; justify-content: space-between; margin-bottom: 12px">
+                    <span style="color: var(--teal)">Available Vault</span>
+                    <span style="font-weight: 800; color: #fff">$8,732.50 USDC</span>
+                </div>
+                <p style="color: var(--text-muted); line-height: 1.4">Payout will settle directly to 0x7F21...4a29 with zero protocol fee.</p>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px">
+                <button class="btn-glass" onclick="closeModal('withdrawModal')">Cancel</button>
+                <button class="btn-primary" onclick="closeModal('withdrawModal'); showToast('Settlement Payout Executed!')">Confirm Payout</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOAST NOTIFICATION -->
+    <div id="toastBox" class="toast-box">
+        <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--teal)"></span>
+        <span id="toastMsg">Action completed!</span>
+    </div>
+
+    <!-- PURE VANILLA JS LOGIC -->
+    <script>
+        function openModal(id) {
+            document.getElementById(id).classList.add('open');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('open');
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toastBox');
+            document.getElementById('toastMsg').innerText = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        let isMasked = false;
+        function toggleMask() {
+            isMasked = !isMasked;
+            document.querySelectorAll('.balance-val').forEach(el => {
+                if (isMasked) {
+                    el.setAttribute('data-val', el.innerText);
+                    el.innerText = '••••••••';
+                } else {
+                    el.innerText = el.getAttribute('data-val') || el.innerText;
+                }
+            });
+        }
+
+        function toggleSubNav(id) {
+            const el = document.getElementById(id);
+            if (el.style.display === 'none') {
+                el.style.display = 'flex';
+            } else {
+                el.style.display = 'none';
+            }
+        }
+
+        function toggleSidebarCollapse() {
+            const sidebar = document.getElementById('mainSidebar');
+            const mainContent = document.getElementById('mainContent');
+            sidebar.classList.toggle('collapsed');
+            mainContent.classList.toggle('expanded');
+        }
+    </script>
+</body>
+</html>
