@@ -14,7 +14,7 @@ zero runtime dependencies to your project.
 npx @subscriptonarc/cli
 
 # Non-interactive (AI agents, CI, scripts) — no prompts, no dashboard round-trip
-npx @subscriptonarc/cli init --key sk_test_... --merchant 0xYourWallet --framework next-app --yes
+npx @subscriptonarc/cli init --key sk_test_... --merchant 0xYourCommitID --framework next-app --yes
 ```
 
 The wizard detects your framework (Next.js App/Pages Router, React SPA, Express), scaffolds the
@@ -50,7 +50,7 @@ generate a route that calls `/api/v1/subscriptions` and publishes to the dashboa
 | `-v, --version` | Show the CLI version. |
 | `--json` | Emit one machine-readable JSON object on stdout: `{ ok, command, files_written, error }`. Progress logs go to stderr. |
 | `--key <sk_...>` | `init`: secret key (Dashboard → Developers → API keys). |
-| `--merchant <0x...>` | `init`: merchant payout wallet address. |
+| `--merchant <0x...>` | `init`: merchant primary commit ID. |
 | `--framework <name>` | `init`/`add`: `next-app`, `next-pages`, `react-spa`, or `express` (skips auto-detect). |
 | `--mode <mode>` | `standard` (default) or `privacy-routed` (ArcaneVM confidential settlement). |
 | `--plan-name <name>` | `init`: subscription plan name (default `Premium Subscription`). |
