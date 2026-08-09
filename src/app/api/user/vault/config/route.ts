@@ -23,18 +23,26 @@ export async function GET(request: Request) {
                 orderBy: { updatedAt: "desc" }
             });
 
-            // Resolve aliases for merchant addresses
+            // Resolve aliases & profile pictures for merchant addresses
             const uniqueMerchantAddresses = Array.from(new Set(vaults.map(v => v.merchantAddress.toLowerCase())));
-            const aliases = await prisma.addressAlias.findMany({
-                where: { address: { in: uniqueMerchantAddresses } }
-            });
+            const [aliases, merchants] = await Promise.all([
+                prisma.addressAlias.findMany({
+                    where: { address: { in: uniqueMerchantAddresses } }
+                }),
+                prisma.merchant.findMany({
+                    where: { walletAddress: { in: uniqueMerchantAddresses } },
+                    select: { walletAddress: true, profilePic: true }
+                })
+            ]);
             const aliasMap = new Map(aliases.map(a => [a.address.toLowerCase(), a.alias]));
+            const merchantPicMap = new Map(merchants.map(m => [m.walletAddress.toLowerCase(), m.profilePic]));
 
             const formattedVaults = vaults.map(v => ({
                 id: v.id,
                 userAddress: v.userAddress,
                 merchantAddress: v.merchantAddress,
                 merchantName: merchantDisplayName(aliasMap.get(v.merchantAddress.toLowerCase())),
+                merchantPic: merchantPicMap.get(v.merchantAddress.toLowerCase()) || null,
                 balanceUsdc: v.balanceUsdc.toString(),
                 commitUsdc: v.commitUsdc.toString(),
                 owedUsdc: v.owedUsdc.toString(),

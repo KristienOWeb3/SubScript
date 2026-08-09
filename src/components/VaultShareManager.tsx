@@ -20,6 +20,7 @@ function formatUsdc(micros: string | null): string {
 type Share = {
     commitId: string;
     displayName: string | null;
+    profilePic?: string | null;
     status: string;
     spendLimitUsdc: string | null;
     spentUsdc: string;
@@ -255,8 +256,12 @@ export default function VaultShareManager({
                                 onClick={() => setOpen(true)}
                                 className="flex min-w-[90px] cursor-pointer shrink-0 flex-col items-center justify-center rounded-2xl border border-white/10 bg-black/40 p-3 text-center transition hover:border-[#00d2b4]/40 hover:bg-black/60"
                             >
-                                <div className="mb-1.5 flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/10 text-sm font-black text-white">
-                                    {initial}
+                                <div className="mb-1.5 flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white/10 text-sm font-black text-white shrink-0">
+                                    {share.profilePic ? (
+                                        <img src={share.profilePic} alt={share.displayName || "Friend"} className="h-full w-full object-cover" />
+                                    ) : (
+                                        initial
+                                    )}
                                 </div>
                                 <span className="w-full truncate text-[11px] font-bold text-white">
                                     {share.displayName || "Friend"}
@@ -348,7 +353,11 @@ export default function VaultShareManager({
                                                 >
                                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                                         <span className="flex min-w-0 items-center gap-2">
-                                                            <User className="h-3.5 w-3.5 shrink-0 text-white/40" />
+                                                            {share.profilePic ? (
+                                                                <img src={share.profilePic} alt={share.displayName || "Friend"} className="h-4 w-4 rounded-full object-cover shrink-0" />
+                                                            ) : (
+                                                                <User className="h-3.5 w-3.5 shrink-0 text-white/40" />
+                                                            )}
                                                             <span className="truncate text-[11px] font-bold text-white/85">
                                                                 {share.displayName || "Unnamed"}
                                                             </span>
@@ -413,14 +422,14 @@ export default function VaultShareManager({
                                                             />
                                                             {share.status === "ACTIVE" ? (
                                                                 <RowAction
-                                                                    label="Pause"
+                                                                    label="Pause sharing"
                                                                     busy={rowBusy && busy?.action === "pause"}
                                                                     disabled={rowBusy}
                                                                     onClick={() => runAction(share.commitId, "pause")}
                                                                 />
                                                             ) : (
                                                                 <RowAction
-                                                                    label="Resume"
+                                                                    label="Resume sharing"
                                                                     busy={rowBusy && busy?.action === "resume"}
                                                                     disabled={rowBusy}
                                                                     onClick={() => runAction(share.commitId, "resume")}

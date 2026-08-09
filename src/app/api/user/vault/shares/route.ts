@@ -14,16 +14,19 @@ import {
 
 /* Same BigInt-as-string convention as /api/user/commit/sub-users: USDC columns are BIGINT micros
    and JSON.stringify cannot carry them, so they leave as decimal strings. */
-function serializeShare(share: {
-    commitId: string;
-    displayName: string | null;
-    status: string;
-    spendLimitUsdc: bigint | null;
-    spentUsdc: bigint;
-    pausedAt: Date | null;
-    revokedAt: Date | null;
-    createdAt: Date;
-}) {
+function serializeShare(
+    share: {
+        commitId: string;
+        displayName: string | null;
+        status: string;
+        spendLimitUsdc: bigint | null;
+        spentUsdc: bigint;
+        pausedAt: Date | null;
+        revokedAt: Date | null;
+        createdAt: Date;
+    },
+    profilePic: string | null = null
+) {
     return {
         commitId: share.commitId,
         displayName: resolveDisplayName({
@@ -31,6 +34,7 @@ function serializeShare(share: {
             displayName: share.displayName,
             walletAddress: null,
         }),
+        profilePic,
         status: share.status,
         spendLimitUsdc: share.spendLimitUsdc === null ? null : share.spendLimitUsdc.toString(),
         spentUsdc: share.spentUsdc.toString(),
@@ -109,6 +113,48 @@ export async function GET(request: Request) {
         }
 
         const result = await listVaultShares(walletAddress, vaultId);
+
+        // Resolve profile pictures for display names / handles
+        const displayNames = result.shares
+            .map((s) => (s.displayName ? s.displayName.replace(/^@/, "").replace(/\.subscript$/i, "").trim() : null))
+            .filter((d): d is string => Boolean(d));
+
+        const picMap = new Map<string, string | null>();
+        if (displayNames.length > 0) {
+            const aliases = await prisma.addressAlias.findMany({
+                where: {
+                    OR: [
+                        { alias: { in: displayNames, mode: "insensitive" } },
+                        { alias: { in: displayNames.map((d) => `${d}.subscript`), mode: "insensitive" } },
+                        { address: { in: displayNames, mode: "insensitive" } },
+                    ],
+                },
+            });
+            const matchedAddresses = Array.from(new Set(aliases.map((a) => a.address.toLowerCase())));
+            const [customers, merchants] = await Promise.all([
+                prisma.customer.findMany({
+                    where: { walletAddress: { in: matchedAddresses } },
+                    select: { walletAddress: true, profilePic: true },
+                }),
+                prisma.merchant.findMany({
+                    where: { walletAddress: { in: matchedAddresses } },
+                    select: { walletAddress: true, profilePic: true },
+                }),
+            ]);
+            const addressPicMap = new Map<string, string | null>();
+            customers.forEach((c) => c.profilePic && addressPicMap.set(c.walletAddress.toLowerCase(), c.profilePic));
+            merchants.forEach((m) => m.profilePic && addressPicMap.set(m.walletAddress.toLowerCase(), m.profilePic));
+
+            aliases.forEach((a) => {
+                const pic = addressPicMap.get(a.address.toLowerCase());
+                if (pic) {
+                    picMap.set(a.alias.toLowerCase(), pic);
+                    picMap.set(a.alias.replace(/\.subscript$/i, "").toLowerCase(), pic);
+                    picMap.set(a.address.toLowerCase(), pic);
+                }
+            });
+        }
+
         return NextResponse.json({
             vaultId,
             rootCommitId: result.rootCommitId,
@@ -116,7 +162,11 @@ export async function GET(request: Request) {
             allocatedUsdc: result.allocatedUsdc.toString(),
             unallocatedUsdc: result.unallocatedUsdc.toString(),
             maxShares: MAX_SHARES_PER_VAULT,
-            shares: result.shares.map(serializeShare),
+            shares: result.shares.map((s) => {
+                const handle = s.displayName ? s.displayName.replace(/^@/, "").replace(/\.subscript$/i, "").trim().toLowerCase() : "";
+                const pic = picMap.get(handle) || (s.displayName ? picMap.get(s.displayName.toLowerCase()) : null) || null;
+                return serializeShare(s, pic);
+            }),
         });
     } catch (error) {
         if (error instanceof CommitAccessError) {
