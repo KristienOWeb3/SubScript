@@ -18,27 +18,28 @@ export async function POST(request: Request) {
     const cleanTarget = target.trim();
     const cleanReason = reason ? reason.trim() : null;
 
+    const db = prisma as any;
     if (type === "ACCOUNT") {
       if (action === "BAN") {
-        await prisma.bannedAccount.upsert({
+        await db.bannedAccount.upsert({
           where: { address: cleanTarget.toLowerCase() },
           create: { address: cleanTarget.toLowerCase(), reason: cleanReason },
           update: { reason: cleanReason },
         });
       } else {
-        await prisma.bannedAccount.deleteMany({
+        await db.bannedAccount.deleteMany({
           where: { address: cleanTarget.toLowerCase() },
         });
       }
     } else if (type === "IP") {
       if (action === "BAN") {
-        await prisma.bannedIp.upsert({
+        await db.bannedIp.upsert({
           where: { ip: cleanTarget },
           create: { ip: cleanTarget, reason: cleanReason },
           update: { reason: cleanReason },
         });
       } else {
-        await prisma.bannedIp.deleteMany({
+        await db.bannedIp.deleteMany({
           where: { ip: cleanTarget },
         });
       }

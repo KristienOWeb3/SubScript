@@ -435,7 +435,7 @@ export default function UserDashboard() {
       return () => window.removeEventListener("storage", handleStorageChange);
     }
   }, []);
-  const [txFilter, setTxFilter] = useState<"all" | "recurring" | "one-time">("all");
+  const [txFilter, setTxFilter] = useState<"all" | "recurring" | "one-time" | "transfers" | "withdrawals">("all");
   const [allTxOpen, setAllTxOpen] = useState(false);
   const [allTxSearch, setAllTxSearch] = useState("");
   const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
@@ -5252,7 +5252,7 @@ export default function UserDashboard() {
                   className="subscript-input"
                 />
                 <div className="flex gap-2">
-                  {([["all", "All"], ["recurring", "Recurring"], ["one-time", "One Time"]] as const).map(([value, label]) => (
+                  {([["all", "All"], ["recurring", "Subscriptions"], ["one-time", "One Time"], ["transfers", "Transfers"], ["withdrawals", "Withdrawals"]] as const).map(([value, label]) => (
                     <button
                       key={value}
                       type="button"

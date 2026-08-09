@@ -56,9 +56,10 @@ export async function GET(request: Request) {
     }));
 
     /* Fetch active bans */
+    const db = prisma as any;
     const [bannedAccounts, bannedIps] = await Promise.all([
-      prisma.bannedAccount.findMany({ orderBy: { createdAt: "desc" } }).catch(() => []),
-      prisma.bannedIp.findMany({ orderBy: { createdAt: "desc" } }).catch(() => []),
+      db.bannedAccount?.findMany ? db.bannedAccount.findMany({ orderBy: { createdAt: "desc" } }).catch(() => []) : [],
+      db.bannedIp?.findMany ? db.bannedIp.findMany({ orderBy: { createdAt: "desc" } }).catch(() => []) : [],
     ]);
 
     return NextResponse.json({
