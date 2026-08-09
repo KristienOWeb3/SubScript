@@ -4410,94 +4410,178 @@ Please complete the following implementation tasks:
                                     <Activity className={`w-4 h-4 ${primaryColorText}`} />
                                     Customer / Agent Ledger
                                 </h2>
-                                {/* Desktop Table */}
-                                <div className="overflow-x-auto hidden md:block">
-                                    <table className="w-full text-left border-collapse">
-                                        <thead>
-                                            <tr className="border-b border-white/5 text-white/40 text-[10px] uppercase font-bold tracking-wider">
-                                                <th className="pb-3">ID</th>
-                                                <th className="pb-3">Subscriber</th>
-                                                <th className="pb-3">Allowance</th>
-                                                <th className="pb-3">Next Billing</th>
-                                                <th className="pb-3">Status</th>
-                                                <th className="pb-3 text-right">Control</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="text-xs text-white/70 font-mono">
-                                            {isLoadingContract ? (
-                                                <tr>
-                                                    <td colSpan={6} className="py-8 text-center text-white/40 flex items-center justify-center gap-2">
-                                                        <Loader2 className="w-4 h-4 animate-spin" /> Fetching on-chain state...
-                                                    </td>
-                                                </tr>
-                                            ) : ledgers.length === 0 ? (
-                                                <tr>
-                                                    <td colSpan={6} className="py-8 text-center text-white/30 font-sans">
-                                                        No active recurring allowances detected for this merchant address.
-                                                    </td>
-                                                </tr>
-                                            ) : (
-                                                (() => {
-                                                    return ledgers.map((item) => (
-                                                        <tr key={item.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-colors">
-                                                            <td className="py-4 font-semibold text-white">{item.id}</td>
-                                                            <td className="py-4 text-white/40">{item.displayAddress || item.shortSubAddress}</td>
-                                                            <td className="py-4 text-[#d4a853]">{item.limit}</td>
-                                                            <td className="py-4">{item.nextBilling}</td>
-                                                            <td className="py-4">
-                                                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                                                                    item.cancelAtPeriodEnd || !item.active
-                                                                        ? "bg-red-500/10 text-red-400 border border-red-500/20"
-                                                                        : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                                                                }`}>
-                                                                    {item.cancelAtPeriodEnd ? "Cancelled" : item.active ? "Active" : "Cancelled"}
-                                                                </span>
-                                                            </td>
-                                                            <td className="py-4 text-right">
-                                                                <span className="text-[9px] text-white/25 uppercase tracking-widest font-bold">
-                                                                    {item.cancelAtPeriodEnd ? "Expires at period end" : item.active ? "Customer controlled" : "Ended"}
-                                                                </span>
-                                                            </td>
-                                                        </tr>
-                                                    ));
-                                                })()
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                {(() => {
+                                    const activeLedgers = ledgers.filter((item) => item.active && !item.cancelAtPeriodEnd);
+                                    const churnedLedgers = ledgers.filter((item) => !item.active || item.cancelAtPeriodEnd);
 
-                                {/* Mobile Card-Stack View */}
-                                <div className="block md:hidden space-y-3">
-                                    {isLoadingContract ? (
-                                        <div className="py-8 text-center text-white/40 flex items-center justify-center gap-2">
-                                            <Loader2 className="w-4 h-4 animate-spin" /> Fetching on-chain state...
-                                        </div>
-                                    ) : ledgers.length === 0 ? (
-                                        <div className="py-8 text-center text-white/30 font-sans text-xs">
-                                            No active recurring allowances detected for this merchant address.
-                                        </div>
-                                    ) : (
-                                        ledgers.map((item) => (
-                                            <div key={item.id} className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2 text-xs font-mono">
+                                    return (
+                                        <div className="space-y-8">
+                                            {/* Active Subscriptions Section */}
+                                            <div className="space-y-3">
                                                 <div className="flex items-center justify-between">
-                                                    <span className="font-bold text-white">ID #{item.id}</span>
-                                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                                                        item.cancelAtPeriodEnd || !item.active
-                                                            ? "bg-red-500/10 text-red-400 border border-red-500/20"
-                                                            : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                                                    }`}>
-                                                        {item.cancelAtPeriodEnd ? "Cancelled" : item.active ? "Active" : "Cancelled"}
+                                                    <span className="text-[11px] font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                                        <span className="w-2 h-2 rounded-full bg-emerald-400" /> Active Subscriptions ({activeLedgers.length})
                                                     </span>
                                                 </div>
-                                                <div className="text-white/50 text-[10px] truncate">{item.displayAddress || item.shortSubAddress}</div>
-                                                <div className="flex items-center justify-between text-[11px] pt-1">
-                                                    <span className="text-white/40">Allowance: <span className="text-[#d4a853] font-bold">{item.limit}</span></span>
-                                                    <span className="text-white/40">Next: <span className="text-white/70">{item.nextBilling}</span></span>
+
+                                                {/* Desktop Table - Active */}
+                                                <div className="overflow-x-auto hidden md:block">
+                                                    <table className="w-full text-left border-collapse">
+                                                        <thead>
+                                                            <tr className="border-b border-white/5 text-white/40 text-[10px] uppercase font-bold tracking-wider">
+                                                                <th className="pb-3">ID</th>
+                                                                <th className="pb-3">Subscriber</th>
+                                                                <th className="pb-3">Allowance</th>
+                                                                <th className="pb-3">Next Billing</th>
+                                                                <th className="pb-3">Status</th>
+                                                                <th className="pb-3 text-right">Control</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="text-xs text-white/70 font-mono">
+                                                            {isLoadingContract ? (
+                                                                <tr>
+                                                                    <td colSpan={6} className="py-8 text-center text-white/40 flex items-center justify-center gap-2">
+                                                                        <Loader2 className="w-4 h-4 animate-spin" /> Fetching on-chain state...
+                                                                    </td>
+                                                                </tr>
+                                                            ) : activeLedgers.length === 0 ? (
+                                                                <tr>
+                                                                    <td colSpan={6} className="py-6 text-center text-white/30 font-sans">
+                                                                        No active recurring allowances detected for this merchant address.
+                                                                    </td>
+                                                                </tr>
+                                                            ) : (
+                                                                activeLedgers.map((item) => (
+                                                                    <tr key={item.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-colors">
+                                                                        <td className="py-4 font-semibold text-white">{item.id}</td>
+                                                                        <td className="py-4 text-white/40">{item.displayAddress || item.shortSubAddress}</td>
+                                                                        <td className="py-4 text-[#d4a853]">{item.limit}</td>
+                                                                        <td className="py-4">{item.nextBilling}</td>
+                                                                        <td className="py-4">
+                                                                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                                                                Active
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className="py-4 text-right">
+                                                                            <span className="text-[9px] text-white/25 uppercase tracking-widest font-bold">
+                                                                                Customer controlled
+                                                                            </span>
+                                                                        </td>
+                                                                    </tr>
+                                                                ))
+                                                            )}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+
+                                                {/* Mobile View - Active */}
+                                                <div className="block md:hidden space-y-3">
+                                                    {isLoadingContract ? (
+                                                        <div className="py-8 text-center text-white/40 flex items-center justify-center gap-2">
+                                                            <Loader2 className="w-4 h-4 animate-spin" /> Fetching on-chain state...
+                                                        </div>
+                                                    ) : activeLedgers.length === 0 ? (
+                                                        <div className="py-6 text-center text-white/30 font-sans text-xs">
+                                                            No active recurring allowances detected.
+                                                        </div>
+                                                    ) : (
+                                                        activeLedgers.map((item) => (
+                                                            <div key={item.id} className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2 text-xs font-mono">
+                                                                <div className="flex items-center justify-between">
+                                                                    <span className="font-bold text-white">ID #{item.id}</span>
+                                                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                                                        Active
+                                                                    </span>
+                                                                </div>
+                                                                <div className="text-white/50 text-[10px] truncate">{item.displayAddress || item.shortSubAddress}</div>
+                                                                <div className="flex items-center justify-between text-[11px] pt-1">
+                                                                    <span className="text-white/40">Allowance: <span className="text-[#d4a853] font-bold">{item.limit}</span></span>
+                                                                    <span className="text-white/40">Next: <span className="text-white/70">{item.nextBilling}</span></span>
+                                                                </div>
+                                                            </div>
+                                                        ))
+                                                    )}
                                                 </div>
                                             </div>
-                                        ))
-                                    )}
-                                </div>
+
+                                            {/* Churned & Canceled Subscriptions Section */}
+                                            <div className="space-y-3 pt-6 border-t border-white/5">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[11px] font-bold text-white/70 uppercase tracking-wider flex items-center gap-2">
+                                                        <span className="w-2 h-2 rounded-full bg-red-400" /> Churned & Canceled ({churnedLedgers.length})
+                                                    </span>
+                                                </div>
+
+                                                {/* Desktop Table - Churned */}
+                                                <div className="overflow-x-auto hidden md:block">
+                                                    <table className="w-full text-left border-collapse">
+                                                        <thead>
+                                                            <tr className="border-b border-white/5 text-white/40 text-[10px] uppercase font-bold tracking-wider">
+                                                                <th className="pb-3">ID</th>
+                                                                <th className="pb-3">Subscriber</th>
+                                                                <th className="pb-3">Prior Allowance</th>
+                                                                <th className="pb-3">Status</th>
+                                                                <th className="pb-3 text-right">Reason / Details</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="text-xs text-white/70 font-mono">
+                                                            {churnedLedgers.length === 0 ? (
+                                                                <tr>
+                                                                    <td colSpan={5} className="py-6 text-center text-white/20 font-sans">
+                                                                        No churned or canceled subscriptions on record.
+                                                                    </td>
+                                                                </tr>
+                                                            ) : (
+                                                                churnedLedgers.map((item) => (
+                                                                    <tr key={item.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-colors">
+                                                                        <td className="py-4 font-semibold text-white/60">{item.id}</td>
+                                                                        <td className="py-4 text-white/30">{item.displayAddress || item.shortSubAddress}</td>
+                                                                        <td className="py-4 text-[#d4a853]/60">{item.limit}</td>
+                                                                        <td className="py-4">
+                                                                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/20">
+                                                                                {item.cancelAtPeriodEnd ? "Cancelled (Pending Expiry)" : "Cancelled"}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className="py-4 text-right">
+                                                                            <span className="text-[9px] text-red-400/60 uppercase tracking-widest font-bold">
+                                                                                {item.cancelAtPeriodEnd ? "Expires at period end" : "Permit2 Allowance Revoked"}
+                                                                            </span>
+                                                                        </td>
+                                                                    </tr>
+                                                                ))
+                                                            )}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+
+                                                {/* Mobile View - Churned */}
+                                                <div className="block md:hidden space-y-3">
+                                                    {churnedLedgers.length === 0 ? (
+                                                        <div className="py-6 text-center text-white/20 font-sans text-xs">
+                                                            No churned or canceled subscriptions on record.
+                                                        </div>
+                                                    ) : (
+                                                        churnedLedgers.map((item) => (
+                                                            <div key={item.id} className="p-4 rounded-2xl bg-white/[0.01] border border-white/5 space-y-2 text-xs font-mono opacity-80">
+                                                                <div className="flex items-center justify-between">
+                                                                    <span className="font-bold text-white/70">ID #{item.id}</span>
+                                                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/20">
+                                                                        {item.cancelAtPeriodEnd ? "Cancelled" : "Revoked"}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="text-white/40 text-[10px] truncate">{item.displayAddress || item.shortSubAddress}</div>
+                                                                <div className="flex items-center justify-between text-[11px] pt-1">
+                                                                    <span className="text-white/30">Allowance: <span className="text-[#d4a853]/60 font-bold">{item.limit}</span></span>
+                                                                    <span className="text-red-400/60 text-[9px]">{item.cancelAtPeriodEnd ? "Expires at period end" : "Allowance Revoked"}</span>
+                                                                </div>
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
 
                                 {(() => {
                                     const totalPages = ledgerPagination.totalPages;
@@ -4608,7 +4692,7 @@ Please complete the following implementation tasks:
                                                 initial={{ opacity: 0, height: 0, y: -4 }}
                                                 animate={{ opacity: 1, height: "auto", y: 0 }}
                                                 exit={{ opacity: 0, height: 0, y: -4 }}
-                                                transition={{ type: "spring", stiffness: 340, damping: 22, bounce: 0.22 }}
+                                                transition={{ type: "spring", stiffness: 450, damping: 32 }}
                                                 className="overflow-hidden"
                                             >
                                                 <div className="grid grid-cols-3 gap-1.5 rounded-2xl border border-white/10 bg-black/35 p-1.5 backdrop-blur-xl">
@@ -6309,7 +6393,7 @@ Please complete the following implementation tasks:
                                 key={activeTab}
                                 initial={{ opacity: 0, y: 15, scale: 0.985 }}
                                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                                transition={{ type: "spring", stiffness: 340, damping: 28, bounce: 0.16 }}
+                                transition={{ type: "spring", stiffness: 450, damping: 32 }}
                             >
                                 {renderView()}
                             </motion.div>

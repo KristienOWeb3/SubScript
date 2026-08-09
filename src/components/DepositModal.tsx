@@ -134,7 +134,7 @@ export default function DepositModal({
                         initial={{ opacity: 0, scale: 0.95, y: 20 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                        transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                        transition={{ type: "spring", stiffness: 450, damping: 32 }}
                         className="fixed inset-0 z-50 flex items-center justify-center p-4 font-sans"
                     >
                         <div
