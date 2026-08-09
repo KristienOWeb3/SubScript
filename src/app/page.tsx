@@ -31,8 +31,8 @@ import Reveal from "./components/Reveal";
 import SectionHeading from "./components/SectionHeading";
 
 // Lazy load heavy animation components
-const MockupDashboardCard = dynamic(
-    () => import("./components/MockupDashboardCard"),
+const LandingHeroCard = dynamic(
+    () => import("./components/LandingHeroCard"),
     { ssr: false, loading: () => <div className="w-full h-96 bg-gradient-to-b from-white/5 to-transparent rounded-3xl animate-pulse" /> }
 );
 
@@ -142,7 +142,7 @@ export default function Home() {
                 <div className="max-w-7xl mx-auto w-full px-6 sm:px-12">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
                         <div className="flex justify-center order-2 lg:order-2 w-full">
-                            <MockupDashboardCard />
+                            <LandingHeroCard />
                         </div>
 
                         <div className="order-1 lg:order-1 text-center lg:text-left flex flex-col items-center lg:items-start">

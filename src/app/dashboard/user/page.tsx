@@ -2909,7 +2909,7 @@ export default function UserDashboard() {
       isActiveMobileDm ? "h-[100dvh] overflow-hidden" : "min-h-[100dvh]"
     }`}>
       <AnimatedGradientBg variant="dashboard" />
-      <div className="fixed inset-0 pointer-events-none z-0 bg-gradient-to-b from-black/75 via-black/55 to-black/85" />
+      <div className="fixed inset-0 pointer-events-none z-0 bg-gradient-to-b from-black/35 via-black/15 to-black/45" />
 
       <div className={`relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0 ${
         isActiveMobileDm ? "h-full overflow-hidden" : ""
@@ -3048,9 +3048,8 @@ export default function UserDashboard() {
           />
         )}
 
-        {/* The wireframe's 14px top slit + 28px inner radius, kept on the existing dark surface
-            so the lime-on-black content palette still reads. */}
-        <div className={`relative z-10 min-w-0 flex-1 md:mt-[14px] md:h-[calc(100vh-14px)] bg-[#0b0b0e]/95 backdrop-blur-md md:rounded-tl-[28px] shadow-[-8px_0_24px_rgba(0,0,0,0.45)] ${isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : "overflow-y-auto"}`}>
+        {/* The wireframe's 14px top slit + 28px inner radius, with a refined translucent surface. */}
+        <div className={`relative z-10 min-w-0 flex-1 md:mt-[14px] md:h-[calc(100vh-14px)] bg-[#131522]/90 backdrop-blur-xl md:rounded-tl-[28px] border-t border-l border-white/10 shadow-[-8px_0_24px_rgba(0,0,0,0.36)] ${isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : "md:overflow-y-auto"}`}>
           {/* Mobile headers (only shown on small screens) */}
           {isMobile && (
             <div className="w-full">
@@ -3113,7 +3112,7 @@ export default function UserDashboard() {
               key={activeTab}
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ type: "spring", stiffness: 320, damping: 28 }}
+              transition={{ type: "spring", stiffness: 450, damping: 32 }}
               className={isActiveMobileDm ? "h-full min-h-0" : "min-h-0"}
             >
             {activeTab === "home" && (
@@ -3576,7 +3575,7 @@ export default function UserDashboard() {
                             initial={{ opacity: 0, scale: 0.96, y: 12 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.96, y: -12 }}
-                            transition={{ type: "spring", stiffness: 380, damping: 20 }}
+                            transition={{ type: "spring", stiffness: 450, damping: 32 }}
                             className="flex flex-col h-full justify-between gap-5 overflow-hidden"
                           >
                             {/* Desktop Chat Pane Header */}
@@ -5426,7 +5425,7 @@ export default function UserDashboard() {
               initial={{ scale: 0.94, y: 16, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.96, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 420, damping: 26 }}
+              transition={{ type: "spring", stiffness: 450, damping: 32 }}
               onClick={(event) => event.stopPropagation()}
               role="dialog"
               aria-modal="true"
@@ -5639,7 +5638,7 @@ export default function UserDashboard() {
               initial={{ scale: 0.94, y: 16, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.96, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 420, damping: 26 }}
+              transition={{ type: "spring", stiffness: 450, damping: 32 }}
               onClick={(event) => event.stopPropagation()}
               onSubmit={submitVaultAction}
               className="w-full max-w-sm space-y-4 rounded-3xl border border-[#ccff00]/20 bg-[#0c0c10] p-6 shadow-2xl"
@@ -5899,7 +5898,7 @@ function VaultInfoModal({ open, onClose }: { open: boolean; onClose: () => void 
             initial={{ scale: 0.92, y: 16, opacity: 0 }}
             animate={{ scale: 1, y: 0, opacity: 1 }}
             exit={{ scale: 0.96, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 420, damping: 26 }}
+            transition={{ type: "spring", stiffness: 450, damping: 32 }}
             onClick={(event) => event.stopPropagation()}
             className="w-full max-w-md space-y-4 rounded-3xl border border-white/10 bg-[#0c0c10] p-6 shadow-2xl"
           >
@@ -5994,7 +5993,7 @@ function UserDesktopSidebar({
                    right padding), which is what makes the wireframe's tab-into-page seam work. */
                 className={`group flex w-full items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-l-full lg:rounded-r-none py-3 px-3.5 lg:px-4 text-left text-xs font-semibold transition-all relative ${
                   isActive
-                    ? "bg-[#0b0b0e] text-[#ccff00] font-bold lg:-mr-5 lg:pr-7"
+                    ? "bg-[#131522] text-[#ccff00] font-bold lg:-mr-5 lg:pr-7"
                     : "text-white/70 hover:bg-white/[0.06] hover:text-white"
                 }`}
                 title={tab.label}
@@ -6672,7 +6671,7 @@ function DmBubble({
                     initial={{ opacity: 0, y: -8, scale: 0.92 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -6, scale: 0.94 }}
-                    transition={{ type: "spring", stiffness: 450, damping: 20, mass: 0.8 }}
+                    transition={{ type: "spring", stiffness: 450, damping: 32 }}
                     className={`dm-action-menu-grid ${incoming ? "origin-top-left" : "origin-top-right"}`}
                   >
                     {actionItems.map((action, index) => {
@@ -6683,7 +6682,7 @@ function DmBubble({
                             key={action.key}
                             initial={{ opacity: 0, y: -4, scale: 0.94 }}
                             animate={{ opacity: 1, y: 0, scale: 1 }}
-                            transition={{ type: "spring", stiffness: 420, damping: 22, delay: index * 0.025 }}
+                            transition={{ type: "spring", stiffness: 450, damping: 32, delay: index * 0.025 }}
                             whileHover={{ scale: 1.03 }}
                             whileTap={{ scale: 0.97 }}
                             href={action.href}
@@ -6700,7 +6699,7 @@ function DmBubble({
                           key={action.key}
                           initial={{ opacity: 0, y: -4, scale: 0.94 }}
                           animate={{ opacity: 1, y: 0, scale: 1 }}
-                          transition={{ type: "spring", stiffness: 420, damping: 22, delay: index * 0.025 }}
+                          transition={{ type: "spring", stiffness: 450, damping: 32, delay: index * 0.025 }}
                           whileHover={{ scale: 1.03 }}
                           whileTap={{ scale: 0.97 }}
                           type="button"
@@ -6805,7 +6804,7 @@ function MerchantPlanManager({
     <div className="flex flex-col gap-3">
       <motion.div
         layout
-        transition={{ type: "spring", stiffness: 400, damping: 22, mass: 0.8 }}
+        transition={{ type: "spring", stiffness: 450, damping: 32 }}
         className="order-2 flex flex-wrap items-center gap-2 rounded-2xl border border-[#ccff00]/15 bg-[#ccff00]/[0.06] p-3"
       >
         <div className="min-w-0 flex-1">
@@ -6942,7 +6941,7 @@ function MerchantPlanManager({
                           <motion.span
                             initial={{ scale: 0 }}
                             animate={{ scale: 1 }}
-                            transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                            transition={{ type: "spring", stiffness: 450, damping: 32 }}
                             className="rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-[#ccff00]"
                           >
                             Current
@@ -7031,7 +7030,7 @@ function DmRequestComposer({
             initial={{ opacity: 0, y: 24, scaleY: 0.7, scaleX: 0.94 }}
             animate={{ opacity: 1, y: 0, scaleY: 1, scaleX: 1 }}
             exit={{ opacity: 0, y: 16, scaleY: 0.8, scaleX: 0.96 }}
-            transition={{ type: "spring", stiffness: 450, damping: 20, mass: 0.8 }}
+            transition={{ type: "spring", stiffness: 450, damping: 32 }}
             style={{ transformOrigin: "bottom center" }}
             onSubmit={onSubmit}
             className="max-h-[min(55dvh,30rem)] overflow-y-auto overscroll-contain rounded-[28px] border border-[#ccff00]/20 bg-black/55 p-4 shadow-[0_14px_45px_rgba(0,0,0,0.35)] backdrop-blur-xl"
@@ -7124,7 +7123,7 @@ function DmRequestComposer({
       >
         <motion.span
           animate={{ rotate: open ? 45 : 0 }}
-          transition={{ type: "spring", stiffness: 400, damping: 20 }}
+          transition={{ type: "spring", stiffness: 450, damping: 32 }}
           className={`grid h-5 w-5 place-items-center rounded-full text-sm leading-none ${open ? "bg-[#ccff00]/20 text-[#ccff00]" : "bg-[#ccff00]/15 text-[#ccff00]"}`}
         >
           +

@@ -97,6 +97,21 @@ export async function listVaultShares(userAddress: string, vaultId: string) {
     /* Surfaced so the dashboard can show what is still assignable before the primary types a
        number, rather than only rejecting it afterwards. Mirrors assertCapWithinEscrow: a revoked
        share frees its allocation, and an uncapped one is counted at its spend-so-far. */
+    /* Surfaced so the dashboard can show what is still assignable before the primary types a
+       number, rather than only rejecting it afterwards. Mirrors assertCapWithinEscrow: a revoked
+       share frees its allocation, and an uncapped one is counted at its spend-so-far. */
+    const activeUnspentCaps = shares.reduce(
+        (sum, share) =>
+            share.status === "REVOKED"
+                ? sum
+                : sum +
+                  (share.spendLimitUsdc !== null
+                      ? share.spendLimitUsdc > share.spentUsdc
+                          ? share.spendLimitUsdc - share.spentUsdc
+                          : BigInt(0)
+                      : BigInt(0)),
+        BigInt(0),
+    );
     const allocatedUsdc = shares.reduce(
         (sum, share) =>
             share.status === "REVOKED"
@@ -105,6 +120,7 @@ export async function listVaultShares(userAddress: string, vaultId: string) {
         BigInt(0),
     );
     const escrowUsdc = vault.balanceUsdc;
+    const totalCommittedOrSpent = vault.accruedUsageUsdc + activeUnspentCaps;
 
     return {
         root,
@@ -112,7 +128,7 @@ export async function listVaultShares(userAddress: string, vaultId: string) {
         shares,
         escrowUsdc,
         allocatedUsdc,
-        unallocatedUsdc: escrowUsdc > allocatedUsdc ? escrowUsdc - allocatedUsdc : BigInt(0),
+        unallocatedUsdc: escrowUsdc > totalCommittedOrSpent ? escrowUsdc - totalCommittedOrSpent : BigInt(0),
     };
 }
 
@@ -124,6 +140,7 @@ async function assertCapWithinEscrow(args: {
     vaultId: string;
     rootId: string;
     escrowUsdc: bigint;
+    accruedUsageUsdc: bigint;
     spendLimitUsdc: bigint;
     excludeCommitId?: string;
 }) {
@@ -138,18 +155,27 @@ async function assertCapWithinEscrow(args: {
     });
 
     /* An uncapped sibling could consume the whole escrow on its own, so it makes any further
-       promise meaningless. Counting its spend-so-far is the honest floor. */
-    const committed = siblings.reduce(
-        (sum, sibling) => sum + (sibling.spendLimitUsdc ?? sibling.spentUsdc),
-        0n,
-    );
+       promise meaningless. Active unspent caps plus total accrued usage define the locked budget. */
+    const activeUnspentCaps = siblings.reduce((sum, sibling) => {
+        if (sibling.spendLimitUsdc === null) {
+            return sum;
+        }
+        return (
+            sum +
+            (sibling.spendLimitUsdc > sibling.spentUsdc
+                ? sibling.spendLimitUsdc - sibling.spentUsdc
+                : BigInt(0))
+        );
+    }, BigInt(0));
 
-    if (committed + args.spendLimitUsdc > args.escrowUsdc) {
-        const available = args.escrowUsdc - committed;
+    const totalCommittedOrSpent = args.accruedUsageUsdc + activeUnspentCaps;
+
+    if (totalCommittedOrSpent + args.spendLimitUsdc > args.escrowUsdc) {
+        const available = args.escrowUsdc > totalCommittedOrSpent ? args.escrowUsdc - totalCommittedOrSpent : BigInt(0);
         throw new CommitAccessError(
-            available > 0n
+            available > BigInt(0)
                 ? `That cap exceeds the unallocated escrow. At most ${formatUsdc(available)} USDC is still unassigned.`
-                : "This vault's escrow is fully allocated. Lower another share's cap or commit more first.",
+                : "This vault's escrow is fully allocated or used up. Lower another share's cap or commit more first.",
             409,
         );
     }
@@ -180,6 +206,7 @@ export async function createVaultShare(args: {
             vaultId: args.vaultId,
             rootId: root.id,
             escrowUsdc: vault.balanceUsdc,
+            accruedUsageUsdc: vault.accruedUsageUsdc,
             spendLimitUsdc: args.spendLimitUsdc,
         });
     }
@@ -241,6 +268,7 @@ export async function updateVaultShareLimit(
             /* requireOwnedShare already rejected rows without a parent, so this is a child. */
             rootId: share.parentCommitId as string,
             escrowUsdc: share.vault.balanceUsdc,
+            accruedUsageUsdc: share.vault.accruedUsageUsdc,
             spendLimitUsdc,
             excludeCommitId: commitId,
         });
