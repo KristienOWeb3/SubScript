@@ -77,13 +77,3 @@ CREATE OR REPLACE TRIGGER trigger_enforce_user_commit_vault_lineage
     FOR EACH ROW
     EXECUTE FUNCTION public.enforce_user_commit_vault_lineage();
 
--- Which commit consumed each usage line, so the primary can see per-friend spend in the ledger
--- and not merely a single undifferentiated total. NULL on the pre-existing rows and on usage the
--- primary drove directly through their own address.
-ALTER TABLE public.metered_usage_reports
-    ADD COLUMN IF NOT EXISTS commit_id TEXT;
-
--- Per-friend usage history for a vault, newest first.
-CREATE INDEX IF NOT EXISTS metered_usage_reports_commit_idx
-    ON public.metered_usage_reports (commit_id, created_at DESC)
-    WHERE commit_id IS NOT NULL;
