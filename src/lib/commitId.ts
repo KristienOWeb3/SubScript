@@ -243,6 +243,38 @@ export function resumeSubUser(parentWalletAddress: string, subCommitId: string) 
 export function revokeSubUser(parentWalletAddress: string, subCommitId: string) {
     return setSubUserStatus(parentWalletAddress, subCommitId, "REVOKED");
 }
+
+/* Re-capping an existing delegation. Raising is always safe; lowering is refused once it would
+   land under what the sub-user already spent, because the ledger is history and the
+   spent-within-limit CHECK would reject the row anyway — a 500 from a constraint breach is a
+   worse answer than saying so. A parent who wants spending stopped right now wants pause, which
+   is immediate and does not rewrite the past. Passing null lifts the cap entirely. */
+export async function updateSubUserLimit(
+    parentWalletAddress: string,
+    subCommitId: string,
+    spendLimitUsdc: bigint | null,
+) {
+    const subUser = await requireOwnedSubUser(parentWalletAddress, subCommitId);
+
+    if (subUser.status === "REVOKED") {
+        throw new CommitAccessError("This sub-user has been revoked and cannot be changed", 409);
+    }
+    if (spendLimitUsdc !== null && spendLimitUsdc < 0n) {
+        throw new CommitAccessError("Spend limit cannot be negative");
+    }
+    if (spendLimitUsdc !== null && spendLimitUsdc < subUser.spentUsdc) {
+        throw new CommitAccessError(
+            "That limit is below what this sub-user has already spent. Pause them instead to stop further spending.",
+            409,
+        );
+    }
+
+    return prisma.userCommit.update({
+        where: { id: subUser.id },
+        data: { spendLimitUsdc },
+    });
+}
+
 export type SpendValidation =
     | { allowed: true; remainingUsdc: bigint | null }
     | { allowed: false; reason: string; remainingUsdc: bigint | null };
@@ -371,4 +403,71 @@ export async function recordSubUserSpend(
     const remaining = row.spend_limit_usdc != null ? row.spend_limit_usdc - row.spent_usdc : null;
     return { allowed: true, remainingUsdc: remaining };
 }
+
+/* Hands budget back when a reserved spend does not settle. recordSubUserSpend debits *before* the
+   transfer, because a cap checked after the money has moved is not a cap — so every path that
+   reserves must also release on failure, or a reverted transfer would permanently burn allowance.
+
+   Floored at zero in SQL rather than in JS: the column's `spent_usdc >= 0` CHECK would otherwise
+   turn a double-release into a 500. GREATEST also makes the operation idempotent-ish at the
+   boundary, so a retried release cannot drive the ledger negative and silently widen the cap.
+   Deliberately does not filter on status — a delegation paused or revoked between reservation and
+   failure must still get its unspent budget back. */
+export async function releaseSubUserSpend(commitId: string, amountUsdc: bigint): Promise<void> {
+    if (amountUsdc <= 0n) return;
+
+    await prisma.$executeRaw`
+        UPDATE user_commits
+           SET spent_usdc = GREATEST(spent_usdc - ${amountUsdc}::bigint, 0),
+               updated_at = now()
+         WHERE commit_id = ${commitId}
+    `;
+}
+
+/* Who pays, and whose cap applies. A root commit spends its own balance exactly as before. A
+   sub-user spends the *parent's* balance — the parent committed the funds — so the funding wallet
+   is the parent's and this commit's ledger is what gets debited.
+
+   Returns the parent's address rather than looking it up at each call site so no caller can
+   accidentally fund a delegated spend from the sub-user's own wallet, which would silently
+   sidestep the cap entirely. */
+export type SpendingAuthority =
+    | { delegated: false; fundingWallet: string }
+    | { delegated: true; fundingWallet: string; commitId: string; displayName: string };
+
+export async function resolveSpendingAuthority(walletAddress: string): Promise<SpendingAuthority> {
+    const wallet = walletAddress.toLowerCase();
+
+    /* findUnique, not getOrCreateCommitForWallet: a send is not the place to write a new row, and
+       a wallet with no commit at all is simply an ordinary user spending their own funds. */
+    const commit = await prisma.userCommit.findUnique({
+        where: { walletAddress: wallet },
+        include: { parent: true },
+    });
+
+    if (!commit || !commit.parentCommitId) {
+        return { delegated: false, fundingWallet: wallet };
+    }
+
+    /* A delegated row whose parent is missing or unbound has no funding source. Failing closed
+       matters more than the edge case is likely: the alternative is falling through to the
+       sub-user's own wallet, which spends the wrong person's money with no cap. */
+    if (!commit.parent?.walletAddress) {
+        throw new CommitAccessError("This sub-user's parent account is not available", 409);
+    }
+    if (commit.status !== "ACTIVE") {
+        throw new CommitAccessError(
+            commit.status === "PAUSED" ? "This sub-user is paused" : "This sub-user has been revoked",
+            403,
+        );
+    }
+
+    return {
+        delegated: true,
+        fundingWallet: commit.parent.walletAddress,
+        commitId: commit.commitId,
+        displayName: resolveDisplayName(commit),
+    };
+}
+
 

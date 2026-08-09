@@ -382,10 +382,13 @@ async function auditOverflow(page: Page, label: string) {
       const isTextOrControl =
         ["a", "button", "code", "dd", "dt", "figcaption", "h1", "h2", "h3", "h4", "h5", "h6", "input", "label", "li", "p", "pre", "span", "textarea"].includes(tag) ||
         Boolean(htmlElement.getAttribute("role"));
+      /* getAttribute rather than .className: on SVG elements className is an
+         SVGAnimatedString, whose toString() is "[object SVGAnimatedString]". */
+      const classAttr = htmlElement.getAttribute("class") || "";
       const isClamped =
         Boolean(style.webkitLineClamp && style.webkitLineClamp !== "none") ||
-        className.includes("line-clamp") ||
-        className.includes("truncate");
+        classAttr.includes("line-clamp") ||
+        classAttr.includes("truncate");
       const clipsVertical =
         !isClamped &&
         !["visible", "auto", "scroll"].includes(style.overflowY) &&

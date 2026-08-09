@@ -8,6 +8,12 @@ import { withPgClient } from "@/lib/serverPg";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import { prisma } from "@/lib/prisma";
+import {
+    CommitAccessError,
+    recordSubUserSpend,
+    releaseSubUserSpend,
+    resolveSpendingAuthority,
+} from "@/lib/commitId";
 import { sanitizeInput } from "@/utils/security";
 
 export const maxDuration = 120;
@@ -45,6 +51,11 @@ function normalizeRecipients(body: any): SendRecipient[] {
 }
 
 export async function POST(request: Request) {
+    /* Hoisted above the try so the catch can hand back allowance that was reserved and then
+       stranded by a throw between the debit and the transfer loop (a custody lookup that fails,
+       for instance). Cleared once the in-band release path has settled the accounting. */
+    let strandedReservation: { commitId: string; micros: bigint } | null = null;
+
     try {
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) {
@@ -72,13 +83,28 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Provide between 1 and 25 recipients" }, { status: 400 });
         }
 
+        /* A delegated (sub-user) caller spends the *parent's* USDC, because the parent is the one
+           who committed the funds — so the funding wallet, the custody that signs, and the
+           self-send guard below all key off `fundingWallet`, never off the caller's own address.
+           Root callers resolve to themselves and behave exactly as before. */
+        const authority = await resolveSpendingAuthority(normalizedSender);
+        const fundingWallet = authority.fundingWallet;
+
         const parsedRecipients = recipients.map((item, index) => {
             if (!item.receiverAddress || !ethers.isAddress(item.receiverAddress)) {
                 throw new Error(`Recipient ${index + 1} has an invalid address`);
             }
             const receiver = item.receiverAddress.toLowerCase();
-            if (receiver === normalizedSender) {
-                throw new Error("You cannot send USDC to your own connected wallet.");
+            /* Compared against the funding wallet, not the caller: for a delegated send the
+               money leaves the parent's address, so that is the only self-transfer that is a
+               no-op. A sub-user paying out to their own wallet is a legitimate draw against
+               their allowance and stays capped like any other spend. */
+            if (receiver === fundingWallet) {
+                throw new Error(
+                    authority.delegated
+                        ? "You cannot send USDC back to the wallet funding your allowance."
+                        : "You cannot send USDC to your own connected wallet."
+                );
             }
             const amountMicros = parseUsdcToMicros(item.amountUsdc);
             if (amountMicros <= BigInt(0)) {
@@ -90,15 +116,21 @@ export async function POST(request: Request) {
             };
         });
 
+        const totalAmountMicros = parsedRecipients.reduce(
+            (sum, r) => sum + r.amountMicros, BigInt(0)
+        );
+
         // Spending limit enforcement (Finding 54)
+        /* Keyed to the funding wallet: these are the limits the *owner of the money* set on their
+           own outflow, so a delegated send must respect the parent's ceiling rather than the
+           sub-user's. They are time-windowed and self-imposed; the commit cap reserved below is
+           parent-imposed and cumulative. Both apply. */
         const spendingCustomer = await prisma.customer.findFirst({
-            where: { walletAddress: normalizedSender },
+            where: { walletAddress: fundingWallet },
             select: { spendingLimitDaily: true, spendingLimitWeekly: true, spendingLimitMonthly: true },
         });
         if (spendingCustomer) {
-            const totalAmount = parsedRecipients.reduce(
-                (sum, r) => sum + r.amountMicros, BigInt(0)
-            );
+            const totalAmount = totalAmountMicros;
             if (spendingCustomer.spendingLimitDaily !== null && totalAmount > spendingCustomer.spendingLimitDaily) {
                 return NextResponse.json({
                     error: "Transfer exceeds your daily spending limit.",
@@ -119,26 +151,56 @@ export async function POST(request: Request) {
             }
         }
 
+        /* Reserve the delegation budget BEFORE anything moves. A cap checked after the transfer is
+           not a cap, and recordSubUserSpend's conditional UPDATE is what serialises concurrent
+           sub-user spends — two requests that each fit under the limit alone cannot both win.
+           Whatever does not settle is released in the failure path below. */
+        let reservedMicros = BigInt(0);
+        if (authority.delegated) {
+            const reservation = await recordSubUserSpend(authority.commitId, totalAmountMicros);
+            if (!reservation.allowed) {
+                return NextResponse.json({
+                    error: reservation.reason,
+                    code: "COMMIT_LIMIT_EXCEEDED",
+                    remainingUsdc: reservation.remainingUsdc === null
+                        ? null
+                        : formatAmount(reservation.remainingUsdc),
+                }, { status: 403 });
+            }
+            reservedMicros = totalAmountMicros;
+            strandedReservation = { commitId: authority.commitId, micros: reservedMicros };
+        }
+
+        /* Custody, key lookup and signing all follow the funding wallet: a delegated send is
+           signed by the parent, whose USDC is actually moving. */
         const walletRecord = await withPgClient(async (client) => {
             const result = await client.query(
                 `select encrypted_private_key, circle_wallet_id, provider
                    from user_embedded_wallets
                   where wallet_address = $1
                   limit 1`,
-                [normalizedSender]
+                [fundingWallet]
             );
             return result.rows[0] as EmbeddedWalletRecord | undefined;
         });
 
         if (!walletRecord?.encrypted_private_key && !walletRecord?.circle_wallet_id) {
+            /* Nothing moved, so hand the whole reservation back — otherwise a parent with a
+               browser-only wallet would burn a sub-user's allowance on every failed attempt. */
+            if (authority.delegated && reservedMicros > BigInt(0)) {
+                await releaseSubUserSpend(authority.commitId, reservedMicros);
+                strandedReservation = null;
+            }
             return NextResponse.json({
-                error: "This action needs a browser wallet signature. Generated email wallets can send from here only when their server-held key exists.",
+                error: authority.delegated
+                    ? "The wallet funding this allowance has no server-held key, so it cannot sign this transfer."
+                    : "This action needs a browser wallet signature. Generated email wallets can send from here only when their server-held key exists.",
             }, { status: 409 });
         }
 
         // Execution goes through the custody provider (legacy AES key or Circle MPC), which
         // waits for each transfer to confirm and throws on revert.
-        const custody = await getWalletCustody(normalizedSender);
+        const custody = await getWalletCustody(fundingWallet);
         const txs: { receiverAddress: string; amountUsdc: string; txHash: string }[] = [];
 
         /* Transfers move funds, so each recipient gets a deterministic Circle idempotency key
@@ -151,6 +213,9 @@ export async function POST(request: Request) {
            NOT report a blanket failure — that hides the transfers already sent and invites a retry
            that double-pays them. Stop at the first failure and return exactly what settled. */
         let failure: { index: number; receiverAddress: string; amountUsdc: string; error: string } | null = null;
+        /* Tracked per settled transfer rather than derived from `failure.index`, so the release
+           below reflects what actually left the wallet even if the loop exits some other way. */
+        let settledMicros = BigInt(0);
         for (let i = 0; i < parsedRecipients.length; i++) {
             const item = parsedRecipients[i];
             try {
@@ -163,6 +228,7 @@ export async function POST(request: Request) {
                         `wallet-send:${normalizedSender}:${requestId}:${item.receiver}:${item.amountMicros.toString()}`
                     ),
                 });
+                settledMicros += item.amountMicros;
                 txs.push({
                     receiverAddress: item.receiver,
                     amountUsdc: formatAmount(item.amountMicros),
@@ -177,6 +243,29 @@ export async function POST(request: Request) {
                 };
                 break;
             }
+        }
+
+        /* Give back exactly the budget that did not become an on-chain transfer. On a partial
+           batch the settled prefix stays debited — that money is gone and the ledger must say so —
+           while the untouched tail is released so a retry of the remaining recipients is not
+           charged against the cap twice. A release failure must not mask a successful send, so it
+           is logged rather than thrown: the ledger over-counts (fails safe, toward less spending)
+           and the parent can re-cap. */
+        if (authority.delegated) {
+            const unspent = reservedMicros - settledMicros;
+            if (unspent > BigInt(0)) {
+                try {
+                    await releaseSubUserSpend(authority.commitId, unspent);
+                } catch (releaseError) {
+                    console.error(
+                        `Failed to release ${unspent} unspent micros for commit ${authority.commitId}:`,
+                        releaseError,
+                    );
+                }
+            }
+            /* The loop ran to completion, so the ledger now matches what settled either way.
+               Anything the catch might otherwise release would double-credit the cap. */
+            strandedReservation = null;
         }
 
         if (failure) {
@@ -198,7 +287,24 @@ export async function POST(request: Request) {
             transfers: txs,
         }, { status: 200 });
     } catch (error: any) {
+        /* A throw after the reservation but before the release path ran (a custody lookup that
+           failed, for example) leaves budget stranded — the reservation debited the cap but nothing
+           settled on-chain. Release exactly that amount; do not log the release failure itself into
+           the catch's own error, since it is secondary and would only hide the original throw. */
+        if (strandedReservation) {
+            try {
+                await releaseSubUserSpend(strandedReservation.commitId, strandedReservation.micros);
+            } catch (releaseError) {
+                console.error(
+                    `Failed to release ${strandedReservation.micros} stranded micros for commit ${strandedReservation.commitId}:`,
+                    releaseError,
+                );
+            }
+        }
         console.error("Embedded wallet send failed:", error);
+        if (error instanceof CommitAccessError) {
+            return NextResponse.json({ error: error.message }, { status: error.httpStatus });
+        }
         return NextResponse.json({ error: error.message || "Failed to send USDC" }, { status: 500 });
     }
 }

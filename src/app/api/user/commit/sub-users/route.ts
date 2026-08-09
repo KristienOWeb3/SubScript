@@ -5,8 +5,10 @@ import {
     CommitAccessError,
     createSubUser,
     getOrCreateCommitForWallet,
+    isCommitId,
     listSubUsers,
     resolveDisplayName,
+    updateSubUserLimit,
 } from "@/lib/commitId";
 /* BigInt can't go through JSON.stringify, so USDC columns leave as decimal strings and the
    client parses them. Keeping them as strings also avoids float rounding on large caps. */
@@ -164,5 +166,53 @@ export async function POST(request: Request) {
         }
         console.error("Failed to create sub-user:", error);
         return NextResponse.json({ error: "Could not create sub-user" }, { status: 500 });
+    }
+}
+
+/* Re-cap an existing sub-user. Split from POST because creating a delegation and re-budgeting one
+   are different authorities in the UI, and because this route must accept an explicit null to mean
+   "uncapped" — a distinction POST's "field absent" convention cannot carry. */
+export async function PATCH(request: Request) {
+    try {
+        const walletAddress = await getSessionWallet(request.headers);
+        if (!walletAddress) {
+            return NextResponse.json({ error: "Unauthorized: Connect wallet first" }, { status: 401 });
+        }
+
+        const body = await request.json().catch(() => ({}));
+        const commitId = typeof body.commitId === "string" ? body.commitId.trim() : "";
+        if (!isCommitId(commitId)) {
+            return NextResponse.json({ error: "That commit ID is not valid" }, { status: 400 });
+        }
+
+        /* `undefined` is rejected rather than treated as "no cap": a client that forgets the field
+           would otherwise silently remove a limit. Only an explicit null lifts it. */
+        if (!("spendLimitUsdc" in body)) {
+            return NextResponse.json(
+                { error: "A spend limit is required (send null to remove the cap)" },
+                { status: 400 },
+            );
+        }
+
+        let spendLimitUsdc: bigint | null = null;
+        if (body.spendLimitUsdc !== null && body.spendLimitUsdc !== "") {
+            const raw = String(body.spendLimitUsdc);
+            if (!/^\d+$/.test(raw)) {
+                return NextResponse.json({ error: "Spend limit must be a whole number" }, { status: 400 });
+            }
+            spendLimitUsdc = BigInt(raw);
+            if (spendLimitUsdc > MAX_SPEND_LIMIT_USDC) {
+                return NextResponse.json({ error: "That spend limit is too large" }, { status: 400 });
+            }
+        }
+
+        const subUser = await updateSubUserLimit(walletAddress, commitId, spendLimitUsdc);
+        return NextResponse.json({ subUser: serializeSubUser(subUser) });
+    } catch (error) {
+        if (error instanceof CommitAccessError) {
+            return NextResponse.json({ error: error.message }, { status: error.httpStatus });
+        }
+        console.error("Failed to update sub-user limit:", error);
+        return NextResponse.json({ error: "Could not update spend limit" }, { status: 500 });
     }
 }

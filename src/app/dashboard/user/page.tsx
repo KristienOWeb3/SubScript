@@ -34,6 +34,7 @@ import KycVerificationPanel from "@/components/KycVerificationPanel";
 import ConfirmModal from "@/components/ConfirmModal";
 import QrScannerModal from "@/components/QrScannerModal";
 import SendSingleModal from "@/components/SendSingleModal";
+import SubUserManager from "@/components/SubUserManager";
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
 import { receiptHrefFromDescriptionLine } from "@/lib/dms/receiptPresentation";
@@ -3355,8 +3356,10 @@ export default function UserDashboard() {
               <section className="max-w-3xl space-y-6">
                 <SectionTitle
                   title="Manage Commit"
-                  subtitle="Fund, replenish, or withdraw prepaid balances for metered services."
+                  subtitle="Fund prepaid balances for metered services, and delegate capped spending to others."
                 />
+
+                <SubUserManager />
 
                 <section className="liquid-glass rounded-3xl border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl sm:p-8">
                   <div className="mb-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between">
