@@ -3419,9 +3419,9 @@ export default function UserDashboard() {
                           onReclaim={handleVaultReclaim}
                           onCancelService={handleCancelService}
                           onResumeService={(v) => handleResumeService(v.merchantAddress)}
-                          cancelBusy={vaultCancelBusyId !== null}
-                          resumeBusy={vaultResumeBusyId !== null}
-                          reclaimBusy={vaultReclaimBusyId !== null}
+                          cancelBusy={vaultCancelBusyId === String(vault.id || vault.merchantAddress)}
+                          resumeBusy={vaultResumeBusyId === String(vault.id || vault.merchantAddress)}
+                          reclaimBusy={vaultReclaimBusyId === String(vault.id || vault.merchantAddress)}
                           balanceVisible={balanceVisible}
                         />
                       ))}
@@ -3478,7 +3478,7 @@ export default function UserDashboard() {
                               onSurveySubmit={(dmMsg, ans) => handleSurveySubmit(dmMsg, ans)}
                               onResumeService={() => handleResumeService(dm.senderAddress)}
                               onTopUpCommit={() => openVaultCommit(dm.senderAddress)}
-                              resumeBusy={vaultResumeBusyId !== null}
+                              resumeBusy={vaultResumeBusyId === dm.senderAddress || vaultResumeBusyId === dm.senderAddress?.toLowerCase()}
                             />
                           ))}
                           <div ref={dmBottomRef} />
@@ -3623,7 +3623,7 @@ export default function UserDashboard() {
                                   onSurveySubmit={(dmMsg, ans) => handleSurveySubmit(dmMsg, ans)}
                                   onResumeService={() => handleResumeService(dm.senderAddress)}
                                   onTopUpCommit={() => openVaultCommit(dm.senderAddress)}
-                                  resumeBusy={vaultResumeBusyId !== null}
+                                  resumeBusy={vaultResumeBusyId === dm.senderAddress || vaultResumeBusyId === dm.senderAddress?.toLowerCase()}
                                 />
                               ))}
                               <div ref={dmBottomRef} />
@@ -8513,7 +8513,7 @@ function MeteredVaultRow({
                 onClick={() => !resumeBusy && (balance >= STANDARD_COMMIT_MICROS ? onResumeService(vault) : onCommit(vault))}
                 disabled={resumeBusy}
                 title="Resume service"
-                className={`flex h-10 w-10 sm:w-auto sm:px-3.5 items-center justify-center gap-1.5 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition text-[11px] font-bold ${resumeBusy ? "quick-action-loading opacity-50 cursor-not-allowed" : ""}`}
+                className={`relative overflow-hidden flex h-10 w-10 sm:w-auto sm:px-3.5 items-center justify-center gap-1.5 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition text-[11px] font-bold ${resumeBusy ? "quick-action-loading opacity-50 cursor-not-allowed" : ""}`}
               >
                 <Play className="h-4 w-4 fill-current shrink-0" />
                 <span className="hidden sm:inline">Resume service</span>
@@ -8524,7 +8524,7 @@ function MeteredVaultRow({
                 onClick={() => !cancelBusy && onCancelService(vault)}
                 disabled={cancelBusy}
                 title="Pause service"
-                className={`flex h-10 w-10 sm:w-auto sm:px-3.5 items-center justify-center gap-1.5 rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:border-red-400/30 hover:bg-red-500/10 hover:text-red-300 transition text-[11px] font-bold ${cancelBusy ? "quick-action-loading opacity-50 cursor-not-allowed" : ""}`}
+                className={`relative overflow-hidden flex h-10 w-10 sm:w-auto sm:px-3.5 items-center justify-center gap-1.5 rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:border-red-400/30 hover:bg-red-500/10 hover:text-red-300 transition text-[11px] font-bold ${cancelBusy ? "quick-action-loading opacity-50 cursor-not-allowed" : ""}`}
               >
                 <Pause className="h-4 w-4 fill-current shrink-0" />
                 <span className="hidden sm:inline">Pause service</span>
