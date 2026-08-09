@@ -8264,6 +8264,7 @@ function MeteredVaultRow({
   const awaitingSettlement = !blocked && !disputed && lockedUntilDate !== null
     && now >= lockedUntilDate.getTime() && (reclaimDate === null || now < reclaimDate.getTime());
   const canReclaim = !blocked && !disputed && balance > 0 && reclaimDate !== null && now >= reclaimDate.getTime();
+  const STANDARD_COMMIT_MICROS = 2_000_000;
   const drawableExposure = Math.min(balance, STANDARD_COMMIT_MICROS);
 
   const numericDate = (date: Date | null) => date
