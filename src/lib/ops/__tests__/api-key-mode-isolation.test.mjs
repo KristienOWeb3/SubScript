@@ -64,8 +64,9 @@ test("vault usage reporting verifies key mode, vault environment, settlement cha
     /* Merchant identity: the vault row is selected by the KEY's wallet, not caller input. */
     assert.match(reportUsage, /where user_address = \$1\s+and merchant_address = \$2\s+and environment = \$3\s+and settlement_chain_id = \$4/);
     assert.match(reportUsage, /const merchantAddress = apiKeyRecord\.walletAddress\.toLowerCase\(\);/);
-    /* Usage report rows record their environment. */
-    assert.match(reportUsage, /request_id, environment\)/);
+    /* Usage report rows record their environment. Matched as a column rather than the end of the
+       list so appending a column (e.g. commit_id) doesn't fail a test about environment. */
+    assert.match(reportUsage, /request_id, environment\b/);
 });
 
 test("financial objects persist their settlement environment", () => {

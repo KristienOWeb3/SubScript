@@ -19,6 +19,8 @@ import {
     type DmPushInput,
 } from "@/lib/dms/notifications";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
+import { isCommitId } from "@/lib/commitId";
+import { resolveVaultCommitForMerchant } from "@/lib/vaultCommitSharing";
 
 type VaultUsageRow = {
     id: string;
@@ -35,6 +37,10 @@ type UsageResult =
     | { kind: "idempotency_conflict" }
     | { kind: "environment_mismatch" }
     | { kind: "inactive"; vault: VaultUsageRow }
+    /* A shared Commit ID that the primary paused/revoked, or whose cap this usage would breach.
+       Distinct from "exhausted" (the escrow itself running dry) so the merchant can tell the
+       friend "your allowance is used up" rather than "the account is out of funds". */
+    | { kind: "share_blocked"; reason: string; remainingUsdc: bigint | null }
     | { kind: "cancelled" }
     | { kind: "exhausted"; vault: VaultUsageRow; remaining: bigint; notification: DmPushInput | null }
     | { kind: "accrued"; vault: VaultUsageRow; exhausted: boolean; notification: DmPushInput | null; thresholdNotification: DmPushInput | null };
@@ -44,6 +50,25 @@ type UsageResult =
 const USAGE_THRESHOLD_BANDS = [5000, 8000];
 
 const formatUsdc = (micros: bigint) => (Number(micros) / 1_000_000).toFixed(2);
+
+/* Hands cap budget back inside the caller's transaction when less accrues than was reserved.
+   Floored at zero in SQL because the column carries a `spent_usdc >= 0` CHECK — letting it go
+   negative would both 500 and silently widen the cap. */
+async function releaseShareSpend(
+    client: { query: (sql: string, params: unknown[]) => Promise<unknown> },
+    shareCommitId: string,
+    vaultId: string,
+    amountMicros: bigint,
+) {
+    if (amountMicros <= BigInt(0)) return;
+    await client.query(
+        `update user_commits
+            set spent_usdc = greatest(spent_usdc - $1::bigint, 0),
+                updated_at = now()
+          where commit_id = $2 and vault_id = $3`,
+        [amountMicros.toString(), shareCommitId, vaultId],
+    );
+}
 
 async function insertExhaustionNotification(
     client: any,
@@ -100,6 +125,9 @@ async function accrueUsageAtomically(
     amountMicros: bigint,
     note: string | null,
     requestId: string,
+    /* Set when the merchant reported against a shared Commit ID. The friend's cap is debited in
+       the same transaction as the accrual, so a cap can't be overshot by concurrent reports. */
+    shareCommitId: string | null,
 ): Promise<UsageResult> {
     return withPgClient(async (client) => {
         await client.query("begin");
@@ -161,12 +189,77 @@ async function accrueUsageAtomically(
                 return { kind: "inactive", vault } as const;
             }
 
+            /* Debit the friend's cap in this same transaction, and only once the accrual is certain
+               to proceed. The conditional UPDATE is the enforcement: two concurrent reports that
+               would each fit alone cannot both win, because the second re-reads spent_usdc under
+               this row's lock. Rolling back on a blocked share leaves no partial accrual behind. */
+            let shareRemaining: bigint | null = null;
+            if (shareCommitId) {
+                const debited = await client.query(
+                    `update user_commits
+                        set spent_usdc = spent_usdc + $1::bigint,
+                            updated_at = now()
+                      where commit_id = $2
+                        and vault_id = $3
+                        and status = 'ACTIVE'
+                        and (
+                             spend_limit_usdc is null
+                             or spent_usdc + $1::bigint <= spend_limit_usdc
+                            )
+                      returning spend_limit_usdc, spent_usdc`,
+                    [amountMicros.toString(), shareCommitId, vault.id],
+                );
+
+                if (debited.rowCount === 0) {
+                    /* Separate the two failure modes: a paused/revoked share is an access decision
+                       the primary made, while a breached cap is a budget number the merchant can
+                       surface as a remaining balance. */
+                    const current = await client.query(
+                        `select status, spend_limit_usdc, spent_usdc
+                           from user_commits
+                          where commit_id = $1 and vault_id = $2
+                          limit 1`,
+                        [shareCommitId, vault.id],
+                    );
+                    await client.query("rollback");
+
+                    const row = current.rows[0];
+                    if (!row) {
+                        return { kind: "share_blocked", reason: "This commit ID is not valid for this service.", remainingUsdc: null } as const;
+                    }
+                    if (row.status === "PAUSED") {
+                        return { kind: "share_blocked", reason: "This commit ID has been paused by its owner.", remainingUsdc: null } as const;
+                    }
+                    if (row.status === "REVOKED") {
+                        return { kind: "share_blocked", reason: "This commit ID has been revoked by its owner.", remainingUsdc: null } as const;
+                    }
+                    const limit = row.spend_limit_usdc != null ? BigInt(row.spend_limit_usdc) : null;
+                    const spent = BigInt(row.spent_usdc);
+                    const remaining = limit != null && limit > spent ? limit - spent : BigInt(0);
+                    return {
+                        kind: "share_blocked",
+                        reason: `This usage exceeds the spending cap set for this commit ID. Remaining: ${formatUsdc(remaining)} USDC.`,
+                        remainingUsdc: remaining,
+                    } as const;
+                }
+
+                const debitedRow = debited.rows[0];
+                shareRemaining = debitedRow.spend_limit_usdc != null
+                    ? BigInt(debitedRow.spend_limit_usdc) - BigInt(debitedRow.spent_usdc)
+                    : null;
+            }
+
             const nextAccrued = accrued + amountMicros;
             if (nextAccrued > balance) {
                 const accruableAmount = balance > accrued ? balance - accrued : BigInt(0);
                 const actualNextAccrued = accrued + accruableAmount;
 
                 if (accruableAmount === BigInt(0)) {
+                    /* Nothing accrues, so the cap must not be charged either — hand the whole
+                       reservation back before committing the exhaustion notice. */
+                    if (shareCommitId) {
+                        await releaseShareSpend(client, shareCommitId, vault.id, amountMicros);
+                    }
                     const notification = await insertExhaustionNotification(
                         client,
                         merchantAddress,
@@ -182,6 +275,12 @@ async function accrueUsageAtomically(
                     } as const;
                 }
 
+                /* Only `accruableAmount` is actually billed, so refund the difference rather than
+                   burning allowance the friend never got to use. */
+                if (shareCommitId) {
+                    await releaseShareSpend(client, shareCommitId, vault.id, amountMicros - accruableAmount);
+                }
+
                 const updated = await client.query(
                     `update metered_vaults
                         set accrued_usage_usdc = $1,
@@ -193,9 +292,9 @@ async function accrueUsageAtomically(
 
                 await client.query(
                     `insert into metered_usage_reports
-                         (vault_id, user_address, merchant_address, amount_usdc, accrued_after_usdc, balance_usdc, note, request_id, environment)
-                     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-                    [vault.id, userAddress, merchantAddress, accruableAmount.toString(), actualNextAccrued.toString(), balance.toString(), note, requestId, vaultEnvironment],
+                         (vault_id, user_address, merchant_address, amount_usdc, accrued_after_usdc, balance_usdc, note, request_id, environment, commit_id)
+                     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                    [vault.id, userAddress, merchantAddress, accruableAmount.toString(), actualNextAccrued.toString(), balance.toString(), note, requestId, vaultEnvironment, shareCommitId],
                 );
 
                 const notification = await insertExhaustionNotification(client, merchantAddress, userAddress, commit);
@@ -218,12 +317,13 @@ async function accrueUsageAtomically(
                 [nextAccrued.toString(), vault.id],
             );
 
-            /* Append-only ledger row for this charge — the user's transparent record. */
+            /* Append-only ledger row for this charge — the user's transparent record. Stamped with
+               the shared commit ID so the primary sees which friend drove which line. */
             await client.query(
                 `insert into metered_usage_reports
-                     (vault_id, user_address, merchant_address, amount_usdc, accrued_after_usdc, balance_usdc, note, request_id, environment)
-                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-                [vault.id, userAddress, merchantAddress, amountMicros.toString(), nextAccrued.toString(), balance.toString(), note, requestId, vaultEnvironment],
+                     (vault_id, user_address, merchant_address, amount_usdc, accrued_after_usdc, balance_usdc, note, request_id, environment, commit_id)
+                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                [vault.id, userAddress, merchantAddress, amountMicros.toString(), nextAccrued.toString(), balance.toString(), note, requestId, vaultEnvironment, shareCommitId],
             );
 
             const exhausted = nextAccrued === balance;
@@ -316,10 +416,40 @@ export async function POST(request: Request) {
         }
 
         const sanitizedBody = sanitizeInput(body);
-        const { userAddress, amountUsdc, amountUsdcMicros, note } = sanitizedBody;
+        const { userAddress, amountUsdc, amountUsdcMicros, note, commitId } = sanitizedBody;
 
-        if (typeof userAddress !== "string" || !/^0x[a-fA-F0-9]{40}$/.test(userAddress)) {
+        /* A shared Commit ID is the friend's whole credential: they have no wallet and no account,
+           so it stands in for `userAddress` and resolves to the primary's escrow. Scoped to this
+           merchant inside the resolver, so an ID issued for another service will not resolve. */
+        let resolvedShare: Awaited<ReturnType<typeof resolveVaultCommitForMerchant>> = null;
+        if (commitId !== undefined && commitId !== null && commitId !== "") {
+            if (!isCommitId(commitId)) {
+                return NextResponse.json({ error: "Invalid commitId" }, { status: 400 });
+            }
+            resolvedShare = await resolveVaultCommitForMerchant(commitId, merchantAddress);
+            if (!resolvedShare) {
+                return NextResponse.json({
+                    error: "That commit ID is not valid for your service.",
+                    code: "INVALID_COMMIT_ID",
+                }, { status: 404 });
+            }
+        }
+
+        if (!resolvedShare && (typeof userAddress !== "string" || !/^0x[a-fA-F0-9]{40}$/.test(userAddress))) {
             return NextResponse.json({ error: "Invalid user address" }, { status: 400 });
+        }
+        /* If the merchant sends both, they must agree — otherwise the request is ambiguous about
+           whose escrow to bill, and guessing either way risks billing the wrong account. */
+        if (
+            resolvedShare
+            && typeof userAddress === "string"
+            && userAddress
+            && userAddress.toLowerCase() !== resolvedShare.userAddress.toLowerCase()
+        ) {
+            return NextResponse.json({
+                error: "userAddress does not match the account that owns this commit ID.",
+                code: "COMMIT_ID_MISMATCH",
+            }, { status: 409 });
         }
 
         /* Optional merchant-supplied line-item label for the user's ledger (e.g. "1.2M API calls"). */
@@ -347,14 +477,33 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid consumption amount" }, { status: 400 });
         }
 
-        const normalizedUser = userAddress.toLowerCase();
+        const normalizedUser = resolvedShare
+            ? resolvedShare.userAddress.toLowerCase()
+            : (userAddress as string).toLowerCase();
         const requestIdHeader = request.headers.get("x-request-id")?.trim();
         if (requestIdHeader && !/^[A-Za-z0-9._:-]{8,128}$/.test(requestIdHeader)) {
             return NextResponse.json({ error: "Invalid x-request-id" }, { status: 400 });
         }
         const requestId = requestIdHeader || crypto.randomUUID();
 
-        const result = await accrueUsageAtomically(normalizedUser, merchantAddress, amountMicros, cleanNote, requestId);
+        const result = await accrueUsageAtomically(
+            normalizedUser,
+            merchantAddress,
+            amountMicros,
+            cleanNote,
+            requestId,
+            /* Root commits carry no cap of their own — the primary spending their own escrow is
+               gated by the escrow balance alone, exactly as before this feature. */
+            resolvedShare?.commitId ?? null,
+        );
+
+        if (result.kind === "share_blocked") {
+            return NextResponse.json({
+                error: result.reason,
+                code: "COMMIT_CAP_EXCEEDED",
+                remainingUsdc: result.remainingUsdc != null ? formatUsdc(result.remainingUsdc) : null,
+            }, { status: 403 });
+        }
 
         if (result.kind === "missing") {
             return NextResponse.json({

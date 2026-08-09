@@ -35,6 +35,7 @@ import ConfirmModal from "@/components/ConfirmModal";
 import QrScannerModal from "@/components/QrScannerModal";
 import SendSingleModal from "@/components/SendSingleModal";
 import SubUserManager from "@/components/SubUserManager";
+import VaultShareManager from "@/components/VaultShareManager";
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
 import { receiptHrefFromDescriptionLine } from "@/lib/dms/receiptPresentation";
@@ -837,6 +838,18 @@ export default function UserDashboard() {
   /* Single Send lives in a pop-up modal now, so the tab body is dedicated to Batch Payouts.
      The single/batch sub-tab swap (and its swipe handler) is gone with it. */
   const [sendSingleModalOpen, setSendSingleModalOpen] = useState(false);
+  const batchFormRef = useRef<HTMLDivElement | null>(null);
+
+  /* "Send to multiple people" in the single-send sheet. The batch form is only mounted once the
+     tab is active, so the scroll waits a frame for it to exist. On mobile the tab renders below
+     the header, and landing on the header instead of the form reads as if nothing happened. */
+  const handleGoToBatch = useCallback(() => {
+    setSendSingleModalOpen(false);
+    setActiveTab("batch");
+    requestAnimationFrame(() => {
+      batchFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, []);
   const [singleRecipient, setSingleRecipient] = useState("");
   const [singleAmount, setSingleAmount] = useState("");
   const [singleResolved, setSingleResolved] = useState<{ address: string | null; alias: string | null; profilePic: string | null } | null>(null);
@@ -2892,10 +2905,11 @@ export default function UserDashboard() {
 
 
   return (
-    <div className={`relative overflow-x-hidden bg-[#08080a] text-white selection:bg-[#ccff00]/30 selection:text-black md:h-[100dvh] md:overflow-hidden ${
+    <div className={`relative overflow-x-hidden bg-[#060608] text-white selection:bg-[#ccff00]/30 selection:text-black md:h-[100dvh] md:overflow-hidden ${
       isActiveMobileDm ? "h-[100dvh] overflow-hidden" : "min-h-[100dvh]"
     }`}>
       <AnimatedGradientBg variant="dashboard" />
+      <div className="fixed inset-0 pointer-events-none z-0 bg-gradient-to-b from-black/75 via-black/55 to-black/85" />
 
       <div className={`relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0 ${
         isActiveMobileDm ? "h-full overflow-hidden" : ""
@@ -3036,7 +3050,7 @@ export default function UserDashboard() {
 
         {/* The wireframe's 14px top slit + 28px inner radius, kept on the existing dark surface
             so the lime-on-black content palette still reads. */}
-        <div className={`min-w-0 flex-1 md:mt-[14px] md:h-[calc(100vh-14px)] bg-[#0b0b0e] md:rounded-tl-[28px] shadow-[-8px_0_24px_rgba(0,0,0,0.45)] ${isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : ""} ${activeTab === "inbox" ? "md:overflow-hidden" : "md:overflow-y-auto"}`}>
+        <div className={`relative z-10 min-w-0 flex-1 md:mt-[14px] md:h-[calc(100vh-14px)] bg-[#0b0b0e]/95 backdrop-blur-md md:rounded-tl-[28px] shadow-[-8px_0_24px_rgba(0,0,0,0.45)] ${isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : "overflow-y-auto"}`}>
           {/* Mobile headers (only shown on small screens) */}
           {isMobile && (
             <div className="w-full">
@@ -3132,10 +3146,10 @@ export default function UserDashboard() {
                             <RefreshCw className={`h-3 w-3 ${isRefreshingBalances ? "animate-spin" : ""}`} />
                           </button>
                         </div>
-                        <div className="mt-1.5 truncate text-[32px] font-extrabold leading-none tracking-[-0.8px] text-white select-all sm:text-[38px]">
+                        <div className="mt-1.5 truncate text-[42px] font-extrabold leading-none tracking-[-0.8px] text-white select-all sm:text-[38px]">
                           {balanceVisible ? `$${formatHeadlineAmount(walletBalance)}` : "••••••"}
                         </div>
-                        <p className="mt-1.5 font-mono text-xs font-bold text-white/55">
+                        <p className="mt-1.5 font-mono text-sm font-bold text-white/55 sm:text-xs">
                           {balanceVisible ? `${detectedCurrency.symbol}${formatHeadlineAmount(localBalance)}` : "••••"}
                         </p>
                       </div>
@@ -3828,7 +3842,7 @@ export default function UserDashboard() {
                     <Send className="h-3.5 w-3.5" /> Single Send
                   </button>
                 </div>
-                  <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
+                  <div ref={batchFormRef} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
                     {batchRows.map((row, index) => (
                       <div key={index} className="rounded-3xl border border-white/5 bg-black/20 p-4 space-y-3 relative">
                         {batchRows.length > 1 && (
@@ -5772,6 +5786,7 @@ export default function UserDashboard() {
       <SendSingleModal
         open={sendSingleModalOpen}
         onClose={() => setSendSingleModalOpen(false)}
+        onGoToBatch={handleGoToBatch}
         onSubmit={handleSingleSend}
         recipient={singleRecipient}
         onRecipientChange={setSingleRecipient}
@@ -8338,6 +8353,12 @@ function MeteredVaultRow({
         <p className="text-[10px] leading-relaxed text-amber-300/70">
           Service paused. You&apos;ve used your committed amount. Re-commit {formatUsdc(vault.commitUsdc)} USDC to keep using it.
         </p>
+      )}
+      {vault.id && (
+        <VaultShareManager
+          vaultId={vault.id}
+          merchantLabel={vault.merchantName || "this merchant"}
+        />
       )}
     </div>
   );
