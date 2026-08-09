@@ -2906,7 +2906,7 @@ export default function UserDashboard() {
 
   return (
     <div className={`relative overflow-x-hidden bg-[#060608] text-white selection:bg-[#ccff00]/30 selection:text-black md:h-[100dvh] md:overflow-hidden ${
-      isActiveMobileDm ? "h-[100dvh] overflow-hidden" : "min-h-[100dvh]"
+      isActiveMobileDm ? "h-[100dvh] overflow-hidden" : "h-[100dvh] overflow-y-auto overscroll-y-contain md:h-auto md:overflow-y-auto"
     }`}>
       <AnimatedGradientBg variant="dashboard" />
       <div className="fixed inset-0 pointer-events-none z-0 bg-gradient-to-b from-black/35 via-black/15 to-black/45" />
@@ -3049,7 +3049,7 @@ export default function UserDashboard() {
         )}
 
         {/* The wireframe's 14px top slit + 28px inner radius, with a refined translucent surface. */}
-        <div className={`relative z-10 min-w-0 flex-1 md:mt-[14px] md:h-[calc(100vh-14px)] bg-[#131522]/90 backdrop-blur-xl md:rounded-tl-[28px] border-t border-l border-white/10 shadow-[-8px_0_24px_rgba(0,0,0,0.36)] ${isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : "md:overflow-y-auto"}`}>
+        <div className={`relative z-10 min-w-0 flex-1 md:mt-[14px] md:h-[calc(100vh-14px)] bg-[#131522]/90 backdrop-blur-xl md:rounded-tl-[28px] border-t border-l border-white/10 shadow-[-8px_0_24px_rgba(0,0,0,0.36)] ${isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : "h-[100dvh] overflow-y-auto overscroll-y-contain md:h-auto md:overflow-y-auto"}`}>
           {/* Mobile headers (only shown on small screens) */}
           {isMobile && (
             <div className="w-full">
@@ -3156,7 +3156,7 @@ export default function UserDashboard() {
                       <div className="flex shrink-0 flex-col gap-2.5">
                         <button
                           type="button"
-                          onClick={() => { setSelectedDmPeer(null); setActiveTab("batch"); }}
+                          onClick={() => { setSelectedDmPeer(null); setSendFundsOpen(true); }}
                           className="grid h-[38px] w-[38px] place-items-center rounded-full border-[1.5px] border-[#ccff00]/50 text-[#ccff00] transition-all hover:scale-105 hover:bg-[#ccff00] hover:text-black active:scale-95"
                           aria-label="Send"
                         >
@@ -5380,6 +5380,10 @@ export default function UserDashboard() {
         open={sendFundsOpen}
         recipient={sendFundsRecipient}
         onClose={() => setSendFundsOpen(false)}
+        onGoToBatch={() => {
+          setSendFundsOpen(false);
+          setActiveTab("batch");
+        }}
         walletBalance={walletBalance}
         sepoliaUsdc={sepoliaUsdc}
         userWallet={userWallet}
@@ -6393,8 +6397,8 @@ function DmBubble({
   const canPay = incoming && isPending && Boolean(dm.paymentLinkId) && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER", "SPONSORED_PLAN_REQUEST"].includes(dm.messageType);
   const canDecline = incoming && isPending && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER", "SPONSORED_PLAN_REQUEST"].includes(dm.messageType);
 
-  /* Parse lines to show a beautiful checkout details card for payment requests */
-  const isRequest = ["PAYMENT_REQUEST", "PEER_REQUEST", "SUBSCRIPTION_OFFER", "SPONSORED_PLAN_REQUEST", "SPONSORED_PLAN_CONFIRMED"].includes(dm.messageType);
+  /* Parse lines to show a beautiful checkout details card for payment requests and shared commits */
+  const isRequest = ["PAYMENT_REQUEST", "PEER_REQUEST", "SUBSCRIPTION_OFFER", "SPONSORED_PLAN_REQUEST", "SPONSORED_PLAN_CONFIRMED", "SHARE_COMMIT"].includes(dm.messageType);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const actionItems: Array<{
     key: string;
@@ -7724,6 +7728,7 @@ function SendFundsModal({
   open,
   recipient,
   onClose,
+  onGoToBatch,
   walletBalance,
   sepoliaUsdc,
   userWallet,
@@ -7736,6 +7741,7 @@ function SendFundsModal({
   open: boolean;
   recipient: string;
   onClose: () => void;
+  onGoToBatch?: () => void;
   walletBalance: number;
   sepoliaUsdc: number;
   userWallet: string | null;
@@ -7884,6 +7890,19 @@ function SendFundsModal({
               <h3 id="send-funds-title" className="text-sm font-black uppercase tracking-wider text-white">Send USDC</h3>
               <button type="button" onClick={onClose} disabled={loading} aria-label="Close send dialog" className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30 transition-all"><X className="h-4 w-4" /></button>
             </div>
+
+            {onGoToBatch && (
+              <div className="mb-6 rounded-xl border border-white/10 bg-white/5 p-3 text-xs flex items-center justify-between">
+                <span className="text-white/60">Sending to multiple people?</span>
+                <button
+                  type="button"
+                  onClick={onGoToBatch}
+                  className="text-[#ccff00] hover:underline font-bold flex items-center gap-1"
+                >
+                  Batch Distribution <ArrowUpRight className="h-3 w-3" />
+                </button>
+              </div>
+            )}
 
             <form onSubmit={handleSend} className="space-y-4 text-left">
               <div className="space-y-1">

@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { consumeDistributedRateLimit } from "@/lib/distributedRateLimit";
 import { CommitAccessError, isCommitId } from "@/lib/commitId";
-import { pauseVaultShare, resumeVaultShare, revokeVaultShare } from "@/lib/vaultCommitSharing";
+import { pauseVaultShare, resumeVaultShare, revokeVaultShare, withdrawVaultShare } from "@/lib/vaultCommitSharing";
 
-/* Pause, resume and revoke are one endpoint because they are one state machine on one column.
+/* Pause, resume, revoke and withdraw are one endpoint because they are one state machine on one column.
    Splitting them into three routes would triple the auth/limiter boilerplate for no gain. */
-const ACTIONS = new Set(["pause", "resume", "revoke"]);
+const ACTIONS = new Set(["pause", "resume", "revoke", "withdraw"]);
 
 /* Revocation is the primary's emergency brake — a friend's Commit ID has leaked, or they are
    spending in a way the primary did not intend. It has to stay responsive under a burst, so the
@@ -53,17 +53,19 @@ export async function POST(request: Request) {
         }
         if (typeof body.action !== "string" || !ACTIONS.has(body.action)) {
             return NextResponse.json(
-                { error: "action must be one of: pause, resume, revoke" },
+                { error: "action must be one of: pause, resume, revoke, withdraw" },
                 { status: 400 },
             );
         }
 
-        const action = body.action as "pause" | "resume" | "revoke";
+        const action = body.action as "pause" | "resume" | "revoke" | "withdraw";
         const share = action === "pause"
             ? await pauseVaultShare(walletAddress, body.commitId)
             : action === "resume"
                 ? await resumeVaultShare(walletAddress, body.commitId)
-                : await revokeVaultShare(walletAddress, body.commitId);
+                : action === "withdraw"
+                    ? await withdrawVaultShare(walletAddress, body.commitId)
+                    : await revokeVaultShare(walletAddress, body.commitId);
 
         return NextResponse.json({
             commitId: share.commitId,
