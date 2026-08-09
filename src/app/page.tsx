@@ -31,11 +31,6 @@ import Reveal from "./components/Reveal";
 import SectionHeading from "./components/SectionHeading";
 
 // Lazy load heavy animation components
-const LandingHeroCard = dynamic(
-    () => import("./components/LandingHeroCard"),
-    { ssr: false, loading: () => <div className="w-full h-96 bg-gradient-to-b from-white/5 to-transparent rounded-3xl animate-pulse" /> }
-);
-
 const CodePanel = dynamic(
     () => import("./components/CodePanel"),
     { ssr: false, loading: () => <div className="w-full h-96 bg-gradient-to-b from-white/5 to-transparent rounded-3xl animate-pulse" /> }
@@ -138,67 +133,58 @@ export default function Home() {
             {/* ---------------------------------------------------------- */}
             {/* Hero                                                        */}
             {/* ---------------------------------------------------------- */}
-            <section id="get-started" className="relative w-full min-h-screen flex items-center justify-center pt-32 sm:pt-36 pb-16 sm:pb-24">
-                <div className="max-w-7xl mx-auto w-full px-6 sm:px-12">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
-                        <div className="flex justify-center order-2 lg:order-2 w-full">
-                            <LandingHeroCard />
-                        </div>
+            <section id="get-started" className="relative w-full min-h-[85vh] flex items-center justify-center pt-32 sm:pt-40 pb-16 sm:pb-24">
+                <div className="max-w-4xl mx-auto w-full px-6 sm:px-12 text-center flex flex-col items-center">
+                    <motion.h1
+                        className="text-4xl sm:text-5xl lg:text-[4rem] font-bold tracking-tight text-white mb-6 leading-[1.08] max-w-3xl"
+                        initial={{ opacity: 0, y: 40 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.8, delay: 0.15 }}
+                    >
+                        The billing platform for{" "}
+                        <span className="font-serif italic text-[#00d2b4] font-normal tracking-normal">digital dollars</span>
+                    </motion.h1>
 
-                        <div className="order-1 lg:order-1 text-center lg:text-left flex flex-col items-center lg:items-start">
+                    <motion.p
+                        className="text-base sm:text-lg text-white/60 max-w-2xl mb-10 leading-relaxed font-sans"
+                        initial={{ opacity: 0, y: 30 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.8, delay: 0.3 }}
+                    >
+                        Accept one-time and recurring USDC payments with hosted checkout, signed webhooks, and human-readable receipts, settled on Arc in under a second. Your customers sign in with Google and pay the advertised price. Nothing more.
+                    </motion.p>
 
-                            <motion.h1
-                                className="text-3xl sm:text-4xl lg:text-[3.4rem] font-bold tracking-tight text-white mb-7 leading-[1.08]"
-                                initial={{ opacity: 0, y: 40 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.8, delay: 0.15 }}
-                            >
-                                The billing platform for{" "}
-                                <span className="font-serif italic text-[#00d2b4] font-normal tracking-normal">digital dollars</span>
-                            </motion.h1>
+                    <motion.div
+                        className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto items-center justify-center"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.8, delay: 0.45 }}
+                    >
+                        <Link
+                            href="/signup"
+                            className="group inline-flex items-center justify-center gap-2 px-8 py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-bold rounded-2xl text-sm transition-all shadow-[0_0_24px_rgba(0,210,180,0.25)]"
+                        >
+                            Get started
+                            <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+                        </Link>
+                        <Link
+                            href="/docs"
+                            className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold rounded-2xl text-sm transition-all"
+                        >
+                            View documentation
+                        </Link>
+                    </motion.div>
 
-                            <motion.p
-                                className="text-sm sm:text-base text-white/60 max-w-md mb-8 leading-relaxed font-sans"
-                                initial={{ opacity: 0, y: 30 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.8, delay: 0.3 }}
-                            >
-                                Accept one-time and recurring USDC payments with hosted checkout, signed webhooks, and human-readable receipts, settled on Arc in under a second. Your customers sign in with Google and pay the advertised price. Nothing more.
-                            </motion.p>
-
-                            <motion.div
-                                className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto"
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.8, delay: 0.45 }}
-                            >
-                                <Link
-                                    href="/signup"
-                                    className="group inline-flex items-center justify-center gap-2 px-7 py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-semibold rounded-2xl text-sm transition-all shadow-[0_0_24px_rgba(0,210,180,0.25)]"
-                                >
-                                    Get started
-                                    <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
-                                </Link>
-                                <Link
-                                    href="/docs"
-                                    className="inline-flex items-center justify-center gap-2 px-7 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold rounded-2xl text-sm transition-all"
-                                >
-                                    View documentation
-                                </Link>
-                            </motion.div>
-
-                            <motion.div
-                                className="mt-6 flex flex-wrap items-center justify-center lg:justify-start gap-x-5 gap-y-2 text-[11px] text-white/35 font-sans"
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                transition={{ duration: 0.8, delay: 0.6 }}
-                            >
-                                <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-[#00d2b4]/70" /> Live on Arc</span>
-                                <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-[#00d2b4]/70" /> 1% merchant fee</span>
-                                <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-[#00d2b4]/70" /> No fees for subscribers</span>
-                            </motion.div>
-                        </div>
-                    </div>
+                    <motion.div
+                        className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2.5 text-xs text-white/40 font-sans"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.8, delay: 0.6 }}
+                    >
+                        <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-[#00d2b4]/70" /> Live on Arc</span>
+                        <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-[#00d2b4]/70" /> 1% merchant fee</span>
+                        <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-[#00d2b4]/70" /> No fees for subscribers</span>
+                    </motion.div>
                 </div>
             </section>
 
