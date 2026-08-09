@@ -60,13 +60,6 @@ export default function Home() {
         return () => window.removeEventListener("resize", checkMobile);
     }, []);
 
-    const stats = [
-        ["1%", "Flat processing fee per successful payment"],
-        ["$0", "Fees for subscribers, with no hidden charges"],
-        ["<1s", "Settlement finality on Arc"],
-        ["24/7", "Settlement with no banking hours or cut-offs"],
-    ];
-
     const featureCardsLarge = [
         {
             icon: Zap,
@@ -162,10 +155,9 @@ export default function Home() {
                     >
                         <Link
                             href="/signup"
-                            className="group inline-flex items-center justify-center gap-2 px-8 py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-bold rounded-2xl text-sm transition-all shadow-[0_0_24px_rgba(0,210,180,0.25)]"
+                            className="group inline-flex items-center justify-center px-8 py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-bold rounded-2xl text-sm transition-all shadow-[0_0_24px_rgba(0,210,180,0.25)]"
                         >
                             Get started
-                            <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
                         </Link>
                         <Link
                             href="/docs"
@@ -182,29 +174,11 @@ export default function Home() {
                         transition={{ duration: 0.8, delay: 0.6 }}
                     >
                         <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-[#00d2b4]/70" /> Live on Arc</span>
-                        <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-[#00d2b4]/70" /> 1% merchant fee</span>
-                        <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-[#00d2b4]/70" /> No fees for subscribers</span>
                     </motion.div>
                 </div>
             </section>
 
             <div className="relative z-10">
-                {/* -------------------------------------------------------- */}
-                {/* Stats                                                     */}
-                {/* -------------------------------------------------------- */}
-                <section className="max-w-7xl mx-auto px-6 sm:px-12 py-12">
-                    <Reveal>
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                            {stats.map(([value, label]) => (
-                                <div key={label} className="liquid-glass border border-white/5 bg-black/30 rounded-2xl p-5 text-center">
-                                    <p className="text-2xl sm:text-3xl font-bold text-[#00d2b4]">{value}</p>
-                                    <p className="mt-1.5 text-[11px] text-white/50 leading-snug">{label}</p>
-                                </div>
-                            ))}
-                        </div>
-                    </Reveal>
-                </section>
-
                 {/* -------------------------------------------------------- */}
                 {/* Features (bento)                                          */}
                 {/* -------------------------------------------------------- */}
