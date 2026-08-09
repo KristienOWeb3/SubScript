@@ -62,6 +62,9 @@ import {
   LogOut,
   Mail,
   MessageSquare,
+  Pause,
+  Play,
+  Plus,
   QrCode,
   Send,
   Share2,
@@ -8256,151 +8259,130 @@ function MeteredVaultRow({
   const reclaimDate = lockedUntilDate ? new Date(lockedUntilDate.getTime() + RECLAIM_GRACE_MS) : null;
   const now = Date.now();
   const locked = lockedUntilDate ? now < lockedUntilDate.getTime() : false;
-  /* Contract truth, mirrored in the UI:
-     - withdrawSurplus requires the vault to be INACTIVE and the lock elapsed;
-     - reclaimAbandonedEscrow requires an ACTIVE vault whose settle window (lockedUntil +
-       7-day grace) lapsed without keeper settlement;
-     - an active matured vault inside the grace is simply awaiting settlement. */
+
   const canWithdraw = balance > 0 && blocked && !locked;
   const awaitingSettlement = !blocked && !disputed && lockedUntilDate !== null
     && now >= lockedUntilDate.getTime() && (reclaimDate === null || now < reclaimDate.getTime());
   const canReclaim = !blocked && !disputed && balance > 0 && reclaimDate !== null && now >= reclaimDate.getTime();
-  /* Merchant-drawable exposure is the platform cap, never the surplus. */
   const STANDARD_COMMIT_MICROS = 2_000_000;
-  const drawableExposure = Math.min(balance, STANDARD_COMMIT_MICROS);
-  const shortDate = (date: Date | null) => date
-    ? date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
+
+  const numericDate = (date: Date | null) => date
+    ? date.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric", timeZone: "UTC" })
     : "-";
+
+  const textDate = (date: Date | null) => date
+    ? date.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric", timeZone: "UTC" })
+    : "-";
+
+  const isPaused = blocked || cancelled;
+
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-white/5 bg-black/20 px-4 py-3.5 transition hover:border-white/10 hover:bg-black/35">
-      <div className="flex items-start justify-between gap-3">
+    <div className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-black/30 p-4 sm:p-5 transition hover:border-white/20 hover:bg-black/40">
+      {/* Top Header: Vault Icon + Merchant Name (Left) | Top up (+) & Pause (||) / Play (▶) buttons (Right) */}
+      <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-white/5 bg-black/30 shrink-0">
-            <Shield className="h-5 w-5 text-[#ccff00]/70" />
+          <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black/50 shrink-0">
+            <Home className="h-5 w-5 text-[#ccff00]" />
           </div>
           <div className="min-w-0">
-            <p className="truncate text-xs font-black uppercase tracking-[0.1em] text-white">{vault.merchantName}</p>
-            <p className="mt-1 text-[10px] text-white/45">
-              Used {balanceVisible ? formatUsdc(vault.accruedUsageUsdc) : "•••"} / {balanceVisible ? formatUsdc(vault.balanceUsdc) : "•••"} USDC committed this cycle
-            </p>
+            <h4 className="truncate text-sm sm:text-base font-black text-white uppercase tracking-wider">{vault.merchantName}</h4>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${blocked ? "bg-amber-500/15 text-amber-300" : disputed ? "bg-red-500/15 text-red-300" : cancelled ? "bg-orange-500/15 text-orange-300" : awaitingSettlement ? "bg-sky-500/15 text-sky-300" : "bg-emerald-500/15 text-emerald-300"}`}>
+                {blocked ? "Inactive" : disputed ? "Disputed" : cancelled ? "Paused" : awaitingSettlement ? "Settling" : "Active"}
+              </span>
+            </div>
           </div>
         </div>
-        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${blocked ? "bg-amber-500/15 text-amber-300" : disputed ? "bg-red-500/15 text-red-300" : cancelled ? "bg-orange-500/15 text-orange-300" : awaitingSettlement ? "bg-sky-500/15 text-sky-300" : "bg-emerald-500/15 text-emerald-300"}`}>
-          {blocked ? "Inactive" : disputed ? "Disputed" : cancelled ? "Paused" : awaitingSettlement ? "Settling" : "Active"}
-        </span>
-      </div>
 
-      <div className="flex items-end justify-between gap-3">
-        <div>
-          <p className="text-sm font-black text-[#ccff00]">
-            {balanceVisible ? `${formatUsdc(vault.balanceUsdc)} USDC` : "•••• USDC"}
-          </p>
-          <p className="text-[9px] uppercase text-white/35">committed balance</p>
-        </div>
-        <div className="flex items-center gap-2">
+        {/* Top Right Action Icons */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Top Up (+) Button */}
           <button
             type="button"
             onClick={() => onCommit(vault)}
-            className="rounded-xl bg-[#ccff00]/10 border border-[#ccff00]/30 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#ccff00] hover:bg-[#ccff00]/25 transition"
+            title="Top up commit"
+            className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white hover:border-[#ccff00]/40 hover:bg-[#ccff00]/10 hover:text-[#ccff00] transition"
           >
-            {blocked ? "Re-commit" : "Add commit"}
+            <Plus className="h-5 w-5" />
           </button>
+
+          {/* Pause (||) / Play (▶) Service Button */}
+          {!disputed && (
+            isPaused ? (
+              <button
+                type="button"
+                onClick={() => !resumeBusy && (balance >= STANDARD_COMMIT_MICROS ? onResumeService(vault) : onCommit(vault))}
+                disabled={resumeBusy}
+                title="Resume service"
+                className={`flex h-10 w-10 items-center justify-center rounded-2xl border border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition ${resumeBusy ? "quick-action-loading opacity-50 cursor-not-allowed" : ""}`}
+              >
+                <Play className="h-4 w-4 fill-current" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => !cancelBusy && onCancelService(vault)}
+                disabled={cancelBusy}
+                title="Pause service"
+                className={`flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:border-red-400/30 hover:bg-red-500/10 hover:text-red-300 transition ${cancelBusy ? "quick-action-loading opacity-50 cursor-not-allowed" : ""}`}
+              >
+                <Pause className="h-4 w-4 fill-current" />
+              </button>
+            )
+          )}
+
           {canWithdraw && (
             <button
               type="button"
               onClick={() => onWithdraw(vault)}
-              className="rounded-xl border bg-white/5 border-white/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white/80 hover:bg-white/15 transition"
+              className="rounded-2xl border bg-white/5 border-white/10 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white/80 hover:bg-white/15 transition"
             >
               Withdraw
             </button>
           )}
+
           {canReclaim && (
             <button
               type="button"
               onClick={() => !reclaimBusy && onReclaim(vault)}
               disabled={reclaimBusy}
-              className={`rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${reclaimBusy ? "cursor-not-allowed border-white/5 bg-black/20 text-white/30" : "bg-amber-400/10 border-amber-300/30 text-amber-200 hover:bg-amber-400/20"}`}
+              className={`rounded-2xl border px-3 py-2 text-[10px] font-black uppercase tracking-wider transition ${reclaimBusy ? "cursor-not-allowed border-white/5 bg-black/20 text-white/30" : "bg-amber-400/10 border-amber-300/30 text-amber-200 hover:bg-amber-400/20"}`}
             >
-              {reclaimBusy ? "Reclaiming…" : "Reclaim escrow"}
+              {reclaimBusy ? "Reclaiming…" : "Reclaim"}
             </button>
-          )}
-          {/* Stop the service: only while it's active and not already paused/disputed. The
-              busy state reuses the shimmer sweep (quick-action-loading needs relative+overflow). */}
-          {!blocked && !cancelled && !disputed && (
-            <button
-              type="button"
-              onClick={() => !cancelBusy && onCancelService(vault)}
-              disabled={cancelBusy}
-              className={`relative overflow-hidden rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${cancelBusy ? "quick-action-loading cursor-not-allowed border-red-400/20 bg-red-500/10 text-red-200/60" : "border-red-400/30 bg-red-500/10 text-red-200 hover:bg-red-500/20"}`}
-            >
-              {cancelBusy ? "Stopping…" : "Stop service"}
-            </button>
-          )}
-          {/* Paused: resume directly when the commit still meets the 2 USDC minimum,
-              otherwise route to a top-up (which resumes on success). */}
-          {cancelled && !disputed && (
-            balance >= STANDARD_COMMIT_MICROS ? (
-              <button
-                type="button"
-                onClick={() => !resumeBusy && onResumeService(vault)}
-                disabled={resumeBusy}
-                className={`relative overflow-hidden rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${resumeBusy ? "quick-action-loading cursor-not-allowed border-emerald-300/20 bg-emerald-400/10 text-emerald-200/60" : "border-emerald-300/30 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20"}`}
-              >
-                {resumeBusy ? "Resuming…" : "Resume"}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => onCommit(vault)}
-                className="rounded-xl border border-[#ccff00]/30 bg-[#ccff00]/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#ccff00] hover:bg-[#ccff00]/25 transition"
-              >
-                Top up to resume
-              </button>
-            )
           )}
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-white/45 sm:grid-cols-3">
-        <p>Cycle started <span className="font-bold text-white/60">{shortDate(cycleStartDate)}</span></p>
-        <p>Cycle matures <span className="font-bold text-white/60">{shortDate(lockedUntilDate)}</span></p>
-        <p>Reported usage <span className="font-bold text-white/60">{balanceVisible ? formatUsdc(vault.accruedUsageUsdc) : "•••"} USDC</span></p>
-        <p>Max drawable <span className="font-bold text-white/60">{balanceVisible ? formatUsdc(String(drawableExposure)) : "•••"} USDC</span></p>
-        <p>Settlement due by <span className="font-bold text-white/60">{shortDate(reclaimDate)}</span></p>
-        <p>Reclaimable from <span className="font-bold text-white/60">{shortDate(reclaimDate)}</span></p>
-      </div>
-
-      {cancelled && (
-        <p className="text-[10px] leading-relaxed text-orange-200/70">
-          Service plan paused — you can&apos;t use this merchant&apos;s service while paused, and it can&apos;t bill new usage. {balance >= STANDARD_COMMIT_MICROS
-            ? "Resume anytime — your committed balance still meets the 2 USDC platform minimum."
-            : "Your committed balance is below the 2 USDC platform minimum, so top up to resume."} If you stay paused, the cycle settles after <span className="font-bold">{shortDate(lockedUntilDate)}</span> and your unused balance returns automatically.
-        </p>
-      )}
-      {locked && !blocked && !cancelled && (
-        <p className="text-[10px] leading-relaxed text-white/40">
-          Committed funds are locked while the cycle runs. The keeper settles usage after <span className="font-bold text-white/60">{shortDate(lockedUntilDate)}</span> and unused escrow returns to you automatically.
-        </p>
-      )}
-      {awaitingSettlement && (
-        <p className="text-[10px] leading-relaxed text-sky-200/70">
-          This cycle has matured and is awaiting keeper settlement. Unused escrow returns automatically; if nothing settles by <span className="font-bold">{shortDate(reclaimDate)}</span>, a Reclaim button appears here.
-        </p>
-      )}
-      {canReclaim && (
-        <p className="text-[10px] leading-relaxed text-amber-200/70">
-          Settlement never arrived for this matured cycle. You can reclaim your full escrow now.
-        </p>
-      )}
-      {blocked && commitNeeded > 0 && (
-        <p className="text-[10px] leading-relaxed text-amber-300/70">
-          Service paused. You&apos;ve used your committed amount. Re-commit {formatUsdc(vault.commitUsdc)} USDC to keep using it.
-        </p>
-      )}
+      {/* Middle & Bottom Sections with VaultShareManager integration */}
       {vault.id && (
         <VaultShareManager
           vaultId={vault.id}
           merchantLabel={vault.merchantName || "this merchant"}
+          balanceBox={
+            <div className="flex flex-col justify-between rounded-2xl border border-white/10 bg-black/40 p-4 min-h-[96px]">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-white/50">Vault Balance</span>
+              <div className="mt-1">
+                <p className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                  {balanceVisible ? `${formatUsdc(vault.balanceUsdc)} USDC` : "•••• USDC"}
+                </p>
+                <p className="text-[11px] font-medium text-white/50 mt-0.5">
+                  Used: {balanceVisible ? `${formatUsdc(vault.accruedUsageUsdc)} USDC` : "••• USDC"}
+                </p>
+              </div>
+            </div>
+          }
+          datesBox={
+            <div className="space-y-1 rounded-2xl border border-white/5 bg-black/20 p-3.5 text-xs text-white/60">
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+                <p><span className="font-semibold text-white/40">Lock date:</span> <span className="font-mono text-white/90">{numericDate(cycleStartDate)}</span></p>
+                <p><span className="font-semibold text-white/40">Release date:</span> <span className="font-mono text-white/90">{numericDate(lockedUntilDate)}</span></p>
+              </div>
+              <p className="text-[10px] leading-relaxed text-white/45 mt-1.5 border-t border-white/5 pt-1.5">
+                The keeper settles usage after <span className="font-semibold text-white/70">{textDate(lockedUntilDate)}</span> and unused escrow returns to you automatically.
+              </p>
+            </div>
+          }
         />
       )}
     </div>

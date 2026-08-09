@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, Shield, User, X } from "@/components/icons";
+import { Copy, Loader2, Plus, Shield, User, X } from "@/components/icons";
 import { parseUsdcToMicros } from "@/components/SubUserManager";
 
 /* Same 6-decimal micro-USDC wire convention as SubUserManager: decimal strings so BigInt survives
@@ -56,9 +56,13 @@ type Busy = { commitId: string; action: string } | null;
 export default function VaultShareManager({
     vaultId,
     merchantLabel,
+    balanceBox,
+    datesBox,
 }: {
     vaultId: string;
     merchantLabel: string;
+    balanceBox?: React.ReactNode;
+    datesBox?: React.ReactNode;
 }) {
     const [data, setData] = useState<SharesResponse | null>(null);
     const [open, setOpen] = useState(false);
@@ -199,60 +203,86 @@ export default function VaultShareManager({
         }
     };
 
-    const liveShares = data?.shares.filter((s) => s.status !== "REVOKED").length ?? 0;
+    const liveSharesList = data?.shares.filter((s) => s.status !== "REVOKED") ?? [];
+    const liveShares = liveSharesList.length;
     const atCeiling = data ? liveShares >= data.maxShares : false;
 
     return (
-        <div className="mt-3 border-t border-white/5 pt-3">
-            {data?.rootCommitId && (
-                <div className="mb-4 rounded-2xl border border-[#00d2b4]/25 bg-[#00d2b4]/[0.06] p-3 space-y-2">
+        <div className="space-y-4">
+            {/* Middle Section: Vault Balance Box (Left) & Commit ID (Right) */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {balanceBox}
+                <div className="flex flex-col justify-between rounded-2xl border border-white/10 bg-black/40 p-4 min-h-[96px]">
                     <div className="flex items-center justify-between gap-2">
-                        <span className="text-[9px] font-black uppercase tracking-[0.16em] text-[#00d2b4]">
-                            Primary Commit ID (Privacy First)
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-white/50">
+                            Commit ID:
                         </span>
-                        <span className="rounded-full border border-[#00d2b4]/30 bg-[#00d2b4]/10 px-2 py-0.5 text-[8px] font-bold text-[#00d2b4]">
-                            Root Credential
-                        </span>
+                        {copiedId === data?.rootCommitId && (
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-[#00d2b4]">
+                                Copied
+                            </span>
+                        )}
                     </div>
-                    <p className="text-[10px] text-white/60 leading-relaxed">
-                        Use this Primary Commit ID instead of your wallet address when checking out or reporting usage on merchant services.
-                    </p>
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                        <code className="truncate font-mono text-xs font-bold text-[#00d2b4] sm:text-sm">
+                            {data?.rootCommitId || (loading ? "Loading..." : "cmt_pending")}
+                        </code>
+                        {data?.rootCommitId && (
+                            <button
+                                type="button"
+                                onClick={() => copyId(data.rootCommitId)}
+                                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-[#00d2b4]/30 bg-[#00d2b4]/10 text-[#00d2b4] transition hover:bg-[#00d2b4]/25"
+                                title="Copy Primary Commit ID"
+                            >
+                                <Copy className="h-4 w-4" />
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Dates & Keeper Settlement Section */}
+            {datesBox}
+
+            {/* Friends Avatar Row Section */}
+            <div className="pt-2">
+                <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-none">
+                    {liveSharesList.map((share) => {
+                        const initial = share.displayName ? share.displayName[0].toUpperCase() : "A";
+                        return (
+                            <div
+                                key={share.commitId}
+                                onClick={() => setOpen(true)}
+                                className="flex min-w-[90px] cursor-pointer shrink-0 flex-col items-center justify-center rounded-2xl border border-white/10 bg-black/40 p-3 text-center transition hover:border-[#00d2b4]/40 hover:bg-black/60"
+                            >
+                                <div className="mb-1.5 flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/10 text-sm font-black text-white">
+                                    {initial}
+                                </div>
+                                <span className="w-full truncate text-[11px] font-bold text-white">
+                                    {share.displayName || "Friend"}
+                                </span>
+                                <span className="mt-0.5 text-[9px] font-medium uppercase tracking-wider text-white/50">
+                                    {formatUsdc(share.spentUsdc)} USED
+                                </span>
+                            </div>
+                        );
+                    })}
+
+                    {/* Add a Friend Card */}
                     <button
                         type="button"
-                        onClick={() => copyId(data.rootCommitId)}
-                        className="flex w-full items-center justify-between gap-2 rounded-xl border border-[#00d2b4]/20 bg-black/40 px-3 py-2 text-left transition-colors hover:border-[#00d2b4]/50"
+                        onClick={() => setOpen((prev) => !prev)}
+                        className="flex min-w-[90px] shrink-0 flex-col items-center justify-center rounded-2xl border border-dashed border-[#00d2b4]/40 bg-[#00d2b4]/[0.04] p-3 text-center transition hover:border-[#00d2b4] hover:bg-[#00d2b4]/10"
                     >
-                        <code className="truncate font-mono text-[11px] font-bold text-[#00d2b4]">
-                            {data.rootCommitId}
-                        </code>
-                        <span className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-[#00d2b4]">
-                            {copiedId === data.rootCommitId ? "Copied" : "Copy Primary ID"}
+                        <div className="mb-1.5 flex h-10 w-10 items-center justify-center rounded-xl border border-[#00d2b4]/20 bg-[#00d2b4]/10 text-[#00d2b4]">
+                            <Plus className="h-5 w-5" />
+                        </div>
+                        <span className="text-[11px] font-bold text-[#00d2b4]">
+                            Add a friend
                         </span>
                     </button>
                 </div>
-            )}
-
-            <button
-                type="button"
-                onClick={() => setOpen((prev) => !prev)}
-                className="flex w-full items-center justify-between gap-2 rounded-xl px-1 py-1.5 text-left transition-colors hover:bg-white/[0.03]"
-                aria-expanded={open}
-            >
-                <span className="flex items-center gap-2">
-                    <Shield className="h-3.5 w-3.5 text-[#00d2b4]" />
-                    <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/60">
-                        Share with friends
-                    </span>
-                    {liveShares > 0 && (
-                        <span className="rounded-full border border-white/10 bg-white/[0.06] px-2 py-0.5 text-[9px] font-bold text-white/60">
-                            {liveShares}
-                        </span>
-                    )}
-                </span>
-                <span className="text-[9px] font-bold uppercase tracking-wider text-white/35">
-                    {open ? "Hide" : "Manage"}
-                </span>
-            </button>
+            </div>
 
             <AnimatePresence initial={false}>
                 {open && (
