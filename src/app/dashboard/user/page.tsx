@@ -4186,7 +4186,7 @@ export default function UserDashboard() {
                         </label>
                       </div>
                       <span className="rounded-full bg-white/5 px-3 py-1 text-[9px] font-bold text-white/45 uppercase tracking-widest">
-                        Individual account
+                        User account
                       </span>
                       {uploadError && <p className="text-[10px] text-red-300 font-sans">{uploadError}</p>}
                     </div>
@@ -4234,7 +4234,7 @@ export default function UserDashboard() {
                       <div className="flex items-center justify-between">
                         <div>
                           <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Account Role</label>
-                          <span className="block font-sans text-xs text-white/60 mt-1">Individual Customer</span>
+                          <span className="block font-sans text-xs text-white/60 mt-1">User Account</span>
                         </div>
                         <Lock className="h-4 w-4 text-white/20 shrink-0" />
                       </div>

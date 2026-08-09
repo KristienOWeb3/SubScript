@@ -6202,7 +6202,7 @@ Please complete the following implementation tasks:
                             </h2>
                             <p className="text-xs text-white/50 leading-relaxed font-sans font-normal">
                                 {sessionAlert === "role_missing" && "Your active profile is missing an assigned role. Please complete your registration."}
-                                {sessionAlert === "wrong_role" && "This is the Enterprise Merchant dashboard, but your session is registered as an Individual User."}
+                                {sessionAlert === "wrong_role" && "This is the Enterprise Merchant dashboard, but your session is registered as a User Account."}
                                 {sessionAlert === "wallet_mismatch" && "Your connected wallet address does not match your active session. Please sign in again."}
                             </p>
                         </div>

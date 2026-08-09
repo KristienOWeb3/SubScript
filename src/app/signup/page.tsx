@@ -597,7 +597,7 @@ export default function SignupPage() {
             </div>
 
             <div className="space-y-4">
-              {/* Individual User Option */}
+              {/* User Account Option */}
               <button
                 onClick={() => persistRoleChoice("USER")}
                 className={`w-full p-5 border text-left rounded-2xl transition-all duration-300 relative overflow-hidden group ${
@@ -618,9 +618,8 @@ export default function SignupPage() {
                     <h3 className={`font-bold text-sm uppercase tracking-wider transition-colors ${
                       selectedRole === "USER" ? "text-[#00d2b4]" : "text-white"
                     }`}>
-                      Individual User
+                      User Account
                     </h3>
-                    <span className="text-[9px] text-[#00d2b4] uppercase font-bold tracking-wider">Personal Hub</span>
                   </div>
                 </div>
                 <p className="text-[11px] text-white/50 mt-3 leading-relaxed">
