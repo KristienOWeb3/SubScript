@@ -29,6 +29,9 @@ type SendSingleModalProps = {
        guard below would refuse every amount until the read lands. */
     balanceKnown?: boolean;
     onScanQr: () => void;
+    /* Closes the sheet and takes the user to the Batch Payouts tab. The modal only handles one
+       recipient, so this is the escape hatch to the multi-recipient form. */
+    onGoToBatch: () => void;
     /* Rendered by the parent so the modal doesn't duplicate the Arc/CCTP routing rules that
        live in BalanceRoutingNotice next to the batch form. */
     routingNotice?: ReactNode;
@@ -56,6 +59,7 @@ export default function SendSingleModal({
     selfSend,
     loading,
     status,
+    onGoToBatch,
     walletBalance,
     balanceKnown = true,
     onScanQr,
@@ -274,6 +278,20 @@ export default function SendSingleModal({
                                         <Send className="h-4 w-4" /> Send USDC
                                     </>
                                 )}
+                            </button>
+
+                            {/* Ghost styling so it never competes with the primary CTA above.
+                                Disabled mid-send: navigating away from an in-flight transfer would
+                                strand the user without its confirmation or its error. */}
+                            <button
+                                type="button"
+                                onClick={onGoToBatch}
+                                disabled={loading}
+                                className={`w-full rounded-2xl py-2.5 text-[11px] font-bold text-white/50 transition hover:text-white ${
+                                    loading ? "cursor-not-allowed opacity-40 hover:text-white/50" : ""
+                                }`}
+                            >
+                                Send to multiple people
                             </button>
                         </form>
                     </motion.div>
