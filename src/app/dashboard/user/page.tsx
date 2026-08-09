@@ -3375,8 +3375,6 @@ export default function UserDashboard() {
                   subtitle="Fund prepaid balances for metered services, and delegate capped spending to others."
                 />
 
-                <SubUserManager />
-
                 <section className="liquid-glass rounded-3xl border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl sm:p-8">
                   <div className="mb-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -3423,8 +3421,9 @@ export default function UserDashboard() {
                   </div>
 
                   {isVaultsLoading ? (
-                    <div className="flex h-36 items-center justify-center">
-                      <Loader2 className="h-6 w-6 animate-spin text-[#ccff00]" />
+                    <div className="space-y-3">
+                      <VaultCardSkeleton />
+                      <VaultCardSkeleton />
                     </div>
                   ) : vaults.length === 0 ? (
                     <div className="flex h-36 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 p-4 text-center">
@@ -3458,6 +3457,8 @@ export default function UserDashboard() {
                     </div>
                   )}
                 </section>
+
+                <SubUserManager />
               </section>
             )}
 
@@ -8225,6 +8226,44 @@ function BalanceRoutingNotice({
   );
 }
 
+function VaultCardSkeleton() {
+  return (
+    <div className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-black/30 p-4 sm:p-5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="h-11 w-11 rounded-2xl subscript-skeleton shrink-0" />
+          <div className="space-y-2">
+            <div className="h-4 w-36 rounded-lg subscript-skeleton" />
+            <div className="h-3 w-16 rounded-full subscript-skeleton" />
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="h-10 w-24 rounded-2xl subscript-skeleton" />
+          <div className="h-10 w-24 rounded-2xl subscript-skeleton" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="flex flex-col justify-between rounded-2xl border border-white/10 bg-black/40 p-4 min-h-[96px] subscript-skeleton">
+          <div className="h-3 w-20 rounded-md bg-white/10" />
+          <div className="h-6 w-32 rounded-lg bg-white/10 mt-2" />
+        </div>
+        <div className="flex flex-col justify-between rounded-2xl border border-white/10 bg-black/40 p-4 min-h-[96px] subscript-skeleton">
+          <div className="h-3 w-20 rounded-md bg-white/10" />
+          <div className="h-6 w-40 rounded-lg bg-white/10 mt-2" />
+        </div>
+      </div>
+
+      <div className="h-16 rounded-2xl border border-white/5 bg-black/20 subscript-skeleton" />
+
+      <div className="flex items-center gap-3 pt-2">
+        <div className="h-[92px] w-[90px] rounded-2xl subscript-skeleton shrink-0" />
+        <div className="h-[92px] w-[90px] rounded-2xl subscript-skeleton shrink-0" />
+      </div>
+    </div>
+  );
+}
+
 function MeteredVaultRow({
   vault,
   onCommit,
@@ -8284,7 +8323,11 @@ function MeteredVaultRow({
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black/50 shrink-0">
-            <Home className="h-5 w-5 text-[#ccff00]" />
+            {vault.merchantPic ? (
+              <img src={vault.merchantPic} alt={vault.merchantName} className="h-full w-full object-cover" />
+            ) : (
+              <Home className="h-5 w-5 text-[#ccff00]" />
+            )}
           </div>
           <div className="min-w-0">
             <h4 className="truncate text-sm sm:text-base font-black text-white uppercase tracking-wider">{vault.merchantName}</h4>
@@ -8296,16 +8339,17 @@ function MeteredVaultRow({
           </div>
         </div>
 
-        {/* Top Right Action Icons */}
+        {/* Top Right Action Icons & Desktop Labels */}
         <div className="flex items-center gap-2 shrink-0">
           {/* Top Up (+) Button */}
           <button
             type="button"
             onClick={() => onCommit(vault)}
             title="Top up commit"
-            className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white hover:border-[#ccff00]/40 hover:bg-[#ccff00]/10 hover:text-[#ccff00] transition"
+            className="flex h-10 w-10 sm:w-auto sm:px-3.5 items-center justify-center gap-1.5 rounded-2xl border border-white/10 bg-white/5 text-white hover:border-[#ccff00]/40 hover:bg-[#ccff00]/10 hover:text-[#ccff00] transition text-[11px] font-bold"
           >
-            <Plus className="h-5 w-5" />
+            <Plus className="h-4 w-4 shrink-0" />
+            <span className="hidden sm:inline">Top up commit</span>
           </button>
 
           {/* Pause (||) / Play (▶) Service Button */}
@@ -8316,9 +8360,10 @@ function MeteredVaultRow({
                 onClick={() => !resumeBusy && (balance >= STANDARD_COMMIT_MICROS ? onResumeService(vault) : onCommit(vault))}
                 disabled={resumeBusy}
                 title="Resume service"
-                className={`flex h-10 w-10 items-center justify-center rounded-2xl border border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition ${resumeBusy ? "quick-action-loading opacity-50 cursor-not-allowed" : ""}`}
+                className={`flex h-10 w-10 sm:w-auto sm:px-3.5 items-center justify-center gap-1.5 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition text-[11px] font-bold ${resumeBusy ? "quick-action-loading opacity-50 cursor-not-allowed" : ""}`}
               >
-                <Play className="h-4 w-4 fill-current" />
+                <Play className="h-4 w-4 fill-current shrink-0" />
+                <span className="hidden sm:inline">Resume service</span>
               </button>
             ) : (
               <button
@@ -8326,9 +8371,10 @@ function MeteredVaultRow({
                 onClick={() => !cancelBusy && onCancelService(vault)}
                 disabled={cancelBusy}
                 title="Pause service"
-                className={`flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:border-red-400/30 hover:bg-red-500/10 hover:text-red-300 transition ${cancelBusy ? "quick-action-loading opacity-50 cursor-not-allowed" : ""}`}
+                className={`flex h-10 w-10 sm:w-auto sm:px-3.5 items-center justify-center gap-1.5 rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:border-red-400/30 hover:bg-red-500/10 hover:text-red-300 transition text-[11px] font-bold ${cancelBusy ? "quick-action-loading opacity-50 cursor-not-allowed" : ""}`}
               >
-                <Pause className="h-4 w-4 fill-current" />
+                <Pause className="h-4 w-4 fill-current shrink-0" />
+                <span className="hidden sm:inline">Pause service</span>
               </button>
             )
           )}
