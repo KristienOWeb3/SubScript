@@ -44,7 +44,7 @@ The persistent database layer tracks offchain state and audit trails.
 - `LedgerEntry`: append-only accounting records.
 - `WebhookDelivery`: webhook delivery attempts and retry logs.
 - `MeteredVault`: prepaid usage balances, thresholds, top-up amounts, monthly velocity limits, and per-merchant usage state.
-- `AddressAlias`: SubScript DNS-style readable aliases for user and merchant wallet addresses.
+- `AddressAlias`: SubScript DNS-style readable aliases for user wallet addresses and merchant Primary Commit IDs.
 
 ## 3. Backend API Services
 

@@ -127,7 +127,7 @@ You are operating in a codebase integrating the SubScript Protocol on the Arc Ne
    \`event\` (\`payment.success\`) is a deprecated back-compat alias — never write new logic against it.
 
 ## INTEGRATION CONFIGURATION
-- MERCHANT WALLET ADDRESS: ${opts.merchantWalletAddress}
+- MERCHANT PRIMARY COMMIT ID: ${opts.merchantWalletAddress}
 - PLAN NAME: ${opts.planName}
 - PLAN AMOUNT CAP: ${opts.planCap} USDC
 - PLAN INTERVAL: ${opts.planInterval} seconds
