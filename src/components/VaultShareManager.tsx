@@ -90,11 +90,10 @@ export default function VaultShareManager({
         }
     }, [vaultId]);
 
-    /* Deferred until the panel is opened: a dashboard with many vaults should not fire one request
-       per vault on mount for a feature most users will not expand. */
+    /* Fetch immediately so the Primary Commit ID is always visible on the dashboard. */
     useEffect(() => {
-        if (open && !data) void load();
-    }, [open, data, load]);
+        if (!data) void load();
+    }, [data, load]);
 
     const handleCreate = async () => {
         setFormError(null);
