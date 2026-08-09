@@ -7752,6 +7752,7 @@ function SendFundsModal({
   refetchUsdc: () => void;
 }) {
   const [amount, setAmount] = useState("");
+  const [localRecipient, setLocalRecipient] = useState(recipient);
   const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -7762,29 +7763,43 @@ function SendFundsModal({
 
   useEffect(() => {
     if (!open) return;
-    setStatus(null);
+    setLocalRecipient(recipient);
     setAmount("");
+  }, [open, recipient]);
+
+  useEffect(() => {
+    if (!open) return;
+    setStatus(null);
     setResolvedAddress(null);
     setReviewOpen(false);
     setTransactionHash(null);
 
-    const trimmed = recipient.trim().toLowerCase();
+    const trimmed = localRecipient.trim().toLowerCase();
+    if (!trimmed) return;
+
     if (/^0x[a-fA-F0-9]{40}$/.test(trimmed)) {
       setResolvedAddress(trimmed);
       return;
     }
 
     setResolving(true);
-    fetch(`/api/merchant/alias?alias=${encodeURIComponent(trimmed)}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && data.address) {
-          setResolvedAddress(data.address);
-        }
-      })
-      .catch(console.error)
-      .finally(() => setResolving(false));
-  }, [open, recipient]);
+    const timer = setTimeout(() => {
+      fetch(`/api/merchant/alias?alias=${encodeURIComponent(trimmed)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.address) {
+            setResolvedAddress(data.address);
+          }
+        })
+        .catch(console.error)
+        .finally(() => setResolving(false));
+    }, 500);
+
+    return () => {
+      clearTimeout(timer);
+      setResolving(false);
+    };
+  }, [open, localRecipient]);
 
   /* Stable per send attempt: reused on retry so the server's Circle idempotency key dedupes
      instead of transferring twice; cleared on success. */
@@ -7907,11 +7922,21 @@ function SendFundsModal({
             <form onSubmit={handleSend} className="space-y-4 text-left">
               <div className="space-y-1">
                 <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">To Recipient</span>
-                <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs font-mono text-white/80">
-                  {recipient}
-                  {resolving && <span className="ml-2 text-xs text-[#ccff00] animate-pulse">(Resolving...)</span>}
-                  {resolvedAddress && resolvedAddress !== recipient && (
-                    <div className="text-[10px] text-white/40 mt-1 truncate">{resolvedAddress}</div>
+                <input
+                  type="text"
+                  value={localRecipient}
+                  onChange={(e) => {
+                    setLocalRecipient(e.target.value);
+                    setReviewOpen(false);
+                    setStatus(null);
+                  }}
+                  placeholder="Address or @alias"
+                  className="w-full rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs font-mono text-white/80 focus:border-[#ccff00]/40 focus:outline-none"
+                />
+                <div className="min-h-[20px] px-2">
+                  {resolving && <span className="text-xs text-[#ccff00] animate-pulse">(Resolving...)</span>}
+                  {resolvedAddress && resolvedAddress !== localRecipient && (
+                    <div className="text-[10px] text-white/40 truncate">{resolvedAddress}</div>
                   )}
                 </div>
                 {resolvedAddress && userWallet && resolvedAddress.toLowerCase() === userWallet.toLowerCase() && (
