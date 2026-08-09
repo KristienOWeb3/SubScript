@@ -2881,19 +2881,33 @@ export default function UserDashboard() {
       };
     }),
     ...dms
-      .filter((d) => d.amountUsdc && ["DEBIT_SUCCESS", "PAYMENT", "PEER_PAYMENT", "PAYMENT_SUCCESS", "PEER_TRANSFER"].includes(d.messageType) || (d.amountUsdc && d.status === "PAID"))
+      .filter((d) => d.amountUsdc && (
+        ["DEBIT_SUCCESS", "PAYMENT", "PEER_PAYMENT", "PAYMENT_SUCCESS", "PEER_TRANSFER", "WITHDRAWAL", "WITHDRAW"].includes(d.messageType) ||
+        d.status === "PAID"
+      ))
       .map((d) => {
+        const isWithdrawal = d.messageType === "WITHDRAWAL" || d.messageType === "WITHDRAW";
+        const isPeerTransfer = d.messageType === "PEER_TRANSFER" || d.messageType === "PEER_PAYMENT";
         const isDebitSuccess = d.messageType === "DEBIT_SUCCESS";
-        const incoming = d.receiverAddress.toLowerCase() === userWallet?.toLowerCase() && !isDebitSuccess;
+        const incoming = d.receiverAddress.toLowerCase() === userWallet?.toLowerCase() && !isDebitSuccess && !isWithdrawal;
         const usdVal = Number(d.amountUsdc) / 1_000_000;
         const localVal = usdVal * exchangeRate;
         const localLabel = `${detectedCurrency.symbol}${formatHeadlineAmount(localVal)}`;
+
+        let kind: "one-time" | "transfers" | "withdrawals" = "one-time";
+        if (isWithdrawal) kind = "withdrawals";
+        else if (isPeerTransfer) kind = "transfers";
+
         return {
           id: `dm-${d.id}`,
-          kind: "one-time" as const,
-          name: (incoming ? d.senderName : d.receiverName) || "Payment",
+          kind,
+          name: isWithdrawal
+            ? "Sent from balance to wallet"
+            : (incoming ? d.senderName : d.receiverName) || "Payment",
           pic: incoming ? d.senderProfilePic : d.receiverProfilePic,
-          detail: d.title || d.description || (incoming ? "Received payment" : "Sent payment"),
+          detail: isWithdrawal
+            ? "SubScript Balance Withdrawal"
+            : d.title || d.description || (incoming ? "Received payment" : "Sent payment"),
           amountLabel: `${incoming ? "+" : "-"}$${formatUsdc(d.amountUsdc)}`,
           localAmountLabel: `${incoming ? "+" : "-"}${localLabel}`,
           time: new Date(d.createdAt).getTime(),
@@ -3221,21 +3235,20 @@ export default function UserDashboard() {
                     </div>
                   </div>
 
-                  {/* RIGHT TALL PANEL */}
-                  <section className="liquid-glass flex min-h-[260px] flex-col rounded-[20px] border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl">
+                  {/* RIGHT TALL PANEL - Active Subscriptions (hidden on mobile) */}
+                  <section className="liquid-glass hidden md:flex min-h-[260px] flex-col rounded-[20px] border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl">
                     <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
-                      <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions &amp; Commits</h2>
+                      <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions</h2>
                       <span className="w-fit rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00]">
-                        {subscriptions.filter((s) => s.status === "ACTIVE" && !s.cancelAtPeriodEnd).length
-                          + homeCommitRows.filter((v: any) => Boolean(v?.active)).length} active
+                        {subscriptions.filter((s) => s.status === "ACTIVE" && !s.cancelAtPeriodEnd).length} active
                       </span>
                     </div>
 
                     <div className="min-h-0 flex-1 overflow-y-auto pr-1 scrollbar-thin">
-                      {sortedSubscriptions.length === 0 && homeCommitRows.length === 0 ? (
+                      {sortedSubscriptions.length === 0 ? (
                         <div className="flex h-full min-h-[180px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center">
                           <CreditCard className="mb-3 h-8 w-8 text-white/25" />
-                          <p className="text-xs text-white/45">No active subscription streams or commits yet.</p>
+                          <p className="text-xs text-white/45">No active subscription streams yet.</p>
                         </div>
                       ) : (
                         <div className="space-y-3">
@@ -3248,26 +3261,6 @@ export default function UserDashboard() {
                               resuming={resumingSubscriptionId === sub.subscriptionId}
                             />
                           ))}
-                          {homeCommitRows.map((vault: any) => (
-                            <button
-                              key={`home-commit-${vault.id}`}
-                              type="button"
-                              onClick={() => setActiveTab("commit")}
-                              className="flex w-full min-w-0 items-center justify-between gap-3 rounded-2xl border border-white/5 bg-black/20 p-3.5 text-left transition hover:border-[#ccff00]/20 hover:bg-black/30"
-                            >
-                              <div className="min-w-0">
-                                <p className="truncate text-xs font-bold text-white">
-                                  {merchantDisplayName(vault.merchantName)}
-                                </p>
-                                <p className="mt-0.5 truncate font-mono text-[10px] font-black uppercase tracking-wider text-white/45">
-                                  Commit • {vault.active ? "Locked" : "Inactive"}
-                                </p>
-                              </div>
-                              <span className="shrink-0 font-mono text-xs font-black text-[#ccff00]">
-                                {balanceVisible ? `$${formatUsdc(vault.balanceUsdc)}` : "••••"}
-                              </span>
-                            </button>
-                          ))}
                         </div>
                       )}
                     </div>
@@ -3277,7 +3270,7 @@ export default function UserDashboard() {
                 {/* ===== Bottom full-width panel ===== */}
                 <section className="liquid-glass rounded-[20px] border border-white/5 bg-black/40 p-5 text-white shadow-2xl backdrop-blur-xl">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-white/70">Direct Messages &amp; System Activity Ledger</h2>
+                    <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-white/70">Transaction History</h2>
                     <Link
                       href="/dashboard/user/transactions"
                       className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-white/45 hover:text-[#ccff00] transition-colors"
@@ -3286,37 +3279,8 @@ export default function UserDashboard() {
                     </Link>
                   </div>
 
-                  {/* Newest DM per thread — the "direct messages" half of the ledger. */}
-                  {dmThreads.length > 0 && (
-                    <div className="mt-4 space-y-2">
-                      {dmThreads.slice(0, 2).map((thread) => (
-                        <button
-                          key={thread.peerAddress}
-                          type="button"
-                          onClick={() => { setSelectedDmPeer(thread.peerAddress); setActiveTab("inbox"); }}
-                          className="w-full rounded-2xl border border-white/5 bg-black/20 p-3.5 text-left transition hover:border-[#ccff00]/20 hover:bg-black/30"
-                        >
-                          <div className="flex items-center justify-between gap-3 font-mono text-[10px]">
-                            <span className="truncate font-bold text-white">
-                              {formatPeerDisplayName(thread.peerName, thread.peerAddress)}
-                            </span>
-                            <span className="shrink-0 text-white/40">
-                              {new Date(thread.latestTime).toLocaleString()}
-                            </span>
-                          </div>
-                          {/* Wraps instead of clamping: at 320px a two-line clamp silently cuts the
-                              third line off, and only two threads render here so the row can afford
-                              the height. Matches the wireframe's unclamped ledger preview. */}
-                          <p className="mt-1 text-[11px] leading-relaxed text-white/55">
-                            {shortenWalletsInText(thread.latest.description || thread.latest.title || "Message")}
-                          </p>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="mt-4 flex gap-2">
-                    {([["all", "All"], ["recurring", "Recurring"], ["one-time", "One Time"]] as const).map(([value, label]) => (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {([["all", "All"], ["recurring", "Subscriptions"], ["one-time", "One Time"], ["transfers", "Transfers"], ["withdrawals", "Withdrawals"]] as const).map(([value, label]) => (
                       <button
                         key={value}
                         type="button"

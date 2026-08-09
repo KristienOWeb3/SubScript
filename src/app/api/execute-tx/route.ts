@@ -13,6 +13,7 @@ import {
 } from "@/lib/contracts/constants";
 import { PREMIUM_PRICE } from "@/lib/payments/constants";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
+import { createDmAndNotify } from "@/lib/dms/notifications";
 
 /* Custody execution waits for on-chain confirmation (required for Circle SCA wallets,
    whose tx hash only exists once confirmed), so give the route enough headroom. */
@@ -470,6 +471,15 @@ export async function POST(request: Request) {
 
             if (action === "withdraw") {
                 console.log(`[Withdrawal Executed] session: ${wallet}, txHash: ${txHash}, requestId: ${requestId}`);
+                await createDmAndNotify({
+                    senderAddress: wallet,
+                    receiverAddress: wallet,
+                    messageType: "WITHDRAWAL",
+                    title: "Sent from balance to wallet",
+                    description: `Withdrew USDC balance to external wallet address`,
+                    txHash,
+                    dedupeKey: `withdraw-activity:${txHash}`,
+                }).catch((err) => console.error("Failed to record withdrawal DM:", err));
             }
 
             return NextResponse.json({ success: true, txHash }, { status: 200 });
