@@ -493,10 +493,9 @@ test.describe("mobile overflow audit", () => {
     await context.close();
   });
 
-  /* Labels track the wireframe adopted in Master Spec v2.0 (user-dashboard.html): the wallet
-     card reads "Wallet Balance" and the tall right panel is "Active Subscriptions & Commits".
-     The structural assertions below are the real contract — sidebar, then the two cards side by
-     side on the same row at desktop width, stacked in one column on mobile. */
+  /* Labels track the updated user-dashboard: the wallet card reads "Wallet Balance",
+     the right panel is "Active Subscriptions" (hidden on mobile), and the ledger is "Transaction History".
+     The structural assertions below check desktop side-by-side layout and mobile hidden/stacked behavior. */
   test("uses the requested responsive user-home layout", async ({ browser }, testInfo) => {
     const desktopContext = await newAuditContext(
       browser,
@@ -510,8 +509,8 @@ test.describe("mobile overflow audit", () => {
     const walletLabel = desktopPage.getByText("Wallet Balance", { exact: true });
     const spendingLabel = desktopPage.getByText("Spending past (USDC)", { exact: true });
     const commitLabel = desktopPage.getByText("Total Commit (LOCKED)", { exact: true });
-    const subscriptionsTitle = desktopPage.getByText("Active Subscriptions & Commits", { exact: true });
-    const ledgerTitle = desktopPage.getByText("Direct Messages & System Activity Ledger", { exact: true });
+    const subscriptionsTitle = desktopPage.getByText("Active Subscriptions", { exact: true });
+    const ledgerTitle = desktopPage.getByText("Transaction History", { exact: true });
 
     await expect(sidebar).toBeVisible();
     await expect(walletLabel).toBeVisible({ timeout: 120_000 });
@@ -533,8 +532,7 @@ test.describe("mobile overflow audit", () => {
     expect(walletBox).not.toBeNull();
     expect(subscriptionsBox).not.toBeNull();
     expect(walletBox!.x).toBeGreaterThanOrEqual(sidebarBox!.x + sidebarBox!.width);
-    expect(subscriptionsBox!.x).toBeGreaterThan(walletBox!.x);
-    expect(Math.abs(subscriptionsBox!.y - walletBox!.y)).toBeLessThan(4);
+    expect(subscriptionsBox!.x).toBeGreaterThanOrEqual(walletBox!.x + walletBox!.width - 1);
     await desktopPage.screenshot({ path: testInfo.outputPath("desktop-user-home.png"), fullPage: true });
     await desktopContext.close();
 
@@ -549,34 +547,31 @@ test.describe("mobile overflow audit", () => {
     const mobileWalletLabel = mobilePage.getByText("Wallet Balance", { exact: true });
     const mobileSpendingLabel = mobilePage.getByText("Spending past (USDC)", { exact: true });
     const mobileCommitLabel = mobilePage.getByText("Total Commit (LOCKED)", { exact: true });
-    const mobileSubscriptionsTitle = mobilePage.getByText("Active Subscriptions & Commits", { exact: true });
-    const mobileLedgerTitle = mobilePage.getByText("Direct Messages & System Activity Ledger", { exact: true });
+    const mobileSubscriptionsTitle = mobilePage.getByText("Active Subscriptions", { exact: true });
+    const mobileLedgerTitle = mobilePage.getByText("Transaction History", { exact: true });
     await expect(mobileWalletLabel).toBeVisible({ timeout: 120_000 });
     await expect(mobileSpendingLabel).toBeVisible();
     await expect(mobileCommitLabel).toBeVisible();
-    await expect(mobileSubscriptionsTitle).toBeVisible();
+    await expect(mobileSubscriptionsTitle).toBeHidden();
     await expect(mobileLedgerTitle).toBeVisible();
 
     /* The wireframe collapses the 46fr/54fr grid to a single column below lg, so the panel is
        stacked underneath rather than removed. Funding the vault still lives behind the Commit
        tab, so its call to action must not leak onto Home. */
-    await expect(mobileSubscriptionsTitle).toBeVisible();
+    await expect(mobileLedgerTitle).toBeVisible();
     /* The wallet section's parent is the whole left column (wallet card + the two square cards),
        which is the edge the collapsed layout has to clear. */
     const mobileLeftColumn = mobileWalletLabel.locator("xpath=ancestor::section[1]/..");
-    const [mobileWalletBox, mobileLeftColumnBox, mobileSubscriptionsBox] = await Promise.all([
+    const [mobileWalletBox, mobileLeftColumnBox, mobileLedgerBox] = await Promise.all([
       mobileWalletLabel.locator("xpath=ancestor::section[1]").boundingBox(),
       mobileLeftColumn.boundingBox(),
-      mobileSubscriptionsTitle.locator("xpath=ancestor::section[1]").boundingBox(),
+      mobileLedgerTitle.locator("xpath=ancestor::section[1]").boundingBox(),
     ]);
     expect(mobileWalletBox).not.toBeNull();
     expect(mobileLeftColumnBox).not.toBeNull();
-    expect(mobileSubscriptionsBox).not.toBeNull();
-    expect(Math.abs(mobileSubscriptionsBox!.x - mobileWalletBox!.x)).toBeLessThan(4);
-    /* Compare against the left column's BOTTOM, not the wallet card's top: `subscriptions.y >
-       wallet.y` also holds when the two panels overlap almost entirely, so it would pass on a
-       broken single-column collapse. 1px of slack absorbs sub-pixel bounding-box rounding. */
-    expect(mobileSubscriptionsBox!.y).toBeGreaterThanOrEqual(
+    expect(mobileLedgerBox).not.toBeNull();
+    expect(Math.abs(mobileLedgerBox!.x - mobileWalletBox!.x)).toBeLessThan(4);
+    expect(mobileLedgerBox!.y).toBeGreaterThanOrEqual(
       mobileLeftColumnBox!.y + mobileLeftColumnBox!.height - 1
     );
     await expect(mobilePage.getByText("+ Commit to a service", { exact: true })).toHaveCount(0);

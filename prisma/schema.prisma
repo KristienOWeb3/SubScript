@@ -1071,3 +1071,20 @@ model BatchSendItem {
   @@unique([operationId, itemId], map: "batch_send_items_op_item")
   @@map("batch_send_items")
 }
+
+model BannedAccount {
+  address   String   @id @map("address")
+  reason    String?  @map("reason")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("banned_accounts")
+}
+
+model BannedIp {
+  ip        String   @id @map("ip")
+  reason    String?  @map("reason")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("banned_ips")
+}
+

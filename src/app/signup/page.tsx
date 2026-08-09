@@ -597,7 +597,7 @@ export default function SignupPage() {
             </div>
 
             <div className="space-y-4">
-              {/* Individual User Option */}
+              {/* User Account Option */}
               <button
                 onClick={() => persistRoleChoice("USER")}
                 className={`w-full p-5 border text-left rounded-2xl transition-all duration-300 relative overflow-hidden group ${
@@ -618,9 +618,8 @@ export default function SignupPage() {
                     <h3 className={`font-bold text-sm uppercase tracking-wider transition-colors ${
                       selectedRole === "USER" ? "text-[#00d2b4]" : "text-white"
                     }`}>
-                      Individual User
+                      User Account
                     </h3>
-                    <span className="text-[9px] text-[#00d2b4] uppercase font-bold tracking-wider">Personal Hub</span>
                   </div>
                 </div>
                 <p className="text-[11px] text-white/50 mt-3 leading-relaxed">
@@ -850,7 +849,7 @@ export default function SignupPage() {
               <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 text-[10px] leading-relaxed text-emerald-300 flex items-start gap-2">
                 <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                 <span>
-                  <strong>Recommended:</strong> Register with Email{CIRCLE_GOOGLE_ENABLED ? " or Google" : ""} to create a secure <strong>Server-Signed Wallet</strong>. This will be fully compatible with our upcoming mobile app. Web3 connected wallets are web-only.
+                  <strong>Recommended</strong>
                 </span>
               </div>
 

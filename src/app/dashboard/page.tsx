@@ -37,7 +37,7 @@ import {
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
     Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
     Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, User, Share2,
-    ShieldCheck, Save, Home, SquaresFour, Broadcast, MessageSquare, HelpCircle, Send, Terminal, Bell
+    ShieldCheck, Save, Home, SquaresFour, Broadcast, MessageSquare, HelpCircle, Send, Terminal, Bell, Search
 } from "@/components/icons";
 import { QRCode } from "react-qrcode-logo";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
@@ -875,6 +875,12 @@ export default function DashboardPage() {
 
     const [userSettings, setUserSettings] = useState<any>(null);
     const [settingsTransactions, setSettingsTransactions] = useState<any[]>([]);
+    const [settingsTxCategory, setSettingsTxCategory] = useState<string>("all");
+    const [settingsTxStatus, setSettingsTxStatus] = useState<string>("all");
+    const [settingsTxDatePreset, setSettingsTxDatePreset] = useState<string>("all");
+    const [settingsTxStartDate, setSettingsTxStartDate] = useState<string>("");
+    const [settingsTxEndDate, setSettingsTxEndDate] = useState<string>("");
+    const [settingsTxSearch, setSettingsTxSearch] = useState<string>("");
     const [isSettingsLoading, setIsSettingsLoading] = useState(false);
     const [dnsDomain, setDnsDomain] = useState("");
     const [dnsSuffix, setDnsSuffix] = useState(".hq");
@@ -3419,71 +3425,9 @@ Please complete the following implementation tasks:
                         </div>
                     </div>
 
-                    {/* Verification tier and plan are independent tracks: KYC is a trust badge,
-                        the plan gates product features. Each card always reflects the real DB
-                        state, so a Premium-but-unverified merchant sees both facts correctly. */}
+                    {/* SubScript DNS Registration */}
                     <div className="space-y-4 pt-4 border-t border-white/5">
-                        <h3 className="text-xs font-bold text-white uppercase tracking-wider">Verification & Plan</h3>
-                        <p className="text-[10px] text-white/40 leading-relaxed font-sans max-w-sm">
-                            Verification (KYC) adds a public trust badge. Your plan controls which product features are unlocked. They are independent, so you can hold either without the other.
-                        </p>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {/* KYC track */}
-                            <div className={`p-4 rounded-2xl border ${userSettings.verified ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5'} space-y-2`}>
-                                <div className="flex items-center justify-between">
-                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">KYC Tier</h4>
-                                    <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold ${userSettings.verified ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>
-                                        {userSettings.verified ? 'Verified' : 'Unverified'}
-                                    </span>
-                                </div>
-                                <ul className="space-y-1 text-[9px] text-white/50 leading-relaxed font-sans">
-                                    {userSettings.verified ? (
-                                        <>
-                                            <li className="flex items-center gap-1 text-emerald-400">✓ Verified badge on your public profile</li>
-                                            <li className="flex items-center gap-1 text-emerald-400">✓ Customers can commit without a risk warning</li>
-                                            <li className="flex items-center gap-1 text-emerald-400">✓ Ready for regulated rails as they launch</li>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <li className="flex items-center gap-1 text-white/60">• Public profile shows unverified</li>
-                                            <li className="flex items-center gap-1 text-white/60">• Customers see a warning before committing funds</li>
-                                            <li className="flex items-center gap-1 text-white/60">• Complete business verification below to upgrade</li>
-                                        </>
-                                    )}
-                                </ul>
-                            </div>
-
-                            {/* Plan track */}
-                            <div className={`p-4 rounded-2xl border ${userSettings.tier === 'PREMIUM' ? 'border-purple-500/30 bg-purple-500/5' : 'border-white/5 bg-white/[0.02]'} space-y-2`}>
-                                <div className="flex items-center justify-between">
-                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">Plan</h4>
-                                    <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold ${userSettings.tier === 'PREMIUM' ? 'bg-purple-500/20 text-purple-300' : 'bg-white/10 text-white/60'}`}>
-                                        {userSettings.tier === 'PREMIUM' ? 'Premium' : 'Free'}
-                                    </span>
-                                </div>
-                                <ul className="space-y-1 text-[9px] text-white/50 leading-relaxed font-sans">
-                                    <li className="flex items-center gap-1 text-emerald-400">✓ Create unlimited payment links</li>
-                                    <li className={`flex items-center gap-1 ${userSettings.tier === 'PREMIUM' ? 'text-emerald-400' : 'text-red-400'}`}>
-                                        {userSettings.tier === 'PREMIUM' ? '✓' : '✗'} API Keys &amp; Webhook endpoints
-                                    </li>
-                                    <li className={`flex items-center gap-1 ${userSettings.tier === 'PREMIUM' ? 'text-emerald-400' : 'text-red-400'}`}>
-                                        {userSettings.tier === 'PREMIUM' ? '✓' : '✗'} Customer commitment vaults
-                                    </li>
-                                </ul>
-                                {userSettings.tier !== 'PREMIUM' && (
-                                    <p className="text-[8px] text-white/40 italic pt-1 font-sans">Upgrade plan under the "Premium" tab.</p>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Identity Verification (KYC/KYB) */}
-                    <KycVerificationPanel />
-
-                    {/* DNS / Alias Section */}
-                    <div className="space-y-4">
-                        <h3 className="text-xs font-bold text-white uppercase tracking-wider">SubScript DNS Registration</h3>
+                        <h3 className="text-xs font-bold text-white uppercase tracking-wider">SubScript DNS Registration (Business Name)</h3>
                         <p className="text-[10px] leading-relaxed text-amber-300/80 rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 font-sans">
                             {merchantAliasNextChange
                                 ? <>Your DNS name is locked until <strong>{new Date(merchantAliasNextChange).toLocaleDateString()}</strong>. You can change it again then. Business names cannot be unregistered.</>
@@ -3495,8 +3439,6 @@ Please complete the following implementation tasks:
                                     <p className="text-[9px] uppercase tracking-wider font-bold text-[#00d2b4]/70">Registered Alias</p>
                                     <h4 className="font-mono text-lg font-bold text-[#00d2b4] mt-1">{userSettings.alias}</h4>
                                 </div>
-                                {/* Merchants can never unregister: the registered business name is the
-                                    identity customers pay to, and the API refuses the DELETE too. */}
                                 <span className="px-3 py-1.5 border border-white/10 text-white/40 text-[10px] font-bold uppercase tracking-wider rounded-xl select-none">
                                     Permanent
                                 </span>
@@ -3571,6 +3513,68 @@ Please complete the following implementation tasks:
                         {dnsError && <p className="text-[10px] text-red-400">{dnsError}</p>}
                         {dnsSuccess && <p className="text-[10px] text-emerald-400">{dnsSuccess}</p>}
                     </div>
+
+                    {/* Verification tier and plan are independent tracks: KYC is a trust badge,
+                        the plan gates product features. Each card always reflects the real DB
+                        state, so a Premium-but-unverified merchant sees both facts correctly. */}
+                    <div className="space-y-4 pt-4 border-t border-white/5">
+                        <h3 className="text-xs font-bold text-white uppercase tracking-wider">Verification & Plan</h3>
+                        <p className="text-[10px] text-white/40 leading-relaxed font-sans max-w-sm">
+                            Verification (KYC) adds a public trust badge. Your plan controls which product features are unlocked. They are independent, so you can hold either without the other.
+                        </p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {/* KYC track */}
+                            <div className={`p-4 rounded-2xl border ${userSettings.verified ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5'} space-y-2`}>
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">KYC Tier</h4>
+                                    <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold ${userSettings.verified ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                                        {userSettings.verified ? 'Verified' : 'Unverified'}
+                                    </span>
+                                </div>
+                                <ul className="space-y-1 text-[9px] text-white/50 leading-relaxed font-sans">
+                                    {userSettings.verified ? (
+                                        <>
+                                            <li className="flex items-center gap-1 text-emerald-400">✓ Verified badge on your public profile</li>
+                                            <li className="flex items-center gap-1 text-emerald-400">✓ Customers can commit without a risk warning</li>
+                                            <li className="flex items-center gap-1 text-emerald-400">✓ Ready for regulated rails as they launch</li>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <li className="flex items-center gap-1 text-white/60">• Public profile shows unverified</li>
+                                            <li className="flex items-center gap-1 text-white/60">• Customers see a warning before committing funds</li>
+                                            <li className="flex items-center gap-1 text-white/60">• Complete business verification below to upgrade</li>
+                                        </>
+                                    )}
+                                </ul>
+                            </div>
+
+                            {/* Plan track */}
+                            <div className={`p-4 rounded-2xl border ${userSettings.tier === 'PREMIUM' ? 'border-purple-500/30 bg-purple-500/5' : 'border-white/5 bg-white/[0.02]'} space-y-2`}>
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">Plan</h4>
+                                    <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold ${userSettings.tier === 'PREMIUM' ? 'bg-purple-500/20 text-purple-300' : 'bg-white/10 text-white/60'}`}>
+                                        {userSettings.tier === 'PREMIUM' ? 'Premium' : 'Free'}
+                                    </span>
+                                </div>
+                                <ul className="space-y-1 text-[9px] text-white/50 leading-relaxed font-sans">
+                                    <li className="flex items-center gap-1 text-emerald-400">✓ Create unlimited payment links</li>
+                                    <li className={`flex items-center gap-1 ${userSettings.tier === 'PREMIUM' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {userSettings.tier === 'PREMIUM' ? '✓' : '✗'} API Keys &amp; Webhook endpoints
+                                    </li>
+                                    <li className={`flex items-center gap-1 ${userSettings.tier === 'PREMIUM' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {userSettings.tier === 'PREMIUM' ? '✓' : '✗'} Customer commitment vaults
+                                    </li>
+                                </ul>
+                                {userSettings.tier !== 'PREMIUM' && (
+                                    <p className="text-[8px] text-white/40 italic pt-1 font-sans">Upgrade plan under the "Premium" tab.</p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Identity Verification (KYC/KYB) */}
+                    <KycVerificationPanel />
                 </div>
 
                 {/* Wallet Recovery & Backup */}
@@ -3859,83 +3863,275 @@ Please complete the following implementation tasks:
                 </div>
 
                 {/* Transaction History Receipt Logs */}
-                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
-                    <div>
-                        <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                            <Activity className="w-4 h-4 text-[#00d2b4]" />
-                            Transaction History Logs
-                        </h2>
-                        <p className="text-[11px] text-white/40 font-sans">
-                            Review recent transactions and payments.
-                        </p>
-                    </div>
+                {(() => {
+                    const filteredSettingsTx = settingsTransactions.filter((tx) => {
+                        if (settingsTxSearch.trim()) {
+                            const q = settingsTxSearch.trim().toLowerCase();
+                            const matchId = (tx.receiptId || "").toLowerCase().includes(q);
+                            const matchHash = (tx.txHash || "").toLowerCase().includes(q);
+                            const matchName = (tx.counterpartyName || "").toLowerCase().includes(q);
+                            const matchMemo = (tx.memoNote || "").toLowerCase().includes(q);
+                            const matchPayer = (tx.payerAddress || "").toLowerCase().includes(q);
+                            const matchMerchant = (tx.merchantAddress || "").toLowerCase().includes(q);
+                            if (!matchId && !matchHash && !matchName && !matchMemo && !matchPayer && !matchMerchant) {
+                                return false;
+                            }
+                        }
 
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left font-sans text-xs">
-                            <thead>
-                                <tr className="border-b border-white/5 text-white/40 uppercase text-[9px] tracking-wider">
-                                    <th className="pb-3">Receipt ID</th>
-                                    <th className="pb-3">Date &amp; Time</th>
-                                    <th className="pb-3">Type</th>
-                                    <th className="pb-3">Amount</th>
-                                    <th className="pb-3">Status</th>
-                                    <th className="pb-3 text-right">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {settingsTransactions.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={6} className="text-center py-6 text-white/30">
-                                            No transaction logs found.
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    settingsTransactions.map((tx) => {
-                                        const isOutgoing = tx.payerAddress.toLowerCase() === address.toLowerCase();
-                                        return (
-                                            <tr key={tx.receiptId} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
-                                                <td className="py-4 font-mono font-semibold text-white/80">{tx.receiptId.slice(0, 8)}...</td>
-                                                <td className="py-4 text-white/50">{new Date(tx.createdAt).toLocaleString()}</td>
-                                                <td className="py-4">
-                                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${isOutgoing ? "bg-red-500/10 text-red-400" : "bg-emerald-500/10 text-emerald-400"}`}>
-                                                        {isOutgoing ? "Debit" : "Credit"}
-                                                    </span>
-                                                </td>
-                                                <td className="py-4 font-mono font-bold text-white">
-                                                    {(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
-                                                </td>
-                                                <td className="py-4">
-                                                    <FinancialStatusBadge status={tx.status} />
-                                                </td>
-                                                <td className="py-4 text-right">
-                                                    <div className="inline-flex items-center gap-3">
-                                                        <a
-                                                            href={`/receipt/${tx.receiptId}?invite=1`}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="text-white/50 hover:text-[#00d2b4] hover:underline inline-flex items-center gap-1"
-                                                            title="Grant another address permission to view this private receipt"
-                                                        >
-                                                            Grant access
-                                                        </a>
-                                                        <a
-                                                            href={`${activeArcChain.blockExplorers.default.url}/tx/${tx.txHash}`}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="text-[#00d2b4] hover:underline inline-flex items-center gap-1"
-                                                        >
-                                                            Tx <ExternalLink className="w-3 h-3" />
-                                                        </a>
-                                                    </div>
+                        if (settingsTxCategory !== "all") {
+                            const memo = (tx.memoNote || "").toLowerCase();
+                            const isSub = memo.includes("sub") || memo.includes("plan") || memo.includes("recurring") || !!tx.paymentLinkId;
+                            const isTransfer = memo.includes("transfer") || memo.includes("peer");
+                            const isWithdrawal = memo.includes("withdraw") || memo.includes("balance to wallet");
+                            const isOneTime = !isSub && !isTransfer && !isWithdrawal;
+
+                            if (settingsTxCategory === "subscriptions") {
+                                if (!isSub) return false;
+                            } else if (settingsTxCategory === "one-time") {
+                                if (!isOneTime) return false;
+                            } else if (settingsTxCategory === "transfers") {
+                                if (!isTransfer) return false;
+                            } else if (settingsTxCategory === "withdrawals") {
+                                if (!isWithdrawal) return false;
+                            } else if (settingsTxCategory === "sent") {
+                                const isOutgoing = tx.payerAddress.toLowerCase() === address.toLowerCase();
+                                if (!isOutgoing) return false;
+                            } else if (settingsTxCategory === "received") {
+                                const isOutgoing = tx.payerAddress.toLowerCase() === address.toLowerCase();
+                                if (isOutgoing) return false;
+                            }
+                        }
+
+                        if (settingsTxStatus !== "all") {
+                            if (String(tx.status || "").toUpperCase() !== settingsTxStatus.toUpperCase()) {
+                                return false;
+                            }
+                        }
+
+                        if (settingsTxDatePreset !== "all" || settingsTxStartDate || settingsTxEndDate) {
+                            const txDate = new Date(tx.createdAt).getTime();
+                            const now = Date.now();
+
+                            if (settingsTxDatePreset === "today") {
+                                const todayStart = new Date();
+                                todayStart.setHours(0, 0, 0, 0);
+                                if (txDate < todayStart.getTime()) return false;
+                            } else if (settingsTxDatePreset === "7days") {
+                                if (txDate < now - 7 * 24 * 60 * 60 * 1000) return false;
+                            } else if (settingsTxDatePreset === "30days") {
+                                if (txDate < now - 30 * 24 * 60 * 60 * 1000) return false;
+                            } else if (settingsTxDatePreset === "custom") {
+                                if (settingsTxStartDate) {
+                                    const startMs = new Date(settingsTxStartDate).getTime();
+                                    if (!isNaN(startMs) && txDate < startMs) return false;
+                                }
+                                if (settingsTxEndDate) {
+                                    const endMs = new Date(settingsTxEndDate).setHours(23, 59, 59, 999);
+                                    if (!isNaN(endMs) && txDate > endMs) return false;
+                                }
+                            }
+                        }
+
+                        return true;
+                    });
+
+                    return (
+                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div>
+                                    <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                                        <Activity className="w-4 h-4 text-[#00d2b4]" />
+                                        Transaction History Logs
+                                    </h2>
+                                    <p className="text-[11px] text-white/40 font-sans">
+                                        Review recent transactions and payments.
+                                    </p>
+                                </div>
+                                <span className="text-[10px] font-mono font-semibold text-white/40">
+                                    Showing {filteredSettingsTx.length} of {settingsTransactions.length}
+                                </span>
+                            </div>
+
+                            {/* Customizable Filter Control Bar */}
+                            <div className="space-y-3 p-4 rounded-2xl bg-white/[0.02] border border-white/5 font-sans">
+                                <div className="flex flex-wrap items-center gap-3">
+                                    {/* Search Input */}
+                                    <div className="relative flex-1 min-w-[200px]">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/40" />
+                                        <input
+                                            type="text"
+                                            value={settingsTxSearch}
+                                            onChange={(e) => setSettingsTxSearch(e.target.value)}
+                                            placeholder="Search name, receipt ID, memo..."
+                                            className="w-full bg-white/[0.04] border border-white/10 rounded-xl pl-9 pr-8 py-1.5 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[#00d2b4]/50"
+                                        />
+                                        {settingsTxSearch && (
+                                            <button
+                                                onClick={() => setSettingsTxSearch("")}
+                                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white text-xs"
+                                            >
+                                                ✕
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Category Selector */}
+                                    <select
+                                        value={settingsTxCategory}
+                                        onChange={(e) => setSettingsTxCategory(e.target.value)}
+                                        className="bg-white/[0.04] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white/90 focus:outline-none focus:border-[#00d2b4]/50"
+                                    >
+                                        <option value="all" className="bg-[#121212] text-white">All Categories</option>
+                                        <option value="subscriptions" className="bg-[#121212] text-white">Subscriptions</option>
+                                        <option value="one-time" className="bg-[#121212] text-white">One Time</option>
+                                        <option value="transfers" className="bg-[#121212] text-white">Transfers</option>
+                                        <option value="withdrawals" className="bg-[#121212] text-white">Withdrawals</option>
+                                        <option value="sent" className="bg-[#121212] text-white">Sent (Debit)</option>
+                                        <option value="received" className="bg-[#121212] text-white">Received (Credit)</option>
+                                    </select>
+
+                                    {/* Status Selector */}
+                                    <select
+                                        value={settingsTxStatus}
+                                        onChange={(e) => setSettingsTxStatus(e.target.value)}
+                                        className="bg-white/[0.04] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white/90 focus:outline-none focus:border-[#00d2b4]/50"
+                                    >
+                                        <option value="all" className="bg-[#121212] text-white">All Statuses</option>
+                                        <option value="CONFIRMED" className="bg-[#121212] text-white">Confirmed</option>
+                                        <option value="PENDING" className="bg-[#121212] text-white">Pending</option>
+                                        <option value="FAILED" className="bg-[#121212] text-white">Failed</option>
+                                    </select>
+
+                                    {/* Date Range Selector */}
+                                    <select
+                                        value={settingsTxDatePreset}
+                                        onChange={(e) => {
+                                            setSettingsTxDatePreset(e.target.value);
+                                            if (e.target.value !== "custom") {
+                                                setSettingsTxStartDate("");
+                                                setSettingsTxEndDate("");
+                                            }
+                                        }}
+                                        className="bg-white/[0.04] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white/90 focus:outline-none focus:border-[#00d2b4]/50"
+                                    >
+                                        <option value="all" className="bg-[#121212] text-white">All Time</option>
+                                        <option value="today" className="bg-[#121212] text-white">Today</option>
+                                        <option value="7days" className="bg-[#121212] text-white">Last 7 Days</option>
+                                        <option value="30days" className="bg-[#121212] text-white">Last 30 Days</option>
+                                        <option value="custom" className="bg-[#121212] text-white">Custom Date Range...</option>
+                                    </select>
+
+                                    {/* Reset Button */}
+                                    {(settingsTxSearch || settingsTxCategory !== "all" || settingsTxStatus !== "all" || settingsTxDatePreset !== "all" || settingsTxStartDate || settingsTxEndDate) && (
+                                        <button
+                                            onClick={() => {
+                                                setSettingsTxSearch("");
+                                                setSettingsTxCategory("all");
+                                                setSettingsTxStatus("all");
+                                                setSettingsTxDatePreset("all");
+                                                setSettingsTxStartDate("");
+                                                setSettingsTxEndDate("");
+                                            }}
+                                            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-[11px] font-bold text-white/80 transition-all"
+                                        >
+                                            Reset Filters
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Custom Date Inputs */}
+                                {settingsTxDatePreset === "custom" && (
+                                    <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-white/70">
+                                        <div className="flex items-center gap-1.5">
+                                            <span>From:</span>
+                                            <input
+                                                type="date"
+                                                value={settingsTxStartDate}
+                                                onChange={(e) => setSettingsTxStartDate(e.target.value)}
+                                                className="bg-white/[0.04] border border-white/10 rounded-xl px-2.5 py-1 text-xs text-white focus:outline-none focus:border-[#00d2b4]/50"
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <span>To:</span>
+                                            <input
+                                                type="date"
+                                                value={settingsTxEndDate}
+                                                onChange={(e) => setSettingsTxEndDate(e.target.value)}
+                                                className="bg-white/[0.04] border border-white/10 rounded-xl px-2.5 py-1 text-xs text-white focus:outline-none focus:border-[#00d2b4]/50"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left font-sans text-xs">
+                                    <thead>
+                                        <tr className="border-b border-white/5 text-white/40 uppercase text-[9px] tracking-wider">
+                                            <th className="pb-3">Receipt ID</th>
+                                            <th className="pb-3">Date &amp; Time</th>
+                                            <th className="pb-3">Type</th>
+                                            <th className="pb-3">Amount</th>
+                                            <th className="pb-3">Status</th>
+                                            <th className="pb-3 text-right">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filteredSettingsTx.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={6} className="text-center py-6 text-white/30">
+                                                    No transaction logs match your active filters.
                                                 </td>
                                             </tr>
-                                        );
-                                    })
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                                        ) : (
+                                            filteredSettingsTx.map((tx) => {
+                                                const isOutgoing = tx.payerAddress.toLowerCase() === address.toLowerCase();
+                                                return (
+                                                    <tr key={tx.receiptId} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
+                                                        <td className="py-4 font-mono font-semibold text-white/80">{tx.receiptId.slice(0, 8)}...</td>
+                                                        <td className="py-4 text-white/50">{new Date(tx.createdAt).toLocaleString()}</td>
+                                                        <td className="py-4">
+                                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${isOutgoing ? "bg-red-500/10 text-red-400" : "bg-emerald-500/10 text-emerald-400"}`}>
+                                                                {isOutgoing ? "Debit" : "Credit"}
+                                                            </span>
+                                                        </td>
+                                                        <td className="py-4 font-mono font-bold text-white">
+                                                            {(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
+                                                        </td>
+                                                        <td className="py-4">
+                                                            <FinancialStatusBadge status={tx.status} />
+                                                        </td>
+                                                        <td className="py-4 text-right">
+                                                            <div className="inline-flex items-center gap-3">
+                                                                <a
+                                                                    href={`/receipt/${tx.receiptId}?invite=1`}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="text-white/50 hover:text-[#00d2b4] hover:underline inline-flex items-center gap-1"
+                                                                    title="Grant another address permission to view this private receipt"
+                                                                >
+                                                                    Grant access
+                                                                </a>
+                                                                <a
+                                                                    href={`${activeArcChain.blockExplorers.default.url}/tx/${tx.txHash}`}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="text-[#00d2b4] hover:underline inline-flex items-center gap-1"
+                                                                >
+                                                                    Tx <ExternalLink className="w-3 h-3" />
+                                                                </a>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    );
+                })()}
             </div>
         );
     };
@@ -6202,7 +6398,7 @@ Please complete the following implementation tasks:
                             </h2>
                             <p className="text-xs text-white/50 leading-relaxed font-sans font-normal">
                                 {sessionAlert === "role_missing" && "Your active profile is missing an assigned role. Please complete your registration."}
-                                {sessionAlert === "wrong_role" && "This is the Enterprise Merchant dashboard, but your session is registered as an Individual User."}
+                                {sessionAlert === "wrong_role" && "This is the Enterprise Merchant dashboard, but your session is registered as a User Account."}
                                 {sessionAlert === "wallet_mismatch" && "Your connected wallet address does not match your active session. Please sign in again."}
                             </p>
                         </div>

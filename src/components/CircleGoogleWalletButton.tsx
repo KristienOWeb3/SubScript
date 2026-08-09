@@ -124,9 +124,10 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
         setIsLoading(false);
     };
 
-    const preloadedSdkRef = useRef<{
-        sdk: W3SSdk;
+    const preloadedDataRef = useRef<{
         config: CircleGoogleConfig;
+        deviceToken: string;
+        deviceEncryptionKey: string;
     } | null>(null);
 
     useEffect(() => {
@@ -156,15 +157,11 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
                 if (!dtRes.ok || !dt.deviceToken || !dt.deviceEncryptionKey || !isMounted) return;
                 persistCircleDevice(dt.deviceToken, dt.deviceEncryptionKey);
 
-                tempSdk.updateConfigs({
-                    appSettings: { appId: config.appId },
-                    loginConfigs: {
-                        deviceToken: dt.deviceToken,
-                        deviceEncryptionKey: dt.deviceEncryptionKey,
-                        google: googleConfig,
-                    },
-                }, () => {});
-                preloadedSdkRef.current = { sdk: tempSdk, config };
+                preloadedDataRef.current = {
+                    config,
+                    deviceToken: dt.deviceToken,
+                    deviceEncryptionKey: dt.deviceEncryptionKey,
+                };
             } catch (e) {
                 console.warn("[CircleGoogleWalletButton] Preload error:", e);
             }
@@ -238,60 +235,60 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
                 }
             };
 
-            if (preloadedSdkRef.current) {
-                const { sdk, config } = preloadedSdkRef.current;
-                sdk.updateConfigs({
+            let config: CircleGoogleConfig;
+            let deviceToken: string;
+            let deviceEncryptionKey: string;
+
+            if (preloadedDataRef.current) {
+                config = preloadedDataRef.current.config;
+                deviceToken = preloadedDataRef.current.deviceToken;
+                deviceEncryptionKey = preloadedDataRef.current.deviceEncryptionKey;
+            } else {
+                const configRes = await fetch("/api/auth/circle/google/config", { cache: "no-store" });
+                const fetchedConfig: CircleGoogleConfig & { error?: string } = await configRes.json();
+                if (!configRes.ok) {
+                    throw new Error(fetchedConfig.error || "Circle Google login is not configured.");
+                }
+                config = fetchedConfig;
+
+                const tempSdk = new W3SSdk({
                     appSettings: { appId: config.appId },
                     loginConfigs: {
-                        deviceToken: cookieString("circle_device_token"),
-                        deviceEncryptionKey: cookieString("circle_device_encryption_key"),
+                        deviceToken: "",
+                        deviceEncryptionKey: "",
                         google: {
                             clientId: config.googleClientId,
                             redirectUri: config.redirectUri,
                             selectAccountPrompt: true,
                         },
                     },
-                }, onLoginComplete);
-                await sdk.performLogin(SocialLoginProvider.GOOGLE);
-                return;
-            }
+                }, () => {});
 
-            const configRes = await fetch("/api/auth/circle/google/config", { cache: "no-store" });
-            const config: CircleGoogleConfig & { error?: string } = await configRes.json();
-            if (!configRes.ok) {
-                throw new Error(config.error || "Circle Google login is not configured.");
+                const deviceId = await tempSdk.getDeviceId();
+                const dtRes = await fetch("/api/auth/circle/google/device-token", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ deviceId }),
+                });
+                const dt = await dtRes.json().catch(() => ({}));
+                if (!dtRes.ok || !dt.deviceToken || !dt.deviceEncryptionKey) {
+                    throw new Error(dt.error || "Could not initialize Google login. Please try again.");
+                }
+                persistCircleDevice(dt.deviceToken, dt.deviceEncryptionKey);
+                deviceToken = dt.deviceToken;
+                deviceEncryptionKey = dt.deviceEncryptionKey;
             }
-
-            const googleConfig = {
-                clientId: config.googleClientId,
-                redirectUri: config.redirectUri,
-                selectAccountPrompt: true,
-            };
 
             const sdk = new W3SSdk({
                 appSettings: { appId: config.appId },
-                loginConfigs: { deviceToken: "", deviceEncryptionKey: "", google: googleConfig },
-            }, onLoginComplete);
-
-            const deviceId = await sdk.getDeviceId();
-
-            const dtRes = await fetch("/api/auth/circle/google/device-token", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ deviceId }),
-            });
-            const dt = await dtRes.json().catch(() => ({}));
-            if (!dtRes.ok || !dt.deviceToken || !dt.deviceEncryptionKey) {
-                throw new Error(dt.error || "Could not initialize Google login. Please try again.");
-            }
-            persistCircleDevice(dt.deviceToken, dt.deviceEncryptionKey);
-
-            sdk.updateConfigs({
-                appSettings: { appId: config.appId },
                 loginConfigs: {
-                    deviceToken: dt.deviceToken,
-                    deviceEncryptionKey: dt.deviceEncryptionKey,
-                    google: googleConfig,
+                    deviceToken,
+                    deviceEncryptionKey,
+                    google: {
+                        clientId: config.googleClientId,
+                        redirectUri: config.redirectUri,
+                        selectAccountPrompt: true,
+                    },
                 },
             }, onLoginComplete);
 

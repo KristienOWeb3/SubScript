@@ -54,6 +54,12 @@ function utilizationPercent(share: Share): number | null {
 
 type Busy = { commitId: string; action: string } | null;
 
+type DmContact = {
+    address: string;
+    displayName: string;
+    profilePic?: string | null;
+};
+
 export default function VaultShareManager({
     vaultId,
     merchantLabel,
@@ -77,6 +83,46 @@ export default function VaultShareManager({
     const [formError, setFormError] = useState<string | null>(null);
     const [successMsg, setSuccessMsg] = useState<string | null>(null);
     const [creating, setCreating] = useState(false);
+    const [dmContacts, setDmContacts] = useState<DmContact[]>([]);
+
+    const loadDmContacts = useCallback(async () => {
+        try {
+            const res = await fetch("/api/user/dms", { credentials: "include" });
+            const json = await res.json();
+            if (json.success && Array.isArray(json.dms)) {
+                const contactsMap = new Map<string, DmContact>();
+                json.dms.forEach((dm: any) => {
+                    if (dm.senderRole !== "ENTERPRISE" && dm.senderAddress) {
+                        const addr = dm.senderAddress.toLowerCase();
+                        if (!contactsMap.has(addr)) {
+                            contactsMap.set(addr, {
+                                address: dm.senderAddress,
+                                displayName: dm.senderName || dm.senderAddress.slice(0, 10),
+                                profilePic: dm.senderProfilePic,
+                            });
+                        }
+                    }
+                    if (dm.receiverRole !== "ENTERPRISE" && dm.receiverAddress) {
+                        const addr = dm.receiverAddress.toLowerCase();
+                        if (!contactsMap.has(addr)) {
+                            contactsMap.set(addr, {
+                                address: dm.receiverAddress,
+                                displayName: dm.receiverName || dm.receiverAddress.slice(0, 10),
+                                profilePic: dm.receiverProfilePic,
+                            });
+                        }
+                    }
+                });
+                setDmContacts(Array.from(contactsMap.values()));
+            }
+        } catch {
+            /* Ignore DM load error */
+        }
+    }, []);
+
+    useEffect(() => {
+        if (open) void loadDmContacts();
+    }, [open, loadDmContacts]);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -477,6 +523,29 @@ export default function VaultShareManager({
                                         <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-white/45">
                                             Share with a new friend
                                         </p>
+
+                                        {dmContacts.length > 0 && (
+                                            <div className="mb-2.5 space-y-1">
+                                                <span className="text-[9px] font-bold uppercase tracking-wider text-white/40">Select from open DMs:</span>
+                                                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                                                    {dmContacts.map((c) => (
+                                                        <button
+                                                            key={c.address}
+                                                            type="button"
+                                                            onClick={() => setName(c.displayName)}
+                                                            className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-black/40 px-2 py-1 text-[10px] text-white/80 transition hover:border-[#00d2b4]/40 hover:bg-black/60 hover:text-white"
+                                                        >
+                                                            {c.profilePic ? (
+                                                                <img src={c.profilePic} alt={c.displayName} className="h-3.5 w-3.5 rounded-full object-cover shrink-0" />
+                                                            ) : (
+                                                                <User className="h-3 w-3 text-white/40 shrink-0" />
+                                                            )}
+                                                            <span className="font-medium truncate max-w-[110px]">{c.displayName}</span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                         <div className="flex flex-col gap-2 sm:flex-row">
                                             <input
                                                 value={name}

@@ -12,9 +12,14 @@ import {
   CreditCard,
   MessageSquare,
   Loader2,
-  Lock
+  Lock,
+  Building2,
+  TrendingUp,
+  ArrowUpRight,
+  User,
+  ArrowDownToLine
 } from "lucide-react";
-import AnimatedGradientBg from "@/components/DashboardSkeleton"; // Using layout background
+import AnimatedGradientBg from "@/components/DashboardSkeleton";
 import FinancialStatusBadge from "@/components/FinancialStatusBadge";
 import { humanStatus, humanSubscriptionStatus } from "@/lib/transactionLabels";
 import { isOptimisticTxId, readOptimisticTxs, reconcileOptimisticTxs, type OptimisticTx } from "@/lib/optimisticTx";
@@ -58,19 +63,17 @@ export default function UserTransactionsPage() {
   const router = useRouter();
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [dms, setDms] = useState<DmMessage[]>([]);
-  /* Transfers submitted on the dashboard that the DM log hasn't surfaced yet. */
   const [optimisticTxs, setOptimisticTxs] = useState<OptimisticTx[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [filter, setFilter] = useState<"all" | "recurring" | "one-time">("all");
+  const [filter, setFilter] = useState<"all" | "recurring" | "one-time" | "transfers" | "withdrawals">("all");
   const [userWallet, setUserWallet] = useState<string | null>(null);
 
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [detectedCurrency, setDetectedCurrency] = useState({ code: "USD", symbol: "$" });
-  const [exchangeRate, setExchangeRate] = useState(1.0); // Fallback rate
+  const [exchangeRate, setExchangeRate] = useState(1.0);
 
-  // Sync balanceVisible with localStorage across tabs
   useEffect(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("subscript_balance_visible");
@@ -85,7 +88,6 @@ export default function UserTransactionsPage() {
     }
   }, []);
 
-  // Timezone-based geographic currency detection
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -102,34 +104,8 @@ export default function UserTransactionsPage() {
         if (tz.includes("Nairobi")) return { code: "KES", symbol: "KSh" };
         if (tz.includes("Accra")) return { code: "GHS", symbol: "GH₵" };
         if (tz.includes("Johannesburg")) return { code: "ZAR", symbol: "R" };
-
-        const locale = navigator.language || "en-US";
-        const parts = locale.split("-");
-        const country = parts[1] ? parts[1].toUpperCase() : "";
-
-        const countryToCurrency: Record<string, { code: string; symbol: string }> = {
-          NG: { code: "NGN", symbol: "₦" },
-          GB: { code: "GBP", symbol: "£" },
-          DE: { code: "EUR", symbol: "€" },
-          FR: { code: "EUR", symbol: "€" },
-          IT: { code: "EUR", symbol: "€" },
-          ES: { code: "EUR", symbol: "€" },
-          NL: { code: "EUR", symbol: "€" },
-          JP: { code: "JPY", symbol: "¥" },
-          IN: { code: "INR", symbol: "₹" },
-          AU: { code: "AUD", symbol: "A$" },
-          CA: { code: "CAD", symbol: "C$" },
-          US: { code: "USD", symbol: "$" },
-          ZA: { code: "ZAR", symbol: "R" },
-          KE: { code: "KES", symbol: "KSh" },
-          GH: { code: "GHS", symbol: "GH₵" },
-        };
-
-        if (country && countryToCurrency[country]) {
-          return countryToCurrency[country];
-        }
       } catch (e) {
-        console.error("Failed to detect currency from locale/timezone fallback:", e);
+        console.error("Failed to detect currency:", e);
       }
       return { code: "USD", symbol: "$" };
     };
@@ -145,15 +121,12 @@ export default function UserTransactionsPage() {
           if (data.success) {
             const resolvedCode = data.currency || initialCurrency.code;
             const resolvedSymbol = resolvedCode === "NGN" ? "₦" : (data.symbol && data.symbol !== "E" ? data.symbol : initialCurrency.symbol);
-            setDetectedCurrency({
-              code: resolvedCode,
-              symbol: resolvedSymbol
-            });
+            setDetectedCurrency({ code: resolvedCode, symbol: resolvedSymbol });
             setExchangeRate(Number(data.rate) || 1.0);
           }
         }
       } catch (e) {
-        console.error("Failed to fetch exchange rates from local API:", e);
+        console.error("Failed to fetch exchange rates:", e);
       }
     };
 
@@ -179,8 +152,6 @@ export default function UserTransactionsPage() {
       if (dmData.success) setDms(dmData.dms);
       if (sessionData.loggedIn && sessionData.wallet) setUserWallet(sessionData.wallet);
 
-      /* Reconcile against whatever the server just returned, so a transfer that has landed in
-         the DM log stops being rendered twice. */
       const serverHashes: Array<string | null | undefined> = (dmData.success ? dmData.dms : []).map(
         (m: DmMessage) => m.txHash
       );
@@ -197,8 +168,6 @@ export default function UserTransactionsPage() {
     loadData();
   }, [loadData]);
 
-  /* Hydrate before (and independently of) the network call, so a submitted transfer is still
-     visible if the history fetch itself fails. */
   useEffect(() => {
     setOptimisticTxs(readOptimisticTxs());
   }, []);
@@ -225,13 +194,25 @@ export default function UserTransactionsPage() {
     return "year";
   };
 
+  /* Accurately normalize subscription amounts to monthly (/mo) rates */
+  const getMonthlyRateUsdc = (amountCapUsdc: string, secondsStr: string) => {
+    const rawUsd = Number(amountCapUsdc) / 1_000_000;
+    const sec = Math.max(1, Number(secondsStr));
+    const MONTH_SECONDS = 2_592_000; // 30 days
+    return rawUsd * (MONTH_SECONDS / sec);
+  };
+
+  const activeSubscriptions = subscriptions.filter((s) => s.status === "ACTIVE" && !s.cancelAtPeriodEnd);
+
+  const totalMonthlyCommitmentUsdc = activeSubscriptions.reduce((sum, s) => {
+    return sum + getMonthlyRateUsdc(s.amountCapUsdc, s.billingIntervalSeconds);
+  }, 0);
+
   // Build unified transactions array
   const allTransactions = [
-    /* Pending sends first — they're always the newest thing the user did, and the sort below
-       keeps them on top anyway since createdAt is the submit time. */
     ...optimisticTxs.map((tx) => ({
       id: tx.id,
-      kind: "one-time" as const,
+      kind: "transfers" as const,
       name: tx.recipientLabel || "Recipient",
       pic: null as string | null,
       detail: "Sending • Awaiting confirmation",
@@ -250,8 +231,8 @@ export default function UserTransactionsPage() {
       pic: s.merchantProfilePic,
       detail: `Subscription • ${humanSubscriptionStatus(s.status)}`,
       amountUsdc: s.amountCapUsdc,
-      amountLabel: `${formatUsdc(s.amountCapUsdc)} USDC cap/${formatPlanPeriod(s.billingIntervalSeconds)}`,
-      localAmountLabel: `≈ ${getLocalValueLabel(s.amountCapUsdc)}`,
+      amountLabel: `-$${formatUsdc(s.amountCapUsdc)}/${formatPlanPeriod(s.billingIntervalSeconds)[0]}`,
+      localAmountLabel: `≈ -${getLocalValueLabel(s.amountCapUsdc)}`,
       time: s.lastSettlementTimestamp ? new Date(s.lastSettlementTimestamp).getTime() : new Date(s.createdAt).getTime(),
       incoming: false,
       status: s.status,
@@ -259,18 +240,31 @@ export default function UserTransactionsPage() {
     })),
     ...dms
       .filter((m) => m.amountUsdc && (
-        ["DEBIT_SUCCESS", "PAYMENT", "PEER_PAYMENT", "PAYMENT_SUCCESS", "PEER_TRANSFER"].includes(m.messageType) || 
+        ["DEBIT_SUCCESS", "PAYMENT", "PEER_PAYMENT", "PAYMENT_SUCCESS", "PEER_TRANSFER", "WITHDRAWAL"].includes(m.messageType) || 
         m.status === "PAID"
       ))
       .map((m) => {
-        const incoming = m.receiverAddress.toLowerCase() === userWallet?.toLowerCase();
+        const isWithdrawal = m.messageType === "WITHDRAWAL" || m.messageType === "WITHDRAW";
+        const isPeerTransfer = m.messageType === "PEER_TRANSFER" || m.messageType === "PEER_PAYMENT";
+        const incoming = m.receiverAddress.toLowerCase() === userWallet?.toLowerCase() && !isWithdrawal;
         const sign = incoming ? "+" : "-";
+
+        let kind: "one-time" | "transfers" | "withdrawals" = "one-time";
+        if (isWithdrawal) kind = "withdrawals";
+        else if (isPeerTransfer) kind = "transfers";
+
         return {
           id: `dm-${m.id}`,
-          kind: "one-time" as const,
-          name: incoming ? (m.senderName || "Sender") : (m.receiverName || "Recipient"),
+          kind,
+          name: isWithdrawal
+            ? "Sent from balance to wallet"
+            : incoming
+            ? (m.senderName || "Sender")
+            : (m.receiverName || "Recipient"),
           pic: incoming ? m.senderProfilePic : m.receiverProfilePic,
-          detail: m.title || m.description || humanStatus(m.messageType),
+          detail: isWithdrawal
+            ? "SubScript Balance Withdrawal"
+            : m.title || m.description || humanStatus(m.messageType),
           amountUsdc: m.amountUsdc,
           amountLabel: `${sign}$${formatUsdc(m.amountUsdc)}`,
           localAmountLabel: `${sign}${getLocalValueLabel(m.amountUsdc)}`,
@@ -285,6 +279,8 @@ export default function UserTransactionsPage() {
   const filteredTransactions = allTransactions.filter((tx) => {
     if (filter === "recurring" && tx.kind !== "recurring") return false;
     if (filter === "one-time" && tx.kind !== "one-time") return false;
+    if (filter === "transfers" && tx.kind !== "transfers") return false;
+    if (filter === "withdrawals" && tx.kind !== "withdrawals") return false;
     
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -315,12 +311,66 @@ export default function UserTransactionsPage() {
           </div>
         </div>
 
-        {/* Page Title */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-black uppercase tracking-tight text-white sm:text-4xl">Transaction History</h1>
-          <p className="mt-2 text-sm text-white/50">
-            View all recurring subscription streams and direct peer-to-peer payments settled on the Arc network.
-          </p>
+        {/* Page Title & Spend Overview */}
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-black uppercase tracking-tight text-white sm:text-4xl">Spending Analysis</h1>
+            <p className="mt-2 text-sm text-white/50">
+              Detailed breakdown of active subscription commitments and settled network activity.
+            </p>
+          </div>
+          <div className="rounded-3xl border border-white/10 bg-black/40 p-4 shadow-xl backdrop-blur-xl sm:text-right">
+            <span className="text-[10px] font-black uppercase tracking-wider text-white/40">Monthly Commitment</span>
+            <p className="text-2xl font-black text-white mt-0.5">
+              {balanceVisible ? `$${totalMonthlyCommitmentUsdc.toFixed(2)}` : "••••"} <span className="text-xs font-bold text-[#ccff00]">/mo</span>
+            </p>
+          </div>
+        </div>
+
+        {/* Active Subscriptions Section */}
+        <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-[28px] p-6 shadow-2xl mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xs font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions</h2>
+            <span className="rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-2.5 py-0.5 text-[10px] font-bold text-[#ccff00]">
+              {activeSubscriptions.length} Active Streams
+            </span>
+          </div>
+
+          {activeSubscriptions.length === 0 ? (
+            <div className="flex h-32 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center p-4">
+              <CreditCard className="mb-2 h-6 w-6 text-white/20" />
+              <p className="text-xs text-white/40">No active subscription streams.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {activeSubscriptions.map((s) => {
+                const monthlyUsd = getMonthlyRateUsdc(s.amountCapUsdc, s.billingIntervalSeconds);
+                return (
+                  <div key={s.subscriptionId} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/40 p-3.5 transition hover:border-white/20">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white/5">
+                        {s.merchantProfilePic ? (
+                          <img src={s.merchantProfilePic} alt={s.merchantName} className="h-full w-full object-cover" />
+                        ) : (
+                          <Building2 className="h-5 w-5 text-[#ccff00]" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-bold text-white uppercase tracking-wider">{s.merchantName}</p>
+                        <p className="text-[10px] font-medium text-white/40">
+                          ${formatUsdc(s.amountCapUsdc)} / {formatPlanPeriod(s.billingIntervalSeconds)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-xs font-black text-[#ccff00]">${monthlyUsd.toFixed(2)}</span>
+                      <span className="block text-[9px] font-bold text-white/40">/mo normalized</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Search & Filter Controls */}
@@ -336,17 +386,19 @@ export default function UserTransactionsPage() {
             />
           </div>
 
-          <div className="flex gap-2">
-            {([
+          <div className="flex flex-wrap gap-2">
+            {[
               { id: "all", label: "All Activity" },
-              { id: "recurring", label: "Subscription Streams" },
-              { id: "one-time", label: "One-Time Payments" }
-            ] as const).map((tab) => (
+              { id: "recurring", label: "Subscriptions" },
+              { id: "one-time", label: "One-Time Payments" },
+              { id: "transfers", label: "Transfers" },
+              { id: "withdrawals", label: "Withdrawals" },
+            ].map((tab) => (
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setFilter(tab.id)}
-                className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-wider transition-all ${
+                onClick={() => setFilter(tab.id as any)}
+                className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all ${
                   filter === tab.id
                     ? "bg-[#ccff00] text-black"
                     : "bg-white/[0.06] text-white/50 hover:bg-white/10"
@@ -392,33 +444,34 @@ export default function UserTransactionsPage() {
                         <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
                       ) : tx.kind === "recurring" ? (
                         <Shield className="h-5 w-5 text-[#ccff00]/70" />
+                      ) : tx.kind === "withdrawals" ? (
+                        <ArrowDownToLine className="h-5 w-5 text-amber-400" />
+                      ) : tx.kind === "transfers" ? (
+                        <User className="h-5 w-5 text-sky-400" />
                       ) : (
-                        <MessageSquare className="h-5 w-5 text-purple-400/70" />
+                        <CreditCard className="h-5 w-5 text-purple-400/70" />
                       )}
                     </div>
                     <div className="min-w-0">
                       <p className="truncate text-xs font-black uppercase tracking-[0.1em] text-white">{tx.name}</p>
-                      <p className="mt-1 text-[10px] text-white/55">{tx.detail} • {new Date(tx.time).toLocaleString()}</p>
-                      <div className="mt-2 flex items-center gap-2">
-                        <FinancialStatusBadge status={tx.status} />
-                      </div>
+                      <p className="truncate text-[10px] font-medium text-white/40 mt-0.5">
+                        {tx.detail} • {new Date(tx.time).toLocaleString()}
+                      </p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className={`text-xs font-black ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>
+                  <div className="text-right shrink-0">
+                    <span className={`block text-xs font-black ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>
                       {balanceVisible ? tx.amountLabel : "••••"}
-                    </p>
-                    <p className="mt-1 text-[9px] font-bold text-[#ccff00]">
+                    </span>
+                    <span className="block text-[9px] font-bold text-white/40 mt-0.5">
                       {balanceVisible ? tx.localAmountLabel : "••••"}
-                    </p>
+                    </span>
                   </div>
                 </div>
               ))}
             </div>
           )}
-          {!loading && !loadError && <p className="mt-6 border-t border-white/[0.06] pt-4 text-[10px] leading-relaxed text-white/40">Local-currency values are estimates based on the latest available exchange rate. Subscription caps are authorizations, not completed debits.</p>}
         </div>
-
       </div>
     </div>
   );

@@ -435,7 +435,7 @@ export default function UserDashboard() {
       return () => window.removeEventListener("storage", handleStorageChange);
     }
   }, []);
-  const [txFilter, setTxFilter] = useState<"all" | "recurring" | "one-time">("all");
+  const [txFilter, setTxFilter] = useState<"all" | "recurring" | "one-time" | "transfers" | "withdrawals">("all");
   const [allTxOpen, setAllTxOpen] = useState(false);
   const [allTxSearch, setAllTxSearch] = useState("");
   const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
@@ -582,6 +582,12 @@ export default function UserDashboard() {
     !userSettings?.walletBackup?.completedAt
   );
   const [settingsTransactions, setSettingsTransactions] = useState<any[]>([]);
+  const [settingsTxCategory, setSettingsTxCategory] = useState<string>("all");
+  const [settingsTxStatus, setSettingsTxStatus] = useState<string>("all");
+  const [settingsTxDatePreset, setSettingsTxDatePreset] = useState<string>("all");
+  const [settingsTxStartDate, setSettingsTxStartDate] = useState<string>("");
+  const [settingsTxEndDate, setSettingsTxEndDate] = useState<string>("");
+  const [settingsTxSearch, setSettingsTxSearch] = useState<string>("");
   const [isSettingsLoading, setIsSettingsLoading] = useState(false);
   const [savingSettingsField, setSavingSettingsField] = useState<string | null>(null);
   const [walletBackupLoading, setWalletBackupLoading] = useState(false);
@@ -2881,19 +2887,33 @@ export default function UserDashboard() {
       };
     }),
     ...dms
-      .filter((d) => d.amountUsdc && ["DEBIT_SUCCESS", "PAYMENT", "PEER_PAYMENT", "PAYMENT_SUCCESS", "PEER_TRANSFER"].includes(d.messageType) || (d.amountUsdc && d.status === "PAID"))
+      .filter((d) => d.amountUsdc && (
+        ["DEBIT_SUCCESS", "PAYMENT", "PEER_PAYMENT", "PAYMENT_SUCCESS", "PEER_TRANSFER", "WITHDRAWAL", "WITHDRAW"].includes(d.messageType) ||
+        d.status === "PAID"
+      ))
       .map((d) => {
+        const isWithdrawal = d.messageType === "WITHDRAWAL" || d.messageType === "WITHDRAW";
+        const isPeerTransfer = d.messageType === "PEER_TRANSFER" || d.messageType === "PEER_PAYMENT";
         const isDebitSuccess = d.messageType === "DEBIT_SUCCESS";
-        const incoming = d.receiverAddress.toLowerCase() === userWallet?.toLowerCase() && !isDebitSuccess;
+        const incoming = d.receiverAddress.toLowerCase() === userWallet?.toLowerCase() && !isDebitSuccess && !isWithdrawal;
         const usdVal = Number(d.amountUsdc) / 1_000_000;
         const localVal = usdVal * exchangeRate;
         const localLabel = `${detectedCurrency.symbol}${formatHeadlineAmount(localVal)}`;
+
+        let kind: "one-time" | "transfers" | "withdrawals" = "one-time";
+        if (isWithdrawal) kind = "withdrawals";
+        else if (isPeerTransfer) kind = "transfers";
+
         return {
           id: `dm-${d.id}`,
-          kind: "one-time" as const,
-          name: (incoming ? d.senderName : d.receiverName) || "Payment",
+          kind,
+          name: isWithdrawal
+            ? "Sent from balance to wallet"
+            : (incoming ? d.senderName : d.receiverName) || "Payment",
           pic: incoming ? d.senderProfilePic : d.receiverProfilePic,
-          detail: d.title || d.description || (incoming ? "Received payment" : "Sent payment"),
+          detail: isWithdrawal
+            ? "SubScript Balance Withdrawal"
+            : d.title || d.description || (incoming ? "Received payment" : "Sent payment"),
           amountLabel: `${incoming ? "+" : "-"}$${formatUsdc(d.amountUsdc)}`,
           localAmountLabel: `${incoming ? "+" : "-"}${localLabel}`,
           time: new Date(d.createdAt).getTime(),
@@ -3221,21 +3241,20 @@ export default function UserDashboard() {
                     </div>
                   </div>
 
-                  {/* RIGHT TALL PANEL */}
-                  <section className="liquid-glass flex min-h-[260px] flex-col rounded-[20px] border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl">
+                  {/* RIGHT TALL PANEL - Active Subscriptions (hidden on mobile) */}
+                  <section className="liquid-glass hidden md:flex min-h-[260px] flex-col rounded-[20px] border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl">
                     <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
-                      <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions &amp; Commits</h2>
+                      <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions</h2>
                       <span className="w-fit rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00]">
-                        {subscriptions.filter((s) => s.status === "ACTIVE" && !s.cancelAtPeriodEnd).length
-                          + homeCommitRows.filter((v: any) => Boolean(v?.active)).length} active
+                        {subscriptions.filter((s) => s.status === "ACTIVE" && !s.cancelAtPeriodEnd).length} active
                       </span>
                     </div>
 
                     <div className="min-h-0 flex-1 overflow-y-auto pr-1 scrollbar-thin">
-                      {sortedSubscriptions.length === 0 && homeCommitRows.length === 0 ? (
+                      {sortedSubscriptions.length === 0 ? (
                         <div className="flex h-full min-h-[180px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center">
                           <CreditCard className="mb-3 h-8 w-8 text-white/25" />
-                          <p className="text-xs text-white/45">No active subscription streams or commits yet.</p>
+                          <p className="text-xs text-white/45">No active subscription streams yet.</p>
                         </div>
                       ) : (
                         <div className="space-y-3">
@@ -3248,26 +3267,6 @@ export default function UserDashboard() {
                               resuming={resumingSubscriptionId === sub.subscriptionId}
                             />
                           ))}
-                          {homeCommitRows.map((vault: any) => (
-                            <button
-                              key={`home-commit-${vault.id}`}
-                              type="button"
-                              onClick={() => setActiveTab("commit")}
-                              className="flex w-full min-w-0 items-center justify-between gap-3 rounded-2xl border border-white/5 bg-black/20 p-3.5 text-left transition hover:border-[#ccff00]/20 hover:bg-black/30"
-                            >
-                              <div className="min-w-0">
-                                <p className="truncate text-xs font-bold text-white">
-                                  {merchantDisplayName(vault.merchantName)}
-                                </p>
-                                <p className="mt-0.5 truncate font-mono text-[10px] font-black uppercase tracking-wider text-white/45">
-                                  Commit • {vault.active ? "Locked" : "Inactive"}
-                                </p>
-                              </div>
-                              <span className="shrink-0 font-mono text-xs font-black text-[#ccff00]">
-                                {balanceVisible ? `$${formatUsdc(vault.balanceUsdc)}` : "••••"}
-                              </span>
-                            </button>
-                          ))}
                         </div>
                       )}
                     </div>
@@ -3277,7 +3276,7 @@ export default function UserDashboard() {
                 {/* ===== Bottom full-width panel ===== */}
                 <section className="liquid-glass rounded-[20px] border border-white/5 bg-black/40 p-5 text-white shadow-2xl backdrop-blur-xl">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-white/70">Direct Messages &amp; System Activity Ledger</h2>
+                    <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-white/70">Transaction History</h2>
                     <Link
                       href="/dashboard/user/transactions"
                       className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-white/45 hover:text-[#ccff00] transition-colors"
@@ -3286,37 +3285,8 @@ export default function UserDashboard() {
                     </Link>
                   </div>
 
-                  {/* Newest DM per thread — the "direct messages" half of the ledger. */}
-                  {dmThreads.length > 0 && (
-                    <div className="mt-4 space-y-2">
-                      {dmThreads.slice(0, 2).map((thread) => (
-                        <button
-                          key={thread.peerAddress}
-                          type="button"
-                          onClick={() => { setSelectedDmPeer(thread.peerAddress); setActiveTab("inbox"); }}
-                          className="w-full rounded-2xl border border-white/5 bg-black/20 p-3.5 text-left transition hover:border-[#ccff00]/20 hover:bg-black/30"
-                        >
-                          <div className="flex items-center justify-between gap-3 font-mono text-[10px]">
-                            <span className="truncate font-bold text-white">
-                              {formatPeerDisplayName(thread.peerName, thread.peerAddress)}
-                            </span>
-                            <span className="shrink-0 text-white/40">
-                              {new Date(thread.latestTime).toLocaleString()}
-                            </span>
-                          </div>
-                          {/* Wraps instead of clamping: at 320px a two-line clamp silently cuts the
-                              third line off, and only two threads render here so the row can afford
-                              the height. Matches the wireframe's unclamped ledger preview. */}
-                          <p className="mt-1 text-[11px] leading-relaxed text-white/55">
-                            {shortenWalletsInText(thread.latest.description || thread.latest.title || "Message")}
-                          </p>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="mt-4 flex gap-2">
-                    {([["all", "All"], ["recurring", "Recurring"], ["one-time", "One Time"]] as const).map(([value, label]) => (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {([["all", "All"], ["recurring", "Subscriptions"], ["one-time", "One Time"], ["transfers", "Transfers"], ["withdrawals", "Withdrawals"]] as const).map(([value, label]) => (
                       <button
                         key={value}
                         type="button"
@@ -4222,19 +4192,80 @@ export default function UserDashboard() {
                         </label>
                       </div>
                       <span className="rounded-full bg-white/5 px-3 py-1 text-[9px] font-bold text-white/45 uppercase tracking-widest">
-                        Individual account
+                        User account
                       </span>
                       {uploadError && <p className="text-[10px] text-red-300 font-sans">{uploadError}</p>}
                     </div>
 
                     <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-6 space-y-4 shadow-2xl">
                       {/* SubScript DNS alias (Spenda ID / Username) */}
-                      <div className="pb-3 border-b border-white/5 flex items-center justify-between">
-                        <div>
-                          <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">SubScript DNS</label>
-                          <span className="block font-mono text-xs font-bold text-[#ccff00] mt-1">
-                            {registeredDomain ? `@${registeredDomain}` : "No DNS Alias"}
-                          </span>
+                      <div className="pb-3 border-b border-white/5 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">SubScript DNS (Display Name)</label>
+                            <span className="block font-mono text-xs font-bold text-[#ccff00] mt-1">
+                              {registeredDomain ? `@${registeredDomain}` : "No DNS Alias"}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Inline Name Change / Register Form right next to DNS */}
+                        <div className="pt-1">
+                          {registeredDomain ? (
+                            <div className="flex items-center justify-between text-xs font-sans pt-1">
+                              <span className="text-[10px] text-white/50">DNS Alias active</span>
+                              <button
+                                onClick={async () => {
+                                  setDnsLoading(true);
+                                  setDnsError(null);
+                                  try {
+                                    const res = await fetch("/api/merchant/alias", { method: "DELETE" });
+                                    if (res.ok) {
+                                      setRegisteredDomain(null);
+                                      setDnsDomain("");
+                                      setDnsSuccess("Alias removed successfully");
+                                      setTimeout(() => setDnsSuccess(null), 3000);
+                                    } else {
+                                      const data = await res.json().catch(() => ({}));
+                                      setDnsError(data.error || "Could not unregister this name.");
+                                    }
+                                  } catch (err) {
+                                    setDnsError("Network error removing DNS name.");
+                                  } finally {
+                                    setDnsLoading(false);
+                                  }
+                                }}
+                                className="px-3 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider rounded-xl transition"
+                              >
+                                {dnsLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Unregister Name"}
+                              </button>
+                            </div>
+                          ) : (
+                            <form onSubmit={handleRegisterDns} className="space-y-2 font-sans text-xs">
+                              <div className="flex gap-2">
+                                <div className="relative flex-1">
+                                  <input
+                                    type="text"
+                                    value={dnsDomain}
+                                    onChange={(e) => setDnsDomain(e.target.value)}
+                                    placeholder="Enter custom alias / display name"
+                                    className="w-full bg-white/[0.04] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#ccff00]/40 font-mono pr-12"
+                                    required
+                                  />
+                                  <span className="absolute right-3 top-2 text-xs font-black text-white/35">.sub</span>
+                                </div>
+                                <button
+                                  type="submit"
+                                  disabled={dnsLoading}
+                                  className="px-4 py-2 bg-[#ccff00]/10 border border-[#ccff00]/30 hover:bg-[#ccff00]/20 text-[#ccff00] text-xs font-bold uppercase tracking-wider rounded-xl transition"
+                                >
+                                  {dnsLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Save Name"}
+                                </button>
+                              </div>
+                            </form>
+                          )}
+                          {dnsError && <p className="text-[10px] text-red-300 font-sans mt-1">{dnsError}</p>}
+                          {dnsSuccess && <p className="text-[10px] text-emerald-300 font-sans mt-1">{dnsSuccess}</p>}
                         </div>
                       </div>
 
@@ -4270,7 +4301,7 @@ export default function UserDashboard() {
                       <div className="flex items-center justify-between">
                         <div>
                           <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Account Role</label>
-                          <span className="block font-sans text-xs text-white/60 mt-1">Individual Customer</span>
+                          <span className="block font-sans text-xs text-white/60 mt-1">User Account</span>
                         </div>
                         <Lock className="h-4 w-4 text-white/20 shrink-0" />
                       </div>
@@ -4310,74 +4341,6 @@ export default function UserDashboard() {
                           Open the Help Center
                         </a>
                       </div>
-                    </div>
-
-                    {/* DNS Management Panel */}
-                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 space-y-4 shadow-2xl">
-                      <h4 className="text-[10px] font-black uppercase tracking-wider text-white/50 flex items-center gap-1.5">
-                        <Globe className="h-3.5 w-3.5 text-[#ccff00]" /> DNS Identity Management
-                      </h4>
-                      <p className="text-[9px] leading-relaxed text-amber-300/80 rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 font-sans">
-                        Heads up: a DNS name can only be changed <strong>once every 365 days</strong>. Choose carefully. After a change you won't be able to switch again for a year.
-                      </p>
-
-                      {registeredDomain ? (
-                        <button
-                          onClick={async () => {
-                            setDnsLoading(true);
-                            setDnsError(null);
-                            try {
-                              const res = await fetch("/api/merchant/alias", { method: "DELETE" });
-                              if (res.ok) {
-                                setRegisteredDomain(null);
-                                /* The profile picture belongs to the account, not the alias —
-                                   unregistering a name must not blank the avatar. */
-                                setDnsDomain("");
-                                setDnsSuccess("Alias removed successfully");
-                                setTimeout(() => setDnsSuccess(null), 3000);
-                              } else {
-                                const data = await res.json().catch(() => ({}));
-                                setDnsError(data.error || "Could not unregister this name.");
-                              }
-                            } catch (err) {
-                              setDnsError("Network error removing DNS name.");
-                            } finally {
-                              setDnsLoading(false);
-                            }
-                          }}
-                          className="w-full py-3 border border-red-500/20 hover:bg-red-500/5 text-red-400 text-xs font-black uppercase tracking-wider rounded-2xl transition"
-                        >
-                          {dnsLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Unregister .sub Alias"}
-                        </button>
-                      ) : (
-                        <form onSubmit={handleRegisterDns} className="space-y-3 font-sans text-xs">
-                          <div className="space-y-1">
-                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Domain Alias</label>
-                            <div className="flex gap-2">
-                              <div className="relative flex-1">
-                                <input
-                                  type="text"
-                                  value={dnsDomain}
-                                  onChange={(e) => setDnsDomain(e.target.value)}
-                                  placeholder="my-alias"
-                                  className="w-full bg-white/[0.02] border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-[#ccff00]/40 font-mono"
-                                  required
-                                />
-                                <span className="absolute right-4 top-2.5 text-xs font-black text-white/35">.sub</span>
-                              </div>
-                              <button
-                                type="submit"
-                                disabled={dnsLoading}
-                                className="px-6 bg-[#ccff00]/10 border border-[#ccff00]/30 hover:bg-[#ccff00]/20 text-[#ccff00] font-bold uppercase tracking-wider rounded-xl transition"
-                              >
-                                {dnsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Register"}
-                              </button>
-                            </div>
-                          </div>
-                        </form>
-                      )}
-                      {dnsError && <p className="text-[10px] text-red-300 font-sans">{dnsError}</p>}
-                      {dnsSuccess && <p className="text-[10px] text-emerald-300 font-sans">{dnsSuccess}</p>}
                     </div>
 
                     <button
@@ -4641,124 +4604,313 @@ export default function UserDashboard() {
                 )}
 
                 {/* 4. TRANSACTIONS VIEW */}
-                {accountSubView === "transactions" && (
-                  <div className="space-y-6">
-                    <div className="flex items-center gap-4">
-                      <button 
-                        onClick={() => setAccountSubView("menu")}
-                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
-                      >
-                        <ChevronLeft className="h-5 w-5" />
-                      </button>
-                      <h2 className="text-sm font-black uppercase tracking-wider text-white">Transactions</h2>
-                    </div>
+                {accountSubView === "transactions" && (() => {
+                  const filteredSettingsTx = settingsTransactions.filter((tx) => {
+                    if (settingsTxSearch.trim()) {
+                      const q = settingsTxSearch.trim().toLowerCase();
+                      const matchId = (tx.receiptId || "").toLowerCase().includes(q);
+                      const matchHash = (tx.txHash || "").toLowerCase().includes(q);
+                      const matchName = (tx.counterpartyName || "").toLowerCase().includes(q);
+                      const matchMemo = (tx.memoNote || "").toLowerCase().includes(q);
+                      const matchPayer = (tx.payerAddress || "").toLowerCase().includes(q);
+                      const matchMerchant = (tx.merchantAddress || "").toLowerCase().includes(q);
+                      if (!matchId && !matchHash && !matchName && !matchMemo && !matchPayer && !matchMerchant) {
+                        return false;
+                      }
+                    }
 
-                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
-                      <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                        <Activity className="h-4 w-4 text-[#ccff00]" /> Recent Transactions History
-                      </h3>
-                      <div className="overflow-x-auto hidden md:block">
-                        <table className="w-full text-left font-sans text-xs">
-                          <thead>
-                            <tr className="border-b border-white/5 text-white/40 uppercase text-[9px] tracking-wider">
-                              <th className="pb-3">Payment</th>
-                              <th className="pb-3">Date &amp; Time</th>
-                              <th className="pb-3">Amount</th>
-                              <th className="pb-3">Status</th>
-                              <th className="pb-3 text-right">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {settingsTransactions.length === 0 ? (
-                              <tr>
-                                <td colSpan={5} className="text-center py-6 text-white/30">
-                                  No payments yet.
-                                </td>
+                    if (settingsTxCategory !== "all") {
+                      const memo = (tx.memoNote || "").toLowerCase();
+                      const isSub = memo.includes("sub") || memo.includes("plan") || memo.includes("recurring") || !!tx.paymentLinkId;
+                      const isTransfer = memo.includes("transfer") || memo.includes("peer");
+                      const isWithdrawal = memo.includes("withdraw") || memo.includes("balance to wallet");
+                      const isOneTime = !isSub && !isTransfer && !isWithdrawal;
+
+                      if (settingsTxCategory === "subscriptions") {
+                        if (!isSub) return false;
+                      } else if (settingsTxCategory === "one-time") {
+                        if (!isOneTime) return false;
+                      } else if (settingsTxCategory === "transfers") {
+                        if (!isTransfer) return false;
+                      } else if (settingsTxCategory === "withdrawals") {
+                        if (!isWithdrawal) return false;
+                      } else if (settingsTxCategory === "sent") {
+                        if (tx.direction !== "sent") return false;
+                      } else if (settingsTxCategory === "received") {
+                        if (tx.direction !== "received") return false;
+                      }
+                    }
+
+                    if (settingsTxStatus !== "all") {
+                      if (String(tx.status || "").toUpperCase() !== settingsTxStatus.toUpperCase()) {
+                        return false;
+                      }
+                    }
+
+                    if (settingsTxDatePreset !== "all" || settingsTxStartDate || settingsTxEndDate) {
+                      const txDate = new Date(tx.createdAt).getTime();
+                      const now = Date.now();
+
+                      if (settingsTxDatePreset === "today") {
+                        const todayStart = new Date();
+                        todayStart.setHours(0, 0, 0, 0);
+                        if (txDate < todayStart.getTime()) return false;
+                      } else if (settingsTxDatePreset === "7days") {
+                        if (txDate < now - 7 * 24 * 60 * 60 * 1000) return false;
+                      } else if (settingsTxDatePreset === "30days") {
+                        if (txDate < now - 30 * 24 * 60 * 60 * 1000) return false;
+                      } else if (settingsTxDatePreset === "custom") {
+                        if (settingsTxStartDate) {
+                          const startMs = new Date(settingsTxStartDate).getTime();
+                          if (!isNaN(startMs) && txDate < startMs) return false;
+                        }
+                        if (settingsTxEndDate) {
+                          const endMs = new Date(settingsTxEndDate).setHours(23, 59, 59, 999);
+                          if (!isNaN(endMs) && txDate > endMs) return false;
+                        }
+                      }
+                    }
+
+                    return true;
+                  });
+
+                  return (
+                    <div className="space-y-6">
+                      <div className="flex items-center gap-4">
+                        <button 
+                          onClick={() => setAccountSubView("menu")}
+                          className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                        >
+                          <ChevronLeft className="h-5 w-5" />
+                        </button>
+                        <h2 className="text-sm font-black uppercase tracking-wider text-white">Transactions</h2>
+                      </div>
+
+                      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                          <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                            <Activity className="h-4 w-4 text-[#ccff00]" /> Recent Transactions History
+                          </h3>
+                          <span className="text-[10px] font-mono font-semibold text-white/40">
+                            Showing {filteredSettingsTx.length} of {settingsTransactions.length}
+                          </span>
+                        </div>
+
+                        {/* Interactive Filter Toolbar */}
+                        <div className="space-y-3 p-4 rounded-2xl bg-white/[0.02] border border-white/5 font-sans">
+                          <div className="flex flex-wrap items-center gap-3">
+                            {/* Search */}
+                            <div className="relative flex-1 min-w-[200px]">
+                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/40" />
+                              <input
+                                type="text"
+                                value={settingsTxSearch}
+                                onChange={(e) => setSettingsTxSearch(e.target.value)}
+                                placeholder="Search name, receipt ID, memo..."
+                                className="w-full bg-white/[0.04] border border-white/10 rounded-xl pl-9 pr-8 py-1.5 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[#ccff00]/50"
+                              />
+                              {settingsTxSearch && (
+                                <button
+                                  onClick={() => setSettingsTxSearch("")}
+                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white text-xs"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Category Dropdown */}
+                            <select
+                              value={settingsTxCategory}
+                              onChange={(e) => setSettingsTxCategory(e.target.value)}
+                              className="bg-white/[0.04] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white/90 focus:outline-none focus:border-[#ccff00]/50"
+                            >
+                              <option value="all" className="bg-[#121212] text-white">All Categories</option>
+                              <option value="subscriptions" className="bg-[#121212] text-white">Subscriptions</option>
+                              <option value="one-time" className="bg-[#121212] text-white">One Time</option>
+                              <option value="transfers" className="bg-[#121212] text-white">Transfers</option>
+                              <option value="withdrawals" className="bg-[#121212] text-white">Withdrawals</option>
+                              <option value="sent" className="bg-[#121212] text-white">Sent (Debit)</option>
+                              <option value="received" className="bg-[#121212] text-white">Received (Credit)</option>
+                            </select>
+
+                            {/* Status Dropdown */}
+                            <select
+                              value={settingsTxStatus}
+                              onChange={(e) => setSettingsTxStatus(e.target.value)}
+                              className="bg-white/[0.04] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white/90 focus:outline-none focus:border-[#ccff00]/50"
+                            >
+                              <option value="all" className="bg-[#121212] text-white">All Statuses</option>
+                              <option value="CONFIRMED" className="bg-[#121212] text-white">Confirmed</option>
+                              <option value="PENDING" className="bg-[#121212] text-white">Pending</option>
+                              <option value="FAILED" className="bg-[#121212] text-white">Failed</option>
+                            </select>
+
+                            {/* Date Preset Dropdown */}
+                            <select
+                              value={settingsTxDatePreset}
+                              onChange={(e) => {
+                                setSettingsTxDatePreset(e.target.value);
+                                if (e.target.value !== "custom") {
+                                  setSettingsTxStartDate("");
+                                  setSettingsTxEndDate("");
+                                }
+                              }}
+                              className="bg-white/[0.04] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white/90 focus:outline-none focus:border-[#ccff00]/50"
+                            >
+                              <option value="all" className="bg-[#121212] text-white">All Time</option>
+                              <option value="today" className="bg-[#121212] text-white">Today</option>
+                              <option value="7days" className="bg-[#121212] text-white">Last 7 Days</option>
+                              <option value="30days" className="bg-[#121212] text-white">Last 30 Days</option>
+                              <option value="custom" className="bg-[#121212] text-white">Custom Date Range...</option>
+                            </select>
+
+                            {/* Clear Filters */}
+                            {(settingsTxSearch || settingsTxCategory !== "all" || settingsTxStatus !== "all" || settingsTxDatePreset !== "all" || settingsTxStartDate || settingsTxEndDate) && (
+                              <button
+                                onClick={() => {
+                                  setSettingsTxSearch("");
+                                  setSettingsTxCategory("all");
+                                  setSettingsTxStatus("all");
+                                  setSettingsTxDatePreset("all");
+                                  setSettingsTxStartDate("");
+                                  setSettingsTxEndDate("");
+                                }}
+                                className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-[11px] font-bold text-white/80 transition-all"
+                              >
+                                Reset Filters
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Custom Date Pickers */}
+                          {settingsTxDatePreset === "custom" && (
+                            <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-white/70">
+                              <div className="flex items-center gap-1.5">
+                                <span>From:</span>
+                                <input
+                                  type="date"
+                                  value={settingsTxStartDate}
+                                  onChange={(e) => setSettingsTxStartDate(e.target.value)}
+                                  className="bg-white/[0.04] border border-white/10 rounded-xl px-2.5 py-1 text-xs text-white focus:outline-none focus:border-[#ccff00]/50"
+                                />
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <span>To:</span>
+                                <input
+                                  type="date"
+                                  value={settingsTxEndDate}
+                                  onChange={(e) => setSettingsTxEndDate(e.target.value)}
+                                  className="bg-white/[0.04] border border-white/10 rounded-xl px-2.5 py-1 text-xs text-white focus:outline-none focus:border-[#ccff00]/50"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="overflow-x-auto hidden md:block">
+                          <table className="w-full text-left font-sans text-xs">
+                            <thead>
+                              <tr className="border-b border-white/5 text-white/40 uppercase text-[9px] tracking-wider">
+                                <th className="pb-3">Payment</th>
+                                <th className="pb-3">Date &amp; Time</th>
+                                <th className="pb-3">Amount</th>
+                                <th className="pb-3">Status</th>
+                                <th className="pb-3 text-right">Actions</th>
                               </tr>
-                            ) : (
-                              settingsTransactions.map((tx) => {
-                                const counterparty = tx.counterpartyName
-                                  || formatAddress(tx.direction === "sent" ? tx.merchantAddress : tx.payerAddress);
-                                return (
-                                <tr key={tx.receiptId} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
-                                  <td className="py-4 font-semibold text-white/80">
-                                    {tx.direction === "sent" ? `Paid ${counterparty}` : `Received from ${counterparty}`}
+                            </thead>
+                            <tbody>
+                              {filteredSettingsTx.length === 0 ? (
+                                <tr>
+                                  <td colSpan={5} className="text-center py-6 text-white/30">
+                                    No payments match your active filters.
                                   </td>
-                                  <td className="py-4 text-white/50">{new Date(tx.createdAt).toLocaleString()}</td>
-                                  <td className="py-4 font-mono font-bold text-white">
-                                    ${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
-                                  </td>
-                                  <td className="py-4">
+                                </tr>
+                              ) : (
+                                filteredSettingsTx.map((tx) => {
+                                  const counterparty = tx.counterpartyName
+                                    || formatAddress(tx.direction === "sent" ? tx.merchantAddress : tx.payerAddress);
+                                  return (
+                                  <tr key={tx.receiptId} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
+                                    <td className="py-4 font-semibold text-white/80">
+                                      {tx.direction === "sent" ? `Paid ${counterparty}` : `Received from ${counterparty}`}
+                                    </td>
+                                    <td className="py-4 text-white/50">{new Date(tx.createdAt).toLocaleString()}</td>
+                                    <td className="py-4 font-mono font-bold text-white">
+                                      ${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
+                                    </td>
+                                    <td className="py-4">
+                                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-500/15 text-amber-400"}`}>
+                                        {humanStatus(tx.status)}
+                                      </span>
+                                    </td>
+                                    <td className="py-4 text-right">
+                                      <div className="inline-flex items-center gap-3">
+                                        <a
+                                          href={`/receipt/${tx.receiptId}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-[#ccff00]/80 hover:text-[#ccff00] hover:underline inline-flex items-center gap-1"
+                                          title="Open this receipt in a new tab"
+                                        >
+                                          View receipt
+                                        </a>
+                                        <a
+                                          href={`/receipt/${tx.receiptId}?invite=1`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-white/60 hover:text-[#ccff00] hover:underline inline-flex items-center gap-1"
+                                          title="Grant another address permission to view this private receipt"
+                                        >
+                                          Share
+                                        </a>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Mobile Card-Stack View */}
+                        <div className="block md:hidden space-y-3">
+                          {filteredSettingsTx.length === 0 ? (
+                            <div className="text-center py-6 text-white/30 text-xs font-sans">
+                              No payments match your active filters.
+                            </div>
+                          ) : (
+                            filteredSettingsTx.map((tx) => {
+                              const counterparty = tx.counterpartyName
+                                || formatAddress(tx.direction === "sent" ? tx.merchantAddress : tx.payerAddress);
+                              return (
+                                <div key={tx.receiptId} className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2 text-xs font-mono">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-bold text-white/90">
+                                      {tx.direction === "sent" ? `Paid ${counterparty}` : `Received ${counterparty}`}
+                                    </span>
                                     <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-500/15 text-amber-400"}`}>
                                       {humanStatus(tx.status)}
                                     </span>
-                                  </td>
-                                  <td className="py-4 text-right">
-                                    <div className="inline-flex items-center gap-3">
-                                      <a
-                                        href={`/receipt/${tx.receiptId}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-[#ccff00]/80 hover:text-[#ccff00] hover:underline inline-flex items-center gap-1"
-                                        title="Open this receipt in a new tab"
-                                      >
-                                        View receipt
-                                      </a>
-                                      <a
-                                        href={`/receipt/${tx.receiptId}?invite=1`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-white/60 hover:text-[#ccff00] hover:underline inline-flex items-center gap-1"
-                                        title="Grant another address permission to view this private receipt"
-                                      >
-                                        Share
-                                      </a>
-                                    </div>
-                                  </td>
-                                </tr>
-                                );
-                              })
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* Mobile Card-Stack View */}
-                      <div className="block md:hidden space-y-3">
-                        {settingsTransactions.length === 0 ? (
-                          <div className="text-center py-6 text-white/30 text-xs font-sans">
-                            No payments yet.
-                          </div>
-                        ) : (
-                          settingsTransactions.map((tx) => {
-                            const counterparty = tx.counterpartyName
-                              || formatAddress(tx.direction === "sent" ? tx.merchantAddress : tx.payerAddress);
-                            return (
-                              <div key={tx.receiptId} className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2 text-xs font-mono">
-                                <div className="flex items-center justify-between">
-                                  <span className="font-bold text-white/90">
-                                    {tx.direction === "sent" ? `Paid ${counterparty}` : `Received ${counterparty}`}
-                                  </span>
-                                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-500/15 text-amber-400"}`}>
-                                    {humanStatus(tx.status)}
-                                  </span>
+                                  </div>
+                                  <div className="flex items-center justify-between text-[11px] pt-1">
+                                    <span className="text-white/40">{new Date(tx.createdAt).toLocaleDateString()}</span>
+                                    <span className="font-bold text-white">${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC</span>
+                                  </div>
+                                  <div className="pt-2 flex items-center justify-end gap-3 border-t border-white/5 text-[10px]">
+                                    <a href={`/receipt/${tx.receiptId}`} target="_blank" rel="noopener noreferrer" className="text-[#ccff00]">View receipt</a>
+                                    <a href={`/receipt/${tx.receiptId}?invite=1`} target="_blank" rel="noopener noreferrer" className="text-white/60">Share</a>
+                                  </div>
                                 </div>
-                                <div className="flex items-center justify-between text-[11px] pt-1">
-                                  <span className="text-white/40">{new Date(tx.createdAt).toLocaleDateString()}</span>
-                                  <span className="font-bold text-white">${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC</span>
-                                </div>
-                                <div className="pt-2 flex items-center justify-end gap-3 border-t border-white/5 text-[10px]">
-                                  <a href={`/receipt/${tx.receiptId}`} target="_blank" rel="noopener noreferrer" className="text-[#ccff00]">View receipt</a>
-                                  <a href={`/receipt/${tx.receiptId}?invite=1`} target="_blank" rel="noopener noreferrer" className="text-white/60">Share</a>
-                                </div>
-                              </div>
-                            );
-                          })
-                        )}
+                              );
+                            })
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* 5. NOTIFICATIONS VIEW */}
                 {accountSubView === "notifications" && (
@@ -5288,7 +5440,7 @@ export default function UserDashboard() {
                   className="subscript-input"
                 />
                 <div className="flex gap-2">
-                  {([["all", "All"], ["recurring", "Recurring"], ["one-time", "One Time"]] as const).map(([value, label]) => (
+                  {([["all", "All"], ["recurring", "Subscriptions"], ["one-time", "One Time"], ["transfers", "Transfers"], ["withdrawals", "Withdrawals"]] as const).map(([value, label]) => (
                     <button
                       key={value}
                       type="button"

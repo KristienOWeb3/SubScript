@@ -8,6 +8,7 @@ function resolveRedirectUri(request: Request, configuredRedirectUri: string | un
     const requestHost = (forwardedHost || requestUrl.host).toLowerCase().replace(/:\d+$/, "");
     const protocol = forwardedProto || requestUrl.protocol.replace(":", "");
     const derivedRedirectUri = `${protocol}://${forwardedHost || requestUrl.host}/auth/popup`;
+
     if (!configuredRedirectUri) return derivedRedirectUri;
 
     try {
@@ -15,7 +16,13 @@ function resolveRedirectUri(request: Request, configuredRedirectUri: string | un
         const configuredHost = configuredUrl.hostname.toLowerCase();
         const configuredIsLocal = configuredHost === "localhost" || configuredHost === "127.0.0.1";
         const requestIsLocal = requestHost === "localhost" || requestHost === "127.0.0.1";
-        if (configuredIsLocal && !requestIsLocal) return derivedRedirectUri;
+
+        if (requestIsLocal && !configuredIsLocal) {
+            return derivedRedirectUri;
+        }
+        if (configuredIsLocal && !requestIsLocal) {
+            return derivedRedirectUri;
+        }
     } catch {
         return derivedRedirectUri;
     }
