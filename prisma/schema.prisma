@@ -565,6 +565,11 @@ model UserCommit {
   // (the wallet owner spends their own balance) and on uncapped children.
   spendLimitUsdc BigInt?      @map("spend_limit_usdc")
   spentUsdc      BigInt       @default(0) @map("spent_usdc")
+  // Set when this commit draws on a metered vault's escrow instead of a wallet balance. Null
+  // keeps the wallet-delegation rows unchanged. Authority over a vault commit is proven by
+  // MeteredVault.userAddress, not by walletAddress, which stays null on vault-scoped rows.
+  vaultId        String?      @map("vault_id") @db.Uuid
+  vault          MeteredVault? @relation(fields: [vaultId], references: [id], onDelete: Cascade)
   // "ACTIVE" | "PAUSED" | "REVOKED"
   status         String       @default("ACTIVE") @map("status")
   pausedAt       DateTime?    @map("paused_at")
@@ -800,6 +805,8 @@ model MeteredVault {
   merchant          Merchant @relation(fields: [merchantAddress], references: [walletAddress], onDelete: Cascade)
   customer          Customer @relation(fields: [userAddress], references: [walletAddress], onDelete: Cascade)
   usageReports      MeteredUsageReport[]
+  // Shareable Commit IDs drawing on this escrow: one root plus a capped child per friend.
+  commits           UserCommit[]
 
   @@unique([userAddress, merchantAddress, environment, settlementChainId])
   @@index([userAddress])
@@ -820,6 +827,9 @@ model MeteredUsageReport {
   note             String?
   requestId        String?  @map("request_id")
   environment      String   @default("TEST")
+  // Which shared Commit ID drove this usage line, so the primary sees per-friend spend rather
+  // than one undifferentiated total. Null on usage the primary drove through their own address.
+  commitId         String?  @map("commit_id")
   createdAt        DateTime @default(now()) @map("created_at")
   vault            MeteredVault @relation(fields: [vaultId], references: [id], onDelete: Cascade)
 
