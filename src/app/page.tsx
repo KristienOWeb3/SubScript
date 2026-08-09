@@ -136,13 +136,13 @@ export default function Home() {
             <section id="get-started" className="relative w-full min-h-[85vh] flex items-center justify-center pt-32 sm:pt-40 pb-16 sm:pb-24">
                 <div className="max-w-4xl mx-auto w-full px-6 sm:px-12 text-center flex flex-col items-center">
                     <motion.h1
-                        className="text-4xl sm:text-5xl lg:text-[4rem] font-bold tracking-tight text-white mb-6 leading-[1.08] max-w-3xl"
+                        className="text-4xl sm:text-5xl lg:text-[4rem] font-bold tracking-tight text-white mb-6 leading-[1.08] max-w-4xl"
                         initial={{ opacity: 0, y: 40 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.8, delay: 0.15 }}
                     >
-                        The billing platform for{" "}
-                        <span className="font-serif italic text-[#00d2b4] font-normal tracking-normal">digital dollars</span>
+                        Every way money moves for your business.{" "}
+                        <span className="font-serif italic text-[#00d2b4] font-normal tracking-normal">Settled in $USDC.</span>
                     </motion.h1>
 
                     <motion.p
