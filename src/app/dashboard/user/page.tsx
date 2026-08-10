@@ -3506,6 +3506,10 @@ export default function UserDashboard() {
                           onReclaim={handleVaultReclaim}
                           onCancelService={handleCancelService}
                           onResumeService={(v) => handleResumeService(v.merchantAddress)}
+                          onConfigureAutoTopUp={(v) => {
+                            setEditingVault(v);
+                            setConfigVaultOpen(true);
+                          }}
                           cancelBusy={vaultCancelBusyId === String(vault.id || vault.merchantAddress)}
                           resumeBusy={vaultResumeBusyId === String(vault.id || vault.merchantAddress)}
                           reclaimBusy={vaultReclaimBusyId === String(vault.id || vault.merchantAddress)}
@@ -6719,6 +6723,16 @@ function DmBubble({
   if (dm.messageType === "USAGE_THRESHOLD" && onViewCommit) {
     actionItems.push({ key: "view-commit", label: "View usage", onClick: onViewCommit });
   }
+  /* An auto top-up failure always names something the user can act on — add funds, re-approve,
+     raise the cap — and every one of those starts at the commit/mandate surface. */
+  if (dm.messageType === "AUTO_TOPUP_FAILED") {
+    if (onTopUpCommit) {
+      actionItems.push({ key: "topup-now", label: "Top up now", onClick: onTopUpCommit });
+    }
+    if (onViewCommit) {
+      actionItems.push({ key: "view-commit", label: "Auto top-up settings", onClick: onViewCommit });
+    }
+  }
   if (dm.messageType === "CHURN_SURVEY" && isPending && onSurveySubmit) {
     actionItems.push(
       { key: "survey-expensive", label: "Too Expensive", onClick: () => onSurveySubmit(dm, "TOO_EXPENSIVE"), loadingKey: `survey-${dm.id}-TOO_EXPENSIVE` },
@@ -8592,6 +8606,7 @@ function MeteredVaultRow({
   onReclaim,
   onCancelService,
   onResumeService,
+  onConfigureAutoTopUp,
   cancelBusy,
   resumeBusy,
   reclaimBusy,
@@ -8603,6 +8618,7 @@ function MeteredVaultRow({
   onReclaim: (vault: any) => void;
   onCancelService: (vault: any) => void;
   onResumeService: (vault: any) => void;
+  onConfigureAutoTopUp: (vault: any) => void;
   cancelBusy: boolean;
   resumeBusy: boolean;
   reclaimBusy: boolean;
@@ -8636,7 +8652,26 @@ function MeteredVaultRow({
     : "-";
 
   const isPaused = blocked || cancelled;
-  const remainingBalanceUsdc = String(Math.max(0, Number(vault.balanceUsdc || 0) - Number(vault.accruedUsageUsdc || 0)));
+  /* Server-authoritative (see remainingMicros in src/lib/vault/autoTopUp.ts). The local
+     subtraction is only a fallback for a cached payload from before the field existed. */
+  const remainingBalanceUsdc = vault.remainingUsdc
+    ?? String(Math.max(0, Number(vault.balanceUsdc || 0) - Number(vault.accruedUsageUsdc || 0)));
+
+  const autoTopUpOn = vault.autoTopUpEnabled === true;
+  const autoTopUpFailure: string | null = vault.autoTopUpFailureCode || null;
+  const AUTO_TOPUP_FAILURE_LABELS: Record<string, string> = {
+    EXTERNAL_WALLET: "Needs a SubScript wallet",
+    INSUFFICIENT_WALLET_BALANCE: "Add funds to refill",
+    ALLOWANCE_EXHAUSTED: "Re-approve to continue",
+    MONTHLY_CAP_REACHED: "Monthly cap reached",
+    VAULT_DISPUTED: "Paused — in dispute",
+    COMMIT_FAILED: "Last refill failed",
+  };
+  const autoTopUpLabel = !autoTopUpOn
+    ? "Auto top-up off"
+    : autoTopUpFailure
+      ? AUTO_TOPUP_FAILURE_LABELS[autoTopUpFailure] || "Needs attention"
+      : `Auto top-up on · ${formatUsdc(vault.topUpAmountUsdc)} at ${formatUsdc(vault.thresholdUsdc)}`;
 
   return (
     <div className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-black/30 p-4 sm:p-5 transition hover:border-white/20 hover:bg-black/40">
@@ -8740,6 +8775,26 @@ function MeteredVaultRow({
                   Used: {balanceVisible ? `${formatUsdc(vault.accruedUsageUsdc)} USDC` : "••• USDC"}
                 </p>
               </div>
+              {/* Auto top-up state lives with the balance because it is a statement about this
+                  number: whether it refills itself, and if not, why not. */}
+              <button
+                type="button"
+                onClick={() => onConfigureAutoTopUp(vault)}
+                title={autoTopUpOn ? "Manage auto top-up" : "Set up auto top-up"}
+                className={`mt-3 flex w-full items-center justify-between gap-2 rounded-xl border px-2.5 py-1.5 text-[10px] font-bold transition ${
+                  autoTopUpFailure
+                    ? "border-amber-400/30 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+                    : autoTopUpOn
+                      ? "border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00] hover:bg-[#ccff00]/20"
+                      : "border-white/10 bg-white/[0.03] text-white/50 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <RefreshCw className={`h-3 w-3 shrink-0 ${autoTopUpOn && !autoTopUpFailure ? "" : "opacity-60"}`} />
+                  <span className="truncate">{autoTopUpLabel}</span>
+                </span>
+                <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />
+              </button>
             </div>
           }
           datesBox={
@@ -8763,6 +8818,10 @@ function MeteredVaultRow({
   );
 }
 
+/* Auto top-up mandate editor.
+   Always scoped to an existing vault: a mandate cannot be the first money that moves toward a
+   merchant, so the "create a vault here" path this modal used to carry is gone (it posted to
+   /api/user/vault/config, which is a 410 tombstone for off-chain balance writes). */
 function ConfigureVaultModal({
   open,
   onClose,
@@ -8774,171 +8833,126 @@ function ConfigureVaultModal({
   editingVault: any | null;
   refetchVaults: () => void;
 }) {
-  const [merchantAddress, setMerchantAddress] = useState("");
   const [threshold, setThreshold] = useState("2.00");
   const [topUpAmount, setTopUpAmount] = useState("10.00");
   const [monthlyLimit, setMonthlyLimit] = useState("50.00");
-  const [initialDeposit, setInitialDeposit] = useState("10.00");
-  const [resolving, setResolving] = useState(false);
-  const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
+  const [acknowledgeUnverified, setAcknowledgeUnverified] = useState(false);
+  const [needsAcknowledgement, setNeedsAcknowledgement] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [disabling, setDisabling] = useState(false);
+
+  const enabled = editingVault?.autoTopUpEnabled === true;
+  const merchantName = editingVault?.merchantName || "this merchant";
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !editingVault) return;
     setStatus(null);
-    if (editingVault) {
-      setMerchantAddress(merchantDisplayName(editingVault.merchantName));
-      setResolvedAddress(editingVault.merchantAddress);
-      setThreshold((Number(editingVault.thresholdUsdc) / 1_000_000).toString());
-      setTopUpAmount((Number(editingVault.topUpAmountUsdc) / 1_000_000).toString());
-      setMonthlyLimit((Number(editingVault.monthlyLimitUsdc) / 1_000_000).toString());
-      setInitialDeposit("0");
-    } else {
-      setMerchantAddress("");
-      setResolvedAddress(null);
-      setThreshold("2.00");
-      setTopUpAmount("10.00");
-      setMonthlyLimit("50.00");
-      setInitialDeposit("10.00");
-    }
+    setNeedsAcknowledgement(false);
+    setAcknowledgeUnverified(false);
+    setThreshold((Number(editingVault.thresholdUsdc || 2_000_000) / 1_000_000).toString());
+    setTopUpAmount((Number(editingVault.topUpAmountUsdc || 10_000_000) / 1_000_000).toString());
+    setMonthlyLimit((Number(editingVault.monthlyLimitUsdc || 50_000_000) / 1_000_000).toString());
   }, [open, editingVault]);
-
-  useEffect(() => {
-    if (editingVault) return;
-    const trimmed = merchantAddress.trim().toLowerCase();
-    if (!trimmed) {
-      setResolvedAddress(null);
-      setResolving(false);
-      return;
-    }
-
-    if (/^0x[a-fA-F0-9]{40}$/.test(trimmed)) {
-      setResolvedAddress(null);
-      setStatus("Use the merchant's SubScript name instead of a wallet address.");
-      return;
-    }
-
-    setResolving(true);
-    const delayDebounce = setTimeout(() => {
-      fetch(`/api/merchant/alias?alias=${encodeURIComponent(trimmed)}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.success && data.address) {
-            setResolvedAddress(data.address);
-          } else {
-            setResolvedAddress(null);
-          }
-        })
-        .catch(console.error)
-        .finally(() => setResolving(false));
-    }, 400);
-
-    return () => clearTimeout(delayDebounce);
-  }, [merchantAddress, editingVault]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!resolvedAddress) {
-      setStatus("Merchant name was not found.");
-      return;
-    }
+    if (!editingVault?.merchantAddress) return;
+
     if (Number(threshold) <= 0 || Number(topUpAmount) <= 0 || Number(monthlyLimit) <= 0) {
-      setStatus("Threshold, top-up amount, and monthly limit must be positive numbers.");
+      setStatus("Threshold, top-up amount, and monthly cap must be positive numbers.");
       return;
     }
+    if (Number(threshold) > Number(topUpAmount)) {
+      setStatus("The threshold can't be larger than the top-up amount, or each refill would immediately trigger another one.");
+      return;
+    }
+    if (Number(monthlyLimit) < Number(topUpAmount)) {
+      setStatus("The monthly cap must be at least one top-up.");
+      return;
+    }
+
     setLoading(true);
     setStatus(null);
 
     try {
-      const payload: any = {
-        merchantAddress: resolvedAddress,
-        thresholdUsdc: (Number(threshold) * 1_000_000).toString(),
-        topUpAmountUsdc: (Number(topUpAmount) * 1_000_000).toString(),
-        monthlyLimitUsdc: (Number(monthlyLimit) * 1_000_000).toString(),
-      };
-
-      if (!editingVault && Number(initialDeposit) > 0) {
-        payload.balanceUsdc = (Number(initialDeposit) * 1_000_000).toString();
-      }
-
-      const res = await fetch("/api/user/vault/config", {
+      /* Signs an on-chain approve, so the same stable-request-id contract as a commit applies:
+         a retry after an ambiguous response must not grant a second allowance. */
+      const requestId = `autotopup-${editingVault.merchantAddress}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const res = await fetch("/api/user/vault/auto-topup", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        headers: { "Content-Type": "application/json", "x-request-id": requestId },
+        body: JSON.stringify({
+          merchantAddress: editingVault.merchantAddress,
+          thresholdUsdc: threshold,
+          topUpAmountUsdc: topUpAmount,
+          monthlyLimitUsdc: monthlyLimit,
+          ...(acknowledgeUnverified ? { acknowledgeUnverified: true } : {}),
+        }),
       });
-
       const data = await res.json();
+
+      if (res.status === 409 && data.code === "UNVERIFIED_MERCHANT") {
+        setNeedsAcknowledgement(true);
+        setStatus(data.warning || data.error);
+        return;
+      }
       if (res.ok && data.success) {
         setStatus("success");
         refetchVaults();
         setTimeout(() => onClose(), 1500);
       } else {
-        setStatus(data.error || "Failed to save configuration.");
+        setStatus(data.error || "Failed to save auto top-up.");
       }
     } catch (err: any) {
-      setStatus(err.message || "Failed to configure vault.");
+      setStatus(err.message || "Failed to save auto top-up.");
     } finally {
       setLoading(false);
     }
   };
 
+  const handleDisable = async () => {
+    if (!editingVault?.merchantAddress) return;
+    setDisabling(true);
+    setStatus(null);
+    try {
+      const res = await fetch(
+        `/api/user/vault/auto-topup?merchantAddress=${encodeURIComponent(editingVault.merchantAddress)}`,
+        { method: "DELETE" },
+      );
+      const data = await res.json();
+      if (res.ok && data.success) {
+        refetchVaults();
+        onClose();
+      } else {
+        setStatus(data.error || "Failed to turn off auto top-up.");
+      }
+    } catch (err: any) {
+      setStatus(err.message || "Failed to turn off auto top-up.");
+    } finally {
+      setDisabling(false);
+    }
+  };
+
   return (
     <AnimatePresence>
-      {open && (
+      {open && editingVault && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 backdrop-blur-xl">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm liquid-glass border border-white/10 rounded-3xl p-6 shadow-2xl bg-black/50 backdrop-blur-xl relative overflow-hidden text-left">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-black uppercase tracking-wider text-white">
-                {editingVault ? "Configure prepaid vault" : "Create prepaid vault"}
-              </h3>
+          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm liquid-glass border border-white/10 rounded-3xl p-6 shadow-2xl bg-black/50 backdrop-blur-xl relative overflow-hidden text-left max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-sm font-black uppercase tracking-wider text-white">Auto top-up</h3>
               <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 transition-all"><X className="h-4 w-4" /></button>
             </div>
+            <p className="mb-4 text-[11px] text-white/50">{merchantName}</p>
 
             <form onSubmit={handleSubmit} className="space-y-4 text-left">
-              <div className="space-y-1">
-                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Merchant</span>
-                {editingVault ? (
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs font-mono text-white/80">
-                    {merchantAddress}
-                  </div>
-                ) : (
-                  <input
-                    type="text"
-                    value={merchantAddress}
-                    onChange={(e) => setMerchantAddress(e.target.value)}
-                    className="subscript-input text-xs"
-                    placeholder="Merchant name"
-                    required
-                  />
-                )}
-                {!editingVault && resolving && <span className="text-[9px] text-[#ccff00] animate-pulse">Resolving...</span>}
-                {!editingVault && resolvedAddress && (
-                  <div className="text-[9px] text-white/40 truncate mt-1">Merchant found</div>
-                )}
-              </div>
-
-              {!editingVault && (
-                <div className="space-y-1">
-                  <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Initial Deposit Amount (USDC)</span>
-                  <input
-                    type="number"
-                    step="any"
-                    value={initialDeposit}
-                    onChange={(e) => setInitialDeposit(e.target.value)}
-                    className="subscript-input"
-                    placeholder="10.00"
-                    required
-                  />
-                </div>
-              )}
-
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Auto-Topup Threshold</span>
+                  <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Refill when below</span>
                   <input
                     type="number"
                     step="any"
+                    min="0"
                     value={threshold}
                     onChange={(e) => setThreshold(e.target.value)}
                     className="subscript-input"
@@ -8947,10 +8961,11 @@ function ConfigureVaultModal({
                   />
                 </div>
                 <div className="space-y-1">
-                  <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Topup Chunk Size</span>
+                  <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Add each time</span>
                   <input
                     type="number"
                     step="any"
+                    min="2"
                     value={topUpAmount}
                     onChange={(e) => setTopUpAmount(e.target.value)}
                     className="subscript-input"
@@ -8961,36 +8976,81 @@ function ConfigureVaultModal({
               </div>
 
               <div className="space-y-1">
-                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Monthly Velocity Cap Limit</span>
+                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Monthly cap</span>
                 <input
                   type="number"
                   step="any"
+                  min="0"
                   value={monthlyLimit}
                   onChange={(e) => setMonthlyLimit(e.target.value)}
                   className="subscript-input"
                   placeholder="50.00"
                   required
                 />
+                <p className="text-[10px] leading-relaxed text-white/45 pt-1">
+                  Turning this on approves <span className="font-semibold text-white/70">{monthlyLimit || "0"} USDC</span> to
+                  the vault on-chain. That approval is the hard ceiling — we can never move more than it in a month,
+                  and you can revoke it from any wallet. Refills come from your SubScript wallet balance.
+                </p>
               </div>
 
-              {status && status !== "success" && (
+              {enabled && (
+                <div className="rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2 text-[10px] text-white/50">
+                  Used this month:{" "}
+                  <span className="font-bold text-white/75">
+                    {(Number(editingVault.monthlySpentUsdc || 0) / 1_000_000).toFixed(2)} /{" "}
+                    {(Number(editingVault.monthlyLimitUsdc || 0) / 1_000_000).toFixed(2)} USDC
+                  </span>
+                </div>
+              )}
+
+              {needsAcknowledgement && (
+                <label className="flex items-start gap-2.5 rounded-xl border border-amber-400/25 bg-amber-500/10 p-3">
+                  <input
+                    type="checkbox"
+                    checked={acknowledgeUnverified}
+                    onChange={(e) => setAcknowledgeUnverified(e.target.checked)}
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-[#ccff00]"
+                  />
+                  <span className="text-[10px] leading-relaxed text-amber-100/90">
+                    I understand {merchantName} is not verified by SubScript, and that they report the usage that
+                    triggers each automatic refill.
+                  </span>
+                </label>
+              )}
+
+              {status && status !== "success" && !needsAcknowledgement && (
                 <p className="text-[11px] text-red-300 bg-red-950/15 border border-red-500/20 rounded-xl p-3">{status}</p>
+              )}
+              {status && needsAcknowledgement && (
+                <p className="text-[11px] text-amber-200/90 bg-amber-950/15 border border-amber-500/20 rounded-xl p-3">{status}</p>
               )}
 
               {status === "success" && (
                 <div className="flex flex-col items-center gap-2 py-4 text-center">
                   <CheckCircle2 className="h-10 w-10 text-[#ccff00]" />
-                  <p className="text-xs text-white/80 font-bold">prepaid vault configured!</p>
+                  <p className="text-xs text-white/80 font-bold">Auto top-up saved</p>
                 </div>
               )}
 
               <button
                 type="submit"
-                disabled={loading || (!editingVault && !resolvedAddress) || status === "success"}
+                disabled={loading || disabling || status === "success" || (needsAcknowledgement && !acknowledgeUnverified)}
                 className="subscript-primary-button w-full mt-2"
               >
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : editingVault ? "Update Settings" : "Authorize & Fund"}
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : enabled ? "Update auto top-up" : "Approve & turn on"}
               </button>
+
+              {enabled && (
+                <button
+                  type="button"
+                  onClick={handleDisable}
+                  disabled={loading || disabling}
+                  className="w-full rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-[11px] font-bold text-white/60 hover:bg-white/10 hover:text-white transition disabled:opacity-50"
+                >
+                  {disabling ? "Turning off…" : "Turn off auto top-up"}
+                </button>
+              )}
             </form>
           </motion.div>
         </motion.div>

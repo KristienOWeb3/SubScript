@@ -20,6 +20,7 @@ name: Keepers
 on:
   schedule:
     - cron: "*/15 * * * *"   # reconcile        — recover stuck premium-upgrade sessions
+                             # keeper/vault-topup — refill vaults under a user auto top-up mandate
     - cron: "0 2 * * *"      # cron/billing      — premium recurring billing + downgrades
     - cron: "0 5 * * *"      # internal/payroll  — run due payroll campaigns
     - cron: "0 6 * * *"      # internal/billing  — premium downgrade sweep
@@ -102,6 +103,22 @@ jobs:
             "${BASE:-https://www.subscriptonarc.com}/api/cron/kyc-expiry" \
             -H "Authorization: Bearer ${SECRET}"
 
+  vault-topup:
+    # Same schedule as reconcile: GitHub dispatches every job whose `if` matches, so two jobs can
+    # share a cron string. Kept separate rather than folded into reconcile's steps so a failing
+    # top-up sweep is attributable on its own without masking (or being masked by) reconcile.
+    if: github.event_name == 'schedule' && github.event.schedule == '*/15 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: keeper/vault-topup
+        env:
+          BASE: ${{ secrets.KEEPER_BASE_URL }}
+          SECRET: ${{ secrets.KEEPER_SECRET }}
+        run: |
+          curl -fsS --retry 3 --retry-delay 5 --max-time 300 -X GET \
+            "${BASE:-https://www.subscriptonarc.com}/api/keeper/vault-topup" \
+            -H "Authorization: Bearer ${SECRET}"
+
   manual-all:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -118,7 +135,8 @@ jobs:
             /api/cron/billing \
             /api/internal/payroll \
             /api/internal/billing \
-            /api/cron/kyc-expiry; do
+            /api/cron/kyc-expiry \
+            /api/keeper/vault-topup; do
             echo "→ GET ${path}"
             curl -fsS --retry 2 --retry-delay 5 --max-time 300 -X GET \
               "${BASE}${path}" -H "Authorization: Bearer ${SECRET}"

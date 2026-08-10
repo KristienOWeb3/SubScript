@@ -260,6 +260,19 @@ async function accrueUsageAtomically(
                     if (shareCommitId) {
                         await releaseShareSpend(client, shareCommitId, vault.id, amountMicros);
                     }
+                    /* Arm auto top-up even though no usage accrued. A fully exhausted vault is the
+                       MOST urgent refill case — its service is already paused — and this early
+                       return is the only path an exhausted vault ever takes, so skipping it here
+                       would leave such a vault permanently unarmed. */
+                    await client.query(
+                        `update metered_vaults
+                            set topup_due_at = now(),
+                                updated_at = now()
+                          where id = $1
+                            and auto_topup_enabled
+                            and topup_due_at is null`,
+                        [vault.id],
+                    );
                     const notification = await insertExhaustionNotification(
                         client,
                         merchantAddress,
@@ -284,6 +297,13 @@ async function accrueUsageAtomically(
                 const updated = await client.query(
                     `update metered_vaults
                         set accrued_usage_usdc = $1,
+                            topup_due_at = case
+                                when auto_topup_enabled
+                                 and topup_due_at is null
+                                 and greatest(balance_usdc - $1::bigint, 0) < threshold_usdc
+                                then now()
+                                else topup_due_at
+                            end,
                             updated_at = now()
                       where id = $2
                   returning id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active, usage_notified_bps`,
@@ -308,9 +328,20 @@ async function accrueUsageAtomically(
                 } as const;
             }
 
+            /* Arm auto top-up in the same statement that records the usage: the keeper does all
+               signing, so the merchant's request pays for one extra CASE and nothing else. Only
+               arms when a mandate exists and the vault is not already armed, so re-arming cannot
+               reset the queue position of a vault that has been waiting. */
             const updated = await client.query(
                 `update metered_vaults
                     set accrued_usage_usdc = $1,
+                        topup_due_at = case
+                            when auto_topup_enabled
+                             and topup_due_at is null
+                             and greatest(balance_usdc - $1::bigint, 0) < threshold_usdc
+                            then now()
+                            else topup_due_at
+                        end,
                         updated_at = now()
                   where id = $2
               returning id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active, usage_notified_bps`,
