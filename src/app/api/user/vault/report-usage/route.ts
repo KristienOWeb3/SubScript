@@ -115,7 +115,7 @@ async function insertThresholdNotification(
         status: "PENDING",
         amount_usdc: accrued.toString(),
         title: `${pct}% of your committed balance used`,
-        description: `This merchant has reported ${formatUsdc(accrued)} of your ${formatUsdc(balance)} USDC committed balance as used. Service continues until the balance is fully used — review the usage breakdown in your dashboard.`,
+        description: `This merchant has reported ${formatUsdc(accrued)} of your ${formatUsdc(balance)} USDC committed balance as used. Service continues until the balance is fully used — tap View usage for the full breakdown.`,
     });
 }
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { consumeDistributedRateLimit } from "@/lib/distributedRateLimit";
+import { notifyCommitInvite, resolveInviteeAddress } from "@/lib/dms/commitInvite";
 import {
     CommitAccessError,
     createSubUser,
@@ -159,7 +160,23 @@ export async function POST(request: Request) {
             spendLimitUsdc,
         });
 
-        return NextResponse.json({ subUser: serializeSubUser(subUser) }, { status: 201 });
+        /* If the name resolves to someone we already have a thread with, put the invite in their
+           inbox instead of making the parent relay the Commit ID by hand. Silent when the name is
+           offline or no thread exists — see notifyCommitInvite for why an existing thread gates it. */
+        let dmSent = false;
+        if (displayName) {
+            const inviteeAddress = await resolveInviteeAddress(displayName);
+            if (inviteeAddress) {
+                dmSent = await notifyCommitInvite({
+                    inviterAddress: walletAddress,
+                    inviteeAddress,
+                    commitId: subUser.commitId,
+                    spendLimitUsdc,
+                });
+            }
+        }
+
+        return NextResponse.json({ subUser: serializeSubUser(subUser), dmSent }, { status: 201 });
     } catch (error) {
         if (error instanceof CommitAccessError) {
             return NextResponse.json({ error: error.message }, { status: error.httpStatus });

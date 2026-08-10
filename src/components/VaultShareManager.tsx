@@ -65,11 +65,15 @@ export default function VaultShareManager({
     merchantLabel,
     balanceBox,
     datesBox,
+    balanceVisible = true,
 }: {
     vaultId: string;
     merchantLabel: string;
     balanceBox?: React.ReactNode;
     datesBox?: React.ReactNode;
+    /* Driven by the Eye toggle on the commit tab. Defaults to visible so other call sites
+       (and any future embed) are unaffected. */
+    balanceVisible?: boolean;
 }) {
     const [data, setData] = useState<SharesResponse | null>(null);
     const [open, setOpen] = useState(false);
@@ -77,6 +81,14 @@ export default function VaultShareManager({
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState<Busy>(null);
     const [copiedId, setCopiedId] = useState<string | null>(null);
+
+    /* Amounts collapse to dots when the commit tab's Eye toggle is off. The dot count matches
+       the convention used across the dashboard rather than the real digit count, so the mask
+       never hints at the magnitude. */
+    const money = (value: string | null) => (balanceVisible ? formatUsdc(value) : "••••");
+    /* A Commit ID is a bearer credential — anyone holding it can bill this vault — so it is
+       masked alongside the amounts rather than left in the clear on a shared screen. */
+    const secretId = (value: string) => (balanceVisible ? value : "•".repeat(24));
 
     const [name, setName] = useState("");
     const [cap, setCap] = useState("");
@@ -273,7 +285,7 @@ export default function VaultShareManager({
                     <div className="mt-2 flex items-center justify-between gap-2">
                         {data?.rootCommitId ? (
                             <code className="truncate font-mono text-xs font-bold text-[#00d2b4] sm:text-sm">
-                                {data.rootCommitId}
+                                {secretId(data.rootCommitId)}
                             </code>
                         ) : (
                             <div className="h-5 w-36 rounded-md subscript-skeleton" />
@@ -323,7 +335,7 @@ export default function VaultShareManager({
                                         {share.displayName || "Friend"}
                                     </span>
                                     <span className="mt-0.5 text-[9px] font-medium uppercase tracking-wider text-white/50">
-                                        {formatUsdc(share.spentUsdc)} USED
+                                        {money(share.spentUsdc)} USED
                                     </span>
                                 </div>
                             );
@@ -364,11 +376,11 @@ export default function VaultShareManager({
 
                             {data && (
                                 <div className="flex flex-wrap gap-x-4 gap-y-1 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2">
-                                    <Stat label="Committed" value={`${formatUsdc(data.escrowUsdc)} USDC`} />
-                                    <Stat label="Assigned" value={`${formatUsdc(data.allocatedUsdc)} USDC`} />
+                                    <Stat label="Committed" value={`${money(data.escrowUsdc)} USDC`} />
+                                    <Stat label="Assigned" value={`${money(data.allocatedUsdc)} USDC`} />
                                     <Stat
                                         label="Unassigned"
-                                        value={`${formatUsdc(data.unallocatedUsdc)} USDC`}
+                                        value={`${money(data.unallocatedUsdc)} USDC`}
                                         accent
                                     />
                                 </div>
@@ -434,7 +446,7 @@ export default function VaultShareManager({
                                                         className="mt-2 flex w-full items-center justify-between gap-2 rounded-xl border border-white/5 bg-black/30 px-2.5 py-1.5 text-left transition-colors hover:border-[#00d2b4]/30"
                                                     >
                                                         <code className="truncate font-mono text-[10px] text-white/55">
-                                                            {share.commitId}
+                                                            {secretId(share.commitId)}
                                                         </code>
                                                         <span className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-[#00d2b4]">
                                                             {copiedId === share.commitId ? "Copied" : "Copy"}
@@ -444,12 +456,12 @@ export default function VaultShareManager({
                                                     <div className="mt-2 space-y-1">
                                                         <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-wider">
                                                             <span className="text-white/35">
-                                                                {formatUsdc(share.spentUsdc)} spent
+                                                                {money(share.spentUsdc)} spent
                                                             </span>
                                                             <span className="text-white/50">
                                                                 {share.spendLimitUsdc === null
                                                                     ? "Uncapped"
-                                                                    : `${formatUsdc(share.remainingUsdc)} left of ${formatUsdc(share.spendLimitUsdc)}`}
+                                                                    : `${money(share.remainingUsdc)} left of ${money(share.spendLimitUsdc)}`}
                                                             </span>
                                                         </div>
                                                         {pct !== null && (

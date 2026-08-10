@@ -308,6 +308,62 @@ export default function UserDashboard() {
   const { disconnect } = useDisconnect();
   const dmBottomRef = useRef<HTMLDivElement | null>(null);
   const desktopDmScrollRef = useRef<HTMLDivElement | null>(null);
+  /* False once the reader deliberately scrolls up, so an arriving message doesn't yank the
+     view back down mid-read. Reset to true whenever a thread's scroller mounts. */
+  const autoPinDmRef = useRef(true);
+  const dmScrollObserverRef = useRef<ResizeObserver | null>(null);
+  const dmScrollMutationRef = useRef<MutationObserver | null>(null);
+
+  /* Callback ref for the message scroller. Runs the instant the node mounts — which, unlike a
+     timeout, is guaranteed to be after AnimatePresence has swapped the pane in — and pins the
+     view to the newest message. The observers keep it pinned while bubbles settle to their
+     final heights after first paint. */
+  const attachDmScroller = useCallback((node: HTMLDivElement | null) => {
+    dmScrollObserverRef.current?.disconnect();
+    dmScrollObserverRef.current = null;
+    dmScrollMutationRef.current?.disconnect();
+    dmScrollMutationRef.current = null;
+    desktopDmScrollRef.current = node;
+    if (!node) return;
+
+    autoPinDmRef.current = true;
+    const pin = () => {
+      node.scrollTop = node.scrollHeight;
+    };
+    pin();
+    requestAnimationFrame(pin);
+
+    if (typeof ResizeObserver === "undefined") return;
+    /* Observing the scroller itself only reports its own box, which is flex-sized and doesn't
+       change with content — so watch the children, and re-sync that list as bubbles are added. */
+    const observer = new ResizeObserver(() => {
+      if (autoPinDmRef.current) pin();
+    });
+    const observeChildren = () => {
+      for (const child of Array.from(node.children)) observer.observe(child);
+    };
+    observeChildren();
+    dmScrollObserverRef.current = observer;
+
+    const mutations = new MutationObserver(() => {
+      observeChildren();
+      if (autoPinDmRef.current) pin();
+    });
+    mutations.observe(node, { childList: true });
+    dmScrollMutationRef.current = mutations;
+  }, []);
+
+  /* Track whether the reader is parked at the bottom. Anything more than a bubble's worth of
+     distance means they scrolled up on purpose. */
+  const handleDmScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    const el = event.currentTarget;
+    autoPinDmRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  }, []);
+
+  useEffect(() => () => {
+    dmScrollObserverRef.current?.disconnect();
+    dmScrollMutationRef.current?.disconnect();
+  }, []);
 
   const [isMobile, setIsMobile] = useState(false);
 
@@ -615,6 +671,9 @@ export default function UserDashboard() {
   const [referralLink, setReferralLink] = useState<string>("");
   const [referralsCount, setReferralsCount] = useState<number>(0);
   const [referralsLoading, setReferralsLoading] = useState<boolean>(false);
+  /* Distinct from `referralsLoading`, which is still false on the first render pass before the
+     fetch effect fires. Without this the section would flash its empty state before shimmering. */
+  const [referralsLoaded, setReferralsLoaded] = useState<boolean>(false);
   const [referralCopySuccess, setReferralCopySuccess] = useState<boolean>(false);
 
   const [accountSubView, setAccountSubView] = useState<AccountSubView>("menu");
@@ -662,6 +721,7 @@ export default function UserDashboard() {
       console.error("Failed to fetch referrals:", err);
     } finally {
       setReferralsLoading(false);
+      setReferralsLoaded(true);
     }
   }, []);
 
@@ -2600,14 +2660,16 @@ export default function UserDashboard() {
     .map((row, index) => ({ ...row, index }))
     .filter((row) => isOwnWalletAddress(row.address));
 
-  /* Open every thread at the newest message. The old version waited a flat 60ms and keyed off
-     the global dms.length — but on desktop the pane's entrance animation is still running at
-     60ms, and switching threads doesn't change the global count, so the effect never re-fired
-     and the pane sat at the top. Scroll the container directly (scrollIntoView is a no-op while
-     the animating ancestor has no layout height yet), key off this thread's own message count,
-     and repeat across a frame and a post-animation timeout to catch the settled layout. */
+  /* Open every thread at the newest message.
+     Timing this against the pane's entrance animation never worked reliably: with
+     AnimatePresence mode="wait" the new scroller isn't mounted yet when this effect fires
+     (the old pane is still exiting), and the spring that follows has no fixed duration, so any
+     fixed timeout is a guess. `attachDmScroller` below is a callback ref instead — React calls
+     it at the exact moment the node mounts — so the pin happens once the element genuinely
+     exists. This effect now only handles messages arriving in an already-open thread. */
   useEffect(() => {
     if (activeTab !== "inbox" || !selectedDmPeer) return;
+    if (!autoPinDmRef.current) return;
 
     const scrollToBottom = () => {
       const container = desktopDmScrollRef.current;
@@ -2619,53 +2681,53 @@ export default function UserDashboard() {
 
     scrollToBottom();
     const rafId = requestAnimationFrame(scrollToBottom);
-    const timer = window.setTimeout(scrollToBottom, 150);
 
-    return () => {
-      cancelAnimationFrame(rafId);
-      window.clearTimeout(timer);
-    };
+    return () => cancelAnimationFrame(rafId);
   }, [activeTab, selectedDmPeer, selectedThreadDms.length]);
 
   if (loading) {
     return (
-      <div className="mx-auto flex min-h-[100dvh] max-w-md lg:max-w-none lg:w-full flex-col lg:flex-row overflow-hidden bg-transparent text-white font-sans relative">
+      <div className="relative overflow-x-hidden bg-[#060608] text-white font-sans md:h-[100dvh] md:overflow-hidden">
         <AnimatedGradientBg variant="dashboard" />
-        
-        {/* Desktop Sidebar Skeleton */}
-        <aside className="hidden md:flex md:w-20 lg:w-64 border-r border-white/5 bg-black/40 backdrop-blur-xl flex-col p-4 lg:p-5 shrink-0 h-screen sticky top-0 justify-between relative z-10">
-          <div className="space-y-8">
-            <div className="flex items-center justify-center lg:justify-start gap-3 p-2 lg:px-3 lg:py-2 bg-white/[0.02] border border-white/5 rounded-2xl">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/5 bg-white/5 text-sm font-black text-white/20">S</span>
-              <div className="hidden lg:block space-y-1.5 flex-1">
-                <div className="h-3 w-16 subscript-skeleton rounded-full" />
-                <div className="h-2 w-20 subscript-skeleton subscript-skeleton--faint rounded-full" />
-              </div>
+        <div className="fixed inset-0 pointer-events-none z-0 bg-gradient-to-b from-black/35 via-black/15 to-black/45" />
+
+        <div className="relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0">
+        {/* Desktop Sidebar Skeleton — mirrors UserDesktopSidebar: profile pill, 6 half-rounded
+            nav pills that bleed into the content panel, promo card, then two footer links. */}
+        <aside className="hidden md:flex h-full max-h-screen w-20 lg:w-64 shrink-0 flex-col justify-between overflow-y-auto bg-[#08080a] p-4 lg:p-5">
+          <div className="space-y-6">
+            <div className="flex items-center justify-center lg:justify-start gap-2.5 rounded-full lg:px-2 lg:py-1.5">
+              <div className="h-6 w-6 shrink-0 subscript-skeleton rounded-full" />
+              <div className="hidden lg:block h-2.5 w-20 subscript-skeleton rounded-full" />
             </div>
 
             <nav className="space-y-1.5">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="w-full flex items-center justify-center lg:justify-start gap-3.5 px-3 py-4 lg:px-5 rounded-2xl border border-white/5 bg-white/[0.01]">
-                  <div className="h-4 w-4 subscript-skeleton rounded-lg shrink-0" />
-                  <div className="hidden lg:block h-3 w-24 subscript-skeleton rounded-full" />
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="w-full flex items-center justify-center lg:justify-start gap-3 px-3.5 py-3 lg:px-4 rounded-full lg:rounded-l-full lg:rounded-r-none">
+                  <div className="h-4 w-4 subscript-skeleton rounded-md shrink-0" />
+                  <div className="hidden lg:block h-2.5 w-24 subscript-skeleton rounded-full" />
                 </div>
               ))}
             </nav>
           </div>
-          <div className="space-y-4 pt-4 border-t border-white/5 flex flex-col items-center lg:items-stretch">
-            <div className="flex items-center justify-center lg:justify-start gap-3 lg:px-2">
-              <div className="h-10 w-10 subscript-skeleton rounded-full shrink-0" />
-              <div className="hidden lg:block space-y-1.5 flex-1">
-                <div className="h-2.5 w-20 subscript-skeleton rounded-full" />
-                <div className="h-2 w-12 subscript-skeleton subscript-skeleton--faint rounded-full" />
-              </div>
+          <div className="hidden lg:block space-y-4">
+            <div className="rounded-[20px] border border-white/5 bg-white/[0.02] p-4 space-y-2.5">
+              <div className="h-2.5 w-28 subscript-skeleton rounded-full" />
+              <div className="h-2 w-36 subscript-skeleton subscript-skeleton--faint rounded-full" />
+              <div className="h-7 w-24 subscript-skeleton rounded-full" />
+            </div>
+            <div className="space-y-3 px-2">
+              <div className="h-2.5 w-20 subscript-skeleton subscript-skeleton--faint rounded-full" />
+              <div className="h-2.5 w-24 subscript-skeleton subscript-skeleton--faint rounded-full" />
             </div>
           </div>
         </aside>
 
-        {/* Mobile Header Skeleton */}
-        {isMobile && (
-          <div className="fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
+        {/* Content Pane Skeleton — mirrors the desktop Home layout: header with title + action
+            circles, then a 46fr/54fr main grid with the balance row (big card + circles) on the
+            left and the active-subscriptions panel on the right. */}
+        <div className="relative z-10 min-w-0 flex-1 flex flex-col md:mt-[14px] md:h-[calc(100vh-14px)] bg-[#131522]/90 backdrop-blur-xl md:rounded-tl-[28px] border-t border-l border-white/10 shadow-[-8px_0_24px_rgba(0,0,0,0.36)] overflow-hidden">
+          <div className="md:hidden fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
             <div className="w-full max-w-md liquid-glass rounded-full px-5 py-3 pointer-events-auto bg-black/30 backdrop-blur-lg border border-white/5 flex items-center justify-between">
               <div className="h-7 w-7 subscript-skeleton rounded-full" />
               <div className="flex gap-2">
@@ -2674,44 +2736,38 @@ export default function UserDashboard() {
               </div>
             </div>
           </div>
-        )}
 
-        {/* Content Pane Skeleton */}
-        <div className="flex-1 flex flex-col min-h-[100dvh] bg-[#060608] overflow-hidden">
-          {/* Desktop Header Skeleton */}
-          <header className="hidden lg:flex items-center justify-between px-8 py-5 border-b border-white/5 bg-black/25 sticky top-0 z-30 shrink-0">
-            <div className="space-y-2">
-              <div className="h-4.5 w-28 subscript-skeleton rounded-full" />
-              <div className="h-2.5 w-44 subscript-skeleton subscript-skeleton--faint rounded-full" />
+          <main className="flex-1 overflow-y-auto min-h-0 mx-auto w-full max-w-7xl px-5 lg:px-8 pt-24 lg:pt-8 pb-28 lg:pb-12">
+            {/* Title Header — one line, no subtitle, matching the "User Dashboard" heading */}
+            <div className="hidden md:flex items-center justify-between gap-6 mb-8 pb-6 border-b border-white/5">
+              <div className="h-8 w-64 subscript-skeleton rounded-lg" />
             </div>
-            <div className="h-9 w-44 subscript-skeleton rounded-full" />
-          </header>
 
-          <main className="flex-1 overflow-y-auto will-change-transform translate-z-0 px-5 lg:px-8 pb-28 pt-24 lg:pt-8 min-h-0 max-w-7xl">
-            <div className="grid grid-cols-1 gap-7 md:grid-cols-2 items-stretch">
-              {/* Left Column Stack */}
-              <div className="flex flex-col gap-7 md:col-span-1 order-1">
-                {/* Balance Card Skeleton */}
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 min-w-0 liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-6 rounded-[28px] shadow-2xl space-y-3">
+            <div className="flex flex-col gap-5">
+              <div className="grid grid-cols-1 gap-5 lg:grid-cols-[46fr_54fr]">
+              {/* LEFT 46% */}
+              <div className="flex flex-col gap-4 min-w-0">
+                {/* Balance row: figures left, stacked 38px circle actions right, inside one card */}
+                <div className="liquid-glass flex items-center justify-between gap-4 rounded-[20px] border border-white/5 bg-black/40 px-6 py-[22px] shadow-2xl backdrop-blur-xl">
+                  <div className="min-w-0 space-y-2">
                     <div className="h-2.5 w-40 subscript-skeleton rounded-full" />
-                    <div className="h-12 w-44 subscript-skeleton rounded-xl" />
-                    <div className="h-5 w-28 subscript-skeleton subscript-skeleton--faint rounded-full" />
+                    <div className="h-10 w-44 subscript-skeleton rounded-xl" />
+                    <div className="h-3 w-28 subscript-skeleton subscript-skeleton--faint rounded-full" />
                   </div>
-                  <div className="flex flex-col gap-3 shrink-0">
-                    {[1, 2, 3].map((i) => (
-                      <div key={i} className="h-14 w-14 subscript-skeleton rounded-full" />
+                  <div className="flex shrink-0 flex-col gap-2.5">
+                    {[1, 2].map((i) => (
+                      <div key={i} className="h-[38px] w-[38px] subscript-skeleton rounded-full" />
                     ))}
                   </div>
                 </div>
 
-                {/* Spending + Commit Skeleton */}
-                <div className="grid grid-cols-2 gap-3">
+                {/* Two equal square cards */}
+                <div className="grid grid-cols-2 gap-3.5">
                   {[1, 2].map((i) => (
-                    <div key={i} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-5 rounded-[24px] shadow-xl min-h-[150px] flex flex-col justify-between">
-                      <div className="space-y-3">
+                    <div key={i} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-[18px] rounded-[18px] shadow-xl min-h-[120px] flex flex-col justify-between">
+                      <div className="space-y-2">
                         <div className="h-2.5 w-24 subscript-skeleton rounded-full" />
-                        <div className="h-8 w-20 subscript-skeleton rounded-lg" />
+                        <div className="h-6 w-20 subscript-skeleton rounded-lg" />
                       </div>
                       <div className="h-3 w-28 subscript-skeleton subscript-skeleton--faint rounded-full" />
                     </div>
@@ -2719,21 +2775,21 @@ export default function UserDashboard() {
                 </div>
               </div>
 
-              {/* Right Column: Active Subscriptions Skeleton */}
-              <div className="hidden md:block md:col-span-1 md:h-[330px] order-3 md:order-2">
-                <div className="h-full rounded-3xl border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl liquid-glass sm:p-8 flex flex-col">
-                  <div className="mb-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between shrink-0">
-                    <div className="h-4 w-36 subscript-skeleton rounded-full" />
-                    <div className="h-5 w-16 subscript-skeleton rounded-full" />
+              {/* RIGHT 54%: Active Subscriptions tall panel */}
+              <div className="hidden md:block min-w-0">
+                <div className="min-h-[260px] h-full liquid-glass border border-white/5 bg-black/40 p-5 rounded-[20px] shadow-2xl backdrop-blur-xl flex flex-col">
+                  <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
+                    <div className="h-3 w-36 subscript-skeleton rounded-full" />
+                    <div className="h-5 w-14 subscript-skeleton rounded-full" />
                   </div>
                   <div className="flex-1 space-y-3 overflow-hidden">
                     {[1, 2, 3].map((i) => (
                       <div key={i} className="flex items-center justify-between py-2 border-b border-white/5">
                         <div className="flex items-center gap-3">
-                          <div className="h-8 w-8 subscript-skeleton rounded-full" />
+                          <div className="h-9 w-9 subscript-skeleton rounded-full" />
                           <div className="space-y-1.5">
                             <div className="h-3 w-24 subscript-skeleton rounded-full" />
-                            <div className="h-2 w-16 subscript-skeleton rounded-full" />
+                            <div className="h-2 w-16 subscript-skeleton subscript-skeleton--faint rounded-full" />
                           </div>
                         </div>
                         <div className="h-4 w-20 subscript-skeleton rounded-full" />
@@ -2743,34 +2799,38 @@ export default function UserDashboard() {
                 </div>
               </div>
 
-              {/* Recent Transactions Skeleton */}
-              <div className="col-span-1 md:col-span-2 order-2 md:order-3">
-                <div className="liquid-glass border border-white/5 bg-black/40 p-5 rounded-[28px] shadow-2xl backdrop-blur-xl space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="h-3 w-36 subscript-skeleton rounded-full" />
-                    <div className="h-4 w-16 subscript-skeleton rounded-full" />
-                  </div>
-                  <div className="flex gap-2">
-                    {[1, 2, 3].map((i) => (
-                      <div key={i} className="h-6 w-16 subscript-skeleton rounded-full" />
-                    ))}
-                  </div>
-                  <div className="space-y-3">
-                    {[1, 2, 3].map((i) => (
-                      <div key={i} className="flex items-center gap-3 py-2">
-                        <div className="h-10 w-10 subscript-skeleton rounded-full" />
-                        <div className="flex-1 space-y-1.5">
-                          <div className="h-3 w-28 subscript-skeleton rounded-full" />
-                          <div className="h-2 w-20 subscript-skeleton subscript-skeleton--faint rounded-full" />
-                        </div>
-                        <div className="h-5 w-14 subscript-skeleton rounded-full" />
+              </div>
+
+              {/* Recent Transactions — full-width sibling of the grid, 5 filter chips, 6 rows */}
+              <div className="liquid-glass border border-white/5 bg-black/40 p-5 rounded-[20px] shadow-2xl backdrop-blur-xl">
+                <div className="flex items-center justify-between">
+                  <div className="h-3 w-36 subscript-skeleton rounded-full" />
+                  <div className="h-4 w-16 subscript-skeleton rounded-full" />
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <div key={i} className="h-7 w-20 subscript-skeleton rounded-full" />
+                  ))}
+                </div>
+                <div className="mt-4 divide-y divide-white/[0.06]">
+                  {[1, 2, 3, 4, 5, 6].map((i) => (
+                    <div key={i} className="flex items-center gap-3 py-3">
+                      <div className="h-10 w-10 subscript-skeleton rounded-full shrink-0" />
+                      <div className="flex-1 min-w-0 space-y-1.5">
+                        <div className="h-3 w-28 subscript-skeleton rounded-full" />
+                        <div className="h-2 w-20 subscript-skeleton subscript-skeleton--faint rounded-full" />
                       </div>
-                    ))}
-                  </div>
+                      <div className="shrink-0 space-y-1.5 text-right">
+                        <div className="h-3.5 w-16 subscript-skeleton rounded-full ml-auto" />
+                        <div className="h-2 w-12 subscript-skeleton subscript-skeleton--faint rounded-full ml-auto" />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
           </main>
+        </div>
         </div>
 
         {/* Mobile Bottom Bar Skeleton */}
@@ -2858,6 +2918,13 @@ export default function UserDashboard() {
   // Total value currently locked across prepaid metered vaults.
   const totalCommitLockedUsdc = vaults.reduce(
     (sum, v: any) => sum + Number(v?.balanceUsdc || 0) / 1_000_000,
+    0,
+  );
+  /* Merchant-reported draw against those locked balances. Sits beside the locked figure so the
+     Home card answers "how much have I committed" and "how much is actually gone" together —
+     balanceUsdc is the gross commit, so the two are additive, not overlapping. */
+  const totalCommitUsedUsdc = vaults.reduce(
+    (sum, v: any) => sum + Number(v?.accruedUsageUsdc || 0) / 1_000_000,
     0,
   );
   /* The Home panel is headed "Active Subscriptions & Commits" — a label the Master Spec wireframe
@@ -3111,12 +3178,9 @@ export default function UserDashboard() {
         {!isMobile && activeTab !== "inbox" && (
           <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 mb-8 pb-6 border-b border-white/5">
             <div>
-              <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2">
-                User Wallet <span className="font-serif italic lowercase font-normal text-[#ccff00]">hub</span>
+              <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight">
+                User Dashboard
               </h1>
-              <p className="text-xs text-white/50 font-sans">
-                Manage your payment flows, subscriptions, inbox DMs, and batch distributions.
-              </p>
             </div>
           </div>
         )}
@@ -3225,10 +3289,21 @@ export default function UserDashboard() {
                       </div>
                       <div className="liquid-glass flex min-h-[120px] flex-col justify-between rounded-[18px] border border-white/5 bg-black/40 p-[18px] text-white shadow-xl backdrop-blur-xl">
                         <div>
-                          <p className="font-mono text-[10px] font-black uppercase tracking-[0.06em] text-white/50">Total Commit (LOCKED)</p>
-                          <p className="mt-2 text-xl font-extrabold tracking-tight text-white">
-                            {balanceVisible ? `$${formatHeadlineAmount(totalCommitLockedUsdc)}` : "••••"}
-                          </p>
+                          <p className="font-mono text-[10px] font-black uppercase tracking-[0.06em] text-white/50">Total Commit</p>
+                          <div className="mt-2 flex items-baseline gap-3">
+                            <div className="min-w-0">
+                              <p className="text-xl font-extrabold tracking-tight text-white">
+                                {balanceVisible ? `$${formatHeadlineAmount(totalCommitLockedUsdc)}` : "••••"}
+                              </p>
+                              <p className="mt-0.5 font-mono text-[9px] font-black uppercase tracking-[0.06em] text-white/40">Locked</p>
+                            </div>
+                            <div className="min-w-0 border-l border-white/10 pl-3">
+                              <p className="text-xl font-extrabold tracking-tight text-[#ccff00]">
+                                {balanceVisible ? `$${formatHeadlineAmount(totalCommitUsedUsdc)}` : "••••"}
+                              </p>
+                              <p className="mt-0.5 font-mono text-[9px] font-black uppercase tracking-[0.06em] text-white/40">Used</p>
+                            </div>
+                          </div>
                         </div>
                         <button
                           type="button"
@@ -3353,6 +3428,15 @@ export default function UserDashboard() {
                         <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Prepaid Metered Vaults</h2>
                         <button
                           type="button"
+                          onClick={toggleBalanceVisible}
+                          className="text-white/40 transition-colors hover:text-white"
+                          aria-label={balanceVisible ? "Hide balances" : "Show balances"}
+                          title={balanceVisible ? "Hide sensitive amounts" : "Show sensitive amounts"}
+                        >
+                          {balanceVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => setVaultInfoOpen(true)}
                           className="grid h-4 w-4 place-items-center rounded-full border border-white/20 text-[9px] font-black text-white/50 transition hover:border-[#ccff00]/50 hover:text-[#ccff00]"
                           aria-label="What is a vault?"
@@ -3429,7 +3513,7 @@ export default function UserDashboard() {
                   )}
                 </section>
 
-                <SubUserManager />
+                <SubUserManager balanceVisible={balanceVisible} />
               </section>
             )}
 
@@ -3451,6 +3535,8 @@ export default function UserDashboard() {
                     ) : (
                       <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
                         <div
+                          ref={attachDmScroller}
+                          onScroll={handleDmScroll}
                           data-testid="mobile-dm-message-scroller"
                           className="min-h-0 flex-1 overflow-y-auto overscroll-contain will-change-transform translate-z-0 space-y-4 px-1 pt-1 pb-4"
                         >
@@ -3478,6 +3564,7 @@ export default function UserDashboard() {
                               onSurveySubmit={(dmMsg, ans) => handleSurveySubmit(dmMsg, ans)}
                               onResumeService={() => handleResumeService(dm.senderAddress)}
                               onTopUpCommit={() => openVaultCommit(dm.senderAddress)}
+                              onViewCommit={() => setActiveTab("commit")}
                               resumeBusy={vaultResumeBusyId === dm.senderAddress || vaultResumeBusyId === dm.senderAddress?.toLowerCase()}
                             />
                           ))}
@@ -3598,7 +3685,7 @@ export default function UserDashboard() {
                             </div>
 
                             {/* Message bubbles pane */}
-                            <div ref={desktopDmScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain will-change-transform translate-z-0 pr-1 space-y-4">
+                            <div ref={attachDmScroller} onScroll={handleDmScroll} className="min-h-0 flex-1 overflow-y-auto overscroll-contain will-change-transform translate-z-0 pr-1 space-y-4">
                               <div className="mx-auto w-fit max-w-full rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-5 py-2 text-center text-[10px] font-black uppercase tracking-[0.16em] text-[#ccff00] backdrop-blur-md shadow-md mt-2">
                                 {isActiveDmMerchant
                                   ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
@@ -3623,6 +3710,7 @@ export default function UserDashboard() {
                                   onSurveySubmit={(dmMsg, ans) => handleSurveySubmit(dmMsg, ans)}
                                   onResumeService={() => handleResumeService(dm.senderAddress)}
                                   onTopUpCommit={() => openVaultCommit(dm.senderAddress)}
+                                  onViewCommit={() => setActiveTab("commit")}
                                   resumeBusy={vaultResumeBusyId === dm.senderAddress || vaultResumeBusyId === dm.senderAddress?.toLowerCase()}
                                 />
                               ))}
@@ -3712,7 +3800,7 @@ export default function UserDashboard() {
                     <input
                       value={linkMemo}
                       onChange={(event) => setLinkMemo(event.target.value)}
-                      placeholder="Invoice #1042, split the bill, donation..."
+                      placeholder="e.g. Graphic design work, dinner split, coffee, monthly consulting..."
                       className="subscript-input"
                       maxLength={120}
                     />
@@ -3797,7 +3885,7 @@ export default function UserDashboard() {
                 <div className="flex items-start gap-3 rounded-3xl border border-white/5 bg-black/30 p-4">
                   <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-white/40" />
                   <p className="text-[11px] leading-relaxed text-white/45">
-                    Want to bill a specific person privately instead? Open their thread in <button type="button" onClick={() => setActiveTab("inbox")} className="font-bold text-[#ccff00] underline-offset-2 hover:underline">DMs</button> and tap Request. Those are receiver-bound and can't be shared.
+                    Want to bill a specific person privately instead? Open their thread in <button type="button" onClick={() => setActiveTab("inbox")} className="font-bold text-[#ccff00] underline-offset-2 hover:underline">DMs</button> and tap Request.
                   </p>
                 </div>
               </section>
@@ -5247,8 +5335,12 @@ export default function UserDashboard() {
 
             {activeTab === "referrals" && (
               <section className="space-y-6 pb-20 max-w-2xl">
-                <SectionTitle title="Referrals Program" subtitle="Invite friends to join SubScript and view your referred signup registry." />
+                <SectionTitle title="Referrals Program" subtitle="Invite friends to join SubScript and view your referred signups." />
 
+                {referralsLoading || !referralsLoaded ? (
+                  <ReferralsSkeleton />
+                ) : (
+                  <>
                 {/* Referral Link Card */}
                 <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
                   <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
@@ -5260,7 +5352,7 @@ export default function UserDashboard() {
 
                   <div className="flex flex-col sm:flex-row gap-3">
                     <div className="flex-1 rounded-2xl border border-white/10 bg-black/40 px-4 py-3 font-mono text-xs text-white/70 overflow-x-auto whitespace-nowrap select-all flex items-center">
-                      {referralLink || "Loading your link..."}
+                      {referralLink}
                     </div>
                     <button
                       type="button"
@@ -5294,7 +5386,7 @@ export default function UserDashboard() {
                 {/* Referrals Registry List */}
                 <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
                   <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                    <Users className="h-4 w-4 text-[#ccff00]" /> Referred Signup Registry
+                    <Users className="h-4 w-4 text-[#ccff00]" /> Referred Signups
                   </h3>
 
                   <div className="overflow-x-auto">
@@ -5308,13 +5400,7 @@ export default function UserDashboard() {
                         </tr>
                       </thead>
                       <tbody>
-                        {referralsLoading ? (
-                          <tr>
-                            <td colSpan={4} className="text-center py-6 text-white/30">
-                              <Loader2 className="w-4 h-4 animate-spin mx-auto" />
-                            </td>
-                          </tr>
-                        ) : referrals.length === 0 ? (
+                        {referrals.length === 0 ? (
                           <tr>
                             <td colSpan={4} className="text-center py-6 text-white/30">
                               No signups registered under your link yet.
@@ -5338,6 +5424,8 @@ export default function UserDashboard() {
                     </table>
                   </div>
                 </div>
+                  </>
+                )}
               </section>
             )}
             </motion.div>
@@ -6529,6 +6617,7 @@ function DmBubble({
   onSurveySubmit,
   onResumeService,
   onTopUpCommit,
+  onViewCommit,
   resumeBusy,
 }: {
   dm: DmMessage;
@@ -6544,6 +6633,7 @@ function DmBubble({
   onSurveySubmit?: (dm: DmMessage, response: string) => void;
   onResumeService?: () => void;
   onTopUpCommit?: () => void;
+  onViewCommit?: () => void;
   resumeBusy?: boolean;
 }) {
   const isPending = dm.status === "PENDING";
@@ -6604,6 +6694,12 @@ function DmBubble({
   }
   if (dm.messageType === "PAYMENT_REQUEST" && isPending && incoming && onCancelPlan) {
     actionItems.push({ key: "cancel", label: "Cancel Plan", onClick: onCancelPlan, loadingKey: `cancel-${dm.id}` });
+  }
+  /* The threshold notice tells the user to "review the usage breakdown in your dashboard" —
+     this is that link. onViewCommit lands them on the Vault & Commits tab, scoped to the
+     merchant that reported the usage. */
+  if (dm.messageType === "USAGE_THRESHOLD" && onViewCommit) {
+    actionItems.push({ key: "view-commit", label: "View usage", onClick: onViewCommit });
   }
   if (dm.messageType === "CHURN_SURVEY" && isPending && onSurveySubmit) {
     actionItems.push(
@@ -8098,7 +8194,7 @@ function SendFundsModal({
                 </div>
                 {resolvedAddress && userWallet && resolvedAddress.toLowerCase() === userWallet.toLowerCase() && (
                   <div className="mt-2 rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-[11px] leading-relaxed text-red-300">
-                    This is your connected wallet address. Choose another recipient.
+                    This is your wallet address. Choose another recipient.
                   </div>
                 )}
               </div>
@@ -8417,6 +8513,60 @@ function VaultCardSkeleton() {
   );
 }
 
+/* Mirrors the referrals section 1:1 (link card → 2 stat cards → registry table) so the
+   swap to real content doesn't shift layout. */
+function ReferralsSkeleton() {
+  return (
+    <>
+      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
+        <div className="h-3.5 w-40 rounded-md subscript-skeleton" />
+        <div className="space-y-2">
+          <div className="h-2.5 w-full rounded-md subscript-skeleton subscript-skeleton--faint" />
+          <div className="h-2.5 w-4/5 rounded-md subscript-skeleton subscript-skeleton--faint" />
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="h-[46px] flex-1 rounded-2xl border border-white/10 subscript-skeleton" />
+          <div className="h-[46px] w-full sm:w-[132px] rounded-2xl border border-[#ccff00]/20 subscript-skeleton shrink-0" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {[0, 1].map((i) => (
+          <div
+            key={i}
+            className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 shadow-2xl flex flex-col justify-between min-h-[104px]"
+          >
+            <div className="h-2.5 w-24 rounded-md subscript-skeleton subscript-skeleton--faint" />
+            <div className="mt-2 h-8 w-20 rounded-lg subscript-skeleton" />
+          </div>
+        ))}
+      </div>
+
+      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
+        <div className="h-3.5 w-44 rounded-md subscript-skeleton" />
+
+        <div className="space-y-4">
+          <div className="flex items-center gap-4 border-b border-white/5 pb-3">
+            <div className="h-2.5 flex-1 rounded-md subscript-skeleton subscript-skeleton--faint" />
+            <div className="h-2.5 w-16 rounded-md subscript-skeleton subscript-skeleton--faint" />
+            <div className="h-2.5 w-20 rounded-md subscript-skeleton subscript-skeleton--faint" />
+            <div className="h-2.5 w-14 rounded-md subscript-skeleton subscript-skeleton--faint" />
+          </div>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="flex items-center gap-4 border-b border-white/5 pb-4">
+              <div className="h-3.5 flex-1 rounded-md subscript-skeleton" />
+              <div className="h-3.5 w-16 rounded-md subscript-skeleton" />
+              <div className="h-3.5 w-20 rounded-md subscript-skeleton" />
+              <div className="h-5 w-14 rounded-full subscript-skeleton" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
 function MeteredVaultRow({
   vault,
   onCommit,
@@ -8559,6 +8709,7 @@ function MeteredVaultRow({
       {vault.id && (
         <VaultShareManager
           vaultId={vault.id}
+          balanceVisible={balanceVisible}
           merchantLabel={vault.merchantName || "this merchant"}
           balanceBox={
             <div className="flex flex-col justify-between rounded-2xl border border-white/10 bg-black/40 p-4 min-h-[96px]">

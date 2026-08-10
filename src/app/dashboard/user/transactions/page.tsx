@@ -68,6 +68,13 @@ export default function UserTransactionsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "recurring" | "one-time" | "transfers" | "withdrawals">("all");
+  /* Date range. "custom" reveals the two date inputs; the presets are relative to now so they
+     stay correct without a re-render. */
+  const [dateRange, setDateRange] = useState<"all" | "7d" | "30d" | "90d" | "custom">("all");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [showFilters, setShowFilters] = useState(false);
   const [userWallet, setUserWallet] = useState<string | null>(null);
 
   const [balanceVisible, setBalanceVisible] = useState(true);
@@ -276,12 +283,47 @@ export default function UserTransactionsPage() {
       })
   ].sort((a, b) => b.time - a.time);
 
+  /* Statuses actually present in the data, so the dropdown never offers a filter that
+     matches nothing. Sorted for a stable order across reloads. */
+  const availableStatuses = Array.from(new Set(allTransactions.map((tx) => tx.status).filter(Boolean))).sort();
+
+  /* Inclusive [start, end] bounds in epoch ms, or null for an open end. Custom dates come from
+     <input type="date"> as YYYY-MM-DD in local time; the end is pushed to 23:59:59.999 so
+     picking the same day for both bounds still matches that whole day. */
+  const dateBounds = (() => {
+    if (dateRange === "custom") {
+      const start = customFrom ? new Date(`${customFrom}T00:00:00`).getTime() : null;
+      const end = customTo ? new Date(`${customTo}T23:59:59.999`).getTime() : null;
+      return { start: Number.isNaN(start as number) ? null : start, end: Number.isNaN(end as number) ? null : end };
+    }
+    const days = dateRange === "7d" ? 7 : dateRange === "30d" ? 30 : dateRange === "90d" ? 90 : null;
+    if (days === null) return { start: null, end: null };
+    return { start: Date.now() - days * 24 * 60 * 60 * 1000, end: null };
+  })();
+
+  const activeFilterCount =
+    (dateRange !== "all" ? 1 : 0) + (statusFilter !== "all" ? 1 : 0) + (filter !== "all" ? 1 : 0);
+
+  const resetFilters = () => {
+    setFilter("all");
+    setDateRange("all");
+    setCustomFrom("");
+    setCustomTo("");
+    setStatusFilter("all");
+    setSearchQuery("");
+  };
+
   const filteredTransactions = allTransactions.filter((tx) => {
     if (filter === "recurring" && tx.kind !== "recurring") return false;
     if (filter === "one-time" && tx.kind !== "one-time") return false;
     if (filter === "transfers" && tx.kind !== "transfers") return false;
     if (filter === "withdrawals" && tx.kind !== "withdrawals") return false;
-    
+
+    if (statusFilter !== "all" && tx.status !== statusFilter) return false;
+
+    if (dateBounds.start !== null && tx.time < dateBounds.start) return false;
+    if (dateBounds.end !== null && tx.time > dateBounds.end) return false;
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       return (
@@ -313,13 +355,7 @@ export default function UserTransactionsPage() {
 
         {/* Page Title & Spend Overview */}
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-black uppercase tracking-tight text-white sm:text-4xl">Spending Analysis</h1>
-            <p className="mt-2 text-sm text-white/50">
-              Detailed breakdown of active subscription commitments and settled network activity.
-            </p>
-          </div>
-          <div className="rounded-3xl border border-white/10 bg-black/40 p-4 shadow-xl backdrop-blur-xl sm:text-right">
+          <div className="rounded-3xl border border-white/10 bg-black/40 p-4 shadow-xl backdrop-blur-xl sm:ml-auto sm:text-right">
             <span className="text-[10px] font-black uppercase tracking-wider text-white/40">Monthly Commitment</span>
             <p className="text-2xl font-black text-white mt-0.5">
               {balanceVisible ? `$${totalMonthlyCommitmentUsdc.toFixed(2)}` : "••••"} <span className="text-xs font-bold text-[#ccff00]">/mo</span>
@@ -386,7 +422,7 @@ export default function UserTransactionsPage() {
             />
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {[
               { id: "all", label: "All Activity" },
               { id: "recurring", label: "Subscriptions" },
@@ -407,7 +443,99 @@ export default function UserTransactionsPage() {
                 {tab.label}
               </button>
             ))}
+
+            <button
+              type="button"
+              onClick={() => setShowFilters((prev) => !prev)}
+              aria-expanded={showFilters}
+              className={`ml-auto flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider transition-all ${
+                showFilters || activeFilterCount > 0
+                  ? "bg-[#ccff00]/15 text-[#ccff00] border border-[#ccff00]/30"
+                  : "bg-white/[0.06] text-white/50 hover:bg-white/10 border border-transparent"
+              }`}
+            >
+              <Sliders className="h-3 w-3" />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="ml-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-[#ccff00] px-1 text-[9px] font-black text-black">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
           </div>
+
+          {showFilters && (
+            <div className="grid grid-cols-1 gap-4 rounded-2xl border border-white/5 bg-black/40 p-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <label htmlFor="tx-date-range" className="block text-[9px] font-black uppercase tracking-[0.16em] text-white/45">
+                  Date
+                </label>
+                <select
+                  id="tx-date-range"
+                  value={dateRange}
+                  onChange={(e) => setDateRange(e.target.value as any)}
+                  className="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2.5 text-xs font-bold text-white transition-colors focus:border-[#ccff00]/50 focus:outline-none"
+                >
+                  <option value="all">All time</option>
+                  <option value="7d">Last 7 days</option>
+                  <option value="30d">Last 30 days</option>
+                  <option value="90d">Last 90 days</option>
+                  <option value="custom">Custom range...</option>
+                </select>
+
+                {dateRange === "custom" && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="date"
+                      value={customFrom}
+                      max={customTo || undefined}
+                      onChange={(e) => setCustomFrom(e.target.value)}
+                      aria-label="From date"
+                      className="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2 text-[11px] font-bold text-white [color-scheme:dark] focus:border-[#ccff00]/50 focus:outline-none"
+                    />
+                    <span className="text-[10px] font-black text-white/30">TO</span>
+                    <input
+                      type="date"
+                      value={customTo}
+                      min={customFrom || undefined}
+                      onChange={(e) => setCustomTo(e.target.value)}
+                      aria-label="To date"
+                      className="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2 text-[11px] font-bold text-white [color-scheme:dark] focus:border-[#ccff00]/50 focus:outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="tx-status" className="block text-[9px] font-black uppercase tracking-[0.16em] text-white/45">
+                  Status
+                </label>
+                <select
+                  id="tx-status"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2.5 text-xs font-bold text-white transition-colors focus:border-[#ccff00]/50 focus:outline-none"
+                >
+                  <option value="all">Any status</option>
+                  {availableStatuses.map((status) => (
+                    <option key={status} value={status}>
+                      {humanSubscriptionStatus(status)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {activeFilterCount > 0 && (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="justify-self-start rounded-full bg-white/[0.06] px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-white/60 transition-colors hover:bg-white/10 hover:text-white sm:col-span-2"
+                >
+                  Clear all filters
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Transactions List */}
@@ -428,6 +556,15 @@ export default function UserTransactionsPage() {
             <div className="flex h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center">
               <CreditCard className="mb-3 h-8 w-8 text-white/20" />
               <p className="text-xs text-white/40">No transactions match your filters.</p>
+              {(activeFilterCount > 0 || searchQuery.trim()) && (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="mt-3 rounded-full bg-white/[0.06] px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+                >
+                  Clear filters
+                </button>
+              )}
             </div>
           ) : (
             <div className="divide-y divide-white/[0.06]">
