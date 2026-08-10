@@ -313,7 +313,12 @@ export default function UserTransactionsPage() {
 
         {/* Page Title & Spend Overview */}
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
+          <div>
+            <h1 className="text-3xl font-black uppercase tracking-tight text-white sm:text-4xl">Spending Analysis</h1>
+            <p className="mt-2 text-sm text-white/50">
+              Detailed breakdown of active subscription commitments and settled network activity.
+            </p>
+          </div>
           <div className="rounded-3xl border border-white/10 bg-black/40 p-4 shadow-xl backdrop-blur-xl sm:text-right">
             <span className="text-[10px] font-black uppercase tracking-wider text-white/40">Monthly Commitment</span>
             <p className="text-2xl font-black text-white mt-0.5">
