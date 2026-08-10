@@ -5,6 +5,7 @@ import { getAccountRole } from "@/lib/accounts/roles";
 import { isConnectionError, getOfflineUserEmbeddedWalletByAddress } from "@/lib/offlineDb";
 import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 import { getWalletCustody, isCustodialWallet, type WalletCustody } from "@/lib/auth/walletCustody";
+import { isAdminWallet } from "@/lib/admin/identity";
 
 export async function GET(request: Request) {
     try {
@@ -44,6 +45,10 @@ export async function GET(request: Request) {
         }
 
         const role = await getAccountRole(wallet);
+        /* Rendering hint only — it decides whether the dashboard shows an Admin button.
+           Every real boundary (the /admin layout and each /api/admin handler) re-derives
+           admin status server-side, so a client that forges this gains nothing. */
+        const isAdmin = await isAdminWallet(wallet).catch(() => false);
         const provider = custody?.provider ?? null;
         /* Custody decides this, not the provider label. The old test was
            !provider.startsWith("external_wallet"), which alone among this column's consumers read
@@ -58,7 +63,8 @@ export async function GET(request: Request) {
             email,
             provider,
             isEmbedded,
-            role
+            role,
+            isAdmin
         }, { status: 200 });
 
         /* Self-heal cookie scoping: re-issue the SAME token (original expiry, never

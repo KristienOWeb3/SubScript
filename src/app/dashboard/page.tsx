@@ -80,6 +80,11 @@ const tabs = [
     { id: "settings", label: "Profile & DNS", icon: User },
 ] as const;
 
+/* Admin console link, appended only for allowlisted wallets. Carries an href so the
+   sidebar renders it as a Link out to /admin rather than switching an in-page tab.
+   Hiding it is presentation only — /admin and every /api/admin route re-check server-side. */
+const ADMIN_TAB = { id: "admin", label: "Admin", icon: Shield, href: "/admin" } as const;
+
 type TabId = "overview" | "premium" | "analytics" | "payment-links" | "plans" | "apikeys" | "checkout" | "webhooks" | "settings" | "payroll" | "offramp";
 
 type MerchantPlan = {
@@ -288,6 +293,11 @@ export default function DashboardPage() {
 
     const [embeddedWallet, setEmbeddedWallet] = useState<{ wallet: string; email: string } | null>(null);
     const [sessionWallet, setSessionWallet] = useState<string | null>(null);
+    const [isAdmin, setIsAdmin] = useState(false);
+    const navTabs = useMemo(
+        () => (isAdmin ? [...tabs, ADMIN_TAB] : [...tabs]),
+        [isAdmin],
+    );
     const [otpEmail, setOtpEmail] = useState("");
     const [otpCode, setOtpCode] = useState("");
     const [otpSent, setOtpSent] = useState(false);
@@ -1576,6 +1586,7 @@ export default function DashboardPage() {
                         return;
                     }
                     setSessionWallet(data.wallet.toLowerCase());
+                    setIsAdmin(Boolean(data.isAdmin));
                     if (data.isEmbedded) {
                         setEmbeddedWallet({
                             wallet: data.wallet,
@@ -6515,7 +6526,7 @@ Please complete the following implementation tasks:
                     <div className="grid grid-cols-1 md:grid-cols-12 lg:grid-cols-4 gap-6 md:gap-8 items-start">
                         {/* Sidebar Navigation */}
                         <div className="hidden md:block md:col-span-3 lg:col-span-1 space-y-2 sticky top-24 overflow-y-auto max-h-[calc(100vh-16rem)]">
-                            {tabs.map((tab) => {
+                            {navTabs.map((tab) => {
                                 const hasHref = "href" in tab;
                                 const isSelected = activeTab === (tab.id as any);
                                 const itemClasses = `w-full flex items-center justify-start gap-3.5 px-4 py-4 lg:px-5 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left ${

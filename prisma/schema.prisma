@@ -1073,18 +1073,79 @@ model BatchSendItem {
 }
 
 model BannedAccount {
-  address   String   @id @map("address")
-  reason    String?  @map("reason")
-  createdAt DateTime @default(now()) @map("created_at")
+  address   String    @id @map("address")
+  reason    String?   @map("reason")
+  bannedBy  String    @map("banned_by")
+  expiresAt DateTime? @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
 
   @@map("banned_accounts")
 }
 
 model BannedIp {
-  ip        String   @id @map("ip")
-  reason    String?  @map("reason")
-  createdAt DateTime @default(now()) @map("created_at")
+  ip        String    @id @map("ip")
+  reason    String?   @map("reason")
+  bannedBy  String    @map("banned_by")
+  expiresAt DateTime? @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
 
   @@map("banned_ips")
+}
+
+model AdminWallet {
+  wallet    String   @id @map("wallet")
+  label     String?  @map("label")
+  grantedBy String   @map("granted_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("admin_wallets")
+}
+
+model AdminAuditLog {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actor     String   @map("actor")
+  action    String   @map("action")
+  target    String?  @map("target")
+  detail    Json?    @map("detail")
+  ip        String?  @map("ip")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt(sort: Desc)])
+  @@index([actor, createdAt(sort: Desc)])
+  @@index([target, createdAt(sort: Desc)])
+  @@map("admin_audit_log")
+}
+
+/// Runtime kill switches, one singleton row (id = 1). See the migration header for why each
+/// flag exists and why readers fail OPEN. Never read this directly from a route — go through
+/// getPlatformFlags() in @/lib/platform/flags so the cache and fallbacks apply.
+model PlatformFlag {
+  id                    Int      @id @default(1)
+  googleSigninEnabled   Boolean  @default(false) @map("google_signin_enabled")
+  maintenanceEnabled    Boolean  @default(false) @map("maintenance_enabled")
+  maintenanceMessage    String?  @map("maintenance_message")
+  externalWalletEnabled Boolean  @default(true) @map("external_wallet_enabled")
+  updatedAt             DateTime @default(now()) @map("updated_at")
+  updatedBy             String   @default("system") @map("updated_by")
+
+  @@map("platform_flags")
+}
+
+model AdminBroadcast {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  audience        String    @map("audience")
+  title           String    @map("title")
+  body            String    @map("body")
+  url             String?   @map("url")
+  createdBy       String    @map("created_by")
+  status          String    @default("QUEUED") @map("status")
+  cursor          String?   @map("cursor")
+  totalRecipients Int       @default(0) @map("total_recipients")
+  sentCount       Int       @default(0) @map("sent_count")
+  failedCount     Int       @default(0) @map("failed_count")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  completedAt     DateTime? @map("completed_at")
+
+  @@map("admin_broadcasts")
 }
 

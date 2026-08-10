@@ -426,6 +426,7 @@ export default function UserDashboard() {
   const [redirectMessage, setRedirectMessage] = useState<string | null>(null);
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
   const [userWallet, setUserWallet] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [emailPromptValue, setEmailPromptValue] = useState("");
   const [emailPromptSaving, setEmailPromptSaving] = useState(false);
@@ -1095,6 +1096,7 @@ export default function UserDashboard() {
 
       setUserWallet(data.wallet);
       setUserEmail(data.email);
+      setIsAdmin(Boolean(data.isAdmin));
       setIsEmbeddedWalletSession(Boolean(data.isEmbedded));
       await Promise.all([loadSubscriptions(), loadDms(), loadUserSettings(), loadVaults()]);
     } catch (e) {
@@ -3131,6 +3133,7 @@ export default function UserDashboard() {
             registeredDomain={registeredDomain}
             profilePic={profilePic}
             walletBalance={walletBalance}
+            isAdmin={isAdmin}
             onTabChange={(tab) => {
               setSelectedDmPeer(null);
               setActiveTab(tab);
@@ -6192,6 +6195,7 @@ function UserDesktopSidebar({
   registeredDomain,
   profilePic,
   walletBalance,
+  isAdmin,
   onTabChange,
   onLogout,
 }: {
@@ -6201,6 +6205,7 @@ function UserDesktopSidebar({
   registeredDomain: string | null;
   profilePic: string | null;
   walletBalance: number;
+  isAdmin: boolean;
   onTabChange: (tab: UserTab) => void;
   onLogout: () => void;
 }) {
@@ -6259,6 +6264,19 @@ function UserDesktopSidebar({
               </button>
             );
           })}
+
+          {/* Separate from the tab list because it navigates out to /admin rather than
+              switching a tab, so it cannot be a UserTab. Visibility is cosmetic — the
+              /admin layout re-checks admin status server-side on every request. */}
+          {isAdmin && (
+            <Link
+              href="/admin"
+              className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-[#ccff00] transition hover:bg-[#ccff00]/10"
+            >
+              <Shield className="h-5 w-5" />
+              <span>Admin</span>
+            </Link>
+          )}
         </nav>
       </div>
 
