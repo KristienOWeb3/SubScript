@@ -1,10 +1,23 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 
 const root = process.cwd();
 const source = (path) => readFile(join(root, path), "utf8");
+
+/* The guide is one route per section rather than a single page.tsx, so assert against the whole
+   tree: a concept documented anywhere in /docs still counts as documented. */
+async function docsTreeSource() {
+    const docsRoot = join(root, "src", "app", "docs");
+    const entries = await readdir(docsRoot, { recursive: true, withFileTypes: true });
+    const files = entries
+        .filter((entry) => entry.isFile() && (entry.name === "page.tsx" || entry.name.endsWith(".ts")))
+        .map((entry) => join(entry.parentPath ?? entry.path, entry.name));
+
+    const contents = await Promise.all(files.map((file) => readFile(file, "utf8")));
+    return contents.join("\n");
+}
 
 test("sponsored merchant-plan route creates single-use one-time gift checkouts with guardrails", async () => {
     const route = await source("src/app/api/user/requests/merchant-plan/route.ts");
@@ -38,7 +51,7 @@ test("friend-locked gift links are enforced server-side without leaking receiver
 test("sponsored metadata is merged into payment.succeeded webhooks", async () => {
     const webhooks = await source("src/lib/webhooks.ts");
     const worker = await source("src/lib/payments/paymentLinkVerificationWorker.ts");
-    const docs = await source("src/app/docs/page.tsx");
+    const docs = await docsTreeSource();
 
     assert.match(webhooks, /metadata\?:\s*Record<string,\s*unknown>/);
     assert.match(webhooks, /\.\.\.\(args\.metadata \?\? \{\}\)/);

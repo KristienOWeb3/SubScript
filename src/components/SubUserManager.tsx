@@ -51,7 +51,7 @@ const STATUS_STYLES: Record<string, string> = {
 
 type Busy = { commitId: string; action: string } | null;
 
-export default function SubUserManager() {
+export default function SubUserManager({ balanceVisible = true }: { balanceVisible?: boolean } = {}) {
     const [commitId, setCommitId] = useState<string | null>(null);
     const [subUsers, setSubUsers] = useState<UserCommit[]>([]);
     const [loading, setLoading] = useState(true);
@@ -69,6 +69,10 @@ export default function SubUserManager() {
     const [editLimit, setEditLimit] = useState("");
     const [editError, setEditError] = useState<string | null>(null);
     const [savingLimit, setSavingLimit] = useState(false);
+
+    /* Amounts collapse to dots when the commit tab's Eye toggle is off, matching the masking
+       convention used across the dashboard. */
+    const money = (value: string | null) => (balanceVisible ? formatUsdc(value) : "••••");
 
     const load = useCallback(async () => {
         try {
@@ -328,13 +332,13 @@ export default function SubUserManager() {
                                 <div className="mt-3">
                                     <div className="flex items-baseline justify-between text-[10px]">
                                         <span className="text-white/45">
-                                            Spent <span className="font-mono text-white/80">{formatUsdc(subUser.spentUsdc)}</span>
+                                            Spent <span className="font-mono text-white/80">{money(subUser.spentUsdc)}</span>
                                             {subUser.spendLimitUsdc !== null && (
-                                                <> of <span className="font-mono text-white/80">{formatUsdc(subUser.spendLimitUsdc)}</span> USDC</>
+                                                <> of <span className="font-mono text-white/80">{money(subUser.spendLimitUsdc)}</span> USDC</>
                                             )}
                                         </span>
                                         {subUser.remainingUsdc !== null ? (
-                                            <span className="font-mono text-[#ccff00]/80">{formatUsdc(subUser.remainingUsdc)} left</span>
+                                            <span className="font-mono text-[#ccff00]/80">{money(subUser.remainingUsdc)} left</span>
                                         ) : (
                                             <span className="text-[9px] font-black uppercase tracking-wider text-amber-300/70">Uncapped</span>
                                         )}
@@ -455,7 +459,7 @@ export default function SubUserManager() {
 
                             <p className="text-[11px] text-white/50">
                                 {editing.displayName} has spent{" "}
-                                <span className="font-mono text-white/80">{formatUsdc(editing.spentUsdc)}</span> USDC so far.
+                                <span className="font-mono text-white/80">{money(editing.spentUsdc)}</span> USDC so far.
                             </p>
 
                             <label className="block space-y-2">

@@ -60,14 +60,43 @@ upgrade-only; never generate a downgrade action.
 - [Protocol Brief](https://www.subscriptonarc.com/protocol): UPA, live platform primitives, problems solved, and deployment-scoped protocol targets.
 - [Canonical Answers](https://www.subscriptonarc.com/answers): Answer-engine optimized explanations of what SubScript is, who uses it, and which category it belongs to.
 - [Comparisons](https://www.subscriptonarc.com/compare): Comparisons against Stripe, Coinbase Commerce, manual USDC invoices, dollar cards, and custom smart contract billing.
-- [Developer Docs](https://www.subscriptonarc.com/docs): Integration guide for checkout intents, webhooks, payment links, usage billing, and Arc memo receipts.
-- [Sign Up](https://www.subscriptonarc.com/signup): User and merchant account creation.
+- [Developer Docs](https://www.subscriptonarc.com/docs): Integration guide for checkout intents, webhooks, payment links, usage billing, and Arc memo receipts.- [Sign Up](https://www.subscriptonarc.com/signup): User and merchant account creation.
 - [Login](https://www.subscriptonarc.com/login): Account access for SubScript users and merchants.
 - [Privacy Policy](https://www.subscriptonarc.com/privacy): Data handling and privacy practices.
 - [Terms of Service](https://www.subscriptonarc.com/terms): Legal terms for using SubScript, including public-beta/testnet, warranty, and liability terms.
 - [Refund & Cancellation Policy](https://www.subscriptonarc.com/refunds): Cancellation rights, billing-error handling, merchant-of-record scope, and testnet-beta refund terms.
 - [Fulfillment Policy](https://www.subscriptonarc.com/fulfillment): Digital delivery terms, Premium activation timing, merchant webhook fulfillment, and vault settlement.
 - [Support & Contact](https://www.subscriptonarc.com/support): How to reach SubScript — general support (support@subscriptonarc.com), billing/refunds/privacy/legal and security disclosures (compliance@subscriptonarc.com), plus answers to common questions.
+
+## Integration Guide (every page available as Markdown)
+
+The developer guide is one page per topic. Append `.md` to any path to get the plain-Markdown
+twin with no HTML to strip — e.g. https://www.subscriptonarc.com/docs/webhooks.md
+
+Essentials:
+- [Start here](https://www.subscriptonarc.com/docs/index.md): What SubScript is, which endpoint your billing model needs, and where the machine-readable specs live.
+- [5-minute quickstart](https://www.subscriptonarc.com/docs/quickstart.md): First sandbox Checkout Intent, the three ids to persist, redirect, and webhook fulfillment.
+- [Core concepts](https://www.subscriptonarc.com/docs/concepts.md): The four identifiers, the five-step lifecycle, per-step failure modes, and micro-USDC integer units.
+
+Platform:
+- [Protocol brief](https://www.subscriptonarc.com/docs/protocol.md): Live primitives versus deployment-scoped targets, and why the distinction matters.
+- [Choose a path](https://www.subscriptonarc.com/docs/paths.md): No-code, AI agent, backend REST, or direct protocol — with where each one stops.
+- [UPA model](https://www.subscriptonarc.com/docs/upa.md): Bounded authorization as the shared shape behind every billing type.
+- [No-code links](https://www.subscriptonarc.com/docs/nocode.md): Payment links and QR checkout with no backend integration.
+- [AI integration prompt](https://www.subscriptonarc.com/docs/vibecoder.md): Copy-paste agent prompt, plus the three things to review in generated code.
+
+Build:
+- [API reference](https://www.subscriptonarc.com/docs/developer.md): POST /api/intent fields, status polling, and status-code semantics.
+- [Subscriptions](https://www.subscriptonarc.com/docs/subscriptions.md): Fixed-schedule recurring billing, plan catalog, states, and lifecycle webhooks.
+- [Usage billing](https://www.subscriptonarc.com/docs/usage.md): Commit vaults, report-before-serve ordering, and the two denial cases.
+- [Webhooks](https://www.subscriptonarc.com/docs/webhooks.md): Raw-bytes HMAC verification, event-id claiming, sponsored payments, and delivery semantics.
+- [Test & debug](https://www.subscriptonarc.com/docs/testing.md): Sandbox versus live credentials, CLI triggers, test clocks, and both checklists.
+
+Reference:
+- [Errors](https://www.subscriptonarc.com/docs/errors.md): The error envelope and every common code.
+- [Receipts](https://www.subscriptonarc.com/docs/receipts.md): Arc memo receipts, visibility, and receipt tokens.
+- [On-chain](https://www.subscriptonarc.com/docs/contracts.md): Router memo payload and how each link type is verified.
+- [FAQ](https://www.subscriptonarc.com/docs/faq.md): Integration effort, billing models, fees, custody, and roadmap scope.
 
 ## Developer Resources
 

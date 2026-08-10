@@ -508,7 +508,9 @@ test.describe("mobile overflow audit", () => {
     const sidebar = desktopPage.getByRole("complementary");
     const walletLabel = desktopPage.getByText("Wallet Balance", { exact: true });
     const spendingLabel = desktopPage.getByText("Spending past (USDC)", { exact: true });
-    const commitLabel = desktopPage.getByText("Total Commit (LOCKED)", { exact: true });
+    const commitLabel = desktopPage.getByText("Total Commit", { exact: true });
+    const commitLockedLabel = desktopPage.getByText("Locked", { exact: true });
+    const commitUsedLabel = desktopPage.getByText("Used", { exact: true });
     const subscriptionsTitle = desktopPage.getByText("Active Subscriptions", { exact: true });
     const ledgerTitle = desktopPage.getByText("Transaction History", { exact: true });
 
@@ -516,6 +518,8 @@ test.describe("mobile overflow audit", () => {
     await expect(walletLabel).toBeVisible({ timeout: 120_000 });
     await expect(spendingLabel).toBeVisible();
     await expect(commitLabel).toBeVisible();
+    await expect(commitLockedLabel).toBeVisible();
+    await expect(commitUsedLabel).toBeVisible();
     await expect(subscriptionsTitle).toBeVisible();
     await expect(ledgerTitle).toBeVisible();
     await expect(desktopPage.getByRole("button", { name: "Manage Spending", exact: true })).toBeVisible();
@@ -546,7 +550,7 @@ test.describe("mobile overflow audit", () => {
 
     const mobileWalletLabel = mobilePage.getByText("Wallet Balance", { exact: true });
     const mobileSpendingLabel = mobilePage.getByText("Spending past (USDC)", { exact: true });
-    const mobileCommitLabel = mobilePage.getByText("Total Commit (LOCKED)", { exact: true });
+    const mobileCommitLabel = mobilePage.getByText("Total Commit", { exact: true });
     const mobileSubscriptionsTitle = mobilePage.getByText("Active Subscriptions", { exact: true });
     const mobileLedgerTitle = mobilePage.getByText("Transaction History", { exact: true });
     await expect(mobileWalletLabel).toBeVisible({ timeout: 120_000 });

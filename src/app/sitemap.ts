@@ -1,7 +1,21 @@
 import { MetadataRoute } from "next";
+import { docsSections, sectionHref } from "./docs/_components/sections";
 
 export default function sitemap(): MetadataRoute.Sitemap {
     const baseUrl = "https://www.subscriptonarc.com";
+
+    /* The guide is one route per section, so each is its own indexable page. Driven off the
+       same registry the sidebar uses, so adding a section never leaves the sitemap stale.
+       The overview keeps the higher priority; the sections sit just below it. */
+    const docsRoutes: MetadataRoute.Sitemap = docsSections
+        .filter((section) => section.slug)
+        .map((section) => ({
+            url: `${baseUrl}${sectionHref(section)}`,
+            lastModified: new Date(),
+            changeFrequency: "weekly" as const,
+            priority: 0.8,
+        }));
+
     return [
         {
             url: baseUrl,
@@ -15,6 +29,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
             changeFrequency: "weekly",
             priority: 0.9,
         },
+        ...docsRoutes,
         {
             url: `${baseUrl}/protocol`,
             lastModified: new Date(),
