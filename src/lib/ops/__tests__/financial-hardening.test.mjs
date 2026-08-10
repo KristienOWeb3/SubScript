@@ -21,7 +21,14 @@ test("session verification survives duplicate legacy and domain cookies", () => 
 
     assert.match(auth, /getCookieValues\(cookieStore, "subscript_session_token"\)/);
     assert.match(auth, /for \(const token of tokens\)/);
-    assert.match(auth, /select token from sessions where token = ANY\(\$1\)/);
+    /* The session lookup also filters out banned accounts, so this is a multi-line query
+       rather than the original single-line select. Asserted in parts: the session predicate,
+       then the ban exclusion, so a future reformat of the SQL does not fail the test while
+       the security properties it cares about are still present. */
+    assert.match(auth, /select s\.token/);
+    assert.match(auth, /s\.token = ANY\(\$1\)/);
+    assert.match(auth, /not exists/);
+    assert.match(auth, /from banned_accounts b/);
     assert.match(auth, /const liveHashes = new Set/);
     assert.match(auth, /liveHashes\.has\(candidate\.hash\)/);
     assert.match(auth, /candidate\.issuedAt > newestSession\.issuedAt/);

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { isUsableCircleApiKey } from "@/lib/circle/client";
+import { isGoogleSigninEnabled } from "@/lib/platform/flags";
 
 function resolveRedirectUri(request: Request, configuredRedirectUri: string | undefined) {
     const requestUrl = new URL(request.url);
@@ -31,6 +32,17 @@ function resolveRedirectUri(request: Request, configuredRedirectUri: string | un
 }
 
 export async function GET(request: Request) {
+    /* Runtime kill switch, checked BEFORE the env checks below so an admin pausing Google
+       gets a clean "unavailable" rather than a configuration error listing env vars. This
+       is the server-side half of the pause: hiding the button alone would still leave the
+       flow reachable by anyone who kept a tab open or hits the endpoint directly. */
+    if (!(await isGoogleSigninEnabled())) {
+        return NextResponse.json(
+            { error: "Continue with Google is temporarily unavailable. Please sign in with email.", paused: true },
+            { status: 503, headers: { "Cache-Control": "no-store" } },
+        );
+    }
+
     const appId = process.env.NEXT_PUBLIC_CIRCLE_APP_ID || process.env.CIRCLE_APP_ID;
     const googleClientId = process.env.NEXT_PUBLIC_CIRCLE_GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
     const redirectUri = resolveRedirectUri(request, process.env.NEXT_PUBLIC_CIRCLE_GOOGLE_REDIRECT_URI || process.env.CIRCLE_GOOGLE_REDIRECT_URI);

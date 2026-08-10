@@ -126,8 +126,25 @@ export async function getVerifiedSessionToken(headers: Headers): Promise<Verifie
     if (candidates.length === 0) return null;
 
     const hashes = candidates.map(c => c.hash);
+    /* Banned accounts are filtered out HERE rather than at sign-in, because a ban issued
+       mid-session would otherwise do nothing: sessions last 30 days, so a banned user's
+       existing token would keep authorizing every request until it expired. This runs on
+       every authenticated request, so the check is folded into the query that was already
+       being made — no extra round trip.
+
+       NOT EXISTS (rather than a join) so a wallet with several ban rows cannot duplicate
+       session rows, and expires_at is honoured so temporary bans lapse on their own. */
     const liveSessions = await pgQuery<{ token: string }>(
-        `select token from sessions where token = ANY($1) and expires_at > now()`,
+        `select s.token
+           from sessions s
+          where s.token = ANY($1)
+            and s.expires_at > now()
+            and not exists (
+                select 1
+                  from banned_accounts b
+                 where lower(b.address) = lower(s.wallet)
+                   and (b.expires_at is null or b.expires_at > now())
+            )`,
         [hashes]
     );
     const liveHashes = new Set(liveSessions.map(s => s.token));

@@ -20,6 +20,101 @@ export function isGasSponsorshipEnabled() {
     return Boolean(process.env.SPONSOR_PRIVATE_KEY);
 }
 
+export type SponsorWalletStatus = {
+    configured: boolean;
+    address: string | null;
+    balanceUsdc: string | null;
+    topupUsdc: string;
+    /* How many more top-ups the current balance can fund — the number an operator
+       actually acts on. A raw balance cannot answer "is this enough". */
+    estimatedTopupsRemaining: number | null;
+    underfunded: boolean;
+    emergencyStop: boolean;
+    error: string | null;
+};
+
+/**
+ * Sponsor wallet address and balance for the admin console.
+ *
+ * Reads the NATIVE balance at 18 decimals — the same value every sponsorship decision
+ * gates on (see the underfunding check in sponsorGasForBeneficiary below and the
+ * denomination note above it). The admin overview route previously read an ERC-20
+ * balanceOf on the USDC contract and formatted it at 6 decimals, which is a DIFFERENT
+ * asset from the one that pays for gas: the console could show a healthy balance while
+ * every sponsored payment failed with sponsor_underfunded.
+ *
+ * Never throws — the console must still render when the RPC is unreachable, so a failed
+ * read returns the address with a null balance and an error string rather than 500ing
+ * the whole overview.
+ */
+export async function getSponsorWalletStatus(): Promise<SponsorWalletStatus> {
+    const emergencyStop = process.env.SPONSOR_EMERGENCY_STOP === "true";
+    const topupUsdc = process.env.SPONSOR_GAS_TOPUP_USDC || "0.10";
+    const key = process.env.SPONSOR_PRIVATE_KEY;
+
+    if (!key) {
+        return {
+            configured: false,
+            address: null,
+            balanceUsdc: null,
+            topupUsdc,
+            estimatedTopupsRemaining: null,
+            underfunded: false,
+            emergencyStop,
+            error: null,
+        };
+    }
+
+    let address: string;
+    try {
+        address = new ethers.Wallet(key).address;
+    } catch (error: any) {
+        return {
+            configured: true,
+            address: null,
+            balanceUsdc: null,
+            topupUsdc,
+            estimatedTopupsRemaining: null,
+            underfunded: false,
+            emergencyStop,
+            error: `Invalid SPONSOR_PRIVATE_KEY: ${error?.message || "could not derive address"}`,
+        };
+    }
+
+    try {
+        const topupValue = ethers.parseUnits(topupUsdc, 18);
+        /* Same failover helper the sponsorship path uses, so the console does not report
+           an outage because one endpoint is unhealthy. */
+        const { provider } = await getRpcProviderForWrite();
+        const balance = await provider.getBalance(address);
+
+        return {
+            configured: true,
+            address,
+            balanceUsdc: ethers.formatUnits(balance, 18),
+            topupUsdc,
+            estimatedTopupsRemaining:
+                topupValue > BigInt(0) ? Number(balance / topupValue) : null,
+            /* Identical test to the live sponsorship check: the balance must cover the
+               top-up plus the sponsor's own gas for the transfer. */
+            underfunded: balance < topupValue * BigInt(2),
+            emergencyStop,
+            error: null,
+        };
+    } catch (error: any) {
+        return {
+            configured: true,
+            address,
+            balanceUsdc: null,
+            topupUsdc,
+            estimatedTopupsRemaining: null,
+            underfunded: false,
+            emergencyStop,
+            error: error?.message || "Failed to read sponsor balance",
+        };
+    }
+}
+
 export type SponsorFailureReason =
     | "sponsor_disabled"
     | "invalid_sponsor_config"

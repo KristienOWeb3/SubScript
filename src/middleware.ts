@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { Redis } from "@upstash/redis/cloudflare";
 import { Ratelimit } from "@upstash/ratelimit";
+import { adminWalletAllowlist } from "@/lib/admin/allowlist";
 
 const PUBLIC_HOST = "www.subscriptonarc.com";
 const APEX_HOST = "subscriptonarc.com";
@@ -17,43 +18,119 @@ const PUBLIC_ORIGIN = `https://${PUBLIC_HOST}`;
 const SESSION_ISSUER = "subscriptonarc.com";
 const SESSION_AUDIENCE = "subscript-app";
 
-/* Comma-separated wallets permitted to reach /admin. Unset means nobody, so a deploy that
-   forgets the variable locks the console rather than opening it. */
-function adminWalletAllowlist(): Set<string> {
-    return new Set(
-        (process.env.ADMIN_WALLET_ADDRESSES || process.env.ADMIN_WALLET_ADDRESS || "")
-            .split(",")
-            .map((entry) => entry.trim().toLowerCase())
-            .filter(Boolean),
-    );
-}
-
 /* Cookie presence proves nothing — any string satisfies it — so the JWT is verified with the
    same parameters that minted it and the wallet inside is matched against the allowlist.
 
    Deliberately does not consult the sessions table: middleware runs on every request and a
    database round trip here would tax the whole site, so a token revoked by signing out stays
-   accepted until it expires. Treat this as a gate, not the authority. The authoritative check
-   belongs in the /admin layout once that tree exists; /api/admin handlers already authenticate
-   independently (ADMIN_API_KEY or KEEPER_SECRET), which is why they bypass this. */
-async function isAuthorizedAdmin(request: NextRequest): Promise<boolean> {
-    const allowlist = adminWalletAllowlist();
-    if (allowlist.size === 0) return false;
+   accepted until it expires. Treat this as a gate, not the authority.
 
+   The authority is getAdminSession() in @/lib/admin/guard, enforced by the /admin layout and
+   by every /api/admin route handler — the latter matters because the isApiRoute guard below
+   means this gate never runs for /api/* at all. */
+async function isAuthorizedAdmin(request: NextRequest): Promise<boolean> {
     const token = request.cookies.get("subscript_session_token")?.value;
     const secret = process.env.JWT_SECRET;
     if (!token || !secret) return false;
 
+    let address = "";
     try {
         const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), {
             issuer: SESSION_ISSUER,
             audience: SESSION_AUDIENCE,
         });
-        const address = typeof payload.address === "string" ? payload.address.trim().toLowerCase() : "";
-        return address.length > 0 && allowlist.has(address);
+        address = typeof payload.address === "string" ? payload.address.trim().toLowerCase() : "";
     } catch {
         return false;
     }
+    if (!address) return false;
+
+    if (adminWalletAllowlist().has(address)) return true;
+    return await isDelegatedAdminCached(address);
+}
+
+/* Delegated admins live in the admin_wallets table, which the edge runtime cannot read
+   (no pg). The console mirrors that table into a Redis set on every grant/revoke, and
+   this reads the mirror.
+
+   Cached in module memory for MIRROR_TTL_MS so a burst of requests from one admin costs
+   one Redis round trip rather than one per request; the cache is per-isolate, so a revoke
+   can take up to the TTL to be felt at the edge. That lag is acceptable because the edge
+   is only a gate — the /admin layout and every /api/admin handler re-check against the
+   DATABASE on each request, so a revoked wallet can reach the shell and nothing else.
+
+   The same asymmetry contains the obvious objection to trusting Redis for authorization:
+   anyone able to write this key could pass the gate, but they would still be rejected by
+   the authoritative DB check behind it. Redis can admit you to the door, never the room. */
+const MIRROR_TTL_MS = 10_000;
+let mirrorCache: { wallets: Set<string>; fetchedAt: number } | null = null;
+
+async function isDelegatedAdminCached(address: string): Promise<boolean> {
+    const now = Date.now();
+    if (mirrorCache && now - mirrorCache.fetchedAt < MIRROR_TTL_MS) {
+        return mirrorCache.wallets.has(address);
+    }
+    if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) return false;
+
+    try {
+        const members = await redis.smembers("admin:wallets");
+        const wallets = new Set((members as string[]).map((entry) => String(entry).toLowerCase()));
+        mirrorCache = { wallets, fetchedAt: now };
+        return wallets.has(address);
+    } catch {
+        /* Redis unreachable: degrade to root-only rather than locking the console. Root
+           admins were already admitted above, so nothing here can lock everyone out. */
+        return false;
+    }
+}
+
+const DEFAULT_MAINTENANCE_MESSAGE = "SubScript is temporarily down for maintenance. We'll be back shortly.";
+
+/* Routes that stay up while maintenance mode is on.
+ *
+ * The admin console and its API must remain reachable so the switch can be turned back off,
+ * and the auth routes must work so an admin can sign in to get there. Everything else — the
+ * marketing site, dashboards, checkout, cron, webhooks — returns 503.
+ *
+ * Note this exempts the /admin PATH on any host, not just the admin subdomain, because the
+ * admin gate above accepts both (www.subscriptonarc.com/admin resolves to the same tree). */
+function isMaintenanceExempt(pathname: string, isAdminHost: boolean): boolean {
+    if (isAdminHost) return true;
+    if (pathname === "/admin" || pathname.startsWith("/admin/")) return true;
+    if (pathname.startsWith("/api/admin/")) return true;
+    if (pathname.startsWith("/api/auth/")) return true;
+    if (pathname === "/login" || pathname === "/signin") return true;
+    return false;
+}
+
+/* Edge-side maintenance read. Fails open on every path: no Redis, no key, malformed JSON,
+   or a thrown request all resolve to "not in maintenance". */
+async function readMaintenanceFlag(): Promise<{ enabled: boolean; message: string | null }> {
+    if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
+        return { enabled: false, message: null };
+    }
+    try {
+        const raw = await redis.get<unknown>("platform:flags");
+        if (!raw) return { enabled: false, message: null };
+        const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+        if (!parsed || typeof parsed !== "object") return { enabled: false, message: null };
+        const flags = parsed as { maintenanceEnabled?: unknown; maintenanceMessage?: unknown };
+        return {
+            enabled: flags.maintenanceEnabled === true,
+            message: typeof flags.maintenanceMessage === "string" ? flags.maintenanceMessage : null,
+        };
+    } catch {
+        return { enabled: false, message: null };
+    }
+}
+
+/* Self-contained 503 page. Inline styles rather than a nonce-bound <style>: this response
+   never reaches the CSP-header code below, so a nonce would not be honoured anyway. */
+function maintenancePage(message: string | null): string {
+    const safe = (message || DEFAULT_MAINTENANCE_MESSAGE).replace(/[<>&"]/g, (character) => {
+        return { "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[character] as string;
+    });
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SubScript — Temporarily Down</title></head><body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#000;color:#fff;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif"><main style="max-width:30rem;padding:2rem;text-align:center"><div style="font-size:.625rem;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:#ccff00">Maintenance</div><h1 style="margin:.75rem 0 0;font-size:1.5rem;font-weight:900;letter-spacing:-.02em">Temporarily down</h1><p style="margin:.75rem 0 0;font-size:.875rem;line-height:1.6;color:rgba(255,255,255,.6)">${safe}</p></main></body></html>`;
 }
 
 /* Initialize Upstash Redis REST client */
@@ -331,6 +408,38 @@ export async function middleware(request: NextRequest) {
             const adminUrl = request.nextUrl.clone();
             adminUrl.pathname = pathname === "/" ? "/admin" : `/admin${pathname}`;
             return NextResponse.rewrite(adminUrl);
+        }
+    }
+
+    /* Maintenance mode. Placed AFTER the admin gate on purpose: an authorized admin request to
+       /admin has already returned above, so the console cannot be taken down by the very switch
+       it operates. Without that ordering an operator could enable maintenance and permanently
+       lock themselves out of the page that disables it.
+
+       Also exempt: the auth routes (an admin must be able to sign IN to reach the console) and
+       the health endpoints (already returned at the top of this function, before any of this).
+
+       Reads the Redis mirror, never the database — middleware runs on the edge and cannot
+       import Prisma. A missing, unparseable, or unreachable mirror means NOT in maintenance:
+       fail-open, matching @/lib/platform/flags. A Redis outage must not black out the site. */
+    if (!isMaintenanceExempt(pathname, isAdminHost)) {
+        const maintenance = await readMaintenanceFlag();
+        if (maintenance.enabled) {
+            const retryAfter = "3600";
+            if (isApiRoute) {
+                return NextResponse.json(
+                    { error: "service_unavailable", message: maintenance.message || DEFAULT_MAINTENANCE_MESSAGE },
+                    { status: 503, headers: { "Retry-After": retryAfter, "Cache-Control": "no-store" } },
+                );
+            }
+            return new NextResponse(maintenancePage(maintenance.message), {
+                status: 503,
+                headers: {
+                    "Content-Type": "text/html; charset=utf-8",
+                    "Retry-After": retryAfter,
+                    "Cache-Control": "no-store",
+                },
+            });
         }
     }
 

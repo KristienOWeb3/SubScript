@@ -1,40 +1,19 @@
 import { NextResponse } from "next/server";
-import { ethers } from "ethers";
 import { prisma } from "@/lib/prisma";
-import { getSessionWallet } from "@/lib/auth";
-import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
-
-const ERC20_ABI = [
-  "function balanceOf(address owner) view returns (uint256)",
-];
+import { requireAdmin } from "@/lib/admin/guard";
+import { getSponsorWalletStatus } from "@/lib/sponsor/gas";
 
 export async function GET(request: Request) {
   try {
-    const sessionWallet = await getSessionWallet(request.headers);
-    if (!sessionWallet) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const auth = await requireAdmin(request);
+    if (!auth.ok) return auth.response;
 
-    const sponsorPrivateKey = process.env.SPONSOR_PRIVATE_KEY;
-    let sponsorWalletAddress: string | null = null;
-    let sponsorBalanceUsdc = "0";
+    /* Sponsor status comes from the shared helper so the console reads the SAME native
+       18dp balance that sponsorship decisions gate on. This route used to read an ERC-20
+       balanceOf at 6 decimals — a different asset entirely, which could show a healthy
+       balance while every sponsored payment failed with sponsor_underfunded. */
+    const sponsor = await getSponsorWalletStatus();
 
-    if (sponsorPrivateKey) {
-      try {
-        const wallet = new ethers.Wallet(sponsorPrivateKey);
-        sponsorWalletAddress = wallet.address;
-
-        const rpcUrl = process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network";
-        const provider = new ethers.JsonRpcProvider(rpcUrl);
-        const usdcContract = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, ERC20_ABI, provider);
-        const rawBal = await usdcContract.balanceOf(sponsorWalletAddress);
-        sponsorBalanceUsdc = ethers.formatUnits(rawBal, 6);
-      } catch (err) {
-        console.error("Failed to read sponsor wallet balance:", err);
-      }
-    }
-
-    /* Fetch all merchants */
     const merchantsRaw = await prisma.merchant.findMany({
       orderBy: { createdAt: "desc" },
       take: 100,
@@ -55,20 +34,25 @@ export async function GET(request: Request) {
       createdAt: m.createdAt,
     }));
 
-    /* Fetch active bans */
-    const db = prisma as any;
+    /* The defensive .catch(() => []) that used to wrap these reads hid the real problem:
+       the tables did not exist, so the ban form 500'd on every submit while the lists
+       silently rendered empty. The 20260810120000 migration creates them; let a genuine
+       failure surface now instead of masquerading as "no bans". */
     const [bannedAccounts, bannedIps] = await Promise.all([
-      db.bannedAccount?.findMany ? db.bannedAccount.findMany({ orderBy: { createdAt: "desc" } }).catch(() => []) : [],
-      db.bannedIp?.findMany ? db.bannedIp.findMany({ orderBy: { createdAt: "desc" } }).catch(() => []) : [],
+      prisma.bannedAccount.findMany({ orderBy: { createdAt: "desc" } }),
+      prisma.bannedIp.findMany({ orderBy: { createdAt: "desc" } }),
     ]);
 
     return NextResponse.json({
       success: true,
-      sponsorWalletAddress,
-      sponsorBalanceUsdc,
+      sponsor,
+      /* Retained for any client still reading the old flat fields. */
+      sponsorWalletAddress: sponsor.address,
+      sponsorBalanceUsdc: sponsor.balanceUsdc ?? "0",
       merchants,
       bannedAccounts,
       bannedIps,
+      viewerIsRoot: auth.admin.isRoot,
     });
   } catch (err: any) {
     console.error("Admin overview failed:", err);
