@@ -36,7 +36,14 @@ test("wallet sessions are server-revocable and signatures are origin-bound", asy
         source("src/lib/walletAuthMessage.ts"),
     ]);
     assert.match(auth, /insert into sessions \(wallet, token, expires_at\)/);
-    assert.match(auth, /select token from sessions where token = ANY\(\$1\)/);
+    /* The session lookup also excludes banned accounts, so this is a multi-line query
+       rather than the original single-line select. Asserted in parts — the session
+       predicate, then the ban exclusion — so reformatting the SQL cannot fail the test
+       while the properties it guards are still present. */
+    assert.match(auth, /select s\.token/);
+    assert.match(auth, /s\.token = ANY\(\$1\)/);
+    assert.match(auth, /not exists/);
+    assert.match(auth, /from banned_accounts b/);
     assert.match(auth, /issuer: SESSION_ISSUER/);
     assert.match(logout, /revokeSessionToken/);
     assert.match(verifier, /walletAuthRequestContext\(request\)/);
