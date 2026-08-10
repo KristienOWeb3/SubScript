@@ -1,11 +1,6 @@
 const SUBSCRIPT_ALIAS_SUFFIX = /\.(?:sub|hq|biz)$/i;
 
-export function titleCaseAlias(value: string): string {
-    if (!value) return "";
-    if (value.toLowerCase().startsWith("anonymous-")) {
-        const shortId = value.split("-")[1]?.slice(0, 6) || "";
-        return shortId ? `User #${shortId}` : "SubScript User";
-    }
+function titleCaseAlias(value: string): string {
     const words = value
         .replace(SUBSCRIPT_ALIAS_SUFFIX, "")
         .replace(/[._-]+/g, " ")

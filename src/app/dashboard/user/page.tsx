@@ -6141,7 +6141,37 @@ function UserDesktopSidebar({
         </button>
 
         {/* Navigation items with context-matching icons */}
-
+        <nav className="space-y-1.5" aria-label="User dashboard navigation">
+          {userDesktopTabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => onTabChange(tab.id)}
+                /* The active pill bleeds right into the content panel (negative margin + extra
+                   right padding), which is what makes the wireframe's tab-into-page seam work. */
+                className={`group flex w-full items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-l-full lg:rounded-r-none py-3 px-3.5 lg:px-4 text-left text-xs font-semibold transition-all relative ${
+                  isActive
+                    ? "bg-[#131522] text-[#ccff00] font-bold lg:-mr-5 lg:pr-7"
+                    : "text-white/70 hover:bg-white/[0.06] hover:text-white"
+                }`}
+                title={tab.label}
+              >
+                <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? "text-[#ccff00]" : "text-white/60 group-hover:text-white"}`} />
+                <span className="hidden lg:inline truncate">{tab.label}</span>
+                {tab.id === "inbox" && pendingDmCount > 0 && (
+                  <span className={`ml-auto flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[9px] font-bold ${
+                    isActive ? "bg-[#ccff00] text-black" : "bg-red-500 text-white"
+                  }`}>
+                    {pendingDmCount > 9 ? "9+" : pendingDmCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
       </div>
 
       <div className="space-y-4 mt-6">
@@ -6176,7 +6206,9 @@ function UserDesktopSidebar({
           <button
             type="button"
             onClick={() => onTabChange("dns")}
-
+            className={`flex w-full items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-l-full lg:rounded-r-none py-2.5 px-3.5 lg:px-4 text-xs font-medium text-white/70 transition hover:bg-white/[0.06] hover:text-white ${
+              activeTab === "dns" ? "bg-[#0b0b0e] text-[#ccff00] font-bold lg:-mr-5 lg:pr-7" : ""
+            }`}
             title="Settings"
           >
             <Sliders className="h-4.5 w-4.5 shrink-0" />
