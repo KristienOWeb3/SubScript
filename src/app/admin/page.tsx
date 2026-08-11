@@ -837,28 +837,28 @@ export default function AdminDashboardPage() {
                       </td>
                     </tr>
                   ) : (
-                    filteredMerchants.map((m) => (
-                      <tr key={m.walletAddress} className="hover:bg-white/[0.02]">
+                    filteredMerchants.map((merchant) => (
+                      <tr key={merchant.walletAddress} className="hover:bg-white/[0.02]">
                         <td className="py-3.5 px-3">
                           <div className="flex items-center gap-2.5">
                             <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 border border-white/10 font-bold text-white shrink-0">
-                              {m.profilePic ? (
-                                <img src={m.profilePic} alt={m.merchantName} className="h-full w-full rounded-xl object-cover" />
+                              {merchant.profilePic ? (
+                                <img src={merchant.profilePic} alt={merchant.merchantName} className="h-full w-full rounded-xl object-cover" />
                               ) : (
                                 <Building2 className="h-4 w-4 text-[#ccff00]" />
                               )}
                             </div>
-                            <span className="font-bold text-white uppercase tracking-wider">{m.merchantName}</span>
+                            <span className="font-bold text-white uppercase tracking-wider">{merchant.merchantName}</span>
                           </div>
                         </td>
-                        <td className="py-3.5 px-3 font-mono text-white/60">{m.walletAddress}</td>
+                        <td className="py-3.5 px-3 font-mono text-white/60">{merchant.walletAddress}</td>
                         <td className="py-3.5 px-3">
                           <span className="rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[9px] font-bold text-white/70">
-                            {m.tier}
+                            {merchant.tier}
                           </span>
                         </td>
                         <td className="py-3.5 px-3">
-                          {m.verified ? (
+                          {merchant.verified ? (
                             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 text-[9px] font-bold text-emerald-300">
                               <ShieldCheck className="h-3 w-3" /> Verified
                             </span>
@@ -871,17 +871,17 @@ export default function AdminDashboardPage() {
                         <td className="py-3.5 px-3 text-right">
                           <button
                             type="button"
-                            onClick={() => toggleVerification(m.walletAddress, m.verified)}
-                            disabled={verifyBusy === m.walletAddress}
+                            onClick={() => toggleVerification(merchant.walletAddress, merchant.verified)}
+                            disabled={verifyBusy === merchant.walletAddress}
                             className={`rounded-xl border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition ${
-                              m.verified
+                              merchant.verified
                                 ? "border-red-400/30 bg-red-400/10 text-red-300 hover:bg-red-400/20"
                                 : "border-emerald-400/30 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20"
                             }`}
                           >
-                            {verifyBusy === m.walletAddress ? (
+                            {verifyBusy === merchant.walletAddress ? (
                               <Loader2 className="h-3 w-3 animate-spin mx-auto" />
-                            ) : m.verified ? (
+                            ) : merchant.verified ? (
                               "Unverify"
                             ) : (
                               "Verify"
@@ -1234,6 +1234,7 @@ export default function AdminDashboardPage() {
                   value={banTarget}
                   onChange={(e) => setBanTarget(e.target.value)}
                   placeholder={banType === "ACCOUNT" ? "0x... wallet address" : "192.168.1.1"}
+                  aria-label={banType === "ACCOUNT" ? "Target wallet address to ban" : "Target IP address to ban"}
                   className={INPUT}
                 />
                 <input

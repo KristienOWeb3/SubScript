@@ -118,3 +118,9 @@ test("a zero or negative period never reports a revert", () => {
 test("an empty catalog raises nothing", () => {
     assert.deepEqual(planCatalogAdvisories(monthly100, []), []);
 });
+
+test("floorUsdcFormatted rounds UP to 2 decimal places to avoid rendering price below floor", () => {
+    const customMonthly100 = { name: "Custom", amountUsdc: BigInt(100_000_001), periodSeconds: MONTH };
+    const [advisory] = planCatalogAdvisories({ name: "Candidate", amountUsdc: BigInt(10_000_000), periodSeconds: MONTH }, [customMonthly100]);
+    assert.match(advisory.message, /Price it at 100\.01 USDC or above/);
+});

@@ -31,23 +31,38 @@ export function usePlatformFlags(): PublicPlatformFlags & { loaded: boolean } {
 
     useEffect(() => {
         let active = true;
-        fetch("/api/platform/flags")
-            .then((res) => (res.ok ? res.json() : null))
-            .then((json) => {
-                if (!active || !json) return;
-                setFlags({
-                    googleSigninEnabled: json.googleSigninEnabled !== false,
-                    externalWalletEnabled: json.externalWalletEnabled !== false,
+
+        const loadFlags = () => {
+            fetch("/api/platform/flags")
+                .then((res) => (res.ok ? res.json() : null))
+                .then((json) => {
+                    if (!active || !json) return;
+                    setFlags({
+                        googleSigninEnabled: json.googleSigninEnabled !== false,
+                        externalWalletEnabled: json.externalWalletEnabled !== false,
+                    });
+                })
+                .catch(() => {
+                    /* Keep the permissive defaults. */
+                })
+                .finally(() => {
+                    if (active) setLoaded(true);
                 });
-            })
-            .catch(() => {
-                /* Keep the permissive defaults. */
-            })
-            .finally(() => {
-                if (active) setLoaded(true);
-            });
+        };
+
+        loadFlags();
+
+        const intervalId = setInterval(loadFlags, 60000);
+        const handleVisibility = () => {
+            if (document.visibilityState === "visible") loadFlags();
+        };
+
+        window.addEventListener("visibilitychange", handleVisibility);
+
         return () => {
             active = false;
+            clearInterval(intervalId);
+            window.removeEventListener("visibilitychange", handleVisibility);
         };
     }, []);
 
