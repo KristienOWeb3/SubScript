@@ -24,6 +24,7 @@ import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import Script from "next/script";
 import { CIRCLE_GOOGLE_ENABLED } from "@/lib/featureFlags";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
+import { usePlatformFlags } from "@/hooks/usePlatformFlags";
 
 // Global type declaration for Cloudflare Turnstile
 declare global {
@@ -104,6 +105,7 @@ export default function SignupPage() {
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending: isConnecting } = useConnect();
   const { signMessageAsync } = useSignMessage();
+  const { externalWalletEnabled } = usePlatformFlags();
 
   const [authMethod, setAuthMethod] = useState<"select" | "email">("select");
   const [activeMerchantAddress, setActiveMerchantAddress] = useState<string | null>(null);
@@ -884,8 +886,10 @@ export default function SignupPage() {
               )}
 
               {/* External/self-custody wallets are for USERS only — merchant accounts must be
-                  email/embedded (server-recoverable) for a more professional, recoverable account. */}
-              {!merchantSignupIntent && (
+                  email/embedded (server-recoverable) for a more professional, recoverable account.
+                  externalWalletEnabled additionally hides this when an operator pauses external
+                  wallets; the server refuses the flow either way. */}
+              {!merchantSignupIntent && externalWalletEnabled && (
                 <>
               <div className="relative py-2 flex items-center justify-center">
                 <div className="absolute inset-0 flex items-center">

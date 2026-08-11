@@ -9,6 +9,7 @@ import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 import { Identity } from "@/components/Identity";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 import FinancialStatusBadge, { financialStatusMeta } from "@/components/FinancialStatusBadge";
+import { usePlatformFlags } from "@/hooks/usePlatformFlags";
 
 interface ReceiptClientProps {
     receiptId: string;
@@ -30,6 +31,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
     const { address: connectedAddress, isConnected } = useAccount();
     const { connect, isPending: isConnecting } = useConnect();
     const { signMessageAsync } = useSignMessage();
+    const { externalWalletEnabled } = usePlatformFlags();
 
     const [loading, setLoading] = useState(true);
     const [receipt, setReceipt] = useState<any>(null);
@@ -233,20 +235,26 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                     {authRequired ? (
                         <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-4">
                             <p className="text-xs text-white/40">
-                                {connectedAddress 
-                                    ? `Authenticate wallet ${formatAddress(connectedAddress)} to check access.` 
-                                    : "Connect your wallet to verify receipt access."}
+                                {connectedAddress
+                                    ? `Authenticate wallet ${formatAddress(connectedAddress)} to check access.`
+                                    : externalWalletEnabled
+                                      ? "Connect your wallet to verify receipt access."
+                                      : "Sign in to verify receipt access."}
                             </p>
-                            
+
                             {!connectedAddress ? (
                                 <div className="grid gap-3">
                                     <Link href={`/signin?next=${encodeURIComponent(`/receipt/${receiptId}`)}`} className="w-full rounded-xl bg-[#00d2b4] px-4 py-3 text-sm font-bold text-black flex items-center justify-center gap-2 hover:bg-[#00d2b4]/90 transition">Sign in with email or Google</Link>
-                                    <button
-                                        onClick={() => connect({ connector: injected() })}
-                                        className="w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-bold text-white flex items-center justify-center gap-2 hover:bg-white/10 transition"
-                                    >
-                                        Use browser wallet
-                                    </button>
+                                    {/* Hidden while external wallets are paused. The signature would
+                                        be refused by /api/auth/verify-signature anyway. */}
+                                    {externalWalletEnabled && (
+                                        <button
+                                            onClick={() => connect({ connector: injected() })}
+                                            className="w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-bold text-white flex items-center justify-center gap-2 hover:bg-white/10 transition"
+                                        >
+                                            Use browser wallet
+                                        </button>
+                                    )}
                                 </div>
                             ) : (
                                 <button

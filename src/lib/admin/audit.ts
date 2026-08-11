@@ -20,7 +20,13 @@ export type AdminAction =
     | "ADMIN_WALLET_GRANT"
     | "ADMIN_WALLET_REVOKE"
     | "BROADCAST_CREATED"
-    | "RECEIPT_INVITE";
+    | "RECEIPT_INVITE"
+    /* KYC_FORCE_APPROVE is the only action here that overrides a compliance guard rather than
+       flipping a product switch, so it is kept distinct from the ordinary KYC_DECISION: an
+       auditor filtering this log wants those rows on their own, not buried among routine reviews. */
+    | "KYC_DECISION"
+    | "KYC_FORCE_APPROVE"
+    | "KYC_MANUAL_CREATE";
 
 export function requestIp(request: Request): string | null {
     const forwarded = request.headers.get("x-forwarded-for");

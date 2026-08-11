@@ -54,6 +54,8 @@ import {
   CreditCard,
   Download,
   ExternalLink,
+  Filter,
+  ChevronDown,
   Globe,
   HelpCircle,
   Home,
@@ -204,10 +206,32 @@ const userDesktopTabs = [
   { id: "referrals", label: "Refer & Earn", icon: Gift },
 ] as const;
 
+/* Collapses the two status vocabularies in the activity feed onto the three buckets a spend view
+   can filter by. They are mapped separately rather than through one lookup because the same word
+   means different things on each side: a CANCELED subscription still settled every cycle it ran,
+   so its rows are completed history, whereas a DECLINED payment DM never moved money at all.
+   Anything unrecognised counts as completed — these rows exist because money moved, so the safe
+   default is to show them rather than quietly drop them out of the totals. */
+type TxStatus = "COMPLETED" | "PENDING" | "FAILED";
+
+function subscriptionTxStatus(raw: unknown): TxStatus {
+  const value = String(raw || "").toUpperCase();
+  if (value === "PENDING") return "PENDING";
+  /* Only a renewal that actually failed. CANCELED and EXPIRED are ordinary ends of life. */
+  if (value === "PAST_DUE") return "FAILED";
+  return "COMPLETED";
+}
+
+function dmTxStatus(raw: unknown): TxStatus {
+  const value = String(raw || "").toUpperCase();
+  if (["PENDING", "PROCESSING", "IN_PROGRESS", "AWAITING", "QUEUED"].includes(value)) return "PENDING";
+  if (["FAILED", "DECLINED", "REJECTED", "EXPIRED", "DISMISSED"].includes(value)) return "FAILED";
+  return "COMPLETED";
+}
+
 const formatAddress = (addr: string | null) => {
   if (!addr) return "";
-  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
-};
+  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;};
 
 const limitDecimals = (value: string, maxDecimals: number = 6): string => {
   if (!value || !value.includes(".")) return value;
@@ -679,6 +703,14 @@ export default function UserDashboard() {
 
   const [accountSubView, setAccountSubView] = useState<AccountSubView>("menu");
   const [spendSearchQuery, setSpendSearchQuery] = useState("");
+  const [spendCategory, setSpendCategory] = useState("all");
+  const [spendStatus, setSpendStatus] = useState("all");
+  const [spendDatePreset, setSpendDatePreset] = useState("all");
+  const [spendStartDate, setSpendStartDate] = useState("");
+  const [spendEndDate, setSpendEndDate] = useState("");
+  /* "" = every month. Otherwise "YYYY-MM", which both scopes the list and picks the month whose
+     In/Out totals are summarised above it. */
+  const [spendMonth, setSpendMonth] = useState("");
 
   /* Cross-tab navigation aims at a sub-view, but the reset below fires on every activeTab
      change and would clobber it. Parking the intent here lets the reset itself perform the
@@ -2938,6 +2970,10 @@ export default function UserDashboard() {
     (v: any) => Boolean(v?.active) || Number(v?.balanceUsdc || 0) > 0,
   );
   // Unified recent-activity feed: subscriptions are "recurring", paid/settled payment DMs are "one-time".
+  /* Each row carries `amountUsdc` (unsigned magnitude; read `incoming` for direction) and a
+     normalized `status`. Spend Analysis needs real numbers to total In/Out per month — it used to
+     recover amounts by stripping non-digits out of the formatted `amountLabel`, which silently
+     mis-parsed anything with a thousands separator and had no way to tell a credit from a debit. */
   const recentTransactions = [
     ...subscriptions.map((s) => {
       const usdVal = Number(s.amountCapUsdc) / 1_000_000;
@@ -2951,6 +2987,10 @@ export default function UserDashboard() {
         detail: `Plan • ${formatPlanPeriod(s.billingIntervalSeconds)}`,
         amountLabel: `-$${formatUsdc(s.amountCapUsdc)}/${formatPlanPeriod(s.billingIntervalSeconds)[0]}`,
         localAmountLabel: `-${localLabel}/${formatPlanPeriod(s.billingIntervalSeconds)[0]}`,
+        /* The per-period cap, not a settled amount — see the caveat rendered under the month
+           summary in Spend Analysis. */
+        amountUsdc: usdVal,
+        status: subscriptionTxStatus(s.status),
         time: s.lastSettlementTimestamp ? new Date(s.lastSettlementTimestamp).getTime() : new Date(s.createdAt).getTime(),
         incoming: false,
       };
@@ -2985,6 +3025,8 @@ export default function UserDashboard() {
             : d.title || d.description || (incoming ? "Received payment" : "Sent payment"),
           amountLabel: `${incoming ? "+" : "-"}$${formatUsdc(d.amountUsdc)}`,
           localAmountLabel: `${incoming ? "+" : "-"}${localLabel}`,
+          amountUsdc: usdVal,
+          status: dmTxStatus(d.status),
           time: new Date(d.createdAt).getTime(),
           incoming,
         };
@@ -4101,6 +4143,28 @@ export default function UserDashboard() {
 
                     {/* Settings Menu Options Card */}
                     <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-3 space-y-1 shadow-2xl">
+                      {/* Admin console. The desktop sidebar link is inside `hidden md:flex`, so on a
+                          phone this is the ONLY way in. A Link rather than a sub-view because /admin
+                          is its own route; visibility is cosmetic, since the /admin layout re-checks
+                          admin status server-side on every request. */}
+                      {isAdmin && (
+                        <Link
+                          href="/admin"
+                          className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="p-2.5 rounded-xl bg-[#ccff00]/10 text-[#ccff00] transition-all">
+                              <Shield className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <span className="block text-xs font-bold text-[#ccff00] uppercase tracking-wide">Admin</span>
+                              <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Platform controls, analytics and moderation</span>
+                            </div>
+                          </div>
+                          <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                        </Link>
+                      )}
+
                       <button
                         onClick={() => setAccountSubView("profile")}
                         className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
@@ -4450,29 +4514,30 @@ export default function UserDashboard() {
                 {/* 3. SPENDING LIMITS VIEW */}
                 {/* ========== SPEND ANALYSIS VIEW ========== */}
                 {accountSubView === "spend-analysis" && (() => {
-                  /* ---- Category classification engine ---- */
+                  /* ---- Category classification engine ----
+                     Keyed off tx.kind, which the feed already assigns from the source record, so
+                     the buckets here line up exactly with the category filter below and with the
+                     Home tab's pills. This previously sniffed substrings out of tx.detail, which
+                     put a payment described as "monthly transfer" in a different bucket than the
+                     filter did. Only outgoing rows count toward spend — money received is not
+                     spending, and summing it here inflated the headline figure. */
                   const spendCategories = (() => {
                     const cats: Record<string, { label: string; color: string; bgColor: string; borderColor: string; icon: string; total: number; items: typeof recentTransactions }> = {
                       subscriptions: { label: "Subscriptions", color: "#ccff00", bgColor: "rgba(204,255,0,0.08)", borderColor: "rgba(204,255,0,0.25)", icon: "🔄", total: 0, items: [] },
                       payments: { label: "Payments", color: "#38bdf8", bgColor: "rgba(56,189,248,0.08)", borderColor: "rgba(56,189,248,0.25)", icon: "💳", total: 0, items: [] },
                       transfers: { label: "Transfers", color: "#a78bfa", bgColor: "rgba(167,139,250,0.08)", borderColor: "rgba(167,139,250,0.25)", icon: "↗️", total: 0, items: [] },
-                      other: { label: "Other", color: "#f97316", bgColor: "rgba(249,115,22,0.08)", borderColor: "rgba(249,115,22,0.25)", icon: "📦", total: 0, items: [] },
+                      withdrawals: { label: "Withdrawals", color: "#f97316", bgColor: "rgba(249,115,22,0.08)", borderColor: "rgba(249,115,22,0.25)", icon: "📦", total: 0, items: [] },
                     };
+                    const bucketFor = (kind: string) =>
+                      kind === "recurring" ? "subscriptions"
+                      : kind === "transfers" ? "transfers"
+                      : kind === "withdrawals" ? "withdrawals"
+                      : "payments";
                     recentTransactions.forEach((tx) => {
-                      const amountNum = parseFloat(tx.amountLabel.replace(/[^0-9.]/g, "")) || 0;
-                      if (tx.kind === "recurring") {
-                        cats.subscriptions.total += amountNum;
-                        cats.subscriptions.items.push(tx);
-                      } else if (tx.detail?.toLowerCase().includes("payment") || tx.detail?.toLowerCase().includes("invoice")) {
-                        cats.payments.total += amountNum;
-                        cats.payments.items.push(tx);
-                      } else if (tx.detail?.toLowerCase().includes("transfer") || tx.detail?.toLowerCase().includes("send")) {
-                        cats.transfers.total += amountNum;
-                        cats.transfers.items.push(tx);
-                      } else {
-                        cats.payments.total += amountNum;
-                        cats.payments.items.push(tx);
-                      }
+                      if (tx.incoming) return;
+                      const bucket = cats[bucketFor(tx.kind)];
+                      bucket.total += tx.amountUsdc;
+                      bucket.items.push(tx);
                     });
                     return cats;
                   })();
@@ -4480,24 +4545,145 @@ export default function UserDashboard() {
                   const categoryEntries = Object.entries(spendCategories).filter(([, c]) => c.total > 0);
                   const allCategoryEntries = Object.entries(spendCategories);
 
+                  /* Months present in the data, newest first, for the month picker. */
+                  const monthKey = (ms: number) => {
+                    const d = new Date(ms);
+                    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+                  };
+                  const availableMonths = Array.from(
+                    new Set(recentTransactions.map((tx) => monthKey(tx.time))),
+                  ).sort((a, b) => b.localeCompare(a));
+                  const monthLabel = (key: string) => {
+                    const [year, month] = key.split("-");
+                    return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString("en-US", {
+                      month: "long",
+                      year: "numeric",
+                    });
+                  };
+
                   /* ---- Filtered transaction list ---- */
                   const spendTxList = recentTransactions.filter((tx) => {
-                    if (!spendSearchQuery.trim()) return true;
-                    const q = spendSearchQuery.toLowerCase();
-                    return tx.name.toLowerCase().includes(q) || tx.detail.toLowerCase().includes(q) || tx.amountLabel.toLowerCase().includes(q);
+                    if (spendSearchQuery.trim()) {
+                      const q = spendSearchQuery.toLowerCase();
+                      const hit =
+                        tx.name.toLowerCase().includes(q)
+                        || tx.detail.toLowerCase().includes(q)
+                        || tx.amountLabel.toLowerCase().includes(q);
+                      if (!hit) return false;
+                    }
+
+                    if (spendCategory !== "all") {
+                      if (spendCategory === "received") {
+                        if (!tx.incoming) return false;
+                      } else if (spendCategory === "sent") {
+                        if (tx.incoming) return false;
+                      } else if (tx.kind !== spendCategory) {
+                        return false;
+                      }
+                    }
+
+                    if (spendStatus !== "all" && tx.status !== spendStatus) return false;
+
+                    if (spendMonth && monthKey(tx.time) !== spendMonth) return false;
+
+                    if (spendDatePreset !== "all" || spendStartDate || spendEndDate) {
+                      const now = Date.now();
+                      if (spendDatePreset === "today") {
+                        const todayStart = new Date();
+                        todayStart.setHours(0, 0, 0, 0);
+                        if (tx.time < todayStart.getTime()) return false;
+                      } else if (spendDatePreset === "7days") {
+                        if (tx.time < now - 7 * 24 * 60 * 60 * 1000) return false;
+                      } else if (spendDatePreset === "30days") {
+                        if (tx.time < now - 30 * 24 * 60 * 60 * 1000) return false;
+                      } else if (spendDatePreset === "custom") {
+                        if (spendStartDate) {
+                          const startMs = new Date(spendStartDate).getTime();
+                          if (!Number.isNaN(startMs) && tx.time < startMs) return false;
+                        }
+                        if (spendEndDate) {
+                          const endMs = new Date(spendEndDate).setHours(23, 59, 59, 999);
+                          if (!Number.isNaN(endMs) && tx.time > endMs) return false;
+                        }
+                      }
+                    }
+
+                    return true;
                   });
+
+                  /* In/Out for the summary header. Computed from the rows actually on screen, so
+                     the header can never disagree with the list under it. Failed rows are excluded
+                     — no money moved — but pending ones count, since they are expected to. */
+                  const summaryRows = spendTxList.filter((tx) => tx.status !== "FAILED");
+                  const monthIn = summaryRows.filter((tx) => tx.incoming).reduce((s, tx) => s + tx.amountUsdc, 0);
+                  const monthOut = summaryRows.filter((tx) => !tx.incoming).reduce((s, tx) => s + tx.amountUsdc, 0);
+                  const summaryHasRecurring = summaryRows.some((tx) => !tx.incoming && tx.kind === "recurring");
+                  const spendFiltersActive =
+                    Boolean(spendSearchQuery)
+                    || spendCategory !== "all"
+                    || spendStatus !== "all"
+                    || spendDatePreset !== "all"
+                    || Boolean(spendStartDate)
+                    || Boolean(spendEndDate)
+                    || Boolean(spendMonth);
+                  const money = (value: number) =>
+                    `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+                  const exportSpendCsv = () => {
+                    if (spendTxList.length === 0) return;
+                    const headers = ["ID", "Title", "Type", "Category", "Amount (USDC)", "Status", "Date"];
+                    const rows = spendTxList.map((tx) => [
+                      tx.id,
+                      `"${tx.name.replace(/"/g, '""')}"`,
+                      tx.incoming ? "CREDIT" : "DEBIT",
+                      tx.kind,
+                      tx.amountUsdc.toFixed(2),
+                      tx.status,
+                      new Date(tx.time).toISOString(),
+                    ]);
+                    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+                    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", url);
+                    link.setAttribute("download", `subscript-transaction-history-${new Date().toISOString().slice(0, 10)}.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  };
 
                   return (
                     <div className="space-y-6">
                       {/* Header */}
-                      <div className="flex items-center gap-4">
-                        <button
-                          onClick={() => setAccountSubView("menu")}
-                          className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
-                        >
-                          <ChevronLeft className="h-5 w-5" />
-                        </button>
-                        <h2 className="text-sm font-black uppercase tracking-wider text-white">Spend Analysis</h2>
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => setAccountSubView("menu")}
+                            className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                          >
+                            <ChevronLeft className="h-5 w-5" />
+                          </button>
+                          <h2 className="text-base font-black uppercase tracking-wider text-white">Transaction History</h2>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={toggleBalanceVisible}
+                            className="p-2 rounded-xl border border-white/10 bg-white/5 text-white/60 hover:text-white transition-all"
+                            aria-label={balanceVisible ? "Hide balances" : "Show balances"}
+                            title={balanceVisible ? "Hide sensitive amounts" : "Show sensitive amounts"}
+                          >
+                            {balanceVisible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={exportSpendCsv}
+                            className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white transition hover:bg-white/10"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            <span>Download</span>
+                          </button>
+                        </div>
                       </div>
 
                       {/* ---- Hero: Total Spending ---- */}
@@ -4575,21 +4761,165 @@ export default function UserDashboard() {
                         <div>
                           <h4 className="text-xs font-black uppercase tracking-wider text-white">Smart category</h4>
                           <p className="text-[10px] text-white/45 leading-relaxed mt-1">
-                            We&apos;ve categorized your transactions automatically based on subscription type and payment context. Categories update as new transactions come in.
+                            Transactions are categorized by type as they arrive. The totals above cover money
+                            going out only — payments you received are excluded, and are listed under the
+                            Received filter below.
                           </p>
                         </div>
                       </div>
 
-                      {/* ---- Search bar ---- */}
-                      <div className="relative">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30 pointer-events-none" />
-                        <input
-                          type="text"
-                          value={spendSearchQuery}
-                          onChange={(e) => setSpendSearchQuery(e.target.value)}
-                          placeholder="Search for any transaction"
-                          className="w-full rounded-2xl border border-white/10 bg-white/[0.04] pl-11 pr-4 py-3.5 text-xs text-white placeholder:text-white/25 focus:border-[#ccff00]/30 focus:outline-none focus:ring-1 focus:ring-[#ccff00]/20 transition-all"
-                        />
+                      {/* ---- Search + filters ---- */}
+                      <div className="space-y-3">
+                        <div className="relative">
+                          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={spendSearchQuery}
+                            onChange={(e) => setSpendSearchQuery(e.target.value)}
+                            placeholder="Search for any transaction"
+                            className="w-full rounded-2xl border border-white/10 bg-white/[0.04] pl-11 pr-4 py-3.5 text-xs text-white placeholder:text-white/25 focus:border-[#ccff00]/30 focus:outline-none focus:ring-1 focus:ring-[#ccff00]/20 transition-all"
+                          />
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2.5 font-sans">
+                          {/* Category Filter Pill Dropdown */}
+                          <div className="relative inline-flex items-center">
+                            <div className="pointer-events-none absolute left-3 flex items-center text-white/40">
+                              <Filter className="h-3.5 w-3.5 text-[#ccff00]" />
+                            </div>
+                            <select
+                              value={spendCategory}
+                              onChange={(e) => setSpendCategory(e.target.value)}
+                              className="appearance-none rounded-xl border border-white/10 bg-white/[0.04] pl-9 pr-7 py-2 text-xs font-bold text-white/90 focus:border-[#ccff00]/50 focus:outline-none cursor-pointer"
+                            >
+                              <option value="all" className="bg-[#121212] text-white">All Categories 🈳</option>
+                              <option value="recurring" className="bg-[#121212] text-white">Subscriptions 🔄</option>
+                              <option value="one-time" className="bg-[#121212] text-white">One Time 💳</option>
+                              <option value="transfers" className="bg-[#121212] text-white">Transfers ↗️</option>
+                              <option value="withdrawals" className="bg-[#121212] text-white">Withdrawals 📦</option>
+                              <option value="sent" className="bg-[#121212] text-white">Sent (Debit)</option>
+                              <option value="received" className="bg-[#121212] text-white">Received (Credit)</option>
+                            </select>
+                            <ChevronDown className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-white/40" />
+                          </div>
+
+                          {/* Status Filter Dropdown */}
+                          <div className="relative inline-flex items-center">
+                            <select
+                              value={spendStatus}
+                              onChange={(e) => setSpendStatus(e.target.value)}
+                              className="appearance-none rounded-xl border border-white/10 bg-white/[0.04] pl-3 pr-7 py-2 text-xs font-bold text-white/90 focus:border-[#ccff00]/50 focus:outline-none cursor-pointer"
+                            >
+                              <option value="all" className="bg-[#121212] text-white">All Status ∨</option>
+                              <option value="COMPLETED" className="bg-[#121212] text-white">Completed</option>
+                              <option value="PENDING" className="bg-[#121212] text-white">Pending</option>
+                              <option value="FAILED" className="bg-[#121212] text-white">Failed</option>
+                            </select>
+                            <ChevronDown className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-white/40" />
+                          </div>
+
+                          {/* Date Preset Filter */}
+                          <select
+                            value={spendDatePreset}
+                            onChange={(e) => {
+                              setSpendDatePreset(e.target.value);
+                              if (e.target.value !== "custom") {
+                                setSpendStartDate("");
+                                setSpendEndDate("");
+                              }
+                            }}
+                            className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-white/90 focus:border-[#ccff00]/50 focus:outline-none cursor-pointer"
+                          >
+                            <option value="all" className="bg-[#121212] text-white">All Time</option>
+                            <option value="today" className="bg-[#121212] text-white">Today</option>
+                            <option value="7days" className="bg-[#121212] text-white">Last 7 Days</option>
+                            <option value="30days" className="bg-[#121212] text-white">Last 30 Days</option>
+                            <option value="custom" className="bg-[#121212] text-white">Custom Date Range…</option>
+                          </select>
+
+                          {spendFiltersActive && (
+                            <button
+                              onClick={() => {
+                                setSpendSearchQuery("");
+                                setSpendCategory("all");
+                                setSpendStatus("all");
+                                setSpendDatePreset("all");
+                                setSpendStartDate("");
+                                setSpendEndDate("");
+                                setSpendMonth("");
+                              }}
+                              className="rounded-xl bg-white/10 px-3 py-2 text-[11px] font-bold text-white/80 transition hover:bg-white/20"
+                            >
+                              Clear filters
+                            </button>
+                          )}
+
+                          <span className="ml-auto font-mono text-[10px] font-semibold text-white/40">
+                            Showing {spendTxList.length} of {recentTransactions.length}
+                          </span>
+                        </div>
+
+                        {spendDatePreset === "custom" && (
+                          <div className="flex flex-wrap items-center gap-2 font-sans">
+                            <input
+                              type="date"
+                              value={spendStartDate}
+                              onChange={(e) => setSpendStartDate(e.target.value)}
+                              className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-white/90 focus:border-[#ccff00]/50 focus:outline-none"
+                            />
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-white/30">to</span>
+                            <input
+                              type="date"
+                              value={spendEndDate}
+                              onChange={(e) => setSpendEndDate(e.target.value)}
+                              className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-white/90 focus:border-[#ccff00]/50 focus:outline-none"
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* ---- Month summary: In / Out for whatever is on screen ---- */}
+                      <div className="liquid-glass rounded-3xl border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <select
+                              value={spendMonth}
+                              onChange={(e) => setSpendMonth(e.target.value)}
+                              className="rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-base font-extrabold text-white focus:border-[#ccff00]/50 focus:outline-none cursor-pointer"
+                            >
+                              <option value="" className="bg-[#121212] text-white">All months ∨</option>
+                              {availableMonths.map((key) => (
+                                <option key={key} value={key} className="bg-[#121212] text-white">
+                                  {monthLabel(key)} ∨
+                                </option>
+                              ))}
+                            </select>
+                            <span className="rounded-full bg-[#7c3aed]/20 border border-[#7c3aed]/40 px-3 py-1 text-xs font-bold text-[#a78bfa] flex items-center gap-1.5">
+                              <span>🪙</span> Monthly Overview
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-6">
+                            <div>
+                              <span className="text-xs font-bold text-white/50">In</span>{" "}
+                              <span className="text-lg font-extrabold tracking-tight text-[#ccff00]">
+                                {balanceVisible ? money(monthIn) : "••••"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-xs font-bold text-white/50">Out</span>{" "}
+                              <span className="text-lg font-extrabold tracking-tight text-white">
+                                {balanceVisible ? money(monthOut) : "••••"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <p className="mt-3 text-[10px] leading-relaxed text-white/35">
+                          Totals cover the {spendTxList.length} transaction{spendTxList.length === 1 ? "" : "s"} listed
+                          below, excluding failed ones.
+                          {summaryHasRecurring
+                            ? " Subscriptions count at their per-period cap, so Out is an upper bound on recurring spend rather than an exact debit total."
+                            : ""}
+                        </p>
                       </div>
 
                       {/* ---- Transaction list ---- */}
@@ -4597,7 +4927,7 @@ export default function UserDashboard() {
                         {spendTxList.length === 0 ? (
                           <div className="flex flex-col items-center justify-center py-12 text-center">
                             <DollarSign className="h-8 w-8 text-white/15 mb-3" />
-                            <p className="text-xs text-white/35">{spendSearchQuery ? "No matching transactions." : "No transactions yet."}</p>
+                            <p className="text-xs text-white/35">{spendFiltersActive ? "No matching transactions." : "No transactions yet."}</p>
                           </div>
                         ) : (
                           <div className="divide-y divide-white/[0.05]">
@@ -4618,8 +4948,15 @@ export default function UserDashboard() {
                                 </div>
                                 <div className="text-right shrink-0">
                                   <span className={`text-sm font-extrabold ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>{balanceVisible ? tx.amountLabel : "••••"}</span>
-                                  <span className={`block text-[8px] font-bold uppercase tracking-wider mt-0.5 ${tx.kind === "recurring" ? "text-[#ccff00]/60" : "text-sky-400/60"}`}>
-                                    {tx.kind === "recurring" ? "Recurring" : "One-time"}
+                                  <span className="mt-0.5 flex items-center justify-end gap-1.5">
+                                    {tx.status !== "COMPLETED" && (
+                                      <span className={`text-[8px] font-bold uppercase tracking-wider ${tx.status === "PENDING" ? "text-amber-400/70" : "text-red-400/70"}`}>
+                                        {tx.status}
+                                      </span>
+                                    )}
+                                    <span className={`text-[8px] font-bold uppercase tracking-wider ${tx.kind === "recurring" ? "text-[#ccff00]/60" : "text-sky-400/60"}`}>
+                                      {tx.kind === "recurring" ? "Recurring" : "One-time"}
+                                    </span>
                                   </span>
                                 </div>
                               </div>
@@ -6270,15 +6607,18 @@ function UserDesktopSidebar({
           })}
 
           {/* Separate from the tab list because it navigates out to /admin rather than
-              switching a tab, so it cannot be a UserTab. Visibility is cosmetic — the
-              /admin layout re-checks admin status server-side on every request. */}
+              switching a tab, so it cannot be a UserTab. Shape matches the sibling pills —
+              including collapsing to icon-only below lg — so it doesn't read as a stray
+              element. It has no active state because leaving the route unmounts this nav.
+              Visibility is cosmetic; the /admin layout re-checks admin status server-side. */}
           {isAdmin && (
             <Link
               href="/admin"
-              className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-[#ccff00] transition hover:bg-[#ccff00]/10"
+              title="Admin"
+              className="group flex w-full items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-l-full lg:rounded-r-none py-3 px-3.5 lg:px-4 text-left text-xs font-semibold text-[#ccff00] transition-all hover:bg-[#ccff00]/10"
             >
-              <Shield className="h-5 w-5" />
-              <span>Admin</span>
+              <Shield className="h-4.5 w-4.5 shrink-0" />
+              <span className="hidden lg:inline truncate">Admin</span>
             </Link>
           )}
         </nav>
