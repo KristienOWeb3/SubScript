@@ -51,6 +51,7 @@ If you use a scheduler other than the workflow above, hit each **via `GET`** wit
 | Endpoint | Suggested cadence | Purpose |
 |---|---|---|
 | `/api/cron/reconcile` | every 15 min | Recover stuck premium-upgrade payment sessions (user-facing — keep frequent) |
+| `/api/keeper/vault-topup` | every 15 min | Refill metered vaults under a user's auto top-up mandate (user-facing — keep frequent) |
 | `/api/cron/billing` | daily | Premium (merchant→SubScript) recurring billing + grace-period downgrades |
 | `/api/internal/payroll` | daily | Execute due payroll campaigns (per-payday atomic claim makes overlapping runs safe) |
 | `/api/internal/billing` | daily | Premium downgrade sweep for delinquent merchants |
@@ -60,6 +61,15 @@ If you use a scheduler other than the workflow above, hit each **via `GET`** wit
 - **`/api/internal/billing` — use GET for the sweep.** Its `POST` handler is the
   HMAC-signed protocol webhook receiver (verified with `SUBSCRIPT_WEBHOOK_SECRET`),
   **not** the cron. Point the scheduler at `GET`.
+- **`/api/keeper/vault-topup` signs as the USER, not the platform.** It commits from the
+  subscriber's Circle MPC wallet under the mandate they granted at
+  `POST /api/user/vault/auto-topup`, bounded by three independent ceilings: the
+  `auto_topup_enabled` flag, `monthly_spent_usdc` against `monthly_limit_usdc`, and the real
+  ERC-20 allowance approved when the mandate was granted. It **reads** that allowance and never
+  re-approves it — a user who revokes their approval from any wallet stops the keeper dead, with
+  no action needed from us. Over-running it is safe: it re-checks the balance and disarms if the
+  user already topped up, and each attempt reuses one Circle idempotency key derived from the
+  arming instant.
 - **Idempotency / safety.** These are safe to over-run: `customer-billing`/`cron-billing`
   gate every charge on the contract's sequence bitmap, and `internal/payroll` atomically
   claims each payday before moving funds. A missed run just delays work to the next

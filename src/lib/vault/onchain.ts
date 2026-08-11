@@ -29,6 +29,7 @@ export const VAULT_ABI = [
 const USDC_ABI = [
     "function approve(address spender, uint256 amount) returns (bool)",
     "function allowance(address owner, address spender) view returns (uint256)",
+    "function balanceOf(address account) view returns (uint256)",
 ];
 
 export type VaultState = {
@@ -150,6 +151,35 @@ export async function ensureUsdcAllowance(custody: WalletCustody, spender: strin
             args: [spender, amount],
         });
     }
+}
+
+/** Read the wallet's current USDC allowance to `spender`. The auto top-up keeper checks this
+    before every unattended commit: the allowance the user approved when granting the mandate is
+    the one ceiling the chain enforces, so a drained or user-revoked approval must stop the keeper
+    rather than be silently re-raised. Never call ensureUsdcAllowance from an unattended path — it
+    would re-approve the ceiling the user just revoked. */
+export async function readUsdcAllowance(owner: string, spender: string): Promise<bigint> {
+    const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, USDC_ABI, readProvider());
+    return BigInt(await usdc.allowance(owner, spender));
+}
+
+/** Read a wallet's ERC-20 USDC balance (6 dp), the spendable source for a vault commit. */
+export async function readUsdcBalance(owner: string): Promise<bigint> {
+    const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, USDC_ABI, readProvider());
+    return BigInt(await usdc.balanceOf(owner));
+}
+
+/** Set the wallet's USDC allowance to `spender` to an exact value, up or DOWN. Used to revoke an
+    auto top-up mandate (amount 0); ensureUsdcAllowance only ever raises. */
+export async function setUsdcAllowance(walletAddress: string, spender: string, amount: bigint) {
+    const custody = await getWalletCustody(walletAddress);
+    const { txHash } = await custody.executeContract({
+        contractAddress: USDC_NATIVE_GAS_ADDRESS,
+        abi: USDC_ABI,
+        functionName: "approve",
+        args: [spender, amount],
+    });
+    return txHash;
 }
 
 export function getKeeperSigner(): ethers.Wallet {

@@ -3,6 +3,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
 import { accountDisplayName, merchantDisplayName } from "@/lib/identityDisplay";
+import { remainingMicros } from "@/lib/vault/autoTopUp";
 
 export async function GET(request: Request) {
     try {
@@ -47,6 +48,9 @@ export async function GET(request: Request) {
                 commitUsdc: v.commitUsdc.toString(),
                 owedUsdc: v.owedUsdc.toString(),
                 accruedUsageUsdc: v.accruedUsageUsdc.toString(),
+                /* Server-authoritative. The dashboard used to derive this locally while
+                   /api/user/vault/status computed it differently — one definition now. */
+                remainingUsdc: remainingMicros(v.balanceUsdc, v.accruedUsageUsdc).toString(),
                 active: v.active,
                 disputed: v.disputed,
                 cancelRequestedAt: v.cancelRequestedAt,
@@ -59,6 +63,15 @@ export async function GET(request: Request) {
                 monthlyLimitUsdc: v.monthlyLimitUsdc.toString(),
                 monthlySpentUsdc: v.monthlySpentUsdc.toString(),
                 lastTopUpAt: v.lastTopUpAt,
+                /* Mandate state is deliberately USER-branch only: the merchant below gets the
+                   vault's balance and usage, but not how their customer funds it. */
+                autoTopUpEnabled: v.autoTopUpEnabled,
+                autoTopUpConsentAt: v.autoTopUpConsentAt,
+                autoTopUpAllowanceUsdc: v.autoTopUpAllowanceUsdc.toString(),
+                monthlyWindowStart: v.monthlyWindowStart,
+                topUpDueAt: v.topUpDueAt,
+                autoTopUpFailureCode: v.autoTopUpFailureCode,
+                autoTopUpFailedAt: v.autoTopUpFailedAt,
                 createdAt: v.createdAt,
                 updatedAt: v.updatedAt
             }));
@@ -86,6 +99,9 @@ export async function GET(request: Request) {
                 commitUsdc: v.commitUsdc.toString(),
                 owedUsdc: v.owedUsdc.toString(),
                 accruedUsageUsdc: v.accruedUsageUsdc.toString(),
+                /* Server-authoritative. The dashboard used to derive this locally while
+                   /api/user/vault/status computed it differently — one definition now. */
+                remainingUsdc: remainingMicros(v.balanceUsdc, v.accruedUsageUsdc).toString(),
                 active: v.active,
                 disputed: v.disputed,
                 cancelRequestedAt: v.cancelRequestedAt,

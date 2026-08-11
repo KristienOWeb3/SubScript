@@ -778,6 +778,21 @@ model MeteredVault {
   monthlySpentUsdc  BigInt   @default(0) @map("monthly_spent_usdc")
   lastTopUpAt       DateTime? @map("last_top_up_at")
 
+  // Auto top-up mandate. The user grants it explicitly (autoTopUpEnabled defaults false); the
+  // keeper refills the vault unattended while all three bounds hold: the flag, monthlySpentUsdc
+  // against monthlyLimitUsdc within the calendar month anchored by monthlyWindowStart, and the
+  // real on-chain allowance mirrored in autoTopUpAllowanceUsdc. topUpDueAt is an arming flag set
+  // by report-usage and cleared by the keeper — not a schedule.
+  // NOTE: the CHECK constraints on these columns live only in SQL (see the auto-topup migration);
+  // `prisma migrate dev` / `db push` would silently drop them.
+  autoTopUpEnabled       Boolean   @default(false) @map("auto_topup_enabled")
+  autoTopUpConsentAt     DateTime? @map("auto_topup_consent_at")
+  autoTopUpAllowanceUsdc BigInt    @default(0) @map("auto_topup_allowance_usdc")
+  monthlyWindowStart     DateTime? @map("monthly_window_start")
+  topUpDueAt             DateTime? @map("topup_due_at")
+  autoTopUpFailureCode   String?   @map("auto_topup_failure_code")
+  autoTopUpFailedAt      DateTime? @map("auto_topup_failed_at")
+
   // On-chain escrow mirror (dormant until SubScriptVault is deployed + routes cut over).
   commitUsdc        BigInt   @default(0) @map("commit_usdc")
   owedUsdc          BigInt   @default(0) @map("owed_usdc")

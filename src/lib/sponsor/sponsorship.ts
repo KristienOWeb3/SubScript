@@ -29,6 +29,10 @@ export type SponsorCustody = "CIRCLE_SCA" | "CIRCLE_EOA" | "LEGACY_EOA";
 export type SponsoredGasAction =
     | "execute_tx"
     | "vault_commit"
+    /* Deliberately distinct from vault_commit: the per-action daily limit is counted per action,
+       so sharing the bucket would let a user's manual commits silently exhaust their unattended
+       top-ups (or the reverse) with no diagnosable failure. */
+    | "vault_auto_topup"
     | "vault_withdraw"
     | "subscribe"
     | "subscription_change"
