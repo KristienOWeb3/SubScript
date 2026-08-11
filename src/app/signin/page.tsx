@@ -19,6 +19,7 @@ import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { CIRCLE_GOOGLE_ENABLED } from "@/lib/featureFlags";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
+import { usePlatformFlags } from "@/hooks/usePlatformFlags";
 import Script from "next/script";
 
 function SignInContent() {
@@ -32,6 +33,9 @@ function SignInContent() {
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending: isConnecting } = useConnect();
   const { signMessageAsync } = useSignMessage();
+  /* Hides the web3 button when an operator pauses external wallets. Cosmetic only —
+     /api/auth/verify-signature refuses the flow regardless. */
+  const { externalWalletEnabled } = usePlatformFlags();
 
   const [authMethod, setAuthMethod] = useState<"select" | "email">("select");
   const [email, setEmail] = useState(initialEmail);
@@ -363,30 +367,34 @@ function SignInContent() {
                 </div>
               )}
 
-              <div className="relative py-2 flex items-center justify-center">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-white/5"></div>
-                </div>
-                <span className="relative px-3 bg-[#0a0a0c] text-[9px] font-bold text-white/30 uppercase tracking-widest">
-                  or use web3
-                </span>
-              </div>
+              {externalWalletEnabled && (
+                <>
+                  <div className="relative py-2 flex items-center justify-center">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-white/5"></div>
+                    </div>
+                    <span className="relative px-3 bg-[#0a0a0c] text-[9px] font-bold text-white/30 uppercase tracking-widest">
+                      or use web3
+                    </span>
+                  </div>
 
-              <button
-                onClick={() => {
-                  posthog.capture("signin_method_selected", { method: "wallet" });
-                  handleConnectWallet();
-                }}
-                disabled={isConnecting || siweLoading}
-                className="w-full py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/90 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-black shadow-[0_0_20px_rgba(0,210,180,0.15)]"
-              >
-                {isConnecting || siweLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Wallet className="w-4 h-4" />
-                )}
-                Connect Web3 Wallet
-              </button>
+                  <button
+                    onClick={() => {
+                      posthog.capture("signin_method_selected", { method: "wallet" });
+                      handleConnectWallet();
+                    }}
+                    disabled={isConnecting || siweLoading}
+                    className="w-full py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/90 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-black shadow-[0_0_20px_rgba(0,210,180,0.15)]"
+                  >
+                    {isConnecting || siweLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Wallet className="w-4 h-4" />
+                    )}
+                    Connect Web3 Wallet
+                  </button>
+                </>
+              )}
 
               {siweError && (
                 <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-400 flex items-start gap-3 mt-2">

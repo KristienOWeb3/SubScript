@@ -81,7 +81,7 @@ test("checkout copy distinguishes testnet settlement from public demo simulation
 
 test("an unpayable link offers no way to start paying it", () => {
     const client = source(CLIENT);
-    assert.match(client, /\{!isConnected && !cannotPayLink && \(walletConnectors\.length > 1/);
+    assert.match(client, /\{!isConnected && !cannotPayLink && (externalWalletEnabled && )?\(walletConnectors\.length > 1/);
     assert.match(client, /\{!embeddedPaySession && !cannotPayLink && \(/);
     assert.match(client, /\{embeddedPaySession && !cannotPayLink && \(/);
     assert.match(client, /\{checkoutUrl && !cannotPayLink && \(/);

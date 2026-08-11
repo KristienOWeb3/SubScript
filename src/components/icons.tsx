@@ -50,6 +50,7 @@ export const ExternalLink = wrap(P.ArrowSquareOut);
 export const Eye = wrap(P.Eye);
 export const EyeOff = wrap(P.EyeSlash);
 export const FileText = wrap(P.FileText);
+export const Filter = wrap(P.Funnel);
 export const Globe = wrap(P.Globe);
 export const Globe2 = wrap(P.Globe);
 export const Heart = wrap(P.Heart);

@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import DashboardHeader from "@/components/DashboardHeader";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import DashboardSkeleton from "@/components/DashboardSkeleton";
+import { SkeletonCard, SkeletonRows, SkeletonStatGrid } from "@/components/ui/skeletons";
 import { getDashboardUrl } from "@/utils/navigation";
 import { buildCheckoutUrl, buildSubscribeUrl } from "@/lib/checkoutUrl";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
@@ -36,7 +37,7 @@ import {
     RefreshCw, Sliders, CheckCircle, AlertTriangle,
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
     Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
-    Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, User, Share2,
+    Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, ChevronRight, User, Share2,
     ShieldCheck, Save, Home, SquaresFour, Broadcast, MessageSquare, HelpCircle, Send, Terminal, Bell, Search
 } from "@/components/icons";
 import { QRCode } from "react-qrcode-logo";
@@ -3311,14 +3312,39 @@ Please complete the following implementation tasks:
     const renderSettingsTab = () => {
         if (!userSettings) {
             return (
-                <div className="flex items-center justify-center py-20">
-                    <Loader2 className="w-8 h-8 animate-spin text-[#00d2b4]" />
+                <div className="space-y-6 max-w-4xl mx-auto">
+                    <SkeletonCard label="Loading help and support" lines={3} headline={false} />
+                    <SkeletonCard label="Loading failed-renewal policy" lines={3} headline={false} />
+                    <SkeletonCard label="Loading profile settings" lines={4} headline={false} />
                 </div>
             );
         }
 
         return (
             <div className="space-y-8 max-w-4xl mx-auto">
+                {/* Admin console. The sidebar Admin tab lives inside `hidden md:block`, so on a phone
+                    this card is the only way in. Visibility is cosmetic — the /admin layout re-checks
+                    admin status server-side on every request. */}
+                {isAdmin && (
+                    <Link
+                        href="/admin"
+                        className="liquid-glass flex items-center justify-between gap-4 rounded-3xl border border-[#ccff00]/20 bg-[#ccff00]/[0.04] p-6 shadow-2xl transition hover:bg-[#ccff00]/[0.08] md:hidden"
+                    >
+                        <div className="flex items-center gap-3">
+                            <div className="rounded-xl bg-[#ccff00]/10 p-2.5 text-[#ccff00]">
+                                <Shield className="h-4 w-4" />
+                            </div>
+                            <div>
+                                <span className="block text-sm font-bold uppercase tracking-wider text-[#ccff00]">Admin</span>
+                                <span className="mt-0.5 block font-sans text-[11px] text-white/40">
+                                    Platform controls, analytics and moderation
+                                </span>
+                            </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-white/30" />
+                    </Link>
+                )}
+
                 {/* Help & Support */}
                 <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
                     <div>

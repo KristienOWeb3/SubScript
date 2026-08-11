@@ -22,6 +22,7 @@ import {
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import { ROUTER_DEPOSIT_ABI, isReceiptId, receiptUrl } from "@/lib/arc/memo";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
+import { usePlatformFlags } from "@/hooks/usePlatformFlags";
 import { merchantDisplayName } from "@/lib/identityDisplay";
 
 export interface PublicPayClientProps {
@@ -102,6 +103,7 @@ export default function PublicPayClient({
     const chainId = useChainId();
     const { switchChainAsync } = useSwitchChain();
     const publicClient = usePublicClient();
+    const { externalWalletEnabled } = usePlatformFlags();
 
     useEffect(() => {
         setMounted(true);
@@ -1977,7 +1979,7 @@ export default function PublicPayClient({
                                     </div>
                                 )}
 
-                                {embeddedPaySession && !isConnected && !cannotPayLink && (
+                                {embeddedPaySession && !isConnected && !cannotPayLink && externalWalletEnabled && (
                                     <div className="flex items-center gap-3 pt-1">
                                         <span className="h-px flex-1 bg-white/10" />
                                         <span className="text-[9px] font-bold uppercase tracking-wider text-white/30">or pay with a browser wallet</span>
@@ -1987,8 +1989,14 @@ export default function PublicPayClient({
 
                                 {/* The browser-wallet connect prompt only makes sense when no wallet is
                                     connected yet. When an embedded user already has an extension connected,
-                                    they pay via the embedded card above — no "Connect Wallet" nag. */}
-                                {!isConnected && !cannotPayLink && (walletConnectors.length > 1 ? (
+                                    they pay via the embedded card above — no "Connect Wallet" nag.
+
+                                    externalWalletEnabled additionally hides it while an operator has
+                                    external wallets paused. Unlike sign-in, paying here is an on-chain
+                                    transaction the server never signs, so this switch is the only thing
+                                    that stops it — and the SubScript-account path below stays available,
+                                    so a payer is never left without a way to pay. */}
+                                {!isConnected && !cannotPayLink && externalWalletEnabled && (walletConnectors.length > 1 ? (
                                     <div className="space-y-2">
                                         <p className="text-[9px] font-bold uppercase tracking-wider text-white/40 text-center">
                                             Multiple wallets found — choose one
@@ -2038,7 +2046,7 @@ export default function PublicPayClient({
                                 )}
                                 {!embeddedPaySession && !cannotPayLink && (
                                     <p className="text-[10px] text-white/35 text-center leading-relaxed font-sans">
-                                        Have a SubScript account?{" "}
+                                        {externalWalletEnabled ? "Have a SubScript account? " : "Browser-wallet payments are paused right now. "}
                                         <a href="/login" target="_blank" rel="noopener noreferrer" className="text-[#00d2b4] hover:underline font-bold">
                                             Sign in
                                         </a>

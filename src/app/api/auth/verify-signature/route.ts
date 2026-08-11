@@ -7,9 +7,29 @@ import { getAccountRole } from "@/lib/accounts/roles";
 import { verifyCaptchaToken } from "@/lib/captcha";
 import { clearSiweNonceCookie, setSessionCookie } from "@/lib/authCookies";
 import { buildWalletAuthMessage, walletAuthRequestContext } from "@/lib/walletAuthMessage";
+import { getPlatformFlags } from "@/lib/platform/flags";
 
 export async function POST(request: Request) {
     try {
+        /* External-wallet kill switch. This route is the only way a browser-wallet signature
+           becomes a session — embedded wallets go through auth/circle/wallet/complete and email
+           through auth/otp/verify — so refusing here disables external wallets platform-wide
+           without touching the other two sign-in methods.
+
+           Checked before the nonce is consumed, so a request arriving mid-toggle does not burn a
+           single-use nonce it can no longer redeem. getPlatformFlags fails OPEN: if the flags
+           table is unreadable, external wallets keep working rather than the site losing a
+           sign-in method to a database hiccup. */
+        const flags = await getPlatformFlags();
+        if (!flags.externalWalletEnabled) {
+            return NextResponse.json(
+                {
+                    error: "External wallet sign-in is temporarily unavailable. Use email or Continue with Google.",
+                },
+                { status: 503 },
+            );
+        }
+
         const body = await request.json().catch(() => null);
         if (!body || typeof body !== "object") {
             return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });

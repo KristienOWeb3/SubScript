@@ -7,6 +7,7 @@ import {
   Building2,
   CheckCircle2,
   Copy,
+  FileText,
   Loader2,
   ReceiptText,
   RefreshCw,
@@ -18,6 +19,12 @@ import {
   UserPlus,
   Users,
 } from "@/components/icons";
+import {
+  SkeletonCard,
+  SkeletonRows,
+  SkeletonStatGrid,
+  SkeletonToggleRows,
+} from "@/components/ui/skeletons";
 
 type Merchant = {
   walletAddress: string;
@@ -69,12 +76,17 @@ type Analytics = {
     byStatus: Record<string, number>;
   };
   growth: {
+    usersTotal: number;
+    usersRoleUser: number;
+    usersRoleEnterprise: number;
+    usersNew30d: number;
     merchantsTotal: number;
     merchantsVerified: number;
     merchantsNew30d: number;
     customersTotal: number;
     customersNew30d: number;
   };
+  kyc: { byStatus: Record<string, number>; pending: number; approved: number };
   health: { revocationPending: number; downgradeFailures: number; stuckReceipts: number };
   recentBroadcasts: Array<{
     id: string;
@@ -96,12 +108,77 @@ type PlatformFlags = {
   googleEnvConfigured?: boolean;
 };
 
-type TabId = "overview" | "analytics" | "merchants" | "moderation" | "system" | "broadcast" | "receipts" | "admins";
+type KycRecord = {
+  id: string;
+  walletAddress: string;
+  accountRole: string;
+  kind: string;
+  countryCode: string;
+  provider: string;
+  providerCaseId: string | null;
+  requestedLevel: string;
+  status: string;
+  reasonCode: string | null;
+  revision: number;
+  submittedAt: string | null;
+  decidedAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  adminAsserted: boolean;
+};
+
+/* Mirrors REASONS_BY_TARGET in src/lib/kyc — the server rejects anything else, and a
+   status whose set is empty must be sent with no reason at all. */
+const KYC_REASONS: Record<string, string[]> = {
+  NEEDS_INPUT: [
+    "ADDITIONAL_INFORMATION_REQUIRED",
+    "DOCUMENT_EXPIRED",
+    "DOCUMENT_UNREADABLE",
+    "IDENTITY_MISMATCH",
+    "BUSINESS_DETAILS_MISMATCH",
+  ],
+  REJECTED: [
+    "IDENTITY_MISMATCH",
+    "BUSINESS_DETAILS_MISMATCH",
+    "UNSUPPORTED_JURISDICTION",
+    "PROVIDER_REJECTED",
+    "COMPLIANCE_REVIEW_FAILED",
+  ],
+  EXPIRED: ["APPROVAL_EXPIRED"],
+  REVOKED: ["APPROVAL_REVOKED", "COMPLIANCE_REVIEW_FAILED"],
+};
+
+/* Mirrors ADMIN_TRANSITIONS. Terminal states offer nothing here — lifting one is what the
+   root-only force-approve panel is for. */
+const KYC_TRANSITIONS: Record<string, string[]> = {
+  PENDING: ["IN_REVIEW", "NEEDS_INPUT", "APPROVED", "REJECTED"],
+  IN_REVIEW: ["NEEDS_INPUT", "APPROVED", "REJECTED"],
+  NEEDS_INPUT: [],
+  APPROVED: ["EXPIRED", "REVOKED"],
+  REJECTED: [],
+  EXPIRED: [],
+  REVOKED: [],
+};
+
+const KYC_FORCE_CONFIRMATION = "FORCE APPROVE";
+
+type TabId =
+  | "overview"
+  | "analytics"
+  | "merchants"
+  | "kyc"
+  | "moderation"
+  | "system"
+  | "broadcast"
+  | "receipts"
+  | "admins";
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "analytics", label: "Analytics" },
   { id: "merchants", label: "Merchants" },
+  { id: "kyc", label: "KYC" },
   { id: "moderation", label: "Moderation" },
   { id: "system", label: "System" },
   { id: "broadcast", label: "Broadcast" },
@@ -163,6 +240,22 @@ export default function AdminDashboardPage() {
   const [invReason, setInvReason] = useState("");
   const [invBusy, setInvBusy] = useState(false);
 
+  const [kycRecords, setKycRecords] = useState<KycRecord[]>([]);
+  const [kycLoading, setKycLoading] = useState(false);
+  const [kycStatusFilter, setKycStatusFilter] = useState("all");
+  const [kycSearch, setKycSearch] = useState("");
+  const [kycBusy, setKycBusy] = useState<string | null>(null);
+  /* Keyed by verification id so two rows open at once cannot share a draft. */
+  const [kycReasonDraft, setKycReasonDraft] = useState<Record<string, string>>({});
+  const [forceTarget, setForceTarget] = useState<KycRecord | null>(null);
+  const [forceReason, setForceReason] = useState("");
+  const [forceExpiry, setForceExpiry] = useState("");
+  const [forceConfirm, setForceConfirm] = useState("");
+  const [manualWallet, setManualWallet] = useState("");
+  const [manualCountry, setManualCountry] = useState("");
+  const [manualLevel, setManualLevel] = useState("STANDARD");
+  const [manualReason, setManualReason] = useState("");
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -222,6 +315,119 @@ export default function AdminDashboardPage() {
       setError(err.message || "Failed to load platform flags");
     }
   }, []);
+
+  const loadKyc = useCallback(async () => {
+    setKycLoading(true);
+    try {
+      const params = new URLSearchParams({ status: kycStatusFilter, limit: "100" });
+      if (kycSearch.trim()) params.set("search", kycSearch.trim());
+      const res = await fetch(`/api/admin/kyc/review?${params.toString()}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to load verifications");
+      setKycRecords(json.verifications || []);
+      setViewerIsRoot(Boolean(json.viewerIsRoot));
+    } catch (err: any) {
+      setError(err.message || "Failed to load verifications");
+    } finally {
+      setKycLoading(false);
+    }
+  }, [kycStatusFilter, kycSearch]);
+
+  /** Ordinary review transition. Reason is required for some targets and forbidden for others. */
+  const decideKyc = async (record: KycRecord, status: string) => {
+    setKycBusy(record.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const needsReason = (KYC_REASONS[status] || []).length > 0;
+      const reasonCode = kycReasonDraft[record.id] || "";
+      if (needsReason && !reasonCode) {
+        throw new Error(`Pick a reason code before moving this to ${status}.`);
+      }
+      const res = await fetch("/api/admin/kyc/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "decide",
+          verificationId: record.id,
+          status,
+          ...(needsReason ? { reasonCode } : {}),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to update verification");
+      setKycRecords((prev) => prev.map((r) => (r.id === record.id ? json.verification : r)));
+      setNotice(`${record.walletAddress.slice(0, 10)}… moved to ${status}.`);
+    } catch (err: any) {
+      setError(err.message || "Failed to update verification");
+    } finally {
+      setKycBusy(null);
+    }
+  };
+
+  const forceApproveKyc = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forceTarget) return;
+    setKycBusy(forceTarget.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/admin/kyc/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "force-approve",
+          verificationId: forceTarget.id,
+          reason: forceReason.trim(),
+          confirm: forceConfirm,
+          ...(forceExpiry ? { expiresAt: new Date(forceExpiry).toISOString() } : {}),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Force approval failed");
+      setKycRecords((prev) => prev.map((r) => (r.id === forceTarget.id ? json.verification : r)));
+      setNotice(`Force-approved ${forceTarget.walletAddress}. Logged to the admin audit trail.`);
+      setForceTarget(null);
+      setForceReason("");
+      setForceExpiry("");
+      setForceConfirm("");
+    } catch (err: any) {
+      setError(err.message || "Force approval failed");
+    } finally {
+      setKycBusy(null);
+    }
+  };
+
+  const createManualKyc = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setKycBusy("create");
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/admin/kyc/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create-manual",
+          walletAddress: manualWallet.trim(),
+          countryCode: manualCountry.trim(),
+          requestedLevel: manualLevel,
+          reason: manualReason.trim(),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to open verification");
+      setKycRecords((prev) => [json.verification, ...prev]);
+      setNotice(`Opened a manual verification for ${manualWallet.trim()}. It still needs a decision.`);
+      setManualWallet("");
+      setManualCountry("");
+      setManualReason("");
+    } catch (err: any) {
+      setError(err.message || "Failed to open verification");
+    } finally {
+      setKycBusy(null);
+    }
+  };
 
   const updateFlag = async (patch: Record<string, unknown>, key: string) => {
     setFlagBusy(key);
@@ -314,7 +520,8 @@ export default function AdminDashboardPage() {
     if (tab === "admins") loadAdmins();
     if (tab === "analytics") loadAnalytics();
     if (tab === "system") loadFlags();
-  }, [tab, loadAdmins, loadAnalytics, loadFlags]);
+    if (tab === "kyc") loadKyc();
+  }, [tab, loadAdmins, loadAnalytics, loadFlags, loadKyc]);
 
   const handleCopySponsor = () => {
     if (!sponsor?.address) return;
@@ -465,6 +672,7 @@ export default function AdminDashboardPage() {
               if (tab === "admins") loadAdmins();
               else if (tab === "analytics") loadAnalytics();
               else if (tab === "system") loadFlags();
+              else if (tab === "kyc") loadKyc();
               else loadData();
             }}
             disabled={loading}
@@ -689,6 +897,301 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
+        {tab === "kyc" && (
+          <div className="space-y-6">
+            <div className={`${CARD} space-y-4`}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-black uppercase tracking-wide text-white">KYC Review</h2>
+                  <p className="text-xs text-white/50">
+                    Approving an enterprise account also grants its verified-merchant badge.
+                    Individuals only get their KYC status.
+                  </p>
+                </div>
+                <div className="flex w-full gap-2 sm:w-auto">
+                  <div className="relative flex-1 sm:w-56">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-white/30" />
+                    <input
+                      type="text"
+                      value={kycSearch}
+                      onChange={(e) => setKycSearch(e.target.value)}
+                      placeholder="Search wallet..."
+                      className={`${INPUT} pl-9`}
+                    />
+                  </div>
+                  <select
+                    value={kycStatusFilter}
+                    onChange={(e) => setKycStatusFilter(e.target.value)}
+                    className={`${INPUT} w-auto`}
+                  >
+                    {["all", "PENDING", "IN_REVIEW", "NEEDS_INPUT", "APPROVED", "REJECTED", "EXPIRED", "REVOKED"].map(
+                      (s) => (
+                        <option key={s} value={s} className="bg-[#121212] text-white">
+                          {s === "all" ? "All statuses" : s.replace("_", " ")}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              {kycLoading && kycRecords.length === 0 ? (
+                <SkeletonRows count={5} avatar={false} label="Loading verification queue" />
+              ) : kycRecords.length === 0 ? (
+                <p className="py-6 text-center text-xs text-white/40">No verifications match this filter.</p>
+              ) : (
+                <div className="space-y-3">
+                  {kycRecords.map((record) => {
+                    const transitions = KYC_TRANSITIONS[record.status] || [];
+                    const busy = kycBusy === record.id;
+                    return (
+                      <div
+                        key={record.id}
+                        className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 space-y-3"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <code className="font-mono text-xs text-white/80">{record.walletAddress}</code>
+                              <KycStatusPill status={record.status} />
+                              {record.adminAsserted && (
+                                <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[9px] font-bold text-amber-300">
+                                  Admin-asserted
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-1.5 text-[10px] text-white/40">
+                              {record.accountRole} · {record.kind} · {record.countryCode} ·{" "}
+                              {record.requestedLevel} · via {record.provider}
+                              {record.expiresAt
+                                ? ` · expires ${new Date(record.expiresAt).toLocaleDateString()}`
+                                : ""}
+                              {record.reasonCode ? ` · ${record.reasonCode}` : ""}
+                            </p>
+                          </div>
+                          {viewerIsRoot && record.status !== "APPROVED" && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setForceTarget(record);
+                                setForceReason("");
+                                setForceExpiry("");
+                                setForceConfirm("");
+                              }}
+                              className="shrink-0 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-300 transition hover:bg-amber-400/20"
+                            >
+                              Force approve
+                            </button>
+                          )}
+                        </div>
+
+                        {transitions.length === 0 ? (
+                          <p className="text-[10px] text-white/30">
+                            {record.status === "APPROVED"
+                              ? "Approved. It can still be expired or revoked once it has been re-loaded."
+                              : "Terminal state — the applicant must resubmit, or a root admin can force approve."}
+                          </p>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-2">
+                            {(() => {
+                              /* One dropdown serving every transition offered on this row. The
+                                 server validates the code against the specific target status, so
+                                 a code picked for REJECTED and then applied to APPROVED is
+                                 refused there rather than silently accepted. */
+                              const codes = Array.from(
+                                new Set(transitions.flatMap((t) => KYC_REASONS[t] || [])),
+                              );
+                              if (codes.length === 0) return null;
+                              return (
+                                <select
+                                  value={kycReasonDraft[record.id] || ""}
+                                  onChange={(e) =>
+                                    setKycReasonDraft((prev) => ({ ...prev, [record.id]: e.target.value }))
+                                  }
+                                  className={`${INPUT} w-auto`}
+                                >
+                                  <option value="" className="bg-[#121212] text-white">
+                                    Reason…
+                                  </option>
+                                  {codes.map((code) => (
+                                    <option key={code} value={code} className="bg-[#121212] text-white">
+                                      {code.replace(/_/g, " ")}
+                                    </option>
+                                  ))}
+                                </select>
+                              );
+                            })()}
+                            {transitions.map((next) => (
+                              <button
+                                key={next}
+                                type="button"
+                                disabled={busy}
+                                onClick={() => decideKyc(record, next)}
+                                className={`rounded-xl border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition disabled:opacity-50 ${
+                                  next === "APPROVED"
+                                    ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20"
+                                    : next === "REJECTED" || next === "REVOKED"
+                                      ? "border-red-400/30 bg-red-400/10 text-red-300 hover:bg-red-400/20"
+                                      : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+                                }`}
+                              >
+                                {busy ? <Loader2 className="mx-auto h-3 w-3 animate-spin" /> : next.replace("_", " ")}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {viewerIsRoot && (
+              <div className={`${CARD} space-y-4 border-amber-500/30`}>
+                <div className="flex items-start gap-2">
+                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+                  <div>
+                    <span className={LABEL}>Open a manual verification</span>
+                    <p className="mt-1 text-[11px] text-white/50">
+                      For a wallet that never applied. The record is marked{" "}
+                      <code className="text-amber-300">manual_admin</code> permanently, and records the
+                      consent as admin-supplied rather than given by the user. It opens as PENDING —
+                      approving it is a second, separate decision.
+                    </p>
+                  </div>
+                </div>
+                <form onSubmit={createManualKyc} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <input
+                    type="text"
+                    value={manualWallet}
+                    onChange={(e) => setManualWallet(e.target.value)}
+                    placeholder="0x wallet address"
+                    className={INPUT}
+                    required
+                  />
+                  <input
+                    type="text"
+                    value={manualCountry}
+                    onChange={(e) => setManualCountry(e.target.value)}
+                    placeholder="Country code (e.g. NG)"
+                    maxLength={2}
+                    className={INPUT}
+                    required
+                  />
+                  <select
+                    value={manualLevel}
+                    onChange={(e) => setManualLevel(e.target.value)}
+                    className={INPUT}
+                  >
+                    <option value="STANDARD" className="bg-[#121212] text-white">Standard</option>
+                    <option value="ENHANCED" className="bg-[#121212] text-white">Enhanced</option>
+                  </select>
+                  <input
+                    type="text"
+                    value={manualReason}
+                    onChange={(e) => setManualReason(e.target.value)}
+                    placeholder="Reason (min 10 characters, logged)"
+                    className={INPUT}
+                    required
+                  />
+                  <button
+                    type="submit"
+                    disabled={kycBusy === "create"}
+                    className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-amber-300 transition hover:bg-amber-400/20 disabled:opacity-50 sm:col-span-2"
+                  >
+                    {kycBusy === "create" ? (
+                      <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      "Open verification"
+                    )}
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {forceTarget && (
+              <div className={`${CARD} space-y-4 border-red-500/40`}>
+                <div className="flex items-start gap-2">
+                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-red-300" />
+                  <div>
+                    <span className={LABEL}>Force approve {forceTarget.walletAddress}</span>
+                    <p className="mt-1 text-[11px] text-white/50">
+                      This overrides the compliance guard that stops a manual verification counting as
+                      production KYC, and lifts it out of{" "}
+                      <strong className="text-white/70">{forceTarget.status}</strong> regardless of the
+                      normal transition rules. Your wallet, your reason, and your IP are written to the
+                      audit log.
+                    </p>
+                  </div>
+                </div>
+                <form onSubmit={forceApproveKyc} className="space-y-3">
+                  <div>
+                    <label className={LABEL}>Reason (min 10 characters)</label>
+                    <input
+                      type="text"
+                      value={forceReason}
+                      onChange={(e) => setForceReason(e.target.value)}
+                      placeholder="Why this override is justified"
+                      className={`${INPUT} mt-1.5`}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className={LABEL}>Approval expires (defaults to 12 months)</label>
+                    <input
+                      type="date"
+                      value={forceExpiry}
+                      onChange={(e) => setForceExpiry(e.target.value)}
+                      className={`${INPUT} mt-1.5`}
+                    />
+                  </div>
+                  <div>
+                    <label className={LABEL}>
+                      Type “{KYC_FORCE_CONFIRMATION}” to confirm
+                    </label>
+                    <input
+                      type="text"
+                      value={forceConfirm}
+                      onChange={(e) => setForceConfirm(e.target.value)}
+                      placeholder={KYC_FORCE_CONFIRMATION}
+                      className={`${INPUT} mt-1.5`}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      disabled={forceConfirm !== KYC_FORCE_CONFIRMATION || kycBusy === forceTarget.id}
+                      className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-red-300 transition hover:bg-red-400/20 disabled:opacity-40"
+                    >
+                      {kycBusy === forceTarget.id ? (
+                        <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        "Force approve"
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setForceTarget(null)}
+                      className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-white/70 transition hover:bg-white/10"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {!viewerIsRoot && (
+              <p className="px-1 text-[10px] text-white/35">
+                <FileText className="mr-1 inline h-3 w-3" />
+                Force approval and manual records are restricted to root admins
+                (ADMIN_WALLET_ADDRESSES).
+              </p>
+            )}
+          </div>
+        )}
+
         {tab === "moderation" && (
           <div className="space-y-6">
             <div className={`${CARD}`}>
@@ -783,9 +1286,11 @@ export default function AdminDashboardPage() {
         {tab === "analytics" && (
           <div className="space-y-6">
             {analyticsLoading && !analytics ? (
-              <div className={`${CARD} flex items-center gap-2 text-xs text-white/50`}>
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading platform analytics…
-              </div>
+              <>
+                <SkeletonCard label="Loading volume transacted" lines={1} />
+                <SkeletonStatGrid count={4} columns={4} label="Loading subscription metrics" />
+                <SkeletonStatGrid count={4} columns={2} label="Loading growth and health metrics" />
+              </>
             ) : !analytics ? (
               <div className={`${CARD} text-xs text-white/40`}>No analytics available.</div>
             ) : (
@@ -823,6 +1328,21 @@ export default function AdminDashboardPage() {
                   </p>
                 </div>
 
+                <div className={`${CARD} space-y-4`}>
+                  <span className={LABEL}>Users</span>
+                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                    <Stat label="Total users" value={analytics.growth.usersTotal} />
+                    <Stat label="Individuals" value={analytics.growth.usersRoleUser} />
+                    <Stat label="Enterprise" value={analytics.growth.usersRoleEnterprise} />
+                    <Stat label="New (30d)" value={analytics.growth.usersNew30d} />
+                  </div>
+                  <p className="text-[10px] text-white/40">
+                    Every signed-up account has a role, so this is the headline user count. The
+                    merchant and customer figures below are subsets that overlap each other — a
+                    merchant who also pays for things is counted in both — so do not add them up.
+                  </p>
+                </div>
+
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                   <div className={`${CARD} space-y-4`}>
                     <span className={LABEL}>Growth</span>
@@ -840,6 +1360,7 @@ export default function AdminDashboardPage() {
                       <Stat label="Revocations pending" value={analytics.health.revocationPending} danger={analytics.health.revocationPending > 0} />
                       <Stat label="Downgrade failures" value={analytics.health.downgradeFailures} danger={analytics.health.downgradeFailures > 0} />
                       <Stat label="Stuck receipts" value={analytics.health.stuckReceipts} danger={analytics.health.stuckReceipts > 0} />
+                      <Stat label="KYC awaiting review" value={analytics.kyc.pending} danger={analytics.kyc.pending > 0} />
                     </div>
                     <p className="text-[10px] text-white/40">
                       Stuck receipts are unconfirmed for more than 7 days — usually a memo that never finalized on chain.
@@ -854,9 +1375,10 @@ export default function AdminDashboardPage() {
         {tab === "system" && (
           <div className="space-y-6">
             {!flags ? (
-              <div className={`${CARD} flex items-center gap-2 text-xs text-white/50`}>
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading platform flags…
-              </div>
+              <>
+                <SkeletonToggleRows count={2} label="Loading sign-in method switches" />
+                <SkeletonCard label="Loading maintenance mode" lines={2} />
+              </>
             ) : (
               <>
                 <div className={`${CARD} space-y-4`}>
@@ -877,7 +1399,7 @@ export default function AdminDashboardPage() {
 
                   <Toggle
                     title="Connect external wallet"
-                    description="Turning this off leaves email and embedded wallets working. Use it if an external-wallet path starts producing bad signatures."
+                    description="Hides every connect-wallet button and makes /api/auth/verify-signature refuse the signature, so an open tab cannot still sign in. Also removes browser-wallet payment from checkout — payers fall back to signing in and paying from their SubScript wallet. Email and embedded wallets are unaffected."
                     enabled={flags.externalWalletEnabled}
                     disabled={flagBusy === "wallet"}
                     busy={flagBusy === "wallet"}
@@ -1223,6 +1745,24 @@ function Stat({ label, value, danger = false }: { label: string; value: number |
       <p className={`text-2xl font-black ${danger ? "text-amber-300" : "text-white"}`}>{value}</p>
       <p className="text-[10px] font-bold uppercase tracking-wider text-white/40">{label}</p>
     </div>
+  );
+}
+
+/* Status chip for the KYC queue. Colour carries the same meaning as elsewhere in the console:
+   green settled-good, red settled-bad, amber needs a human, white/neutral in flight. */
+function KycStatusPill({ status }: { status: string }) {
+  const tone =
+    status === "APPROVED"
+      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+      : status === "REJECTED" || status === "REVOKED"
+        ? "border-red-500/30 bg-red-500/10 text-red-300"
+        : status === "NEEDS_INPUT" || status === "EXPIRED"
+          ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
+          : "border-white/10 bg-white/5 text-white/70";
+  return (
+    <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${tone}`}>
+      {status.replace("_", " ")}
+    </span>
   );
 }
 

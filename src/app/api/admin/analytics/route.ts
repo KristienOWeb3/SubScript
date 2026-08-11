@@ -53,6 +53,9 @@ export async function GET(request: Request) {
             merchantsLast30,
             customerTotal,
             customersLast30,
+            accountsByRole,
+            accountsLast30,
+            kycByStatus,
             subsByStatus,
             activeCustomerSubs,
             activePremiumSubs,
@@ -84,6 +87,13 @@ export async function GET(request: Request) {
             prisma.merchant.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
             prisma.customer.count(),
             prisma.customer.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
+            /* Total users. `customers` only holds wallets that reached a payment surface, so it
+               undercounts: a wallet that signed up and stopped has an account_roles row and no
+               customers row. account_roles is the one row every account gets, so it is the
+               headline user count — split by role, since a merchant is also an account. */
+            prisma.accountRole.groupBy({ by: ["role"], _count: { _all: true } }),
+            prisma.accountRole.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
+            prisma.kycVerification.groupBy({ by: ["status"], _count: { _all: true } }),
             prisma.subscription.groupBy({ by: ["status"], _count: { _all: true } }),
             prisma.subscription.count({ where: { kind: "CUSTOMER", status: "ACTIVE" } }),
             prisma.subscription.count({ where: { kind: "PREMIUM", status: "ACTIVE" } }),
@@ -110,6 +120,13 @@ export async function GET(request: Request) {
         const statusCounts: Record<string, number> = {};
         for (const row of subsByStatus) statusCounts[row.status] = row._count._all;
 
+        const roleCounts: Record<string, number> = {};
+        for (const row of accountsByRole) roleCounts[row.role] = row._count._all;
+        const usersTotal = Object.values(roleCounts).reduce((sum, n) => sum + n, 0);
+
+        const kycCounts: Record<string, number> = {};
+        for (const row of kycByStatus) kycCounts[row.status] = row._count._all;
+
         return NextResponse.json({
             generatedAt: now.toISOString(),
             volume: {
@@ -131,11 +148,23 @@ export async function GET(request: Request) {
                 byStatus: statusCounts,
             },
             growth: {
+                /* usersTotal counts every account. merchantsTotal and customersTotal overlap it
+                   and each other — a merchant who also pays for things is one account, one
+                   merchants row and one customers row — so these must not be added together. */
+                usersTotal,
+                usersRoleUser: roleCounts.USER || 0,
+                usersRoleEnterprise: roleCounts.ENTERPRISE || 0,
+                usersNew30d: accountsLast30,
                 merchantsTotal: merchantTotal,
                 merchantsVerified: merchantVerified,
                 merchantsNew30d: merchantsLast30,
                 customersTotal: customerTotal,
                 customersNew30d: customersLast30,
+            },
+            kyc: {
+                byStatus: kycCounts,
+                pending: (kycCounts.PENDING || 0) + (kycCounts.IN_REVIEW || 0),
+                approved: kycCounts.APPROVED || 0,
             },
             health: {
                 revocationPending,
