@@ -375,6 +375,23 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(canonicalUrl, 308);
     }
 
+    /* /docs on any non-docs host redirects to the docs subdomain, so documentation has ONE
+       canonical origin. Without this, www.../docs and docs.../ serve identical content on two
+       hostnames — split SEO signals, and links that disagree about where the docs live.
+
+       308 (not 302) preserves the method and marks the move permanent for crawlers. The path
+       carries across, so www.../docs/quickstart lands on docs.../docs/quickstart rather than the
+       docs root; clone() keeps the query string with it.
+
+       Localhost is exempt: docs.subscriptonarc.com does not resolve to a dev server, so
+       redirecting there would make /docs unreachable while working locally. */
+    if (!isApiRoute && !isDocsHost && !isLocalHost && (pathname === "/docs" || pathname.startsWith("/docs/"))) {
+        const canonicalDocsUrl = request.nextUrl.clone();
+        canonicalDocsUrl.protocol = "https:";
+        canonicalDocsUrl.host = DOCS_HOST;
+        return NextResponse.redirect(canonicalDocsUrl, 308);
+    }
+
     /* docs.subscriptonarc.com serves /docs at its own root, so the subdomain's "/" maps to
        /docs rather than the marketing landing page. Paths that already start with /docs are
        left alone so docs.../docs/x doesn't become /docs/docs/x. */

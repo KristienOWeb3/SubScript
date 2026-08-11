@@ -11,22 +11,63 @@ import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 import { getDashboardUrl } from "@/utils/navigation";
 import { docsSections, sectionHref } from "./sections";
 
+/* Motion matched to the marketing navbar (src/components/Navbar.tsx) so the docs menu feels
+   like the same product: the panel slides down on an expo curve rather than fading flat, and
+   the links cascade in on a spring once it has landed. Keep these in step with Navbar.tsx —
+   two overlays with different physics read as two different sites. */
 const overlayVariants = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: { duration: 0.2 } },
-  exit: { opacity: 0, transition: { duration: 0.15 } },
+  hidden: { y: "-100%" },
+  visible: {
+    y: 0,
+    transition: {
+      type: "tween",
+      ease: [0.16, 1, 0.3, 1], // easeOutExpo
+      duration: 0.45,
+    },
+  },
+  exit: {
+    y: "-100%",
+    transition: {
+      type: "tween",
+      ease: [0.7, 0, 0.84, 0], // easeInExpo
+      duration: 0.35,
+    },
+  },
 };
 
 const staggerContainerVariants = {
-  hidden: {},
-  visible: { transition: { staggerChildren: 0.03 } },
-  exit: {},
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.05,
+      /* Held until the panel has substantially arrived, so links animate into a settled
+         surface instead of racing the slide. Slightly tighter than the navbar's 0.2s because
+         the docs menu carries more rows. */
+      delayChildren: 0.18,
+    },
+  },
+  exit: {
+    opacity: 0,
+    transition: {
+      staggerChildren: 0.03,
+      staggerDirection: -1,
+    },
+  },
 };
 
 const itemVariants = {
-  hidden: { opacity: 0, y: 8 },
-  visible: { opacity: 1, y: 0 },
-  exit: { opacity: 0 },
+  hidden: { opacity: 0, y: 15 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      type: "spring",
+      stiffness: 450,
+      damping: 32,
+    },
+  },
+  exit: { opacity: 0, y: 10 },
 };
 
 /* Chrome shared by every docs route. The active item now comes from the URL rather than an
