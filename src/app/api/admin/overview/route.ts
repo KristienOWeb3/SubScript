@@ -38,9 +38,10 @@ export async function GET(request: Request) {
        the tables did not exist, so the ban form 500'd on every submit while the lists
        silently rendered empty. The 20260810120000 migration creates them; let a genuine
        failure surface now instead of masquerading as "no bans". */
-    const [bannedAccounts, bannedIps] = await Promise.all([
+    const [bannedAccounts, bannedIps, totalUsers] = await Promise.all([
       prisma.bannedAccount.findMany({ orderBy: { createdAt: "desc" } }),
       prisma.bannedIp.findMany({ orderBy: { createdAt: "desc" } }),
+      prisma.accountRole.count(),
     ]);
 
     return NextResponse.json({
@@ -52,6 +53,7 @@ export async function GET(request: Request) {
       merchants,
       bannedAccounts,
       bannedIps,
+      totalUsers,
       viewerIsRoot: auth.admin.isRoot,
     });
   } catch (err: any) {

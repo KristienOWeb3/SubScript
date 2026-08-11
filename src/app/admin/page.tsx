@@ -201,6 +201,7 @@ export default function AdminDashboardPage() {
   const [merchants, setMerchants] = useState<Merchant[]>([]);
   const [bannedAccounts, setBannedAccounts] = useState<BannedAccount[]>([]);
   const [bannedIps, setBannedIps] = useState<BannedIp[]>([]);
+  const [totalUsers, setTotalUsers] = useState<number | null>(null);
   const [viewerIsRoot, setViewerIsRoot] = useState(false);
 
   const [copied, setCopied] = useState(false);
@@ -267,6 +268,7 @@ export default function AdminDashboardPage() {
       setMerchants(json.merchants || []);
       setBannedAccounts(json.bannedAccounts || []);
       setBannedIps(json.bannedIps || []);
+      setTotalUsers(json.totalUsers ?? null);
       setViewerIsRoot(Boolean(json.viewerIsRoot));
     } catch (err: any) {
       setError(err.message || "Failed to load admin dashboard");
@@ -787,9 +789,10 @@ export default function AdminDashboardPage() {
 
             <div className={`${CARD} space-y-4`}>
               <span className={LABEL}>At a glance</span>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <Stat label="Total Users" value={totalUsers ?? (analytics?.growth?.usersTotal ?? "—")} />
                 <Stat label="Merchants" value={merchants.length} />
-                <Stat label="Verified" value={merchants.filter((m) => m.verified).length} />
+                <Stat label="Verified Merchants" value={merchants.filter((merchant) => merchant.verified).length} />
                 <Stat label="Banned wallets" value={bannedAccounts.length} />
                 <Stat label="Banned IPs" value={bannedIps.length} />
               </div>
