@@ -83,12 +83,14 @@ export function planCatalogAdvisories(
         .map((plan) => minimumSwitchablePrice(plan, candidate.periodSeconds))
         .reduce((a, b) => (b > a ? b : a), BigInt(0));
 
+    const floorUsdcFormatted = (Math.ceil(Number(floor) / 10000) / 100).toFixed(2);
+
     return [{
         code: "PLAN_SWITCH_BLOCKED",
         message:
             `Existing subscribers on ${names} cannot switch to this plan: at ${candidateMonthly} USDC/month `
             + "equivalent it costs less per day, and the payment contract only allows subscribers to move to a "
-            + `higher recurring rate. Price it at ${(Number(floor) / 1_000_000).toFixed(2)} USDC or above to make `
+            + `higher recurring rate. Price it at ${floorUsdcFormatted} USDC or above to make `
             + "it switchable. New subscribers can sign up at the current price either way.",
         minimumSwitchableAmountUsdc: floor.toString(),
     }];

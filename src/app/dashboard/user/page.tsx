@@ -4598,12 +4598,18 @@ export default function UserDashboard() {
                         if (tx.time < now - 30 * 24 * 60 * 60 * 1000) return false;
                       } else if (spendDatePreset === "custom") {
                         if (spendStartDate) {
-                          const startMs = new Date(spendStartDate).getTime();
-                          if (!Number.isNaN(startMs) && tx.time < startMs) return false;
+                          const parts = spendStartDate.split("-").map(Number);
+                          if (parts.length === 3) {
+                            const startMs = new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0).getTime();
+                            if (!Number.isNaN(startMs) && tx.time < startMs) return false;
+                          }
                         }
                         if (spendEndDate) {
-                          const endMs = new Date(spendEndDate).setHours(23, 59, 59, 999);
-                          if (!Number.isNaN(endMs) && tx.time > endMs) return false;
+                          const parts = spendEndDate.split("-").map(Number);
+                          if (parts.length === 3) {
+                            const endMs = new Date(parts[0], parts[1] - 1, parts[2], 23, 59, 59, 999).getTime();
+                            if (!Number.isNaN(endMs) && tx.time > endMs) return false;
+                          }
                         }
                       }
                     }
@@ -4947,7 +4953,9 @@ export default function UserDashboard() {
                                   </p>
                                 </div>
                                 <div className="text-right shrink-0">
-                                  <span className={`text-sm font-extrabold ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>{balanceVisible ? tx.amountLabel : "••••"}</span>
+                                  <span className={`text-sm font-extrabold ${tx.status === "FAILED" ? "text-red-400/50 line-through" : tx.incoming ? "text-[#ccff00]" : "text-white"}`}>
+                                    {balanceVisible ? tx.amountLabel : "••••"}
+                                  </span>
                                   <span className="mt-0.5 flex items-center justify-end gap-1.5">
                                     {tx.status !== "COMPLETED" && (
                                       <span className={`text-[8px] font-bold uppercase tracking-wider ${tx.status === "PENDING" ? "text-amber-400/70" : "text-red-400/70"}`}>

@@ -201,6 +201,7 @@ export default function AdminDashboardPage() {
   const [merchants, setMerchants] = useState<Merchant[]>([]);
   const [bannedAccounts, setBannedAccounts] = useState<BannedAccount[]>([]);
   const [bannedIps, setBannedIps] = useState<BannedIp[]>([]);
+  const [totalUsers, setTotalUsers] = useState<number | null>(null);
   const [viewerIsRoot, setViewerIsRoot] = useState(false);
 
   const [copied, setCopied] = useState(false);
@@ -267,6 +268,7 @@ export default function AdminDashboardPage() {
       setMerchants(json.merchants || []);
       setBannedAccounts(json.bannedAccounts || []);
       setBannedIps(json.bannedIps || []);
+      setTotalUsers(json.totalUsers ?? null);
       setViewerIsRoot(Boolean(json.viewerIsRoot));
     } catch (err: any) {
       setError(err.message || "Failed to load admin dashboard");
@@ -787,9 +789,10 @@ export default function AdminDashboardPage() {
 
             <div className={`${CARD} space-y-4`}>
               <span className={LABEL}>At a glance</span>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <Stat label="Total Users" value={totalUsers ?? (analytics?.growth?.usersTotal ?? "—")} />
                 <Stat label="Merchants" value={merchants.length} />
-                <Stat label="Verified" value={merchants.filter((m) => m.verified).length} />
+                <Stat label="Verified Merchants" value={merchants.filter((merchant) => merchant.verified).length} />
                 <Stat label="Banned wallets" value={bannedAccounts.length} />
                 <Stat label="Banned IPs" value={bannedIps.length} />
               </div>
@@ -837,28 +840,28 @@ export default function AdminDashboardPage() {
                       </td>
                     </tr>
                   ) : (
-                    filteredMerchants.map((m) => (
-                      <tr key={m.walletAddress} className="hover:bg-white/[0.02]">
+                    filteredMerchants.map((merchant) => (
+                      <tr key={merchant.walletAddress} className="hover:bg-white/[0.02]">
                         <td className="py-3.5 px-3">
                           <div className="flex items-center gap-2.5">
                             <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 border border-white/10 font-bold text-white shrink-0">
-                              {m.profilePic ? (
-                                <img src={m.profilePic} alt={m.merchantName} className="h-full w-full rounded-xl object-cover" />
+                              {merchant.profilePic ? (
+                                <img src={merchant.profilePic} alt={merchant.merchantName} className="h-full w-full rounded-xl object-cover" />
                               ) : (
                                 <Building2 className="h-4 w-4 text-[#ccff00]" />
                               )}
                             </div>
-                            <span className="font-bold text-white uppercase tracking-wider">{m.merchantName}</span>
+                            <span className="font-bold text-white uppercase tracking-wider">{merchant.merchantName}</span>
                           </div>
                         </td>
-                        <td className="py-3.5 px-3 font-mono text-white/60">{m.walletAddress}</td>
+                        <td className="py-3.5 px-3 font-mono text-white/60">{merchant.walletAddress}</td>
                         <td className="py-3.5 px-3">
                           <span className="rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[9px] font-bold text-white/70">
-                            {m.tier}
+                            {merchant.tier}
                           </span>
                         </td>
                         <td className="py-3.5 px-3">
-                          {m.verified ? (
+                          {merchant.verified ? (
                             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 text-[9px] font-bold text-emerald-300">
                               <ShieldCheck className="h-3 w-3" /> Verified
                             </span>
@@ -871,17 +874,17 @@ export default function AdminDashboardPage() {
                         <td className="py-3.5 px-3 text-right">
                           <button
                             type="button"
-                            onClick={() => toggleVerification(m.walletAddress, m.verified)}
-                            disabled={verifyBusy === m.walletAddress}
+                            onClick={() => toggleVerification(merchant.walletAddress, merchant.verified)}
+                            disabled={verifyBusy === merchant.walletAddress}
                             className={`rounded-xl border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition ${
-                              m.verified
+                              merchant.verified
                                 ? "border-red-400/30 bg-red-400/10 text-red-300 hover:bg-red-400/20"
                                 : "border-emerald-400/30 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20"
                             }`}
                           >
-                            {verifyBusy === m.walletAddress ? (
+                            {verifyBusy === merchant.walletAddress ? (
                               <Loader2 className="h-3 w-3 animate-spin mx-auto" />
-                            ) : m.verified ? (
+                            ) : merchant.verified ? (
                               "Unverify"
                             ) : (
                               "Verify"
@@ -1234,6 +1237,7 @@ export default function AdminDashboardPage() {
                   value={banTarget}
                   onChange={(e) => setBanTarget(e.target.value)}
                   placeholder={banType === "ACCOUNT" ? "0x... wallet address" : "192.168.1.1"}
+                  aria-label={banType === "ACCOUNT" ? "Target wallet address to ban" : "Target IP address to ban"}
                   className={INPUT}
                 />
                 <input
