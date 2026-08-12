@@ -209,8 +209,14 @@ export async function POST(request: Request) {
         /* A cap is mandatory when creating a share. The whole point of handing a Commit ID to a
            friend is that they cannot spend past a number the primary chose; an uncapped friend
            would be able to drain the entire committed escrow. */
-        if (parsed.value === null) {
-            return NextResponse.json({ error: "A spend cap is required when sharing" }, { status: 400 });
+        if (displayName) {
+            const friendAddress = await resolveInviteeAddress(displayName);
+            if (friendAddress && friendAddress.toLowerCase() === walletAddress.toLowerCase()) {
+                return NextResponse.json(
+                    { error: "You cannot add yourself as a friend on your commitment." },
+                    { status: 400 },
+                );
+            }
         }
 
         const share = await createVaultShare({

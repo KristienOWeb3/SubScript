@@ -1,6 +1,7 @@
 import type { Prisma, SubscriptDm } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sendPushToWallet, type PushDeliveryResult } from "@/lib/push";
+import { DM_TYPES, dmFallbackTitle, isKnownDmType } from "@/lib/dms/catalog";
 
 export type DmPushInput = {
     id?: string | null;
@@ -24,20 +25,31 @@ export type SupabaseDmInsert = {
     dedupe_key?: string | null;
 };
 
-const FALLBACK_TITLES: Record<string, string> = {
-    CHURN_SURVEY: "Subscription feedback requested",
-    DEBIT_SUCCESS: "Payment confirmed",
-    EXPIRY_WARNING: "Subscription needs attention",
-    PAYMENT_REQUEST: "New payment request",
-    PEER_REACTION: "New reaction",
-    PEER_REQUEST: "New payment request",
-    PEER_TRANSFER: "USDC received",
-    SHARE_COMMIT: "Shared commitment access",
-    SPONSORED_PLAN_REQUEST: "Sponsorship requested",
-    SPONSORED_PLAN_CONFIRMED: "Sponsored access active",
-    SUBSCRIPTION_OFFER: "New subscription plan",
-    SUBSCRIPTION_STARTED: "Subscription updated",
-};
+/**
+ * Surface a recurring type written without a dedupe key.
+ *
+ * Warn, not throw. The catalog's `recurring` flag is accurate about which types can repeat, but
+ * several long-standing call sites (DEBIT_SUCCESS in the keepers, PEER_TRANSFER, WITHDRAWAL)
+ * write without a key today. Turning that into an exception here would convert a duplicate
+ * inbox row — cosmetic — into a failed payment notification, which is strictly worse. New
+ * lifecycle helpers call assertDedupeDiscipline directly and do throw; this is the net that
+ * makes the existing offenders visible in logs so they can be fixed deliberately.
+ */
+function warnOnMissingDedupe(messageType: string, dedupeKey: unknown) {
+    if (!isKnownDmType(messageType)) {
+        console.warn(
+            `[dms] messageType '${messageType}' is not in the catalog, so it has no push title `
+            + "or dedupe policy. Register it in src/lib/dms/catalog.ts.",
+        );
+        return;
+    }
+    if (DM_TYPES[messageType].recurring && !dedupeKey) {
+        console.warn(
+            `[dms] recurring type '${messageType}' written without a dedupeKey — it will re-send `
+            + "on every pass over the same record.",
+        );
+    }
+}
 
 function notificationText(value: string | null | undefined, maxLength: number): string | null {
     const normalized = value?.replace(/\s+/g, " ").trim();
@@ -59,8 +71,7 @@ export async function pushDmNotification(dm: DmPushInput): Promise<PushDeliveryR
 
     const title =
         notificationText(dm.title, 100) ||
-        FALLBACK_TITLES[dm.messageType] ||
-        "New SubScript message";
+        dmFallbackTitle(dm.messageType);
     const body =
         notificationText(dm.description, 180) ||
         "Open SubScript to view this message.";
@@ -82,6 +93,7 @@ export async function pushDmNotification(dm: DmPushInput): Promise<PushDeliveryR
 export async function createDmAndNotify(
     data: Prisma.SubscriptDmUncheckedCreateInput
 ): Promise<SubscriptDm> {
+    warnOnMissingDedupe(String(data.messageType), data.dedupeKey);
     const dm = await prisma.subscriptDm.create({ data });
     await pushDmNotification(dm);
     return dm;
@@ -95,6 +107,7 @@ export async function insertSupabaseDmAndNotify(
     supabase: any,
     row: SupabaseDmInsert
 ): Promise<{ id: string }> {
+    warnOnMissingDedupe(row.message_type, row.dedupe_key);
     const query = supabase.from("subscript_dms");
     const { data, error } = row.dedupe_key
         ? await query.upsert(row, { onConflict: "dedupe_key", ignoreDuplicates: true }).select("id").maybeSingle()
@@ -134,6 +147,7 @@ export async function insertPgDm(
     client: any,
     row: SupabaseDmInsert
 ): Promise<DmPushInput & { id: string }> {
+    warnOnMissingDedupe(row.message_type, row.dedupe_key);
     const result = await client.query(
         `insert into subscript_dms (
             sender_address,

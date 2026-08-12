@@ -13,8 +13,15 @@ export const API_VERSION = "2026-07-01";
 /**
  * Catalog version. Bump this when event types are added or removed.
  * Consumers (SDK, CLI) can compare against this to detect staleness.
+ *
+ * 1.1.0 — Added subscription.renewal_upcoming, subscription.allowance_low,
+ *         subscription.trial_ending, subscription.trial_converted,
+ *         subscription.reactivated, subscription.winback_offered, promotion.redeemed.
+ *         Moved payment.refunded out of the public catalog into RESERVED_EVENT_TYPES:
+ *         it was subscribable but emitted by nothing. Minor, not major — the envelope
+ *         is unchanged and no public type an integrator could have received was removed.
  */
-export const EVENT_CATALOG_VERSION = "1.0.0";
+export const EVENT_CATALOG_VERSION = "1.1.0";
 
 /** Default chain ID for Arc testnet */
 export const ARC_TESTNET_CHAIN_ID = 5042002;

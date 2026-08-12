@@ -23,11 +23,14 @@ import { prisma } from "@/lib/prisma";
 import { STANDARD_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS, PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
+import { projectRunway } from "@/lib/subscriptions/allowanceRunway";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { pricingPhaseFor } from "@/lib/subscriptions/promotions";
 import { cancelFromEmbedded } from "@/lib/subscriptions/onchain";
 import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
+import { sendAllowanceLowDm } from "@/lib/dms/lifecycle";
+import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { getRpcProviderForWrite } from "@/lib/payments/rpc";
 
 export const maxDuration = 300;
@@ -88,7 +91,7 @@ async function createBillingDm({
     supabase: any;
     senderAddress: string;
     receiverAddress: string;
-    messageType: "DEBIT_SUCCESS" | "EXPIRY_WARNING";
+    messageType: "DEBIT_SUCCESS" | "EXPIRY_WARNING" | "ALLOWANCE_LOW";
     amountUsdc: bigint | string | number;
     title: string;
     description: string;
@@ -416,20 +419,53 @@ export async function POST(request: Request) {
                     const failures = Number(sub.downgrade_failures || 0);
                     const newFailures = failures + 1;
 
+                    /* Balance-short and allowance-short are different failures with different
+                       remedies, and the combined "insufficient USDC balance or allowance" told a
+                       fully-funded subscriber to add funds that could not help. The allowance is
+                       the ERC-20 approval signed at subscribe time, sized for roughly a year of
+                       cycles and never renewed — so a healthy monthly plan hits this at about
+                       cycle 13 with a message pointing at the wrong cause. Name which one. */
+                    const balanceShort = balance < chargeAmount;
+                    const allowanceShort = allowance < chargeAmount;
+                    const shortfallReason = balanceShort && allowanceShort
+                        ? "Insufficient balance and expired authorization"
+                        : balanceShort
+                        ? "Insufficient USDC balance"
+                        : "Spending authorization exhausted";
+                    const shortfallLines = balanceShort && allowanceShort
+                        ? [
+                            "Reason: your USDC balance is too low AND your spending authorization has run out.",
+                            "Both need fixing: add USDC, then re-authorize the subscription from your dashboard.",
+                        ]
+                        : balanceShort
+                        ? [
+                            `Reason: insufficient USDC balance — this renewal needs ${Number(chargeAmount) / 1_000_000} USDC.`,
+                            "Add USDC to keep your plan active — we'll retry automatically.",
+                        ]
+                        : [
+                            "Reason: the spending authorization you signed when you subscribed has run out.",
+                            "This is not your balance — adding USDC will not fix it. That approval covers about a year of renewals and now needs renewing.",
+                            "Re-authorize this subscription from your dashboard to resume renewals.",
+                        ];
+
                     /* Notify once, on the first failure, to avoid a message every cron run. */
                     if (failures === 0) {
                         await createBillingDm({
                             supabase,
                             senderAddress: merchantAddress,
                             receiverAddress: subscriber,
-                            messageType: "EXPIRY_WARNING",
+                            /* An exhausted authorization is not a funding problem, so it gets the
+                               dedicated type — the customer's next action differs entirely. */
+                            messageType: allowanceShort && !balanceShort ? "ALLOWANCE_LOW" : "EXPIRY_WARNING",
                             amountUsdc: chargeAmount,
-                            title: "Subscription renewal needs attention",
+                            title: allowanceShort && !balanceShort
+                                ? "Subscription authorization has run out"
+                                : "Subscription renewal needs attention",
                             description: [
                                 "SubScript could not renew your subscription.",
-                                "Reason: insufficient USDC balance or allowance.",
-                                "Add USDC to keep your plan active — we'll retry automatically.",
+                                ...shortfallLines,
                             ].join("\n"),
+                            dedupeKey: `customer-renewal-shortfall:${subId}:${sequenceId}`,
                         }).catch((e: any) => console.error("[customer-billing] warning DM failed:", e));
                         await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.payment_failed", subscriptionWebhookData({
                             subscriptionId: subId,
@@ -438,7 +474,7 @@ export async function POST(request: Request) {
                             subscriber,
                             merchantAddress,
                             ...lifecycleBinding(sub),
-                            reason: "Insufficient balance or allowance",
+                            reason: shortfallReason,
                             pricing: pricingBlock,
                         }), `customer-payment-failed:${subId}:${newFailures}`);
                     }
@@ -585,6 +621,80 @@ export async function POST(request: Request) {
                     ...lifecycleBinding(sub),
                     pricing: pricingBlock,
                 }), `customer-renewed:${subId}:${sequenceId}:${tx.hash.toLowerCase()}`);
+
+                /* Project the remaining authorization runway on the way out of a SUCCESSFUL
+                   renewal, and warn while the customer can still act.
+
+                   This is the point the allowance arithmetic existed for and was never wired to.
+                   The allowance is finite and consumed one cycle at a time; without this, the
+                   first signal a subscriber gets is the renewal that fails at roughly cycle 13,
+                   reported as a funding problem. Reading it here costs one eth_call on a path
+                   that has already spent a transaction, and the warning lands a cycle or two
+                   before the wall rather than after it.
+
+                   Deliberately after completeBillingClaim's inputs are settled but before it
+                   runs, so a failure in projection cannot strand the claim: everything below is
+                   wrapped and swallowed. */
+                try {
+                    /* Re-read post-charge: the allowance we validated above was pre-charge, and
+                       this renewal just consumed chargeAmount of it. Projecting from the stale
+                       figure would overstate the runway by exactly one cycle — the one cycle
+                       that matters at the boundary. */
+                    const remainingAllowance: bigint = BigInt(
+                        await usdcContract.allowance(subscriber, STANDARD_CONTRACT_ADDRESS),
+                    );
+                    /* Project against the REGULAR amount, not this cycle's charge. An
+                       introductory cycle charges less (sometimes zero), so using chargeAmount
+                       would report a long runway right up to the first full-price renewal. */
+                    const runway = projectRunway(remainingAllowance, amountOnChain);
+
+                    if (runway.isLow && runway.cyclesRemaining !== null) {
+                        const nextBillingIso = new Date(
+                            Number((nextPaymentOnChain + BigInt(sequenceId) * periodOnChain) * BigInt(1000)),
+                        );
+                        const warned = await sendAllowanceLowDm({
+                            merchantAddress,
+                            subscriberAddress: subscriber,
+                            subscriptionId: subId,
+                            amountUsdcMicros: amountOnChain,
+                            allowanceUsdcMicros: remainingAllowance,
+                            cyclesRemaining: runway.cyclesRemaining,
+                            nextBillingDate: nextBillingIso,
+                        });
+
+                        /* Only tell the merchant about a warning the customer actually received,
+                           so the event stream and the inbox agree. */
+                        if (warned.sent) {
+                            await recordMerchantEvent({
+                                merchantAddress,
+                                environment: "LIVE",
+                                eventType: "subscription.allowance_low",
+                                resourceType: "subscription",
+                                resourceId: String(subId),
+                                resourceVersion: sequenceId,
+                                transitionKey: `allowance-low:${subId}:${sequenceId}`,
+                                correlationId: `customer-billing:${subId}:${sequenceId}`,
+                                data: {
+                                    subscription_id: String(subId),
+                                    status: "active",
+                                    amount_usdc_micros: amountOnChain.toString(),
+                                    currency: "USDC",
+                                    subscriber,
+                                    merchant_address: merchantAddress,
+                                    merchant_customer_id: null,
+                                    external_reference: sub.external_reference ?? null,
+                                    allowance_usdc_micros: remainingAllowance.toString(),
+                                    cycles_remaining: runway.cyclesRemaining,
+                                },
+                            });
+                        }
+                    }
+                } catch (runwayError: any) {
+                    console.error(
+                        `[customer-billing] allowance runway projection failed for sub ${subId}:`,
+                        runwayError?.message || runwayError,
+                    );
+                }
 
                 if (!await completeBillingClaim(tx.hash)) throw new Error("Customer renewal claim completion failed");
 

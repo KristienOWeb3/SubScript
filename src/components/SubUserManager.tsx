@@ -96,14 +96,14 @@ export default function SubUserManager({ balanceVisible = true }: { balanceVisib
     /* Pause/resume/revoke all reduce to one status write, so they share a handler. The list is
        refetched rather than patched locally: the server owns the status/timestamp coherence rules
        and a local guess could disagree with the CHECK constraints. */
-    const mutateStatus = async (target: UserCommit, action: "pause" | "resume" | "revoke") => {
-        if (action === "revoke") {
-            const confirmed = window.confirm(
-                `Revoke ${target.displayName}? This is permanent — their spend history is kept, but you cannot reactivate them. Use Pause if you only want to stop spending for now.`,
-            );
-            if (!confirmed) return;
-        }
+    const [subUserConfirm, setSubUserConfirm] = useState<{
+        title: string;
+        message: string;
+        confirmText: string;
+        onConfirm: () => void;
+    } | null>(null);
 
+    const executeMutateStatus = async (target: UserCommit, action: "pause" | "resume" | "revoke") => {
         setBusy({ commitId: target.commitId, action });
         setError(null);
         try {
@@ -111,7 +111,6 @@ export default function SubUserManager({ balanceVisible = true }: { balanceVisib
                 ? "/api/user/commit/sub-users/revoke"
                 : "/api/user/commit/sub-users/pause";
             const res = await fetch(path, {
-                // DELETE on the pause route lifts a pause; POST applies one.
                 method: action === "resume" ? "DELETE" : "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ commitId: target.commitId }),
@@ -123,27 +122,24 @@ export default function SubUserManager({ balanceVisible = true }: { balanceVisib
             setError(err instanceof Error ? err.message : `Could not ${action} this sub-user`);
         } finally {
             setBusy(null);
+            setSubUserConfirm(null);
         }
     };
 
-    const createSubUser = async (event: React.FormEvent) => {
-        event.preventDefault();
-        setCreateError(null);
-
-        /* An empty cap field means uncapped, which is a real choice — but it is the dangerous one,
-           so it is opt-in via confirmation rather than the silent default. */
-        let spendLimitUsdc: string | null = null;
-        if (newLimit.trim()) {
-            const parsed = parseUsdcToMicros(newLimit);
-            if ("error" in parsed) {
-                setCreateError(parsed.error);
-                return;
-            }
-            spendLimitUsdc = parsed.micros;
-        } else if (!window.confirm("Leave this sub-user uncapped? They will be able to spend your full wallet balance.")) {
+    const mutateStatus = (target: UserCommit, action: "pause" | "resume" | "revoke") => {
+        if (action === "revoke") {
+            setSubUserConfirm({
+                title: "Revoke Sub-user",
+                message: `Revoke ${target.displayName || "this sub-user"}? This is permanent — their spend history is kept, but you cannot reactivate them.`,
+                confirmText: "Revoke",
+                onConfirm: () => executeMutateStatus(target, action),
+            });
             return;
         }
+        void executeMutateStatus(target, action);
+    };
 
+    const executeCreateSubUser = async (spendLimitUsdc: string | null) => {
         setCreating(true);
         try {
             const res = await fetch("/api/user/commit/sub-users", {
@@ -162,6 +158,51 @@ export default function SubUserManager({ balanceVisible = true }: { balanceVisib
             setCreateError(err instanceof Error ? err.message : "Could not create sub-user");
         } finally {
             setCreating(false);
+            setSubUserConfirm(null);
+        }
+    };
+
+    const createSubUser = async (event: React.FormEvent) => {
+        event.preventDefault();
+        setCreateError(null);
+
+        let spendLimitUsdc: string | null = null;
+        if (newLimit.trim()) {
+            const parsed = parseUsdcToMicros(newLimit);
+            if ("error" in parsed) {
+                setCreateError(parsed.error);
+                return;
+            }
+            spendLimitUsdc = parsed.micros;
+            await executeCreateSubUser(spendLimitUsdc);
+        } else {
+            setSubUserConfirm({
+                title: "Create Uncapped Sub-user",
+                message: "Leave this sub-user uncapped? They will be able to spend your full wallet balance.",
+                confirmText: "Create Uncapped",
+                onConfirm: () => executeCreateSubUser(null),
+            });
+        }
+    };
+
+    const executeSaveLimit = async (spendLimitUsdc: string | null) => {
+        if (!editing) return;
+        setSavingLimit(true);
+        try {
+            const res = await fetch("/api/user/commit/sub-users", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ commitId: editing.commitId, spendLimitUsdc }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || "Could not update the cap");
+            setEditing(null);
+            await load();
+        } catch (err: unknown) {
+            setEditError(err instanceof Error ? err.message : "Could not update the cap");
+        } finally {
+            setSavingLimit(false);
+            setSubUserConfirm(null);
         }
     };
 
@@ -178,25 +219,14 @@ export default function SubUserManager({ balanceVisible = true }: { balanceVisib
                 return;
             }
             spendLimitUsdc = parsed.micros;
-        } else if (!window.confirm("Remove this sub-user's cap? They will be able to spend your full wallet balance.")) {
-            return;
-        }
-
-        setSavingLimit(true);
-        try {
-            const res = await fetch("/api/user/commit/sub-users", {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ commitId: editing.commitId, spendLimitUsdc }),
+            await executeSaveLimit(spendLimitUsdc);
+        } else {
+            setSubUserConfirm({
+                title: "Remove Sub-user Cap",
+                message: "Remove this sub-user's cap? They will be able to spend your full wallet balance.",
+                confirmText: "Remove Cap",
+                onConfirm: () => executeSaveLimit(null),
             });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.error || "Could not update the cap");
-            setEditing(null);
-            await load();
-        } catch (err: unknown) {
-            setEditError(err instanceof Error ? err.message : "Could not update the cap");
-        } finally {
-            setSavingLimit(false);
         }
     };
 
@@ -486,6 +516,44 @@ export default function SubUserManager({ balanceVisible = true }: { balanceVisib
                                 {savingLimit ? "Saving..." : "Save cap"}
                             </button>
                         </motion.form>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Custom SubScript Confirmation Modal */}
+            <AnimatePresence>
+                {subUserConfirm && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.95, opacity: 0 }}
+                            className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#121212] p-6 shadow-2xl space-y-4"
+                        >
+                            <h3 className="text-base font-bold text-white uppercase tracking-wider">{subUserConfirm.title}</h3>
+                            <p className="text-xs text-white/60 leading-relaxed">{subUserConfirm.message}</p>
+                            <div className="flex justify-end gap-2 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setSubUserConfirm(null)}
+                                    className="px-4 py-2 text-xs font-bold text-white/50 hover:text-white transition"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={subUserConfirm.onConfirm}
+                                    className="px-4 py-2 rounded-xl bg-[#ccff00] text-black text-xs font-bold uppercase tracking-wider transition hover:opacity-90"
+                                >
+                                    {subUserConfirm.confirmText}
+                                </button>
+                            </div>
+                        </motion.div>
                     </motion.div>
                 )}
             </AnimatePresence>

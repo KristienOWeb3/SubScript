@@ -90,7 +90,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
         }
 
-        const mirroredBeforeChange = await prisma.subscription.findUnique({
+        const mirroredBeforeChange = await prisma.subscription.findFirst({
             where: { subscriptionId: BigInt(fromSubscriptionId) },
             select: {
                 beneficiaryAddress: true,

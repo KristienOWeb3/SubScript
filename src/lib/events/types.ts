@@ -15,7 +15,6 @@ export const PAYMENT_EVENT_TYPES = [
     "payment.pending",
     "payment.succeeded",
     "payment.failed",
-    "payment.refunded",
     "payment.expired",
 ] as const;
 
@@ -37,6 +36,25 @@ export const SUBSCRIPTION_EVENT_TYPES = [
     "subscription.cancel_scheduled",
     "subscription.canceled",
     "subscription.expired",
+    /* Advance notice, ahead of the charge rather than after a failure. */
+    "subscription.renewal_upcoming",
+    /* The spending authorization is running out of cycles. Distinct from a funding
+       problem: adding USDC does not fix it, re-authorizing does. */
+    "subscription.allowance_low",
+    /* Trial lifecycle. trial_ending precedes the first real charge; trial_converted is
+       the conversion itself, which merchants meter separately from a renewal. */
+    "subscription.trial_ending",
+    "subscription.trial_converted",
+    /* A previously churned subscriber (voluntary or involuntary) is billing again. */
+    "subscription.reactivated",
+    /* A retention offer was presented to a churning subscriber. Emitted when the offer is
+       surfaced, not when it converts — merchants need the denominator to measure the rate. */
+    "subscription.winback_offered",
+] as const;
+
+/* ----------------------------- Promotions ---------------------------------- */
+export const PROMOTION_EVENT_TYPES = [
+    "promotion.redeemed",
 ] as const;
 
 /* ----------------------------- Metered vaults ------------------------------ */
@@ -70,19 +88,68 @@ export const PAYOUT_EVENT_TYPES = [
 ] as const;
 
 /* ----------------------------- Exhaustive catalog -------------------------- */
-export const ALL_EVENT_TYPES = [
+
+/**
+ * The PUBLIC catalog: every event type SubScript actually emits today.
+ *
+ * This is what integrators may subscribe an endpoint to, what the docs and OpenAPI
+ * generator enumerate, and what the dashboard offers in its event picker. An event type
+ * belongs here only once a producer emits it. A type declared here that nothing emits is
+ * worse than an absent one — integrators write handlers that never fire and conclude the
+ * platform is broken. `payment.refunded` sat in this list for months emitted by nothing,
+ * which is why the split below exists.
+ */
+export const PUBLIC_EVENT_TYPES = [
     ...PAYMENT_EVENT_TYPES,
     ...CHECKOUT_EVENT_TYPES,
     ...SUBSCRIPTION_EVENT_TYPES,
+    ...PROMOTION_EVENT_TYPES,
     ...VAULT_EVENT_TYPES,
     ...PAYOUT_EVENT_TYPES,
 ] as const;
 
+/**
+ * RESERVED types: named, wire-accepted, and deliberately NOT public.
+ *
+ * These are accepted by the validator and by inbound consumers so a forward-dated payload
+ * from a newer producer parses instead of erroring, and so the names cannot be reused for
+ * something else later. They are excluded from PUBLIC_EVENT_TYPES because no producer emits
+ * them yet. Move a type up into its category list in the same commit that ships its producer.
+ *
+ * - payment.refunded — needs the refund path (no credit primitive on-chain yet).
+ * - subscription.trial_started / trial_extended — need off-chain trial entitlements.
+ * - subscription.downgrade_scheduled — needs scheduled-downgrade composition.
+ * - subscription.quantity_updated / addon_added / addon_removed — need multi-sub-per-merchant.
+ */
+export const RESERVED_EVENT_TYPES = [
+    "payment.refunded",
+    "subscription.trial_started",
+    "subscription.trial_extended",
+    "subscription.downgrade_scheduled",
+    "subscription.quantity_updated",
+    "subscription.addon_added",
+    "subscription.addon_removed",
+] as const;
+
+/**
+ * Everything the validator will accept: public plus reserved.
+ *
+ * Producers must never emit a reserved type — use PUBLIC_EVENT_TYPES for anything
+ * outbound. This union exists for parsing tolerance only.
+ */
+export const ALL_EVENT_TYPES = [
+    ...PUBLIC_EVENT_TYPES,
+    ...RESERVED_EVENT_TYPES,
+] as const;
+
 export type EventType = (typeof ALL_EVENT_TYPES)[number];
+export type PublicEventType = (typeof PUBLIC_EVENT_TYPES)[number];
+export type ReservedEventType = (typeof RESERVED_EVENT_TYPES)[number];
 
 export type PaymentEventType = (typeof PAYMENT_EVENT_TYPES)[number];
 export type CheckoutEventType = (typeof CHECKOUT_EVENT_TYPES)[number];
 export type SubscriptionEventType = (typeof SUBSCRIPTION_EVENT_TYPES)[number];
+export type PromotionEventType = (typeof PROMOTION_EVENT_TYPES)[number];
 export type VaultEventType = (typeof VAULT_EVENT_TYPES)[number];
 export type PayoutEventType = (typeof PAYOUT_EVENT_TYPES)[number];
 
@@ -234,6 +301,148 @@ export interface CheckoutCreatedEventData {
     external_reference: string | null;
 }
 
+/**
+ * Advance notice of an upcoming renewal charge.
+ *
+ * `renews_at` is when the keeper will attempt the charge; `lead_hours` is how far ahead of
+ * that this event fired, so an integrator can tell a 72h notice from a 24h one without
+ * recomputing it against a clock that may have drifted from ours.
+ */
+export interface SubscriptionRenewalUpcomingEventData {
+    subscription_id: string;
+    status: "active";
+    amount_usdc_micros: string;
+    currency: "USDC";
+    subscriber: string | null;
+    merchant_address: string;
+    merchant_customer_id: string | null;
+    external_reference: string | null;
+    renews_at: string;
+    lead_hours: number;
+    /* True when this renewal is the first at the regular price after introductory cycles. */
+    is_first_regular_charge: boolean;
+}
+
+/**
+ * The ERC-20 spending authorization is nearly exhausted.
+ *
+ * Deliberately NOT a payment failure. The subscriber's balance may be fully funded; what has
+ * run down is the approval signed at subscribe time, which covers a finite number of cycles.
+ * Integrators should prompt re-authorization, not a payment-method update.
+ */
+export interface SubscriptionAllowanceLowEventData {
+    subscription_id: string;
+    status: string;
+    amount_usdc_micros: string;
+    currency: "USDC";
+    subscriber: string | null;
+    merchant_address: string;
+    merchant_customer_id: string | null;
+    external_reference: string | null;
+    allowance_usdc_micros: string;
+    /* Whole renewals the remaining allowance can still fund. */
+    cycles_remaining: number;
+}
+
+/** A trial or introductory phase is about to end and bill at the regular price. */
+export interface SubscriptionTrialEndingEventData {
+    subscription_id: string;
+    status: string;
+    /* The price that will be charged when the trial ends. */
+    amount_usdc_micros: string;
+    /* What the subscriber is paying during the trial (0 for a free trial). */
+    trial_amount_usdc_micros: string;
+    currency: "USDC";
+    subscriber: string | null;
+    merchant_address: string;
+    merchant_customer_id: string | null;
+    external_reference: string | null;
+    promotion_id: string | null;
+    first_regular_payment_at: string;
+    lead_hours: number;
+}
+
+/** A trial converted to paid — the first charge at the regular price succeeded. */
+export interface SubscriptionTrialConvertedEventData {
+    subscription_id: string;
+    status: "active";
+    amount_usdc_micros: string;
+    currency: "USDC";
+    subscriber: string | null;
+    merchant_address: string;
+    merchant_customer_id: string | null;
+    external_reference: string | null;
+    promotion_id: string | null;
+    /* Introductory cycles the subscriber consumed before converting. */
+    trial_cycles: number;
+    trial_amount_usdc_micros: string;
+    transaction_hash: string | null;
+    chain_id: number;
+    explorer_url: string | null;
+}
+
+/**
+ * A churned subscriber is billing again.
+ *
+ * `previous_subscription_id` is the run that ended. `churn_kind` distinguishes a subscriber
+ * who chose to leave from one the dunning process dropped — the two are different funnels and
+ * merchants report them separately.
+ */
+export interface SubscriptionReactivatedEventData {
+    subscription_id: string;
+    previous_subscription_id: string | null;
+    status: "active";
+    amount_usdc_micros: string;
+    currency: "USDC";
+    subscriber: string | null;
+    merchant_address: string;
+    merchant_customer_id: string | null;
+    external_reference: string | null;
+    churn_kind: "voluntary" | "involuntary";
+    /* Gap between the previous run ending and this one starting. */
+    days_since_churn: number | null;
+    promotion_id: string | null;
+    transaction_hash: string | null;
+    chain_id: number;
+    explorer_url: string | null;
+}
+
+/** A retention offer was presented to a churning subscriber. */
+export interface SubscriptionWinbackOfferedEventData {
+    subscription_id: string;
+    status: string;
+    currency: "USDC";
+    subscriber: string | null;
+    merchant_address: string;
+    merchant_customer_id: string | null;
+    external_reference: string | null;
+    promotion_id: string;
+    promotion_name: string;
+    offer_amount_usdc_micros: string;
+    regular_amount_usdc_micros: string;
+    offer_cycles: number;
+    /* Why the subscriber was leaving, when the cancel flow captured it. */
+    cancellation_reason: string | null;
+    expires_at: string | null;
+}
+
+/** A promotion was redeemed against a subscription. */
+export interface PromotionRedeemedEventData {
+    promotion_id: string;
+    promotion_name: string;
+    code: string | null;
+    subscription_id: string | null;
+    subscriber: string;
+    merchant_address: string;
+    plan_id: string;
+    discount_type: "PERCENT" | "FIXED_PRICE" | "FREE_TRIAL";
+    regular_amount_usdc_micros: string;
+    introductory_amount_usdc_micros: string;
+    introductory_cycles: number;
+    first_regular_payment_at: string | null;
+    currency: "USDC";
+}
+
 export interface VaultServiceCanceledEventData {
     vault_id: string;
     user_address: string;
@@ -267,6 +476,27 @@ export type SubscriptionPaymentFailedEvent = EventEnvelope<SubscriptionPaymentFa
 export type CheckoutCreatedEvent = EventEnvelope<CheckoutCreatedEventData> & {
     type: "checkout.created";
 };
+export type SubscriptionRenewalUpcomingEvent = EventEnvelope<SubscriptionRenewalUpcomingEventData> & {
+    type: "subscription.renewal_upcoming";
+};
+export type SubscriptionAllowanceLowEvent = EventEnvelope<SubscriptionAllowanceLowEventData> & {
+    type: "subscription.allowance_low";
+};
+export type SubscriptionTrialEndingEvent = EventEnvelope<SubscriptionTrialEndingEventData> & {
+    type: "subscription.trial_ending";
+};
+export type SubscriptionTrialConvertedEvent = EventEnvelope<SubscriptionTrialConvertedEventData> & {
+    type: "subscription.trial_converted";
+};
+export type SubscriptionReactivatedEvent = EventEnvelope<SubscriptionReactivatedEventData> & {
+    type: "subscription.reactivated";
+};
+export type SubscriptionWinbackOfferedEvent = EventEnvelope<SubscriptionWinbackOfferedEventData> & {
+    type: "subscription.winback_offered";
+};
+export type PromotionRedeemedEvent = EventEnvelope<PromotionRedeemedEventData> & {
+    type: "promotion.redeemed";
+};
 export type VaultServiceCanceledEvent = EventEnvelope<VaultServiceCanceledEventData> & {
     type: "vault.service_canceled";
 };
@@ -283,6 +513,13 @@ export type SubScriptWebhookEvent =
     | SubscriptionCancelScheduledEvent
     | SubscriptionUpdatedEvent
     | SubscriptionPaymentFailedEvent
+    | SubscriptionRenewalUpcomingEvent
+    | SubscriptionAllowanceLowEvent
+    | SubscriptionTrialEndingEvent
+    | SubscriptionTrialConvertedEvent
+    | SubscriptionReactivatedEvent
+    | SubscriptionWinbackOfferedEvent
+    | PromotionRedeemedEvent
     | CheckoutCreatedEvent
     | VaultServiceCanceledEvent;
 
@@ -291,8 +528,46 @@ export type SubScriptWebhookEvent =
 /** Set for O(1) membership tests */
 export const EVENT_TYPE_SET: ReadonlySet<string> = new Set(ALL_EVENT_TYPES);
 
+/** Types integrators may subscribe to — excludes reserved-but-unemitted names. */
+export const PUBLIC_EVENT_TYPE_SET: ReadonlySet<string> = new Set(PUBLIC_EVENT_TYPES);
+
+export const RESERVED_EVENT_TYPE_SET: ReadonlySet<string> = new Set(RESERVED_EVENT_TYPES);
+
 export function isKnownEventType(value: string): value is EventType {
     return EVENT_TYPE_SET.has(value);
+}
+
+/**
+ * True for a type SubScript actually emits.
+ *
+ * Use this — not isKnownEventType — anywhere the answer drives what an integrator sees or
+ * subscribes to: endpoint `enabledEvents` validation, the docs catalog, the OpenAPI enum, the
+ * dashboard picker. isKnownEventType is deliberately wider so inbound parsing tolerates
+ * reserved names.
+ */
+export function isPublicEventType(value: string): value is PublicEventType {
+    return PUBLIC_EVENT_TYPE_SET.has(value);
+}
+
+/** True for a name that is claimed but has no producer yet. */
+export function isReservedEventType(value: string): value is ReservedEventType {
+    return RESERVED_EVENT_TYPE_SET.has(value);
+}
+
+/**
+ * Producer-side assertion. recordMerchantEvent calls this so a reserved type cannot reach a
+ * subscriber: the type exists for parsing tolerance, and emitting one would recreate exactly
+ * the `payment.refunded` problem the public/reserved split was introduced to end.
+ */
+export function assertEmittableEventType(value: string): asserts value is PublicEventType {
+    if (isPublicEventType(value)) return;
+    if (isReservedEventType(value)) {
+        throw new Error(
+            `Event type '${value}' is reserved and has no producer. Move it into its category `
+            + `list in PUBLIC_EVENT_TYPES in the same change that ships its producer.`,
+        );
+    }
+    throw new Error(`Unknown event type '${value}'. Add it to the catalog in src/lib/events/types.ts.`);
 }
 
 /**

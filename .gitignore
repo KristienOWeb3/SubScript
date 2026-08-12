@@ -69,3 +69,11 @@ snapshot_*.json
 # Brand Documentation
 /brand_docs/
 
+# Dev scripts and scratch files
+agentrouter-proxy.js
+launch-claude-*.bat
+billing-coverage.*
+photo_*.jpg
+.codex/
+.claudeignore
+

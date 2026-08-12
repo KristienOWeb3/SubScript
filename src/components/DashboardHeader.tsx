@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import NotificationBell from "@/components/dashboard/NotificationBell";
 import { Wallet, Copy, Check, PlugZap, Eye, EyeOff, User } from "@/components/icons";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { createPublicClient, http, formatUnits } from "viem";
@@ -66,9 +67,27 @@ export default function DashboardHeader({
     const [usdcBalance, setUsdcBalance] = useState("0.00");
     const [merchantAlias, setMerchantAlias] = useState<string | null>(propMerchantAlias || null);
     const [balancesVisible, setBalancesVisible] = useState(true);
+    const [isAdmin, setIsAdmin] = useState(false);
 
     useEffect(() => {
         setMounted(true);
+    }, []);
+
+    useEffect(() => {
+        const checkAdmin = async () => {
+            try {
+                const res = await fetch("/api/auth/session");
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.isAdmin || (data.wallet && data.wallet.toLowerCase() === "0x497b0e2c08fb93464354e7023f040e088b169a3f")) {
+                        setIsAdmin(true);
+                    }
+                }
+            } catch {
+                /* ignore */
+            }
+        };
+        checkAdmin();
     }, []);
 
     useEffect(() => {
@@ -192,6 +211,14 @@ export default function DashboardHeader({
                         {/* Disconnect + Address/Domain Name + PFP (Right) */}
                         {isConnected && address ? (
                             <div className="flex items-center gap-1.5">
+                                {(isAdmin || address.toLowerCase() === "0x497b0e2c08fb93464354e7023f040e088b169a3f") && (
+                                    <Link
+                                        href="/admin"
+                                        className="px-2.5 py-1 rounded-full border border-purple-500/40 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 text-[9px] font-bold uppercase tracking-wider transition"
+                                    >
+                                        Admin
+                                    </Link>
+                                )}
                                 {/* Disconnect Wallet Icon */}
                                 <button
                                     onClick={handleDisconnect}
@@ -262,8 +289,20 @@ export default function DashboardHeader({
 
                         {/* Right Side: Wallet Info + Actions */}
                         <div className="flex items-center gap-2 sm:gap-3">
+                            {/* Mobile placement: the bell sits in the header bar. On desktop it is
+                                rendered beside the dashboard title instead, so exactly one is
+                                visible at a time and the two cannot show different counts. */}
+                            <NotificationBell audience="MERCHANT" accent="#00d2b4" className="md:hidden" />
                             {isConnected && address ? (
                                 <>
+                                    {(isAdmin || address.toLowerCase() === "0x497b0e2c08fb93464354e7023f040e088b169a3f") && (
+                                        <Link
+                                            href="/admin"
+                                            className="px-3 py-1.5 rounded-full border border-purple-500/40 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 text-[10px] sm:text-xs font-bold uppercase tracking-wider transition"
+                                        >
+                                            Admin
+                                        </Link>
+                                    )}
                                     {/* Wallet Address (copyable) */}
                                     <button
                                         onClick={handleCopyAddress}

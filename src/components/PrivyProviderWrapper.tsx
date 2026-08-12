@@ -3,6 +3,7 @@
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider } from "wagmi";
+import { MotionConfig } from "framer-motion";
 import { config } from "@/lib/wagmi";
 
 if (typeof window !== "undefined") {
@@ -67,7 +68,19 @@ export default function PrivyProviderWrapper({
     return (
         <WagmiProvider config={config}>
             <QueryClientProvider client={queryClient}>
-                {children}
+                {/* reducedMotion="user" makes every framer-motion component in the app honour the
+                    OS "reduce motion" setting, which CSS cannot do for them: framer-motion animates
+                    via inline style on each frame, so the prefers-reduced-motion rules in
+                    globals.css never apply to it. Set here because this is the outermost client
+                    boundary both dashboards render inside, so the tab-switch springs, modals, and
+                    reveals are all covered by one declaration instead of a useReducedMotion call
+                    per motion component.
+
+                    "user" rather than "always": transform and opacity animations still run for
+                    everyone who has not asked for less motion. */}
+                <MotionConfig reducedMotion="user">
+                    {children}
+                </MotionConfig>
             </QueryClientProvider>
         </WagmiProvider>
     );
