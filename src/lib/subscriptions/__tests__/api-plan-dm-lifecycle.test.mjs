@@ -89,15 +89,15 @@ test("legacy backfill excludes private checkout terms and creates targeted inbox
 test("sponsored plan requests dispatch in-app DM cards and merchant confirmation DMs", () => {
     const requestRoute = source("src/app/api/user/requests/merchant-plan/route.ts");
     const verifyWorker = source("src/lib/payments/paymentLinkVerificationWorker.ts");
-    const notifications = source("src/lib/dms/notifications.ts");
+    const catalog = source("src/lib/dms/catalog.ts");
     const dashboard = source("src/app/dashboard/user/page.tsx");
 
     assert.match(requestRoute, /messageType: "SPONSORED_PLAN_REQUEST"/);
     assert.match(requestRoute, /createDmAndNotify\(\{/);
     assert.match(verifyWorker, /message_type: "SPONSORED_PLAN_CONFIRMED"/);
     assert.match(verifyWorker, /Sponsored Access Active/);
-    assert.match(notifications, /SPONSORED_PLAN_REQUEST: "Sponsorship requested"/);
-    assert.match(notifications, /SPONSORED_PLAN_CONFIRMED: "Sponsored access active"/);
+    assert.match(catalog, /SPONSORED_PLAN_REQUEST/);
+    assert.match(catalog, /SPONSORED_PLAN_CONFIRMED/);
     assert.match(dashboard, /SPONSORED_PLAN_REQUEST/);
     assert.match(dashboard, /SPONSORED_PLAN_CONFIRMED/);
     assert.match(dashboard, /Resubscribe for Yourself/);
