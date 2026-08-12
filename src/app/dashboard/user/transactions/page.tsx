@@ -375,7 +375,7 @@ export default function UserTransactionsPage() {
           {activeSubscriptions.length === 0 ? (
             <div className="flex h-32 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center p-4">
               <CreditCard className="mb-2 h-6 w-6 text-white/20" />
-              <p className="text-xs text-white/40">No active subscription streams.</p>
+              <p className="text-xs text-white/40">No active subscriptions</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

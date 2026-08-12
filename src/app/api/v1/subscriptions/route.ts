@@ -17,6 +17,7 @@ import { generateReceiptId } from "@/lib/arc/memo";
 import { sanitizeInput } from "@/utils/security";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
+import { onActiveContract, subscriptionKey } from "@/lib/subscriptions/contractBinding";
 import {
     readSubscriptionCheckoutMeta,
     subscriptionCheckoutPeriod,
@@ -565,14 +566,23 @@ export async function DELETE(request: Request) {
         // An active on-chain authorization belongs to the subscriber. Merchants can set
         // cancelAtPeriodEnd = true on active subscriptions and notify the DM thread.
         if (/^\d+$/.test(idParam)) {
+            /* Scoped to the active PSA. `subscription_id` is not unique — an immutable PSA
+               restarts ids at 1 on every redeploy — so a bare (id, merchant) lookup can match a
+               row stranded by an abandoned deployment and schedule a cancellation plus a
+               merchant webhook for a subscription that no longer exists on chain. */
             const sub = await prisma.subscription.findFirst({
-                where: { subscriptionId: BigInt(idParam), merchantAddress },
+                where: { ...onActiveContract(), subscriptionId: BigInt(idParam), merchantAddress },
             });
             if (!sub) {
                 return NextResponse.json({ error: "Subscription not found for this merchant" }, { status: 404 });
             }
             await prisma.subscription.update({
-                where: { subscriptionId: sub.subscriptionId },
+                where: {
+                    contractAddress_subscriptionId: {
+                        contractAddress: sub.contractAddress,
+                        subscriptionId: sub.subscriptionId,
+                    },
+                },
                 data: { cancelAtPeriodEnd: true, updatedAt: new Date() },
             });
             await createDmAndNotify({

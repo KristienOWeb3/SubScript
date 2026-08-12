@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/admin/guard";
+import { jsonOk } from "@/lib/http/json";
 
 /* Platform-wide analytics for the admin console.
  *
@@ -127,7 +128,11 @@ export async function GET(request: Request) {
         const kycCounts: Record<string, number> = {};
         for (const row of kycByStatus) kycCounts[row.status] = row._count._all;
 
-        return NextResponse.json({
+        /* jsonOk, not NextResponse.json: formatUsdc already converts every money figure this
+           handler knows about, but this payload is assembled from eighteen aggregates and grows
+           every time a metric is added. jsonOk means forgetting formatUsdc on a new _sum yields
+           a slightly unformatted string rather than a 500 that takes the whole tab down. */
+        return jsonOk({
             generatedAt: now.toISOString(),
             volume: {
                 totalUsdc: formatUsdc(receiptVolume),

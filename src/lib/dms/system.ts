@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { createDmAndNotify } from "@/lib/dms/notifications";
+import { THREAD_OPENING_DM_TYPES } from "@/lib/dms/catalog";
 import { isPeerRequestLink } from "@/lib/paymentLinks/classification";
 
 const USDC_DECIMALS = 1_000_000;
@@ -206,16 +207,20 @@ export async function createSubscriptionOfferDm({
 }
 
 /**
- * True if a subscription has opened a merchant→user DM thread (a SUBSCRIPTION_STARTED,
- * EXPIRY_WARNING, or CHURN_SURVEY DM — all subscription-lifecycle only). Used to gate
- * one-time payment receipt DMs so they appear only after a subscription relationship.
+ * True if a subscription has opened a merchant→user DM thread. Used to gate one-time payment
+ * receipt DMs so they appear only after a subscription relationship exists.
+ *
+ * The type list comes from the catalog's `opensSubscriptionThread` flag rather than being
+ * repeated here. It was previously a literal `["SUBSCRIPTION_STARTED", "EXPIRY_WARNING",
+ * "CHURN_SURVEY"]`, which meant every new lifecycle DM type silently failed to open a thread —
+ * a customer whose only contact was a renewal reminder would not see their receipts.
  */
 export async function hasSubscriptionDmThread(merchantAddress: string, userAddress: string) {
     const existing = await prisma.subscriptDm.findFirst({
         where: {
             senderAddress: merchantAddress.toLowerCase(),
             receiverAddress: userAddress.toLowerCase(),
-            messageType: { in: ["SUBSCRIPTION_STARTED", "EXPIRY_WARNING", "CHURN_SURVEY"] },
+            messageType: { in: THREAD_OPENING_DM_TYPES },
         },
         select: { id: true },
     }).catch(() => null);

@@ -40,7 +40,7 @@ async function createBillingDm({
     supabase: any;
     senderAddress: string;
     receiverAddress: string;
-    messageType: "DEBIT_SUCCESS" | "EXPIRY_WARNING";
+    messageType: "DEBIT_SUCCESS" | "EXPIRY_WARNING" | "ALLOWANCE_LOW";
     amountUsdc: bigint | string | number;
     title: string;
     description: string;

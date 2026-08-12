@@ -21,6 +21,8 @@ export type AdminAction =
     | "ADMIN_WALLET_REVOKE"
     | "BROADCAST_CREATED"
     | "RECEIPT_INVITE"
+    | "WITHDRAWAL_HOLD_SET"
+    | "WITHDRAWAL_HOLD_CLEARED"
     /* KYC_FORCE_APPROVE is the only action here that overrides a compliance guard rather than
        flipping a product switch, so it is kept distinct from the ordinary KYC_DECISION: an
        auditor filtering this log wants those rows on their own, not buried among routine reviews. */

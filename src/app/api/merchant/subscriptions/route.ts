@@ -125,10 +125,12 @@ export async function GET(request: Request) {
 
         const [subscriptionPage, total] = await Promise.all([
             prisma.subscription.findMany({
-                where: detailWhere,
+                where: {
+                    ...detailWhere,
+                    ...(cursor ? { subscriptionId: { lt: BigInt(cursor) } } : {}),
+                },
                 select: detailSelect,
                 orderBy: { subscriptionId: "desc" },
-                ...(cursor ? { cursor: { subscriptionId: BigInt(cursor) }, skip: 1 } : {}),
                 take: pageSize + 1,
             }),
             prisma.subscription.count({ where: detailWhere }),

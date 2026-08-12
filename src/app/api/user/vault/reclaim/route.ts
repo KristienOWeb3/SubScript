@@ -10,6 +10,7 @@ import { reclaimAbandonedFromEmbedded, syncVaultMirror } from "@/lib/vault/oncha
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
+import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
 import crypto from "crypto";
 
 export const maxDuration = 120;
@@ -31,6 +32,13 @@ export async function POST(request: Request) {
 
         /* Reclaim returns the user's own escrow; the contract enforces the maturity + grace
            window and the dispute hold, so no additional server-side gate is needed. */
+        /* An admin withdrawal hold, however, does apply. This is still funds leaving the
+           platform, and a freeze that left the abandoned-escrow path open would not be a
+           freeze — a drainer under review would simply reclaim instead of withdrawing.
+           Holds carry an optional expiry precisely so using one here cannot strand a
+           legitimate user's escape hatch indefinitely. */
+        await assertWithdrawalAllowed(wallet, "USER");
+
         await requireSponsoredGas({
             wallet: wallet.toLowerCase(),
             action: "execute_tx",
@@ -67,6 +75,11 @@ export async function POST(request: Request) {
             },
         }, { status: 200 });
     } catch (error: any) {
+        /* Ahead of the message-sniffing below: a held account is a policy refusal with its own
+           status, and letting it fall through would relabel a 403 as a 500. */
+        if (error instanceof WithdrawalHeldError) {
+            return NextResponse.json({ error: error.message }, { status: error.status });
+        }
         console.error("Vault reclaim failed:", error);
         const message = String(error?.message || "Failed to reclaim escrow");
         const status = /not abandoned|inactive|disputed|nothing to reclaim/i.test(message) ? 409 : 500;

@@ -14,6 +14,7 @@ import {
 import { PREMIUM_PRICE } from "@/lib/payments/constants";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { createDmAndNotify } from "@/lib/dms/notifications";
+import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
 
 /* Custody execution waits for on-chain confirmation (required for Circle SCA wallets,
    whose tx hash only exists once confirmed), so give the route enough headroom. */
@@ -232,6 +233,21 @@ export async function POST(request: Request) {
                     console.warn(`[execute-tx] Circuit breaker: withdrawals_enabled is false; blocking withdrawal. requestId: ${requestId}`);
                 }
                 return NextResponse.json({ error: "Service Unavailable: Withdrawals are currently disabled by circuit breaker." }, { status: 503 });
+            }
+
+            /* Per-account hold, checked after the global breaker and before any signing. The
+               breaker above is all-or-nothing for the whole platform; this is the one-account
+               freeze an operator places during a payout dispute. Handled inline rather than by
+               letting WithdrawalHeldError reach the outer catch, which maps everything to 500 —
+               a held account must read as a refusal, not a fault. */
+            try {
+                await assertWithdrawalAllowed(wallet, "MERCHANT");
+            } catch (holdError: any) {
+                if (holdError instanceof WithdrawalHeldError) {
+                    console.warn(`[execute-tx] Withdrawal hold blocked ${wallet.toLowerCase()}. requestId: ${requestId}`);
+                    return NextResponse.json({ error: holdError.message }, { status: holdError.status });
+                }
+                throw holdError;
             }
         }
 

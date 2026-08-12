@@ -9,6 +9,13 @@ import {
 } from "./offlineDb";
 
 /* Prevent multiple instantiations of Prisma Client in development mode */
+// Ensure BigInt values serialize cleanly to JSON across all API handlers and Prisma models
+if (typeof BigInt !== "undefined" && !(BigInt.prototype as any).toJSON) {
+    (BigInt.prototype as any).toJSON = function () {
+        return this.toString();
+    };
+}
+
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
 const rawPrisma =

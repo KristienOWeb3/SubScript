@@ -1681,7 +1681,9 @@ export default function PublicPayClient({
                     <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
                         SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">checkout</span>
                     </h1>
-                    <p className="text-[10px] text-white/50 uppercase tracking-widest mt-1">Secure USDC checkout</p>
+                    <p className="text-xs text-[#00d2b4] font-bold uppercase tracking-widest mt-1">
+                        {linkData?.billing_type === "RECURRING" || linkData?.recurring || linkData?.interval ? "Recurring" : "One-time"}
+                    </p>
                 </div>
 
                 {isLoading ? (

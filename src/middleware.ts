@@ -403,6 +403,28 @@ export async function middleware(request: NextRequest) {
         }
     }
 
+    /* /pay on any non-checkout host redirects to the checkout subdomain, for the same reason
+       /docs does above: one canonical origin per surface, so a payment link cannot circulate as
+       two different hostnames serving the same page.
+
+       The /pay prefix carries across rather than being stripped — www.../pay/abc lands on
+       pay.../pay/abc, matching the /docs redirect. Stripping it would target pay.../abc, and
+       the bare "/" case would then hit the checkout-host block below that bounces "/" back to
+       the marketing home, turning /pay into a trip to the landing page.
+
+       This runs BEFORE the dashboard-host block further down that sends checkout paths to
+       PUBLIC_HOST, so dashboard.../pay now also lands on the checkout subdomain; that block
+       still governs /receipt.
+
+       Localhost is exempt: pay.subscriptonarc.com does not resolve to a dev server, so
+       redirecting there would make checkout unreachable while working locally. */
+    if (!isApiRoute && !isCheckoutHost && !isLocalHost && (pathname === "/pay" || pathname.startsWith("/pay/"))) {
+        const canonicalPayUrl = request.nextUrl.clone();
+        canonicalPayUrl.protocol = "https:";
+        canonicalPayUrl.host = CHECKOUT_HOST;
+        return NextResponse.redirect(canonicalPayUrl, 308);
+    }
+
     /* /admin is gated by path as well as by host. www.subscriptonarc.com/admin resolves to the
        same route tree, so a host-only check would leave the canonical domain ungated the moment
        those pages exist — the subdomain is a routing convenience, not a security boundary.
@@ -420,6 +442,26 @@ export async function middleware(request: NextRequest) {
                 return NextResponse.redirect(`${PUBLIC_ORIGIN}/login`);
             }
             return new NextResponse("Not Found", { status: 404 });
+        }
+        /* An authorized admin reaching the console on any other host is sent to the admin
+           subdomain, so it has ONE canonical origin — same reasoning as /docs and /pay above.
+           The /admin prefix carries across (admin.../admin/flags, not the console root), which
+           also means isAdminPath is true on arrival and the rewrite below leaves it alone.
+
+           Placed AFTER the gate on purpose. Redirecting first would tell an anonymous visitor
+           that admin.subscriptonarc.com is worth looking at, which is exactly what the 404
+           above exists to prevent.
+
+           302, not the 308 used by /docs and /pay: this redirect is conditional on the caller
+           being an admin, and a permanently-cached redirect would keep firing for the same
+           browser after sign-out — handing a 404 path a durable hint that the console exists.
+
+           Localhost is exempt: admin.subscriptonarc.com does not resolve to a dev server. */
+        if (isAdminPath && !isAdminHost && !isLocalHost) {
+            const canonicalAdminUrl = request.nextUrl.clone();
+            canonicalAdminUrl.protocol = "https:";
+            canonicalAdminUrl.host = ADMIN_HOST;
+            return NextResponse.redirect(canonicalAdminUrl, 302);
         }
         if (isAdminHost && !isAdminPath) {
             const adminUrl = request.nextUrl.clone();
