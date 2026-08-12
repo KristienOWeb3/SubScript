@@ -99,6 +99,10 @@ export default function VaultShareManager({
 
     const loadDmContacts = useCallback(async () => {
         try {
+            const sessionRes = await fetch("/api/auth/session", { credentials: "include" }).catch(() => null);
+            const sessionData = sessionRes && sessionRes.ok ? await sessionRes.json() : null;
+            const myAddress = sessionData?.wallet ? sessionData.wallet.toLowerCase() : null;
+
             const res = await fetch("/api/user/dms", { credentials: "include" });
             const json = await res.json();
             if (json.success && Array.isArray(json.dms)) {
@@ -106,7 +110,7 @@ export default function VaultShareManager({
                 json.dms.forEach((dm: any) => {
                     if (dm.senderRole !== "ENTERPRISE" && dm.senderAddress) {
                         const addr = dm.senderAddress.toLowerCase();
-                        if (!contactsMap.has(addr)) {
+                        if (addr !== myAddress && !contactsMap.has(addr)) {
                             contactsMap.set(addr, {
                                 address: dm.senderAddress,
                                 displayName: dm.senderName || dm.senderAddress.slice(0, 10),
@@ -116,7 +120,7 @@ export default function VaultShareManager({
                     }
                     if (dm.receiverRole !== "ENTERPRISE" && dm.receiverAddress) {
                         const addr = dm.receiverAddress.toLowerCase();
-                        if (!contactsMap.has(addr)) {
+                        if (addr !== myAddress && !contactsMap.has(addr)) {
                             contactsMap.set(addr, {
                                 address: dm.receiverAddress,
                                 displayName: dm.receiverName || dm.receiverAddress.slice(0, 10),
@@ -195,14 +199,19 @@ export default function VaultShareManager({
         }
     };
 
-    const runAction = async (commitId: string, action: "pause" | "resume" | "revoke" | "withdraw") => {
-        /* Revocation and withdrawal are irreversible. */
-        if (action === "revoke" && !window.confirm("Revoke this commit ID for good? This cannot be undone.")) {
-            return;
-        }
-        if (action === "withdraw" && !window.confirm("Withdraw and revoke this share? Unspent funds will return to your unallocated escrow.")) {
-            return;
-        }
+    const [confirmModal, setConfirmModal] = useState<{
+        title: string;
+        message: string;
+        confirmText: string;
+        onConfirm: () => void;
+    } | null>(null);
+
+    const [recapModal, setRecapModal] = useState<{
+        share: Share;
+        value: string;
+    } | null>(null);
+
+    const executeAction = async (commitId: string, action: "pause" | "resume" | "revoke" | "withdraw") => {
         setBusy({ commitId, action });
         setError(null);
         try {
@@ -219,15 +228,40 @@ export default function VaultShareManager({
             setError(err.message || "Could not update share");
         } finally {
             setBusy(null);
+            setConfirmModal(null);
         }
     };
 
-    const handleRecap = async (share: Share) => {
-        const entered = window.prompt(
-            `New spend cap in USDC for ${share.displayName || "this friend"} (already spent ${formatUsdc(share.spentUsdc)}):`,
-            share.spendLimitUsdc ? formatUsdc(share.spendLimitUsdc) : "",
-        );
-        if (entered === null) return;
+    const runAction = (commitId: string, action: "pause" | "resume" | "revoke" | "withdraw") => {
+        if (action === "revoke") {
+            setConfirmModal({
+                title: "Revoke Commit ID",
+                message: "Revoke this commit ID for good? This cannot be undone.",
+                confirmText: "Revoke",
+                onConfirm: () => executeAction(commitId, action),
+            });
+            return;
+        }
+        if (action === "withdraw") {
+            setConfirmModal({
+                title: "Withdraw & Reclaim Share",
+                message: "Withdraw and revoke this share? Unspent funds will return to your unallocated escrow.",
+                confirmText: "Withdraw",
+                onConfirm: () => executeAction(commitId, action),
+            });
+            return;
+        }
+        void executeAction(commitId, action);
+    };
+
+    const handleRecap = (share: Share) => {
+        setRecapModal({
+            share,
+            value: share.spendLimitUsdc ? formatUsdc(share.spendLimitUsdc) : "",
+        });
+    };
+
+    const submitRecap = async (share: Share, entered: string) => {
         const parsed = parseUsdcToMicros(entered);
         if ("error" in parsed) {
             setError(parsed.error);
@@ -245,6 +279,7 @@ export default function VaultShareManager({
             const json = await res.json();
             if (!res.ok) throw new Error(json.error || "Could not update cap");
             await load();
+            setRecapModal(null);
         } catch (err: any) {
             setError(err.message || "Could not update cap");
         } finally {
@@ -602,6 +637,92 @@ export default function VaultShareManager({
                                 </>
                             )}
                         </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Custom SubScript Confirmation Modal */}
+            <AnimatePresence>
+                {confirmModal && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.95, opacity: 0 }}
+                            className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#121212] p-6 shadow-2xl space-y-4"
+                        >
+                            <h3 className="text-base font-bold text-white uppercase tracking-wider">{confirmModal.title}</h3>
+                            <p className="text-xs text-white/60 leading-relaxed">{confirmModal.message}</p>
+                            <div className="flex justify-end gap-2 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setConfirmModal(null)}
+                                    className="px-4 py-2 text-xs font-bold text-white/50 hover:text-white transition"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={confirmModal.onConfirm}
+                                    className="px-4 py-2 rounded-xl bg-red-500/20 border border-red-500/30 text-red-300 hover:bg-red-500/30 text-xs font-bold uppercase tracking-wider transition"
+                                >
+                                    {confirmModal.confirmText}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Custom SubScript Recap Modal */}
+            <AnimatePresence>
+                {recapModal && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.95, opacity: 0 }}
+                            className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#121212] p-6 shadow-2xl space-y-4"
+                        >
+                            <h3 className="text-base font-bold text-white uppercase tracking-wider">Update Spend Cap</h3>
+                            <p className="text-xs text-white/60 leading-relaxed">
+                                Enter new spend cap in USDC for {recapModal.share.displayName || "this friend"} (already spent {formatUsdc(recapModal.share.spentUsdc)} USDC):
+                            </p>
+                            <input
+                                type="text"
+                                value={recapModal.value}
+                                onChange={(e) => setRecapModal({ ...recapModal, value: e.target.value })}
+                                placeholder="Cap in USDC"
+                                inputMode="decimal"
+                                className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-xs text-white placeholder:text-white/25 focus:border-[#00d2b4]/40 focus:outline-none"
+                            />
+                            <div className="flex justify-end gap-2 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setRecapModal(null)}
+                                    className="px-4 py-2 text-xs font-bold text-white/50 hover:text-white transition"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => submitRecap(recapModal.share, recapModal.value)}
+                                    className="px-4 py-2 rounded-xl bg-[#ccff00] text-black text-xs font-bold uppercase tracking-wider transition hover:opacity-90"
+                                >
+                                    Save Cap
+                                </button>
+                            </div>
+                        </motion.div>
                     </motion.div>
                 )}
             </AnimatePresence>

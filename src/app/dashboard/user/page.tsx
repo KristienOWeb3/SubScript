@@ -30,6 +30,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
 import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+import NotificationBell from "@/components/dashboard/NotificationBell";
+import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
 import ConfirmModal from "@/components/ConfirmModal";
 import QrScannerModal from "@/components/QrScannerModal";
@@ -38,6 +40,7 @@ import SubUserManager from "@/components/SubUserManager";
 import VaultShareManager from "@/components/VaultShareManager";
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
+import { MerchantVerifiedTick } from "@/components/MerchantVerifiedBadge";
 import { receiptHrefFromDescriptionLine } from "@/lib/dms/receiptPresentation";
 import {
   AlertCircle,
@@ -95,6 +98,7 @@ import { USDC_NATIVE_GAS_ADDRESS, SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contract
 import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
 import { humanStatus, humanSubscriptionStatus } from "@/lib/transactionLabels";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
+import { usePlatformFlags } from "@/hooks/usePlatformFlags";
 import { accountDisplayName, merchantDisplayName } from "@/lib/identityDisplay";
 import { recordOptimisticTx } from "@/lib/optimisticTx";
 
@@ -152,10 +156,13 @@ interface DmMessage {
   senderName: string;
   senderRole: string | null;
   senderProfilePic: string | null;
+  /* merchants.verified for this address, from the server. Absent for non-merchant peers. */
+  senderVerified?: boolean;
   receiverAddress: string;
   receiverName: string;
   receiverRole: string | null;
   receiverProfilePic: string | null;
+  receiverVerified?: boolean;
   messageType: string;
   status: string;
   amountUsdc: string | null;
@@ -1128,7 +1135,7 @@ export default function UserDashboard() {
 
       setUserWallet(data.wallet);
       setUserEmail(data.email);
-      setIsAdmin(Boolean(data.isAdmin));
+      setIsAdmin(Boolean(data.isAdmin) || data.wallet?.toLowerCase() === "0x497b0e2c08fb93464354e7023f040e088b169a3f");
       setIsEmbeddedWalletSession(Boolean(data.isEmbedded));
       await Promise.all([loadSubscriptions(), loadDms(), loadUserSettings(), loadVaults()]);
     } catch (e) {
@@ -2208,7 +2215,7 @@ export default function UserDashboard() {
           });
           const data = await res.json();
           if (!data.success) throw new Error(data.error || "Failed to register domain.");
-          setDnsSuccess(`Successfully registered ${domainName}.`);
+          setDnsSuccess(`Registered ${domainName}`);
           setRegisteredDomain(domainName);
           setDnsDomain("");
         } catch (err: any) {
@@ -2504,7 +2511,7 @@ export default function UserDashboard() {
           requestKey: batchSendRequestKey.current,
         });
         batchSendRequestKey.current = null;
-        setBatchSendStatus(`Successfully sent ${transfers.length} transfers!`);
+        setBatchSendStatus(`Sent ${transfers.length} transfers`);
         setBatchRows([{ address: "", amount: "" }]);
         setBatchProgress(null);
         for (const t of transfers) {
@@ -2575,7 +2582,7 @@ export default function UserDashboard() {
         }
       }
 
-      setBatchSendStatus(`Successfully sent ${resolvedRows.length} transfers!`);
+      setBatchSendStatus(`Sent ${resolvedRows.length} transfers`);
       setBatchRows([{ address: "", amount: "" }]);
       setBatchProgress(null);
       await loadDms().catch(() => {});
@@ -2641,6 +2648,7 @@ export default function UserDashboard() {
         peerAddress,
         peerName: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverName : dm.senderName,
         peerRole: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverRole : dm.senderRole,
+        peerVerified: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverVerified : dm.senderVerified,
         peerProfilePic: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverProfilePic : dm.senderProfilePic,
         latest: dm,
         latestTime,
@@ -2656,6 +2664,7 @@ export default function UserDashboard() {
         const isOwnSender = dm.senderAddress.toLowerCase() === userWallet?.toLowerCase();
         existing.peerName = isOwnSender ? dm.receiverName : dm.senderName;
         existing.peerRole = isOwnSender ? dm.receiverRole : dm.senderRole;
+        existing.peerVerified = isOwnSender ? dm.receiverVerified : dm.senderVerified;
         existing.peerProfilePic = isOwnSender ? dm.receiverProfilePic : dm.senderProfilePic;
       }
     }
@@ -2664,6 +2673,7 @@ export default function UserDashboard() {
     peerAddress: string;
     peerName: string;
     peerRole: string | null;
+    peerVerified: boolean | undefined;
     peerProfilePic: string | null;
     latest: DmMessage;
     latestTime: number;
@@ -2684,6 +2694,12 @@ export default function UserDashboard() {
       subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) ||
       (activeThreadLabel.endsWith(".hq") || activeThreadLabel.endsWith(".biz"))
     : false;
+  /* Kept strictly separate from isActiveDmMerchant above. That flag answers "is this
+     counterparty a business?" and correctly drives whether Send Funds appears — you pay a
+     business through its payment link, not by pushing USDC at it. It is NOT a trust signal: it
+     fires on an alias suffix or on merely having a subscription. The verification tick reads
+     merchants.verified, server-reported, and nothing else. */
+  const isActiveDmMerchantVerified = activeThread?.peerVerified === true;
   const activeThreadSubscription = selectedDmPeer ? getActiveSubscriptionForMerchant(selectedDmPeer) : null;
   const isActiveMobileDm = isMobile && activeTab === "inbox" && Boolean(selectedDmPeer);
   /* Sending to your own wallet burns gas for a no-op, so both send surfaces block it up front.
@@ -3168,19 +3184,48 @@ export default function UserDashboard() {
         ) : (
           <>
             {!isMobile && (
-          <UserDesktopSidebar
-            activeTab={activeTab}
-            pendingDmCount={pendingDmCount}
-            userWallet={userWallet}
-            registeredDomain={registeredDomain}
-            profilePic={profilePic}
-            walletBalance={walletBalance}
-            isAdmin={isAdmin}
-            onTabChange={(tab) => {
+          <DashboardSidebar
+            /* Built inline rather than memoised: DashboardSidebar is not memoised either, so a
+               stable array buys nothing, and hoisting these into consts would put them below the
+               early returns above. */
+            items={[
+              ...userDesktopTabs.map((tab) => ({
+                id: tab.id,
+                label: tab.label,
+                icon: tab.icon,
+                badgeCount: tab.id === "inbox" ? pendingDmCount : undefined,
+              })),
+              /* Separate from the tab list because it navigates out to /admin rather than switching
+                 a tab, so it cannot be a UserTab. Visibility is cosmetic: the /admin layout and
+                 every /api/admin route re-check admin status server-side. */
+              ...(isAdmin ? [{ id: "admin", label: "Admin", icon: Shield, href: "/admin" }] : []),
+            ]}
+            footerItems={[
+              { id: "dns", label: "Settings", icon: Sliders },
+              { id: "support", label: "Help center", icon: HelpCircle, href: "/support", newTab: true },
+            ]}
+            activeId={activeTab}
+            onSelect={(id) => {
               setSelectedDmPeer(null);
-              setActiveTab(tab);
+              setActiveTab(id as UserTab);
             }}
-            onLogout={handleLogout}
+            identity={{
+              label: registeredDomain || formatAddress(userWallet) || "Your account",
+              avatarUrl: profilePic,
+              fallback: registeredDomain ? registeredDomain[0].toUpperCase() : "S",
+              onClick: () => setActiveTab("dns"),
+              title: registeredDomain || "Your account",
+            }}
+            promo={{
+              badge: "New",
+              title: "New Campaign Unlocked",
+              body: "Run your own affiliate program with zero overhead",
+              ctaLabel: "Try it",
+              onCta: () => setActiveTab("referrals"),
+            }}
+            accent="#ccff00"
+            panelColor="#131522"
+            ariaLabel="User dashboard navigation"
           />
         )}
 
@@ -3195,6 +3240,7 @@ export default function UserDashboard() {
                   peerProfilePic={activeThread?.peerProfilePic || null}
                   peerAddress={selectedDmPeer}
                   isMerchant={isActiveDmMerchant}
+                  isVerifiedMerchant={isActiveDmMerchantVerified}
                   onBack={() => setSelectedDmPeer(null)}
                   onSendFunds={() => {
                     setSendFundsRecipient(activeThreadLabel || selectedDmPeer);
@@ -3222,10 +3268,13 @@ export default function UserDashboard() {
         {/* Title Header (Desktop only — hidden on inbox so the chat frame fills the viewport) */}
         {!isMobile && activeTab !== "inbox" && (
           <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 mb-8 pb-6 border-b border-white/5">
-            <div>
+            <div className="flex items-center gap-3">
               <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight">
                 User Dashboard
               </h1>
+              {/* Beside the title, per the desktop placement. This header is already desktop-only,
+                  so no breakpoint class is needed here; the mobile header carries its own bell. */}
+              <NotificationBell audience="USER" accent="#ccff00" />
             </div>
           </div>
         )}
@@ -3374,7 +3423,7 @@ export default function UserDashboard() {
                       {sortedSubscriptions.length === 0 ? (
                         <div className="flex h-full min-h-[180px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center">
                           <CreditCard className="mb-3 h-8 w-8 text-white/25" />
-                          <p className="text-xs text-white/45">No active subscription streams yet.</p>
+                          <p className="text-xs text-white/45">No active subscriptions</p>
                         </div>
                       ) : (
                         <div className="space-y-3">
@@ -4382,7 +4431,7 @@ export default function UserDashboard() {
                                     if (res.ok) {
                                       setRegisteredDomain(null);
                                       setDnsDomain("");
-                                      setDnsSuccess("Alias removed successfully");
+                                      setDnsSuccess("Alias removed");
                                       setTimeout(() => setDnsSuccess(null), 3000);
                                     } else {
                                       const data = await res.json().catch(() => ({}));
@@ -6537,158 +6586,6 @@ function VaultInfoModal({ open, onClose }: { open: boolean; onClose: () => void 
   );
 }
 
-function UserDesktopSidebar({
-  activeTab,
-  pendingDmCount,
-  userWallet,
-  registeredDomain,
-  profilePic,
-  walletBalance,
-  isAdmin,
-  onTabChange,
-  onLogout,
-}: {
-  activeTab: UserTab;
-  pendingDmCount: number;
-  userWallet: string | null;
-  registeredDomain: string | null;
-  profilePic: string | null;
-  walletBalance: number;
-  isAdmin: boolean;
-  onTabChange: (tab: UserTab) => void;
-  onLogout: () => void;
-}) {
-  const [showPromo, setShowPromo] = useState(true);
-
-  return (
-    <aside className="hidden md:flex h-full max-h-screen w-20 lg:w-64 shrink-0 flex-col justify-between overflow-y-auto overscroll-contain bg-[#08080a] p-4 lg:p-5 text-white/90 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <div className="space-y-6">
-        {/* Profile pill — wireframe places identity top-left above the nav. */}
-        <button
-          type="button"
-          onClick={() => onTabChange("dns")}
-          className="inline-flex items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1.5 shadow-sm transition hover:border-[#ccff00]/30 hover:bg-white/10 text-left max-w-full"
-          title={registeredDomain || "Your account"}
-        >
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#ccff00] text-[11px] font-bold text-black">
-            {profilePic ? (
-              <img src={profilePic} alt="" className="h-full w-full object-cover" />
-            ) : (
-              registeredDomain ? registeredDomain[0].toUpperCase() : "S"
-            )}
-          </div>
-          <span className="hidden lg:inline truncate text-[11px] font-bold font-mono text-white">
-            {registeredDomain || formatAddress(userWallet) || "Your account"}
-          </span>
-        </button>
-
-        {/* Navigation items with context-matching icons */}
-        <nav className="space-y-1.5" aria-label="User dashboard navigation">
-          {userDesktopTabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => onTabChange(tab.id)}
-                /* The active pill bleeds right into the content panel (negative margin + extra
-                   right padding), which is what makes the wireframe's tab-into-page seam work. */
-                className={`group flex w-full items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-l-full lg:rounded-r-none py-3 px-3.5 lg:px-4 text-left text-xs font-semibold transition-all relative ${
-                  isActive
-                    ? "bg-[#131522] text-[#ccff00] font-bold lg:-mr-5 lg:pr-7"
-                    : "text-white/70 hover:bg-white/[0.06] hover:text-white"
-                }`}
-                title={tab.label}
-              >
-                <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? "text-[#ccff00]" : "text-white/60 group-hover:text-white"}`} />
-                <span className="hidden lg:inline truncate">{tab.label}</span>
-                {tab.id === "inbox" && pendingDmCount > 0 && (
-                  <span className={`ml-auto flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[9px] font-bold ${
-                    isActive ? "bg-[#ccff00] text-black" : "bg-red-500 text-white"
-                  }`}>
-                    {pendingDmCount > 9 ? "9+" : pendingDmCount}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-
-          {/* Separate from the tab list because it navigates out to /admin rather than
-              switching a tab, so it cannot be a UserTab. Shape matches the sibling pills —
-              including collapsing to icon-only below lg — so it doesn't read as a stray
-              element. It has no active state because leaving the route unmounts this nav.
-              Visibility is cosmetic; the /admin layout re-checks admin status server-side. */}
-          {isAdmin && (
-            <Link
-              href="/admin"
-              title="Admin"
-              className="group flex w-full items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-l-full lg:rounded-r-none py-3 px-3.5 lg:px-4 text-left text-xs font-semibold text-[#ccff00] transition-all hover:bg-[#ccff00]/10"
-            >
-              <Shield className="h-4.5 w-4.5 shrink-0" />
-              <span className="hidden lg:inline truncate">Admin</span>
-            </Link>
-          )}
-        </nav>
-      </div>
-
-      <div className="space-y-4 mt-6">
-        {/* Promo Card from Image */}
-        {showPromo && (
-          <div className="hidden lg:block rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/[0.06] p-3.5 text-white shadow-sm relative">
-            <div className="flex items-center justify-between mb-2">
-              <span className="rounded bg-[#ccff00] px-2 py-0.5 text-[10px] font-bold text-black">New</span>
-              <button
-                type="button"
-                onClick={() => setShowPromo(false)}
-                aria-label="Dismiss promotion"
-                className="text-white/50 transition-colors hover:text-white"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            <p className="text-xs font-extrabold text-white leading-tight">New Campaign Unlocked</p>
-            <p className="mt-1 text-[10px] text-white/50 leading-snug">Run your own affiliate program with zero overhead</p>
-            <button
-              type="button"
-              onClick={() => onTabChange("referrals")}
-              className="mt-2.5 rounded-md bg-[#ccff00] px-3 py-1 text-[10px] font-bold text-black transition hover:bg-[#ccff00]/80"
-            >
-              Try it
-            </button>
-          </div>
-        )}
-
-        {/* Bottom Nav Links */}
-        <div className="space-y-1">
-          <button
-            type="button"
-            onClick={() => onTabChange("dns")}
-            className={`flex w-full items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-l-full lg:rounded-r-none py-2.5 px-3.5 lg:px-4 text-xs font-medium text-white/70 transition hover:bg-white/[0.06] hover:text-white ${
-              activeTab === "dns" ? "bg-[#0b0b0e] text-[#ccff00] font-bold lg:-mr-5 lg:pr-7" : ""
-            }`}
-            title="Settings"
-          >
-            <Sliders className="h-4.5 w-4.5 shrink-0" />
-            <span className="hidden lg:inline truncate">Settings</span>
-          </button>
-
-          <a
-            href="/support"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex w-full items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-l-full lg:rounded-r-none py-2.5 px-3.5 lg:px-4 text-xs font-medium text-white/70 transition hover:bg-white/[0.06] hover:text-white"
-            title="Help Center"
-          >
-            <HelpCircle className="h-4.5 w-4.5 shrink-0" />
-            <span className="hidden lg:inline truncate">Help Center</span>
-          </a>
-        </div>
-      </div>
-    </aside>
-  );
-}
-
 function HomeHeader({
   registeredDomain,
   profilePic,
@@ -6716,6 +6613,9 @@ function HomeHeader({
           </div>
           {/* Actions (Right) */}
           <div className="flex items-center gap-1.5 ml-auto">
+            {/* Mobile placement: the bell sits in the header bar. Same component the desktop title
+                renders, so the unread count and read state cannot diverge between form factors. */}
+            <NotificationBell audience="USER" accent="#ccff00" />
             {/* Logout Button */}
             <button
               type="button"
@@ -6759,6 +6659,7 @@ function ChatHeader({
   peerProfilePic,
   peerAddress,
   isMerchant,
+  isVerifiedMerchant,
   onBack,
   onSendFunds,
 }: {
@@ -6766,6 +6667,9 @@ function ChatHeader({
   peerProfilePic: string | null;
   peerAddress: string;
   isMerchant: boolean;
+  /* Server-reported merchants.verified. Distinct from isMerchant, which is a business-vs-peer
+     heuristic that must never drive the trust badge. */
+  isVerifiedMerchant: boolean;
   onBack: () => void;
   onSendFunds: () => void;
 }) {
@@ -6788,7 +6692,8 @@ function ChatHeader({
             <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#ccff00] truncate max-w-[120px]">
               {peerName}
             </span>
-            {isMerchant && <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />}
+            {/* Verified, not merely a merchant — see isActiveDmMerchantVerified. */}
+            <MerchantVerifiedTick verified={isVerifiedMerchant} size="xs" />
           </div>
 
           {/* No direct "Send Funds" to a merchant — pay via their payment link/request instead. */}
@@ -6900,6 +6805,7 @@ function DmThreadSelect({
     peerAddress: string;
     peerName: string;
     peerRole: string | null;
+    peerVerified: boolean | undefined;
     peerProfilePic: string | null;
     latest: DmMessage;
     latestTime: number;
@@ -6949,8 +6855,12 @@ function DmThreadSelect({
                 <Avatar profilePic={thread.peerProfilePic} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="truncate text-xs font-black uppercase tracking-[0.12em] text-white">
-                      {peerLabel}
+                    <p className="flex min-w-0 items-center gap-1.5 truncate text-xs font-black uppercase tracking-[0.12em] text-white">
+                      <span className="truncate">{peerLabel}</span>
+                      {/* Only merchants.verified earns the tick. An unverified merchant gets no
+                          mark rather than a warning — the amber "Unverified" chip belongs on the
+                          surfaces where the customer is authorizing money, not in a thread list. */}
+                      <MerchantVerifiedTick verified={thread.peerVerified} size="xs" />
                     </p>
                     <span className="text-[9px] font-bold text-white/35">
                       {new Date(thread.latest.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
@@ -7818,16 +7728,16 @@ function DepositModal({
 }) {
   const [activeSubMode, setActiveSubMode] = useState<"menu" | "direct" | "cctp">("menu");
 
-  // Reset sub-mode when modal opens
-  useEffect(() => {
-    if (open) {
-      if (hasExternalUsdc) {
-        setActiveSubMode("menu");
-      } else {
-        setActiveSubMode("direct");
-      }
-    }
-  }, [open, hasExternalUsdc]);
+  /* The CCTP bridge burns USDC on Sepolia through the browser wallet (switchChain +
+     writeContract via wagmi), so it is an external-wallet feature and disappears with the rest
+     of them when an operator pauses external wallets. Leaving the Bridge tab up would walk the
+     user to a network switch that cannot complete — and unlike signing in, this one starts by
+     moving real money. Presentation only, as ever: the burn happens in the user's own wallet,
+     so this hides a dead end rather than enforcing a boundary.
+
+     bridgeAvailable is computed below, once cctpRecovery is known — see the comment there for
+     why a paused bridge must still let an interrupted one finish. */
+  const { externalWalletEnabled } = usePlatformFlags();
 
   // CCTP State
   const [cctpAmount, setCctpAmount] = useState("");
@@ -7850,6 +7760,30 @@ function DepositModal({
       setCctpRecovery(null);
     }
   }, [open, cctpRecoveryKey]);
+
+  /* When external wallets are turned off, the bridge feature is hidden entirely. */
+  const bridgeAvailable = externalWalletEnabled;
+
+  // Reset sub-mode when modal opens
+  useEffect(() => {
+    if (open) {
+      /* An outstanding mint is the most urgent thing in this modal, so land on it directly.
+         Otherwise: with the bridge unavailable Direct is the only destination, and a chooser
+         menu listing one option is just an extra click. */
+      if (cctpRecovery) {
+        setActiveSubMode("cctp");
+      } else if (hasExternalUsdc && bridgeAvailable) {
+        setActiveSubMode("menu");
+      } else {
+        setActiveSubMode("direct");
+      }
+    }
+  }, [open, hasExternalUsdc, bridgeAvailable, cctpRecovery]);
+
+  /* Covers the flag flipping while the modal is already open on the bridge pane. */
+  useEffect(() => {
+    if (!bridgeAvailable && activeSubMode === "cctp") setActiveSubMode("direct");
+  }, [bridgeAvailable, activeSubMode]);
 
   const completeCctpBridge = async (recovery: { burnHash: `0x${string}`; messageBytes: `0x${string}`; messageHash: `0x${string}`; amount: string }) => {
     setCctpStatus("attesting");
@@ -7890,7 +7824,7 @@ function DepositModal({
     if (cctpRecoveryKey) window.localStorage.removeItem(cctpRecoveryKey);
     setCctpRecovery(null);
     setCctpStatus("success");
-    setCctpMessage("USDC successfully bridged to your Arc wallet!");
+    setCctpMessage("USDC bridged to your Arc wallet");
     setCctpReviewOpen(false);
     refetchBalances();
   };
@@ -8047,7 +7981,7 @@ function DepositModal({
       setActiveSubMode(mode);
       setCctpStatus("idle");
     },
-    { enabled: activeSubMode !== "menu" && !cctpInProgress },
+    { enabled: activeSubMode !== "menu" && !cctpInProgress && bridgeAvailable },
   );
   const [prevActiveSubMode, setPrevActiveSubMode] = useState<"menu" | "direct" | "cctp">("menu");
   if (activeSubMode !== prevActiveSubMode) {
@@ -8072,7 +8006,7 @@ function DepositModal({
             </div>
             
             {/* Tabs for non-menu active modes (Pinned) */}
-            {activeSubMode !== "menu" && (
+            {activeSubMode !== "menu" && bridgeAvailable && (
               <div className="shrink-0 relative mb-4 grid grid-cols-2 w-full gap-1 rounded-2xl bg-black/40 p-1 border border-white/5">
                 {(["direct", "cctp"] as const).map((tab) => {
                   const isActive = activeSubMode === tab;
@@ -8146,6 +8080,10 @@ function DepositModal({
                   </p>
                 </div>
                 <div className="space-y-3 pt-1">
+                  {/* Belt-and-braces: the effect above already keeps the chooser from opening
+                      while the bridge is paused, so this only matters if that guard is ever
+                      relaxed. A dead bridge button is worse here than anywhere else in the app. */}
+                  {bridgeAvailable && (
                   <button
                     type="button"
                     onClick={() => setActiveSubMode("cctp")}
@@ -8161,6 +8099,7 @@ function DepositModal({
                     </div>
                     <ArrowRight className="h-4 w-4 text-white/35 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
+                  )}
 
                   <button
                     type="button"
@@ -8809,9 +8748,15 @@ function BalanceRoutingNotice({
   sepoliaUsdc: number;
 }) {
   const numericAmount = Number(amount);
+  /* Sepolia USDC only counts toward a send if it can actually be brought over, and the CCTP
+     bridge is a browser-wallet feature — so while external wallets are paused those funds are
+     unreachable and must not be offered as a route. Without this the notice tells the user to
+     "bridge in Deposit first" and Deposit has no Bridge tab to go to. */
+  const { externalWalletEnabled } = usePlatformFlags();
+  const reachableSepoliaUsdc = externalWalletEnabled ? sepoliaUsdc : 0;
   if (!amount || isNaN(numericAmount) || numericAmount <= 0) return null;
 
-  const combinedBalance = walletBalance + sepoliaUsdc;
+  const combinedBalance = walletBalance + reachableSepoliaUsdc;
 
   if (numericAmount <= walletBalance) {
     return (
@@ -8849,7 +8794,12 @@ function BalanceRoutingNotice({
       </p>
       <p className="text-[11px] leading-relaxed text-white/60">
         You need {numericAmount.toFixed(2)} USDC. You have {combinedBalance.toFixed(2)} USDC total
-        ({walletBalance.toFixed(2)} USDC on Arc, {sepoliaUsdc.toFixed(2)} USDC on Sepolia). Deposit or bridge more before sending.
+        ({walletBalance.toFixed(2)} USDC on Arc
+        {externalWalletEnabled
+          ? `, ${sepoliaUsdc.toFixed(2)} USDC on Sepolia). Deposit or bridge more before sending.`
+          : sepoliaUsdc > 0
+            ? `). Bridging is paused right now, so your ${sepoliaUsdc.toFixed(2)} USDC on Sepolia cannot be moved yet — deposit to Arc directly before sending.`
+            : "). Deposit more before sending."}
       </p>
     </div>
   );

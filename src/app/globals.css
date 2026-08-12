@@ -322,3 +322,45 @@ body {
     display: none;
   }
 }
+
+/* Keyboard focus, applied globally.
+ *
+ * Before this, the only focus style in the app was `.subscript-input:focus`, so every button, tab,
+ * and link in both dashboards fell back to whatever the browser drew over a dark background —
+ * frequently nothing legible. :focus-visible rather than :focus is what makes a global rule
+ * tolerable: the ring appears for keyboard and assistive-tech navigation and never for a mouse
+ * click, so it costs the pointer experience nothing.
+ *
+ * White rather than a brand accent because this is shared by both dashboards, which use different
+ * accents (lime for users, teal for merchants), and because white is the only colour guaranteed to
+ * clear 4.5:1 against every surface here, including the lime and teal fills themselves. The offset
+ * keeps the ring outside rounded borders instead of cutting across them. */
+:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The blanket rule. The block above only covered scroll behaviour and skeletons, which left
+     every CSS transition and keyframe animation in the app running for someone who has asked the
+     operating system for less motion.
+
+     0.01ms rather than `none`: a zeroed duration prevents transitionend from firing at all, and
+     code that waits on that event to clean up would hang. This effectively removes the motion
+     while keeping the event. */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  /* Re-asserted after the blanket rule, which would otherwise override the deliberate choice
+     above. A skeleton frozen mid-animation reads as a broken empty box rather than as loading.
+     This is an opacity fade with no travel, so it does not cause the vestibular discomfort the
+     blanket rule exists to prevent. */
+  .subscript-skeleton {
+    animation: pulse 2s ease-in-out infinite !important;
+  }
+}

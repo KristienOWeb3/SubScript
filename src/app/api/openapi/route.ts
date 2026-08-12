@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { ALL_EVENT_TYPES } from "@/lib/events/types";
+import { PUBLIC_EVENT_TYPES } from "@/lib/events/types";
 
 /* Machine-readable contract for the public SubScript payments API. Served at /openapi.json
    (via a rewrite) and /api/openapi with permissive CORS so SDK generators, Postman, Swagger,
@@ -314,8 +314,11 @@ const spec = {
                     id: { type: "string" },
                     type: {
                         type: "string",
-                        enum: [...ALL_EVENT_TYPES] as unknown as string[],
-                        description: "Canonical event name.",
+                        enum: [...PUBLIC_EVENT_TYPES] as unknown as string[],
+                        description:
+                            "Canonical event name. This enum lists only the types SubScript emits — "
+                            + "reserved-but-unimplemented names are excluded so a generated client "
+                            + "cannot offer a handler that will never fire.",
                     },
                     event: { type: "string", description: "Back-compat alias of `type`." },
                     created: { type: "integer" },

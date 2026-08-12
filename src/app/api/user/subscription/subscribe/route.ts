@@ -36,6 +36,7 @@ import { readSubscriptionCheckoutMeta, subscriptionCheckoutPeriod } from "@/lib/
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
+import { subscriptionKey } from "@/lib/subscriptions/contractBinding";
 
 export const maxDuration = 120;
 
@@ -236,7 +237,15 @@ export async function POST(request: Request) {
                 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
                 if (remainingMs > ONE_DAY_MS) {
                     await tx.subscription.update({
-                        where: { subscriptionId: existingCanceledSamePlan.subscriptionId },
+                        /* Keyed on (contract, id) via the shared helper, not the bare id: the PSA
+                           is immutable, so a redeploy re-mints ids that already exist and a
+                           bare-id update could reactivate a stranded row from an abandoned
+                           deployment. The row was just read, so its own contractAddress — not
+                           the currently configured one — is the authoritative half of the key. */
+                        where: subscriptionKey(
+                            existingCanceledSamePlan.subscriptionId,
+                            existingCanceledSamePlan.contractAddress,
+                        ),
                         data: {
                             cancelAtPeriodEnd: false,
                             status: "ACTIVE",

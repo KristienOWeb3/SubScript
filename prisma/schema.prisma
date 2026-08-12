@@ -248,7 +248,17 @@ model PromotionRedemption {
 }
 
 model Subscription {
-  subscriptionId          BigInt   @id @map("subscription_id")
+  /// PSA-minted id. NOT unique on its own — the PSA is immutable (no proxy), so a redeploy
+  /// restarts nextSubscriptionId at 1 and every id it mints collides with an existing row.
+  /// The id is only meaningful relative to the contract that minted it, hence the composite
+  /// key below. See supabase/migrations/20260810140000_subscriptions_contract_binding.sql.
+  subscriptionId          BigInt   @map("subscription_id")
+  /// Lowercased address of the PSA that minted subscriptionId. Chain-reading code MUST filter
+  /// on this, or it reads a zeroed struct for an id belonging to an abandoned deployment and
+  /// concludes the subscription was cancelled on-chain. The sentinel
+  /// 0x000...dead marks rows stranded by a redeploy that predates this column — go through
+  /// @/lib/subscriptions/contractBinding rather than hardcoding either value.
+  contractAddress         String   @map("contract_address")
   merchantAddress         String   @map("merchant_address")
   merchant                Merchant @relation(fields: [merchantAddress], references: [walletAddress], onDelete: Cascade)
   currentNonce            Int      @default(0) @map("current_nonce")
@@ -288,6 +298,7 @@ model Subscription {
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @default(now()) @map("updated_at")
 
+  @@id([contractAddress, subscriptionId])
   @@index([merchantAddress])
   @@index([merchantAddress, kind, subscriptionId(sort: Desc)], map: "subscriptions_merchant_kind_id_idx")
   @@index([merchantAddress, kind, status, cancelAtPeriodEnd, downgradeFailures, subscriptionId(sort: Desc)], map: "subscriptions_merchant_attention_idx")
@@ -295,6 +306,9 @@ model Subscription {
   @@index([beneficiaryAddress])
   @@index([merchantAddress, externalReference, kind, status], map: "subscriptions_merchant_reference_idx")
   @@index([sourceCheckoutId], map: "subscriptions_source_checkout_id_idx")
+  /// Keepers and the drift healer scan "live rows on the configured contract". Without this
+  /// they fall back to a scan that widens as sentinel rows and contract generations accumulate.
+  @@index([contractAddress, kind, status, nextBillingDate], map: "subscriptions_contract_kind_status_due_idx")
   @@map("subscriptions")
 }
 
@@ -1107,6 +1121,25 @@ model BannedIp {
   @@map("banned_ips")
 }
 
+/// Freezes withdrawals for one wallet without banning it — a ban kills every session, so it
+/// cannot be used for a payout dispute where the account still has to sign in and answer
+/// questions. `scope` is USER (vault withdrawals), MERCHANT (merchant claims), or BOTH,
+/// because one address can hold both roles through different endpoints. Never query this
+/// directly from a withdrawal path — go through assertWithdrawalAllowed() in
+/// @/lib/admin/withdrawalHolds so expiry is applied and the read fails CLOSED.
+model WithdrawalHold {
+  address   String    @id @map("address")
+  scope     String    @default("BOTH") @map("scope")
+  reason    String?   @map("reason")
+  placedBy  String    @map("placed_by")
+  expiresAt DateTime? @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@index([createdAt(sort: Desc)])
+  @@map("withdrawal_holds")
+}
+
 model AdminWallet {
   wallet    String   @id @map("wallet")
   label     String?  @map("label")
@@ -1162,5 +1195,30 @@ model AdminBroadcast {
   completedAt     DateTime? @map("completed_at")
 
   @@map("admin_broadcasts")
+}
+
+/// One row per (recipient, announcement) — the notification bell's backing store. See the
+/// migration header for why announcements do not go through SubscriptDm and why `audience` is a
+/// column rather than something inferred from the wallet. A broadcast to "both" writes two rows
+/// for a wallet that is both a customer and a merchant, because each bell is read independently.
+model AccountNotification {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Always lowercase; a check constraint enforces it so a checksummed insert fails loudly.
+  recipientAddress String    @map("recipient_address")
+  /// "USER" | "MERCHANT" — which dashboard's bell shows this row.
+  audience         String    @map("audience")
+  title            String    @map("title")
+  body             String    @map("body")
+  url              String?   @map("url")
+  /// "ADMIN" | "SYSTEM".
+  source           String    @default("ADMIN") @map("source")
+  /// Not a relation: a notification outlives the broadcast it came from, and system rows have none.
+  broadcastId      String?   @map("broadcast_id") @db.Uuid
+  /// Null means unread. A timestamp rather than a boolean so the read time is preserved.
+  readAt           DateTime? @map("read_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  @@index([recipientAddress, audience, createdAt(sort: Desc)])
+  @@map("account_notifications")
 }
 

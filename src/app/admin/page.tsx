@@ -38,6 +38,22 @@ type Merchant = {
 type BannedAccount = { address: string; reason?: string | null; bannedBy?: string; createdAt: string };
 type BannedIp = { ip: string; reason?: string | null; bannedBy?: string; createdAt: string };
 
+/* Which exits a hold closes. One address can be both a merchant and a user, and the two
+   withdraw through different endpoints, so freezing a merchant payout must not have to
+   freeze that same person's consumer vault refunds. */
+type HoldScope = "USER" | "MERCHANT" | "BOTH";
+
+type WithdrawalHold = {
+  address: string;
+  scope: HoldScope;
+  reason?: string | null;
+  placedBy: string;
+  expiresAt: string | null;
+  createdAt: string;
+  /* Server-computed. An expired row is kept for the audit trail but no longer blocks. */
+  active: boolean;
+};
+
 type SponsorStatus = {
   configured: boolean;
   address: string | null;
@@ -126,6 +142,9 @@ type KycRecord = {
   createdAt: string;
   updatedAt: string;
   adminAsserted: boolean;
+  /* Joined from address_aliases for display. Null when the wallet has no DNS name. KYC itself
+     is keyed on walletAddress, so renaming the alias never affects the record. */
+  alias?: string | null;
 };
 
 /* Mirrors REASONS_BY_TARGET in src/lib/kyc — the server rejects anything else, and a
@@ -212,6 +231,14 @@ export default function AdminDashboardPage() {
   const [banTarget, setBanTarget] = useState("");
   const [banReason, setBanReason] = useState("");
   const [banBusy, setBanBusy] = useState(false);
+
+  const [holds, setHolds] = useState<WithdrawalHold[]>([]);
+  const [holdsLoading, setHoldsLoading] = useState(false);
+  const [holdTarget, setHoldTarget] = useState("");
+  const [holdScope, setHoldScope] = useState<HoldScope>("BOTH");
+  const [holdReason, setHoldReason] = useState("");
+  const [holdExpiry, setHoldExpiry] = useState("");
+  const [holdBusy, setHoldBusy] = useState<string | null>(null);
 
   const [admins, setAdmins] = useState<AdminEntry[]>([]);
   const [adminsLoading, setAdminsLoading] = useState(false);
@@ -518,12 +545,30 @@ export default function AdminDashboardPage() {
     loadData();
   }, [loadData]);
 
+  /* Declared above the tab effect below, which both calls it and lists it as a dependency. As a
+     const it is in the temporal dead zone until this line runs, so declaring it further down threw
+     on every render that reached the dependency array. */
+  const loadWithdrawalHolds = useCallback(async () => {
+    setHoldsLoading(true);
+    try {
+      const res = await fetch("/api/admin/withdrawal-holds");
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to load withdrawal holds");
+      setHolds(json.holds || []);
+    } catch (err: any) {
+      setError(err.message || "Failed to load withdrawal holds");
+    } finally {
+      setHoldsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (tab === "admins") loadAdmins();
     if (tab === "analytics") loadAnalytics();
     if (tab === "system") loadFlags();
     if (tab === "kyc") loadKyc();
-  }, [tab, loadAdmins, loadAnalytics, loadFlags, loadKyc]);
+    if (tab === "moderation") loadWithdrawalHolds();
+  }, [tab, loadAdmins, loadAnalytics, loadFlags, loadKyc, loadWithdrawalHolds]);
 
   const handleCopySponsor = () => {
     if (!sponsor?.address) return;
@@ -601,6 +646,63 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const handlePlaceHold = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!holdTarget.trim()) return;
+    setHoldBusy("place");
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/admin/withdrawal-holds", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          address: holdTarget.trim(),
+          hold: true,
+          scope: holdScope,
+          reason: holdReason.trim(),
+          /* datetime-local yields a value with no zone; let the browser attach the local
+             offset so an operator typing 18:00 gets 18:00 their time, not UTC. */
+          expiresAt: holdExpiry ? new Date(holdExpiry).toISOString() : null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to place withdrawal hold");
+      setNotice(
+        `Withdrawals frozen for ${holdTarget.trim().toLowerCase()} (${holdScope}). Logged to the admin audit trail.`,
+      );
+      setHoldTarget("");
+      setHoldReason("");
+      setHoldExpiry("");
+      await loadWithdrawalHolds();
+    } catch (err: any) {
+      setError(err.message || "Failed to place withdrawal hold");
+    } finally {
+      setHoldBusy(null);
+    }
+  };
+
+  const handleLiftHold = async (address: string) => {
+    setHoldBusy(address);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/admin/withdrawal-holds", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address, hold: false }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to lift withdrawal hold");
+      setNotice(`Withdrawals released for ${address}. Logged to the admin audit trail.`);
+      await loadWithdrawalHolds();
+    } catch (err: any) {
+      setError(err.message || "Failed to lift withdrawal hold");
+    } finally {
+      setHoldBusy(null);
+    }
+  };
+
   const handleGrantAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAdminWallet.trim()) return;
@@ -675,6 +777,12 @@ export default function AdminDashboardPage() {
               else if (tab === "analytics") loadAnalytics();
               else if (tab === "system") loadFlags();
               else if (tab === "kyc") loadKyc();
+              /* Moderation draws from two sources: bans ride along on loadData(), holds have
+                 their own endpoint. Refresh has to pull both or the tab half-updates. */
+              else if (tab === "moderation") {
+                loadWithdrawalHolds();
+                loadData();
+              }
               else loadData();
             }}
             disabled={loading}
@@ -918,7 +1026,7 @@ export default function AdminDashboardPage() {
                       type="text"
                       value={kycSearch}
                       onChange={(e) => setKycSearch(e.target.value)}
-                      placeholder="Search wallet..."
+                      placeholder="Search wallet or name.sub..."
                       className={`${INPUT} pl-9`}
                     />
                   </div>
@@ -971,6 +1079,12 @@ export default function AdminDashboardPage() {
                                 : ""}
                               {record.reasonCode ? ` · ${record.reasonCode}` : ""}
                             </p>
+                            {record.decidedAt && (
+                              <p className="mt-1 text-[9px] text-[#00d2b4]/90 font-mono">
+                                Decided {new Date(record.decidedAt).toLocaleString()}
+                                {record.adminAsserted ? " (upgraded by admin)" : ""}
+                              </p>
+                            )}
                           </div>
                           {viewerIsRoot && record.status !== "APPROVED" && (
                             <button
@@ -1069,7 +1183,7 @@ export default function AdminDashboardPage() {
                     type="text"
                     value={manualWallet}
                     onChange={(e) => setManualWallet(e.target.value)}
-                    placeholder="0x wallet address"
+                    placeholder="0x address or name.sub"
                     className={INPUT}
                     required
                   />
@@ -1255,6 +1369,144 @@ export default function AdminDashboardPage() {
                   {banBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Enforce Ban"}
                 </button>
               </form>
+            </div>
+
+            <div className={`${CARD} space-y-4 border-amber-500/30`}>
+              <div className="flex items-center justify-between">
+                <span className={LABEL}>Payout Control</span>
+                <ShieldAlert className="h-5 w-5 text-amber-400" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Freeze Withdrawals</h3>
+                <p className="mt-1 text-[11px] text-white/50">
+                  Stops funds leaving one account while everything else keeps working — the person can
+                  still sign in, read receipts, and reply to you. Use this for a payout dispute or a
+                  suspected drainer; a ban would lock them out of the conversation entirely.
+                </p>
+              </div>
+
+              <form onSubmit={handlePlaceHold} className="space-y-3 max-w-lg">
+                <input
+                  type="text"
+                  value={holdTarget}
+                  onChange={(e) => setHoldTarget(e.target.value)}
+                  placeholder="0x... wallet address"
+                  aria-label="Wallet address to freeze withdrawals for"
+                  className={INPUT}
+                />
+
+                <div>
+                  <p className={`${LABEL} mb-1.5`}>Which exits close</p>
+                  <div className="flex items-center gap-2">
+                    {(["USER", "MERCHANT", "BOTH"] as const).map((scope) => (
+                      <button
+                        key={scope}
+                        type="button"
+                        onClick={() => setHoldScope(scope)}
+                        className={`flex-1 rounded-xl py-1.5 text-[11px] font-bold transition ${
+                          holdScope === scope
+                            ? "bg-amber-500/20 border border-amber-500/40 text-amber-300"
+                            : "bg-white/5 text-white/50 hover:bg-white/10"
+                        }`}
+                      >
+                        {scope === "USER" ? "Vault" : scope === "MERCHANT" ? "Merchant" : "Both"}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-1.5 text-[10px] text-white/35">
+                    {holdScope === "USER"
+                      ? "Blocks vault withdrawals only. Merchant payouts to this address still run."
+                      : holdScope === "MERCHANT"
+                        ? "Blocks merchant claims only. This person's own vault refunds still run."
+                        : "Blocks every withdrawal path for this address."}
+                  </p>
+                </div>
+
+                <input
+                  type="text"
+                  value={holdReason}
+                  onChange={(e) => setHoldReason(e.target.value)}
+                  placeholder="Reason (required — recorded in the audit log)"
+                  aria-label="Reason for the withdrawal hold"
+                  className={INPUT}
+                />
+
+                <div>
+                  <label htmlFor="hold-expiry" className={`${LABEL} mb-1.5 block`}>
+                    Lift automatically at (optional)
+                  </label>
+                  <input
+                    id="hold-expiry"
+                    type="datetime-local"
+                    value={holdExpiry}
+                    onChange={(e) => setHoldExpiry(e.target.value)}
+                    className={INPUT}
+                  />
+                  <p className="mt-1.5 text-[10px] text-white/35">
+                    Leave empty to hold until an admin lifts it.
+                  </p>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={holdBusy === "place" || !holdTarget.trim() || holdReason.trim().length < 3}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-amber-500/20 border border-amber-500/40 py-2 text-xs font-black uppercase tracking-wider text-amber-300 transition hover:bg-amber-500/30 disabled:opacity-40"
+                >
+                  {holdBusy === "place" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Freeze Withdrawals"}
+                </button>
+              </form>
+            </div>
+
+            <div className={`${CARD} space-y-4`}>
+              <h3 className="text-sm font-black uppercase tracking-wider text-white">Withdrawal Holds</h3>
+              {holdsLoading && holds.length === 0 ? (
+                <SkeletonRows count={3} avatar={false} label="Loading withdrawal holds" />
+              ) : holds.length === 0 ? (
+                <p className="text-xs text-white/40">No withdrawal holds.</p>
+              ) : (
+                <div className="space-y-2">
+                  {holds.map((h) => (
+                    <div
+                      key={h.address}
+                      className={`flex items-center justify-between gap-3 rounded-2xl border p-3 ${
+                        h.active ? "border-amber-500/25 bg-amber-500/5" : "border-white/5 bg-white/[0.03]"
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate font-mono text-[11px] text-white/80">{h.address}</p>
+                          <span
+                            className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold ${
+                              h.active
+                                ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
+                                : "border-white/10 bg-white/5 text-white/40"
+                            }`}
+                          >
+                            {h.active ? h.scope : "LAPSED"}
+                          </span>
+                        </div>
+                        <p className="mt-1 truncate text-[10px] text-white/40">
+                          {h.reason || "No reason recorded"}
+                        </p>
+                        {/* Who and when, per the audit requirement — the console should answer
+                            "who froze this" without anyone opening the database. */}
+                        <p className="mt-0.5 truncate text-[9px] text-white/30">
+                          By {h.placedBy} on {new Date(h.createdAt).toLocaleString()}
+                          {h.expiresAt ? ` · ${h.active ? "lifts" : "lifted"} ${new Date(h.expiresAt).toLocaleString()}` : ""}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleLiftHold(h.address)}
+                        disabled={holdBusy === h.address}
+                        className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white/70 transition hover:bg-white/10 disabled:opacity-40"
+                      >
+                        {holdBusy === h.address ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Lift"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">

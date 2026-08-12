@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/admin/guard";
 import { recordAdminAction } from "@/lib/admin/audit";
 import { sendPushToWallet } from "@/lib/push";
+import { jsonOk } from "@/lib/http/json";
 
 /* Admin broadcast: one push notification to every user, every merchant, or both.
  *
@@ -17,6 +18,8 @@ import { sendPushToWallet } from "@/lib/push";
 
 const MAX_RECIPIENTS = 5_000;
 const BATCH_SIZE = 25;
+/* Rows per createMany. Keeps one statement from growing with the account table. */
+const NOTIFY_CHUNK = 500;
 
 type Audience = "users" | "merchants" | "both";
 
@@ -28,7 +31,7 @@ export async function GET(request: Request) {
         orderBy: { createdAt: "desc" },
         take: 20,
     });
-    return NextResponse.json({
+    return jsonOk({
         broadcasts: broadcasts.map((b) => ({ ...b, createdAt: b.createdAt.toISOString(), completedAt: b.completedAt?.toISOString() ?? null })),
     });
 }
@@ -72,39 +75,73 @@ export async function POST(request: Request) {
             });
         }
 
-        /* Recipients are resolved before the row is created so totalRecipients is accurate
-           from the start rather than being backfilled after delivery. */
-        const recipients = new Set<string>();
-        if (audience === "users" || audience === "both") {
-            const customers = await prisma.customer.findMany({
-                where: { pushEnabled: true, closureStatus: "OPEN" },
-                select: { walletAddress: true },
+        /* Resolved before the broadcast row is created so totalRecipients is accurate from the
+           start rather than being backfilled after delivery.
+         *
+         * TWO CHANNELS, TWO AUDIENCES. The bell reaches every OPEN account: an in-app notification
+         * needs no browser permission, and filtering it by pushEnabled — as this route used to —
+         * silently dropped the announcement for the majority of accounts that never granted push.
+         * Web Push still goes only to accounts that opted in. */
+        const customers = audience === "users" || audience === "both"
+            ? await prisma.customer.findMany({
+                where: { closureStatus: "OPEN" },
+                select: { walletAddress: true, pushEnabled: true },
                 take: MAX_RECIPIENTS,
-            });
-            for (const c of customers) recipients.add(c.walletAddress.toLowerCase());
-        }
-        if (audience === "merchants" || audience === "both") {
-            const merchants = await prisma.merchant.findMany({
-                where: { pushEnabled: true, closureStatus: "OPEN" },
-                select: { walletAddress: true },
+            })
+            : [];
+        const merchants = audience === "merchants" || audience === "both"
+            ? await prisma.merchant.findMany({
+                where: { closureStatus: "OPEN" },
+                select: { walletAddress: true, pushEnabled: true },
                 take: MAX_RECIPIENTS,
-            });
-            /* A Set, because a wallet can be both a customer and a merchant — with
-               audience "both" that address must receive one notification, not two. */
-            for (const m of merchants) recipients.add(m.walletAddress.toLowerCase());
-        }
+            })
+            : [];
 
-        const wallets = Array.from(recipients).slice(0, MAX_RECIPIENTS);
-        const truncated = recipients.size > MAX_RECIPIENTS;
+        /* One row per (wallet, audience). A wallet holding both a customer and a merchant account
+           gets TWO rows under audience "both" — each dashboard has its own bell, read and dismissed
+           independently, so collapsing them would hide the announcement on one of the two. */
+        const notificationRows = [
+            ...customers.map((c) => ({ recipientAddress: c.walletAddress.toLowerCase(), audience: "USER" as const })),
+            ...merchants.map((m) => ({ recipientAddress: m.walletAddress.toLowerCase(), audience: "MERCHANT" as const })),
+        ];
+
+        /* Push, by contrast, is per device owner rather than per account: the same wallet must be
+           pushed once, not twice. Hence the Set. */
+        const pushWallets = new Set<string>();
+        for (const c of customers) if (c.pushEnabled) pushWallets.add(c.walletAddress.toLowerCase());
+        for (const m of merchants) if (m.pushEnabled) pushWallets.add(m.walletAddress.toLowerCase());
+
+        const wallets = Array.from(pushWallets).slice(0, MAX_RECIPIENTS);
+        const truncated = notificationRows.length > MAX_RECIPIENTS || pushWallets.size > MAX_RECIPIENTS;
 
         const broadcast = await prisma.adminBroadcast.create({
             data: {
                 audience, title, body: messageBody, url,
                 createdBy: auth.admin.wallet,
                 status: "RUNNING",
-                totalRecipients: wallets.length,
+                /* The announcement's real reach — the bell — not the push subset. sentCount and
+                   failedCount below describe the push channel alone. */
+                totalRecipients: notificationRows.length,
             },
         });
+
+        /* The durable half of delivery, written BEFORE any push is attempted: a push that fails, or
+           was never permitted, must not cost the account the announcement itself. */
+        let notified = 0;
+        for (let i = 0; i < notificationRows.length; i += NOTIFY_CHUNK) {
+            const chunk = notificationRows.slice(i, i + NOTIFY_CHUNK);
+            const created = await prisma.accountNotification.createMany({
+                data: chunk.map((row) => ({
+                    ...row,
+                    title,
+                    body: messageBody,
+                    url,
+                    source: "ADMIN",
+                    broadcastId: broadcast.id,
+                })),
+            });
+            notified += created.count;
+        }
 
         let sent = 0;
         let failed = 0;
@@ -129,14 +166,16 @@ export async function POST(request: Request) {
             actor: auth.admin.wallet,
             action: "BROADCAST_CREATED",
             target: broadcast.id,
-            detail: { audience, title, recipients: wallets.length, sent, failed, truncated },
+            detail: { audience, title, notified, pushTargets: wallets.length, sent, failed, truncated },
             request,
         });
 
-        return NextResponse.json({
+        return jsonOk({
             success: true,
             broadcast: { ...completed, createdAt: completed.createdAt.toISOString(), completedAt: completed.completedAt?.toISOString() ?? null },
-            summary: `Delivered to ${sent} of ${wallets.length} recipients${failed > 0 ? `, ${failed} failed` : ""}.`,
+            /* Both channels, separately. Collapsing them into one number made a healthy broadcast
+               look like a partial failure, because push reach is always a fraction of real reach. */
+            summary: `In every recipient's notifications: ${notified}. Also pushed to ${sent} of ${wallets.length} device${wallets.length === 1 ? "" : "s"}${failed > 0 ? `, ${failed} failed` : ""}.`,
             warning: truncated
                 ? `Only the first ${MAX_RECIPIENTS} recipients were notified — the audience is larger than a single broadcast can cover.`
                 : undefined,

@@ -1,8 +1,13 @@
 /* Write-through mirror for customer (non-Premium) subscriptions.
    Customer subs live on-chain (created/modified/cancelled via the embedded-wallet routes and
    billed by on-chain Chainlink Automation). Creation is authoritative for fulfillment and throws
-   when persistence fails; callers retain their post-broadcast reconciliation state and retry. */
+   when persistence fails; callers retain their post-broadcast reconciliation state and retry.
+
+   Every write here is keyed by (contract_address, subscription_id) via subscriptionKey(). PSA
+   ids restart at 1 on redeploy, so the id alone identifies nothing — see
+   @/lib/subscriptions/contractBinding for why, and never reintroduce a bare { subscriptionId }. */
 import { prisma } from "@/lib/prisma";
+import { activeSubscriptionContract, subscriptionKey } from "@/lib/subscriptions/contractBinding";
 
 export async function mirrorSubscriptionCreated({
     subscriptionId,
@@ -79,7 +84,7 @@ export async function mirrorSubscriptionCreated({
         });
 
     await prisma.subscription.upsert({
-            where: { subscriptionId: id },
+            where: subscriptionKey(id),
             update: {
                 merchantAddress: merchant,
                 subscriber: sub,
@@ -99,6 +104,7 @@ export async function mirrorSubscriptionCreated({
             },
             create: {
                 subscriptionId: id,
+                contractAddress: activeSubscriptionContract(),
                 merchantAddress: merchant,
                 subscriber: sub,
                 status: "ACTIVE",
@@ -132,7 +138,7 @@ export async function mirrorSubscriptionModified({
     sourceCheckoutId?: string;
 }) {
     await prisma.subscription.update({
-        where: { subscriptionId: BigInt(subscriptionId) },
+        where: subscriptionKey(subscriptionId),
         data: {
             amountCapUsdc: amountUsdc.toString(),
             billingIntervalSeconds: BigInt(periodSeconds),
@@ -151,7 +157,7 @@ export async function mirrorSubscriptionModified({
 export async function mirrorSubscriptionCanceled(subscriptionId: string | bigint) {
     try {
         await prisma.subscription.update({
-            where: { subscriptionId: BigInt(subscriptionId) },
+            where: subscriptionKey(subscriptionId),
             data: { status: "CANCELED", updatedAt: new Date() },
         });
     } catch (err) {
@@ -205,7 +211,7 @@ export async function mirrorSubscriptionCancelAtPeriodEnd({
             create: { walletAddress: merchant },
         });
         await prisma.subscription.upsert({
-            where: { subscriptionId: id },
+            where: subscriptionKey(id),
             update: {
                 status: "ACTIVE",
                 kind: "CUSTOMER",
@@ -219,6 +225,7 @@ export async function mirrorSubscriptionCancelAtPeriodEnd({
             },
             create: {
                 subscriptionId: id,
+                contractAddress: activeSubscriptionContract(),
                 merchantAddress: merchant,
                 subscriber: sub,
                 status: "ACTIVE",

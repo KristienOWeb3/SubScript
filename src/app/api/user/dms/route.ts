@@ -88,7 +88,7 @@ export async function GET(request: Request) {
 
         const merchants = await prisma.merchant.findMany({
             where: { walletAddress: { in: Array.from(uniqueAddresses) } },
-            select: { walletAddress: true, profilePic: true }
+            select: { walletAddress: true, profilePic: true, verified: true }
         });
         const roles = await prisma.accountRole.findMany({
             where: { address: { in: Array.from(uniqueAddresses) } },
@@ -101,6 +101,19 @@ export async function GET(request: Request) {
         customers.forEach((c: any) => profilePicMap.set(c.walletAddress.toLowerCase(), c.profilePic));
         merchants.forEach((m: any) => profilePicMap.set(m.walletAddress.toLowerCase(), m.profilePic));
 
+        /* Verification is a per-address FACT from the merchants table, not an inference from the
+           account role. The inbox previously showed a green check beside any counterparty it had
+           decided was a business — role ENTERPRISE, or a .hq/.biz alias, or simply someone the
+           user had a subscription with. That is an account-type indicator wearing the costume of
+           a trust signal: an unverified merchant got the same check as a verified one, which is
+           precisely the assurance the badge is supposed to withhold. Only addresses with
+           merchants.verified = true land in this set. */
+        const verifiedMerchants = new Set(
+            merchants
+                .filter((m: any) => m.verified === true)
+                .map((m: any) => m.walletAddress.toLowerCase()),
+        );
+
         const formatted = dms.map((dm: any) => ({
             id: dm.id,
             senderAddress: dm.senderAddress,
@@ -109,12 +122,14 @@ export async function GET(request: Request) {
                 : accountDisplayName(aliasMap.get(dm.senderAddress.toLowerCase())),
             senderRole: roleMap.get(dm.senderAddress.toLowerCase()) || null,
             senderProfilePic: profilePicMap.get(dm.senderAddress.toLowerCase()) || null,
+            senderVerified: verifiedMerchants.has(dm.senderAddress.toLowerCase()),
             receiverAddress: dm.receiverAddress,
             receiverName: roleMap.get(dm.receiverAddress.toLowerCase()) === "ENTERPRISE"
                 ? merchantDisplayName(aliasMap.get(dm.receiverAddress.toLowerCase()))
                 : accountDisplayName(aliasMap.get(dm.receiverAddress.toLowerCase())),
             receiverRole: roleMap.get(dm.receiverAddress.toLowerCase()) || null,
             receiverProfilePic: profilePicMap.get(dm.receiverAddress.toLowerCase()) || null,
+            receiverVerified: verifiedMerchants.has(dm.receiverAddress.toLowerCase()),
             messageType: dm.messageType,
             status: dm.status,
             amountUsdc: dm.amountUsdc ? dm.amountUsdc.toString() : null,

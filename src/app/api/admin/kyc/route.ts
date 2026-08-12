@@ -7,6 +7,15 @@ import {
     type KycStatus,
 } from "@/lib/kyc";
 import { prisma } from "@/lib/prisma";
+import { jsonOk } from "@/lib/http/json";
+
+/* Responses go out through jsonOk, not NextResponse.json, because both handlers echo whole
+   `kyc_verifications` rows rather than a named projection (unlike api/admin/kyc/review, which
+   has serialize()). No column on that model is BigInt today, so nothing is broken — but a
+   whole-row echo is precisely the shape that turned a working merchant-verify write into a
+   "Do not know how to serialize a BigInt" 500 the moment a money column landed on `merchants`.
+   jsonOk makes that class of regression impossible here instead of relying on nobody adding a
+   BigInt column to this table. */
 
 class KycAdminRouteError extends Error {
     constructor(
@@ -34,7 +43,7 @@ export async function GET(request: Request) {
             take: params.data.limit,
         });
 
-        return NextResponse.json({ success: true, verifications });
+        return jsonOk({ success: true, verifications });
     } catch (error) {
         console.error("Failed to list KYC verifications:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
@@ -162,7 +171,7 @@ export async function POST(request: Request) {
             return updated;
         });
 
-        return NextResponse.json({ success: true, verification });
+        return jsonOk({ success: true, verification });
     } catch (error) {
         if (error instanceof KycAdminRouteError) {
             return NextResponse.json({ error: error.message }, { status: error.status });

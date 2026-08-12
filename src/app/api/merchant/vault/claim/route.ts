@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { claimMerchantFromEmbedded, vaultReadContract } from "@/lib/vault/onchain";
+import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
 
 export const maxDuration = 120;
 
@@ -35,9 +36,18 @@ export async function POST(request: Request) {
         if (!roleCheck.ok) {
             return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
         }
+        /* Admin withdrawal hold. Only POST is gated: GET merely reports what is claimable, and
+           blocking that would hide the balance from a merchant who still needs to reconcile it
+           while the hold is being resolved. MERCHANT scope, so freezing a merchant payout does
+           not also freeze the same person's unrelated consumer vault refunds. */
+        await assertWithdrawalAllowed(wallet, "MERCHANT");
+
         const txHash = await claimMerchantFromEmbedded(wallet);
         return NextResponse.json({ success: true, txHash }, { status: 200 });
     } catch (error: any) {
+        if (error instanceof WithdrawalHeldError) {
+            return NextResponse.json({ error: error.message }, { status: error.status });
+        }
         console.error("Merchant claim failed:", error);
         return NextResponse.json({ error: error.message || "Failed to claim" }, { status: 500 });
     }

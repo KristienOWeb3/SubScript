@@ -13,6 +13,7 @@ import { subscriptionWebhookData } from "@/lib/webhooks";
 import { prisma } from "@/lib/prisma";
 import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 import { createDmAndNotify } from "@/lib/dms/notifications";
+import { subscriptionKey } from "@/lib/subscriptions/contractBinding";
 
 export const maxDuration = 120;
 
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "This subscription is already inactive" }, { status: 409 });
         }
         const mirrored = await prisma.subscription.findUnique({
-            where: { subscriptionId: BigInt(subscriptionId) },
+            where: subscriptionKey(subscriptionId),
             select: {
                 beneficiaryAddress: true,
                 externalReference: true,

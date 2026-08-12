@@ -24,6 +24,7 @@
 
 import { prisma } from "@/lib/prisma";
 import type { EventEnvelope, EventType, EventEnvironment } from "./types";
+import { assertEmittableEventType } from "./types";
 import { buildEvent, deterministicEventId, type BuildEventParams } from "./builders";
 import type { Prisma } from "@prisma/client";
 
@@ -68,6 +69,13 @@ const DEFAULT_CHAIN_ID = 5042002;
 export async function recordMerchantEvent(
     params: RecordMerchantEventParams,
 ): Promise<RecordMerchantEventResult> {
+    /* Reject reserved types at the producer, before anything is persisted. A reserved name is
+       wire-parseable so inbound payloads from a newer producer don't error, but emitting one
+       would put a type in a subscriber's stream that the public catalog says does not exist —
+       the `payment.refunded` failure mode, in reverse. Throwing here is deliberate: it surfaces
+       in development the moment a producer references a type it hasn't graduated. */
+    assertEmittableEventType(params.eventType);
+
     const normalizedWallet = params.merchantAddress.toLowerCase();
     const chainId = params.chainId ?? DEFAULT_CHAIN_ID;
     const sequence = params.sequence ?? params.resourceVersion;

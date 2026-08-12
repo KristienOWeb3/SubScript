@@ -10,6 +10,7 @@ import { sanitizeInput } from "@/utils/security";
 import { withdrawFromEmbedded, syncVaultMirror } from "@/lib/vault/onchain";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
+import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
 import crypto from "crypto";
 
 export const maxDuration = 120;
@@ -24,6 +25,12 @@ export async function POST(request: Request) {
         if (!roleCheck.ok) {
             return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
         }
+
+        /* Admin withdrawal hold, checked before anything is parsed, reserved, or signed. This
+           is an on-chain transfer out of escrow: once withdrawFromEmbedded broadcasts there is
+           nothing to reverse, so the freeze has to sit ahead of both requireSponsoredGas (which
+           spends platform gas budget) and the burn itself. */
+        await assertWithdrawalAllowed(wallet, "USER");
 
         const body = sanitizeInput(await request.json().catch(() => null));
         const { merchantAddress, amountUsdc, requestId } = body || {};
@@ -77,6 +84,12 @@ export async function POST(request: Request) {
             },
         }, { status: 200 });
     } catch (error: any) {
+        /* A held account is a deliberate refusal, not a fault: 403/503 with the message the
+           helper composed, so the UI does not tell the user to retry a withdrawal that policy
+           will keep rejecting. Kept ahead of the 500 fallback, which would otherwise relabel it. */
+        if (error instanceof WithdrawalHeldError) {
+            return NextResponse.json({ error: error.message }, { status: error.status });
+        }
         console.error("Vault withdraw failed:", error);
         return NextResponse.json({ error: error.message || "Failed to withdraw from vault" }, { status: 500 });
     }

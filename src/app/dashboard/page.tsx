@@ -6,6 +6,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import DashboardHeader from "@/components/DashboardHeader";
+import DashboardSidebar, { type DashboardSidebarItem } from "@/components/dashboard/DashboardSidebar";
+import NotificationBell from "@/components/dashboard/NotificationBell";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import DashboardSkeleton from "@/components/DashboardSkeleton";
 import { SkeletonCard, SkeletonRows, SkeletonStatGrid } from "@/components/ui/skeletons";
@@ -418,7 +420,7 @@ export default function DashboardPage() {
                 setActiveTab(tabParam as TabId);
             }
             if (urlParams.get("upgradeSuccess") === "true") {
-                setToastMessage("Privacy Premium activated successfully!");
+                setToastMessage("Privacy Premium activated");
                 setShowToast(true);
                 setTimeout(() => setShowToast(false), 4000);
                 /* Clean up URL parameter to avoid showing the toast again on refresh */
@@ -1409,7 +1411,7 @@ export default function DashboardPage() {
                 title: data.link.title,
                 checkoutUrl: data.link.checkoutUrl || buildCheckoutUrl(data.link.id, window.location.origin),
             });
-            setLinkSuccess("Payment link created successfully!");
+            setLinkSuccess("Payment link created");
             setToastMessage("Link Created Successfully");
             setShowToast(true);
             setTimeout(() => setShowToast(false), 4000);
@@ -1763,7 +1765,7 @@ export default function DashboardPage() {
             setMerchantAlias(data.alias);
             setMerchantAliasIsAnonymous(data.is_anonymous);
             setAliasInput(data.alias || "");
-            setAliasSuccessMessage("SubScript alias setting updated successfully!");
+            setAliasSuccessMessage("Alias updated");
             fetchPaymentLinks();
         } catch (err: any) {
             setAliasErrorMessage(err.message || "An error occurred");
@@ -1788,7 +1790,7 @@ export default function DashboardPage() {
             setMerchantAliasIsAnonymous(false);
             setAliasInput("");
             setAliasIsAnonymousInput(false);
-            setAliasSuccessMessage("SubScript alias removed successfully!");
+            setAliasSuccessMessage("Alias removed");
             fetchPaymentLinks();
         } catch (err: any) {
             setAliasErrorMessage(err.message || "An error occurred");
@@ -2802,7 +2804,7 @@ Please complete the following implementation tasks:
                         {linkSuccess && (
                             <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-5 space-y-4 font-sans text-left">
                                 <p className="text-emerald-400 text-xs font-bold uppercase tracking-wider">
-                                    Payment link created successfully!
+                                    Payment link created
                                 </p>
                                 {createdLinkInfo && (
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-black/40 border border-white/5 rounded-xl p-3">
@@ -5239,7 +5241,7 @@ Please complete the following implementation tasks:
                                                 </button>
                                             </div>
                                             {rerouteSuccess && (
-                                                <p className="text-emerald-400 text-xs mt-3 font-semibold">Payout destination updated on-chain successfully!</p>
+                                                <p className="text-emerald-400 text-xs mt-3 font-semibold">Payout destination updated on-chain</p>
                                             )}
                                             {premiumError && (
                                                 <p className="text-red-400 text-xs mt-3 font-mono break-all">{premiumError}</p>
@@ -6416,10 +6418,59 @@ Please complete the following implementation tasks:
         }
     };
 
+    /* Sidebar model. Settings is lifted out of the tab list and pinned to the footer, matching the
+       user dashboard, where account settings sit below the nav rather than inside it.
+
+       Plain consts, deliberately not useMemo: these read state defined throughout this component,
+       and a hook added down here would sit below every existing one — any early return introduced
+       above it later would then change the hook count between renders. The arrays are ten items. */
+    const sidebarItems: DashboardSidebarItem[] = navTabs
+        .filter((tab) => tab.id !== "settings")
+        .map((tab) => ({
+            id: tab.id,
+            label: tab.label,
+            icon: tab.icon,
+            href: "href" in tab ? tab.href : undefined,
+            /* Premium keeps the gold it already uses across the merchant dashboard, so the upgrade
+               row stays legible as an offer rather than reading as ordinary navigation. */
+            accent: tab.id === "premium" ? "#d4a853" : undefined,
+            tag: tab.id === "premium" && isPremium ? "PRO" : undefined,
+        }));
+
+    const sidebarFooterItems: DashboardSidebarItem[] = [
+        { id: "settings", label: "Profile & DNS", icon: User },
+        { id: "support", label: "Help center", icon: HelpCircle, href: "/support", newTab: true },
+    ];
+
+    const sidebarIdentityLabel =
+        merchantAlias || (address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Your account");
+
     return (
-        <div data-mounted={isMounted} className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4]">
+        <div data-mounted={isMounted} className="relative overflow-x-hidden bg-[#060608] text-white font-sans selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4] md:h-[100dvh] md:overflow-hidden">
             <AnimatedGradientBg variant="dashboard" />
-            <div className="relative z-10">
+            {/* Depth wash beneath the panel, matching the user dashboard's shell. */}
+            <div className="fixed inset-0 pointer-events-none z-0 bg-gradient-to-b from-black/35 via-black/15 to-black/45" />
+            {/* Full-height flex shell: a fixed rail plus a content panel the active tab bleeds into.
+                Height is 100dvh less the 4px brand border above, so the panel's bottom edge lands on
+                the viewport edge rather than overflowing it. */}
+            <div className="relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0">
+                <DashboardSidebar
+                    items={sidebarItems}
+                    footerItems={sidebarFooterItems}
+                    activeId={activeTab}
+                    onSelect={(id) => setActiveTab(id as TabId)}
+                    identity={{
+                        label: sidebarIdentityLabel,
+                        avatarUrl: userSettings?.profilePic || null,
+                        fallback: (merchantAlias || "M").slice(0, 1).toUpperCase(),
+                        onClick: () => setActiveTab("settings"),
+                        title: merchantAlias || "Your merchant account",
+                    }}
+                    accent="#00d2b4"
+                    panelColor="#131522"
+                    ariaLabel="Merchant dashboard navigation"
+                />
+                <div className="relative z-10 min-w-0 flex-1 overflow-y-auto border-l border-t border-white/10 bg-[#131522]/90 shadow-[-8px_0_24px_rgba(0,0,0,0.36)] backdrop-blur-xl md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[28px]">
             {/* Session Consent Alerts Overlay */}
             {sessionAlert && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
@@ -6490,8 +6541,8 @@ Please complete the following implementation tasks:
                             </button>
                         )}
                         <div>
-                            <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2 flex flex-wrap items-center gap-3">
-                                Merchant Control <span className="font-serif italic lowercase font-normal text-[#00d2b4]">center</span>
+                            <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight flex flex-wrap items-center gap-3">
+                                Merchant <span className="font-serif italic lowercase font-normal text-[#00d2b4]">dashboard</span>
                                 {isConnected && userSettings && (
                                     <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
                                         !userSettings.verified
@@ -6508,10 +6559,10 @@ Please complete the following implementation tasks:
                                     </span>
                                 )}
                             </h1>
-                            <p className="text-xs text-white/50 font-sans">
-                                Manage your premium subscriptions, payments, allowances, and billing analytics.
-                            </p>
                         </div>
+                        {/* Beside the title on desktop, matching the user dashboard. Hidden on mobile,
+                            where the header bar carries the bell instead. */}
+                        <NotificationBell audience="MERCHANT" accent="#00d2b4" className="hidden md:block" />
                     </div>
                 </div>
 
@@ -6524,9 +6575,9 @@ Please complete the following implementation tasks:
                                 <AlertTriangle className="w-10 h-10" />
                             </div>
                             <div className="space-y-2">
-                                <h2 className="text-lg font-bold text-white uppercase tracking-wider">Merchant Wallet Connection Required</h2>
+                                <h2 className="text-lg font-bold text-white uppercase tracking-wider">Connect your merchant wallet</h2>
                                 <p className="text-sm text-white/60 max-w-md leading-relaxed">
-                                    Connect your browser wallet to access allowances, metrics, premium features, and settlement configurations.
+                                    Your dashboard loads once your wallet is connected. Nothing is signed or spent by connecting.
                                 </p>
                             </div>
                             <button
@@ -6549,76 +6600,10 @@ Please complete the following implementation tasks:
                         </div>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-12 lg:grid-cols-4 gap-6 md:gap-8 items-start">
-                        {/* Sidebar Navigation */}
-                        <div className="hidden md:block md:col-span-3 lg:col-span-1 space-y-2 sticky top-24 overflow-y-auto max-h-[calc(100vh-16rem)]">
-                            {navTabs.map((tab) => {
-                                const hasHref = "href" in tab;
-                                const isSelected = activeTab === (tab.id as any);
-                                const itemClasses = `w-full flex items-center justify-start gap-3.5 px-4 py-4 lg:px-5 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left ${
-                                    isSelected
-                                        ? tab.id === "premium"
-                                            ? "bg-[#d4a853]/10 border-[#d4a853]/30 text-white shadow-lg shadow-[#d4a853]/5"
-                                            : "bg-[#00d2b4]/10 border-[#00d2b4]/30 text-white shadow-lg shadow-[#00d2b4]/5"
-                                        : "bg-white/[0.01] border-white/5 text-white/50 hover:text-white hover:bg-white/[0.03]"
-                                }`;
-                                
-                                const iconClasses = `w-4 h-4 shrink-0 ${
-                                    isSelected
-                                        ? tab.id === "premium" ? "text-[#d4a853]" : "text-[#00d2b4]"
-                                        : "text-white/40"
-                                }`;
-
-                                const content = (
-                                    <>
-                                        <tab.icon className={iconClasses} />
-                                        <span className="hidden md:inline">{tab.label}</span>
-                                        {tab.id === "premium" && isPremium && (
-                                            <span className="hidden md:inline-flex ml-auto text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-[#d4a853]/10 text-[#d4a853] border border-[#d4a853]/20">PRO</span>
-                                        )}
-                                    </>
-                                );
-
-                                if (hasHref) {
-                                    return (
-                                        <Link
-                                            key={tab.id}
-                                            href={tab.href!}
-                                            className={itemClasses}
-                                            title={tab.label}
-                                        >
-                                            {content}
-                                        </Link>
-                                    );
-                                }
-
-                                return (
-                                    <button
-                                        key={tab.id}
-                                        onClick={() => setActiveTab(tab.id as TabId)}
-                                        className={itemClasses}
-                                        title={tab.label}
-                                    >
-                                        {content}
-                                    </button>
-                                );
-                            })}
-
-                            <a
-                                href="/support"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="w-full flex items-center justify-start gap-3.5 px-4 py-4 lg:px-5 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left bg-white/[0.01] border-white/5 text-white/50 hover:text-white hover:bg-[#00d2b4]/5 hover:border-[#00d2b4]/20"
-                                title="Help & Support"
-                            >
-                                <HelpCircle className="w-4 h-4 shrink-0 text-white/40" />
-                                <span className="hidden md:inline">Support</span>
-                            </a>
-                        </div>
-
-                        {/* View Content */}
-                        <div className="md:col-span-9 lg:col-span-3 min-h-[500px]">
-                            {/* Keyed enter-only animation — deliberately NO AnimatePresence/exit here.
+                    /* Navigation moved to the shared rail, so the tab body now owns the full width
+                       of the content panel. */
+                    <div className="min-h-[500px]">
+                        {/* Keyed enter-only animation — deliberately NO AnimatePresence/exit here.
                                 mode="wait" gated the incoming tab on the outgoing exit spring, which
                                 dropped the presence on interrupted switches (slow mobile frames) and
                                 left the content area blank. */}
@@ -6630,7 +6615,6 @@ Please complete the following implementation tasks:
                             >
                                 {renderView()}
                             </motion.div>
-                        </div>
                     </div>
                 )}
                 
@@ -6644,6 +6628,7 @@ Please complete the following implementation tasks:
                     <span>Built on Arc Network</span>
                 </footer>
             </main>
+            </div>
             </div>
             <WithdrawModal
                 isOpen={isWithdrawOpen}

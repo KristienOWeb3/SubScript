@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { validateWebhookUrl } from "@/lib/webhookUrls";
 import { requireEnterpriseAndPremium, authenticateMerchant } from "@/lib/v1/merchantAuth";
 import { encryptWebhookSecret } from "@/lib/webhooks";
+import { validateEnabledEvents } from "@/lib/events/enabledEvents";
 
 function getSupabase() {
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -194,7 +195,14 @@ export async function POST(request: Request) {
         }
 
         const apiVersion = api_version || "2026-07-01";
-        const enabledEvents = Array.isArray(enabled_events) ? enabled_events : [];
+        /* Validated, not coerced. Storing an unrecognized name produced an endpoint that looked
+           configured and delivered nothing — the integrator's handler simply never fired and
+           there was no signal anywhere that the subscription was unmatchable. */
+        const eventsValidation = validateEnabledEvents(enabled_events);
+        if (!eventsValidation.ok) {
+            return NextResponse.json({ error: eventsValidation.error }, { status: 400 });
+        }
+        const enabledEvents = eventsValidation.enabledEvents;
 
         const id = crypto.randomUUID();
         const secret = `whsec_${crypto.randomBytes(24).toString("hex")}`;
