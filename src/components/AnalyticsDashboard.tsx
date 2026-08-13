@@ -714,8 +714,19 @@ export default function AnalyticsDashboard({
 
                                     <div className="space-y-3 my-4 overflow-y-auto max-h-[280px]">
                                         {isInactiveLoading ? (
-                                            <div className="flex items-center justify-center h-36 text-white/30 text-xs gap-2">
-                                                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading subscriptions
+                                            <div className="space-y-2.5 animate-pulse">
+                                                {Array.from({ length: 3 }).map((_, i) => (
+                                                    <div key={i} className="flex justify-between items-center bg-white/[0.02] border border-white/5 rounded-2xl p-3">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-7 h-7 rounded-full bg-white/15" />
+                                                            <div className="space-y-1.5">
+                                                                <div className="h-3 w-28 rounded bg-white/15" />
+                                                                <div className="h-2 w-16 rounded bg-white/10" />
+                                                            </div>
+                                                        </div>
+                                                        <div className="h-4 w-12 rounded bg-white/10" />
+                                                    </div>
+                                                ))}
                                             </div>
                                         ) : inactiveList.length === 0 ? (
                                             <div className="flex flex-col items-center justify-center h-36 text-white/30 text-xs">
@@ -806,9 +817,40 @@ export default function AnalyticsDashboard({
                             )}
 
                             {isLoadingTemplate ? (
-                                <div className="flex flex-col items-center justify-center h-80 text-white/40 gap-3">
-                                    <Loader2 className="w-8 h-8 animate-spin text-[#00d2b4]" />
-                                    <span className="text-xs uppercase tracking-wider font-bold font-mono">Loading Automations Config...</span>
+                                <div className="space-y-6 animate-pulse">
+                                    <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                                        <div className="space-y-2">
+                                            <div className="h-5 w-72 rounded-lg bg-white/15" />
+                                            <div className="h-3 w-96 max-w-full rounded bg-white/10" />
+                                        </div>
+                                        <div className="h-6 w-11 rounded-full bg-white/15" />
+                                    </div>
+                                    <div className="space-y-4">
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between items-center">
+                                                <div className="h-3 w-20 rounded bg-white/10" />
+                                                <div className="flex gap-2">
+                                                    <div className="h-4 w-20 rounded bg-white/10" />
+                                                    <div className="h-4 w-24 rounded bg-white/10" />
+                                                </div>
+                                            </div>
+                                            <div className="h-11 w-full rounded-xl bg-white/[0.06]" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between items-center">
+                                                <div className="h-3 w-36 rounded bg-white/10" />
+                                                <div className="flex gap-2">
+                                                    <div className="h-4 w-20 rounded bg-white/10" />
+                                                    <div className="h-4 w-24 rounded bg-white/10" />
+                                                </div>
+                                            </div>
+                                            <div className="h-40 w-full rounded-xl bg-white/[0.06]" />
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-between items-center pt-4 border-t border-white/5">
+                                        <div className="h-3 w-28 rounded bg-white/10" />
+                                        <div className="h-9 w-44 rounded-xl bg-white/20" />
+                                    </div>
                                 </div>
                             ) : (
                                 <form onSubmit={handleSaveTemplate} className="space-y-6">
@@ -1126,8 +1168,20 @@ export default function AnalyticsDashboard({
                                     )}
 
                                     {isVaultsLoading ? (
-                                        <div className="flex h-24 items-center justify-center">
-                                            <Loader2 className="h-5 w-5 animate-spin text-[#00d2b4]" />
+                                        <div className="space-y-3 animate-pulse">
+                                            {Array.from({ length: 2 }).map((_, i) => (
+                                                <div key={i} className="rounded-2xl border border-white/5 bg-black/30 p-4 space-y-3">
+                                                    <div className="flex justify-between items-center">
+                                                        <div className="h-4 w-36 rounded bg-white/15" />
+                                                        <div className="h-4 w-16 rounded bg-white/10" />
+                                                    </div>
+                                                    <div className="h-2 w-full rounded-full bg-white/10" />
+                                                    <div className="flex justify-between">
+                                                        <div className="h-3 w-20 rounded bg-white/10" />
+                                                        <div className="h-3 w-24 rounded bg-white/15" />
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
                                     ) : vaults.length === 0 ? (
                                         <div className="flex h-24 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center p-4">

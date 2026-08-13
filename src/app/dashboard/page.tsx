@@ -2868,8 +2868,17 @@ Please complete the following implementation tasks:
                             </div>
                         )}
                         {isLinksLoading && paymentLinks.length === 0 ? (
-                            <div className="flex items-center justify-center py-12">
-                                <Loader2 className="w-6 h-6 animate-spin text-[#00d2b4]" />
+                            <div className="space-y-3 py-3 animate-pulse">
+                                {Array.from({ length: 3 }).map((_, i) => (
+                                    <div key={i} className="flex justify-between items-center bg-white/[0.02] border border-white/5 rounded-2xl p-4">
+                                        <div className="space-y-1.5">
+                                            <div className="h-3.5 w-32 rounded bg-white/15" />
+                                            <div className="h-2.5 w-20 rounded bg-white/10" />
+                                        </div>
+                                        <div className="h-4 w-16 rounded bg-white/15" />
+                                        <div className="h-6 w-20 rounded-xl bg-white/10" />
+                                    </div>
+                                ))}
                             </div>
                         ) : paymentLinks.length === 0 ? (
                             <div className="text-center py-12 border border-white/5 rounded-2xl bg-white/[0.01]">
@@ -5779,9 +5788,13 @@ Please complete the following implementation tasks:
                         )}
 
                         {isKeysLoading ? (
-                            <div className="py-12 text-center flex flex-col items-center gap-2">
-                                <Loader2 className="w-6 h-6 animate-spin text-[#00d2b4]" />
-                                <span className="text-xs text-white/40">Loading keys...</span>
+                            <div className="border border-white/5 rounded-2xl p-6 sm:p-8 bg-black/20 space-y-4 font-sans animate-pulse">
+                                <div className="w-8 h-8 rounded-full bg-white/15 mx-auto" />
+                                <div className="space-y-2 max-w-sm mx-auto">
+                                    <div className="h-3.5 w-44 rounded bg-white/15 mx-auto" />
+                                    <div className="h-2.5 w-full rounded bg-white/10" />
+                                </div>
+                                <div className="h-11 w-full max-w-xl mx-auto rounded-xl bg-white/[0.06]" />
                             </div>
                         ) : !activeKey ? (
                             <div className="border border-white/5 rounded-2xl p-6 sm:p-8 text-center bg-black/20 space-y-4 font-sans">
@@ -6254,8 +6267,16 @@ Please complete the following implementation tasks:
 
                             {/* List endpoints */}
                             {isWebhooksLoading ? (
-                                <div className="py-4 text-center">
-                                    <Loader2 className="w-5 h-5 animate-spin text-[#00d2b4] mx-auto" />
+                                <div className="space-y-3 font-sans animate-pulse">
+                                    {Array.from({ length: 2 }).map((_, i) => (
+                                        <div key={i} className="bg-black/30 border border-white/5 rounded-2xl p-4 flex justify-between items-center">
+                                            <div className="space-y-2">
+                                                <div className="h-3.5 w-48 rounded bg-white/15" />
+                                                <div className="h-2.5 w-32 rounded bg-white/10" />
+                                            </div>
+                                            <div className="h-5 w-16 rounded-full bg-white/10" />
+                                        </div>
+                                    ))}
                                 </div>
                             ) : webhookEndpoints.length === 0 ? (
                                 <p className="text-[11px] text-white/30 font-sans text-center py-4 bg-black/20 rounded-xl border border-white/5">
@@ -6377,8 +6398,16 @@ Please complete the following implementation tasks:
                                     </h2>
                                     <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
                                         {isEventsLoading ? (
-                                            <div className="py-12 text-center">
-                                                <Loader2 className="w-6 h-6 animate-spin text-[#00d2b4] mx-auto" />
+                                            <div className="space-y-2.5 animate-pulse">
+                                                {Array.from({ length: 4 }).map((_, i) => (
+                                                    <div key={i} className="p-4 rounded-2xl border border-white/5 bg-white/[0.01] flex justify-between items-center">
+                                                        <div className="space-y-1.5">
+                                                            <div className="h-3.5 w-36 rounded bg-white/15" />
+                                                            <div className="h-2.5 w-24 rounded bg-white/10" />
+                                                        </div>
+                                                        <div className="h-5 w-14 rounded-full bg-white/10" />
+                                                    </div>
+                                                ))}
                                             </div>
                                         ) : webhookEvents.length === 0 ? (
                                             <div className="py-12 text-center text-white/30 font-sans text-xs space-y-3">
