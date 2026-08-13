@@ -1,6 +1,9 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
+import DashboardSidebar, {
+  type DashboardSidebarItem,
+} from "@/components/dashboard/DashboardSidebar";
 import {
   AlertTriangle,
   Bell,
@@ -18,6 +21,9 @@ import {
   Trash2,
   UserPlus,
   Users,
+  Home,
+  BarChart3,
+  Sliders,
 } from "@/components/icons";
 import {
   SkeletonCard,
@@ -812,78 +818,116 @@ export default function AdminDashboardPage() {
   const activeTabLabel =
     TABS.find((item) => item.id === tab)?.label ?? "Overview";
 
+  const adminSidebarItems: DashboardSidebarItem[] = [
+    { id: "overview", label: "Overview", icon: Home },
+    { id: "analytics", label: "Analytics", icon: BarChart3 },
+    { id: "merchants", label: "Merchants", icon: Building2 },
+    { id: "kyc", label: "KYC Compliance", icon: ShieldCheck },
+    { id: "moderation", label: "Moderation & Bans", icon: ShieldAlert },
+    { id: "system", label: "System Flags", icon: Sliders },
+    { id: "broadcast", label: "Broadcast", icon: Bell },
+    { id: "receipts", label: "Receipts", icon: ReceiptText },
+    { id: "admins", label: "Admin Access", icon: Shield },
+  ];
+
+  const adminSidebarFooterItems: DashboardSidebarItem[] = [
+    { id: "merchant", label: "Merchant Dashboard", icon: Building2, href: "/merchant" },
+    { id: "user", label: "User Dashboard", icon: Users, href: "/user" },
+    { id: "docs", label: "Documentation", icon: FileText, href: "/support", newTab: true },
+  ];
+
   return (
-    <main className="admin-topography min-h-screen bg-[#f8fafc] text-white">
-      <div className="topo-admin-header border-b border-white/10 px-4 py-5 shadow-[0_8px_28px_rgba(15,23,42,0.24)] sm:px-8">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="rounded-full border border-white/25 bg-white/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#e2e8f0]">
-                admin.subscriptonarc.com
-              </span>
-              {viewerIsRoot && (
-                <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white/60 border border-white/10">
-                  root
-                </span>
-              )}
+    <div className="relative overflow-x-hidden bg-[#060608] text-white font-sans md:h-[100dvh] md:overflow-hidden">
+      <div className="relative z-10 md:flex md:h-[100dvh] md:min-h-0">
+        <DashboardSidebar
+          items={adminSidebarItems}
+          footerItems={adminSidebarFooterItems}
+          activeId={tab}
+          onSelect={(id) => setTab(id as TabId)}
+          identity={{
+            label: viewerIsRoot ? "Root Authority" : "Admin Console",
+            avatarUrl: null,
+            fallback: "A",
+            onClick: () => setTab("admins"),
+            title: "Arc Protocol Authority",
+          }}
+          accent="#2775ca"
+          panelColor="#0f172a"
+          ariaLabel="Admin Protocol Navigation"
+        />
+
+        <div className="relative z-10 min-w-0 flex-1 h-[100dvh] overflow-y-auto overscroll-contain admin-topography bg-[#f8fafc] text-white">
+          <main className="min-h-screen pb-16">
+            <div className="topo-admin-header border-b border-white/10 px-4 py-5 shadow-[0_8px_28px_rgba(15,23,42,0.24)] sm:px-8">
+              <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full border border-white/25 bg-white/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#e2e8f0]">
+                      admin.subscriptonarc.com
+                    </span>
+                    {viewerIsRoot && (
+                      <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white/60 border border-white/10">
+                        root
+                      </span>
+                    )}
+                  </div>
+                  <h1 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
+                    Protocol Control Center
+                  </h1>
+                  <p className="text-xs text-[#cbd5e1]">
+                    Gas sponsorship, merchant verification, access control, and admin
+                    management.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (tab === "admins") loadAdmins();
+                    else if (tab === "analytics") loadAnalytics();
+                    else if (tab === "system") loadFlags();
+                    else if (tab === "kyc") loadKyc();
+                    /* Moderation draws from two sources: bans ride along on loadData(), holds have
+                       their own endpoint. Refresh has to pull both or the tab half-updates. */ else if (
+                      tab === "moderation"
+                    ) {
+                      loadWithdrawalHolds();
+                      loadData();
+                    } else loadData();
+                  }}
+                  disabled={loading}
+                  className="flex items-center gap-2 rounded-lg border border-white/25 bg-white/10 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-white/15"
+                >
+                  <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                  Refresh
+                </button>
+              </div>
             </div>
-            <h1 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
-              Protocol Control Center
-            </h1>
-            <p className="text-xs text-[#cbd5e1]">
-              Gas sponsorship, merchant verification, access control, and admin
-              management.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              if (tab === "admins") loadAdmins();
-              else if (tab === "analytics") loadAnalytics();
-              else if (tab === "system") loadFlags();
-              else if (tab === "kyc") loadKyc();
-              /* Moderation draws from two sources: bans ride along on loadData(), holds have
-                 their own endpoint. Refresh has to pull both or the tab half-updates. */ else if (
-                tab === "moderation"
-              ) {
-                loadWithdrawalHolds();
-                loadData();
-              } else loadData();
-            }}
-            disabled={loading}
-            className="flex items-center gap-2 rounded-lg border border-white/25 bg-white/10 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-white/15"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            Refresh
-          </button>
-        </div>
-      </div>
 
-      <div className="admin-workspace mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-8 sm:py-8">
-        <section className="topo-admin-blue flex flex-col justify-between gap-5 rounded-xl border border-white/20 px-5 py-5 text-white shadow-[0_12px_30px_rgba(39,117,202,0.18)] sm:flex-row sm:items-end sm:px-6">
-          <div>
-            <span className="text-[10px] font-black uppercase tracking-[0.14em] text-white/75">
-              Secure operations workspace
-            </span>
-            <h2 className="mt-1 text-xl font-black text-white">
-              {activeTabLabel}
-            </h2>
-            <p className="mt-1 text-xs text-white/80">
-              Live administrative controls and auditable protocol operations.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-wider">
-            <span className="rounded-full border border-white/25 bg-white/10 px-3 py-1.5">
-              Arc Mainnet
-            </span>
-            <span className="rounded-full border border-white/25 bg-white/10 px-3 py-1.5">
-              {viewerIsRoot ? "Root authority" : "Delegated authority"}
-            </span>
-          </div>
-        </section>
+            <div className="admin-workspace mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-8 sm:py-8">
+              <section className="topo-admin-blue flex flex-col justify-between gap-5 rounded-xl border border-white/20 px-5 py-5 text-white shadow-[0_12px_30px_rgba(39,117,202,0.18)] sm:flex-row sm:items-end sm:px-6">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-[0.14em] text-white/75">
+                    Secure operations workspace
+                  </span>
+                  <h2 className="mt-1 text-xl font-black text-white">
+                    {activeTabLabel}
+                  </h2>
+                  <p className="mt-1 text-xs text-white/80">
+                    Live administrative controls and auditable protocol operations.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-wider">
+                  <span className="rounded-full border border-white/25 bg-white/10 px-3 py-1.5">
+                    Arc Mainnet
+                  </span>
+                  <span className="rounded-full border border-white/25 bg-white/10 px-3 py-1.5">
+                    {viewerIsRoot ? "Root authority" : "Delegated authority"}
+                  </span>
+                </div>
+              </section>
 
-        <div className="flex gap-2 overflow-x-auto rounded-xl border border-[#dbe3ec] bg-white p-2 shadow-sm">
-          {TABS.map((t) => (
+              <div className="md:hidden flex gap-2 overflow-x-auto rounded-xl border border-[#dbe3ec] bg-white p-2 shadow-sm">
+                {TABS.map((t) => (
             <button
               key={t.id}
               type="button"
@@ -2437,7 +2481,10 @@ export default function AdminDashboardPage() {
         )}
       </div>
     </main>
-  );
+  </div>
+</div>
+</div>
+);
 }
 
 function Stat({

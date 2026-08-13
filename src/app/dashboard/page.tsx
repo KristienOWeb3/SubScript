@@ -79,7 +79,6 @@ const tabs = [
     { id: "checkout", label: "Checkout Setup", icon: Code2 },
     { id: "webhooks", label: "Webhooks", icon: Webhook },
     { id: "premium", label: "Premium Pro", icon: Crown },
-    { id: "offramp", label: "Fiat Off-Ramp", icon: ArrowRightLeft },
     { id: "settings", label: "Profile & DNS", icon: User },
 ] as const;
 
@@ -4200,14 +4199,7 @@ Please complete the following implementation tasks:
             );
         }
 
-        if (!isPremium && ["apikeys", "checkout", "webhooks"].includes(activeTab)) {
-            const labelMap = {
-                apikeys: "API Keys Management",
-                checkout: "Checkout Setup & Generator",
-                webhooks: "Developer Webhooks"
-            };
-            return renderPremiumLock(labelMap[activeTab as "apikeys" | "checkout" | "webhooks"]);
-        }
+        // Developer tools (API keys, checkout, webhooks) remain accessible to standard and premium merchants alike.
 
         const renderSubTabs = () => {
             const tabsConfig = [
@@ -6630,23 +6622,26 @@ Please complete the following implementation tasks:
                     </div>
                 </div>
             )}
-            <DashboardHeader
-                embeddedWallet={embeddedWallet}
-                onDisconnect={handleLogout}
-                onDepositSuccess={handleDepositSuccess}
-                isPremium={isPremium}
-                promptFlowMode={promptFlowMode}
-                onDeposit={() => setIsDepositOpen(true)}
-                merchantAlias={merchantAlias}
-                onDnsClick={handleDnsClick}
-                activeTab={activeTab}
-                onBackToOverview={() => setActiveTab('overview')}
-                onProfileClick={() => setActiveTab('settings')}
-                profilePic={userSettings?.profilePic || null}
-            />
+            <div className="md:hidden">
+                <DashboardHeader
+                    embeddedWallet={embeddedWallet}
+                    onDisconnect={handleLogout}
+                    onDepositSuccess={handleDepositSuccess}
+                    isPremium={isPremium}
+                    promptFlowMode={promptFlowMode}
+                    onDeposit={() => setIsDepositOpen(true)}
+                    merchantAlias={merchantAlias}
+                    onDnsClick={handleDnsClick}
+                    activeTab={activeTab}
+                    onBackToOverview={() => setActiveTab('overview')}
+                    onProfileClick={() => setActiveTab('settings')}
+                    profilePic={userSettings?.profilePic || null}
+                    walletBalance={walletBalance}
+                />
+            </div>
 
             {/* Dashboard Content */}
-            <main className="max-w-7xl mx-auto px-6 pt-28 pb-12">
+            <main className="max-w-7xl mx-auto px-4 sm:px-6 pt-24 md:pt-8 pb-12">
                 {/* Header Row */}
                 <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10 pb-6 border-b border-white/5">
                     <div className="flex items-center gap-3">

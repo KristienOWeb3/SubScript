@@ -14,6 +14,7 @@ import {
 import DashboardHeader from "@/components/DashboardHeader";
 import Skeleton from "@/components/ui/Skeleton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+import DashboardSkeleton from "@/components/DashboardSkeleton";
 import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
 import ConfirmModal from "@/components/ConfirmModal";
@@ -879,32 +880,10 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                     </div>
                     )}
 
-                    {/* Check if connected */}
+                    {/* Content View or Loading Skeleton */}
                     {pageIsLoading ? (
-                        <div className="py-20 flex flex-col items-center justify-center gap-4 text-center">
-                            <Loader2 className="w-8 h-8 animate-spin text-[#00d2b4]" />
-                            <p className="text-xs text-white/50 uppercase tracking-widest">Restoring session...</p>
-                        </div>
-                    ) : !isConnected ? (
-                        <div className="space-y-8">
-                            <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
-                                <div className="p-4 rounded-3xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-300">
-                                    <AlertTriangle className="w-10 h-10" />
-                                </div>
-                                <div className="space-y-2">
-                                    <h2 className="text-lg font-bold text-white uppercase tracking-wider">Merchant Wallet Connection Required</h2>
-                                    <p className="text-sm text-white/60 max-w-md leading-relaxed font-sans">
-                                        Connect your browser wallet to access allowances, metrics, premium features, and settlement configurations.
-                                    </p>
-                                </div>
-                                <button
-                                    onClick={handleConnect}
-                                    className="px-8 py-3 bg-yellow-300 hover:bg-yellow-200 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-[0_0_20px_rgba(234,179,8,0.2)] font-sans"
-                                >
-                                    <PlugZap className="w-4 h-4" />
-                                    {isConnecting ? "Connecting Wallet..." : "Connect Merchant Wallet"}
-                                </button>
-                            </div>
+                        <div className="min-h-[450px]">
+                            <DashboardSkeleton activeTab="payroll" isConnected={isConnected} />
                         </div>
                     ) : (
                         /* Two-column layout matching main dashboard */
