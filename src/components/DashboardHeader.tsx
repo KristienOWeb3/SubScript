@@ -258,14 +258,6 @@ export default function DashboardHeader({
                             </div>
                         ) : (
                             <div className="flex items-center gap-1.5">
-                                {/* Connect button for mobile */}
-                                <button
-                                    onClick={handleConnect}
-                                    className="px-4 py-2 bg-[#00d2b4] text-[#111111] text-[10px] font-bold uppercase tracking-wider rounded-full hover:brightness-110 shadow-[0_0_12px_rgba(0,210,180,0.25)] transition-all duration-200 flex items-center gap-1.5"
-                                >
-                                    <PlugZap className="w-3 h-3" />
-                                    <span>Connect</span>
-                                </button>
                                 {/* PFP Icon (Placeholder) */}
                                 <button
                                     onClick={onProfileClick}
@@ -367,15 +359,6 @@ export default function DashboardHeader({
                                 </>
                             ) : (
                                 <div className="flex items-center gap-2.5">
-                                    {/* Not connected — show connect button */}
-                                    <button
-                                        onClick={handleConnect}
-                                        className="px-5 sm:px-6 py-2.5 bg-[#00d2b4] text-[#111111] text-[11px] font-bold uppercase tracking-wider rounded-full hover:brightness-110 shadow-[0_0_15px_rgba(0,210,180,0.3)] transition-all duration-200 flex items-center gap-2"
-                                    >
-                                        <PlugZap className="w-3.5 h-3.5" />
-                                        {isConnecting ? "Connecting..." : "Connect Wallet"}
-                                    </button>
-
                                     {/* PFP Icon (Placeholder) */}
                                     <button
                                         onClick={onProfileClick}

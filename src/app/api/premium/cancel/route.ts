@@ -73,7 +73,7 @@ export async function POST(request: Request) {
 
         return NextResponse.json({
             success: true,
-            message: "Privacy Premium has been cancelled successfully.",
+            message: "Premium Pro has been cancelled successfully.",
             cancelAtPeriodEnd: true,
             nextBillingDate: subData?.next_billing_date || null
         }, { status: 200 });

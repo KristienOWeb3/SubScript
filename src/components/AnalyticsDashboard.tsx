@@ -791,9 +791,9 @@ export default function AnalyticsDashboard({
                                         <Lock className="w-6 h-6" />
                                     </div>
                                     <div className="space-y-2">
-                                        <h3 className="text-xs font-bold text-white uppercase tracking-wider">Privacy Premium Feature</h3>
+                                        <h3 className="text-xs font-bold text-white uppercase tracking-wider">Premium Pro Feature</h3>
                                         <p className="text-[10px] text-white/55 max-w-xs leading-relaxed">
-                                            Automated exit surveys and churn recovery templates are exclusive to the Privacy Premium tier. Upgrade your account to unlock automations.
+                                            Automated exit surveys and churn recovery templates are exclusive to the Premium Pro tier. Upgrade your account to unlock automations.
                                         </p>
                                     </div>
                                     <Link

@@ -71,9 +71,11 @@ snapshot_*.json
 
 # Dev scripts and scratch files
 agentrouter-proxy.js
-launch-claude-*.bat
+launch-*.bat
 billing-coverage.*
 photo_*.jpg
 .codex/
 .claudeignore
+.kilo/
+
 

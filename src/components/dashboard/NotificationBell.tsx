@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bell, X, CheckCircle, RefreshCw, Broadcast, ShieldAlert, Sparkles, CreditCard } from "@/components/icons";
+import { Bell, X, CheckCircle, RefreshCw, ShieldAlert, Sparkles, CreditCard } from "@/components/icons";
 
 type Notification = {
     id: string;
@@ -32,7 +32,7 @@ function relativeTime(iso: string): string {
 function getSourceIcon(source: string) {
     switch (source?.toUpperCase()) {
         case "ADMIN":
-            return <Broadcast className="h-4 w-4 text-purple-400" />;
+            return <Sparkles className="h-4 w-4 text-purple-400" />;
         case "SECURITY":
             return <ShieldAlert className="h-4 w-4 text-amber-400" />;
         case "SYSTEM":
@@ -92,6 +92,10 @@ export default function NotificationBell({
 
     useEffect(() => {
         void load();
+        const interval = setInterval(() => {
+            void load();
+        }, 15000);
+        return () => clearInterval(interval);
     }, [load]);
 
     useEffect(() => {

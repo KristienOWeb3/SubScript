@@ -6616,15 +6616,6 @@ function HomeHeader({
             {/* Mobile placement: the bell sits in the header bar. Same component the desktop title
                 renders, so the unread count and read state cannot diverge between form factors. */}
             <NotificationBell audience="USER" accent="#ccff00" />
-            {/* Logout Button */}
-            <button
-              type="button"
-              onClick={onLogout}
-              className="p-2 text-white/40 hover:text-red-400 bg-white/[0.02] hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 rounded-full transition-all"
-              title="Log Out"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-            </button>
             {/* Address/Domain Pill */}
             <button
               type="button"
