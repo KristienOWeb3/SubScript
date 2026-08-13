@@ -82,34 +82,76 @@ export async function POST(request: Request) {
          * needs no browser permission, and filtering it by pushEnabled — as this route used to —
          * silently dropped the announcement for the majority of accounts that never granted push.
          * Web Push still goes only to accounts that opted in. */
-        const customers = audience === "users" || audience === "both"
-            ? await prisma.customer.findMany({
+        /* Gather all eligible recipient wallets across Customer, UserCommit, Account, and Merchant tables */
+        const userWallets = new Set<string>();
+        const merchantWallets = new Set<string>();
+
+        if (audience === "users" || audience === "both") {
+            const [cust, commits, embedded, roles, aliases] = await Promise.all([
+                prisma.customer.findMany({
+                    where: { closureStatus: "OPEN" },
+                    select: { walletAddress: true },
+                    take: MAX_RECIPIENTS,
+                }).catch(() => []),
+                prisma.userCommit.findMany({
+                    select: { walletAddress: true },
+                    take: MAX_RECIPIENTS,
+                }).catch(() => []),
+                prisma.userEmbeddedWallet.findMany({
+                    select: { walletAddress: true },
+                    take: MAX_RECIPIENTS,
+                }).catch(() => []),
+                prisma.accountRole.findMany({
+                    select: { address: true },
+                    take: MAX_RECIPIENTS,
+                }).catch(() => []),
+                prisma.addressAlias.findMany({
+                    select: { address: true },
+                    take: MAX_RECIPIENTS,
+                }).catch(() => []),
+            ]);
+
+            for (const c of cust) if (c.walletAddress) userWallets.add(c.walletAddress.toLowerCase());
+            for (const c of commits) if (c.walletAddress) userWallets.add(c.walletAddress.toLowerCase());
+            for (const e of embedded) if (e.walletAddress) userWallets.add(e.walletAddress.toLowerCase());
+            for (const r of roles) if (r.address) userWallets.add(r.address.toLowerCase());
+            for (const a of aliases) if (a.address) userWallets.add(a.address.toLowerCase());
+        }
+
+        if (audience === "merchants" || audience === "both") {
+            const merch = await prisma.merchant.findMany({
                 where: { closureStatus: "OPEN" },
                 select: { walletAddress: true, pushEnabled: true },
                 take: MAX_RECIPIENTS,
-            })
-            : [];
-        const merchants = audience === "merchants" || audience === "both"
-            ? await prisma.merchant.findMany({
-                where: { closureStatus: "OPEN" },
-                select: { walletAddress: true, pushEnabled: true },
-                take: MAX_RECIPIENTS,
-            })
-            : [];
+            });
+            for (const m of merch) {
+                if (m.walletAddress) merchantWallets.add(m.walletAddress.toLowerCase());
+            }
+        }
 
         /* One row per (wallet, audience). A wallet holding both a customer and a merchant account
            gets TWO rows under audience "both" — each dashboard has its own bell, read and dismissed
-           independently, so collapsing them would hide the announcement on one of the two. */
-        const notificationRows = [
-            ...customers.map((c) => ({ recipientAddress: c.walletAddress.toLowerCase(), audience: "USER" as const })),
-            ...merchants.map((m) => ({ recipientAddress: m.walletAddress.toLowerCase(), audience: "MERCHANT" as const })),
-        ];
+           independently. */
+        const notificationRows: { recipientAddress: string; audience: "USER" | "MERCHANT" }[] = [];
+        userWallets.forEach((w) => notificationRows.push({ recipientAddress: w, audience: "USER" }));
+        merchantWallets.forEach((w) => notificationRows.push({ recipientAddress: w, audience: "MERCHANT" }));
 
-        /* Push, by contrast, is per device owner rather than per account: the same wallet must be
-           pushed once, not twice. Hence the Set. */
+        /* Push wallets set */
         const pushWallets = new Set<string>();
-        for (const c of customers) if (c.pushEnabled) pushWallets.add(c.walletAddress.toLowerCase());
-        for (const m of merchants) if (m.pushEnabled) pushWallets.add(m.walletAddress.toLowerCase());
+        if (audience === "users" || audience === "both") {
+            const custPush = await prisma.customer.findMany({
+                where: { pushEnabled: true, closureStatus: "OPEN" },
+                select: { walletAddress: true },
+            }).catch(() => []);
+            for (const c of custPush) pushWallets.add(c.walletAddress.toLowerCase());
+        }
+        if (audience === "merchants" || audience === "both") {
+            const merchPush = await prisma.merchant.findMany({
+                where: { pushEnabled: true, closureStatus: "OPEN" },
+                select: { walletAddress: true },
+            }).catch(() => []);
+            for (const m of merchPush) pushWallets.add(m.walletAddress.toLowerCase());
+        }
 
         const wallets = Array.from(pushWallets).slice(0, MAX_RECIPIENTS);
         const truncated = notificationRows.length > MAX_RECIPIENTS || pushWallets.size > MAX_RECIPIENTS;
