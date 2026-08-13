@@ -80,7 +80,7 @@ export async function POST(request: Request) {
             .maybeSingle();
 
         if (merchantError || !merchant || merchant.tier !== "PREMIUM") {
-            return NextResponse.json({ error: "Forbidden: Privacy Premium tier required for Automated Churn Recovery" }, { status: 403 });
+            return NextResponse.json({ error: "Forbidden: Premium Pro tier required for Automated Churn Recovery" }, { status: 403 });
         }
 
         const body = await request.json();

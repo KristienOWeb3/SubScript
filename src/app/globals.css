@@ -2,6 +2,88 @@
 @tailwind components;
 @tailwind utilities;
 
+.topo-admin-header {
+  background-color: #353935;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='720' height='420' viewBox='0 0 720 420'%3E%3Cg fill='none' stroke='%23d8dee9' stroke-opacity='.2' stroke-width='1'%3E%3Cpath d='M-40 95Q130 10 300 120t460-15M-40 130Q130 45 300 155t460-15M-40 165Q130 80 300 190t460-15M70-40q75 150 250 180t390-70M105-40q75 150 250 180t390-70M400 300c-170-110-230-10-135 65s270 50 330-35-55-160-175-95-150 180-15 210'/%3E%3Cpath stroke='%23edf2f7' stroke-opacity='.4' stroke-width='2' d='M-40 200Q130 115 300 225t460-15M400 300c-120-80-180-5-110 52s220 34 272-30-42-120-150-62'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 720px 420px;
+}
+
+.topo-admin-blue {
+  background-color: #2775ca;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='680' height='280' viewBox='0 0 680 280'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='.2' stroke-width='1'%3E%3Cpath d='M-40 70Q130-10 290 95t430-10M-40 100Q130 20 290 125t430-10M-40 130Q130 50 290 155t430-10M420 245c-120-75-200-10-125 55s225 25 250-50-85-110-165-45-45 135 65 120'/%3E%3Cpath stroke-opacity='.42' stroke-width='2' d='M-40 160Q130 80 290 185t430-10M420 245c-85-50-140-5-90 38s160 15 180-38-60-75-115-30'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 680px 280px;
+}
+
+.admin-topography {
+  color-scheme: light;
+}
+
+.admin-topography select option {
+  background: #ffffff;
+  color: #0f172a;
+}
+
+/* Keep status semantics while converting the legacy dark console to clean white surfaces. */
+.admin-workspace [class~="text-white"] {
+  color: #0f172a;
+}
+
+.admin-workspace [class~="text-white/80"],
+.admin-workspace [class~="text-white/70"],
+.admin-workspace [class~="text-white/60"] {
+  color: #334155;
+}
+
+.admin-workspace [class~="text-white/50"],
+.admin-workspace [class~="text-white/40"],
+.admin-workspace [class~="text-white/35"],
+.admin-workspace [class~="text-white/30"] {
+  color: #64748b;
+}
+
+.admin-workspace [class~="border-white/15"],
+.admin-workspace [class~="border-white/10"],
+.admin-workspace [class~="border-white/5"] {
+  border-color: #e2e8f0;
+}
+
+.admin-workspace [class~="bg-black/60"],
+.admin-workspace [class~="bg-white/10"],
+.admin-workspace [class~="bg-white/5"],
+.admin-workspace [class~="bg-white/[0.03]"],
+.admin-workspace [class~="bg-white/[0.02]"] {
+  background-color: #f8fafc;
+}
+
+.admin-workspace [class~="divide-white/5"] > :not([hidden]) ~ :not([hidden]) {
+  border-color: #e2e8f0;
+}
+
+.admin-workspace [class~="text-emerald-300"] {
+  color: #047857;
+}
+
+.admin-workspace [class~="text-amber-300"],
+.admin-workspace [class~="text-amber-200"] {
+  color: #b45309;
+}
+
+.admin-workspace [class~="text-red-300"] {
+  color: #b91c1c;
+}
+
+.admin-workspace .topo-admin-blue [class*="text-white"] {
+  color: #ffffff;
+}
+
+.admin-workspace .topo-admin-blue [class*="border-white"] {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.admin-workspace .topo-admin-blue [class*="bg-white"] {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
 :root {
   color-scheme: dark;
   --background-start: #111111;
@@ -62,7 +144,12 @@ body {
   inset: 0;
   border-radius: inherit;
   padding: 1.4px; /* Border thickness */
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.45), transparent, rgba(255, 255, 255, 0.45));
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.45),
+    transparent,
+    rgba(255, 255, 255, 0.45)
+  );
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
@@ -72,7 +159,8 @@ body {
 
 .glass-card:hover {
   border-color: rgba(0, 210, 180, 0.2);
-  box-shadow: 0 8px 32px 0 rgba(0, 210, 180, 0.05), 0 0 15px rgba(0, 210, 180, 0.1);
+  box-shadow: 0 8px 32px 0 rgba(0, 210, 180, 0.05),
+    0 0 15px rgba(0, 210, 180, 0.1);
 }
 
 .perspective-container {
@@ -82,12 +170,14 @@ body {
 
 /* Tablet shadow for floating card */
 .tablet-shadow {
-  box-shadow: -25px 25px 50px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  box-shadow: -25px 25px 50px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(255, 255, 255, 0.05);
 }
 
 /* Float animation for tablet - Desktop */
 @keyframes gentleFloat {
-  0%, 100% {
+  0%,
+  100% {
     transform: translateY(0px) rotateX(10deg) rotateY(-20deg) rotateZ(2deg);
   }
   50% {
@@ -111,8 +201,13 @@ body {
 
 /* Animations */
 @keyframes pulse-glow {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 0.9; }
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 0.9;
+  }
 }
 
 .pulse-glow-teal {
@@ -120,7 +215,8 @@ body {
 }
 
 @keyframes liquid-pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.65;
   }
   50% {
@@ -147,7 +243,8 @@ body {
   color: #fff;
   font-size: 0.78rem;
   outline: none;
-  transition: border-color 180ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: border-color 180ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    background-color 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .subscript-input:focus {
@@ -167,7 +264,9 @@ body {
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
-  transition: transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1), filter 160ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 160ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    filter 160ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    background-color 160ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .subscript-primary-button {

@@ -271,7 +271,7 @@ export default function UpgradePage() {
                 if (upgradeRes.ok && upgradeData.success === true) {
                     setSuccessTxHash(hash);
                     setCheckoutState("success");
-                    setCheckoutStatus("Upgrade successful! Privacy Premium activated.");
+                    setCheckoutStatus("Upgrade successful! Premium Pro activated.");
                     router.push("/merchant?upgradeSuccess=true");
                     return;
                 }
@@ -537,10 +537,10 @@ export default function UpgradePage() {
 
                     <div className="text-center mb-12">
                         <h1 className="text-4xl font-extrabold text-white uppercase tracking-tight mb-3">
-                            Privacy Premium <span className="font-serif italic lowercase font-normal text-[#d4a853]">subscription</span>
+                            SubScript Premium <span className="font-serif italic lowercase font-normal text-[#d4a853]">subscription</span>
                         </h1>
                         <p className="text-sm text-white/50 max-w-xl mx-auto leading-relaxed">
-                            Upgrade your SubScript merchant node to activate Arc privacy-aware receipt controls, priority keeper execution, and advanced automation.
+                            Upgrade your SubScript merchant node to activate payout rerouting, priority keeper execution, and advanced automation.
                         </p>
                     </div>
 
@@ -600,7 +600,7 @@ export default function UpgradePage() {
                                             Active Subscriber
                                         </span>
                                         <h3 className="text-xl font-extrabold text-white uppercase tracking-tight mt-1">
-                                            Privacy Premium Plan
+                                            SubScript Premium Plan
                                         </h3>
                                     </div>
                                 </div>
@@ -648,7 +648,7 @@ export default function UpgradePage() {
                                             {isCancelling ? (
                                                 <><Loader2 className="w-4 h-4 animate-spin" /> Processing...</>
                                             ) : (
-                                                <><XCircle className="w-4 h-4" /> Cancel Privacy Premium</>
+                                                <><XCircle className="w-4 h-4" /> Cancel Premium Plan</>
                                             )}
                                         </button>
                                     </div>
@@ -669,10 +669,10 @@ export default function UpgradePage() {
 
                                 <div className="text-center mb-6">
                                     <span className="text-[9px] font-extrabold px-3 py-1 rounded-full bg-[#d4a853]/15 text-[#d4a853] border border-[#d4a853]/30 uppercase tracking-widest font-mono">
-                                        Privacy Premium
+                                        SubScript Premium
                                     </span>
                                     <h2 className="text-2xl font-extrabold text-white uppercase tracking-tight mt-4">
-                                        Privacy Premium
+                                        Premium Pro
                                     </h2>
                                     <div className="flex items-baseline justify-center gap-1 mt-4">
                                         <span className="text-5xl font-extrabold text-white tracking-tight">10</span>
@@ -707,7 +707,7 @@ export default function UpgradePage() {
                                             className="w-full py-4 bg-gradient-to-r from-[#d4a853] via-[#e2be72] to-[#c49240] text-black font-extrabold rounded-2xl text-xs uppercase tracking-wider hover:brightness-105 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-[0_4px_25px_rgba(212,168,83,0.2)]"
                                         >
                                             <Crown className="w-4 h-4" />
-                                            Activate Privacy Premium
+                                            Activate Premium Pro
                                         </button>
                                     )}
 
@@ -783,7 +783,7 @@ export default function UpgradePage() {
                     <ConfirmModal
                         open={showCancelModal}
                         title="Cancel Subscription"
-                        description="Are you sure you want to cancel your Privacy Premium plan? Your Privacy Premium benefits will remain active until the end of your current billing period."
+                        description="Are you sure you want to cancel your Premium Pro plan? Your Premium benefits will remain active until the end of your current billing period."
                         confirmLabel="Cancel Subscription"
                         cancelLabel="Keep Plan"
                         variant="warning"

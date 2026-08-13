@@ -67,14 +67,6 @@ export default function UserDashboardHeader({
                         {userWallet ? (
                             <div className="flex items-center gap-1.5">
                                 <NotificationBell audience="USER" accent="#ccff00" />
-                                {/* Log Out */}
-                                <button
-                                    onClick={onLogout}
-                                    className="p-2 text-white/40 hover:text-red-400 bg-white/[0.02] hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 rounded-full transition-all"
-                                    title="Log Out"
-                                >
-                                    <LogOut className="w-3.5 h-3.5" />
-                                </button>
                                 {/* Address/Domain pill */}
                                 <button
                                     onClick={() => onTabChange("dns")}
@@ -156,15 +148,6 @@ export default function UserDashboardHeader({
                                             <span className="text-[10px] text-white/50 font-normal ml-1">USDC</span>
                                         </p>
                                     </div>
-
-                                    {/* Log Out Button */}
-                                    <button
-                                        onClick={onLogout}
-                                        className="p-2 text-white/40 hover:text-red-400 bg-white/[0.02] hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 rounded-full transition-all"
-                                        title="Log Out"
-                                    >
-                                        <LogOut className="w-3.5 h-3.5" />
-                                    </button>
 
                                     {/* PFP Icon */}
                                     <button

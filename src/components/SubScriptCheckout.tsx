@@ -327,7 +327,7 @@ export default function SubScriptCheckout({
     }
 
     if (mode === "private") {
-      setErrorMessage("Privacy Premium routing mode is currently unavailable.");
+      setErrorMessage("Premium routing mode is currently unavailable.");
       setLoadingState("error");
       return;
     }

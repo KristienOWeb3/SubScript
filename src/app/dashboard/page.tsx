@@ -40,7 +40,7 @@ import {
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
     Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
     Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, ChevronRight, User, Share2,
-    ShieldCheck, Save, Home, SquaresFour, Broadcast, MessageSquare, HelpCircle, Send, Terminal, Bell, Search
+    ShieldCheck, Save, Home, SquaresFour, MessageSquare, HelpCircle, Send, Terminal, Bell, Search
 } from "@/components/icons";
 import { QRCode } from "react-qrcode-logo";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
@@ -72,14 +72,14 @@ const STANDARD_ABI = STANDARD_SUBSCRIPT_ABI;
 
 const tabs = [
     { id: "overview", label: "Overview", icon: SquaresFour },
-    { id: "premium", label: "Premium", icon: Crown },
+    { id: "payment-links", label: "Payments & Plans", icon: Sliders },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
-    { id: "payment-links", label: "Payments and Subscriptions", icon: Sliders },
     { id: "payroll", label: "Payroll", icon: Building2 },
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "checkout", label: "Checkout Setup", icon: Code2 },
-    { id: "webhooks", label: "Webhooks", icon: Broadcast },
-    { id: "offramp", label: "Off-Ramp", icon: ArrowRightLeft },
+    { id: "webhooks", label: "Webhooks", icon: Webhook },
+    { id: "premium", label: "Premium Pro", icon: Crown },
+    { id: "offramp", label: "Fiat Off-Ramp", icon: ArrowRightLeft },
     { id: "settings", label: "Profile & DNS", icon: User },
 ] as const;
 
@@ -420,7 +420,7 @@ export default function DashboardPage() {
                 setActiveTab(tabParam as TabId);
             }
             if (urlParams.get("upgradeSuccess") === "true") {
-                setToastMessage("Privacy Premium activated");
+                setToastMessage("Premium Pro activated");
                 setShowToast(true);
                 setTimeout(() => setShowToast(false), 4000);
                 /* Clean up URL parameter to avoid showing the toast again on refresh */
@@ -2262,8 +2262,8 @@ export default function DashboardPage() {
 
         setConfirmModal({
             open: true,
-            title: "Cancel Privacy Premium",
-            description: "Your Privacy Premium benefits will remain active until the end of the current billing period. You can resume before that date.",
+            title: "Cancel Premium Pro",
+            description: "Your Premium Pro benefits will remain active until the end of the current billing period. You can resume before that date.",
             confirmLabel: "Cancel Plan",
             variant: "warning",
             onConfirm: async () => {
@@ -2284,7 +2284,7 @@ export default function DashboardPage() {
                     }
 
                     const dateStr = cancelData.nextBillingDate ? new Date(cancelData.nextBillingDate).toLocaleDateString() : "the end of the current period";
-                    setPremiumStatus(`Privacy Premium subscription has been cancelled. Active until ${dateStr}.`);
+                    setPremiumStatus(`Premium Pro subscription has been cancelled. Active until ${dateStr}.`);
                     setIsPremium(false);
                     setCancelAtPeriodEnd(true);
                     setMerchantTier(0);
@@ -2324,7 +2324,7 @@ export default function DashboardPage() {
                 throw new Error(resumeData.error || "Failed to resume subscription.");
             }
 
-            setPremiumStatus("Privacy Premium renewal has been restored. Your subscription will continue normally.");
+            setPremiumStatus("Premium Pro renewal has been restored. Your subscription will continue normally.");
             await refetchBalancesAndTier();
             setTimeout(() => setPremiumStatus(null), 6000);
         } catch (err: any) {
@@ -2593,9 +2593,9 @@ Please complete the following implementation tasks:
                     <Crown className="w-12 h-12" />
                 </div>
                 <div className="space-y-3 max-w-md">
-                    <h2 className="text-xl font-extrabold text-white uppercase tracking-wider">Privacy Premium Feature Locked</h2>
+                    <h2 className="text-xl font-extrabold text-white uppercase tracking-wider">Premium Pro Feature Locked</h2>
                     <p className="text-xs text-white/60 leading-relaxed font-sans">
-                        Access to <span className="font-semibold text-white">{tabLabel}</span> requires an active SubScript Privacy Premium subscription. Upgrade to unlock keys, private checkout generation, and webhook event streaming.
+                        Access to <span className="font-semibold text-white">{tabLabel}</span> requires an active SubScript Premium subscription. Upgrade to unlock keys, private checkout generation, and webhook event streaming.
                     </p>
                 </div>
                 <button
@@ -2603,7 +2603,7 @@ Please complete the following implementation tasks:
                     className="px-8 py-3 bg-[#d4a853] hover:bg-[#d4a853]/80 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-[0_0_20px_rgba(212,168,83,0.2)]"
                 >
                     <Crown className="w-4 h-4" />
-                    Upgrade to Privacy Premium
+                    Upgrade to Premium Pro
                 </button>
             </div>
         );
@@ -4526,36 +4526,40 @@ Please complete the following implementation tasks:
                             {/* Stats Grid */}
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                                 {/* Wallet Balance */}
-                                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+                                <div className="liquid-glass border border-white/10 rounded-3xl p-6 shadow-xl relative overflow-hidden bg-white/[0.02] hover:border-white/20 transition-colors">
                                     <div className="flex items-center justify-between mb-2">
                                         <div className="flex items-center gap-2">
-                                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Wallet Balance</p>
-                                            <button onClick={() => setBalanceVisible(!balanceVisible)} className="text-white/30 hover:text-white/60 transition-colors p-0.5">
-                                                {balanceVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                                            <p className="text-[10px] text-white/50 uppercase font-bold tracking-wider">Wallet Balance</p>
+                                            <button 
+                                                onClick={() => setBalanceVisible(!balanceVisible)} 
+                                                className="text-white/40 hover:text-white transition-colors p-0.5"
+                                                aria-label={balanceVisible ? "Hide balance" : "Show balance"}
+                                            >
+                                                {balanceVisible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
                                             </button>
                                         </div>
                                         <button 
                                             onClick={handleManualRefreshBalances}
                                             disabled={isRefreshingBalances}
-                                            className="text-white/30 hover:text-white/65 disabled:opacity-50 transition-all p-0.5 flex items-center justify-center"
-                                            title="Refresh Balance"
+                                            className="text-white/40 hover:text-white disabled:opacity-50 transition-all p-0.5 flex items-center justify-center"
+                                            title="Refresh balance"
                                         >
-                                            <RefreshCw className={`w-3 h-3 ${isRefreshingBalances ? "animate-spin" : ""}`} />
+                                            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingBalances ? "animate-spin text-[#00d2b4]" : ""}`} />
                                         </button>
                                     </div>
-                                    <p className="text-3xl font-extrabold text-white mb-1 tracking-tight">
+                                    <p className="text-3xl font-extrabold text-white mb-2 tracking-tight">
                                         {balanceVisible ? `$${walletBalance.toFixed(2)}` : '•••••'}
                                     </p>
-                                    <div className="flex items-center justify-between">
-                                        <p className="text-[10px] text-white/30 flex items-center gap-1">
-                                            <Wallet className="w-3 h-3 text-[#00d2b4]" /> USDC in connected wallet
+                                    <div className="flex items-center justify-between pt-1">
+                                        <p className="text-[10px] text-white/45 flex items-center gap-1.5 font-medium">
+                                            <Wallet className="w-3 h-3 text-[#00d2b4]" /> USDC in wallet
                                         </p>
                                         <button
                                             onClick={() => setIsSendWalletOpen(true)}
                                             disabled={walletBalance <= 0 || isSendingWallet}
-                                            className={`text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border transition-all flex items-center gap-1 ${
+                                            className={`text-[9px] font-bold uppercase tracking-wider px-3 py-1 rounded-full border transition-all flex items-center gap-1.5 ${
                                                 walletBalance > 0 
-                                                    ? "border-[#00d2b4]/30 text-[#00d2b4] hover:bg-[#00d2b4]/10 cursor-pointer" 
+                                                    ? "border-[#00d2b4]/40 text-[#00d2b4] bg-[#00d2b4]/5 hover:bg-[#00d2b4]/15 cursor-pointer" 
                                                     : "border-white/5 text-white/20 cursor-not-allowed"
                                             }`}
                                         >
@@ -4565,25 +4569,31 @@ Please complete the following implementation tasks:
                                     </div>
                                 </div>
 
-                                {/* Claimable Settlement */}
-                                <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 shadow-xl relative overflow-hidden">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Claimable Settlement</p>
-                                        <button onClick={() => setBalanceVisible(!balanceVisible)} className="text-white/30 hover:text-white/60 transition-colors p-0.5">
-                                            {balanceVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-                                        </button>
+                                {/* Ready for Payout / Settled Vault */}
+                                <div className="liquid-glass border border-[#00d2b4]/30 rounded-3xl p-6 shadow-xl relative overflow-hidden bg-[#00d2b4]/[0.03] hover:border-[#00d2b4]/50 transition-colors">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <p className="text-[10px] text-[#00d2b4] uppercase font-bold tracking-wider">Ready for Payout</p>
+                                            <button 
+                                                onClick={() => setBalanceVisible(!balanceVisible)} 
+                                                className="text-white/40 hover:text-white transition-colors p-0.5"
+                                                aria-label={balanceVisible ? "Hide balance" : "Show balance"}
+                                            >
+                                                {balanceVisible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                                            </button>
+                                        </div>
                                     </div>
-                                    <p className={`text-3xl font-extrabold ${primaryColorText} mb-1 tracking-tight`}>
+                                    <p className="text-3xl font-extrabold text-[#00d2b4] mb-2 tracking-tight">
                                         {balanceVisible ? `$${vaultBalance.toFixed(2)}` : '•••••'}
                                     </p>
-                                    <div className="flex items-center justify-between">
-                                        <p className="text-[10px] text-white/30">USDC ready for merchant payout</p>
+                                    <div className="flex items-center justify-between pt-1">
+                                        <p className="text-[10px] text-white/45">Settled earnings ready to claim</p>
                                         <button
                                             onClick={() => setIsWithdrawOpen(true)}
                                             disabled={vaultBalance <= 0 || isWithdrawing}
-                                            className={`text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border transition-all flex items-center gap-1 ${
+                                            className={`text-[9px] font-bold uppercase tracking-wider px-3 py-1 rounded-full border transition-all flex items-center gap-1.5 ${
                                                 vaultBalance > 0 
-                                                    ? "border-[#00d2b4]/30 text-[#00d2b4] hover:bg-[#00d2b4]/10" 
+                                                    ? "border-[#00d2b4] bg-[#00d2b4] text-black font-extrabold hover:brightness-110 shadow-[0_0_12px_rgba(0,210,180,0.25)]" 
                                                     : "border-white/5 text-white/20 cursor-not-allowed"
                                             }`}
                                         >
@@ -4592,63 +4602,140 @@ Please complete the following implementation tasks:
                                         </button>
                                     </div>
                                     {withdrawSuccess && (
-                                        <p className="text-[10px] text-emerald-400 mt-2 font-semibold">Withdrawal successful</p>
+                                        <p className="text-[10px] text-emerald-400 mt-2 font-semibold flex items-center gap-1">
+                                            <Check className="w-3 h-3" /> Withdrawal completed successfully
+                                        </p>
                                     )}
                                 </div>
 
-                                {/* Active Allowances */}
-                                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden">
-                                    <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Active Allowances</p>
-                                    <p className="text-3xl font-extrabold text-white mb-1 tracking-tight">
+                                {/* Active Subscriptions */}
+                                <div className="liquid-glass border border-white/10 rounded-3xl p-6 shadow-xl relative overflow-hidden bg-white/[0.02] hover:border-white/20 transition-colors">
+                                    <p className="text-[10px] text-white/50 uppercase font-bold tracking-wider mb-2">Active Subscriptions</p>
+                                    <p className="text-3xl font-extrabold text-white mb-2 tracking-tight">
                                         {isLoadingContract ? "..." : activeAllowances}
                                     </p>
-                                    <p className="text-[10px] text-white/30 flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                                        Active M2M contracts
+                                    <p className="text-[10px] text-white/45 flex items-center gap-1.5 pt-1">
+                                        <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+                                        Recurring customer authorizations
                                     </p>
                                 </div>
 
-                                {/* 30 Day Settlement */}
-                                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden">
-                                    <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">30-Day Projection</p>
-                                    <p className="text-3xl font-extrabold text-white mb-1 tracking-tight">
+                                {/* 30-Day Projection */}
+                                <div className="liquid-glass border border-white/10 rounded-3xl p-6 shadow-xl relative overflow-hidden bg-white/[0.02] hover:border-white/20 transition-colors">
+                                    <p className="text-[10px] text-white/50 uppercase font-bold tracking-wider mb-2">30-Day Projection</p>
+                                    <p className="text-3xl font-extrabold text-white mb-2 tracking-tight">
                                         {isLoadingContract ? "..." : `$${projected30DaySettlement.toFixed(2)}`}
                                     </p>
-                                    <p className="text-[10px] text-white/30">Estimated monthly volume</p>
+                                    <p className="text-[10px] text-white/45 pt-1">Estimated recurring monthly volume</p>
                                 </div>
                             </div>
 
-                            {/* Tier Badge */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-5 shadow-xl flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <div className={`p-2 rounded-xl ${isPremium ? "bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853]" : "bg-white/5 border border-white/10 text-white/40"}`}>
+                            {/* Quick Action Shortcuts */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+                                <button
+                                    onClick={() => {
+                                        setActiveTab("payment-links");
+                                        setSubTab("one-time");
+                                    }}
+                                    className="group liquid-glass border border-white/10 hover:border-[#00d2b4]/40 bg-white/[0.02] hover:bg-[#00d2b4]/[0.05] p-4 rounded-2xl flex items-center gap-3.5 transition-all duration-200 text-left shadow-lg"
+                                >
+                                    <div className="w-9 h-9 rounded-xl bg-[#00d2b4]/10 text-[#00d2b4] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                                        <Link2 className="w-4 h-4" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-xs font-bold text-white uppercase tracking-wider truncate">Payment Link</p>
+                                        <p className="text-[10px] text-white/45 truncate">One-time checkout URL</p>
+                                    </div>
+                                </button>
+
+                                <button
+                                    onClick={() => {
+                                        setActiveTab("payment-links");
+                                        setSubTab("subscriptions");
+                                    }}
+                                    className="group liquid-glass border border-white/10 hover:border-[#00d2b4]/40 bg-white/[0.02] hover:bg-[#00d2b4]/[0.05] p-4 rounded-2xl flex items-center gap-3.5 transition-all duration-200 text-left shadow-lg"
+                                >
+                                    <div className="w-9 h-9 rounded-xl bg-[#00d2b4]/10 text-[#00d2b4] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                                        <Sliders className="w-4 h-4" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-xs font-bold text-white uppercase tracking-wider truncate">Subscription Plan</p>
+                                        <p className="text-[10px] text-white/45 truncate">Recurring billing plan</p>
+                                    </div>
+                                </button>
+
+                                <button
+                                    onClick={() => setIsDepositOpen(true)}
+                                    className="group liquid-glass border border-white/10 hover:border-[#00d2b4]/40 bg-white/[0.02] hover:bg-[#00d2b4]/[0.05] p-4 rounded-2xl flex items-center gap-3.5 transition-all duration-200 text-left shadow-lg"
+                                >
+                                    <div className="w-9 h-9 rounded-xl bg-white/5 text-white/70 group-hover:text-white flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                                        <ArrowDownToLine className="w-4 h-4" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-xs font-bold text-white uppercase tracking-wider truncate">Deposit Funds</p>
+                                        <p className="text-[10px] text-white/45 truncate">Add USDC to balance</p>
+                                    </div>
+                                </button>
+
+                                <button
+                                    onClick={() => setActiveTab("apikeys")}
+                                    className="group liquid-glass border border-white/10 hover:border-[#00d2b4]/40 bg-white/[0.02] hover:bg-[#00d2b4]/[0.05] p-4 rounded-2xl flex items-center gap-3.5 transition-all duration-200 text-left shadow-lg"
+                                >
+                                    <div className="w-9 h-9 rounded-xl bg-white/5 text-white/70 group-hover:text-white flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                                        <Key className="w-4 h-4" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-xs font-bold text-white uppercase tracking-wider truncate">API Credentials</p>
+                                        <p className="text-[10px] text-white/45 truncate">Keys &amp; Webhooks</p>
+                                    </div>
+                                </button>
+                            </div>
+
+                            {/* Tier Badge Banner */}
+                            <div className="liquid-glass border border-white/10 rounded-3xl p-5 shadow-xl flex items-center justify-between bg-white/[0.015]">
+                                <div className="flex items-center gap-4">
+                                    <div className={`p-2.5 rounded-2xl ${isPremium ? "bg-[#d4a853]/15 border border-[#d4a853]/30 text-[#d4a853] shadow-[0_0_15px_rgba(212,168,83,0.15)]" : "bg-white/5 border border-white/10 text-white/50"}`}>
                                         {isPremium ? <Crown className="w-5 h-5" /> : <Shield className="w-5 h-5" />}
                                     </div>
                                     <div>
-                                        <p className="text-xs font-bold text-white uppercase tracking-wider">
-                                            {isPremium ? "Premium Tier" : "Standard Tier"}
+                                        <p className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                                            {isPremium ? "Premium Merchant Pro Active" : "Standard Merchant Tier"}
+                                            {isPremium && (
+                                                <span className="px-2 py-0.5 rounded-full bg-[#d4a853]/20 text-[#d4a853] text-[9px] font-bold">
+                                                    0% FEES
+                                                </span>
+                                            )}
                                         </p>
-                                        <p className="text-[10px] text-white/40">
-                                            {isPremium ? "Full access to rerouting, analytics, and priority execution" : "Basic dashboard access. Upgrade for premium features."}
+                                        <p className="text-[11px] text-white/50 mt-0.5">
+                                            {isPremium 
+                                                ? "0% protocol fees, custom webhook routing, real-time analytics, and automated dunning retries are active." 
+                                                : "Standard 1% protocol fee. Upgrade to Pro for 0% fees, real-time revenue analytics, and priority execution."}
                                         </p>
                                     </div>
                                 </div>
                                 {!isPremium && (
                                     <button
                                         onClick={() => setActiveTab("premium")}
-                                        className="px-4 py-2 bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853] text-[10px] font-bold uppercase tracking-wider rounded-full hover:bg-[#d4a853]/20 transition-all"
+                                        className="px-5 py-2.5 bg-[#d4a853] text-black font-extrabold text-[10px] uppercase tracking-wider rounded-xl hover:brightness-110 shadow-[0_0_15px_rgba(212,168,83,0.2)] transition-all shrink-0"
                                     >
-                                        Upgrade
+                                        Upgrade to Pro
                                     </button>
                                 )}
                             </div>
 
-                            {/* Customer / Agent Ledger */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl">
-                                <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-5 flex items-center gap-2">
-                                    <Activity className={`w-4 h-4 ${primaryColorText}`} />
-                                    Customer / Agent Ledger
-                                </h2>
+                            {/* Customer Subscriptions Ledger */}
+                            <div className="liquid-glass border border-white/10 rounded-3xl p-6 sm:p-7 shadow-2xl bg-white/[0.01]">
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+                                    <div>
+                                        <h2 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                                            <Activity className={`w-4 h-4 ${primaryColorText}`} />
+                                            Active Subscriptions &amp; Customers
+                                        </h2>
+                                        <p className="text-[11px] text-white/45 mt-0.5">
+                                            Live recurring payment authorizations and customer billing cycles.
+                                        </p>
+                                    </div>
+                                </div>
                                 {(() => {
                                     const activeLedgers = ledgers.filter((item) => item.active && !item.cancelAtPeriodEnd);
                                     const churnedLedgers = ledgers.filter((item) => !item.active || item.cancelAtPeriodEnd);
@@ -4668,42 +4755,60 @@ Please complete the following implementation tasks:
                                                     <table className="w-full text-left border-collapse">
                                                         <thead>
                                                             <tr className="border-b border-white/5 text-white/40 text-[10px] uppercase font-bold tracking-wider">
-                                                                <th className="pb-3">ID</th>
-                                                                <th className="pb-3">Subscriber</th>
-                                                                <th className="pb-3">Allowance</th>
-                                                                <th className="pb-3">Next Billing</th>
-                                                                <th className="pb-3">Status</th>
-                                                                <th className="pb-3 text-right">Control</th>
+                                                                <th className="pb-3 font-semibold">Plan ID</th>
+                                                                <th className="pb-3 font-semibold">Customer</th>
+                                                                <th className="pb-3 font-semibold">Allowance / Rate</th>
+                                                                <th className="pb-3 font-semibold">Next Billing</th>
+                                                                <th className="pb-3 font-semibold">Status</th>
+                                                                <th className="pb-3 text-right font-semibold">Control</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody className="text-xs text-white/70 font-mono">
                                                             {isLoadingContract ? (
                                                                 <tr>
-                                                                    <td colSpan={6} className="py-8 text-center text-white/40 flex items-center justify-center gap-2">
-                                                                        <Loader2 className="w-4 h-4 animate-spin" /> Fetching on-chain state...
+                                                                    <td colSpan={6} className="py-8 text-center text-white/40 font-sans">
+                                                                        <div className="flex items-center justify-center gap-2">
+                                                                            <Loader2 className="w-4 h-4 animate-spin text-[#00d2b4]" /> 
+                                                                            <span>Reading on-chain subscription status...</span>
+                                                                        </div>
                                                                     </td>
                                                                 </tr>
                                                             ) : activeLedgers.length === 0 ? (
                                                                 <tr>
-                                                                    <td colSpan={6} className="py-6 text-center text-white/30 font-sans">
-                                                                        No active recurring allowances detected for this merchant address.
+                                                                    <td colSpan={6} className="py-8 text-center text-white/35 font-sans">
+                                                                        <div className="max-w-sm mx-auto space-y-2 py-4">
+                                                                            <p className="text-xs font-semibold text-white/60">No active customer subscriptions yet</p>
+                                                                            <p className="text-[11px] text-white/40">When customers subscribe to your plans, their active status and billing cycles will show here.</p>
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    setActiveTab("payment-links");
+                                                                                    setSubTab("subscriptions");
+                                                                                }}
+                                                                                className="mt-3 px-4 py-2 bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/30 text-[#00d2b4] rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all inline-block"
+                                                                            >
+                                                                                Create a Plan
+                                                                            </button>
+                                                                        </div>
                                                                     </td>
                                                                 </tr>
                                                             ) : (
                                                                 activeLedgers.map((item) => (
-                                                                    <tr key={item.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-colors">
-                                                                        <td className="py-4 font-semibold text-white">{item.id}</td>
-                                                                        <td className="py-4 text-white/40">{item.displayAddress || item.shortSubAddress}</td>
-                                                                        <td className="py-4 text-[#d4a853]">{item.limit}</td>
-                                                                        <td className="py-4">{item.nextBilling}</td>
+                                                                    <tr key={item.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+                                                                        <td className="py-4 font-semibold text-white font-mono">{item.id}</td>
+                                                                        <td className="py-4 text-white/60 font-sans">
+                                                                            <span className="font-mono text-xs">{item.displayAddress || item.shortSubAddress}</span>
+                                                                        </td>
+                                                                        <td className="py-4 text-[#d4a853] font-bold">{item.limit}</td>
+                                                                        <td className="py-4 text-white/70 font-sans">{item.nextBilling}</td>
                                                                         <td className="py-4">
-                                                                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                                                            <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 inline-flex items-center gap-1 font-sans">
+                                                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                                                                                 Active
                                                                             </span>
                                                                         </td>
-                                                                        <td className="py-4 text-right">
-                                                                            <span className="text-[9px] text-white/25 uppercase tracking-widest font-bold">
-                                                                                Customer controlled
+                                                                        <td className="py-4 text-right font-sans">
+                                                                            <span className="text-[9px] text-white/35 uppercase tracking-wider font-semibold">
+                                                                                Customer managed
                                                                             </span>
                                                                         </td>
                                                                     </tr>
@@ -4717,25 +4822,26 @@ Please complete the following implementation tasks:
                                                 <div className="block md:hidden space-y-3">
                                                     {isLoadingContract ? (
                                                         <div className="py-8 text-center text-white/40 flex items-center justify-center gap-2">
-                                                            <Loader2 className="w-4 h-4 animate-spin" /> Fetching on-chain state...
+                                                            <Loader2 className="w-4 h-4 animate-spin text-[#00d2b4]" /> 
+                                                            <span>Reading on-chain state...</span>
                                                         </div>
                                                     ) : activeLedgers.length === 0 ? (
-                                                        <div className="py-6 text-center text-white/30 font-sans text-xs">
-                                                            No active recurring allowances detected.
+                                                        <div className="py-6 text-center text-white/35 font-sans text-xs">
+                                                            No active customer subscriptions yet.
                                                         </div>
                                                     ) : (
                                                         activeLedgers.map((item) => (
                                                             <div key={item.id} className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2 text-xs font-mono">
                                                                 <div className="flex items-center justify-between">
-                                                                    <span className="font-bold text-white">ID #{item.id}</span>
-                                                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                                                    <span className="font-bold text-white">Plan #{item.id}</span>
+                                                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-sans">
                                                                         Active
                                                                     </span>
                                                                 </div>
-                                                                <div className="text-white/50 text-[10px] truncate">{item.displayAddress || item.shortSubAddress}</div>
-                                                                <div className="flex items-center justify-between text-[11px] pt-1">
-                                                                    <span className="text-white/40">Allowance: <span className="text-[#d4a853] font-bold">{item.limit}</span></span>
-                                                                    <span className="text-white/40">Next: <span className="text-white/70">{item.nextBilling}</span></span>
+                                                                <div className="text-white/60 text-[11px] truncate font-mono">{item.displayAddress || item.shortSubAddress}</div>
+                                                                <div className="flex items-center justify-between text-[11px] pt-1 font-sans">
+                                                                    <span className="text-white/45">Allowance: <span className="text-[#d4a853] font-bold">{item.limit}</span></span>
+                                                                    <span className="text-white/45">Next: <span className="text-white/80">{item.nextBilling}</span></span>
                                                                 </div>
                                                             </div>
                                                         ))
@@ -4747,7 +4853,7 @@ Please complete the following implementation tasks:
                                             <div className="space-y-3 pt-6 border-t border-white/5">
                                                 <div className="flex items-center justify-between">
                                                     <span className="text-[11px] font-bold text-white/70 uppercase tracking-wider flex items-center gap-2">
-                                                        <span className="w-2 h-2 rounded-full bg-red-400" /> Churned & Canceled ({churnedLedgers.length})
+                                                        <span className="w-2 h-2 rounded-full bg-red-400" /> Canceled &amp; Expired ({churnedLedgers.length})
                                                     </span>
                                                 </div>
 
@@ -4756,34 +4862,34 @@ Please complete the following implementation tasks:
                                                     <table className="w-full text-left border-collapse">
                                                         <thead>
                                                             <tr className="border-b border-white/5 text-white/40 text-[10px] uppercase font-bold tracking-wider">
-                                                                <th className="pb-3">ID</th>
-                                                                <th className="pb-3">Subscriber</th>
-                                                                <th className="pb-3">Prior Allowance</th>
-                                                                <th className="pb-3">Status</th>
-                                                                <th className="pb-3 text-right">Reason / Details</th>
+                                                                <th className="pb-3 font-semibold">Plan ID</th>
+                                                                <th className="pb-3 font-semibold">Customer</th>
+                                                                <th className="pb-3 font-semibold">Prior Rate</th>
+                                                                <th className="pb-3 font-semibold">Status</th>
+                                                                <th className="pb-3 text-right font-semibold">Details</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody className="text-xs text-white/70 font-mono">
                                                             {churnedLedgers.length === 0 ? (
                                                                 <tr>
-                                                                    <td colSpan={5} className="py-6 text-center text-white/20 font-sans">
-                                                                        No churned or canceled subscriptions on record.
+                                                                    <td colSpan={5} className="py-6 text-center text-white/30 font-sans text-xs">
+                                                                        No canceled or expired subscriptions on record.
                                                                     </td>
                                                                 </tr>
                                                             ) : (
                                                                 churnedLedgers.map((item) => (
                                                                     <tr key={item.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-colors">
                                                                         <td className="py-4 font-semibold text-white/60">{item.id}</td>
-                                                                        <td className="py-4 text-white/30">{item.displayAddress || item.shortSubAddress}</td>
+                                                                        <td className="py-4 text-white/40">{item.displayAddress || item.shortSubAddress}</td>
                                                                         <td className="py-4 text-[#d4a853]/60">{item.limit}</td>
                                                                         <td className="py-4">
-                                                                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/20">
-                                                                                {item.cancelAtPeriodEnd ? "Cancelled (Pending Expiry)" : "Cancelled"}
+                                                                            <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/20 font-sans">
+                                                                                {item.cancelAtPeriodEnd ? "Pending Expiry" : "Canceled"}
                                                                             </span>
                                                                         </td>
-                                                                        <td className="py-4 text-right">
-                                                                            <span className="text-[9px] text-red-400/60 uppercase tracking-widest font-bold">
-                                                                                {item.cancelAtPeriodEnd ? "Expires at period end" : "Permit2 Allowance Revoked"}
+                                                                        <td className="py-4 text-right font-sans">
+                                                                            <span className="text-[9px] text-red-400/70 uppercase tracking-wider font-semibold">
+                                                                                {item.cancelAtPeriodEnd ? "Cancels at period end" : "Allowance revoked"}
                                                                             </span>
                                                                         </td>
                                                                     </tr>
@@ -4796,22 +4902,22 @@ Please complete the following implementation tasks:
                                                 {/* Mobile View - Churned */}
                                                 <div className="block md:hidden space-y-3">
                                                     {churnedLedgers.length === 0 ? (
-                                                        <div className="py-6 text-center text-white/20 font-sans text-xs">
-                                                            No churned or canceled subscriptions on record.
+                                                        <div className="py-6 text-center text-white/30 font-sans text-xs">
+                                                            No canceled subscriptions.
                                                         </div>
                                                     ) : (
                                                         churnedLedgers.map((item) => (
                                                             <div key={item.id} className="p-4 rounded-2xl bg-white/[0.01] border border-white/5 space-y-2 text-xs font-mono opacity-80">
                                                                 <div className="flex items-center justify-between">
-                                                                    <span className="font-bold text-white/70">ID #{item.id}</span>
-                                                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/20">
-                                                                        {item.cancelAtPeriodEnd ? "Cancelled" : "Revoked"}
+                                                                    <span className="font-bold text-white/70">Plan #{item.id}</span>
+                                                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/20 font-sans">
+                                                                        {item.cancelAtPeriodEnd ? "Pending Expiry" : "Canceled"}
                                                                     </span>
                                                                 </div>
                                                                 <div className="text-white/40 text-[10px] truncate">{item.displayAddress || item.shortSubAddress}</div>
-                                                                <div className="flex items-center justify-between text-[11px] pt-1">
-                                                                    <span className="text-white/30">Allowance: <span className="text-[#d4a853]/60 font-bold">{item.limit}</span></span>
-                                                                    <span className="text-red-400/60 text-[9px]">{item.cancelAtPeriodEnd ? "Expires at period end" : "Allowance Revoked"}</span>
+                                                                <div className="flex items-center justify-between text-[11px] pt-1 font-sans">
+                                                                    <span className="text-white/30">Rate: <span className="text-[#d4a853]/60 font-bold">{item.limit}</span></span>
+                                                                    <span className="text-red-400/70 text-[9px]">{item.cancelAtPeriodEnd ? "Expires at period end" : "Allowance revoked"}</span>
                                                                 </div>
                                                             </div>
                                                         ))
@@ -4996,7 +5102,7 @@ Please complete the following implementation tasks:
                                         onClick={() => setActiveTab("webhooks")}
                                         className="mx-auto w-12 h-12 rounded-full border border-[#00d2b4]/20 bg-white/[0.02] hover:bg-white/[0.05] text-[#00d2b4] flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
                                     >
-                                        <Broadcast className="w-5 h-5" />
+                                        <Webhook className="w-5 h-5" />
                                     </button>
                                     <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest block mt-2 leading-tight">Webhooks</span>
                                 </div>
@@ -5159,7 +5265,7 @@ Please complete the following implementation tasks:
                                     <p className="text-xs text-white/50 leading-relaxed">
                                         {isPremium 
                                             ? "You have full access to payout rerouting, priority keeper execution, advanced analytics, and multi-wallet support." 
-                                    : "Upgrade to Privacy Premium to unlock payout rerouting, priority execution, advanced analytics, and more."
+                                    : "Upgrade to Premium Pro to unlock payout rerouting, priority execution, advanced analytics, and more."
                                         }
                                     </p>
                                 </div>
@@ -5453,7 +5559,7 @@ Please complete the following implementation tasks:
                                                     className={`px-5 py-3 bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold border border-red-500/30 rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 relative overflow-hidden ${isCancellingPremium ? "quick-action-loading" : ""}`}
                                                 >
                                                     {isCancellingPremium ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5" />}
-                                                    Cancel Privacy Premium
+                                                    Cancel Premium Pro
                                                 </button>
                                             )}
                                         </div>
@@ -5488,7 +5594,7 @@ Please complete the following implementation tasks:
                                         <div className="space-y-3 font-mono text-[10px] text-white/60">
                                             <div className="flex justify-between border-b border-white/5 pb-2">
                                                 <span>Tier:</span>
-                                                <span className="text-[#d4a853] font-bold">PRIVACY PREMIUM</span>
+                                                <span className="text-[#d4a853] font-bold">PREMIUM PRO</span>
                                             </div>
                                             <div className="flex justify-between border-b border-white/5 pb-2">
                                                 <span>Price:</span>
@@ -5515,9 +5621,9 @@ Please complete the following implementation tasks:
                             <div className="liquid-glass border border-[#d4a853]/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-gradient-to-b from-[#d4a853]/[0.02] to-transparent">
                                 <div className="max-w-lg mx-auto text-center space-y-6">
                                     <div className="space-y-2">
-                                        <h3 className="text-lg font-extrabold text-white uppercase tracking-tight">Upgrade to Privacy Premium</h3>
+                                        <h3 className="text-lg font-extrabold text-white uppercase tracking-tight">Upgrade to Premium Pro</h3>
                                         <p className="text-xs text-white/50 leading-relaxed">
-                                            Unlock privacy-aware payouts, fund rerouting to cold storage and multisigs, priority keeper execution, and full API/webhook access.
+                                            Unlock payout rerouting to cold storage and multisigs, priority keeper execution, real-time analytics, and full API/webhook access.
                                         </p>
                                     </div>
 
@@ -5541,7 +5647,7 @@ Please complete the following implementation tasks:
                                             "Advanced analytics",
                                             "Full API & webhook access",
                                             "Multi-wallet support",
-                                            "Privacy Premium merchant badge"
+                                            "Premium Pro merchant badge"
                                         ].map((f, i) => (
                                             <div key={i} className="flex items-center gap-2 text-xs text-white/60">
                                                 <Check className="w-3.5 h-3.5 text-[#d4a853] flex-shrink-0" /> {f}
@@ -6442,7 +6548,7 @@ Please complete the following implementation tasks:
         }));
 
     const sidebarFooterItems: DashboardSidebarItem[] = [
-        { id: "settings", label: "Profile & DNS", icon: User },
+        { id: "settings", label: "Settings", icon: Sliders },
         { id: "support", label: "Help center", icon: HelpCircle, href: "/support", newTab: true },
     ];
 
@@ -6469,6 +6575,15 @@ Please complete the following implementation tasks:
                         fallback: (merchantAlias || "M").slice(0, 1).toUpperCase(),
                         onClick: () => setActiveTab("settings"),
                         title: merchantAlias || "Your merchant account",
+                    }}
+                    promo={{
+                        badge: isPremium ? "PRO ACTIVE" : "QUICKSTART",
+                        title: isPremium ? "Analytics Active" : "One-Command Setup",
+                        body: isPremium
+                            ? "Real-time metrics, automated retries, and custom webhook routes."
+                            : "Generate checkout routes, buttons, and webhook receivers in 60s with our CLI.",
+                        ctaLabel: isPremium ? "Open Analytics" : "View Setup",
+                        onCta: () => setActiveTab(isPremium ? "analytics" : "checkout"),
                     }}
                     accent="#00d2b4"
                     panelColor="#131522"
@@ -6572,37 +6687,6 @@ Please complete the following implementation tasks:
 
                 {isLoading ? (
                     <DashboardSkeleton activeTab={activeTab} isConnected={isConnected} />
-                ) : !isConnected ? (
-                    <div className="space-y-8">
-                        <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
-                            <div className="p-4 rounded-3xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-300">
-                                <AlertTriangle className="w-10 h-10" />
-                            </div>
-                            <div className="space-y-2">
-                                <h2 className="text-lg font-bold text-white uppercase tracking-wider">Connect your merchant wallet</h2>
-                                <p className="text-sm text-white/60 max-w-md leading-relaxed">
-                                    Your dashboard loads once your wallet is connected. Nothing is signed or spent by connecting.
-                                </p>
-                            </div>
-                            <button
-                                onClick={handleConnect}
-                                className="px-8 py-3 bg-yellow-300 hover:bg-yellow-200 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-[0_0_20px_rgba(234,179,8,0.2)]"
-                            >
-                                <PlugZap className="w-4 h-4" />
-                                {isConnecting ? "Connecting Wallet..." : "Connect Merchant Wallet"}
-                            </button>
-                            {isConnectError && connectError && (
-                                <div className="mt-4 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-left max-w-md w-full">
-                                    <span className="text-red-400 text-xs font-semibold uppercase tracking-wide block">
-                                        Connection Failed
-                                    </span>
-                                    <p className="text-red-200 text-xs font-mono break-all mt-1 leading-relaxed">
-                                        {connectError.message}
-                                    </p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
                 ) : (
                     /* Navigation moved to the shared rail, so the tab body now owns the full width
                        of the content panel. */

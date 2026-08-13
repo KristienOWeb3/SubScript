@@ -35,8 +35,18 @@ type Merchant = {
   createdAt: string;
 };
 
-type BannedAccount = { address: string; reason?: string | null; bannedBy?: string; createdAt: string };
-type BannedIp = { ip: string; reason?: string | null; bannedBy?: string; createdAt: string };
+type BannedAccount = {
+  address: string;
+  reason?: string | null;
+  bannedBy?: string;
+  createdAt: string;
+};
+type BannedIp = {
+  ip: string;
+  reason?: string | null;
+  bannedBy?: string;
+  createdAt: string;
+};
 
 /* Which exits a hold closes. One address can be both a merchant and a user, and the two
    withdraw through different endpoints, so freezing a merchant payout must not have to
@@ -103,7 +113,11 @@ type Analytics = {
     customersNew30d: number;
   };
   kyc: { byStatus: Record<string, number>; pending: number; approved: number };
-  health: { revocationPending: number; downgradeFailures: number; stuckReceipts: number };
+  health: {
+    revocationPending: number;
+    downgradeFailures: number;
+    stuckReceipts: number;
+  };
   recentBroadcasts: Array<{
     id: string;
     title: string;
@@ -205,10 +219,11 @@ const TABS: Array<{ id: TabId; label: string }> = [
   { id: "admins", label: "Admins" },
 ];
 
-const CARD = "rounded-3xl border border-white/10 bg-black/40 p-6 backdrop-blur-xl";
-const LABEL = "text-[10px] font-black uppercase tracking-wider text-white/40";
+const CARD =
+  "rounded-xl border border-[#e2e8f0] bg-white p-6 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]";
+const LABEL = "text-[10px] font-black uppercase tracking-wider text-[#64748b]";
 const INPUT =
-  "w-full rounded-xl border border-white/10 bg-black/50 px-3.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-[#ccff00]/40 focus:outline-none";
+  "w-full rounded-lg border border-[#cbd5e1] bg-white px-3.5 py-2 text-xs text-[#0f172a] placeholder:text-[#94a3b8] focus:border-[#2775ca] focus:outline-none focus:ring-2 focus:ring-[#2775ca]/15";
 
 export default function AdminDashboardPage() {
   const [tab, setTab] = useState<TabId>("overview");
@@ -259,7 +274,9 @@ export default function AdminDashboardPage() {
   const [bcTitle, setBcTitle] = useState("");
   const [bcBody, setBcBody] = useState("");
   const [bcUrl, setBcUrl] = useState("");
-  const [bcAudience, setBcAudience] = useState<"users" | "merchants" | "both">("users");
+  const [bcAudience, setBcAudience] = useState<"users" | "merchants" | "both">(
+    "users"
+  );
   const [bcConfirm, setBcConfirm] = useState("");
   const [bcBusy, setBcBusy] = useState<"preview" | "send" | null>(null);
 
@@ -274,7 +291,9 @@ export default function AdminDashboardPage() {
   const [kycSearch, setKycSearch] = useState("");
   const [kycBusy, setKycBusy] = useState<string | null>(null);
   /* Keyed by verification id so two rows open at once cannot share a draft. */
-  const [kycReasonDraft, setKycReasonDraft] = useState<Record<string, string>>({});
+  const [kycReasonDraft, setKycReasonDraft] = useState<Record<string, string>>(
+    {}
+  );
   const [forceTarget, setForceTarget] = useState<KycRecord | null>(null);
   const [forceReason, setForceReason] = useState("");
   const [forceExpiry, setForceExpiry] = useState("");
@@ -337,7 +356,8 @@ export default function AdminDashboardPage() {
     try {
       const res = await fetch("/api/admin/flags");
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to load platform flags");
+      if (!res.ok)
+        throw new Error(json.error || "Failed to load platform flags");
       setFlags(json);
       setMaintenanceMessage(json.maintenanceMessage || "");
     } catch (err: any) {
@@ -348,11 +368,15 @@ export default function AdminDashboardPage() {
   const loadKyc = useCallback(async () => {
     setKycLoading(true);
     try {
-      const params = new URLSearchParams({ status: kycStatusFilter, limit: "100" });
+      const params = new URLSearchParams({
+        status: kycStatusFilter,
+        limit: "100",
+      });
       if (kycSearch.trim()) params.set("search", kycSearch.trim());
       const res = await fetch(`/api/admin/kyc/review?${params.toString()}`);
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to load verifications");
+      if (!res.ok)
+        throw new Error(json.error || "Failed to load verifications");
       setKycRecords(json.verifications || []);
       setViewerIsRoot(Boolean(json.viewerIsRoot));
     } catch (err: any) {
@@ -384,8 +408,11 @@ export default function AdminDashboardPage() {
         }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to update verification");
-      setKycRecords((prev) => prev.map((r) => (r.id === record.id ? json.verification : r)));
+      if (!res.ok)
+        throw new Error(json.error || "Failed to update verification");
+      setKycRecords((prev) =>
+        prev.map((r) => (r.id === record.id ? json.verification : r))
+      );
       setNotice(`${record.walletAddress.slice(0, 10)}… moved to ${status}.`);
     } catch (err: any) {
       setError(err.message || "Failed to update verification");
@@ -409,13 +436,19 @@ export default function AdminDashboardPage() {
           verificationId: forceTarget.id,
           reason: forceReason.trim(),
           confirm: forceConfirm,
-          ...(forceExpiry ? { expiresAt: new Date(forceExpiry).toISOString() } : {}),
+          ...(forceExpiry
+            ? { expiresAt: new Date(forceExpiry).toISOString() }
+            : {}),
         }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Force approval failed");
-      setKycRecords((prev) => prev.map((r) => (r.id === forceTarget.id ? json.verification : r)));
-      setNotice(`Force-approved ${forceTarget.walletAddress}. Logged to the admin audit trail.`);
+      setKycRecords((prev) =>
+        prev.map((r) => (r.id === forceTarget.id ? json.verification : r))
+      );
+      setNotice(
+        `Force-approved ${forceTarget.walletAddress}. Logged to the admin audit trail.`
+      );
       setForceTarget(null);
       setForceReason("");
       setForceExpiry("");
@@ -447,7 +480,9 @@ export default function AdminDashboardPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to open verification");
       setKycRecords((prev) => [json.verification, ...prev]);
-      setNotice(`Opened a manual verification for ${manualWallet.trim()}. It still needs a decision.`);
+      setNotice(
+        `Opened a manual verification for ${manualWallet.trim()}. It still needs a decision.`
+      );
       setManualWallet("");
       setManualCountry("");
       setManualReason("");
@@ -499,7 +534,11 @@ export default function AdminDashboardPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Broadcast failed");
-      setNotice(json.warning ? `${json.summary || json.message} ${json.warning}` : json.summary || json.message);
+      setNotice(
+        json.warning
+          ? `${json.summary || json.message} ${json.warning}`
+          : json.summary || json.message
+      );
       if (!testOnly) {
         setBcTitle("");
         setBcBody("");
@@ -553,7 +592,8 @@ export default function AdminDashboardPage() {
     try {
       const res = await fetch("/api/admin/withdrawal-holds");
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to load withdrawal holds");
+      if (!res.ok)
+        throw new Error(json.error || "Failed to load withdrawal holds");
       setHolds(json.holds || []);
     } catch (err: any) {
       setError(err.message || "Failed to load withdrawal holds");
@@ -577,7 +617,10 @@ export default function AdminDashboardPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const toggleVerification = async (merchantAddress: string, currentStatus: boolean) => {
+  const toggleVerification = async (
+    merchantAddress: string,
+    currentStatus: boolean
+  ) => {
     setVerifyBusy(merchantAddress);
     setError(null);
     try {
@@ -587,9 +630,14 @@ export default function AdminDashboardPage() {
         body: JSON.stringify({ merchantAddress, verified: !currentStatus }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to update verification");
+      if (!res.ok)
+        throw new Error(json.error || "Failed to update verification");
       setMerchants((prev) =>
-        prev.map((m) => (m.walletAddress === merchantAddress ? { ...m, verified: !currentStatus } : m)),
+        prev.map((m) =>
+          m.walletAddress === merchantAddress
+            ? { ...m, verified: !currentStatus }
+            : m
+        )
       );
     } catch (err: any) {
       setError(err.message || "Failed to update verification");
@@ -667,9 +715,12 @@ export default function AdminDashboardPage() {
         }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to place withdrawal hold");
+      if (!res.ok)
+        throw new Error(json.error || "Failed to place withdrawal hold");
       setNotice(
-        `Withdrawals frozen for ${holdTarget.trim().toLowerCase()} (${holdScope}). Logged to the admin audit trail.`,
+        `Withdrawals frozen for ${holdTarget
+          .trim()
+          .toLowerCase()} (${holdScope}). Logged to the admin audit trail.`
       );
       setHoldTarget("");
       setHoldReason("");
@@ -693,8 +744,11 @@ export default function AdminDashboardPage() {
         body: JSON.stringify({ address, hold: false }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to lift withdrawal hold");
-      setNotice(`Withdrawals released for ${address}. Logged to the admin audit trail.`);
+      if (!res.ok)
+        throw new Error(json.error || "Failed to lift withdrawal hold");
+      setNotice(
+        `Withdrawals released for ${address}. Logged to the admin audit trail.`
+      );
       await loadWithdrawalHolds();
     } catch (err: any) {
       setError(err.message || "Failed to lift withdrawal hold");
@@ -713,10 +767,14 @@ export default function AdminDashboardPage() {
       const res = await fetch("/api/admin/admins", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet: newAdminWallet.trim(), label: newAdminLabel.trim() || undefined }),
+        body: JSON.stringify({
+          wallet: newAdminWallet.trim(),
+          label: newAdminLabel.trim() || undefined,
+        }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to grant admin access");
+      if (!res.ok)
+        throw new Error(json.error || "Failed to grant admin access");
       if (json.warning) setNotice(json.warning);
       setNewAdminWallet("");
       setNewAdminLabel("");
@@ -732,9 +790,13 @@ export default function AdminDashboardPage() {
     setError(null);
     setNotice(null);
     try {
-      const res = await fetch(`/api/admin/admins?wallet=${encodeURIComponent(wallet)}`, { method: "DELETE" });
+      const res = await fetch(
+        `/api/admin/admins?wallet=${encodeURIComponent(wallet)}`,
+        { method: "DELETE" }
+      );
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to revoke admin access");
+      if (!res.ok)
+        throw new Error(json.error || "Failed to revoke admin access");
       if (json.warning) setNotice(json.warning);
       await loadAdmins();
     } catch (err: any) {
@@ -745,16 +807,18 @@ export default function AdminDashboardPage() {
   const filteredMerchants = merchants.filter(
     (m) =>
       m.merchantName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      m.walletAddress.toLowerCase().includes(searchQuery.toLowerCase()),
+      m.walletAddress.toLowerCase().includes(searchQuery.toLowerCase())
   );
+  const activeTabLabel =
+    TABS.find((item) => item.id === tab)?.label ?? "Overview";
 
   return (
-    <main className="min-h-screen bg-black text-white p-4 sm:p-8">
-      <div className="mx-auto max-w-6xl space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-white/10 pb-6">
+    <main className="admin-topography min-h-screen bg-[#f8fafc] text-white">
+      <div className="topo-admin-header border-b border-white/10 px-4 py-5 shadow-[0_8px_28px_rgba(15,23,42,0.24)] sm:px-8">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <span className="rounded-full bg-[#ccff00]/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#ccff00] border border-[#ccff00]/30">
+              <span className="rounded-full border border-white/25 bg-white/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#e2e8f0]">
                 admin.subscriptonarc.com
               </span>
               {viewerIsRoot && (
@@ -763,11 +827,12 @@ export default function AdminDashboardPage() {
                 </span>
               )}
             </div>
-            <h1 className="mt-2 text-2xl sm:text-3xl font-black uppercase tracking-tight text-white">
-              System Control Center
+            <h1 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
+              Protocol Control Center
             </h1>
-            <p className="text-xs text-white/50">
-              Gas sponsorship, merchant verification, access control, and admin management.
+            <p className="text-xs text-[#cbd5e1]">
+              Gas sponsorship, merchant verification, access control, and admin
+              management.
             </p>
           </div>
           <button
@@ -778,31 +843,55 @@ export default function AdminDashboardPage() {
               else if (tab === "system") loadFlags();
               else if (tab === "kyc") loadKyc();
               /* Moderation draws from two sources: bans ride along on loadData(), holds have
-                 their own endpoint. Refresh has to pull both or the tab half-updates. */
-              else if (tab === "moderation") {
+                 their own endpoint. Refresh has to pull both or the tab half-updates. */ else if (
+                tab === "moderation"
+              ) {
                 loadWithdrawalHolds();
                 loadData();
-              }
-              else loadData();
+              } else loadData();
             }}
             disabled={loading}
-            className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-white/10"
+            className="flex items-center gap-2 rounded-lg border border-white/25 bg-white/10 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-white/15"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             Refresh
           </button>
         </div>
+      </div>
 
-        <div className="flex flex-wrap gap-2">
+      <div className="admin-workspace mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-8 sm:py-8">
+        <section className="topo-admin-blue flex flex-col justify-between gap-5 rounded-xl border border-white/20 px-5 py-5 text-white shadow-[0_12px_30px_rgba(39,117,202,0.18)] sm:flex-row sm:items-end sm:px-6">
+          <div>
+            <span className="text-[10px] font-black uppercase tracking-[0.14em] text-white/75">
+              Secure operations workspace
+            </span>
+            <h2 className="mt-1 text-xl font-black text-white">
+              {activeTabLabel}
+            </h2>
+            <p className="mt-1 text-xs text-white/80">
+              Live administrative controls and auditable protocol operations.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-wider">
+            <span className="rounded-full border border-white/25 bg-white/10 px-3 py-1.5">
+              Arc Mainnet
+            </span>
+            <span className="rounded-full border border-white/25 bg-white/10 px-3 py-1.5">
+              {viewerIsRoot ? "Root authority" : "Delegated authority"}
+            </span>
+          </div>
+        </section>
+
+        <div className="flex gap-2 overflow-x-auto rounded-xl border border-[#dbe3ec] bg-white p-2 shadow-sm">
           {TABS.map((t) => (
             <button
               key={t.id}
               type="button"
               onClick={() => setTab(t.id)}
-              className={`rounded-2xl px-4 py-2 text-xs font-black uppercase tracking-wider transition ${
+              className={`shrink-0 rounded-lg px-4 py-2 text-xs font-black uppercase tracking-wider transition ${
                 tab === t.id
-                  ? "bg-[#ccff00]/15 border border-[#ccff00]/40 text-[#ccff00]"
-                  : "border border-white/10 bg-white/5 text-white/50 hover:bg-white/10"
+                  ? "border border-[#2775ca] bg-[#2775ca] text-white shadow-sm"
+                  : "border border-transparent bg-white text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#0f172a]"
               }`}
             >
               {t.label}
@@ -846,27 +935,37 @@ export default function AdminDashboardPage() {
                 <div className="mt-4">
                   <p className="text-3xl font-black tracking-tight text-white">
                     {sponsor?.balanceUsdc
-                      ? Number(sponsor.balanceUsdc).toLocaleString(undefined, { maximumFractionDigits: 4 })
+                      ? Number(sponsor.balanceUsdc).toLocaleString(undefined, {
+                          maximumFractionDigits: 4,
+                        })
                       : sponsor?.configured
-                        ? "—"
-                        : "0"}{" "}
-                    <span className="text-base font-bold text-[#ccff00]">USDC</span>
+                      ? "—"
+                      : "0"}{" "}
+                    <span className="text-base font-bold text-[#2775ca]">
+                      USDC
+                    </span>
                   </p>
                   <p className="mt-1 text-[11px] text-white/50">
-                    Native gas reserve on Arc. Each sponsored action tops a user up by {sponsor?.topupUsdc ?? "0.10"} USDC.
+                    Native gas reserve on Arc. Each sponsored action tops a user
+                    up by {sponsor?.topupUsdc ?? "0.10"} USDC.
                   </p>
-                  {sponsor?.estimatedTopupsRemaining !== null && sponsor?.estimatedTopupsRemaining !== undefined && (
-                    <p className="mt-2 text-[11px] font-bold text-white/70">
-                      ≈ {sponsor.estimatedTopupsRemaining.toLocaleString()} sponsored actions remaining
-                    </p>
-                  )}
+                  {sponsor?.estimatedTopupsRemaining !== null &&
+                    sponsor?.estimatedTopupsRemaining !== undefined && (
+                      <p className="mt-2 text-[11px] font-bold text-white/70">
+                        ≈ {sponsor.estimatedTopupsRemaining.toLocaleString()}{" "}
+                        sponsored actions remaining
+                      </p>
+                    )}
                   {sponsor?.underfunded && (
                     <p className="mt-2 text-[11px] font-bold text-amber-300">
-                      Below the safe threshold — sponsored payments will start failing. Send USDC to the address below.
+                      Below the safe threshold — sponsored payments will start
+                      failing. Send USDC to the address below.
                     </p>
                   )}
                   {sponsor?.error && (
-                    <p className="mt-2 text-[11px] text-red-300">Balance unavailable: {sponsor.error}</p>
+                    <p className="mt-2 text-[11px] text-red-300">
+                      Balance unavailable: {sponsor.error}
+                    </p>
                   )}
                 </div>
               </div>
@@ -883,13 +982,18 @@ export default function AdminDashboardPage() {
                       className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white hover:bg-white/15 transition"
                       title="Copy sponsor address"
                     >
-                      {copied ? <CheckCircle2 className="h-4 w-4 text-[#ccff00]" /> : <Copy className="h-4 w-4" />}
+                      {copied ? (
+                        <CheckCircle2 className="h-4 w-4 text-[#2775ca]" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
                     </button>
                   )}
                 </div>
                 {sponsor?.address && (
                   <p className="text-[10px] text-white/40">
-                    To fund gas: send native USDC on Arc directly to this address.
+                    To fund gas: send native USDC on Arc directly to this
+                    address.
                   </p>
                 )}
               </div>
@@ -898,9 +1002,17 @@ export default function AdminDashboardPage() {
             <div className={`${CARD} space-y-4`}>
               <span className={LABEL}>At a glance</span>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <Stat label="Total Users" value={totalUsers ?? (analytics?.growth?.usersTotal ?? "—")} />
+                <Stat
+                  label="Total Users"
+                  value={totalUsers ?? analytics?.growth?.usersTotal ?? "—"}
+                />
                 <Stat label="Merchants" value={merchants.length} />
-                <Stat label="Verified Merchants" value={merchants.filter((merchant) => merchant.verified).length} />
+                <Stat
+                  label="Verified Merchants"
+                  value={
+                    merchants.filter((merchant) => merchant.verified).length
+                  }
+                />
                 <Stat label="Banned wallets" value={bannedAccounts.length} />
                 <Stat label="Banned IPs" value={bannedIps.length} />
               </div>
@@ -912,7 +1024,9 @@ export default function AdminDashboardPage() {
           <div className={`${CARD} space-y-4`}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-lg font-black uppercase tracking-wide text-white">Merchant Verifications</h2>
+                <h2 className="text-lg font-black uppercase tracking-wide text-white">
+                  Merchant Verifications
+                </h2>
                 <p className="text-xs text-white/50">
                   Verified merchants show a badge at checkout and in DMs.
                 </p>
@@ -943,26 +1057,40 @@ export default function AdminDashboardPage() {
                 <tbody className="divide-y divide-white/5">
                   {filteredMerchants.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="py-6 text-center text-white/40">
+                      <td
+                        colSpan={5}
+                        className="py-6 text-center text-white/40"
+                      >
                         No merchants found.
                       </td>
                     </tr>
                   ) : (
                     filteredMerchants.map((merchant) => (
-                      <tr key={merchant.walletAddress} className="hover:bg-white/[0.02]">
+                      <tr
+                        key={merchant.walletAddress}
+                        className="hover:bg-white/[0.02]"
+                      >
                         <td className="py-3.5 px-3">
                           <div className="flex items-center gap-2.5">
                             <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 border border-white/10 font-bold text-white shrink-0">
                               {merchant.profilePic ? (
-                                <img src={merchant.profilePic} alt={merchant.merchantName} className="h-full w-full rounded-xl object-cover" />
+                                <img
+                                  src={merchant.profilePic}
+                                  alt={merchant.merchantName}
+                                  className="h-full w-full rounded-xl object-cover"
+                                />
                               ) : (
-                                <Building2 className="h-4 w-4 text-[#ccff00]" />
+                                <Building2 className="h-4 w-4 text-[#2775ca]" />
                               )}
                             </div>
-                            <span className="font-bold text-white uppercase tracking-wider">{merchant.merchantName}</span>
+                            <span className="font-bold text-white uppercase tracking-wider">
+                              {merchant.merchantName}
+                            </span>
                           </div>
                         </td>
-                        <td className="py-3.5 px-3 font-mono text-white/60">{merchant.walletAddress}</td>
+                        <td className="py-3.5 px-3 font-mono text-white/60">
+                          {merchant.walletAddress}
+                        </td>
                         <td className="py-3.5 px-3">
                           <span className="rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[9px] font-bold text-white/70">
                             {merchant.tier}
@@ -982,7 +1110,12 @@ export default function AdminDashboardPage() {
                         <td className="py-3.5 px-3 text-right">
                           <button
                             type="button"
-                            onClick={() => toggleVerification(merchant.walletAddress, merchant.verified)}
+                            onClick={() =>
+                              toggleVerification(
+                                merchant.walletAddress,
+                                merchant.verified
+                              )
+                            }
                             disabled={verifyBusy === merchant.walletAddress}
                             className={`rounded-xl border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition ${
                               merchant.verified
@@ -1013,10 +1146,13 @@ export default function AdminDashboardPage() {
             <div className={`${CARD} space-y-4`}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h2 className="text-lg font-black uppercase tracking-wide text-white">KYC Review</h2>
+                  <h2 className="text-lg font-black uppercase tracking-wide text-white">
+                    KYC Review
+                  </h2>
                   <p className="text-xs text-white/50">
-                    Approving an enterprise account also grants its verified-merchant badge.
-                    Individuals only get their KYC status.
+                    Approving an enterprise account also grants its
+                    verified-merchant badge. Individuals only get their KYC
+                    status.
                   </p>
                 </div>
                 <div className="flex w-full gap-2 sm:w-auto">
@@ -1035,21 +1171,38 @@ export default function AdminDashboardPage() {
                     onChange={(e) => setKycStatusFilter(e.target.value)}
                     className={`${INPUT} w-auto`}
                   >
-                    {["all", "PENDING", "IN_REVIEW", "NEEDS_INPUT", "APPROVED", "REJECTED", "EXPIRED", "REVOKED"].map(
-                      (s) => (
-                        <option key={s} value={s} className="bg-[#121212] text-white">
-                          {s === "all" ? "All statuses" : s.replace("_", " ")}
-                        </option>
-                      ),
-                    )}
+                    {[
+                      "all",
+                      "PENDING",
+                      "IN_REVIEW",
+                      "NEEDS_INPUT",
+                      "APPROVED",
+                      "REJECTED",
+                      "EXPIRED",
+                      "REVOKED",
+                    ].map((s) => (
+                      <option
+                        key={s}
+                        value={s}
+                        className="bg-[#121212] text-white"
+                      >
+                        {s === "all" ? "All statuses" : s.replace("_", " ")}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
 
               {kycLoading && kycRecords.length === 0 ? (
-                <SkeletonRows count={5} avatar={false} label="Loading verification queue" />
+                <SkeletonRows
+                  count={5}
+                  avatar={false}
+                  label="Loading verification queue"
+                />
               ) : kycRecords.length === 0 ? (
-                <p className="py-6 text-center text-xs text-white/40">No verifications match this filter.</p>
+                <p className="py-6 text-center text-xs text-white/40">
+                  No verifications match this filter.
+                </p>
               ) : (
                 <div className="space-y-3">
                   {kycRecords.map((record) => {
@@ -1063,7 +1216,9 @@ export default function AdminDashboardPage() {
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                              <code className="font-mono text-xs text-white/80">{record.walletAddress}</code>
+                              <code className="font-mono text-xs text-white/80">
+                                {record.walletAddress}
+                              </code>
                               <KycStatusPill status={record.status} />
                               {record.adminAsserted && (
                                 <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[9px] font-bold text-amber-300">
@@ -1072,17 +1227,25 @@ export default function AdminDashboardPage() {
                               )}
                             </div>
                             <p className="mt-1.5 text-[10px] text-white/40">
-                              {record.accountRole} · {record.kind} · {record.countryCode} ·{" "}
-                              {record.requestedLevel} · via {record.provider}
+                              {record.accountRole} · {record.kind} ·{" "}
+                              {record.countryCode} · {record.requestedLevel} ·
+                              via {record.provider}
                               {record.expiresAt
-                                ? ` · expires ${new Date(record.expiresAt).toLocaleDateString()}`
+                                ? ` · expires ${new Date(
+                                    record.expiresAt
+                                  ).toLocaleDateString()}`
                                 : ""}
-                              {record.reasonCode ? ` · ${record.reasonCode}` : ""}
+                              {record.reasonCode
+                                ? ` · ${record.reasonCode}`
+                                : ""}
                             </p>
                             {record.decidedAt && (
                               <p className="mt-1 text-[9px] text-[#00d2b4]/90 font-mono">
-                                Decided {new Date(record.decidedAt).toLocaleString()}
-                                {record.adminAsserted ? " (upgraded by admin)" : ""}
+                                Decided{" "}
+                                {new Date(record.decidedAt).toLocaleString()}
+                                {record.adminAsserted
+                                  ? " (upgraded by admin)"
+                                  : ""}
                               </p>
                             )}
                           </div>
@@ -1116,22 +1279,36 @@ export default function AdminDashboardPage() {
                                  a code picked for REJECTED and then applied to APPROVED is
                                  refused there rather than silently accepted. */
                               const codes = Array.from(
-                                new Set(transitions.flatMap((t) => KYC_REASONS[t] || [])),
+                                new Set(
+                                  transitions.flatMap(
+                                    (t) => KYC_REASONS[t] || []
+                                  )
+                                )
                               );
                               if (codes.length === 0) return null;
                               return (
                                 <select
                                   value={kycReasonDraft[record.id] || ""}
                                   onChange={(e) =>
-                                    setKycReasonDraft((prev) => ({ ...prev, [record.id]: e.target.value }))
+                                    setKycReasonDraft((prev) => ({
+                                      ...prev,
+                                      [record.id]: e.target.value,
+                                    }))
                                   }
                                   className={`${INPUT} w-auto`}
                                 >
-                                  <option value="" className="bg-[#121212] text-white">
+                                  <option
+                                    value=""
+                                    className="bg-[#121212] text-white"
+                                  >
                                     Reason…
                                   </option>
                                   {codes.map((code) => (
-                                    <option key={code} value={code} className="bg-[#121212] text-white">
+                                    <option
+                                      key={code}
+                                      value={code}
+                                      className="bg-[#121212] text-white"
+                                    >
                                       {code.replace(/_/g, " ")}
                                     </option>
                                   ))}
@@ -1148,11 +1325,15 @@ export default function AdminDashboardPage() {
                                   next === "APPROVED"
                                     ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20"
                                     : next === "REJECTED" || next === "REVOKED"
-                                      ? "border-red-400/30 bg-red-400/10 text-red-300 hover:bg-red-400/20"
-                                      : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+                                    ? "border-red-400/30 bg-red-400/10 text-red-300 hover:bg-red-400/20"
+                                    : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
                                 }`}
                               >
-                                {busy ? <Loader2 className="mx-auto h-3 w-3 animate-spin" /> : next.replace("_", " ")}
+                                {busy ? (
+                                  <Loader2 className="mx-auto h-3 w-3 animate-spin" />
+                                ) : (
+                                  next.replace("_", " ")
+                                )}
                               </button>
                             ))}
                           </div>
@@ -1172,13 +1353,17 @@ export default function AdminDashboardPage() {
                     <span className={LABEL}>Open a manual verification</span>
                     <p className="mt-1 text-[11px] text-white/50">
                       For a wallet that never applied. The record is marked{" "}
-                      <code className="text-amber-300">manual_admin</code> permanently, and records the
-                      consent as admin-supplied rather than given by the user. It opens as PENDING —
+                      <code className="text-amber-300">manual_admin</code>{" "}
+                      permanently, and records the consent as admin-supplied
+                      rather than given by the user. It opens as PENDING —
                       approving it is a second, separate decision.
                     </p>
                   </div>
                 </div>
-                <form onSubmit={createManualKyc} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <form
+                  onSubmit={createManualKyc}
+                  className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+                >
                   <input
                     type="text"
                     value={manualWallet}
@@ -1201,8 +1386,18 @@ export default function AdminDashboardPage() {
                     onChange={(e) => setManualLevel(e.target.value)}
                     className={INPUT}
                   >
-                    <option value="STANDARD" className="bg-[#121212] text-white">Standard</option>
-                    <option value="ENHANCED" className="bg-[#121212] text-white">Enhanced</option>
+                    <option
+                      value="STANDARD"
+                      className="bg-[#121212] text-white"
+                    >
+                      Standard
+                    </option>
+                    <option
+                      value="ENHANCED"
+                      className="bg-[#121212] text-white"
+                    >
+                      Enhanced
+                    </option>
                   </select>
                   <input
                     type="text"
@@ -1232,13 +1427,18 @@ export default function AdminDashboardPage() {
                 <div className="flex items-start gap-2">
                   <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-red-300" />
                   <div>
-                    <span className={LABEL}>Force approve {forceTarget.walletAddress}</span>
+                    <span className={LABEL}>
+                      Force approve {forceTarget.walletAddress}
+                    </span>
                     <p className="mt-1 text-[11px] text-white/50">
-                      This overrides the compliance guard that stops a manual verification counting as
-                      production KYC, and lifts it out of{" "}
-                      <strong className="text-white/70">{forceTarget.status}</strong> regardless of the
-                      normal transition rules. Your wallet, your reason, and your IP are written to the
-                      audit log.
+                      This overrides the compliance guard that stops a manual
+                      verification counting as production KYC, and lifts it out
+                      of{" "}
+                      <strong className="text-white/70">
+                        {forceTarget.status}
+                      </strong>{" "}
+                      regardless of the normal transition rules. Your wallet,
+                      your reason, and your IP are written to the audit log.
                     </p>
                   </div>
                 </div>
@@ -1255,7 +1455,9 @@ export default function AdminDashboardPage() {
                     />
                   </div>
                   <div>
-                    <label className={LABEL}>Approval expires (defaults to 12 months)</label>
+                    <label className={LABEL}>
+                      Approval expires (defaults to 12 months)
+                    </label>
                     <input
                       type="date"
                       value={forceExpiry}
@@ -1278,7 +1480,10 @@ export default function AdminDashboardPage() {
                   <div className="flex gap-2">
                     <button
                       type="submit"
-                      disabled={forceConfirm !== KYC_FORCE_CONFIRMATION || kycBusy === forceTarget.id}
+                      disabled={
+                        forceConfirm !== KYC_FORCE_CONFIRMATION ||
+                        kycBusy === forceTarget.id
+                      }
                       className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-red-300 transition hover:bg-red-400/20 disabled:opacity-40"
                     >
                       {kycBusy === forceTarget.id ? (
@@ -1316,10 +1521,13 @@ export default function AdminDashboardPage() {
                 <span className={LABEL}>Security Access Control</span>
                 <ShieldAlert className="h-5 w-5 text-red-400" />
               </div>
-              <h3 className="text-base font-bold text-white">Ban Account or IP</h3>
+              <h3 className="text-base font-bold text-white">
+                Ban Account or IP
+              </h3>
               <p className="mt-1 text-[11px] text-white/50">
-                Wallet bans take effect on the banned user&apos;s next request — existing sessions stop working
-                immediately. IP bans apply to API traffic and can take up to an hour to lift everywhere.
+                Wallet bans take effect on the banned user&apos;s next request —
+                existing sessions stop working immediately. IP bans apply to API
+                traffic and can take up to an hour to lift everywhere.
               </p>
 
               <form onSubmit={handleBan} className="mt-4 space-y-3 max-w-lg">
@@ -1339,7 +1547,9 @@ export default function AdminDashboardPage() {
                     type="button"
                     onClick={() => setBanType("IP")}
                     className={`flex-1 rounded-xl py-1.5 text-[11px] font-bold transition ${
-                      banType === "IP" ? "bg-red-500/20 border border-red-500/40 text-red-300" : "bg-white/5 text-white/50"
+                      banType === "IP"
+                        ? "bg-red-500/20 border border-red-500/40 text-red-300"
+                        : "bg-white/5 text-white/50"
                     }`}
                   >
                     IP Address
@@ -1350,8 +1560,16 @@ export default function AdminDashboardPage() {
                   type="text"
                   value={banTarget}
                   onChange={(e) => setBanTarget(e.target.value)}
-                  placeholder={banType === "ACCOUNT" ? "0x... wallet address" : "192.168.1.1"}
-                  aria-label={banType === "ACCOUNT" ? "Target wallet address to ban" : "Target IP address to ban"}
+                  placeholder={
+                    banType === "ACCOUNT"
+                      ? "0x... wallet address"
+                      : "192.168.1.1"
+                  }
+                  aria-label={
+                    banType === "ACCOUNT"
+                      ? "Target wallet address to ban"
+                      : "Target IP address to ban"
+                  }
                   className={INPUT}
                 />
                 <input
@@ -1366,7 +1584,11 @@ export default function AdminDashboardPage() {
                   disabled={banBusy || !banTarget.trim()}
                   className="w-full flex items-center justify-center gap-2 rounded-xl bg-red-500/20 border border-red-500/40 py-2 text-xs font-black uppercase tracking-wider text-red-300 transition hover:bg-red-500/30 disabled:opacity-40"
                 >
-                  {banBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Enforce Ban"}
+                  {banBusy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Enforce Ban"
+                  )}
                 </button>
               </form>
             </div>
@@ -1377,11 +1599,15 @@ export default function AdminDashboardPage() {
                 <ShieldAlert className="h-5 w-5 text-amber-400" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-white">Freeze Withdrawals</h3>
+                <h3 className="text-base font-bold text-white">
+                  Freeze Withdrawals
+                </h3>
                 <p className="mt-1 text-[11px] text-white/50">
-                  Stops funds leaving one account while everything else keeps working — the person can
-                  still sign in, read receipts, and reply to you. Use this for a payout dispute or a
-                  suspected drainer; a ban would lock them out of the conversation entirely.
+                  Stops funds leaving one account while everything else keeps
+                  working — the person can still sign in, read receipts, and
+                  reply to you. Use this for a payout dispute or a suspected
+                  drainer; a ban would lock them out of the conversation
+                  entirely.
                 </p>
               </div>
 
@@ -1409,7 +1635,11 @@ export default function AdminDashboardPage() {
                             : "bg-white/5 text-white/50 hover:bg-white/10"
                         }`}
                       >
-                        {scope === "USER" ? "Vault" : scope === "MERCHANT" ? "Merchant" : "Both"}
+                        {scope === "USER"
+                          ? "Vault"
+                          : scope === "MERCHANT"
+                          ? "Merchant"
+                          : "Both"}
                       </button>
                     ))}
                   </div>
@@ -1417,8 +1647,8 @@ export default function AdminDashboardPage() {
                     {holdScope === "USER"
                       ? "Blocks vault withdrawals only. Merchant payouts to this address still run."
                       : holdScope === "MERCHANT"
-                        ? "Blocks merchant claims only. This person's own vault refunds still run."
-                        : "Blocks every withdrawal path for this address."}
+                      ? "Blocks merchant claims only. This person's own vault refunds still run."
+                      : "Blocks every withdrawal path for this address."}
                   </p>
                 </div>
 
@@ -1432,7 +1662,10 @@ export default function AdminDashboardPage() {
                 />
 
                 <div>
-                  <label htmlFor="hold-expiry" className={`${LABEL} mb-1.5 block`}>
+                  <label
+                    htmlFor="hold-expiry"
+                    className={`${LABEL} mb-1.5 block`}
+                  >
                     Lift automatically at (optional)
                   </label>
                   <input
@@ -1449,18 +1682,32 @@ export default function AdminDashboardPage() {
 
                 <button
                   type="submit"
-                  disabled={holdBusy === "place" || !holdTarget.trim() || holdReason.trim().length < 3}
+                  disabled={
+                    holdBusy === "place" ||
+                    !holdTarget.trim() ||
+                    holdReason.trim().length < 3
+                  }
                   className="w-full flex items-center justify-center gap-2 rounded-xl bg-amber-500/20 border border-amber-500/40 py-2 text-xs font-black uppercase tracking-wider text-amber-300 transition hover:bg-amber-500/30 disabled:opacity-40"
                 >
-                  {holdBusy === "place" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Freeze Withdrawals"}
+                  {holdBusy === "place" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Freeze Withdrawals"
+                  )}
                 </button>
               </form>
             </div>
 
             <div className={`${CARD} space-y-4`}>
-              <h3 className="text-sm font-black uppercase tracking-wider text-white">Withdrawal Holds</h3>
+              <h3 className="text-sm font-black uppercase tracking-wider text-white">
+                Withdrawal Holds
+              </h3>
               {holdsLoading && holds.length === 0 ? (
-                <SkeletonRows count={3} avatar={false} label="Loading withdrawal holds" />
+                <SkeletonRows
+                  count={3}
+                  avatar={false}
+                  label="Loading withdrawal holds"
+                />
               ) : holds.length === 0 ? (
                 <p className="text-xs text-white/40">No withdrawal holds.</p>
               ) : (
@@ -1469,12 +1716,16 @@ export default function AdminDashboardPage() {
                     <div
                       key={h.address}
                       className={`flex items-center justify-between gap-3 rounded-2xl border p-3 ${
-                        h.active ? "border-amber-500/25 bg-amber-500/5" : "border-white/5 bg-white/[0.03]"
+                        h.active
+                          ? "border-amber-500/25 bg-amber-500/5"
+                          : "border-white/5 bg-white/[0.03]"
                       }`}
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <p className="truncate font-mono text-[11px] text-white/80">{h.address}</p>
+                          <p className="truncate font-mono text-[11px] text-white/80">
+                            {h.address}
+                          </p>
                           <span
                             className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold ${
                               h.active
@@ -1491,8 +1742,13 @@ export default function AdminDashboardPage() {
                         {/* Who and when, per the audit requirement — the console should answer
                             "who froze this" without anyone opening the database. */}
                         <p className="mt-0.5 truncate text-[9px] text-white/30">
-                          By {h.placedBy} on {new Date(h.createdAt).toLocaleString()}
-                          {h.expiresAt ? ` · ${h.active ? "lifts" : "lifted"} ${new Date(h.expiresAt).toLocaleString()}` : ""}
+                          By {h.placedBy} on{" "}
+                          {new Date(h.createdAt).toLocaleString()}
+                          {h.expiresAt
+                            ? ` · ${h.active ? "lifts" : "lifted"} ${new Date(
+                                h.expiresAt
+                              ).toLocaleString()}`
+                            : ""}
                         </p>
                       </div>
                       <button
@@ -1501,7 +1757,11 @@ export default function AdminDashboardPage() {
                         disabled={holdBusy === h.address}
                         className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white/70 transition hover:bg-white/10 disabled:opacity-40"
                       >
-                        {holdBusy === h.address ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Lift"}
+                        {holdBusy === h.address ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          "Lift"
+                        )}
                       </button>
                     </div>
                   ))}
@@ -1511,26 +1771,40 @@ export default function AdminDashboardPage() {
 
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div className={`${CARD} space-y-4`}>
-                <h3 className="text-sm font-black uppercase tracking-wider text-white">Banned Wallets</h3>
+                <h3 className="text-sm font-black uppercase tracking-wider text-white">
+                  Banned Wallets
+                </h3>
                 {bannedAccounts.length === 0 ? (
                   <p className="text-xs text-white/40">No banned wallets.</p>
                 ) : (
                   <div className="space-y-2">
                     {bannedAccounts.map((b) => (
-                      <BanRow key={b.address} target={b.address} reason={b.reason} onUnban={() => handleUnban("ACCOUNT", b.address)} />
+                      <BanRow
+                        key={b.address}
+                        target={b.address}
+                        reason={b.reason}
+                        onUnban={() => handleUnban("ACCOUNT", b.address)}
+                      />
                     ))}
                   </div>
                 )}
               </div>
 
               <div className={`${CARD} space-y-4`}>
-                <h3 className="text-sm font-black uppercase tracking-wider text-white">Banned IPs</h3>
+                <h3 className="text-sm font-black uppercase tracking-wider text-white">
+                  Banned IPs
+                </h3>
                 {bannedIps.length === 0 ? (
                   <p className="text-xs text-white/40">No banned IPs.</p>
                 ) : (
                   <div className="space-y-2">
                     {bannedIps.map((b) => (
-                      <BanRow key={b.ip} target={b.ip} reason={b.reason} onUnban={() => handleUnban("IP", b.ip)} />
+                      <BanRow
+                        key={b.ip}
+                        target={b.ip}
+                        reason={b.reason}
+                        onUnban={() => handleUnban("IP", b.ip)}
+                      />
                     ))}
                   </div>
                 )}
@@ -1544,58 +1818,108 @@ export default function AdminDashboardPage() {
             {analyticsLoading && !analytics ? (
               <>
                 <SkeletonCard label="Loading volume transacted" lines={1} />
-                <SkeletonStatGrid count={4} columns={4} label="Loading subscription metrics" />
-                <SkeletonStatGrid count={4} columns={2} label="Loading growth and health metrics" />
+                <SkeletonStatGrid
+                  count={4}
+                  columns={4}
+                  label="Loading subscription metrics"
+                />
+                <SkeletonStatGrid
+                  count={4}
+                  columns={2}
+                  label="Loading growth and health metrics"
+                />
               </>
             ) : !analytics ? (
-              <div className={`${CARD} text-xs text-white/40`}>No analytics available.</div>
+              <div className={`${CARD} text-xs text-white/40`}>
+                No analytics available.
+              </div>
             ) : (
               <>
                 <div className={`${CARD} space-y-4`}>
                   <div className="flex items-center justify-between">
                     <span className={LABEL}>Volume Transacted</span>
                     <span className="text-[10px] text-white/30">
-                      as of {new Date(analytics.generatedAt).toLocaleTimeString()}
+                      as of{" "}
+                      {new Date(analytics.generatedAt).toLocaleTimeString()}
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                    <Stat label="Total settled" value={`$${analytics.volume.totalUsdc}`} />
-                    <Stat label="Payments" value={analytics.volume.paymentCount} />
-                    <Stat label="Average payment" value={`$${analytics.volume.averageUsdc}`} />
-                    <Stat label="Last 30 days" value={`$${analytics.volume.last30DaysUsdc}`} />
+                    <Stat
+                      label="Total settled"
+                      value={`$${analytics.volume.totalUsdc}`}
+                    />
+                    <Stat
+                      label="Payments"
+                      value={analytics.volume.paymentCount}
+                    />
+                    <Stat
+                      label="Average payment"
+                      value={`$${analytics.volume.averageUsdc}`}
+                    />
+                    <Stat
+                      label="Last 30 days"
+                      value={`$${analytics.volume.last30DaysUsdc}`}
+                    />
                   </div>
                   <p className="text-[10px] text-white/40">
-                    Settled volume counts confirmed on-chain receipts. Checkout links have moved
-                    ${analytics.volume.checkoutVolumeUsdc} across {analytics.volume.checkoutCount} credited payments.
+                    Settled volume counts confirmed on-chain receipts. Checkout
+                    links have moved ${analytics.volume.checkoutVolumeUsdc}{" "}
+                    across {analytics.volume.checkoutCount} credited payments.
                   </p>
                 </div>
 
                 <div className={`${CARD} space-y-4`}>
                   <span className={LABEL}>Subscriptions</span>
                   <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                    <Stat label="Active (customer)" value={analytics.subscriptions.activeCustomer} />
-                    <Stat label="Active (premium)" value={analytics.subscriptions.activePremium} />
-                    <Stat label="Active total" value={analytics.subscriptions.activeTotal} />
-                    <Stat label="Cancelling" value={analytics.subscriptions.cancellingAtPeriodEnd} />
+                    <Stat
+                      label="Active (customer)"
+                      value={analytics.subscriptions.activeCustomer}
+                    />
+                    <Stat
+                      label="Active (premium)"
+                      value={analytics.subscriptions.activePremium}
+                    />
+                    <Stat
+                      label="Active total"
+                      value={analytics.subscriptions.activeTotal}
+                    />
+                    <Stat
+                      label="Cancelling"
+                      value={analytics.subscriptions.cancellingAtPeriodEnd}
+                    />
                   </div>
                   <p className="text-[10px] text-white/40">
-                    Customer subscriptions are plans your merchants sell. Premium is merchants subscribing to
-                    SubScript — your own revenue.
+                    Customer subscriptions are plans your merchants sell.
+                    Premium is merchants subscribing to SubScript — your own
+                    revenue.
                   </p>
                 </div>
 
                 <div className={`${CARD} space-y-4`}>
                   <span className={LABEL}>Users</span>
                   <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                    <Stat label="Total users" value={analytics.growth.usersTotal} />
-                    <Stat label="Individuals" value={analytics.growth.usersRoleUser} />
-                    <Stat label="Enterprise" value={analytics.growth.usersRoleEnterprise} />
-                    <Stat label="New (30d)" value={analytics.growth.usersNew30d} />
+                    <Stat
+                      label="Total users"
+                      value={analytics.growth.usersTotal}
+                    />
+                    <Stat
+                      label="Individuals"
+                      value={analytics.growth.usersRoleUser}
+                    />
+                    <Stat
+                      label="Enterprise"
+                      value={analytics.growth.usersRoleEnterprise}
+                    />
+                    <Stat
+                      label="New (30d)"
+                      value={analytics.growth.usersNew30d}
+                    />
                   </div>
                   <p className="text-[10px] text-white/40">
-                    Every signed-up account has a role, so this is the headline user count. The
-                    merchant and customer figures below are subsets that overlap each other — a
-                    merchant who also pays for things is counted in both — so do not add them up.
+                    Every signed-up account has a role, so this is the headline
+                    user count. The merchant and customer figures below are
+                    subsets that overlap each other — a merchant who also pays
+                    for things is counted in both — so do not add them up.
                   </p>
                 </div>
 
@@ -1603,23 +1927,52 @@ export default function AdminDashboardPage() {
                   <div className={`${CARD} space-y-4`}>
                     <span className={LABEL}>Growth</span>
                     <div className="grid grid-cols-2 gap-3">
-                      <Stat label="Merchants" value={analytics.growth.merchantsTotal} />
-                      <Stat label="Verified" value={analytics.growth.merchantsVerified} />
-                      <Stat label="New merchants (30d)" value={analytics.growth.merchantsNew30d} />
-                      <Stat label="Customers" value={analytics.growth.customersTotal} />
+                      <Stat
+                        label="Merchants"
+                        value={analytics.growth.merchantsTotal}
+                      />
+                      <Stat
+                        label="Verified"
+                        value={analytics.growth.merchantsVerified}
+                      />
+                      <Stat
+                        label="New merchants (30d)"
+                        value={analytics.growth.merchantsNew30d}
+                      />
+                      <Stat
+                        label="Customers"
+                        value={analytics.growth.customersTotal}
+                      />
                     </div>
                   </div>
 
                   <div className={`${CARD} space-y-4`}>
                     <span className={LABEL}>Health</span>
                     <div className="grid grid-cols-2 gap-3">
-                      <Stat label="Revocations pending" value={analytics.health.revocationPending} danger={analytics.health.revocationPending > 0} />
-                      <Stat label="Downgrade failures" value={analytics.health.downgradeFailures} danger={analytics.health.downgradeFailures > 0} />
-                      <Stat label="Stuck receipts" value={analytics.health.stuckReceipts} danger={analytics.health.stuckReceipts > 0} />
-                      <Stat label="KYC awaiting review" value={analytics.kyc.pending} danger={analytics.kyc.pending > 0} />
+                      <Stat
+                        label="Revocations pending"
+                        value={analytics.health.revocationPending}
+                        danger={analytics.health.revocationPending > 0}
+                      />
+                      <Stat
+                        label="Downgrade failures"
+                        value={analytics.health.downgradeFailures}
+                        danger={analytics.health.downgradeFailures > 0}
+                      />
+                      <Stat
+                        label="Stuck receipts"
+                        value={analytics.health.stuckReceipts}
+                        danger={analytics.health.stuckReceipts > 0}
+                      />
+                      <Stat
+                        label="KYC awaiting review"
+                        value={analytics.kyc.pending}
+                        danger={analytics.kyc.pending > 0}
+                      />
                     </div>
                     <p className="text-[10px] text-white/40">
-                      Stuck receipts are unconfirmed for more than 7 days — usually a memo that never finalized on chain.
+                      Stuck receipts are unconfirmed for more than 7 days —
+                      usually a memo that never finalized on chain.
                     </p>
                   </div>
                 </div>
@@ -1632,7 +1985,10 @@ export default function AdminDashboardPage() {
           <div className="space-y-6">
             {!flags ? (
               <>
-                <SkeletonToggleRows count={2} label="Loading sign-in method switches" />
+                <SkeletonToggleRows
+                  count={2}
+                  label="Loading sign-in method switches"
+                />
                 <SkeletonCard label="Loading maintenance mode" lines={2} />
               </>
             ) : (
@@ -1648,9 +2004,17 @@ export default function AdminDashboardPage() {
                         : "Turning this off hides the button and makes the server refuse the flow, so an open tab cannot still use it."
                     }
                     enabled={flags.googleSigninEnabled}
-                    disabled={flagBusy === "google" || flags.googleEnvConfigured === false}
+                    disabled={
+                      flagBusy === "google" ||
+                      flags.googleEnvConfigured === false
+                    }
                     busy={flagBusy === "google"}
-                    onToggle={() => updateFlag({ googleSigninEnabled: !flags.googleSigninEnabled }, "google")}
+                    onToggle={() =>
+                      updateFlag(
+                        { googleSigninEnabled: !flags.googleSigninEnabled },
+                        "google"
+                      )
+                    }
                   />
 
                   <Toggle
@@ -1659,11 +2023,20 @@ export default function AdminDashboardPage() {
                     enabled={flags.externalWalletEnabled}
                     disabled={flagBusy === "wallet"}
                     busy={flagBusy === "wallet"}
-                    onToggle={() => updateFlag({ externalWalletEnabled: !flags.externalWalletEnabled }, "wallet")}
+                    onToggle={() =>
+                      updateFlag(
+                        { externalWalletEnabled: !flags.externalWalletEnabled },
+                        "wallet"
+                      )
+                    }
                   />
                 </div>
 
-                <div className={`${CARD} space-y-4 ${flags.maintenanceEnabled ? "border-red-500/40" : ""}`}>
+                <div
+                  className={`${CARD} space-y-4 ${
+                    flags.maintenanceEnabled ? "border-red-500/40" : ""
+                  }`}
+                >
                   <div className="flex items-center justify-between">
                     <span className={LABEL}>Maintenance Mode</span>
                     {flags.maintenanceEnabled && (
@@ -1673,8 +2046,9 @@ export default function AdminDashboardPage() {
                     )}
                   </div>
                   <p className="text-[11px] text-white/50">
-                    Returns 503 across the whole product. This console, the admin API, and sign-in stay reachable
-                    so you can always turn it back off.
+                    Returns 503 across the whole product. This console, the
+                    admin API, and sign-in stay reachable so you can always turn
+                    it back off.
                   </p>
 
                   <input
@@ -1688,11 +2062,17 @@ export default function AdminDashboardPage() {
                   {flags.maintenanceEnabled ? (
                     <button
                       type="button"
-                      onClick={() => updateFlag({ maintenanceEnabled: false }, "maintenance")}
+                      onClick={() =>
+                        updateFlag({ maintenanceEnabled: false }, "maintenance")
+                      }
                       disabled={flagBusy === "maintenance"}
                       className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-500/15 border border-emerald-500/40 py-2.5 text-xs font-black uppercase tracking-wider text-emerald-300 transition hover:bg-emerald-500/25 disabled:opacity-40"
                     >
-                      {flagBusy === "maintenance" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Bring the site back online"}
+                      {flagBusy === "maintenance" ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        "Bring the site back online"
+                      )}
                     </button>
                   ) : (
                     <div className="space-y-2">
@@ -1707,14 +2087,26 @@ export default function AdminDashboardPage() {
                         type="button"
                         onClick={() =>
                           updateFlag(
-                            { maintenanceEnabled: true, maintenanceMessage: maintenanceMessage.trim() || null },
-                            "maintenance",
+                            {
+                              maintenanceEnabled: true,
+                              maintenanceMessage:
+                                maintenanceMessage.trim() || null,
+                            },
+                            "maintenance"
                           )
                         }
-                        disabled={flagBusy === "maintenance" || maintenanceConfirm.trim().toLowerCase() !== "take it down"}
+                        disabled={
+                          flagBusy === "maintenance" ||
+                          maintenanceConfirm.trim().toLowerCase() !==
+                            "take it down"
+                        }
                         className="w-full flex items-center justify-center gap-2 rounded-xl bg-red-500/20 border border-red-500/40 py-2.5 text-xs font-black uppercase tracking-wider text-red-300 transition hover:bg-red-500/30 disabled:opacity-30"
                       >
-                        {flagBusy === "maintenance" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Take SubScript down"}
+                        {flagBusy === "maintenance" ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          "Take SubScript down"
+                        )}
                       </button>
                     </div>
                   )}
@@ -1729,11 +2121,12 @@ export default function AdminDashboardPage() {
             <div className={`${CARD} space-y-4`}>
               <div className="flex items-center justify-between">
                 <span className={LABEL}>Push Notification</span>
-                <Bell className="h-5 w-5 text-[#ccff00]" />
+                <Bell className="h-5 w-5 text-[#2775ca]" />
               </div>
               <p className="text-[11px] text-white/50">
-                Delivered to everyone in the audience who has push enabled. This cannot be recalled once sent —
-                preview it on your own wallet first.
+                Delivered to everyone in the audience who has push enabled. This
+                cannot be recalled once sent — preview it on your own wallet
+                first.
               </p>
 
               <div className="flex flex-wrap gap-2">
@@ -1747,7 +2140,7 @@ export default function AdminDashboardPage() {
                     }}
                     className={`rounded-xl px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider transition ${
                       bcAudience === a
-                        ? "bg-[#ccff00]/15 border border-[#ccff00]/40 text-[#ccff00]"
+                        ? "bg-[#2775ca]/15 border border-[#2775ca]/40 text-[#2775ca]"
                         : "border border-white/10 bg-white/5 text-white/50 hover:bg-white/10"
                     }`}
                   >
@@ -1784,10 +2177,16 @@ export default function AdminDashboardPage() {
                 <button
                   type="button"
                   onClick={() => sendBroadcast(true)}
-                  disabled={bcBusy !== null || !bcTitle.trim() || !bcBody.trim()}
+                  disabled={
+                    bcBusy !== null || !bcTitle.trim() || !bcBody.trim()
+                  }
                   className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 py-2.5 text-xs font-bold text-white transition hover:bg-white/10 disabled:opacity-40"
                 >
-                  {bcBusy === "preview" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send to myself first"}
+                  {bcBusy === "preview" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Send to myself first"
+                  )}
                 </button>
               </div>
 
@@ -1808,27 +2207,39 @@ export default function AdminDashboardPage() {
                     !bcBody.trim() ||
                     bcConfirm.trim().toLowerCase() !== bcAudience
                   }
-                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#ccff00]/15 border border-[#ccff00]/40 py-2.5 text-xs font-black uppercase tracking-wider text-[#ccff00] transition hover:bg-[#ccff00]/25 disabled:opacity-30"
+                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#2775ca]/15 border border-[#2775ca]/40 py-2.5 text-xs font-black uppercase tracking-wider text-[#2775ca] transition hover:bg-[#2775ca]/25 disabled:opacity-30"
                 >
-                  {bcBusy === "send" ? <Loader2 className="h-4 w-4 animate-spin" /> : `Send to all ${bcAudience}`}
+                  {bcBusy === "send" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    `Send to all ${bcAudience}`
+                  )}
                 </button>
               </div>
             </div>
 
             {analytics && analytics.recentBroadcasts.length > 0 && (
               <div className={`${CARD} space-y-3`}>
-                <h3 className="text-sm font-black uppercase tracking-wider text-white">Recent Broadcasts</h3>
+                <h3 className="text-sm font-black uppercase tracking-wider text-white">
+                  Recent Broadcasts
+                </h3>
                 <div className="space-y-2">
                   {analytics.recentBroadcasts.map((b) => (
-                    <div key={b.id} className="rounded-2xl border border-white/5 bg-white/[0.03] p-3 text-xs">
+                    <div
+                      key={b.id}
+                      className="rounded-2xl border border-white/5 bg-white/[0.03] p-3 text-xs"
+                    >
                       <div className="flex items-center justify-between gap-2">
-                        <p className="font-bold text-white truncate">{b.title}</p>
+                        <p className="font-bold text-white truncate">
+                          {b.title}
+                        </p>
                         <span className="text-[10px] text-white/40 shrink-0">
                           {new Date(b.createdAt).toLocaleDateString()}
                         </span>
                       </div>
                       <p className="mt-1 text-[10px] text-white/50">
-                        {b.audience} · {b.sentCount}/{b.totalRecipients} delivered
+                        {b.audience} · {b.sentCount}/{b.totalRecipients}{" "}
+                        delivered
                         {b.failedCount > 0 && ` · ${b.failedCount} failed`}
                       </p>
                     </div>
@@ -1843,12 +2254,15 @@ export default function AdminDashboardPage() {
           <div className={`${CARD} space-y-4`}>
             <div className="flex items-center justify-between">
               <span className={LABEL}>Receipt Access</span>
-              <ReceiptText className="h-5 w-5 text-[#ccff00]" />
+              <ReceiptText className="h-5 w-5 text-[#2775ca]" />
             </div>
-            <h3 className="text-base font-bold text-white">Invite an address to view a receipt</h3>
+            <h3 className="text-base font-bold text-white">
+              Invite an address to view a receipt
+            </h3>
             <p className="text-[11px] text-white/50">
-              Grants a wallet permission to view someone else&apos;s payment record. The reason is recorded in the
-              audit log alongside the payer and merchant.
+              Grants a wallet permission to view someone else&apos;s payment
+              record. The reason is recorded in the audit log alongside the
+              payer and merchant.
             </p>
 
             <form onSubmit={inviteToReceipt} className="space-y-3 max-w-lg">
@@ -1875,10 +2289,19 @@ export default function AdminDashboardPage() {
               />
               <button
                 type="submit"
-                disabled={invBusy || !invReceiptId.trim() || !invAddress.trim() || invReason.trim().length < 3}
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#ccff00]/15 border border-[#ccff00]/40 py-2 text-xs font-black uppercase tracking-wider text-[#ccff00] transition hover:bg-[#ccff00]/25 disabled:opacity-40"
+                disabled={
+                  invBusy ||
+                  !invReceiptId.trim() ||
+                  !invAddress.trim() ||
+                  invReason.trim().length < 3
+                }
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#2775ca]/15 border border-[#2775ca]/40 py-2 text-xs font-black uppercase tracking-wider text-[#2775ca] transition hover:bg-[#2775ca]/25 disabled:opacity-40"
               >
-                {invBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Grant access"}
+                {invBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  "Grant access"
+                )}
               </button>
             </form>
           </div>
@@ -1889,18 +2312,23 @@ export default function AdminDashboardPage() {
             <div className={CARD}>
               <div className="flex items-center justify-between mb-4">
                 <span className={LABEL}>Access Management</span>
-                <Users className="h-5 w-5 text-[#ccff00]" />
+                <Users className="h-5 w-5 text-[#2775ca]" />
               </div>
               <h3 className="text-base font-bold text-white">Admin Wallets</h3>
               <p className="mt-1 text-[11px] text-white/50">
-                <span className="font-bold text-white/70">Root</span> admins come from the{" "}
-                <code className="font-mono">ADMIN_WALLET_ADDRESSES</code> environment variable and cannot be
-                revoked here — that is the recovery path if this console is ever misconfigured. Only root admins
-                can grant or revoke access.
+                <span className="font-bold text-white/70">Root</span> admins
+                come from the{" "}
+                <code className="font-mono">ADMIN_WALLET_ADDRESSES</code>{" "}
+                environment variable and cannot be revoked here — that is the
+                recovery path if this console is ever misconfigured. Only root
+                admins can grant or revoke access.
               </p>
 
               {viewerIsRoot ? (
-                <form onSubmit={handleGrantAdmin} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <form
+                  onSubmit={handleGrantAdmin}
+                  className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center"
+                >
                   <input
                     type="text"
                     value={newAdminWallet}
@@ -1918,22 +2346,30 @@ export default function AdminDashboardPage() {
                   <button
                     type="submit"
                     disabled={adminBusy || !newAdminWallet.trim()}
-                    className="flex items-center justify-center gap-2 rounded-xl bg-[#ccff00]/15 border border-[#ccff00]/40 px-4 py-2 text-xs font-black uppercase tracking-wider text-[#ccff00] transition hover:bg-[#ccff00]/25 disabled:opacity-40"
+                    className="flex items-center justify-center gap-2 rounded-xl bg-[#2775ca]/15 border border-[#2775ca]/40 px-4 py-2 text-xs font-black uppercase tracking-wider text-[#2775ca] transition hover:bg-[#2775ca]/25 disabled:opacity-40"
                   >
-                    {adminBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                    {adminBusy ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <UserPlus className="h-4 w-4" />
+                    )}
                     Grant
                   </button>
                 </form>
               ) : (
                 <p className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-[11px] text-white/50">
-                  You have admin access but are not a root admin, so you cannot add or remove admins.
+                  You have admin access but are not a root admin, so you cannot
+                  add or remove admins.
                 </p>
               )}
             </div>
 
             <div className={`${CARD} space-y-3`}>
               <h3 className="text-sm font-black uppercase tracking-wider text-white">
-                Current Admins {adminsLoading && <Loader2 className="inline h-3 w-3 animate-spin ml-1" />}
+                Current Admins{" "}
+                {adminsLoading && (
+                  <Loader2 className="inline h-3 w-3 animate-spin ml-1" />
+                )}
               </h3>
               {admins.length === 0 && !adminsLoading ? (
                 <p className="text-xs text-white/40">No admins found.</p>
@@ -1946,17 +2382,26 @@ export default function AdminDashboardPage() {
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         <Shield
-                          className={`h-4 w-4 shrink-0 ${a.tier === "root" ? "text-[#ccff00]" : "text-white/40"}`}
+                          className={`h-4 w-4 shrink-0 ${
+                            a.tier === "root"
+                              ? "text-[#2775ca]"
+                              : "text-white/40"
+                          }`}
                         />
                         <div className="min-w-0">
-                          <p className="font-mono font-bold text-white truncate">{a.wallet}</p>
+                          <p className="font-mono font-bold text-white truncate">
+                            {a.wallet}
+                          </p>
                           <p className="text-[10px] text-white/50">
                             {a.tier === "root" ? (
                               "Root — configured in environment, not revocable here"
                             ) : (
                               <>
                                 {a.label ? `${a.label} · ` : ""}
-                                Granted by {a.grantedBy ? `${a.grantedBy.slice(0, 10)}…` : "unknown"}
+                                Granted by{" "}
+                                {a.grantedBy
+                                  ? `${a.grantedBy.slice(0, 10)}…`
+                                  : "unknown"}
                               </>
                             )}
                           </p>
@@ -1966,7 +2411,7 @@ export default function AdminDashboardPage() {
                         <span
                           className={`rounded-full px-2 py-0.5 text-[9px] font-bold border ${
                             a.tier === "root"
-                              ? "bg-[#ccff00]/10 border-[#ccff00]/30 text-[#ccff00]"
+                              ? "bg-[#2775ca]/10 border-[#2775ca]/30 text-[#2775ca]"
                               : "bg-white/5 border-white/10 text-white/60"
                           }`}
                         >
@@ -1995,11 +2440,33 @@ export default function AdminDashboardPage() {
   );
 }
 
-function Stat({ label, value, danger = false }: { label: string; value: number | string; danger?: boolean }) {
+function Stat({
+  label,
+  value,
+  danger = false,
+}: {
+  label: string;
+  value: number | string;
+  danger?: boolean;
+}) {
   return (
-    <div className={`rounded-2xl border p-4 ${danger ? "border-amber-500/30 bg-amber-500/[0.06]" : "border-white/5 bg-white/[0.03]"}`}>
-      <p className={`text-2xl font-black ${danger ? "text-amber-300" : "text-white"}`}>{value}</p>
-      <p className="text-[10px] font-bold uppercase tracking-wider text-white/40">{label}</p>
+    <div
+      className={`rounded-2xl border p-4 ${
+        danger
+          ? "border-amber-500/30 bg-amber-500/[0.06]"
+          : "border-white/5 bg-white/[0.03]"
+      }`}
+    >
+      <p
+        className={`text-2xl font-black ${
+          danger ? "text-amber-300" : "text-white"
+        }`}
+      >
+        {value}
+      </p>
+      <p className="text-[10px] font-bold uppercase tracking-wider text-white/40">
+        {label}
+      </p>
     </div>
   );
 }
@@ -2011,12 +2478,14 @@ function KycStatusPill({ status }: { status: string }) {
     status === "APPROVED"
       ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
       : status === "REJECTED" || status === "REVOKED"
-        ? "border-red-500/30 bg-red-500/10 text-red-300"
-        : status === "NEEDS_INPUT" || status === "EXPIRED"
-          ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
-          : "border-white/10 bg-white/5 text-white/70";
+      ? "border-red-500/30 bg-red-500/10 text-red-300"
+      : status === "NEEDS_INPUT" || status === "EXPIRED"
+      ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
+      : "border-white/10 bg-white/5 text-white/70";
   return (
-    <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${tone}`}>
+    <span
+      className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${tone}`}
+    >
       {status.replace("_", " ")}
     </span>
   );
@@ -2043,7 +2512,9 @@ function Toggle({
     <div className="flex items-start justify-between gap-4 rounded-2xl border border-white/5 bg-white/[0.03] p-4">
       <div className="min-w-0">
         <p className="text-sm font-bold text-white">{title}</p>
-        <p className="mt-1 text-[11px] leading-relaxed text-white/50">{description}</p>
+        <p className="mt-1 text-[11px] leading-relaxed text-white/50">
+          {description}
+        </p>
       </div>
       <button
         type="button"
@@ -2051,15 +2522,19 @@ function Toggle({
         disabled={disabled}
         aria-pressed={enabled}
         className={`relative h-7 w-12 shrink-0 rounded-full border transition disabled:opacity-40 ${
-          enabled ? "border-[#ccff00]/50 bg-[#ccff00]/25" : "border-white/15 bg-white/10"
+          enabled
+            ? "border-[#2775ca]/50 bg-[#2775ca]/25"
+            : "border-white/15 bg-white/10"
         }`}
       >
         <span
           className={`absolute top-1 h-5 w-5 rounded-full transition-all ${
-            enabled ? "left-6 bg-[#ccff00]" : "left-1 bg-white/50"
+            enabled ? "left-6 bg-[#2775ca]" : "left-1 bg-white/50"
           }`}
         />
-        {busy && <Loader2 className="absolute inset-0 m-auto h-3.5 w-3.5 animate-spin text-white" />}
+        {busy && (
+          <Loader2 className="absolute inset-0 m-auto h-3.5 w-3.5 animate-spin text-white" />
+        )}
       </button>
     </div>
   );

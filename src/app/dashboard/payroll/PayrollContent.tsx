@@ -982,9 +982,9 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                     <Crown className="w-12 h-12" />
                                                 </div>
                                                 <div className="space-y-3 max-w-md">
-                                                    <h2 className="text-xl font-extrabold text-white uppercase tracking-wider">Privacy Premium Feature Locked</h2>
+                                                    <h2 className="text-xl font-extrabold text-white uppercase tracking-wider">Premium Pro Feature Locked</h2>
                                                     <p className="text-xs text-white/60 leading-relaxed font-sans">
-                                                        Access to <span className="font-semibold text-white">Institutional Payroll</span> requires an active SubScript Privacy Premium subscription. Upgrade to unlock keys, private checkout generation, webhook event streaming, and batch payouts.
+                                                        Access to <span className="font-semibold text-white">Institutional Payroll</span> requires an active SubScript Premium subscription. Upgrade to unlock keys, private checkout generation, webhook event streaming, and batch payouts.
                                                     </p>
                                                 </div>
                                                 <Link
@@ -992,7 +992,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                     className="px-8 py-3 bg-[#d4a853] hover:bg-[#d4a853]/80 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-[0_0_20px_rgba(212,168,83,0.2)] font-sans"
                                                 >
                                                     <Crown className="w-4 h-4" />
-                                                    Upgrade to Privacy Premium
+                                                    Upgrade to Premium Pro
                                                 </Link>
                                             </div>
                                         )}
