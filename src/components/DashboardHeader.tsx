@@ -41,6 +41,7 @@ interface DashboardHeaderProps {
     isVerified?: boolean;
     onProfileClick?: () => void;
     profilePic?: string | null;
+    walletBalance?: number;
 }
 
 export default function DashboardHeader({
@@ -57,6 +58,7 @@ export default function DashboardHeader({
     isVerified,
     onProfileClick,
     profilePic,
+    walletBalance,
 }: DashboardHeaderProps) {
     const [copiedAddress, setCopiedAddress] = useState(false);
     const [mounted, setMounted] = useState(false);
@@ -106,6 +108,11 @@ export default function DashboardHeader({
     const address = (mounted ? realAddress : undefined) || embeddedWallet?.wallet;
 
     useEffect(() => {
+        if (typeof walletBalance === "number") {
+            setUsdcBalance(walletBalance.toFixed(2));
+            return;
+        }
+
         if (!address) return;
         
         const fetchBalance = async () => {
@@ -125,7 +132,7 @@ export default function DashboardHeader({
         fetchBalance();
         const interval = setInterval(fetchBalance, 10000);
         return () => clearInterval(interval);
-    }, [address]);
+    }, [address, walletBalance]);
 
     useEffect(() => {
         if (propMerchantAlias !== undefined) return;
