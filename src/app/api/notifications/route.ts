@@ -44,10 +44,11 @@ export async function GET(request: Request) {
 
         const recipientAddress = wallet.toLowerCase();
         const where = { recipientAddress, audience };
+        const targetBroadcastAudience = audience === "USER" ? ["users", "both"] : ["merchants", "both"];
 
-        /* One round trip. The count is over ALL unread rows, not just the page — a bell showing
-           "20" because that is the page size would be a lie. */
-        const [notifications, unreadCount] = await Promise.all([
+        /* One round trip. Query specific account notifications AND global admin broadcasts so every
+           user and merchant gets broadcast announcements regardless of signup timing. */
+        const [notifications, unreadCount, broadcasts] = await Promise.all([
             prisma.accountNotification.findMany({
                 where,
                 orderBy: { createdAt: "desc" },
@@ -60,12 +61,54 @@ export async function GET(request: Request) {
                     source: true,
                     readAt: true,
                     createdAt: true,
+                    broadcastId: true,
                 },
             }),
             prisma.accountNotification.count({ where: { ...where, readAt: null } }),
+            prisma.adminBroadcast.findMany({
+                where: { audience: { in: targetBroadcastAudience } },
+                orderBy: { createdAt: "desc" },
+                take: 20,
+                select: {
+                    id: true,
+                    title: true,
+                    body: true,
+                    url: true,
+                    createdAt: true,
+                },
+            }).catch(() => []),
         ]);
 
-        return jsonOk({ notifications, unreadCount });
+        const trackedBroadcastIds = new Set(notifications.map((n) => n.broadcastId).filter(Boolean));
+
+        const broadcastItems = broadcasts
+            .filter((b) => !trackedBroadcastIds.has(b.id))
+            .map((b) => ({
+                id: `bc_${b.id}`,
+                title: b.title,
+                body: b.body,
+                url: b.url,
+                source: "ADMIN",
+                readAt: null as string | null,
+                createdAt: b.createdAt.toISOString(),
+            }));
+
+        const merged = [
+            ...notifications.map((n) => ({
+                id: n.id,
+                title: n.title,
+                body: n.body,
+                url: n.url,
+                source: n.source,
+                readAt: n.readAt ? n.readAt.toISOString() : null,
+                createdAt: n.createdAt.toISOString(),
+            })),
+            ...broadcastItems,
+        ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+        const totalUnread = unreadCount + broadcastItems.length;
+
+        return jsonOk({ notifications: merged.slice(0, limit), unreadCount: totalUnread });
     } catch (error: any) {
         console.error("[notifications] list failed:", error);
         return NextResponse.json({ error: "Unable to load notifications" }, { status: 503 });
