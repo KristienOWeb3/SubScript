@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Wallet, Copy, Check, LogOut, Eye, EyeOff, User, Globe } from "@/components/icons";
+import NotificationBell from "@/components/dashboard/NotificationBell";
 
 interface UserDashboardHeaderProps {
     userWallet: string | null;
@@ -65,6 +66,7 @@ export default function UserDashboardHeader({
                         {/* Actions (Right) */}
                         {userWallet ? (
                             <div className="flex items-center gap-1.5">
+                                <NotificationBell audience="USER" accent="#ccff00" />
                                 {/* Log Out */}
                                 <button
                                     onClick={onLogout}
