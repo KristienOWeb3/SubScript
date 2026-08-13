@@ -457,9 +457,14 @@ export default function SubScriptCheckout({
       <div className="absolute top-0 right-0 w-64 h-64 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-[#00d2b4]/5 via-transparent to-transparent -z-10 pointer-events-none" />
 
       <div>
-        <div className="flex justify-between items-center text-[9px] text-white/30 font-mono uppercase mb-6">
-          <span>Subscription Checkout</span>
-          <span className="font-bold text-[#00d2b4] bg-[#00d2b4]/10 border border-[#00d2b4]/20 px-2.5 py-0.5 rounded-full">
+        <div className="flex justify-between items-center text-white/30 font-mono uppercase mb-6">
+          <div>
+            <span className="text-xs font-extrabold text-white tracking-tight font-sans">SubScript checkout</span>
+            <span className="block text-[9px] text-white/40 font-sans tracking-widest uppercase mt-0.5">
+              {interval?.toLowerCase().includes("one") ? "One time" : "Recurring"}
+            </span>
+          </div>
+          <span className="font-bold text-[#00d2b4] bg-[#00d2b4]/10 border border-[#00d2b4]/20 px-2.5 py-0.5 rounded-full text-[9px]">
             {mode.toUpperCase()} MODE
           </span>
         </div>

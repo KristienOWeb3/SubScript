@@ -16,6 +16,7 @@ import Skeleton from "@/components/ui/Skeleton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
+import ConfirmModal from "@/components/ConfirmModal";
 import { createPublicClient, http, formatUnits } from "viem";
 import { activeArcChain } from "@/lib/wagmi";
 import { arcHttp } from "@/lib/arc/transport";
@@ -234,6 +235,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
     /* ----- action-in-progress trackers ----- */
     const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
     const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+    const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
     /* ------------------------------------------------------------------ */
     /*  Mount & Session Restoration                                       */
@@ -745,7 +747,11 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
     /* ------------------------------------------------------------------ */
 
     const handleDelete = async (id: string) => {
-        if (!confirm("Are you sure you want to delete this payroll campaign?")) return;
+        setDeleteTargetId(id);
+    };
+
+    const executeDelete = async (id: string) => {
+        setDeleteTargetId(null);
         setDeletingIds((prev) => new Set(prev).add(id));
         try {
             const res = await fetch(`/api/merchant/payroll?id=${id}`, { method: "DELETE" });
@@ -1451,6 +1457,17 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                     </span>
                 </div>
             )}
+
+            <ConfirmModal
+                open={Boolean(deleteTargetId)}
+                title="Delete Payroll Campaign"
+                description="Are you sure you want to delete this payroll campaign? This action cannot be undone."
+                confirmLabel="Delete Campaign"
+                cancelLabel="Cancel"
+                variant="danger"
+                onConfirm={() => deleteTargetId && executeDelete(deleteTargetId)}
+                onCancel={() => setDeleteTargetId(null)}
+            />
         </div>
     );
 }

@@ -1887,7 +1887,9 @@ export default function DashboardPage() {
                 setWebhookEndpoints(prev => [data.endpoint, ...prev]);
                 setWebhookUrlInput("");
             } else {
-                alert(data.error || "Failed to add endpoint");
+                setToastMessage(data.error || "Failed to add endpoint");
+                setShowToast(true);
+                setTimeout(() => setShowToast(false), 4000);
             }
         } catch (err) {
             console.error("Error adding endpoint:", err);
@@ -2144,7 +2146,9 @@ export default function DashboardPage() {
             setRefreshTrigger((prev) => prev + 1);
         } catch (err: any) {
             console.error("Error retrying subscription charge:", err);
-            alert(err.message || "Failed to execute subscription payment.");
+            setToastMessage(err.message || "Failed to execute subscription payment.");
+            setShowToast(true);
+            setTimeout(() => setShowToast(false), 4000);
             throw err;
         }
     };

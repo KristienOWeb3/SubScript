@@ -18,6 +18,7 @@ import { activeArcChain } from "@/lib/wagmi";
 import { arcHttp } from "@/lib/arc/transport";
 import DashboardHeader from "@/components/DashboardHeader";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+import ConfirmModal from "@/components/ConfirmModal";
 import { 
     Activity, Crown, Shield, Key, ArrowRightLeft, 
     Check, Loader2, AlertTriangle, PlayCircle, XCircle, ChevronLeft
@@ -456,11 +457,14 @@ export default function UpgradePage() {
         }
     };
 
-    const handleCancelSubscription = async () => {
-        if (!confirm("Are you sure you want to cancel your Privacy Premium plan? Your Privacy Premium benefits will remain active until the end of your current billing period.")) {
-            return;
-        }
+    const [showCancelModal, setShowCancelModal] = useState(false);
 
+    const handleCancelSubscription = async () => {
+        setShowCancelModal(true);
+    };
+
+    const executeCancelSubscription = async () => {
+        setShowCancelModal(false);
         setIsCancelling(true);
         setCancellationError(null);
 
@@ -478,7 +482,7 @@ export default function UpgradePage() {
             await refetchBalancesAndTier();
         } catch (err: any) {
             console.error("Cancellation request failed:", err);
-            setCancellationError(err.message || "Failed to cancel subscription.");
+            setCancellationError(err.message || "Failed to schedule subscription cancellation");
         } finally {
             setIsCancelling(false);
         }
@@ -776,6 +780,16 @@ export default function UpgradePage() {
                             </div>
                         </div>
                     )}
+                    <ConfirmModal
+                        open={showCancelModal}
+                        title="Cancel Subscription"
+                        description="Are you sure you want to cancel your Privacy Premium plan? Your Privacy Premium benefits will remain active until the end of your current billing period."
+                        confirmLabel="Cancel Subscription"
+                        cancelLabel="Keep Plan"
+                        variant="warning"
+                        onConfirm={executeCancelSubscription}
+                        onCancel={() => setShowCancelModal(false)}
+                    />
                 </main>
             </div>
         </div>

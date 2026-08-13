@@ -108,9 +108,12 @@ export default function VaultShareManager({
             if (json.success && Array.isArray(json.dms)) {
                 const contactsMap = new Map<string, DmContact>();
                 json.dms.forEach((dm: any) => {
+                    // Ignore system notifications
+                    if (dm.messageType === "SYSTEM" || dm.senderRole === "SYSTEM") return;
+
                     if (dm.senderRole !== "ENTERPRISE" && dm.senderAddress) {
                         const addr = dm.senderAddress.toLowerCase();
-                        if (addr !== myAddress && !contactsMap.has(addr)) {
+                        if ((!myAddress || addr !== myAddress) && !contactsMap.has(addr)) {
                             contactsMap.set(addr, {
                                 address: dm.senderAddress,
                                 displayName: dm.senderName || dm.senderAddress.slice(0, 10),
@@ -120,7 +123,7 @@ export default function VaultShareManager({
                     }
                     if (dm.receiverRole !== "ENTERPRISE" && dm.receiverAddress) {
                         const addr = dm.receiverAddress.toLowerCase();
-                        if (addr !== myAddress && !contactsMap.has(addr)) {
+                        if ((!myAddress || addr !== myAddress) && !contactsMap.has(addr)) {
                             contactsMap.set(addr, {
                                 address: dm.receiverAddress,
                                 displayName: dm.receiverName || dm.receiverAddress.slice(0, 10),
@@ -129,6 +132,10 @@ export default function VaultShareManager({
                         }
                     }
                 });
+                // Ensure user's own address is explicitly filtered out
+                if (myAddress) {
+                    contactsMap.delete(myAddress);
+                }
                 setDmContacts(Array.from(contactsMap.values()));
             }
         } catch {
@@ -165,6 +172,17 @@ export default function VaultShareManager({
     const handleCreate = async () => {
         setFormError(null);
         setSuccessMsg(null);
+
+        const targetInput = name.trim().toLowerCase().replace(/^@/, "").replace(/\.subscript$/i, "");
+        const sessionRes = await fetch("/api/auth/session", { credentials: "include" }).catch(() => null);
+        const sessionData = sessionRes && sessionRes.ok ? await sessionRes.json() : null;
+        const myAddress = sessionData?.wallet ? sessionData.wallet.toLowerCase() : null;
+
+        if (myAddress && (targetInput === myAddress || targetInput === myAddress.slice(0, 10))) {
+            setFormError("You cannot add yourself as a friend on your commitment.");
+            return;
+        }
+
         const parsed = parseUsdcToMicros(cap);
         if ("error" in parsed) {
             setFormError(parsed.error);
