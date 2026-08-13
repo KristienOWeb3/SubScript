@@ -837,74 +837,31 @@ export default function AdminDashboardPage() {
   ];
 
   return (
-    <div className="relative overflow-x-hidden bg-[#060608] text-white font-sans md:h-[100dvh] md:overflow-hidden">
+    <div className="relative overflow-x-hidden bg-[#353935] text-white font-sans md:h-[100dvh] md:overflow-hidden">
       <div className="relative z-10 md:flex md:h-[100dvh] md:min-h-0">
         <DashboardSidebar
+          className="topo-admin-header border-r border-white/10"
           items={adminSidebarItems}
           footerItems={adminSidebarFooterItems}
           activeId={tab}
           onSelect={(id) => setTab(id as TabId)}
           identity={{
-            label: viewerIsRoot ? "Root Authority" : "Admin Console",
+            label: viewerIsRoot ? "root.subscript.admin" : "admin.subscriptonarc.com",
             avatarUrl: null,
-            fallback: "A",
+            fallback: viewerIsRoot ? "R" : "A",
             onClick: () => setTab("admins"),
             title: "Arc Protocol Authority",
           }}
           accent="#2775ca"
-          panelColor="#0f172a"
+          panelColor="#f8fafc"
           ariaLabel="Admin Protocol Navigation"
+          isLoading={loading && merchants.length === 0}
         />
 
         <div className="relative z-10 min-w-0 flex-1 h-[100dvh] overflow-y-auto overscroll-contain admin-topography bg-[#f8fafc] text-white">
-          <main className="min-h-screen pb-16">
-            <div className="topo-admin-header border-b border-white/10 px-4 py-5 shadow-[0_8px_28px_rgba(15,23,42,0.24)] sm:px-8">
-              <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full border border-white/25 bg-white/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#e2e8f0]">
-                      admin.subscriptonarc.com
-                    </span>
-                    {viewerIsRoot && (
-                      <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white/60 border border-white/10">
-                        root
-                      </span>
-                    )}
-                  </div>
-                  <h1 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
-                    Protocol Control Center
-                  </h1>
-                  <p className="text-xs text-[#cbd5e1]">
-                    Gas sponsorship, merchant verification, access control, and admin
-                    management.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (tab === "admins") loadAdmins();
-                    else if (tab === "analytics") loadAnalytics();
-                    else if (tab === "system") loadFlags();
-                    else if (tab === "kyc") loadKyc();
-                    /* Moderation draws from two sources: bans ride along on loadData(), holds have
-                       their own endpoint. Refresh has to pull both or the tab half-updates. */ else if (
-                      tab === "moderation"
-                    ) {
-                      loadWithdrawalHolds();
-                      loadData();
-                    } else loadData();
-                  }}
-                  disabled={loading}
-                  className="flex items-center gap-2 rounded-lg border border-white/25 bg-white/10 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-white/15"
-                >
-                  <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-                  Refresh
-                </button>
-              </div>
-            </div>
-
-            <div className="admin-workspace mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-8 sm:py-8">
-              <section className="topo-admin-blue flex flex-col justify-between gap-5 rounded-xl border border-white/20 px-5 py-5 text-white shadow-[0_12px_30px_rgba(39,117,202,0.18)] sm:flex-row sm:items-end sm:px-6">
+          <main className="min-h-screen pt-4 sm:pt-6 pb-16">
+            <div className="admin-workspace mx-auto max-w-6xl space-y-6 px-4 py-2 sm:px-8">
+              <section className="topo-admin-blue flex flex-col justify-between gap-5 rounded-2xl border border-white/20 px-5 py-5 text-white shadow-[0_12px_30px_rgba(39,117,202,0.18)] sm:flex-row sm:items-end sm:px-6">
                 <div>
                   <span className="text-[10px] font-black uppercase tracking-[0.14em] text-white/75">
                     Secure operations workspace
@@ -923,6 +880,24 @@ export default function AdminDashboardPage() {
                   <span className="rounded-full border border-white/25 bg-white/10 px-3 py-1.5">
                     {viewerIsRoot ? "Root authority" : "Delegated authority"}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (tab === "admins") loadAdmins();
+                      else if (tab === "analytics") loadAnalytics();
+                      else if (tab === "system") loadFlags();
+                      else if (tab === "kyc") loadKyc();
+                      else if (tab === "moderation") {
+                        loadWithdrawalHolds();
+                        loadData();
+                      } else loadData();
+                    }}
+                    disabled={loading}
+                    className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white transition hover:bg-white/20 disabled:opacity-50"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
+                    Refresh
+                  </button>
                 </div>
               </section>
 
