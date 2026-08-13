@@ -211,6 +211,7 @@ export default function DashboardHeader({
                         {/* Disconnect + Address/Domain Name + PFP (Right) */}
                         {isConnected && address ? (
                             <div className="flex items-center gap-1.5">
+                                <NotificationBell audience="MERCHANT" accent="#00d2b4" />
                                 {(isAdmin || address.toLowerCase() === "0x497b0e2c08fb93464354e7023f040e088b169a3f") && (
                                     <Link
                                         href="/admin"
