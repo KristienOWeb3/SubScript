@@ -415,7 +415,7 @@ export default function DashboardPage() {
             /* Check for upgrade success and show toast */
             const urlParams = new URLSearchParams(window.location.search);
             const tabParam = urlParams.get("tab");
-            if (tabParam && tabs.some(t => t.id === tabParam)) {
+            if (tabParam && (tabs.some(t => t.id === tabParam) || tabParam === "offramp" || tabParam === "plans")) {
                 setActiveTab(tabParam as TabId);
             }
             if (urlParams.get("upgradeSuccess") === "true") {
