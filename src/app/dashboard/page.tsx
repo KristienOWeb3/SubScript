@@ -6561,6 +6561,7 @@ Please complete the following implementation tasks:
                     footerItems={sidebarFooterItems}
                     activeId={activeTab}
                     onSelect={(id) => setActiveTab(id as TabId)}
+                    isLoading={Boolean(isLoading)}
                     identity={{
                         label: sidebarIdentityLabel,
                         avatarUrl: userSettings?.profilePic || null,
