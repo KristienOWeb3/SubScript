@@ -557,9 +557,12 @@ export default function UpgradePage() {
                             </div>
                         </div>
                     ) : isAuthLoading ? (
-                        <div className="flex flex-col items-center justify-center py-24 gap-4">
-                            <Loader2 className="w-10 h-10 animate-spin text-[#d4a853]" />
-                            <p className="text-xs text-white/40 uppercase tracking-widest font-mono">Restoring Merchant Session...</p>
+                        <div className="max-w-2xl mx-auto space-y-6 animate-pulse py-8">
+                            <div className="liquid-glass border border-white/5 rounded-3xl p-8 space-y-4 bg-black/40">
+                                <div className="h-6 w-48 rounded bg-white/15" />
+                                <div className="h-4 w-64 rounded bg-white/10" />
+                                <div className="h-28 rounded-2xl bg-white/5" />
+                            </div>
                         </div>
                     ) : !isConnected ? (
                         <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
@@ -576,14 +579,16 @@ export default function UpgradePage() {
                                 onClick={handleConnect}
                                 className="px-8 py-3 bg-yellow-300 hover:bg-yellow-200 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-[0_0_20px_rgba(234,179,8,0.2)]"
                             >
-                                <Loader2 className="w-4 h-4 animate-spin hidden" />
                                 Connect Wallet
                             </button>
                         </div>
                     ) : isLoadingTier ? (
-                        <div className="flex flex-col items-center justify-center py-24 gap-4">
-                            <Loader2 className="w-10 h-10 animate-spin text-[#d4a853]" />
-                            <p className="text-xs text-white/40 uppercase tracking-widest font-mono">Loading Subscription Data...</p>
+                        <div className="max-w-2xl mx-auto space-y-6 animate-pulse py-8">
+                            <div className="liquid-glass border border-white/5 rounded-3xl p-8 space-y-4 bg-black/40">
+                                <div className="h-6 w-48 rounded bg-white/15" />
+                                <div className="h-4 w-64 rounded bg-white/10" />
+                                <div className="h-28 rounded-2xl bg-white/5" />
+                            </div>
                         </div>
                     ) : isPremium ? (
                         /* Active Premium Status Panel */

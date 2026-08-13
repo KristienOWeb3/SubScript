@@ -831,8 +831,17 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
 
     if (!isMounted) {
         return (
-            <div className="min-h-screen bg-transparent text-white border-t-4 border-[#00d2b4] relative z-10 flex flex-col items-center justify-center">
-                <Loader2 className="w-10 h-10 animate-spin text-[#00d2b4]" />
+            <div className="min-h-screen bg-transparent text-white border-t-4 border-[#00d2b4] relative z-10 p-6 md:p-10 space-y-6 animate-pulse max-w-6xl mx-auto">
+                <div className="flex justify-between items-center">
+                    <div className="h-8 w-48 rounded-xl bg-white/10" />
+                    <div className="h-10 w-32 rounded-xl bg-white/10" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="h-28 rounded-2xl bg-white/5 border border-white/5" />
+                    <div className="h-28 rounded-2xl bg-white/5 border border-white/5" />
+                    <div className="h-28 rounded-2xl bg-white/5 border border-white/5" />
+                </div>
+                <div className="h-64 rounded-3xl bg-white/5 border border-white/5" />
             </div>
         );
     }

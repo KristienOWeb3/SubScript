@@ -21,15 +21,38 @@ export function Identity({
     fallbackToAddress?: boolean;
 }) {
     const [alias, setAlias] = useState<string | null>(knownAlias ?? null);
+    const [isLoading, setIsLoading] = useState<boolean>(!knownAlias && Boolean(address));
 
     useEffect(() => {
-        if (knownAlias || !address) return;
+        if (knownAlias) {
+            setAlias(knownAlias);
+            setIsLoading(false);
+            return;
+        }
+        if (!address) {
+            setIsLoading(false);
+            return;
+        }
         let active = true;
-        resolveAliasForAddress(address).then((resolved) => {
-            if (active) setAlias(resolved);
-        });
+        setIsLoading(true);
+        resolveAliasForAddress(address)
+            .then((resolved) => {
+                if (active) {
+                    setAlias(resolved);
+                    setIsLoading(false);
+                }
+            })
+            .catch(() => {
+                if (active) setIsLoading(false);
+            });
         return () => { active = false; };
     }, [address, knownAlias]);
+
+    if (isLoading) {
+        return (
+            <span className={`inline-block h-3.5 w-24 rounded bg-white/15 animate-pulse align-middle ${className || ""}`} />
+        );
+    }
 
     const label = accountDisplayName(alias, fallbackToAddress ? "SubScript account" : "");
     return (

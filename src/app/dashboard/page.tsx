@@ -2855,9 +2855,9 @@ Please complete the following implementation tasks:
                 {/* Existing Payment Links List */}
                 <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
                     <div>
-                        <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2">Hosted Payment Links</h2>
+                        <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2">Payment Links</h2>
                         <p className="text-[11px] text-white/40 font-sans">
-                            Manage your created hosted payment links, monitor their status, and copy links for customers.
+                            Your payment links in one place. Share them with customers or check their status.
                         </p>
                     </div>
 
@@ -3807,7 +3807,7 @@ Please complete the following implementation tasks:
                             <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
                                 <div className="space-y-0.5">
                                     <p className="text-white font-bold flex items-center gap-1.5">Email Alerts <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
-                                    <p className="text-[9px] text-white/40">Receive settlement summaries via email</p>
+                                    <p className="text-[9px] text-white/40">Get payout summaries by email</p>
                                 </div>
                                 <button
                                     onClick={() => {}}
@@ -3820,8 +3820,8 @@ Please complete the following implementation tasks:
 
                             <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
                                 <div className="space-y-0.5">
-                                    <p className="text-white font-bold flex items-center gap-1.5">Payout Settlements <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
-                                    <p className="text-[9px] text-white/40">Settlement alerts will arrive in the merchant inbox when live</p>
+                                    <p className="text-white font-bold flex items-center gap-1.5">Payout Alerts <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
+                                    <p className="text-[9px] text-white/40">You&apos;ll get payout alerts in your inbox once payments start coming in</p>
                                 </div>
                                 <button
                                     onClick={() => {}}
@@ -4279,10 +4279,10 @@ Please complete the following implementation tasks:
                             <div>
                                 <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
                                     <ShieldCheck className="w-4 h-4 text-[#00d2b4]" />
-                                    Vault Commits Control
+                                    Customer Deposits
                                 </h2>
                                 <p className="text-[11px] text-white/40">
-                                    Configure user escrow commitments, claim settled funds, and view customer balances.
+                                    Manage customer deposits, withdraw earnings, and check balances.
                                 </p>
                             </div>
                             <button
@@ -4303,9 +4303,9 @@ Please complete the following implementation tasks:
                             {/* Required Commit form */}
                             <form onSubmit={handleSaveCommitConfig} className="rounded-2xl border border-white/5 bg-black/20 p-5 space-y-4">
                                 <div>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Required Commit</p>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Minimum Deposit</p>
                                     <p className="text-[9px] text-white/35 mt-1">
-                                        Minimum escrow each customer must restore before usage can continue.
+                                        The minimum balance a customer must maintain to keep using the service.
                                     </p>
                                 </div>
                                 <div className="flex flex-col gap-3">
@@ -4328,21 +4328,21 @@ Please complete the following implementation tasks:
                                         className="w-full py-2 bg-[#00d2b4] text-[#111111] hover:brightness-110 disabled:opacity-50 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
                                     >
                                         {isSavingCommit ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                                        Save Commit
+                                        Save Setting
                                     </button>
                                 </div>
                                 <p className="text-[9px] text-white/35 uppercase tracking-wider">
-                                    Current on-chain setting: <span className="font-mono text-[#ccff00]">${formatUsdcMicros(requiredCommit)} USDC</span>
+                                    Current requirement: <span className="font-mono text-[#ccff00]">${formatUsdcMicros(requiredCommit)} USDC</span>
                                 </p>
                             </form>
 
                             {/* Claim Settled Funds card */}
                             <div className="rounded-2xl border border-white/5 bg-black/20 p-5 flex flex-col justify-between gap-4">
                                 <div>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Claimable Settled Funds</p>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Ready to Withdraw</p>
                                     <p className="text-3xl font-black text-white mt-2">${formatUsdcMicros(claimableAmount)}</p>
                                     <p className="text-[9px] text-white/35 mt-1">
-                                        Funds become claimable after the keeper draws accrued cycle usage from escrow.
+                                        Earnings become available to withdraw after each billing cycle completes.
                                     </p>
                                 </div>
                                 <button
@@ -4352,16 +4352,16 @@ Please complete the following implementation tasks:
                                     className="w-full py-2 bg-white/[0.08] border border-white/10 hover:bg-white/[0.12] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
                                 >
                                     {isClaimingVault ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowUpRight className="w-3.5 h-3.5 text-[#00d2b4]" />}
-                                    Claim Funds
+                                    Withdraw Earnings
                                 </button>
                             </div>
 
                             {/* Usage Test Key */}
                             <div className="rounded-2xl border border-white/5 bg-black/20 p-5 space-y-4">
                                 <div>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Usage Test Key</p>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">API Key for Testing</p>
                                     <p className="text-[9px] text-white/35 mt-1">
-                                        Paste a one-time revealed secret key to test usage reports from this dashboard.
+                                        Paste your secret API key here to test sending usage charges.
                                     </p>
                                 </div>
                                 <label className="block space-y-1.5">
@@ -4376,7 +4376,7 @@ Please complete the following implementation tasks:
                                     />
                                 </label>
                                 <p className="text-[9px] text-white/30">
-                                    Keys are only returned as hints after creation; this field stays in local state.
+                                    Keys are only shown once when created. This test field is not saved to the server.
                                 </p>
                             </div>
                         </div>
@@ -4393,13 +4393,25 @@ Please complete the following implementation tasks:
                     {/* Customer Vaults list */}
                     <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
                         <div>
-                            <h3 className="text-xs font-bold uppercase tracking-wider text-white">Active Customer Escrows</h3>
-                            <p className="text-[10px] text-white/40">A live register of active customer commitments and owed usages.</p>
+                            <h3 className="text-xs font-bold uppercase tracking-wider text-white">Active Customer Deposits</h3>
+                            <p className="text-[10px] text-white/40">Live view of customer deposits and current usage.</p>
                         </div>
 
                         {isVaultsLoading ? (
-                            <div className="flex h-24 items-center justify-center">
-                                <Loader2 className="h-5 w-5 animate-spin text-[#00d2b4]" />
+                            <div className="space-y-3 animate-pulse">
+                                {Array.from({ length: 2 }).map((_, i) => (
+                                    <div key={i} className="rounded-2xl border border-white/5 bg-black/30 p-4 space-y-3">
+                                        <div className="flex justify-between items-center">
+                                            <div className="h-4 w-36 rounded bg-white/15" />
+                                            <div className="h-4 w-16 rounded bg-white/10" />
+                                        </div>
+                                        <div className="h-2 w-full rounded-full bg-white/10" />
+                                        <div className="flex justify-between">
+                                            <div className="h-3 w-20 rounded bg-white/10" />
+                                            <div className="h-3 w-24 rounded bg-white/15" />
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         ) : vaultsError ? (
                             <div className="flex h-24 flex-col items-center justify-center rounded-2xl border border-dashed border-red-500/20 bg-red-500/[0.03] text-center p-4">
@@ -4407,7 +4419,7 @@ Please complete the following implementation tasks:
                             </div>
                         ) : vaults.length === 0 ? (
                             <div className="flex h-24 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center p-4">
-                                <p className="text-xs text-white/45">No customers have committed escrow to your metered service yet.</p>
+                                <p className="text-xs text-white/45">No customer deposits yet. When customers deposit funds, they&apos;ll appear here.</p>
                             </div>
                         ) : (
                             <div className="space-y-4">
@@ -4588,7 +4600,7 @@ Please complete the following implementation tasks:
                                         {balanceVisible ? `$${vaultBalance.toFixed(2)}` : '•••••'}
                                     </p>
                                     <div className="flex items-center justify-between pt-1">
-                                        <p className="text-[10px] text-white/45">Settled earnings ready to claim</p>
+                                        <p className="text-[10px] text-white/45">Earnings you can withdraw now</p>
                                         <button
                                             onClick={() => setIsWithdrawOpen(true)}
                                             disabled={vaultBalance <= 0 || isWithdrawing}
@@ -4612,9 +4624,13 @@ Please complete the following implementation tasks:
                                 {/* Active Subscriptions */}
                                 <div className="liquid-glass border border-white/10 rounded-3xl p-6 shadow-xl relative overflow-hidden bg-white/[0.02] hover:border-white/20 transition-colors">
                                     <p className="text-[10px] text-white/50 uppercase font-bold tracking-wider mb-2">Active Subscriptions</p>
-                                    <p className="text-3xl font-extrabold text-white mb-2 tracking-tight">
-                                        {isLoadingContract ? "..." : activeAllowances}
-                                    </p>
+                                    <div className="text-3xl font-extrabold text-white mb-2 tracking-tight flex items-center h-9">
+                                        {isLoadingContract ? (
+                                            <span className="inline-block h-8 w-14 rounded-lg bg-white/15 animate-pulse" />
+                                        ) : (
+                                            activeAllowances
+                                        )}
+                                    </div>
                                     <p className="text-[10px] text-white/45 flex items-center gap-1.5 pt-1">
                                         <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
                                         Recurring customer authorizations
@@ -4624,9 +4640,13 @@ Please complete the following implementation tasks:
                                 {/* 30-Day Projection */}
                                 <div className="liquid-glass border border-white/10 rounded-3xl p-6 shadow-xl relative overflow-hidden bg-white/[0.02] hover:border-white/20 transition-colors">
                                     <p className="text-[10px] text-white/50 uppercase font-bold tracking-wider mb-2">30-Day Projection</p>
-                                    <p className="text-3xl font-extrabold text-white mb-2 tracking-tight">
-                                        {isLoadingContract ? "..." : `$${projected30DaySettlement.toFixed(2)}`}
-                                    </p>
+                                    <div className="text-3xl font-extrabold text-white mb-2 tracking-tight flex items-center h-9">
+                                        {isLoadingContract ? (
+                                            <span className="inline-block h-8 w-24 rounded-lg bg-white/15 animate-pulse" />
+                                        ) : (
+                                            `$${projected30DaySettlement.toFixed(2)}`
+                                        )}
+                                    </div>
                                     <p className="text-[10px] text-white/45 pt-1">Estimated recurring monthly volume</p>
                                 </div>
                             </div>
@@ -4766,14 +4786,16 @@ Please complete the following implementation tasks:
                                                         </thead>
                                                         <tbody className="text-xs text-white/70 font-mono">
                                                             {isLoadingContract ? (
-                                                                <tr>
-                                                                    <td colSpan={6} className="py-8 text-center text-white/40 font-sans">
-                                                                        <div className="flex items-center justify-center gap-2">
-                                                                            <Loader2 className="w-4 h-4 animate-spin text-[#00d2b4]" /> 
-                                                                            <span>Reading on-chain subscription status...</span>
-                                                                        </div>
-                                                                    </td>
-                                                                </tr>
+                                                                Array.from({ length: 3 }).map((_, i) => (
+                                                                    <tr key={i} className="border-b border-white/5 animate-pulse">
+                                                                        <td className="py-4"><div className="h-3.5 w-14 rounded bg-white/15" /></td>
+                                                                        <td className="py-4"><div className="h-3.5 w-28 rounded bg-white/10" /></td>
+                                                                        <td className="py-4"><div className="h-3.5 w-16 rounded bg-white/10" /></td>
+                                                                        <td className="py-4"><div className="h-3.5 w-24 rounded bg-white/10" /></td>
+                                                                        <td className="py-4"><div className="h-5 w-16 rounded-full bg-white/15" /></td>
+                                                                        <td className="py-4 text-right"><div className="h-3.5 w-20 rounded bg-white/10 ml-auto" /></td>
+                                                                    </tr>
+                                                                ))
                                                             ) : activeLedgers.length === 0 ? (
                                                                 <tr>
                                                                     <td colSpan={6} className="py-8 text-center text-white/35 font-sans">
@@ -4822,9 +4844,20 @@ Please complete the following implementation tasks:
                                                 {/* Mobile View - Active */}
                                                 <div className="block md:hidden space-y-3">
                                                     {isLoadingContract ? (
-                                                        <div className="py-8 text-center text-white/40 flex items-center justify-center gap-2">
-                                                            <Loader2 className="w-4 h-4 animate-spin text-[#00d2b4]" /> 
-                                                            <span>Reading on-chain state...</span>
+                                                        <div className="space-y-3 animate-pulse">
+                                                            {Array.from({ length: 2 }).map((_, i) => (
+                                                                <div key={i} className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-3">
+                                                                    <div className="flex justify-between items-center">
+                                                                        <div className="h-3.5 w-20 rounded bg-white/15" />
+                                                                        <div className="h-4 w-14 rounded-full bg-white/10" />
+                                                                    </div>
+                                                                    <div className="h-3 w-32 rounded bg-white/10" />
+                                                                    <div className="flex justify-between pt-2 border-t border-white/5">
+                                                                        <div className="h-3 w-16 rounded bg-white/10" />
+                                                                        <div className="h-3 w-20 rounded bg-white/15" />
+                                                                    </div>
+                                                                </div>
+                                                            ))}
                                                         </div>
                                                     ) : activeLedgers.length === 0 ? (
                                                         <div className="py-6 text-center text-white/35 font-sans text-xs">
@@ -5011,7 +5044,7 @@ Please complete the following implementation tasks:
                                 <div className="relative z-10 space-y-4">
                                     <div className="flex items-center justify-between gap-3">
                                         <div className="flex items-center gap-2">
-                                            <span className="text-[10px] text-white/45 uppercase font-bold tracking-wider">Claimable Settlement</span>
+                                            <span className="text-[10px] text-white/45 uppercase font-bold tracking-wider">Ready to Withdraw</span>
                                             <button
                                                 type="button"
                                                 onClick={() => setBalanceVisible(!balanceVisible)}
@@ -5138,9 +5171,16 @@ Please complete the following implementation tasks:
                                 </h3>
                                 <div className="space-y-3">
                                     {isLoadingContract ? (
-                                        <div className="py-8 text-center text-white/30 flex items-center justify-center gap-2">
-                                            <Loader2 className="w-4 h-4 animate-spin text-[#00d2b4]" />
-                                            <span className="text-xs">Fetching ledger...</span>
+                                        <div className="space-y-3 animate-pulse">
+                                            {Array.from({ length: 2 }).map((_, i) => (
+                                                <div key={i} className="p-4 bg-white/[0.01] border border-white/5 rounded-2xl space-y-2">
+                                                    <div className="flex justify-between items-center">
+                                                        <div className="h-3.5 w-24 rounded bg-white/15" />
+                                                        <div className="h-4 w-12 rounded-full bg-white/10" />
+                                                    </div>
+                                                    <div className="h-3 w-32 rounded bg-white/10" />
+                                                </div>
+                                            ))}
                                         </div>
                                     ) : ledgers.length === 0 ? (
                                         <div className="py-8 text-center text-white/20 text-xs">
@@ -6123,7 +6163,7 @@ Please complete the following implementation tasks:
                         <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40">
                             <div className="border-b border-white/5 px-6 py-4 bg-white/[0.01]">
                                 <span className="text-xs font-bold text-white/40 uppercase tracking-widest">Agent Integration Prompt</span>
-                                <p className="text-[10px] text-white/30 mt-0.5">Configure your subscription settings and copy the setup prompt for your AI agent.</p>
+                                <p className="text-[10px] text-white/30 mt-0.5">Set up your subscription options and grab the integration prompt for your AI agent.</p>
                             </div>
                             <div className="p-6 space-y-4">
 
@@ -7350,19 +7390,19 @@ function LocalCustomerVaultRow({
 
                 <div className="flex flex-wrap gap-x-6 gap-y-2">
                     <div>
-                        <span className="text-[8px] text-white/30 uppercase tracking-wider block font-bold">Escrow Balance</span>
+                        <span className="text-[8px] text-white/30 uppercase tracking-wider block font-bold">Customer Balance</span>
                         <p className="text-sm font-black text-[#ccff00] mt-1">${formatUsdcMicros(vault.balanceUsdc)}</p>
                     </div>
                     <div>
-                        <span className="text-[8px] text-white/30 uppercase tracking-wider block font-bold">Escrow Commit</span>
+                        <span className="text-[8px] text-white/30 uppercase tracking-wider block font-bold">Required Deposit</span>
                         <p className="text-sm font-black text-white mt-1">${formatUsdcMicros(vault.commitUsdc)}</p>
                     </div>
                     <div>
-                        <span className="text-[8px] text-white/30 uppercase tracking-wider block font-bold">Accrued Usage</span>
+                        <span className="text-[8px] text-white/30 uppercase tracking-wider block font-bold">Unbilled Usage</span>
                         <p className="text-sm font-black text-[#00d2b4] mt-1">${formatUsdcMicros(vault.accruedUsageUsdc)}</p>
                     </div>
                     <div>
-                        <span className="text-[8px] text-white/30 uppercase tracking-wider block font-bold">Owed Debt</span>
+                        <span className="text-[8px] text-white/30 uppercase tracking-wider block font-bold">Overdue</span>
                         <p className={`text-sm font-black mt-1 ${owedMicros > 0 ? "text-red-300" : "text-white"}`}>${formatUsdcMicros(vault.owedUsdc)}</p>
                     </div>
                 </div>
@@ -7371,7 +7411,7 @@ function LocalCustomerVaultRow({
             {/* Live usage accrual tool */}
             <form onSubmit={handleReportUsage} className="flex flex-col sm:flex-row gap-3 sm:items-end border-t border-white/5 pt-3">
                 <label className="flex-1 space-y-1">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-white/50">Accrue live usage charge (USDC)</span>
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-white/50">Bill usage (USDC)</span>
                     <input
                         type="number"
                         min="0.01"
@@ -7389,13 +7429,13 @@ function LocalCustomerVaultRow({
                     className="px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 disabled:opacity-50 text-[9px] font-bold uppercase tracking-wider text-white rounded-xl flex items-center justify-center gap-1.5 transition-all"
                 >
                     {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 text-[#ccff00]" />}
-                    {reviewingCharge ? "Confirm live charge" : "Review charge"}
+                    {reviewingCharge ? "Confirm charge" : "Review charge"}
                 </button>
             </form>
 
             {reviewingCharge && (
                 <div className="rounded-xl border border-amber-400/25 bg-amber-400/[0.06] p-3 text-[10px] leading-relaxed text-amber-200/80">
-                    This will add <strong>{Number(chargeAmount).toFixed(2)} USDC</strong> to the customer&apos;s live accrued usage for this billing cycle. It is not a test. Review the customer address above before confirming.
+                    This will add <strong>{Number(chargeAmount).toFixed(2)} USDC</strong> to the customer&apos;s live unbilled usage for this billing cycle. It is not a test. Review the customer address above before confirming.
                     <button type="button" onClick={() => setReviewingCharge(false)} className="mt-2 block font-bold uppercase tracking-wider text-white/60 hover:text-white">Back to edit</button>
                 </div>
             )}

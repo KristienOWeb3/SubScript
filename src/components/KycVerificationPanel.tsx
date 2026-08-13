@@ -218,9 +218,14 @@ export default function KycVerificationPanel({
             </div>
 
             {loading ? (
-                <div className="mt-6 flex items-center gap-2 text-[10px] text-white/45">
-                    <Loader2 className={`h-4 w-4 animate-spin ${accentText}`} />
-                    Loading verification status…
+                <div className="mt-6 space-y-4 animate-pulse">
+                    <div className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                        <div className="h-4 w-4 rounded-full bg-white/15 shrink-0" />
+                        <div className="space-y-2 flex-1">
+                            <div className="h-4 w-40 rounded bg-white/15" />
+                            <div className="h-3 w-64 rounded bg-white/10" />
+                        </div>
+                    </div>
                 </div>
             ) : !available ? (
                 <div className="mt-6 space-y-5">
