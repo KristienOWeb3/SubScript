@@ -210,8 +210,16 @@ export async function POST(request: Request) {
            friend is that they cannot spend past a number the primary chose; an uncapped friend
            would be able to drain the entire committed escrow. */
         if (displayName) {
+            const cleanedName = displayName.trim().toLowerCase().replace(/^@/, "").replace(/\.subscript$/i, "");
+            const userWalletClean = walletAddress.trim().toLowerCase();
+            if (cleanedName === userWalletClean) {
+                return NextResponse.json(
+                    { error: "You cannot add yourself as a friend on your commitment." },
+                    { status: 400 },
+                );
+            }
             const friendAddress = await resolveInviteeAddress(displayName);
-            if (friendAddress && friendAddress.toLowerCase() === walletAddress.toLowerCase()) {
+            if (friendAddress && friendAddress.toLowerCase() === userWalletClean) {
                 return NextResponse.json(
                     { error: "You cannot add yourself as a friend on your commitment." },
                     { status: 400 },

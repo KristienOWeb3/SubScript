@@ -163,11 +163,15 @@ Responsibilities:
     }
   };
 
+  const [copyError, setCopyError] = useState<string | null>(null);
+
   const handleCopy = () => {
     if (!activeMerchantAddress) {
-      alert("Please enter or connect your Merchant Wallet Address first!");
+      setCopyError("Please enter or connect your Merchant Wallet Address first!");
+      setTimeout(() => setCopyError(null), 4000);
       return;
     }
+    setCopyError(null);
     navigator.clipboard.writeText(generatePrompt());
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -278,6 +282,12 @@ Responsibilities:
           </>
         )}
       </button>
+
+      {copyError && (
+        <p className="mt-2 text-center text-[10px] text-amber-300 font-medium">
+          {copyError}
+        </p>
+      )}
     </div>
   );
 }
