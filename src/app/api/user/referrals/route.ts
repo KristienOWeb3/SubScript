@@ -19,21 +19,33 @@ export async function GET(request: Request) {
             orderBy: { createdAt: "desc" }
         });
 
-        // 2. Fetch aliases for all referred addresses to show friendly names
+        // 2. Fetch aliases and KYC records for all referred addresses to show friendly names and verification status
         const referredAddresses = referrals.map(r => r.referredAddress.toLowerCase());
-        const aliases = await prisma.addressAlias.findMany({
-            where: { address: { in: referredAddresses } }
-        });
+        const [aliases, kycRecords] = await Promise.all([
+            prisma.addressAlias.findMany({
+                where: { address: { in: referredAddresses } }
+            }),
+            prisma.kycVerification.findMany({
+                where: { walletAddress: { in: referredAddresses } },
+                select: { walletAddress: true, requestedLevel: true, status: true }
+            })
+        ]);
 
         const aliasMap = new Map(aliases.map(a => [a.address.toLowerCase(), a.alias]));
+        const kycMap = new Map(kycRecords.map(k => [k.walletAddress.toLowerCase(), k]));
 
-        const formattedReferrals = referrals.map(r => ({
-            id: r.id,
-            referredAddress: r.referredAddress,
-            alias: aliasMap.get(r.referredAddress.toLowerCase()) || null,
-            status: r.status,
-            createdAt: r.createdAt,
-        }));
+        const formattedReferrals = referrals.map(r => {
+            const kyc = kycMap.get(r.referredAddress.toLowerCase());
+            return {
+                id: r.id,
+                referredAddress: r.referredAddress,
+                alias: aliasMap.get(r.referredAddress.toLowerCase()) || null,
+                status: r.status,
+                kycStatus: kyc ? kyc.status : "NONE",
+                kycLevel: kyc ? kyc.requestedLevel : null,
+                createdAt: r.createdAt,
+            };
+        });
 
         // 3. Resolve referrer's own alias for the link
         const ownAliasRecord = await prisma.addressAlias.findUnique({

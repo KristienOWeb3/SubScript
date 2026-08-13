@@ -96,8 +96,8 @@ export default function DashboardSidebar({
             ? "bg-[color:var(--sb-panel)] text-[#0f172a] font-bold shadow-sm"
             : "bg-[color:var(--sb-panel)] text-[color:var(--sb-accent)] font-bold shadow-md border border-[color:var(--sb-accent)]/20"
         : isLightPanel
-        ? "bg-[color:var(--sb-panel)] text-[#0f172a] font-bold lg:-mr-4 lg:pr-7 z-20"
-        : "bg-[color:var(--sb-panel)] text-[color:var(--sb-accent)] font-bold lg:-mr-5 lg:pr-7";
+        ? "bg-[color:var(--sb-panel)] text-[#0f172a] font-bold lg:-mr-4 lg:pr-7 z-20 before:hidden lg:before:block before:content-[''] before:absolute before:-top-5 before:right-0 before:w-5 before:h-5 before:bg-transparent before:rounded-br-[20px] before:shadow-[6px_6px_0_0_var(--sb-panel)] before:pointer-events-none after:hidden lg:after:block after:content-[''] after:absolute after:-bottom-5 after:right-0 after:w-5 after:h-5 after:bg-transparent after:rounded-tr-[20px] after:shadow-[6px_-6px_0_0_var(--sb-panel)] after:pointer-events-none"
+        : "bg-[color:var(--sb-panel)] text-[color:var(--sb-accent)] font-bold lg:-mr-5 lg:pr-7 before:hidden lg:before:block before:content-[''] before:absolute before:-top-5 before:right-0 before:w-5 before:h-5 before:bg-transparent before:rounded-br-[20px] before:shadow-[6px_6px_0_0_var(--sb-panel)] before:pointer-events-none after:hidden lg:after:block after:content-[''] after:absolute after:-bottom-5 after:right-0 after:w-5 after:h-5 after:bg-transparent after:rounded-tr-[20px] after:shadow-[6px_-6px_0_0_var(--sb-panel)] after:pointer-events-none";
     
     const idleRow = "text-white/70 hover:bg-white/[0.06] hover:text-white";
 
@@ -198,16 +198,12 @@ export default function DashboardSidebar({
                         <button
                             type="button"
                             onClick={identity.onClick}
-                            className={`inline-flex max-w-full items-center gap-2.5 rounded-full border border-white/10 ${
-                                isLightPanel ? "bg-white/95 text-[#0f172a] shadow-sm" : "bg-white/[0.06] text-white"
-                            } p-1.5 text-left shadow-sm transition hover:border-[color:var(--sb-accent)]/30 hover:bg-white/10 ${
+                            className={`inline-flex max-w-full items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.08] text-white p-1.5 text-left shadow-sm transition hover:border-white/25 hover:bg-white/[0.14] ${
                                 isCollapsed ? "justify-center" : "px-2.5 py-1.5"
                             }`}
                             title={identity.title || identity.label}
                         >
-                            <div className={`flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full ${
-                                isLightPanel ? "bg-[#353935] text-white" : "bg-[color:var(--sb-accent)] text-black"
-                            } text-[11px] font-bold`}>
+                            <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/20 text-white text-[11px] font-bold">
                                 {identity.avatarUrl ? (
                                     /* eslint-disable-next-line @next/next/no-img-element */
                                     <img src={identity.avatarUrl} alt="" className="h-full w-full object-cover" />
@@ -216,9 +212,7 @@ export default function DashboardSidebar({
                                 )}
                             </div>
                             {!isCollapsed && (
-                                <span className={`hidden truncate font-mono text-[11px] font-bold ${
-                                    isLightPanel ? "text-[#0f172a]" : "text-white"
-                                } lg:inline max-w-[120px]`}>
+                                <span className="hidden truncate font-mono text-[11px] font-bold text-white lg:inline max-w-[120px]">
                                     {identity.label}
                                 </span>
                             )}

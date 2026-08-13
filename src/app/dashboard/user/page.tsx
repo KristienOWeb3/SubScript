@@ -75,6 +75,10 @@ import {
   Send,
   Share2,
   Shield,
+  ShieldCheck,
+  ShieldAlert,
+  AlertTriangle,
+  Clock,
   User,
   Users,
   Wallet,
@@ -5794,10 +5798,10 @@ export default function UserDashboard() {
                     <table className="w-full text-left font-sans text-xs">
                       <thead>
                         <tr className="border-b border-white/5 text-white/40 uppercase text-[9px] tracking-wider">
-                          <th className="pb-3">Referred Address</th>
+                          <th className="pb-3">Referred Account</th>
                           <th className="pb-3">Alias</th>
-                          <th className="pb-3">Registered At</th>
-                          <th className="pb-3 text-right">Status</th>
+                          <th className="pb-3">Registered</th>
+                          <th className="pb-3 text-right">KYC Verification</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -5810,13 +5814,36 @@ export default function UserDashboard() {
                         ) : (
                           referrals.map((ref) => (
                             <tr key={ref.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
-                              <td className="py-4 font-semibold text-white/80"><Identity address={ref.referredAddress} /></td>
+                              <td className="py-4 font-semibold text-white/80"><Identity address={ref.referredAddress} knownAlias={ref.alias} /></td>
                               <td className="py-4 font-semibold text-white/60">{ref.alias ? `@${ref.alias}` : "-"}</td>
                               <td className="py-4 text-white/50">{new Date(ref.createdAt).toLocaleDateString()}</td>
                               <td className="py-4 text-right">
-                                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400">
-                                  {humanStatus(ref.status)}
-                                </span>
+                                {ref.kycStatus === "APPROVED" ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                    <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                                    {ref.kycLevel === "ENHANCED" ? "Level 2 (Enhanced)" : "Level 1 (Verified)"}
+                                  </span>
+                                ) : ref.kycStatus === "PENDING" || ref.kycStatus === "IN_REVIEW" ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                                    <Clock className="w-3 h-3 text-amber-400" />
+                                    In Review
+                                  </span>
+                                ) : ref.kycStatus === "NEEDS_INPUT" ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider bg-orange-500/15 text-orange-400 border border-orange-500/30">
+                                    <AlertTriangle className="w-3 h-3 text-orange-400" />
+                                    Needs Input
+                                  </span>
+                                ) : ref.kycStatus === "REJECTED" || ref.kycStatus === "REVOKED" ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider bg-red-500/15 text-red-400 border border-red-500/30">
+                                    <ShieldAlert className="w-3 h-3 text-red-400" />
+                                    Rejected
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider bg-white/5 text-white/40 border border-white/10">
+                                    <Shield className="w-3 h-3 text-white/30" />
+                                    No KYC
+                                  </span>
+                                )}
                               </td>
                             </tr>
                           ))

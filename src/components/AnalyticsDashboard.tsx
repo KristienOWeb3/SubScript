@@ -561,7 +561,7 @@ export default function AnalyticsDashboard({
                         <div className="space-y-2 max-w-sm">
                             <h3 className="text-lg font-bold text-white uppercase tracking-wider">Analytics Locked</h3>
                             <p className="text-xs text-white/60 leading-relaxed font-sans">
-                                Detailed analytics, subscriber retention metrics, and payment projections are exclusive Premium features. Upgrade your merchant account to unlock them.
+                                Upgrade to Premium to see retention, revenue trends, and payment forecasts.
                             </p>
                         </div>
                         <button
@@ -584,7 +584,7 @@ export default function AnalyticsDashboard({
                                 <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-xl relative overflow-hidden col-span-1 md:col-span-2 flex flex-col justify-between min-h-[240px]">
                                     <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
                                         <div className="space-y-1">
-                                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Annual Run Rate</p>
+                                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Projected Annual Revenue</p>
                                             <p className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">${annualRunRate.toFixed(2)}</p>
                                         </div>
                                         <div className="text-left sm:text-right">
@@ -594,7 +594,7 @@ export default function AnalyticsDashboard({
                                     </div>
                                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mt-8">
                                         <p className="text-[9px] text-white/30 max-w-md">
-                                            Annualized from your active recurring revenue · Claimable settlement: ${vaultBalance.toFixed(2)}
+                                            Projected yearly revenue from active subscribers · Ready to withdraw: ${vaultBalance.toFixed(2)}
                                         </p>
                                         <button
                                             onClick={() => setActiveTab("overview")}
@@ -615,7 +615,7 @@ export default function AnalyticsDashboard({
                                                 <p className="text-3xl font-extrabold text-white tracking-tight">{activeSubscribers}</p>
                                             </div>
                                             <div>
-                                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">All-Time Churn</p>
+                                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Churn Rate</p>
                                                 <p className="text-xl font-bold text-white/90">{stats.churn.toFixed(1)}%</p>
                                             </div>
                                             <div>
@@ -632,7 +632,7 @@ export default function AnalyticsDashboard({
                                         </div>
                                     </div>
                                     <p className="text-[9px] text-white/30 font-sans mt-4">
-                                        Share of all subscriptions ever created that are still active
+                                        Active subscribers across all memberships created
                                     </p>
                                 </div>
                             </div>
@@ -643,7 +643,7 @@ export default function AnalyticsDashboard({
                                 <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[320px]">
                                     <div>
                                         <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Revenue by Subscriber</p>
-                                        <p className="text-xs text-white/60">Top active monthly contributions</p>
+                                        <p className="text-xs text-white/60">Top active subscribers by monthly spend</p>
                                     </div>
                                     
                                     <div className="flex items-end justify-between h-40 pt-6 px-1">
@@ -664,15 +664,15 @@ export default function AnalyticsDashboard({
                                     </div>
 
                                     <p className="text-[9px] text-white/30 font-sans mt-4">
-                                        Each bar is a top subscriber&apos;s monthly recurring revenue
+                                        Your highest-spending subscribers this month
                                     </p>
                                 </div>
 
                                 {/* Bottom Center Card: List View */}
                                 <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[320px]">
                                     <div>
-                                        <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Recent Subscribers</p>
-                                        <p className="text-xs text-white/60">Currently renewing subscriptions</p>
+                                        <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Active Subscribers</p>
+                                        <p className="text-xs text-white/60">Memberships currently renewing</p>
                                     </div>
 
                                     <div className="space-y-3 my-4">
@@ -701,7 +701,7 @@ export default function AnalyticsDashboard({
                                     </div>
 
                                     <p className="text-[9px] text-white/30 font-sans">
-                                        Sorted by latest settlement transaction
+                                        Sorted by most recent payment
                                     </p>
                                 </div>
 
@@ -709,7 +709,7 @@ export default function AnalyticsDashboard({
                                 <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[320px]">
                                     <div>
                                         <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Inactive Subscriptions</p>
-                                        <p className="text-xs text-white/60">Past-due and ended accounts</p>
+                                        <p className="text-xs text-white/60">Past due or cancelled accounts</p>
                                     </div>
 
                                     <div className="space-y-3 my-4 overflow-y-auto max-h-[280px]">
@@ -788,7 +788,7 @@ export default function AnalyticsDashboard({
                                     })()}
 
                                     <p className="text-[9px] text-white/30 font-sans">
-                                        Manual on-chain execution of overdue payment
+                                        Retry collecting overdue payments
                                     </p>
                                 </div>
                             </div>
@@ -804,7 +804,7 @@ export default function AnalyticsDashboard({
                                     <div className="space-y-2">
                                         <h3 className="text-xs font-bold text-white uppercase tracking-wider">Premium Pro Feature</h3>
                                         <p className="text-[10px] text-white/55 max-w-xs leading-relaxed">
-                                            Automated exit surveys and churn recovery templates are exclusive to the Premium Pro tier. Upgrade your account to unlock automations.
+                                            Upgrade to Premium Pro to send exit surveys and learn why customers cancel.
                                         </p>
                                     </div>
                                     <Link
@@ -858,10 +858,10 @@ export default function AnalyticsDashboard({
                                         <div>
                                             <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2">
                                                 <Sparkles className="w-4 h-4 text-[#00d2b4]" />
-                                                Automated Churn Recovery Exit Survey
+                                                Cancellation Exit Survey
                                             </h3>
                                             <p className="text-[10px] text-white/40 mt-1">
-                                                Send an exit survey automatically to customers when their subscription is cancelled or expired.
+                                                When someone cancels, automatically send a quick survey to find out what happened.
                                             </p>
                                         </div>
                                         <button
@@ -909,7 +909,7 @@ export default function AnalyticsDashboard({
                                                 type="text"
                                                 required
                                                 disabled={!isPremium}
-                                                placeholder="e.g. We want to hear your feedback"
+                                                placeholder="e.g. We'd love your feedback"
                                                 value={subjectLine}
                                                 onChange={(e) => setSubjectLine(e.target.value)}
                                                 className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors text-xs disabled:opacity-50 disabled:cursor-not-allowed"
@@ -918,7 +918,7 @@ export default function AnalyticsDashboard({
 
                                         <div className="space-y-1.5">
                                             <div className="flex justify-between items-center">
-                                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Email Content (Plain Text)</label>
+                                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Email Content</label>
                                                 <div className="flex items-center gap-1.5">
                                                     <span className="text-[8px] text-white/30 uppercase font-mono">Variables:</span>
                                                     <button
@@ -971,7 +971,7 @@ export default function AnalyticsDashboard({
                                             ) : (
                                                 <Save className="w-3.5 h-3.5" />
                                             )}
-                                            {isSavingTemplate ? "Saving..." : "Save Automations Settings"}
+                                            {isSavingTemplate ? "Saving..." : "Save Settings"}
                                         </button>
                                     </div>
                                 </form>
@@ -1060,10 +1060,10 @@ export default function AnalyticsDashboard({
                                         <div>
                                             <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
                                                 <Shield className="w-4 h-4 text-[#00d2b4]" />
-                                                Metered Vaults ({vaults.length})
+                                                Customer Balances & Usage ({vaults.length})
                                             </h4>
                                             <p className="text-[9px] text-white/40 mt-1 uppercase tracking-wider">
-                                                Customer escrow, accrued usage, owed debt, and merchant claim controls.
+                                                Manage customer deposits, see current usage, and withdraw earnings.
                                             </p>
                                         </div>
                                         <button
@@ -1083,9 +1083,9 @@ export default function AnalyticsDashboard({
                                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                                         <form onSubmit={handleSaveCommitConfig} className="rounded-2xl border border-white/5 bg-black/20 p-5 space-y-4">
                                             <div>
-                                                <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Required Commit</p>
+                                                <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Minimum Deposit</p>
                                                 <p className="text-[9px] text-white/35 mt-1">
-                                                    Minimum escrow each customer must restore before usage can continue.
+                                                    The minimum balance a customer must maintain to keep using the service.
                                                 </p>
                                             </div>
                                             <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
@@ -1108,20 +1108,20 @@ export default function AnalyticsDashboard({
                                                     className="px-5 py-2 bg-[#00d2b4] text-[#111111] hover:brightness-110 disabled:opacity-50 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
                                                 >
                                                     {isSavingCommit ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                                                    Save Commit
+                                                    Save Setting
                                                 </button>
                                             </div>
                                             <p className="text-[9px] text-white/35 uppercase tracking-wider">
-                                                Current on-chain setting: <span className="font-mono text-[#ccff00]">${formatUsdcMicros(requiredCommit)} USDC</span>
+                                                Current requirement: <span className="font-mono text-[#ccff00]">${formatUsdcMicros(requiredCommit)} USDC</span>
                                             </p>
                                         </form>
 
                                         <div className="rounded-2xl border border-white/5 bg-black/20 p-5 flex flex-col justify-between gap-4">
                                             <div>
-                                                <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Claimable Settled Funds</p>
+                                                <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Available to Withdraw</p>
                                                 <p className="text-3xl font-black text-white mt-2">${formatUsdcMicros(claimableAmount)}</p>
                                                 <p className="text-[9px] text-white/35 mt-1">
-                                                    Funds become claimable after the keeper draws accrued cycle usage from escrow.
+                                                    Earnings become available to withdraw after each billing cycle.
                                                 </p>
                                             </div>
                                             <button
@@ -1131,15 +1131,15 @@ export default function AnalyticsDashboard({
                                                 className="px-5 py-2 bg-white/[0.08] border border-white/10 hover:bg-white/[0.12] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
                                             >
                                                 {isClaimingVault ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowUpRight className="w-3.5 h-3.5 text-[#00d2b4]" />}
-                                                Claim Funds
+                                                Withdraw Earnings
                                             </button>
                                         </div>
 
                                         <div className="rounded-2xl border border-white/5 bg-black/20 p-5 space-y-4">
                                             <div>
-                                                <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Usage Test Key</p>
+                                                <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">API Key for Testing</p>
                                                 <p className="text-[9px] text-white/35 mt-1">
-                                                    Paste a one-time revealed secret key to test usage reports from this dashboard.
+                                                    Paste your secret API key here to test sending usage charges.
                                                 </p>
                                             </div>
                                             <label className="block space-y-1.5">
@@ -1154,7 +1154,7 @@ export default function AnalyticsDashboard({
                                                 />
                                             </label>
                                             <p className="text-[9px] text-white/30">
-                                                Stored keys are only returned as hints after creation; this field stays in local component state.
+                                                Keys are only shown once when created. This test field is not saved to the server.
                                             </p>
                                         </div>
                                     </div>
@@ -1185,7 +1185,7 @@ export default function AnalyticsDashboard({
                                         </div>
                                     ) : vaults.length === 0 ? (
                                         <div className="flex h-24 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center p-4">
-                                            <p className="text-xs text-white/45">No customers have committed escrow to your metered service yet.</p>
+                                            <p className="text-xs text-white/45">No customer deposits yet. When customers deposit funds, they&apos;ll appear here.</p>
                                         </div>
                                     ) : (
                                         <div className="space-y-4">
@@ -1306,7 +1306,7 @@ function CustomerVaultRow({
                             disabled={loading || !isActive}
                             className="px-4 py-1.5 bg-[#00d2b4] text-[#111111] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all"
                         >
-                            {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Report Usage"}
+                            {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Bill Usage"}
                         </button>
                     </div>
                     {status && (
@@ -1321,23 +1321,23 @@ function CustomerVaultRow({
 
             <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
                 <div className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
-                    <p className="text-[8px] uppercase tracking-wider text-white/35 font-bold">Escrow Balance</p>
+                    <p className="text-[8px] uppercase tracking-wider text-white/35 font-bold">Customer Balance</p>
                     <p className="text-sm font-black text-[#ccff00] mt-1">${formatUsdcMicros(vault.balanceUsdc)}</p>
                 </div>
                 <div className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
-                    <p className="text-[8px] uppercase tracking-wider text-white/35 font-bold">Required Commit</p>
+                    <p className="text-[8px] uppercase tracking-wider text-white/35 font-bold">Required Deposit</p>
                     <p className="text-sm font-black text-white mt-1">${formatUsdcMicros(vault.commitUsdc)}</p>
                 </div>
                 <div className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
-                    <p className="text-[8px] uppercase tracking-wider text-white/35 font-bold">Accrued Usage</p>
+                    <p className="text-[8px] uppercase tracking-wider text-white/35 font-bold">Unbilled Usage</p>
                     <p className="text-sm font-black text-[#00d2b4] mt-1">${formatUsdcMicros(vault.accruedUsageUsdc)}</p>
                 </div>
                 <div className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
-                    <p className="text-[8px] uppercase tracking-wider text-white/35 font-bold">Owed</p>
+                    <p className="text-[8px] uppercase tracking-wider text-white/35 font-bold">Overdue</p>
                     <p className={`text-sm font-black mt-1 ${owedMicros > 0 ? "text-red-300" : "text-white"}`}>${formatUsdcMicros(vault.owedUsdc)}</p>
                 </div>
                 <div className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
-                    <p className="text-[8px] uppercase tracking-wider text-white/35 font-bold">Cycle Start</p>
+                    <p className="text-[8px] uppercase tracking-wider text-white/35 font-bold">Period Started</p>
                     <p className="text-xs font-bold text-white/70 mt-1">{cycleStart}</p>
                 </div>
             </div>

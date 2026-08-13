@@ -446,9 +446,16 @@ export default function VaultShareManager({
                             )}
 
                             {loading && !data ? (
-                                <div className="flex items-center gap-2 px-1 py-3 text-[10px] text-white/40">
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                    Loading shares…
+                                <div className="space-y-2 animate-pulse py-2">
+                                    {Array.from({ length: 2 }).map((_, i) => (
+                                        <div key={i} className="rounded-xl border border-white/5 bg-white/[0.02] p-3 space-y-2">
+                                            <div className="flex justify-between items-center">
+                                                <div className="h-3 w-28 rounded bg-white/15" />
+                                                <div className="h-3 w-12 rounded bg-white/10" />
+                                            </div>
+                                            <div className="h-1.5 w-full rounded-full bg-white/10" />
+                                        </div>
+                                    ))}
                                 </div>
                             ) : (
                                 <>

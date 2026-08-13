@@ -840,7 +840,7 @@ export default function AdminDashboardPage() {
     <div className="relative overflow-x-hidden bg-[#353935] text-white font-sans md:h-[100dvh] md:overflow-hidden">
       <div className="relative z-10 md:flex md:h-[100dvh] md:min-h-0">
         <DashboardSidebar
-          className="topo-admin-header border-r border-white/10"
+          className="topo-admin-header"
           items={adminSidebarItems}
           footerItems={adminSidebarFooterItems}
           activeId={tab}
@@ -853,12 +853,12 @@ export default function AdminDashboardPage() {
             title: "Arc Protocol Authority",
           }}
           accent="#2775ca"
-          panelColor="#f8fafc"
+          panelColor="#ffffff"
           ariaLabel="Admin Protocol Navigation"
           isLoading={loading && merchants.length === 0}
         />
 
-        <div className="relative z-10 min-w-0 flex-1 h-[100dvh] overflow-y-auto overscroll-contain admin-topography bg-[#f8fafc] text-white">
+        <div className="relative z-10 min-w-0 flex-1 md:mt-[14px] md:h-[calc(100vh-14px)] bg-white shadow-[-8px_0_24px_rgba(0,0,0,0.12)] md:rounded-tl-[32px] border-t border-l border-white/10 overflow-y-auto overscroll-contain admin-topography text-[#0f172a]">
           <main className="min-h-screen pt-4 sm:pt-6 pb-16">
             <div className="admin-workspace mx-auto max-w-6xl space-y-6 px-4 py-2 sm:px-8">
               <section className="topo-admin-blue flex flex-col justify-between gap-5 rounded-2xl border border-white/20 px-5 py-5 text-white shadow-[0_12px_30px_rgba(39,117,202,0.18)] sm:flex-row sm:items-end sm:px-6">

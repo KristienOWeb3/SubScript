@@ -290,8 +290,16 @@ export default function SubUserManager({ balanceVisible = true }: { balanceVisib
             )}
 
             {loading ? (
-                <div className="flex h-36 items-center justify-center">
-                    <Loader2 className="h-6 w-6 animate-spin text-[#ccff00]" />
+                <div className="space-y-3 animate-pulse">
+                    {Array.from({ length: 2 }).map((_, i) => (
+                        <div key={i} className="rounded-2xl border border-white/5 bg-white/[0.02] p-4 space-y-3">
+                            <div className="flex justify-between items-center">
+                                <div className="h-4 w-32 rounded bg-white/15" />
+                                <div className="h-4 w-16 rounded bg-white/10" />
+                            </div>
+                            <div className="h-2 w-full rounded-full bg-white/10" />
+                        </div>
+                    ))}
                 </div>
             ) : subUsers.length === 0 ? (
                 <div className="flex h-36 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 p-4 text-center">
