@@ -1222,3 +1222,60 @@ model AccountNotification {
   @@map("account_notifications")
 }
 
+model DmInviteSetting {
+  walletAddress String   @id @map("wallet_address")
+  tokenVersion  Int      @default(1) @map("token_version")
+  tokenNonce    String   @default(dbgenerated("gen_random_uuid()::text")) @map("token_nonce")
+  enabled       Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("dm_invite_settings")
+}
+
+model DmConnection {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user1Address      String   @map("user1_address")
+  user2Address      String   @map("user2_address")
+  status            String   @default("ACCEPTED")
+  establishedAt     DateTime @default(now()) @map("established_at")
+  lastInteractionAt DateTime @default(now()) @map("last_interaction_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([user1Address, user2Address], map: "dm_connections_pair_idx")
+  @@index([user1Address, status])
+  @@index([user2Address, status])
+  @@map("dm_connections")
+}
+
+model DmRequest {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  senderAddress   String    @map("sender_address")
+  receiverAddress String    @map("receiver_address")
+  note            String?
+  status          String    @default("PENDING")
+  expiresAt       DateTime  @default(dbgenerated("(now() + '7 days'::interval)")) @map("expires_at")
+  declinedAt      DateTime? @map("declined_at")
+  cooldownUntil   DateTime? @map("cooldown_until")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@index([receiverAddress, status, createdAt(sort: Desc)])
+  @@index([senderAddress, status, createdAt(sort: Desc)])
+  @@map("dm_requests")
+}
+
+model DmBlock {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  blockerAddress String   @map("blocker_address")
+  blockedAddress String   @map("blocked_address")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([blockerAddress, blockedAddress], map: "dm_blocks_unique_pair")
+  @@index([blockerAddress])
+  @@index([blockedAddress])
+  @@map("dm_blocks")
+}
+
+

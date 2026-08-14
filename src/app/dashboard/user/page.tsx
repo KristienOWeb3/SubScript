@@ -38,6 +38,9 @@ import QrScannerModal from "@/components/QrScannerModal";
 import SendSingleModal from "@/components/SendSingleModal";
 import SubUserManager from "@/components/SubUserManager";
 import VaultShareManager from "@/components/VaultShareManager";
+import DmRequestsModal from "@/components/dashboard/DmRequestsModal";
+import DmInviteManagerModal from "@/components/dashboard/DmInviteManagerModal";
+import BlockedUsersModal from "@/components/dashboard/BlockedUsersModal";
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
 import { MerchantVerifiedTick } from "@/components/MerchantVerifiedBadge";
@@ -79,7 +82,9 @@ import {
   ShieldAlert,
   AlertTriangle,
   Clock,
+  Inbox,
   User,
+  UserX,
   Users,
   Wallet,
   X,
@@ -483,6 +488,22 @@ export default function UserDashboard() {
   const [exchangeRate, setExchangeRate] = useState(1.0);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [dms, setDms] = useState<DmMessage[]>([]);
+  const [dmConnections, setDmConnections] = useState<Array<{
+    id: string;
+    peerAddress: string;
+    peerName: string;
+    peerRole: string | null;
+    peerProfilePic: string | null;
+    peerVerified: boolean;
+    isBlocked: boolean;
+    establishedAt: string;
+    lastInteractionAt: string;
+  }>>([]);
+  const [blockedAddresses, setBlockedAddresses] = useState<string[]>([]);
+  const [dmRequestsModalOpen, setDmRequestsModalOpen] = useState(false);
+  const [dmInviteModalOpen, setDmInviteModalOpen] = useState(false);
+  const [blockedUsersModalOpen, setBlockedUsersModalOpen] = useState(false);
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
   const [threadPlans, setThreadPlans] = useState<MerchantPlan[]>([]);
   const [plansMerchantAddress, setPlansMerchantAddress] = useState<string | null>(null);
 
@@ -1046,6 +1067,18 @@ export default function UserDashboard() {
     }
   };
 
+  const loadRequestsCount = useCallback(async () => {
+    try {
+      const res = await fetch("/api/user/dm/requests");
+      if (res.ok) {
+        const data = await res.json();
+        setPendingRequestsCount(data.pendingCount || 0);
+      }
+    } catch (err) {
+      console.error("Failed to load requests count:", err);
+    }
+  }, []);
+
   const dmRequestSequence = useRef(0);
   const loadDms = useCallback(async () => {
     const requestSequence = ++dmRequestSequence.current;
@@ -1053,10 +1086,15 @@ export default function UserDashboard() {
       const res = await fetch("/api/user/dms");
       const data = await res.json();
       if (data.success && requestSequence === dmRequestSequence.current) setDms(data.dms);
+      if (data.success && requestSequence === dmRequestSequence.current) {
+        if (data.connections) setDmConnections(data.connections);
+        if (data.blockedAddresses) setBlockedAddresses(data.blockedAddresses);
+      }
+      void loadRequestsCount();
     } catch (err) {
       console.error("Failed to load DMs:", err);
     }
-  }, []);
+  }, [loadRequestsCount]);
 
   /* Live inbox: poll DMs while visible. On focus/visibility or a checkout completion from another
      tab, refresh every payment-backed surface so balances, receipts, subscriptions and DMs agree. */
@@ -2641,7 +2679,7 @@ export default function UserDashboard() {
     dm.status === "PENDING" &&
     dm.receiverAddress.toLowerCase() === userWallet?.toLowerCase() &&
     ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
-  const pendingDmCount = dms.filter(isActionableDm).length;
+  const pendingDmCount = dms.filter(isActionableDm).length + pendingRequestsCount;
   const dmThreads = Array.from(dms.reduce((threads, dm) => {
     const peerAddress = getDmPeerAddress(dm, userWallet).toLowerCase();
     const existing = threads.get(peerAddress);
@@ -2654,15 +2692,16 @@ export default function UserDashboard() {
         peerRole: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverRole : dm.senderRole,
         peerVerified: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverVerified : dm.senderVerified,
         peerProfilePic: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverProfilePic : dm.senderProfilePic,
-        latest: dm,
+        latest: dm as DmMessage | null,
         latestTime,
         pendingCount: actionable ? 1 : 0,
         totalCount: 1,
+        isBlocked: blockedAddresses.includes(peerAddress),
       });
     } else {
       existing.totalCount += 1;
       if (actionable) existing.pendingCount += 1;
-      if (latestTime > existing.latestTime) {
+      if (latestTime > existing.latestTime || !existing.latest) {
         existing.latest = dm;
         existing.latestTime = latestTime;
         const isOwnSender = dm.senderAddress.toLowerCase() === userWallet?.toLowerCase();
@@ -2671,19 +2710,40 @@ export default function UserDashboard() {
         existing.peerVerified = isOwnSender ? dm.receiverVerified : dm.senderVerified;
         existing.peerProfilePic = isOwnSender ? dm.receiverProfilePic : dm.senderProfilePic;
       }
+      existing.isBlocked = blockedAddresses.includes(peerAddress);
     }
     return threads;
-  }, new Map<string, {
-    peerAddress: string;
-    peerName: string;
-    peerRole: string | null;
-    peerVerified: boolean | undefined;
-    peerProfilePic: string | null;
-    latest: DmMessage;
-    latestTime: number;
-    pendingCount: number;
-    totalCount: number;
-  }>()).values()).sort((a, b) => b.latestTime - a.latestTime);
+  }, (() => {
+    const initialMap = new Map<string, {
+      peerAddress: string;
+      peerName: string;
+      peerRole: string | null;
+      peerVerified: boolean | undefined;
+      peerProfilePic: string | null;
+      latest: DmMessage | null;
+      latestTime: number;
+      pendingCount: number;
+      totalCount: number;
+      isBlocked: boolean;
+    }>();
+    // Pre-populate with accepted connections so newly accepted empty threads render
+    for (const conn of dmConnections) {
+      const peer = conn.peerAddress.toLowerCase();
+      initialMap.set(peer, {
+        peerAddress: peer,
+        peerName: conn.peerName,
+        peerRole: conn.peerRole,
+        peerVerified: conn.peerVerified,
+        peerProfilePic: conn.peerProfilePic,
+        latest: null,
+        latestTime: new Date(conn.lastInteractionAt || conn.establishedAt).getTime(),
+        pendingCount: 0,
+        totalCount: 0,
+        isBlocked: conn.isBlocked || blockedAddresses.includes(peer),
+      });
+    }
+    return initialMap;
+  })()).values()).sort((a, b) => b.latestTime - a.latestTime);
   const selectedThreadDms = selectedDmPeer
     ? dms
         .filter((dm) => getDmPeerAddress(dm, userWallet).toLowerCase() === selectedDmPeer)
@@ -2706,6 +2766,49 @@ export default function UserDashboard() {
   const isActiveDmMerchantVerified = activeThread?.peerVerified === true;
   const activeThreadSubscription = selectedDmPeer ? getActiveSubscriptionForMerchant(selectedDmPeer) : null;
   const isActiveMobileDm = isMobile && activeTab === "inbox" && Boolean(selectedDmPeer);
+  const isCurrentPeerBlocked = Boolean(selectedDmPeer && blockedAddresses.includes(selectedDmPeer.toLowerCase()));
+
+  const handleBlockPeer = async (peerAddress: string) => {
+    const peerLabel = formatPeerDisplayName(activeThread?.peerName, peerAddress);
+    setConfirmModal({
+      open: true,
+      title: `Block ${peerLabel}?`,
+      description: "Blocking this contact will immediately terminate your DM connection and prevent all future messages, payment requests, and transfers.",
+      confirmLabel: "Block User",
+      cancelLabel: "Cancel",
+      variant: "danger",
+      onConfirm: async () => {
+        try {
+          const res = await fetch("/api/user/dm/blocks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "block", targetAddress: peerAddress }),
+          });
+          if (res.ok) {
+            await loadDms();
+            setSelectedDmPeer(null);
+          }
+        } catch (err) {
+          console.error("Failed to block peer:", err);
+        }
+      },
+    });
+  };
+
+  const handleUnblockPeer = async (peerAddress: string) => {
+    try {
+      const res = await fetch("/api/user/dm/blocks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "unblock", targetAddress: peerAddress }),
+      });
+      if (res.ok) {
+        await loadDms();
+      }
+    } catch (err) {
+      console.error("Failed to unblock peer:", err);
+    }
+  };
   /* Sending to your own wallet burns gas for a no-op, so both send surfaces block it up front.
      The batch variant keeps each offending row's original index so the warning can name the
      recipient by its position in the form. */
@@ -3245,7 +3348,10 @@ export default function UserDashboard() {
                   peerAddress={selectedDmPeer}
                   isMerchant={isActiveDmMerchant}
                   isVerifiedMerchant={isActiveDmMerchantVerified}
+                  isBlocked={isCurrentPeerBlocked}
                   onBack={() => setSelectedDmPeer(null)}
+                  onBlock={() => handleBlockPeer(selectedDmPeer)}
+                  onUnblock={() => handleUnblockPeer(selectedDmPeer)}
                   onSendFunds={() => {
                     setSendFundsRecipient(activeThreadLabel || selectedDmPeer);
                     setSendFundsOpen(true);
@@ -3632,6 +3738,11 @@ export default function UserDashboard() {
                         <DmThreadSelect
                           threads={dmThreads}
                           onSelect={(peerAddress) => setSelectedDmPeer(peerAddress)}
+                          selectedPeerAddress={selectedDmPeer}
+                          pendingRequestsCount={pendingRequestsCount}
+                          onOpenRequests={() => setDmRequestsModalOpen(true)}
+                          onOpenInvite={() => setDmInviteModalOpen(true)}
+                          onOpenBlocked={() => setBlockedUsersModalOpen(true)}
                         />
                       </div>
                     ) : (
@@ -3650,6 +3761,37 @@ export default function UserDashboard() {
                           <div className="mx-auto w-fit rounded-full bg-white/10 px-6 py-1 text-[10px] font-bold text-white/55">
                             {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                           </div>
+
+                          {isCurrentPeerBlocked && (
+                            <div className="mx-2 rounded-2xl border border-rose-500/20 bg-rose-500/10 p-3.5 flex items-center justify-between gap-3 text-xs text-rose-300">
+                              <div className="flex items-center gap-2">
+                                <UserX className="h-4 w-4 shrink-0 text-rose-400" />
+                                <span>Contact blocked. Messaging and sends disabled.</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => selectedDmPeer && handleUnblockPeer(selectedDmPeer)}
+                                className="rounded-xl border border-white/10 bg-white/10 hover:bg-white/20 px-3 py-1 text-[10px] font-bold text-white transition-all shrink-0"
+                              >
+                                Unblock
+                              </button>
+                            </div>
+                          )}
+
+                          {selectedThreadDms.length === 0 && !isCurrentPeerBlocked && (
+                            <div className="py-12 flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.01] text-center p-6 space-y-3 mx-2">
+                              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/20 text-[#ccff00]">
+                                <MessageSquare className="h-6 w-6" />
+                              </div>
+                              <div className="space-y-1">
+                                <h3 className="text-sm font-bold text-white">Connection Established</h3>
+                                <p className="text-xs text-white/50 max-w-xs">
+                                  You and {activeThreadLabel} are connected. Send funds or request a payment to begin transacting.
+                                </p>
+                              </div>
+                            </div>
+                          )}
+
                           {selectedThreadDms.map((dm) => (
                             <DmBubble
                               key={dm.id}
@@ -3673,12 +3815,16 @@ export default function UserDashboard() {
                           <div ref={dmBottomRef} />
                         </div>
 
-                        {/* Bottom Action Footer for Mobile — stays inside the DM while only messages scroll. */}
+                        {/* Bottom Action Footer for Mobile */}
                         <div
                           data-testid="mobile-dm-action-footer"
                           className="relative z-30 shrink-0 border-t border-white/5 bg-black/30 px-1 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-xl rounded-t-2xl"
                         >
-                          {isActiveDmMerchant ? (
+                          {isCurrentPeerBlocked ? (
+                            <p className="text-center text-[11px] text-white/40 py-2">
+                              Messaging is disabled for blocked contacts.
+                            </p>
+                          ) : isActiveDmMerchant ? (
                             <MerchantPlanManager
                               open={planManagerOpen}
                               merchantLabel={activeThreadLabel}
@@ -3727,6 +3873,10 @@ export default function UserDashboard() {
                         threads={dmThreads}
                         onSelect={(peerAddress) => setSelectedDmPeer(peerAddress)}
                         selectedPeerAddress={selectedDmPeer}
+                        pendingRequestsCount={pendingRequestsCount}
+                        onOpenRequests={() => setDmRequestsModalOpen(true)}
+                        onOpenInvite={() => setDmInviteModalOpen(true)}
+                        onOpenBlocked={() => setBlockedUsersModalOpen(true)}
                       />
                     </div>
 
@@ -3771,17 +3921,39 @@ export default function UserDashboard() {
                                   <ArrowLeft className="h-4 w-4" />
                                 </button>
                                 
-                                {!isActiveDmMerchant && (
+                                {isCurrentPeerBlocked ? (
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      setSendFundsRecipient(activeThreadLabel || selectedDmPeer);
-                                      setSendFundsOpen(true);
-                                    }}
-                                    className="px-3.5 py-1.5 bg-[#ccff00]/10 border border-[#ccff00]/30 text-white font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] active:scale-95 shrink-0"
+                                    onClick={() => selectedDmPeer && handleUnblockPeer(selectedDmPeer)}
+                                    className="px-3.5 py-1.5 bg-white/10 border border-white/20 text-white font-bold text-[10px] rounded-full hover:bg-white/20 transition active:scale-95 shrink-0"
                                   >
-                                    Send Funds
+                                    Unblock
                                   </button>
+                                ) : (
+                                  <>
+                                    {!isActiveDmMerchant && (
+                                      <button
+                                        type="button"
+                                        onClick={() => selectedDmPeer && handleBlockPeer(selectedDmPeer)}
+                                        className="p-2 text-white/40 hover:text-rose-400 bg-white/[0.02] hover:bg-rose-500/10 border border-white/5 rounded-full transition-all shrink-0"
+                                        title="Block user"
+                                      >
+                                        <UserX className="h-4 w-4" />
+                                      </button>
+                                    )}
+                                    {!isActiveDmMerchant && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSendFundsRecipient(activeThreadLabel || selectedDmPeer);
+                                          setSendFundsOpen(true);
+                                        }}
+                                        className="px-3.5 py-1.5 bg-[#ccff00]/10 border border-[#ccff00]/30 text-white font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] active:scale-95 shrink-0"
+                                      >
+                                        Send Funds
+                                      </button>
+                                    )}
+                                  </>
                                 )}
                               </div>
                             </div>
@@ -3796,6 +3968,37 @@ export default function UserDashboard() {
                               <div className="mx-auto w-fit rounded-full border border-white/10 bg-white/5 backdrop-blur-md px-5 py-1 text-[10px] font-bold text-white/60">
                                 {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                               </div>
+
+                              {isCurrentPeerBlocked && (
+                                <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-3.5 flex items-center justify-between gap-3 text-xs text-rose-300">
+                                  <div className="flex items-center gap-2">
+                                    <UserX className="h-4 w-4 shrink-0 text-rose-400" />
+                                    <span>Contact blocked. Messaging and sends disabled.</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => selectedDmPeer && handleUnblockPeer(selectedDmPeer)}
+                                    className="rounded-xl border border-white/10 bg-white/10 hover:bg-white/20 px-3 py-1 text-[10px] font-bold text-white transition-all shrink-0"
+                                  >
+                                    Unblock
+                                  </button>
+                                </div>
+                              )}
+
+                              {selectedThreadDms.length === 0 && !isCurrentPeerBlocked && (
+                                <div className="py-16 flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.01] text-center p-6 space-y-3">
+                                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/20 text-[#ccff00]">
+                                    <MessageSquare className="h-6 w-6" />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <h3 className="text-sm font-bold text-white">Connection Established</h3>
+                                    <p className="text-xs text-white/50 max-w-sm">
+                                      You and {activeThreadLabel} are connected. Send funds or request a payment below to start transacting.
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+
                               {selectedThreadDms.map((dm) => (
                                 <DmBubble
                                   key={dm.id}
@@ -3824,7 +4027,11 @@ export default function UserDashboard() {
                               data-testid="desktop-dm-action-footer"
                               className="sticky bottom-0 z-20 shrink-0 rounded-2xl border border-white/10 bg-black/40 p-3 backdrop-blur-xl shadow-2xl mt-3"
                             >
-                              {isActiveDmMerchant ? (
+                              {isCurrentPeerBlocked ? (
+                                <p className="text-center text-[11px] text-white/40 py-2">
+                                  Messaging is disabled for blocked contacts.
+                                </p>
+                              ) : isActiveDmMerchant ? (
                                 <MerchantPlanManager
                                   open={planManagerOpen}
                                   merchantLabel={activeThreadLabel}
@@ -6488,6 +6695,32 @@ export default function UserDashboard() {
         }
       />
 
+      <DmRequestsModal
+        open={dmRequestsModalOpen}
+        onClose={() => setDmRequestsModalOpen(false)}
+        onConnectionAccepted={(peer) => {
+          setSelectedDmPeer(peer.toLowerCase());
+          loadDms();
+        }}
+        onRequestsUpdated={() => {
+          loadDms();
+          loadRequestsCount();
+        }}
+      />
+
+      <DmInviteManagerModal
+        open={dmInviteModalOpen}
+        onClose={() => setDmInviteModalOpen(false)}
+      />
+
+      <BlockedUsersModal
+        open={blockedUsersModalOpen}
+        onClose={() => setBlockedUsersModalOpen(false)}
+        onUnblockSuccess={() => {
+          loadDms();
+        }}
+      />
+
       {/* Blocking email capture — an email is required for receipts and notifications.
           Shown for accounts that don't have one yet (e.g. wallet-onboarded payers). */}
       {!loading && userWallet && !userEmail && (
@@ -6678,52 +6911,80 @@ function ChatHeader({
   peerAddress,
   isMerchant,
   isVerifiedMerchant,
+  isBlocked,
   onBack,
   onSendFunds,
+  onBlock,
+  onUnblock,
 }: {
   peerName: string;
   peerProfilePic: string | null;
   peerAddress: string;
   isMerchant: boolean;
-  /* Server-reported merchants.verified. Distinct from isMerchant, which is a business-vs-peer
-     heuristic that must never drive the trust badge. */
   isVerifiedMerchant: boolean;
+  isBlocked?: boolean;
   onBack: () => void;
   onSendFunds: () => void;
+  onBlock?: () => void;
+  onUnblock?: () => void;
 }) {
   return (
     <div className="fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
-      <header className="w-full max-w-md liquid-glass rounded-full px-5 py-3 pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/30 backdrop-blur-lg">
-        <div className="flex items-center justify-start w-full gap-2.5">
-          {/* Back button */}
-          <button
-            type="button"
-            onClick={onBack}
-            className="p-2 text-white/60 hover:text-white bg-white/[0.02] border border-white/5 rounded-full transition-all shrink-0"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          
-          {/* Peer Info Capsule */}
-          <div className="flex items-center gap-2 px-3 py-1 bg-white/[0.04] border border-white/5 rounded-full min-w-0">
-            <Avatar profilePic={peerProfilePic} size="xs" />
-            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#ccff00] truncate max-w-[120px]">
-              {peerName}
-            </span>
-            {/* Verified, not merely a merchant — see isActiveDmMerchantVerified. */}
-            <MerchantVerifiedTick verified={isVerifiedMerchant} size="xs" />
-          </div>
-
-          {/* No direct "Send Funds" to a merchant — pay via their payment link/request instead. */}
-          {!isMerchant && (
+      <header className="w-full max-w-md liquid-glass rounded-full px-4 py-2.5 pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/40 backdrop-blur-xl border border-white/10">
+        <div className="flex items-center justify-between w-full gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            {/* Back button */}
             <button
               type="button"
-              onClick={onSendFunds}
-              className="ml-auto px-3.5 py-1.5 bg-[#ccff00]/10 border border-[#ccff00]/30 text-white font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] active:scale-95 shrink-0"
+              onClick={onBack}
+              className="p-1.5 text-white/60 hover:text-white bg-white/[0.04] border border-white/5 rounded-full transition-all shrink-0"
             >
-              Send Funds
+              <ArrowLeft className="h-4 w-4" />
             </button>
-          )}
+            
+            {/* Peer Info Capsule */}
+            <div className="flex items-center gap-2 px-2.5 py-1 bg-white/[0.04] border border-white/5 rounded-full min-w-0">
+              <Avatar profilePic={peerProfilePic} size="xs" />
+              <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#ccff00] truncate max-w-[100px]">
+                {peerName}
+              </span>
+              <MerchantVerifiedTick verified={isVerifiedMerchant} size="xs" />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            {isBlocked ? (
+              <button
+                type="button"
+                onClick={onUnblock}
+                className="px-3 py-1 bg-white/10 border border-white/20 text-white font-bold text-[9px] rounded-full hover:bg-white/20 transition active:scale-95 shrink-0"
+              >
+                Unblock
+              </button>
+            ) : (
+              <>
+                {!isMerchant && onBlock && (
+                  <button
+                    type="button"
+                    onClick={onBlock}
+                    className="p-1.5 text-white/40 hover:text-rose-400 bg-white/[0.02] hover:bg-rose-500/10 border border-white/5 rounded-full transition-all shrink-0"
+                    title="Block user"
+                  >
+                    <UserX className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                {!isMerchant && (
+                  <button
+                    type="button"
+                    onClick={onSendFunds}
+                    className="px-3 py-1 bg-[#ccff00]/10 border border-[#ccff00]/30 text-white font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 transition shadow-[0_0_12px_rgba(204,255,0,0.15)] active:scale-95 shrink-0"
+                  >
+                    Send Funds
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </header>
     </div>
@@ -6818,6 +7079,10 @@ function DmThreadSelect({
   threads,
   onSelect,
   selectedPeerAddress,
+  pendingRequestsCount = 0,
+  onOpenRequests,
+  onOpenInvite,
+  onOpenBlocked,
 }: {
   threads: Array<{
     peerAddress: string;
@@ -6825,46 +7090,110 @@ function DmThreadSelect({
     peerRole: string | null;
     peerVerified: boolean | undefined;
     peerProfilePic: string | null;
-    latest: DmMessage;
+    latest: DmMessage | null;
     latestTime: number;
     pendingCount: number;
     totalCount: number;
+    isBlocked?: boolean;
   }>;
   onSelect: (peerAddress: string) => void;
   selectedPeerAddress?: string | null;
+  pendingRequestsCount?: number;
+  onOpenRequests?: () => void;
+  onOpenInvite?: () => void;
+  onOpenBlocked?: () => void;
 }) {
   return (
-    <div className="space-y-5">
-      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 shadow-2xl relative">
+    <div className="space-y-4">
+      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 shadow-2xl relative space-y-4">
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ccff00]">SubScript DMs</p>
-          <h1 className="mt-2 text-2xl font-black uppercase tracking-tight text-white">Select a payment thread</h1>
+          <h1 className="mt-1 text-xl font-black uppercase tracking-tight text-white">Payment Threads</h1>
         </div>
-        <p className="mt-2 text-xs leading-relaxed text-white/45">
-          DMs are automated payment, receipt, renewal, and request conversations. Click on a thread to view messages.
+        <p className="text-[11px] leading-relaxed text-white/45">
+          Receipts, peer payments, and connection requests.
         </p>
+
+        {/* Action Toolbar */}
+        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5">
+          {onOpenRequests && (
+            <button
+              type="button"
+              onClick={onOpenRequests}
+              className="relative flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white transition-all active:scale-95"
+            >
+              <Inbox className="h-3 w-3 text-[#ccff00]" />
+              <span>Requests</span>
+              {pendingRequestsCount > 0 && (
+                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#ccff00] px-1 text-[9px] font-black text-black">
+                  {pendingRequestsCount}
+                </span>
+              )}
+            </button>
+          )}
+
+          {onOpenInvite && (
+            <button
+              type="button"
+              onClick={onOpenInvite}
+              className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white/80 hover:text-white transition-all active:scale-95"
+            >
+              <Link2 className="h-3 w-3 text-white/60" />
+              <span>My Invite</span>
+            </button>
+          )}
+
+          {onOpenBlocked && (
+            <button
+              type="button"
+              onClick={onOpenBlocked}
+              className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 px-2.5 py-1.5 text-[10px] font-bold text-white/50 hover:text-rose-300 transition-all active:scale-95 ml-auto"
+              title="Blocked contacts"
+            >
+              <UserX className="h-3 w-3" />
+            </button>
+          )}
+        </div>
       </div>
 
       {threads.length === 0 ? (
-        <div className="mt-14 flex flex-col items-center justify-center rounded-[32px] border border-dashed border-white/10 bg-white/[0.02] p-10 text-center">
-          <Mail className="mb-4 h-10 w-10 text-white/20" />
-          <p className="text-xs text-white/45">No SubScript system messages yet.</p>
+        <div className="mt-6 flex flex-col items-center justify-center rounded-[28px] border border-dashed border-white/10 bg-white/[0.02] p-8 text-center space-y-2">
+          <Mail className="h-8 w-8 text-white/20" />
+          <p className="text-xs text-white/45">No conversations or connections yet.</p>
+          {onOpenInvite && (
+            <button
+              type="button"
+              onClick={onOpenInvite}
+              className="mt-2 text-[10px] font-bold text-[#ccff00] hover:underline"
+            >
+              Share your invite link
+            </button>
+          )}
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           {threads.map((thread) => {
             const isSelected = thread.peerAddress.toLowerCase() === selectedPeerAddress?.toLowerCase();
             const peerLabel = formatPeerDisplayName(thread.peerName, thread.peerAddress);
-            const latestPreview = shortenWalletsInText(thread.latest.title || thread.latest.description || "SubScript payment message");
+            const latestPreview = thread.latest
+              ? shortenWalletsInText(thread.latest.title || thread.latest.description || "SubScript payment message")
+              : "Connected • Ready to transact";
+            const dateLabel = thread.latest
+              ? new Date(thread.latest.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+              : new Date(thread.latestTime).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+            const messageCountLabel = thread.totalCount > 0
+              ? `${thread.totalCount} system message${thread.totalCount === 1 ? "" : "s"}`
+              : "Active Connection";
+
             return (
               <motion.button
                 key={thread.peerAddress}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.96 }}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.98 }}
                 transition={{ type: "spring", stiffness: 450, damping: 32 }}
                 type="button"
                 onClick={() => onSelect(thread.peerAddress)}
-                className={`flex w-full items-center gap-4 rounded-3xl border p-4 text-left shadow-xl transition-colors duration-300 ${
+                className={`flex w-full items-center gap-3.5 rounded-2xl border p-3.5 text-left shadow-lg transition-colors duration-200 ${
                   isSelected
                     ? "border-[#ccff00] bg-[#ccff00]/[0.06] shadow-[0_0_15px_rgba(204,255,0,0.1)]"
                     : "border-white/5 bg-black/25 hover:border-[#ccff00]/30 hover:bg-[#ccff00]/[0.04]"
@@ -6872,23 +7201,29 @@ function DmThreadSelect({
               >
                 <Avatar profilePic={thread.peerProfilePic} />
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center justify-between gap-2">
                     <p className="flex min-w-0 items-center gap-1.5 truncate text-xs font-black uppercase tracking-[0.12em] text-white">
                       <span className="truncate">{peerLabel}</span>
-                      {/* Only merchants.verified earns the tick. An unverified merchant gets no
-                          mark rather than a warning — the amber "Unverified" chip belongs on the
-                          surfaces where the customer is authorizing money, not in a thread list. */}
                       <MerchantVerifiedTick verified={thread.peerVerified} size="xs" />
                     </p>
-                    <span className="text-[9px] font-bold text-white/35">
-                      {new Date(thread.latest.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    <span className="text-[9px] font-bold text-white/35 shrink-0">
+                      {dateLabel}
                     </span>
                   </div>
                   <p className="mt-1 truncate text-[11px] text-white/45">{latestPreview}</p>
-                  <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.14em] text-[#ccff00]/50">{thread.totalCount} system messages</p>
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#ccff00]/60">
+                      {messageCountLabel}
+                    </span>
+                    {thread.isBlocked && (
+                      <span className="rounded-full bg-rose-500/10 border border-rose-500/20 px-1.5 py-0.2 text-[8px] font-bold text-rose-400">
+                        Blocked
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {thread.pendingCount > 0 && (
-                  <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-[#ccff00] px-2 text-[10px] font-black text-black">
+                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#ccff00] px-1.5 text-[9px] font-black text-black shrink-0">
                     {thread.pendingCount}
                   </span>
                 )}

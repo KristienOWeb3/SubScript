@@ -1,0 +1,386 @@
+"use client";
+
+import React, { useState } from "react";
+import {
+  AreaTrendChart,
+  DonutMetricChart,
+  RunwayGaugeChart,
+  StatCardWithSparkline,
+  type DataPoint,
+  type DonutSegment,
+} from "../analytics/AdminCharts";
+import {
+  DollarSign,
+  TrendingUp,
+  Layers,
+  ShieldCheck,
+  Building2,
+  Copy,
+  CheckCircle2,
+  AlertTriangle,
+  ReceiptText,
+  Clock,
+  ArrowRight,
+  RefreshCw,
+  Search,
+} from "@/components/icons";
+
+interface AdminOverviewDashboardProps {
+  overviewData: any;
+  analyticsData?: any;
+  sponsor: any;
+  merchants: any[];
+  totalUsers: number | null;
+  onNavigateTab: (tab: any) => void;
+  onToggleVerification: (address: string, current: boolean) => Promise<void>;
+  verifyBusy: string | null;
+}
+
+export function AdminOverviewDashboard({
+  overviewData,
+  analyticsData,
+  sponsor,
+  merchants,
+  totalUsers,
+  onNavigateTab,
+  onToggleVerification,
+  verifyBusy,
+}: AdminOverviewDashboardProps) {
+  const [copiedAddress, setCopiedAddress] = useState<string | null>(null);
+  const [merchantSearch, setMerchantSearch] = useState("");
+
+  const metrics = overviewData?.metrics || analyticsData;
+  const rawTimeline = metrics?.timeline14d || analyticsData?.timeline || [];
+
+  const timelineData: DataPoint[] = rawTimeline.map((t: any) => ({
+    date: t.date,
+    label: t.label,
+    value: t.volume ?? t.settledUsdc ?? 0,
+    secondaryValue: t.checkoutUsdc ?? 0,
+    meta: { paymentCount: t.paymentCount },
+  }));
+
+  const sparklineVolume = rawTimeline.map((t: any) => t.volume ?? t.settledUsdc ?? 0);
+
+  const totalVolumeStr = metrics?.totalVolumeUsdc ?? analyticsData?.volume?.totalUsdc ?? "0.00";
+  const volume30dStr = metrics?.volume30dUsdc ?? analyticsData?.volume?.last30DaysUsdc ?? "0.00";
+  const activeSubs = metrics?.activeSubsCount ?? analyticsData?.subscriptions?.activeTotal ?? 0;
+  const kycPending = metrics?.kycPendingCount ?? analyticsData?.kyc?.pending ?? 0;
+  const stuckReceipts = metrics?.stuckReceiptsCount ?? analyticsData?.health?.stuckReceipts ?? 0;
+
+  const verifiedMerchantsCount = merchants.filter((m) => m.verified).length;
+
+  const streamSegments: DonutSegment[] = [
+    { label: "Settled Receipts", value: Math.max(1, analyticsData?.volume?.paymentCount ?? 12), color: "#2775ca" },
+    { label: "Checkout Links", value: Math.max(1, analyticsData?.volume?.checkoutCount ?? 5), color: "#00d2b4" },
+    { label: "Subscriptions", value: Math.max(1, activeSubs || 3), color: "#10b981" },
+  ];
+
+  const handleCopy = (text: string, key: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedAddress(key);
+    setTimeout(() => setCopiedAddress(null), 2000);
+  };
+
+  const filteredMerchants = merchants
+    .filter(
+      (m) =>
+        m.merchantName?.toLowerCase().includes(merchantSearch.toLowerCase()) ||
+        m.walletAddress.toLowerCase().includes(merchantSearch.toLowerCase())
+    )
+    .slice(0, 6);
+
+  return (
+    <div className="space-y-6">
+      {/* KPI Stat Cards Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCardWithSparkline
+          label="Total Settled GMV"
+          value={`$${totalVolumeStr}`}
+          badgeText="Arc settled receipts"
+          sparklineData={sparklineVolume}
+          icon={DollarSign}
+          color="#2775ca"
+        />
+
+        <StatCardWithSparkline
+          label="30-Day Volume"
+          value={`$${volume30dStr}`}
+          badgeText="Active billing velocity"
+          sparklineData={sparklineVolume.slice(-7)}
+          icon={TrendingUp}
+          color="#10b981"
+        />
+
+        <StatCardWithSparkline
+          label="Active Subscriptions"
+          value={activeSubs}
+          badgeText="Recurring plans"
+          icon={Layers}
+          color="#6366f1"
+        />
+
+        <StatCardWithSparkline
+          label="Registered Merchants"
+          value={merchants.length}
+          badgeText={`${verifiedMerchantsCount} verified (${merchants.length > 0 ? Math.round((verifiedMerchantsCount / merchants.length) * 100) : 0}%)`}
+          icon={Building2}
+          color="#00d2b4"
+        />
+      </div>
+
+      {/* Protocol Health Alert Banner (if KYC or stuck receipts) */}
+      {(kycPending > 0 || stuckReceipts > 0 || sponsor?.underfunded) && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/[0.08] p-4 text-[#0f172a]">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/20 text-amber-600 shrink-0">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-[#0f172a]">
+                Operational Action Required
+              </p>
+              <p className="text-[11px] text-[#64748b]">
+                {kycPending > 0 && `${kycPending} KYC applicant(s) awaiting review. `}
+                {stuckReceipts > 0 && `${stuckReceipts} receipt(s) stuck >7 days. `}
+                {sponsor?.underfunded && "Gas sponsor wallet is below safe funding threshold. "}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {kycPending > 0 && (
+              <button
+                type="button"
+                onClick={() => onNavigateTab("kyc")}
+                className="rounded-xl bg-[#2775ca] px-3.5 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-[#1d61a8] transition"
+              >
+                Review KYC ({kycPending})
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => onNavigateTab("analytics")}
+              className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-1.5 text-xs font-bold text-[#64748b] hover:text-[#0f172a] hover:bg-[#f8fafc] transition"
+            >
+              View Analytics
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Main Interactive Settlement Chart */}
+      <AreaTrendChart
+        data={timelineData}
+        title="Protocol Settlement Velocity"
+        subtitle="14-day daily transaction volume on Arc"
+        primaryLabel="Settled Volume"
+        secondaryLabel="Checkout Links"
+        color="#2775ca"
+        secondaryColor="#00d2b4"
+        showRangeSelector={false}
+        height={240}
+      />
+
+      {/* Two Column Grid: Gas Gauge + Stream Breakdown */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Gas Sponsor Runway Gauge */}
+        <RunwayGaugeChart
+          valueUsdc={sponsor?.balanceUsdc}
+          topupsRemaining={sponsor?.estimatedTopupsRemaining}
+          underfunded={Boolean(sponsor?.underfunded)}
+          emergencyStop={Boolean(sponsor?.emergencyStop)}
+          dailyBurnRateUsdc={sponsor?.topupUsdc ?? "0.10"}
+          title="Gas Sponsor Reserve Runway"
+        />
+
+        {/* Protocol Commerce Activity Stream Donut */}
+        <DonutMetricChart
+          segments={streamSegments}
+          title="Commerce Activity Breakdown"
+          subtitle="Relative transaction frequency across payment rails"
+          centerLabel="Activity"
+          centerValue={`${(analyticsData?.volume?.paymentCount ?? 12) + (analyticsData?.volume?.checkoutCount ?? 5)} txs`}
+        />
+      </div>
+
+      {/* Gas Sponsor Address Card */}
+      <div className="rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <span className="text-[10px] font-black uppercase tracking-wider text-[#64748b]">
+            Gas Sponsorship Wallet
+          </span>
+          <p className="text-xs text-[#64748b] mt-0.5">
+            Send native USDC on Arc to this address to fund automatic user gas coverage
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 rounded-xl border border-[#e2e8f0] bg-[#f8fafc] px-3.5 py-2">
+          <code className="font-mono text-xs text-[#0f172a] truncate max-w-[220px] sm:max-w-xs">
+            {sponsor?.address || "Not configured (SPONSOR_PRIVATE_KEY)"}
+          </code>
+          {sponsor?.address && (
+            <button
+              type="button"
+              onClick={() => handleCopy(sponsor.address, "sponsor-addr")}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#e2e8f0] bg-white text-[#64748b] hover:text-[#2775ca] transition"
+              title="Copy sponsor address"
+            >
+              {copiedAddress === "sponsor-addr" ? (
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              ) : (
+                <Copy className="h-4 w-4" />
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Recent Merchants Quick Table with Copy & Verify */}
+      <div className="rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">
+              Recent Merchant Activity
+            </h3>
+            <p className="text-xs text-[#64748b]">
+              Quick verification and address management
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="relative w-full sm:w-52">
+              <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-[#94a3b8]" />
+              <input
+                type="text"
+                value={merchantSearch}
+                onChange={(e) => setMerchantSearch(e.target.value)}
+                placeholder="Search merchant..."
+                className="w-full rounded-lg border border-[#cbd5e1] bg-white pl-8 pr-3 py-1.5 text-xs text-[#0f172a] placeholder:text-[#94a3b8] focus:border-[#2775ca] focus:outline-none"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigateTab("merchants")}
+              className="rounded-lg border border-[#e2e8f0] bg-white px-3 py-1.5 text-xs font-bold text-[#2775ca] hover:bg-[#f8fafc] transition shrink-0"
+            >
+              View All ({merchants.length})
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-[#f1f5f9] text-[10px] font-black uppercase tracking-wider text-[#64748b]">
+                <th className="py-2.5 px-3">Merchant</th>
+                <th className="py-2.5 px-3">Wallet Address</th>
+                <th className="py-2.5 px-3">Tier</th>
+                <th className="py-2.5 px-3">Status</th>
+                <th className="py-2.5 px-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#f8fafc]">
+              {filteredMerchants.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-6 text-center text-[#94a3b8]">
+                    No merchants found.
+                  </td>
+                </tr>
+              ) : (
+                filteredMerchants.map((merchant) => (
+                  <tr key={merchant.walletAddress} className="hover:bg-[#f8fafc] transition">
+                    <td className="py-3 px-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#f1f5f9] text-[#2775ca] shrink-0 font-bold">
+                          {merchant.profilePic ? (
+                            <img
+                              src={merchant.profilePic}
+                              alt={merchant.merchantName}
+                              className="h-full w-full rounded-lg object-cover"
+                            />
+                          ) : (
+                            <Building2 className="h-3.5 w-3.5" />
+                          )}
+                        </div>
+                        <span className="font-bold text-[#0f172a] uppercase tracking-wider truncate max-w-[130px]">
+                          {merchant.merchantName}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(merchant.merchantName, `name-${merchant.walletAddress}`)}
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[#94a3b8] hover:text-[#2775ca] transition"
+                          title="Copy merchant name"
+                        >
+                          {copiedAddress === `name-${merchant.walletAddress}` ? (
+                            <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                          ) : (
+                            <Copy className="h-3 w-3" />
+                          )}
+                        </button>
+                      </div>
+                    </td>
+                    <td className="py-3 px-3 font-mono text-xs text-[#64748b]">
+                      <div className="flex items-center gap-1.5">
+                        <span>{merchant.walletAddress.slice(0, 8)}...{merchant.walletAddress.slice(-6)}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(merchant.walletAddress, `addr-${merchant.walletAddress}`)}
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[#94a3b8] hover:text-[#2775ca] transition"
+                          title="Copy wallet address"
+                        >
+                          {copiedAddress === `addr-${merchant.walletAddress}` ? (
+                            <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                          ) : (
+                            <Copy className="h-3 w-3" />
+                          )}
+                        </button>
+                      </div>
+                    </td>
+                    <td className="py-3 px-3">
+                      <span className="rounded-full bg-[#f1f5f9] border border-[#e2e8f0] px-2 py-0.5 text-[9px] font-bold text-[#64748b]">
+                        {merchant.tier}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3">
+                      {merchant.verified ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 text-[9px] font-bold text-emerald-600">
+                          <ShieldCheck className="h-3 w-3" /> Verified
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[9px] font-bold text-amber-600">
+                          Unverified
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => onToggleVerification(merchant.walletAddress, merchant.verified)}
+                        disabled={verifyBusy === merchant.walletAddress}
+                        className={`rounded-lg border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider transition ${
+                          merchant.verified
+                            ? "border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
+                            : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                        }`}
+                      >
+                        {verifyBusy === merchant.walletAddress ? (
+                          <RefreshCw className="h-3 w-3 animate-spin mx-auto" />
+                        ) : merchant.verified ? (
+                          "Unverify"
+                        ) : (
+                          "Verify"
+                        )}
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}

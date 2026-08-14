@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { createDmAndNotify } from "@/lib/dms/notifications";
 import { THREAD_OPENING_DM_TYPES } from "@/lib/dms/catalog";
 import { isPeerRequestLink } from "@/lib/paymentLinks/classification";
+import { assertNotBlocked } from "@/lib/dms/blocks";
 
 const USDC_DECIMALS = 1_000_000;
 
@@ -262,6 +263,8 @@ export async function createPaymentRequestDm({
     if (creatorAddress === normalizedReceiver) {
         throw new Error("You can't pay your own payment link.");
     }
+
+    await assertNotBlocked(creatorAddress, normalizedReceiver, "payment request DM");
 
     const existing = await prisma.subscriptDm.findFirst({
         where: {

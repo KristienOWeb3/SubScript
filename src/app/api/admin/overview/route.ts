@@ -4,33 +4,90 @@ import { requireAdmin } from "@/lib/admin/guard";
 import { getSponsorWalletStatus } from "@/lib/sponsor/gas";
 import { jsonOk } from "@/lib/http/json";
 
+const MICRO_USDC = 1_000_000n;
+
+function formatUsdc(micro: bigint | null | undefined): string {
+  if (micro === null || micro === undefined) return "0.00";
+  const negative = micro < 0n;
+  const value = negative ? -micro : micro;
+  const whole = value / MICRO_USDC;
+  const fraction = (value % MICRO_USDC).toString().padStart(6, "0").slice(0, 2);
+  return `${negative ? "-" : ""}${whole.toString()}.${fraction}`;
+}
+
+function toBigInt(value: unknown): bigint {
+  if (typeof value === "bigint") return value;
+  if (value === null || value === undefined) return 0n;
+  try {
+    return BigInt(String(value).split(".")[0]);
+  } catch {
+    return 0n;
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const auth = await requireAdmin(request);
     if (!auth.ok) return auth.response;
 
-    /* Sponsor status comes from the shared helper so the console reads the SAME native
-       18dp balance that sponsorship decisions gate on. This route used to read an ERC-20
-       balanceOf at 6 decimals — a different asset entirely, which could show a healthy
-       balance while every sponsored payment failed with sponsor_underfunded. */
-    const sponsor = await getSponsorWalletStatus();
+    const now = new Date();
+    const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-    /* Narrow select, not the whole row. `merchants` carries available_balance_usdc and
-       reserved_balance_usdc as BigInt, and this screen renders neither — pulling them only
-       widens the query and leaves a BigInt in scope for a future edit to leak into the
-       response, which is exactly how merchant verification came to 500 (see
-       api/admin/merchant-verify). Ask for the five columns the console draws. */
-    const merchantsRaw = await prisma.merchant.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 100,
-      select: {
-        walletAddress: true,
-        tier: true,
-        verified: true,
-        profilePic: true,
-        createdAt: true,
-      },
-    });
+    const [
+      sponsor,
+      merchantsRaw,
+      bannedAccounts,
+      bannedIps,
+      totalUsers,
+      confirmedReceipts,
+      receipts30d,
+      activeSubsCount,
+      kycPendingCount,
+      stuckReceiptsCount,
+      recentReceipts14d,
+      recentUsers14d,
+    ] = await Promise.all([
+      getSponsorWalletStatus(),
+      prisma.merchant.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 100,
+        select: {
+          walletAddress: true,
+          tier: true,
+          verified: true,
+          profilePic: true,
+          createdAt: true,
+        },
+      }),
+      prisma.bannedAccount.findMany({ orderBy: { createdAt: "desc" } }),
+      prisma.bannedIp.findMany({ orderBy: { createdAt: "desc" } }),
+      prisma.accountRole.count(),
+      prisma.receipt.aggregate({
+        where: { status: "CONFIRMED" },
+        _sum: { amountUsdc: true },
+        _count: true,
+      }),
+      prisma.receipt.aggregate({
+        where: { status: "CONFIRMED", createdAt: { gte: thirtyDaysAgo } },
+        _sum: { amountUsdc: true },
+        _count: true,
+      }),
+      prisma.subscription.count({ where: { status: "ACTIVE" } }),
+      prisma.kycVerification.count({ where: { status: { in: ["PENDING", "IN_REVIEW"] } } }),
+      prisma.receipt.count({ where: { status: { not: "CONFIRMED" }, createdAt: { lt: sevenDaysAgo } } }),
+      prisma.receipt.findMany({
+        where: { status: "CONFIRMED", createdAt: { gte: fourteenDaysAgo } },
+        select: { createdAt: true, amountUsdc: true },
+        orderBy: { createdAt: "asc" },
+      }),
+      prisma.accountRole.findMany({
+        where: { createdAt: { gte: fourteenDaysAgo } },
+        select: { createdAt: true },
+        orderBy: { createdAt: "asc" },
+      }),
+    ]);
 
     const merchantAddresses = merchantsRaw.map((m) => m.walletAddress.toLowerCase());
     const aliases = await prisma.addressAlias.findMany({
@@ -47,20 +104,39 @@ export async function GET(request: Request) {
       createdAt: m.createdAt,
     }));
 
-    /* The defensive .catch(() => []) that used to wrap these reads hid the real problem:
-       the tables did not exist, so the ban form 500'd on every submit while the lists
-       silently rendered empty. The 20260810120000 migration creates them; let a genuine
-       failure surface now instead of masquerading as "no bans". */
-    const [bannedAccounts, bannedIps, totalUsers] = await Promise.all([
-      prisma.bannedAccount.findMany({ orderBy: { createdAt: "desc" } }),
-      prisma.bannedIp.findMany({ orderBy: { createdAt: "desc" } }),
-      prisma.accountRole.count(),
-    ]);
+    /* 14-day sparkline timeline */
+    const timeline14d: Array<{ date: string; label: string; volume: number; users: number }> = [];
+    const dayMap: Map<string, { volumeMicro: bigint; users: number }> = new Map();
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+      const key = d.toISOString().slice(0, 10);
+      dayMap.set(key, { volumeMicro: 0n, users: 0 });
+    }
+
+    for (const r of recentReceipts14d) {
+      const key = r.createdAt.toISOString().slice(0, 10);
+      const b = dayMap.get(key);
+      if (b) b.volumeMicro += BigInt(r.amountUsdc);
+    }
+    for (const u of recentUsers14d) {
+      const key = u.createdAt.toISOString().slice(0, 10);
+      const b = dayMap.get(key);
+      if (b) b.users += 1;
+    }
+
+    for (const [dateStr, val] of dayMap.entries()) {
+      const d = new Date(dateStr);
+      timeline14d.push({
+        date: dateStr,
+        label: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        volume: Number(val.volumeMicro) / 1_000_000,
+        users: val.users,
+      });
+    }
 
     return jsonOk({
       success: true,
       sponsor,
-      /* Retained for any client still reading the old flat fields. */
       sponsorWalletAddress: sponsor.address,
       sponsorBalanceUsdc: sponsor.balanceUsdc ?? "0",
       merchants,
@@ -68,6 +144,16 @@ export async function GET(request: Request) {
       bannedIps,
       totalUsers,
       viewerIsRoot: auth.admin.isRoot,
+      metrics: {
+        totalVolumeUsdc: formatUsdc(toBigInt(confirmedReceipts._sum.amountUsdc)),
+        totalVolumeCount: confirmedReceipts._count,
+        volume30dUsdc: formatUsdc(toBigInt(receipts30d._sum.amountUsdc)),
+        volume30dCount: receipts30d._count,
+        activeSubsCount,
+        kycPendingCount,
+        stuckReceiptsCount,
+        timeline14d,
+      },
     });
   } catch (err: any) {
     console.error("Admin overview failed:", err);

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import {
@@ -20,7 +21,6 @@ import {
     RefreshCcw,
     Server,
     ShieldCheck,
-    Terminal,
     Users,
     Wallet,
     Webhook,
@@ -30,10 +30,18 @@ import Navbar from "@/components/Navbar";
 import Reveal from "./components/Reveal";
 import SectionHeading from "./components/SectionHeading";
 
-// Lazy load heavy animation components
+// Lazy load heavy interactive code panel with accessible placeholder
 const CodePanel = dynamic(
     () => import("./components/CodePanel"),
-    { ssr: false, loading: () => <div className="w-full h-96 bg-gradient-to-b from-white/5 to-transparent rounded-3xl animate-pulse" /> }
+    {
+        ssr: false,
+        loading: () => (
+            <div
+                aria-label="Loading code sample..."
+                className="w-full h-96 bg-gradient-to-b from-white/5 to-transparent rounded-3xl animate-pulse border border-white/5"
+            />
+        ),
+    }
 );
 
 function XIcon({ className }: { className?: string }) {
@@ -49,15 +57,10 @@ function XIcon({ className }: { className?: string }) {
 /* ================================================================ */
 
 export default function Home() {
-    const [isMobile, setIsMobile] = useState(true);
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
         setMounted(true);
-        const checkMobile = () => setIsMobile(window.innerWidth < 768);
-        checkMobile();
-        window.addEventListener("resize", checkMobile);
-        return () => window.removeEventListener("resize", checkMobile);
     }, []);
 
     const featureCardsLarge = [
@@ -111,330 +114,358 @@ export default function Home() {
     ];
 
     return (
-        <main className="min-h-screen w-full max-w-[100vw] overflow-x-hidden relative z-0 bg-transparent selection:bg-[#00d2b4]/30 selection:text-white">
+        <>
+            {/* Accessibility skip to main content */}
+            <a
+                href="#main-content"
+                className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-[#00d2b4] focus:text-black focus:font-bold focus:rounded-xl shadow-lg"
+            >
+                Skip to main content
+            </a>
+
             <Navbar />
 
-            {/* Background gradient only */}
-            <div className="absolute inset-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
-                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/90 to-black/80" />
-            </div>
-
-            {/* Background orbs */}
-            <div className="absolute top-0 right-0 w-[400px] h-[400px] sm:w-[700px] sm:h-[700px] bg-[#00d2b4]/5 rounded-full blur-[120px] -z-10 pointer-events-none" />
-            <div className="absolute bottom-0 left-0 w-[300px] h-[300px] sm:w-[600px] sm:h-[600px] bg-[#d4a853]/3 rounded-full blur-[120px] -z-10 pointer-events-none" />
-
-            {/* ---------------------------------------------------------- */}
-            {/* Hero                                                        */}
-            {/* ---------------------------------------------------------- */}
-            <section id="get-started" className="relative w-full min-h-[85vh] flex items-center justify-center pt-32 sm:pt-40 pb-16 sm:pb-24">
-                <div className="max-w-4xl mx-auto w-full px-6 sm:px-12 text-center flex flex-col items-center">
-                    <motion.h1
-                        className="text-4xl sm:text-5xl lg:text-[4rem] font-bold tracking-tight text-white mb-6 leading-[1.08] max-w-4xl"
-                        initial={{ opacity: 0, y: 40 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.8, delay: 0.15 }}
-                    >
-                        Every way money moves for your business.{" "}
-                        <span className="font-serif italic text-[#00d2b4] font-normal tracking-normal">Settled in $USDC.</span>
-                    </motion.h1>
-
-                    <motion.p
-                        className="text-base sm:text-lg text-white/60 max-w-2xl mb-10 leading-relaxed font-sans"
-                        initial={{ opacity: 0, y: 30 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.8, delay: 0.3 }}
-                    >
-                        Accept one-time and recurring USDC payments with hosted checkout, signed webhooks, and human-readable receipts, settled on Arc in under a second. Your customers sign in with Google and pay the advertised price. Nothing more.
-                    </motion.p>
-
-                    <motion.div
-                        className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto items-center justify-center"
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.8, delay: 0.45 }}
-                    >
-                        <Link
-                            href="/signup"
-                            className="group inline-flex items-center justify-center px-8 py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-bold rounded-2xl text-sm transition-all shadow-[0_0_24px_rgba(0,210,180,0.25)]"
-                        >
-                            Get started
-                        </Link>
-                        <Link
-                            href="/docs"
-                            className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold rounded-2xl text-sm transition-all"
-                        >
-                            View documentation
-                        </Link>
-                    </motion.div>
-
-                    <motion.div
-                        className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2.5 text-xs text-white/40 font-sans"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ duration: 0.8, delay: 0.6 }}
-                    >
-                        <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-[#00d2b4]/70" /> Live on Arc</span>
-                    </motion.div>
+            <main
+                id="main-content"
+                className="min-h-screen w-full max-w-[100vw] overflow-x-hidden relative z-0 bg-black selection:bg-[#00d2b4]/30 selection:text-white"
+            >
+                {/* Background gradient only */}
+                <div className="absolute inset-0 w-full h-full overflow-hidden -z-10 pointer-events-none" aria-hidden="true">
+                    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/90 to-black/80" />
                 </div>
-            </section>
 
-            <div className="relative z-10">
-                {/* -------------------------------------------------------- */}
-                {/* Features (bento)                                          */}
-                {/* -------------------------------------------------------- */}
-                <section className="max-w-7xl mx-auto px-6 sm:px-12 py-16">
-                    <SectionHeading
-                        eyebrow="Payment infrastructure"
-                        title="Everything you need to accept USDC"
-                        description="One-time payments, recurring billing, usage-based charging, and invoicing, delivered through a single payment authorization framework on Arc."
-                    />
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-                        {featureCardsLarge.map(({ icon: Icon, title, text }, i) => (
-                            <Reveal key={title} delay={i * 0.08}>
-                                <div className="liquid-glass border border-white/5 bg-black/30 rounded-3xl p-6 sm:p-8 h-full hover:border-[#00d2b4]/30 transition-colors">
-                                    <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#00d2b4]/10 mb-5">
-                                        <Icon className="w-5 h-5 text-[#00d2b4]" />
-                                    </span>
-                                    <h3 className="text-base font-semibold text-white">{title}</h3>
-                                    <p className="mt-2.5 text-sm leading-relaxed text-white/55">{text}</p>
-                                </div>
-                            </Reveal>
-                        ))}
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {featureCardsSmall.map(({ icon: Icon, title, text }, i) => (
-                            <Reveal key={title} delay={i * 0.05}>
-                                <div className="liquid-glass border border-white/5 bg-black/30 rounded-3xl p-6 h-full hover:border-[#00d2b4]/30 transition-colors">
-                                    <Icon className="w-6 h-6 text-[#00d2b4] mb-4" />
-                                    <h3 className="text-sm font-semibold text-white">{title}</h3>
-                                    <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
-                                </div>
-                            </Reveal>
-                        ))}
-                    </div>
-                </section>
+                {/* Background orbs */}
+                <div className="absolute top-0 right-0 w-[400px] h-[400px] sm:w-[700px] sm:h-[700px] bg-[#00d2b4]/5 rounded-full blur-[120px] -z-10 pointer-events-none" aria-hidden="true" />
+                <div className="absolute bottom-0 left-0 w-[300px] h-[300px] sm:w-[600px] sm:h-[600px] bg-[#d4a853]/3 rounded-full blur-[120px] -z-10 pointer-events-none" aria-hidden="true" />
 
-                {/* -------------------------------------------------------- */}
-                {/* Developer section                                         */}
-                {/* -------------------------------------------------------- */}
-                <section className="max-w-7xl mx-auto px-6 sm:px-12 py-16">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-center">
-                        <Reveal>
-                            <span className="text-xs tracking-[0.2em] font-semibold text-[#00d2b4] uppercase">Built for developers</span>
-                            <h2 className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-white">Two API calls to production</h2>
-                            <p className="mt-4 text-sm text-white/55 leading-relaxed max-w-lg">
-                                Create a Checkout Intent from your backend, redirect the customer to hosted checkout, and fulfill from a signed webhook. Plain REST uses predictable, integer-precise amounts, with no SDK lock-in or client-side keys.
-                            </p>
-                            <ul className="mt-6 space-y-3">
-                                {[
-                                    "Intent-based reconciliation with no wallet address matching",
-                                    "HMAC-SHA256 signed webhooks with replay protection",
-                                    "Sandbox keys and test flows before going live",
-                                    "OpenAPI specification for typed client generation",
-                                ].map((item) => (
-                                    <li key={item} className="flex items-start gap-2.5 text-sm text-white/60">
-                                        <CheckCircle2 className="w-4 h-4 text-[#00d2b4] mt-0.5 flex-shrink-0" />
-                                        {item}
-                                    </li>
-                                ))}
-                            </ul>
-                            <Link href="/docs" className="mt-7 inline-flex items-center gap-2 text-sm font-semibold text-[#00d2b4] hover:text-[#00d2b4]/80 transition-colors">
-                                Read the API documentation <ArrowUpRight className="w-4 h-4" />
+                {/* ---------------------------------------------------------- */}
+                {/* Hero                                                        */}
+                {/* ---------------------------------------------------------- */}
+                <section id="get-started" className="relative w-full min-h-[85vh] flex items-center justify-center pt-32 sm:pt-40 pb-16 sm:pb-24">
+                    <div className="max-w-4xl mx-auto w-full px-6 sm:px-12 text-center flex flex-col items-center">
+                        <motion.h1
+                            className="text-4xl sm:text-5xl lg:text-[4rem] font-bold tracking-tight text-white mb-6 leading-[1.08] max-w-4xl"
+                            initial={{ opacity: 0, y: 40 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.8, delay: 0.15 }}
+                        >
+                            Every way money moves for your business.{" "}
+                            <span className="font-serif italic text-[#00d2b4] font-normal tracking-normal">Settled in $USDC.</span>
+                        </motion.h1>
+
+                        <motion.p
+                            className="text-base sm:text-lg text-zinc-200 max-w-2xl mb-10 leading-relaxed font-sans"
+                            initial={{ opacity: 0, y: 30 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.8, delay: 0.3 }}
+                        >
+                            Accept one-time and recurring USDC payments with hosted checkout, signed webhooks, and human-readable receipts, settled on Arc in under a second. Your customers sign in with Google and pay the advertised price. Nothing more.
+                        </motion.p>
+
+                        <motion.div
+                            className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto items-center justify-center"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.8, delay: 0.45 }}
+                        >
+                            <Link
+                                href="/signup"
+                                className="group inline-flex items-center justify-center px-8 py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-bold rounded-2xl text-sm transition-all shadow-[0_0_24px_rgba(0,210,180,0.25)] min-h-[48px]"
+                            >
+                                Get started
                             </Link>
-                        </Reveal>
-                        <Reveal delay={0.1}>
-                            <CodePanel />
-                        </Reveal>
+                            <Link
+                                href="/docs"
+                                className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold rounded-2xl text-sm transition-all min-h-[48px]"
+                            >
+                                View documentation
+                            </Link>
+                        </motion.div>
+
+                        <motion.div
+                            className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2.5 text-xs text-zinc-300 font-sans"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ duration: 0.8, delay: 0.6 }}
+                        >
+                            <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-[#00d2b4]" aria-hidden="true" /> Live on Arc</span>
+                        </motion.div>
                     </div>
                 </section>
 
-                {/* -------------------------------------------------------- */}
-                {/* How it works                                              */}
-                {/* -------------------------------------------------------- */}
-                <section className="max-w-7xl mx-auto px-6 sm:px-12 py-16">
-                    <SectionHeading eyebrow="Integration" title="How it works" />
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                        {steps.map(([title, text], i) => (
-                            <Reveal key={title} delay={i * 0.1}>
-                                <div className="liquid-glass border border-white/5 bg-black/30 rounded-3xl p-6 h-full relative">
-                                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#00d2b4]/10 text-[#00d2b4] text-sm font-bold mb-4">{i + 1}</span>
-                                    <h3 className="text-sm font-semibold text-white">{title}</h3>
-                                    <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
-                                    {i < steps.length - 1 && (
-                                        <ArrowRight className="hidden lg:block absolute top-1/2 -right-4 w-4 h-4 text-white/20 -translate-y-1/2" />
-                                    )}
-                                </div>
-                            </Reveal>
-                        ))}
-                    </div>
-                </section>
-
-                {/* -------------------------------------------------------- */}
-                {/* Use cases                                                 */}
-                {/* -------------------------------------------------------- */}
-                <section className="max-w-7xl mx-auto px-6 sm:px-12 py-16">
-                    <SectionHeading
-                        eyebrow="Use cases"
-                        title="Built for how modern products bill"
-                        description="From seat-based SaaS to per-token AI metering, SubScript covers the billing models digital businesses actually use."
-                    />
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {useCases.map(({ icon: Icon, title, text }, i) => (
-                            <Reveal key={title} delay={i * 0.05}>
-                                <div className="liquid-glass border border-white/5 bg-black/30 rounded-3xl p-6 h-full hover:border-[#00d2b4]/30 transition-colors">
-                                    <Icon className="w-6 h-6 text-[#00d2b4] mb-4" />
-                                    <h3 className="text-sm font-semibold text-white">{title}</h3>
-                                    <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
-                                </div>
-                            </Reveal>
-                        ))}
-                    </div>
-                </section>
-
-                {/* -------------------------------------------------------- */}
-                {/* Security                                                  */}
-                {/* -------------------------------------------------------- */}
-                <section className="max-w-7xl mx-auto px-6 sm:px-12 py-16">
-                    <div className="liquid-glass border border-white/5 bg-black/40 rounded-[2rem] p-8 sm:p-12">
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-                            <Reveal>
-                                <span className="text-xs tracking-[0.2em] font-semibold text-[#00d2b4] uppercase">Security</span>
-                                <h2 className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-white leading-tight">Trust enforced by the payment layer</h2>
-                                <p className="mt-4 text-sm text-white/55 leading-relaxed">
-                                    SubScript is designed so that neither merchants nor SubScript hold open-ended access to customer funds. Controls are enforced on-chain, not by policy.
-                                </p>
-                            </Reveal>
-                            <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                {securityItems.map(({ icon: Icon, title, text }, i) => (
-                                    <Reveal key={title} delay={i * 0.05}>
-                                        <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-5 h-full">
-                                            <Icon className="w-5 h-5 text-[#00d2b4] mb-3" />
-                                            <h3 className="text-sm font-semibold text-white">{title}</h3>
-                                            <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
-                                        </div>
-                                    </Reveal>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                {/* -------------------------------------------------------- */}
-                {/* FAQ                                                       */}
-                {/* -------------------------------------------------------- */}
-                <section className="max-w-3xl mx-auto px-6 sm:px-12 py-16">
-                    <SectionHeading eyebrow="FAQ" title="Common questions" />
-                    <div className="space-y-3">
-                        {faqs.map(([question, answer], i) => (
-                            <Reveal key={question} delay={i * 0.04}>
-                                <details className="group liquid-glass border border-white/5 bg-black/30 rounded-2xl overflow-hidden">
-                                    <summary className="flex items-center justify-between gap-4 cursor-pointer list-none px-6 py-4 text-sm font-semibold text-white hover:text-[#00d2b4] transition-colors [&::-webkit-details-marker]:hidden">
-                                        {question}
-                                        <ChevronDown className="w-4 h-4 text-white/40 flex-shrink-0 transition-transform group-open:rotate-180" />
-                                    </summary>
-                                    <p className="px-6 pb-5 text-sm leading-relaxed text-white/55">{answer}</p>
-                                </details>
-                            </Reveal>
-                        ))}
-                    </div>
-                </section>
-
-                {/* -------------------------------------------------------- */}
-                {/* Final CTA                                                 */}
-                {/* -------------------------------------------------------- */}
-                <section className="max-w-7xl mx-auto px-6 sm:px-12 py-20">
-                    <Reveal>
-                        <div className="liquid-glass border border-[#00d2b4]/20 bg-[#00d2b4]/[0.04] rounded-[2rem] p-10 sm:p-14 text-center">
-                            <h2 className="text-2xl sm:text-4xl font-bold tracking-tight text-white">Start accepting USDC today</h2>
-                            <p className="mt-4 text-sm text-white/55 max-w-xl mx-auto leading-relaxed">
-                                Create a merchant account, generate a payment link or Checkout Intent, and settle in stablecoins on Arc without card networks or chargebacks.
-                            </p>
-                            <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
-                                <Link href="/signup?role=merchant" className="group inline-flex items-center justify-center gap-2 px-8 py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-semibold rounded-2xl text-sm transition-all shadow-[0_0_24px_rgba(0,210,180,0.25)]">
-                                    Create a merchant account <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
-                                </Link>
-                                <Link href="/docs" className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold rounded-2xl text-sm transition-all">
-                                    View documentation
-                                </Link>
-                            </div>
-                        </div>
-                    </Reveal>
-                </section>
-
-                {/* -------------------------------------------------------- */}
-                {/* Footer                                                    */}
-                {/* -------------------------------------------------------- */}
-                <footer className="border-t border-white/5">
-                    <div className="max-w-7xl mx-auto px-6 sm:px-12 py-14">
-                        <div className="grid grid-cols-2 md:grid-cols-5 gap-10">
-                            <div className="col-span-2">
-                                <Link href="/" className="flex items-center gap-2.5">
-                                    <img src="/logo.png" alt="SubScript logo" className="w-8 h-8 object-contain drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]" />
-                                    <span className="text-base font-bold text-white tracking-tight">SubScript</span>
-                                </Link>
-                                <p className="mt-4 text-xs leading-relaxed text-white/40 max-w-xs">
-                                    Stablecoin payment infrastructure on Arc. Hosted USDC checkout, recurring billing, usage-based charging, and verifiable receipts.
-                                </p>
-                                <a
-                                    href="https://x.com/SubScript_onarc"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    aria-label="SubScript on X"
-                                    className="mt-5 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-white/50 hover:text-[#00d2b4] hover:border-[#00d2b4]/40 transition-colors"
-                                >
-                                    <XIcon className="w-4 h-4" />
-                                </a>
-                            </div>
-                            {[
-                                {
-                                    heading: "Product",
-                                    links: [
-                                        { label: "Checkout & payment links", href: "/docs" },
-                                        { label: "Recurring billing", href: "/protocol" },
-                                        { label: "Usage-based billing", href: "/docs" },
-                                        { label: "Comparisons", href: "/compare" },
-                                    ],
-                                },
-                                {
-                                    heading: "Developers",
-                                    links: [
-                                        { label: "Documentation", href: "/docs" },
-                                        { label: "Protocol overview", href: "/protocol" },
-                                        { label: "Answers", href: "/answers" },
-                                    ],
-                                },
-                                {
-                                    heading: "Legal",
-                                    links: [
-                                        { label: "Terms of Service", href: "/terms" },
-                                        { label: "Privacy Policy", href: "/privacy" },
-                                        { label: "Refund Policy", href: "/refunds" },
-                                        { label: "Fulfillment Policy", href: "/fulfillment" },
-                                        { label: "Support", href: "/support" },
-                                    ],
-                                },
-                            ].map((col) => (
-                                <div key={col.heading}>
-                                    <h4 className="text-xs font-semibold uppercase tracking-wider text-white/60">{col.heading}</h4>
-                                    <ul className="mt-4 space-y-2.5">
-                                        {col.links.map((link) => (
-                                            <li key={link.label}>
-                                                <Link href={link.href} className="text-xs text-white/40 hover:text-white transition-colors">
-                                                    {link.label}
-                                                </Link>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
+                <div className="relative z-10">
+                    {/* -------------------------------------------------------- */}
+                    {/* Features (bento)                                          */}
+                    {/* -------------------------------------------------------- */}
+                    <section className="max-w-7xl mx-auto px-6 sm:px-12 py-16" aria-labelledby="features-heading">
+                        <SectionHeading
+                            eyebrow="Payment infrastructure"
+                            title="Everything you need to accept USDC"
+                            description="One-time payments, recurring billing, usage-based charging, and invoicing, delivered through a single payment authorization framework on Arc."
+                        />
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                            {featureCardsLarge.map(({ icon: Icon, title, text }, i) => (
+                                <Reveal key={title} delay={i * 0.08}>
+                                    <div className="liquid-glass border border-white/10 bg-black/40 rounded-3xl p-6 sm:p-8 h-full hover:border-[#00d2b4]/40 transition-colors">
+                                        <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#00d2b4]/10 mb-5">
+                                            <Icon className="w-5 h-5 text-[#00d2b4]" aria-hidden="true" />
+                                        </span>
+                                        <h3 className="text-base font-semibold text-white">{title}</h3>
+                                        <p className="mt-2.5 text-sm leading-relaxed text-zinc-300 font-sans">{text}</p>
+                                    </div>
+                                </Reveal>
                             ))}
                         </div>
-                        <div className="mt-12 pt-6 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-3 text-[10px] text-white/35">
-                            <span>© 2026 SubScript. All rights reserved.</span>
-                            <span>Built on Arc · Settled in USDC</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {featureCardsSmall.map(({ icon: Icon, title, text }, i) => (
+                                <Reveal key={title} delay={i * 0.05}>
+                                    <div className="liquid-glass border border-white/10 bg-black/40 rounded-3xl p-6 h-full hover:border-[#00d2b4]/40 transition-colors">
+                                        <Icon className="w-6 h-6 text-[#00d2b4] mb-4" aria-hidden="true" />
+                                        <h3 className="text-sm font-semibold text-white">{title}</h3>
+                                        <p className="mt-2 text-xs leading-relaxed text-zinc-300 font-sans">{text}</p>
+                                    </div>
+                                </Reveal>
+                            ))}
                         </div>
-                    </div>
-                </footer>
-            </div>
-        </main>
+                    </section>
+
+                    {/* -------------------------------------------------------- */}
+                    {/* Developer section                                         */}
+                    {/* -------------------------------------------------------- */}
+                    <section className="max-w-7xl mx-auto px-6 sm:px-12 py-16" aria-labelledby="dev-heading">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-center">
+                            <Reveal>
+                                <span className="text-xs tracking-[0.2em] font-bold text-[#00d2b4] uppercase">Built for developers</span>
+                                <h2 id="dev-heading" className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-white">Two API calls to production</h2>
+                                <p className="mt-4 text-sm text-zinc-300 leading-relaxed max-w-lg font-sans">
+                                    Create a Checkout Intent from your backend, redirect the customer to hosted checkout, and fulfill from a signed webhook. Plain REST uses predictable, integer-precise amounts, with no SDK lock-in or client-side keys.
+                                </p>
+                                <ul className="mt-6 space-y-3">
+                                    {[
+                                        "Intent-based reconciliation with no wallet address matching",
+                                        "HMAC-SHA256 signed webhooks with replay protection",
+                                        "Sandbox keys and test flows before going live",
+                                        "OpenAPI specification for typed client generation",
+                                    ].map((item) => (
+                                        <li key={item} className="flex items-start gap-2.5 text-sm text-zinc-200">
+                                            <CheckCircle2 className="w-4 h-4 text-[#00d2b4] mt-0.5 flex-shrink-0" aria-hidden="true" />
+                                            <span>{item}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                                <Link
+                                    href="/docs"
+                                    className="mt-7 inline-flex items-center gap-2 text-sm font-semibold text-[#00d2b4] hover:text-[#00d2b4]/80 transition-colors"
+                                >
+                                    Read the API documentation <ArrowUpRight className="w-4 h-4" aria-hidden="true" />
+                                </Link>
+                            </Reveal>
+                            <Reveal delay={0.1}>
+                                <CodePanel />
+                            </Reveal>
+                        </div>
+                    </section>
+
+                    {/* -------------------------------------------------------- */}
+                    {/* How it works                                              */}
+                    {/* -------------------------------------------------------- */}
+                    <section className="max-w-7xl mx-auto px-6 sm:px-12 py-16">
+                        <SectionHeading eyebrow="Integration" title="How it works" />
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                            {steps.map(([title, text], i) => (
+                                <Reveal key={title} delay={i * 0.1}>
+                                    <div className="liquid-glass border border-white/10 bg-black/40 rounded-3xl p-6 h-full relative">
+                                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#00d2b4]/10 text-[#00d2b4] text-sm font-bold mb-4">{i + 1}</span>
+                                        <h3 className="text-sm font-semibold text-white">{title}</h3>
+                                        <p className="mt-2 text-xs leading-relaxed text-zinc-300 font-sans">{text}</p>
+                                        {i < steps.length - 1 && (
+                                            <ArrowRight className="hidden lg:block absolute top-1/2 -right-4 w-4 h-4 text-white/30 -translate-y-1/2" aria-hidden="true" />
+                                        )}
+                                    </div>
+                                </Reveal>
+                            ))}
+                        </div>
+                    </section>
+
+                    {/* -------------------------------------------------------- */}
+                    {/* Use cases                                                 */}
+                    {/* -------------------------------------------------------- */}
+                    <section className="max-w-7xl mx-auto px-6 sm:px-12 py-16">
+                        <SectionHeading
+                            eyebrow="Use cases"
+                            title="Built for how modern products bill"
+                            description="From seat-based SaaS to per-token AI metering, SubScript covers the billing models digital businesses actually use."
+                        />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                            {useCases.map(({ icon: Icon, title, text }, i) => (
+                                <Reveal key={title} delay={i * 0.05}>
+                                    <div className="liquid-glass border border-white/10 bg-black/40 rounded-3xl p-6 h-full hover:border-[#00d2b4]/40 transition-colors">
+                                        <Icon className="w-6 h-6 text-[#00d2b4] mb-4" aria-hidden="true" />
+                                        <h3 className="text-sm font-semibold text-white">{title}</h3>
+                                        <p className="mt-2 text-xs leading-relaxed text-zinc-300 font-sans">{text}</p>
+                                    </div>
+                                </Reveal>
+                            ))}
+                        </div>
+                    </section>
+
+                    {/* -------------------------------------------------------- */}
+                    {/* Security                                                  */}
+                    {/* -------------------------------------------------------- */}
+                    <section className="max-w-7xl mx-auto px-6 sm:px-12 py-16">
+                        <div className="liquid-glass border border-white/10 bg-black/50 rounded-[2rem] p-8 sm:p-12">
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                                <Reveal>
+                                    <span className="text-xs tracking-[0.2em] font-bold text-[#00d2b4] uppercase">Security</span>
+                                    <h2 className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-white leading-tight">Trust enforced by the payment layer</h2>
+                                    <p className="mt-4 text-sm text-zinc-300 leading-relaxed font-sans">
+                                        SubScript is designed so that neither merchants nor SubScript hold open-ended access to customer funds. Controls are enforced on-chain, not by policy.
+                                    </p>
+                                </Reveal>
+                                <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {securityItems.map(({ icon: Icon, title, text }, i) => (
+                                        <Reveal key={title} delay={i * 0.05}>
+                                            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 h-full">
+                                                <Icon className="w-5 h-5 text-[#00d2b4] mb-3" aria-hidden="true" />
+                                                <h3 className="text-sm font-semibold text-white">{title}</h3>
+                                                <p className="mt-2 text-xs leading-relaxed text-zinc-300 font-sans">{text}</p>
+                                            </div>
+                                        </Reveal>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    {/* -------------------------------------------------------- */}
+                    {/* FAQ                                                       */}
+                    {/* -------------------------------------------------------- */}
+                    <section className="max-w-3xl mx-auto px-6 sm:px-12 py-16">
+                        <SectionHeading eyebrow="FAQ" title="Common questions" />
+                        <div className="space-y-3">
+                            {faqs.map(([question, answer], i) => (
+                                <Reveal key={question} delay={i * 0.04}>
+                                    <details className="group liquid-glass border border-white/10 bg-black/40 rounded-2xl overflow-hidden">
+                                        <summary className="flex items-center justify-between gap-4 cursor-pointer list-none px-6 py-4 text-sm font-semibold text-white hover:text-[#00d2b4] transition-colors [&::-webkit-details-marker]:hidden">
+                                            <span>{question}</span>
+                                            <ChevronDown className="w-4 h-4 text-zinc-300 flex-shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />
+                                        </summary>
+                                        <p className="px-6 pb-5 text-sm leading-relaxed text-zinc-300 font-sans">{answer}</p>
+                                    </details>
+                                </Reveal>
+                            ))}
+                        </div>
+                    </section>
+
+                    {/* -------------------------------------------------------- */}
+                    {/* Final CTA                                                 */}
+                    {/* -------------------------------------------------------- */}
+                    <section className="max-w-7xl mx-auto px-6 sm:px-12 py-20">
+                        <Reveal>
+                            <div className="liquid-glass border border-[#00d2b4]/30 bg-[#00d2b4]/[0.05] rounded-[2rem] p-10 sm:p-14 text-center">
+                                <h2 className="text-2xl sm:text-4xl font-bold tracking-tight text-white">Start accepting USDC today</h2>
+                                <p className="mt-4 text-sm text-zinc-200 max-w-xl mx-auto leading-relaxed font-sans">
+                                    Create a merchant account, generate a payment link or Checkout Intent, and settle in stablecoins on Arc without card networks or chargebacks.
+                                </p>
+                                <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
+                                    <Link
+                                        href="/signup?role=merchant"
+                                        className="group inline-flex items-center justify-center gap-2 px-8 py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-bold rounded-2xl text-sm transition-all shadow-[0_0_24px_rgba(0,210,180,0.25)] min-h-[48px]"
+                                    >
+                                        Create a merchant account <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                                    </Link>
+                                    <Link
+                                        href="/docs"
+                                        className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold rounded-2xl text-sm transition-all min-h-[48px]"
+                                    >
+                                        View documentation
+                                    </Link>
+                                </div>
+                            </div>
+                        </Reveal>
+                    </section>
+
+                    {/* -------------------------------------------------------- */}
+                    {/* Footer                                                    */}
+                    {/* -------------------------------------------------------- */}
+                    <footer className="border-t border-white/10">
+                        <div className="max-w-7xl mx-auto px-6 sm:px-12 py-14">
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-10">
+                                <div className="col-span-2">
+                                    <Link href="/" className="flex items-center gap-2.5" aria-label="SubScript Home">
+                                        <Image
+                                            src="/logo.png"
+                                            alt="SubScript logo"
+                                            width={32}
+                                            height={32}
+                                            className="w-8 h-8 object-contain drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]"
+                                        />
+                                        <span className="text-base font-bold text-white tracking-tight">SubScript</span>
+                                    </Link>
+                                    <p className="mt-4 text-xs leading-relaxed text-zinc-300 max-w-xs font-sans">
+                                        Stablecoin payment infrastructure on Arc. Hosted USDC checkout, recurring billing, usage-based charging, and verifiable receipts.
+                                    </p>
+                                    <a
+                                        href="https://x.com/SubScript_onarc"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        aria-label="Follow SubScript on X (formerly Twitter)"
+                                        className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-zinc-200 hover:text-[#00d2b4] hover:border-[#00d2b4]/40 transition-colors"
+                                    >
+                                        <XIcon className="w-4 h-4" />
+                                    </a>
+                                </div>
+                                {[
+                                    {
+                                        heading: "Product",
+                                        links: [
+                                            { label: "Checkout & payment links", href: "/docs" },
+                                            { label: "Recurring billing", href: "/protocol" },
+                                            { label: "Usage-based billing", href: "/docs" },
+                                            { label: "Comparisons", href: "/compare" },
+                                        ],
+                                    },
+                                    {
+                                        heading: "Developers",
+                                        links: [
+                                            { label: "Documentation", href: "/docs" },
+                                            { label: "Protocol overview", href: "/protocol" },
+                                            { label: "Answers", href: "/answers" },
+                                        ],
+                                    },
+                                    {
+                                        heading: "Legal",
+                                        links: [
+                                            { label: "Terms of Service", href: "/terms" },
+                                            { label: "Privacy Policy", href: "/privacy" },
+                                            { label: "Refund Policy", href: "/refunds" },
+                                            { label: "Fulfillment Policy", href: "/fulfillment" },
+                                            { label: "Support", href: "/support" },
+                                        ],
+                                    },
+                                ].map((col) => (
+                                    <div key={col.heading}>
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-white">{col.heading}</h4>
+                                        <ul className="mt-4 space-y-2.5">
+                                            {col.links.map((link) => (
+                                                <li key={link.label}>
+                                                    <Link href={link.href} className="text-xs text-zinc-300 hover:text-white transition-colors">
+                                                        {link.label}
+                                                    </Link>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="mt-12 pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-zinc-400">
+                                <span>© 2026 SubScript. All rights reserved.</span>
+                                <span>Built on Arc · Settled in USDC</span>
+                            </div>
+                        </div>
+                    </footer>
+                </div>
+            </main>
+        </>
     );
 }
