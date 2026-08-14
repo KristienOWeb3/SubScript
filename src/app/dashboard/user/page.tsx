@@ -3669,7 +3669,7 @@ export default function UserDashboard() {
                         title="Refresh vault usage for committed apps"
                       >
                         <RefreshCw className={`h-3.5 w-3.5 ${isVaultsLoading ? "animate-spin text-[#ccff00]" : ""}`} />
-                        {expandedCommitAction === "refresh" && <span className="whitespace-nowrap text-[10px] font-bold">{isVaultsLoading ? "Refreshing..." : "Refresh usage"}</span>}
+                        {expandedCommitAction === "refresh" && <span className="whitespace-nowrap text-[10px] font-bold">{isVaultsLoading ? "Refreshing..." : "Refresh Usage"}</span>}
                       </button>
                       <button
                         type="button"
