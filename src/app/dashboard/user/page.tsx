@@ -36,7 +36,6 @@ import KycVerificationPanel from "@/components/KycVerificationPanel";
 import ConfirmModal from "@/components/ConfirmModal";
 import QrScannerModal from "@/components/QrScannerModal";
 import SendSingleModal from "@/components/SendSingleModal";
-import SubUserManager from "@/components/SubUserManager";
 import VaultShareManager from "@/components/VaultShareManager";
 import DmRequestsModal from "@/components/dashboard/DmRequestsModal";
 import DmInviteManagerModal from "@/components/dashboard/DmInviteManagerModal";
@@ -481,6 +480,7 @@ export default function UserDashboard() {
   const [vaultActionAmount, setVaultActionAmount] = useState("");
   const [vaultActionBusy, setVaultActionBusy] = useState(false);
   const [vaultActionError, setVaultActionError] = useState<string | null>(null);
+  const [expandedCommitAction, setExpandedCommitAction] = useState<"refresh" | "commit" | null>(null);
   /* Unverified-merchant commit warning (informed consent before escrowing to an unverified merchant). */
   const [vaultUnverifiedWarning, setVaultUnverifiedWarning] = useState(false);
   const [isEmbeddedWalletSession, setIsEmbeddedWalletSession] = useState(false);
@@ -3163,11 +3163,10 @@ export default function UserDashboard() {
 
 
   return (
-    <div className={`relative overflow-x-hidden bg-[#060608] text-white selection:bg-[#ccff00]/30 selection:text-black md:h-[100dvh] md:overflow-hidden ${
+    <div className={`user-dashboard-redesign relative overflow-x-hidden bg-[#FFFFF0] text-black selection:bg-[#2775CA]/20 selection:text-black md:h-[100dvh] md:overflow-hidden ${
       isActiveMobileDm ? "h-[100dvh] overflow-hidden" : "h-[100dvh] overflow-y-auto overscroll-y-contain md:h-auto md:overflow-y-auto"
     }`}>
-      <AnimatedGradientBg variant="dashboard" />
-      <div className="fixed inset-0 pointer-events-none z-0 bg-gradient-to-b from-black/35 via-black/15 to-black/45" />
+      {!isMobile && <div className="fixed inset-0 pointer-events-none z-0 bg-[#353935]" />}
 
       <div className={`relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0 ${
         isActiveMobileDm ? "h-full overflow-hidden" : ""
@@ -3330,14 +3329,15 @@ export default function UserDashboard() {
               ctaLabel: "Try it",
               onCta: () => setActiveTab("referrals"),
             }}
-            accent="#ccff00"
-            panelColor="#131522"
+            accent="#FFFFF0"
+            panelColor="#353935"
             ariaLabel="User dashboard navigation"
           />
         )}
 
         {/* The wireframe's 14px top slit + 28px inner radius, with a refined translucent surface. */}
-        <div className={`relative z-10 min-w-0 flex-1 md:mt-[14px] md:h-[calc(100vh-14px)] bg-[#131522]/90 backdrop-blur-xl md:rounded-tl-[28px] border-t border-l border-white/10 shadow-[-8px_0_24px_rgba(0,0,0,0.36)] ${isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : "h-[100dvh] overflow-y-auto overscroll-y-contain md:h-auto md:overflow-y-auto"}`}>
+        <div className={`relative z-10 min-w-0 flex-1 bg-[#FFFFF0] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[20px] md:border md:border-black/10 ${isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : "h-[100dvh] overflow-y-auto overscroll-y-contain md:h-auto md:overflow-y-auto"}`}>
+          <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-0 z-30 h-24 bg-[#FFFFF0]/70 backdrop-blur-xl [mask-image:linear-gradient(to_bottom,black,transparent)] md:hidden" />
           {/* Mobile headers (only shown on small screens) */}
           {isMobile && (
             <div className="w-full">
@@ -3410,12 +3410,12 @@ export default function UserDashboard() {
             {activeTab === "home" && (
               /* Wireframe layout: a 46fr/54fr two-column grid (left stack + tall panel) with a
                  full-width ledger beneath. Collapses to one column at <1024px, per the mock. */
-              <div className="flex flex-col gap-5">
+              <div className="flex flex-col gap-5 md:gap-5">
                 <div className="grid grid-cols-1 gap-5 lg:grid-cols-[46fr_54fr]">
                   {/* LEFT COLUMN */}
                   <div className="flex min-w-0 flex-col gap-4">
                     {/* ===== Wallet balance: figures left, stacked circle actions right ===== */}
-                    <section className="liquid-glass relative flex items-center justify-between gap-4 overflow-hidden rounded-[20px] border border-white/5 bg-black/40 px-6 py-[22px] text-white shadow-2xl backdrop-blur-xl">
+                    <section className="dashboard-blue-panel relative flex flex-col items-center justify-center gap-4 overflow-hidden rounded-[20px] border border-black/35 px-6 py-7 text-black md:flex-row md:justify-between md:py-[22px]">
                       <div className="flex min-w-0 flex-col">
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-[10px] font-black uppercase tracking-[0.08em] text-[#ccff00]/85">Wallet Balance</span>
@@ -3445,22 +3445,22 @@ export default function UserDashboard() {
                         </p>
                       </div>
 
-                      <div className="flex shrink-0 flex-col gap-2.5">
+                      <div className="flex shrink-0 flex-row gap-2.5 md:flex-col">
                         <button
                           type="button"
                           onClick={() => { setSelectedDmPeer(null); setSendFundsOpen(true); }}
-                          className="grid h-[38px] w-[38px] place-items-center rounded-full border-[1.5px] border-[#ccff00]/50 text-[#ccff00] transition-all hover:scale-105 hover:bg-[#ccff00] hover:text-black active:scale-95"
+                          className="grid h-[46px] w-[130px] place-items-center rounded-full border border-black/35 bg-[#D5E3EE] text-black transition active:scale-95 md:h-[38px] md:w-[38px]"
                           aria-label="Send"
                         >
-                          <ArrowUpRight className="h-4 w-4" />
+                          <span className="flex items-center gap-2 text-xs font-semibold"><ArrowUpRight className="h-4 w-4" /> Send Out</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setReceiveOpen(true)}
-                          className="grid h-[38px] w-[38px] place-items-center rounded-full border-[1.5px] border-[#ccff00]/50 text-[#ccff00] transition-all hover:scale-105 hover:bg-[#ccff00] hover:text-black active:scale-95"
+                          className="grid h-[46px] w-[130px] place-items-center rounded-full border border-[#353935] bg-[#353935] text-[#FFFFF0] transition active:scale-95 md:h-[38px] md:w-[38px]"
                           aria-label="Deposit"
                         >
-                          <ArrowDown className="h-4 w-4" />
+                          <span className="flex items-center gap-2 text-xs font-semibold"><ArrowDown className="h-4 w-4" /> Deposit</span>
                         </button>
                         <button
                           type="button"
@@ -3475,7 +3475,7 @@ export default function UserDashboard() {
 
                     {/* ===== Two equal square cards ===== */}
                     <div className="grid grid-cols-2 gap-3.5">
-                      <div className="liquid-glass flex min-h-[120px] flex-col justify-between rounded-[18px] border border-white/5 bg-black/40 p-[18px] text-white shadow-xl backdrop-blur-xl">
+                      <div className="dashboard-blue-panel flex min-h-[140px] flex-col justify-between rounded-[18px] border border-black/35 p-[18px] text-black">
                         <div>
                           <p className="font-mono text-[10px] font-black uppercase tracking-[0.06em] text-white/50">Spending past (USDC)</p>
                           <p className="mt-2 text-[11px] font-black text-white/40">30D</p>
@@ -3491,7 +3491,7 @@ export default function UserDashboard() {
                           Manage Spending <ArrowUpRight className="h-3 w-3" />
                         </button>
                       </div>
-                      <div className="liquid-glass flex min-h-[120px] flex-col justify-between rounded-[18px] border border-white/5 bg-black/40 p-[18px] text-white shadow-xl backdrop-blur-xl">
+                      <div className="dashboard-blue-panel flex min-h-[140px] flex-col justify-between rounded-[18px] border border-black/35 p-[18px] text-black">
                         <div>
                           <p className="font-mono text-[10px] font-black uppercase tracking-[0.06em] text-white/50">Total Commit</p>
                           <div className="mt-2 flex items-baseline gap-3">
@@ -3553,7 +3553,7 @@ export default function UserDashboard() {
                 </div>
 
                 {/* ===== Bottom full-width panel ===== */}
-                <section className="liquid-glass rounded-[20px] border border-white/5 bg-black/40 p-5 text-white shadow-2xl backdrop-blur-xl">
+                <section className="dashboard-blue-panel min-h-[390px] rounded-[20px] border border-black/35 p-5 text-black">
                   <div className="flex items-center justify-between">
                     <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-white/70">Transaction History</h2>
                     <Link
@@ -3564,7 +3564,7 @@ export default function UserDashboard() {
                     </Link>
                   </div>
 
-                  <div className="mt-4 flex flex-wrap gap-2">
+                  <div className="dashboard-filter-scroll mt-4 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     {([["all", "All"], ["recurring", "Subscriptions"], ["one-time", "One Time"], ["transfers", "Transfers"], ["withdrawals", "Withdrawals"]] as const).map(([value, label]) => (
                       <button
                         key={value}
@@ -3572,8 +3572,8 @@ export default function UserDashboard() {
                         onClick={() => setTxFilter(value)}
                         className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all ${
                           txFilter === value
-                            ? "bg-[#ccff00] text-black"
-                            : "bg-white/[0.06] text-white/50 hover:bg-white/10"
+                            ? "bg-[#353935] text-[#FFFFF0]"
+                            : "bg-transparent text-black/70 hover:bg-black/5"
                         }`}
                       >
                         {label}
@@ -3619,13 +3619,13 @@ export default function UserDashboard() {
             )}
 
             {activeTab === "commit" && (
-              <section className="max-w-3xl space-y-6">
+              <section className="mx-auto max-w-3xl space-y-6">
                 <SectionTitle
                   title="Manage Commit"
-                  subtitle="Fund prepaid balances for metered services, and delegate capped spending to others."
+                  subtitle="Fund prepaid balances for metered services"
                 />
 
-                <section className="liquid-glass rounded-3xl border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl sm:p-8">
+                <section className="rounded-3xl border border-black/35 bg-[#2775CA]/20 p-5 sm:p-8">
                   <div className="mb-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <div className="flex items-center gap-2">
@@ -3659,28 +3659,37 @@ export default function UserDashboard() {
                       <button
                         type="button"
                         onClick={async () => {
+                          if (expandedCommitAction !== "refresh") return setExpandedCommitAction("refresh");
                           await loadVaults();
                           triggerToast("Commit usage updated");
+                          setExpandedCommitAction(null);
                         }}
                         disabled={isVaultsLoading}
-                        className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white/70 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:opacity-50"
+                        className={`flex h-12 items-center justify-center gap-2 overflow-hidden rounded-2xl border border-black/30 bg-[#D5E3EE] text-black transition-all duration-300 disabled:opacity-50 ${expandedCommitAction === "refresh" ? "w-36 px-3" : "w-12"}`}
                         title="Refresh vault usage for committed apps"
                       >
                         <RefreshCw className={`h-3.5 w-3.5 ${isVaultsLoading ? "animate-spin text-[#ccff00]" : ""}`} />
-                        <span>{isVaultsLoading ? "Refreshing..." : "Refresh Usage"}</span>
+                        {expandedCommitAction === "refresh" && <span className="whitespace-nowrap text-[10px] font-bold">{isVaultsLoading ? "Refreshing..." : "Refresh Usage"}</span>}
                       </button>
                       <button
                         type="button"
-                        onClick={() => openVaultCommit()}
-                        className="rounded-xl border border-[#ccff00]/30 bg-[#ccff00]/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#ccff00] transition hover:bg-[#ccff00]/20"
+                        onClick={() => {
+                          if (expandedCommitAction !== "commit") return setExpandedCommitAction("commit");
+                          setExpandedCommitAction(null);
+                          openVaultCommit();
+                        }}
+                        className={`flex h-12 items-center justify-center gap-2 overflow-hidden rounded-2xl border border-black/30 bg-[#D5E3EE] text-black transition-all duration-300 ${expandedCommitAction === "commit" ? "w-44 px-3" : "w-12"}`}
+                        title="Commit to a service"
+                        aria-label="Commit to a service"
                       >
-                        + Commit to a service
+                        <Plus className="h-6 w-6 shrink-0" />
+                        {expandedCommitAction === "commit" && <span className="whitespace-nowrap text-[10px] font-bold">Commit to a service</span>}
                       </button>
                     </div>
                   </div>
 
                   {isVaultsLoading ? (
-                    <div className="space-y-3">
+                    <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                       <VaultCardSkeleton />
                       <VaultCardSkeleton />
                     </div>
@@ -3699,8 +3708,7 @@ export default function UserDashboard() {
                   ) : (
                     <div className="space-y-3">
                       {vaults.map((vault) => (
-                        <MeteredVaultRow
-                          key={vault.id}
+                        <div key={vault.id} className="w-full shrink-0 snap-center"><MeteredVaultRow
                           vault={vault}
                           onCommit={(v) => openVaultCommit(v.merchantAddress)}
                           onWithdraw={(v) => openVaultWithdraw(v.merchantAddress)}
@@ -3715,13 +3723,15 @@ export default function UserDashboard() {
                           resumeBusy={vaultResumeBusyId === String(vault.id || vault.merchantAddress)}
                           reclaimBusy={vaultReclaimBusyId === String(vault.id || vault.merchantAddress)}
                           balanceVisible={balanceVisible}
-                        />
+                        /></div>
                       ))}
+                      <button type="button" onClick={() => openVaultCommit()} className="flex min-h-[360px] w-full shrink-0 snap-center items-center justify-center rounded-3xl border border-dashed border-black/35 bg-[#FFFFF0]/55 backdrop-blur-md" aria-label="Commit to another vault">
+                        <Plus className="h-12 w-12 text-black" />
+                      </button>
                     </div>
                   )}
                 </section>
 
-                <SubUserManager balanceVisible={balanceVisible} />
               </section>
             )}
 
@@ -6088,6 +6098,7 @@ export default function UserDashboard() {
                 label={tab.label}
                 icon={tab.icon}
                 active={activeTab === tab.id}
+                accentClassName="text-[#FFFFF0]"
                 onClick={() => {
                   setSelectedDmPeer(null);
                   setActiveTab(tab.id);
@@ -6105,10 +6116,10 @@ export default function UserDashboard() {
                 setSelectedDmPeer(null);
                 setActiveTab("inbox");
               }}
-              className={`relative h-[3.3rem] flex items-center justify-center rounded-full border transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] gap-2 px-3 overflow-hidden ${
+              className={`relative h-[3.3rem] flex items-center justify-center rounded-full border transition-all duration-300 gap-2 px-3 overflow-hidden ${
                 activeTab === "inbox"
-                  ? "bg-[#ccff00] border-[#ccff00]/30 text-[#111111] shadow-[0_0_15px_rgba(204,255,0,0.3)] scale-105 w-[108px]"
-                  : "liquid-glass bg-black/30 backdrop-blur-lg border-transparent text-white/50 hover:text-white w-[3.3rem]"
+                  ? "bg-[#353935] border-[#353935] text-[#FFFFF0] scale-105 w-[108px]"
+                  : "bg-[#2775CA]/20 border-black/15 text-black/60 hover:text-black w-[3.3rem]"
               }`}
               aria-label="Open DMs"
             >
@@ -6859,45 +6870,31 @@ function HomeHeader({
   onDns: () => void;
   onLogout: () => void;
 }) {
+  const [profileExpanded, setProfileExpanded] = useState(false);
+  const profileLabel = registeredDomain || formatAddress(userWallet) || "Profile";
+
+  const handleProfileClick = () => {
+    if (!profileExpanded) {
+      setProfileExpanded(true);
+      return;
+    }
+    onDns();
+    setProfileExpanded(false);
+  };
+
   return (
     <div className="fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
-      <header className="w-full max-w-md liquid-glass rounded-full px-5 py-3 pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/30 backdrop-blur-lg">
+      <header className="w-full max-w-md px-1 py-2 pointer-events-auto transition-all duration-300">
         <div className="flex items-center justify-between w-full">
-          {/* Logo (Left - Always visible on mobile) */}
-          <div className="flex items-center flex-shrink-0">
-            <img 
-              src="/logo.png" 
-              alt="SubScript Logo" 
-              className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]"
-            />
-          </div>
+          <button type="button" onClick={handleProfileClick} aria-label={profileExpanded ? "Open settings" : "Show DNS name"} className={`flex h-12 items-center gap-2 overflow-hidden rounded-2xl border border-black/15 bg-[#2775CA]/20 px-2 text-black transition-all duration-300 ${profileExpanded ? "w-44" : "w-12"}`}>
+            <Avatar profilePic={profilePic} size="xs" />
+            {profileExpanded && <span className="truncate text-[11px] font-semibold">{profileLabel}</span>}
+          </button>
           {/* Actions (Right) */}
           <div className="flex items-center gap-1.5 ml-auto">
             {/* Mobile placement: the bell sits in the header bar. Same component the desktop title
                 renders, so the unread count and read state cannot diverge between form factors. */}
             <NotificationBell audience="USER" accent="#ccff00" />
-            {/* Address/Domain Pill */}
-            <button
-              type="button"
-              onClick={onDns}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/[0.04] border border-white/5 rounded-full hover:bg-white/[0.06] transition-all group"
-              title="Click to manage account settings"
-            >
-              <div className="w-4 h-4 bg-[#ccff00]/10 rounded-full flex items-center justify-center">
-                <Wallet className="w-2 h-2 text-[#ccff00]" />
-              </div>
-              <span className="text-[10px] font-mono font-semibold text-white/70 group-hover:text-white/90 transition-colors max-w-[100px] truncate">
-                {registeredDomain || formatAddress(userWallet)}
-              </span>
-            </button>
-            {/* PFP Avatar button */}
-            <button
-              type="button"
-              onClick={onDns}
-              className="shrink-0 focus:outline-none"
-            >
-              <Avatar profilePic={profilePic} size="xs" />
-            </button>
           </div>
         </div>
       </header>

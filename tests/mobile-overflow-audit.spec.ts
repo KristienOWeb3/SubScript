@@ -579,7 +579,7 @@ test.describe("mobile overflow audit", () => {
     expect(mobileLedgerBox!.y).toBeGreaterThanOrEqual(
       mobileLeftColumnBox!.y + mobileLeftColumnBox!.height - 1
     );
-    await expect(mobilePage.getByText("+ Commit to a service", { exact: true })).toHaveCount(0);
+    await expect(mobilePage.getByRole("button", { name: "Commit to a service" })).toHaveCount(0);
 
     const bottomNav = mobilePage.locator('nav[aria-label="Primary navigation"]');
     await expect(bottomNav).toBeVisible();
@@ -593,7 +593,7 @@ test.describe("mobile overflow audit", () => {
 
     await bottomNav.getByRole("button", { name: "Commit" }).click();
     await expect(mobilePage.getByRole("heading", { name: "Manage Commit" })).toBeVisible();
-    await expect(mobilePage.getByText("+ Commit to a service", { exact: true })).toBeVisible();
+    await expect(mobilePage.getByRole("button", { name: "Commit to a service" })).toBeVisible();
     await mobilePage.screenshot({ path: testInfo.outputPath("mobile-manage-commit.png"), fullPage: true });
 
     const overflowResult = await auditOverflow(mobilePage, "mobile manage commit");

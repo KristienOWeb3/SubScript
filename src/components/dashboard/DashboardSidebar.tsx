@@ -87,17 +87,13 @@ export default function DashboardSidebar({
 
     const rowBase = isCollapsed
         ? "group flex w-full items-center justify-center rounded-2xl text-center font-semibold transition-all relative"
-        : isLightPanel
-        ? "group flex w-full items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-l-2xl lg:rounded-r-none text-left font-semibold transition-all relative"
-        : "group flex w-full items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-l-full lg:rounded-r-none text-left font-semibold transition-all relative";
+        : "group flex w-full items-center justify-center lg:justify-start gap-3 rounded-lg text-left font-semibold transition-all relative";
     
     const activeRow = isCollapsed
         ? isLightPanel
             ? "bg-[color:var(--sb-panel)] text-[#0f172a] font-bold shadow-sm"
             : "bg-[color:var(--sb-panel)] text-[color:var(--sb-accent)] font-bold shadow-md border border-[color:var(--sb-accent)]/20"
-        : isLightPanel
-        ? "z-20 -ml-2 !w-[calc(100%_+_1.25rem)] !rounded-r-none bg-[color:var(--sb-panel)] !pl-[1.375rem] pr-7 font-bold text-[#0f172a] before:pointer-events-none before:absolute before:-top-5 before:right-0 before:block before:h-5 before:w-5 before:rounded-br-[20px] before:bg-transparent before:content-[''] before:shadow-[6px_6px_0_0_var(--sb-panel)] after:pointer-events-none after:absolute after:-bottom-5 after:right-0 after:block after:h-5 after:w-5 after:rounded-tr-[20px] after:bg-transparent after:content-[''] after:shadow-[6px_-6px_0_0_var(--sb-panel)] lg:-ml-3 lg:!w-[calc(100%_+_1.75rem)] lg:!pl-7"
-        : "bg-[color:var(--sb-panel)] text-[color:var(--sb-accent)] font-bold lg:-mr-5 lg:pr-7 before:hidden lg:before:block before:content-[''] before:absolute before:-top-5 before:right-0 before:w-5 before:h-5 before:bg-transparent before:rounded-br-[20px] before:shadow-[6px_6px_0_0_var(--sb-panel)] before:pointer-events-none after:hidden lg:after:block after:content-[''] after:absolute after:-bottom-5 after:right-0 after:w-5 after:h-5 after:bg-transparent after:rounded-tr-[20px] after:shadow-[6px_-6px_0_0_var(--sb-panel)] after:pointer-events-none";
+        : "bg-[#FFFFF0] text-[#353935] font-bold shadow-sm";
     
     const idleRow = "text-white/70 hover:bg-white/[0.06] hover:text-white";
 
@@ -180,7 +176,7 @@ export default function DashboardSidebar({
     return (
         <aside
             style={{ "--sb-accent": accent, "--sb-panel": panelColor } as AccentStyle}
-            className={`hidden md:flex h-full max-h-screen shrink-0 flex-col justify-between overflow-y-auto overscroll-contain bg-[#08080a] p-3 lg:p-4 text-white/90 transition-all duration-300 ease-in-out [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${className} ${
+            className={`hidden md:flex h-full max-h-screen shrink-0 flex-col justify-between overflow-y-auto overscroll-contain bg-[#353935] p-3 lg:p-4 text-white/90 transition-all duration-300 ease-in-out [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${className} ${
                 isCollapsed ? "w-[72px]" : "w-20 lg:w-64"
             }`}
         >
