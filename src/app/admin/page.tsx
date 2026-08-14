@@ -12,6 +12,7 @@ import {
   Copy,
   FileText,
   Loader2,
+  Pencil,
   ReceiptText,
   RefreshCw,
   Search,
@@ -31,6 +32,23 @@ import {
   SkeletonStatGrid,
   SkeletonToggleRows,
 } from "@/components/ui/skeletons";
+import { AdminOverviewDashboard } from "@/components/admin/overview/AdminOverviewDashboard";
+import {
+  AnalyticsSubSidebar,
+  type AnalyticsSectionId,
+} from "@/components/admin/analytics/AnalyticsSubSidebar";
+import { VolumeView } from "@/components/admin/analytics/views/VolumeView";
+import { SubscriptionsView } from "@/components/admin/analytics/views/SubscriptionsView";
+import { GrowthView } from "@/components/admin/analytics/views/GrowthView";
+import { KycView } from "@/components/admin/analytics/views/KycView";
+import { HealthView } from "@/components/admin/analytics/views/HealthView";
+import {
+  VolumeSkeleton,
+  SubscriptionsSkeleton,
+  GrowthSkeleton,
+  KycSkeleton,
+  HealthSkeleton,
+} from "@/components/admin/analytics/AnalyticsSkeletons";
 
 type Merchant = {
   walletAddress: string;
@@ -245,6 +263,7 @@ export default function AdminDashboardPage() {
   const [viewerIsRoot, setViewerIsRoot] = useState(false);
 
   const [copied, setCopied] = useState(false);
+  const [copiedMerchant, setCopiedMerchant] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [verifyBusy, setVerifyBusy] = useState<string | null>(null);
 
@@ -266,9 +285,14 @@ export default function AdminDashboardPage() {
   const [newAdminWallet, setNewAdminWallet] = useState("");
   const [newAdminLabel, setNewAdminLabel] = useState("");
   const [adminBusy, setAdminBusy] = useState(false);
+  const [editingAdminWallet, setEditingAdminWallet] = useState<string | null>(null);
+  const [editAdminAliasValue, setEditAdminAliasValue] = useState("");
+  const [aliasUpdateBusy, setAliasUpdateBusy] = useState(false);
 
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [overviewData, setOverviewData] = useState<any>(null);
+  const [analyticsSection, setAnalyticsSection] = useState<AnalyticsSectionId>("volume");
 
   const [flags, setFlags] = useState<PlatformFlags | null>(null);
   const [flagBusy, setFlagBusy] = useState<string | null>(null);
@@ -316,6 +340,7 @@ export default function AdminDashboardPage() {
       const res = await fetch("/api/admin/overview");
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to load admin data");
+      setOverviewData(json);
       setSponsor(json.sponsor ?? null);
       setMerchants(json.merchants || []);
       setBannedAccounts(json.bannedAccounts || []);
@@ -588,7 +613,8 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+    loadAnalytics();
+  }, [loadData, loadAnalytics]);
 
   /* Declared above the tab effect below, which both calls it and lists it as a dependency. As a
      const it is in the temporal dead zone until this line runs, so declaring it further down threw
@@ -810,6 +836,39 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const handleUpdateAdminAlias = async (wallet: string) => {
+    setAliasUpdateBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/admin/admins", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          wallet,
+          label: editAdminAliasValue.trim() || null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to update admin alias");
+      if (json.warning) setNotice(json.warning);
+      setEditingAdminWallet(null);
+      setEditAdminAliasValue("");
+      await loadAdmins();
+    } catch (err: any) {
+      setError(err.message || "Failed to update admin alias");
+    } finally {
+      setAliasUpdateBusy(false);
+    }
+  };
+
+  const handleCopyMerchant = (wallet: string, name: string) => {
+    if (!name) return;
+    navigator.clipboard.writeText(name);
+    setCopiedMerchant(wallet);
+    setTimeout(() => setCopiedMerchant(null), 2000);
+  };
+
   const filteredMerchants = merchants.filter(
     (m) =>
       m.merchantName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -931,112 +990,16 @@ export default function AdminDashboardPage() {
         )}
 
         {tab === "overview" && (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            <div className={`${CARD} flex flex-col justify-between`}>
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className={LABEL}>Gas Sponsor Wallet</span>
-                  {sponsor?.emergencyStop ? (
-                    <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[9px] font-bold text-red-300 border border-red-500/30">
-                      Emergency Stop
-                    </span>
-                  ) : sponsor?.underfunded ? (
-                    <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[9px] font-bold text-amber-300 border border-amber-500/30">
-                      Underfunded
-                    </span>
-                  ) : (
-                    <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[9px] font-bold text-emerald-400 border border-emerald-500/30">
-                      Live Gas Relayer
-                    </span>
-                  )}
-                </div>
-
-                <div className="mt-4">
-                  <p className="text-3xl font-black tracking-tight text-white">
-                    {sponsor?.balanceUsdc
-                      ? Number(sponsor.balanceUsdc).toLocaleString(undefined, {
-                          maximumFractionDigits: 4,
-                        })
-                      : sponsor?.configured
-                      ? "—"
-                      : "0"}{" "}
-                    <span className="text-base font-bold text-[#2775ca]">
-                      USDC
-                    </span>
-                  </p>
-                  <p className="mt-1 text-[11px] text-white/50">
-                    Native gas reserve on Arc. Each sponsored action tops a user
-                    up by {sponsor?.topupUsdc ?? "0.10"} USDC.
-                  </p>
-                  {sponsor?.estimatedTopupsRemaining !== null &&
-                    sponsor?.estimatedTopupsRemaining !== undefined && (
-                      <p className="mt-2 text-[11px] font-bold text-white/70">
-                        ≈ {sponsor.estimatedTopupsRemaining.toLocaleString()}{" "}
-                        sponsored actions remaining
-                      </p>
-                    )}
-                  {sponsor?.underfunded && (
-                    <p className="mt-2 text-[11px] font-bold text-amber-300">
-                      Below the safe threshold — sponsored payments will start
-                      failing. Send USDC to the address below.
-                    </p>
-                  )}
-                  {sponsor?.error && (
-                    <p className="mt-2 text-[11px] text-red-300">
-                      Balance unavailable: {sponsor.error}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-6 border-t border-white/5 pt-4 space-y-3">
-                <div className="flex items-center justify-between gap-2 rounded-2xl border border-white/10 bg-black/60 p-3">
-                  <code className="truncate font-mono text-xs text-white/80">
-                    {sponsor?.address || "Not configured (SPONSOR_PRIVATE_KEY)"}
-                  </code>
-                  {sponsor?.address && (
-                    <button
-                      type="button"
-                      onClick={handleCopySponsor}
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white hover:bg-white/15 transition"
-                      title="Copy sponsor address"
-                    >
-                      {copied ? (
-                        <CheckCircle2 className="h-4 w-4 text-[#2775ca]" />
-                      ) : (
-                        <Copy className="h-4 w-4" />
-                      )}
-                    </button>
-                  )}
-                </div>
-                {sponsor?.address && (
-                  <p className="text-[10px] text-white/40">
-                    To fund gas: send native USDC on Arc directly to this
-                    address.
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className={`${CARD} space-y-4`}>
-              <span className={LABEL}>At a glance</span>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <Stat
-                  label="Total Users"
-                  value={totalUsers ?? analytics?.growth?.usersTotal ?? "—"}
-                />
-                <Stat label="Merchants" value={merchants.length} />
-                <Stat
-                  label="Verified Merchants"
-                  value={
-                    merchants.filter((merchant) => merchant.verified).length
-                  }
-                />
-                <Stat label="Banned wallets" value={bannedAccounts.length} />
-                <Stat label="Banned IPs" value={bannedIps.length} />
-              </div>
-            </div>
-          </div>
+          <AdminOverviewDashboard
+            overviewData={overviewData}
+            analyticsData={analytics}
+            sponsor={sponsor}
+            merchants={merchants}
+            totalUsers={totalUsers}
+            onNavigateTab={setTab}
+            onToggleVerification={toggleVerification}
+            verifyBusy={verifyBusy}
+          />
         )}
 
         {tab === "merchants" && (
@@ -1105,6 +1068,23 @@ export default function AdminDashboardPage() {
                             <span className="font-bold text-white uppercase tracking-wider">
                               {merchant.merchantName}
                             </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleCopyMerchant(
+                                  merchant.walletAddress,
+                                  merchant.merchantName
+                                )
+                              }
+                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/50 hover:text-white hover:bg-white/15 transition"
+                              title="Copy merchant name"
+                            >
+                              {copiedMerchant === merchant.walletAddress ? (
+                                <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                              ) : (
+                                <Copy className="h-3 w-3" />
+                              )}
+                            </button>
                           </div>
                         </td>
                         <td className="py-3.5 px-3 font-mono text-white/60">
@@ -1834,169 +1814,94 @@ export default function AdminDashboardPage() {
 
         {tab === "analytics" && (
           <div className="space-y-6">
-            {analyticsLoading && !analytics ? (
-              <>
-                <SkeletonCard label="Loading volume transacted" lines={1} />
-                <SkeletonStatGrid
-                  count={4}
-                  columns={4}
-                  label="Loading subscription metrics"
-                />
-                <SkeletonStatGrid
-                  count={4}
-                  columns={2}
-                  label="Loading growth and health metrics"
-                />
-              </>
-            ) : !analytics ? (
-              <div className={`${CARD} text-xs text-white/40`}>
-                No analytics available.
+            {/* Header with Title & Refresh */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-[#e2e8f0] bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+              <div>
+                <span className={LABEL}>Protocol Analytics</span>
+                <h2 className="text-xl font-black tracking-tight text-[#0f172a] mt-0.5">
+                  Performance & On-Chain Intelligence
+                </h2>
+                <p className="text-xs text-[#64748b] mt-0.5">
+                  {analytics?.generatedAt
+                    ? `Live data as of ${new Date(analytics.generatedAt).toLocaleTimeString()}`
+                    : "Live aggregation on Arc Mainnet"}
+                </p>
               </div>
-            ) : (
-              <>
-                <div className={`${CARD} space-y-4`}>
-                  <div className="flex items-center justify-between">
-                    <span className={LABEL}>Volume Transacted</span>
-                    <span className="text-[10px] text-white/30">
-                      as of{" "}
-                      {new Date(analytics.generatedAt).toLocaleTimeString()}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                    <Stat
-                      label="Total settled"
-                      value={`$${analytics.volume.totalUsdc}`}
-                    />
-                    <Stat
-                      label="Payments"
-                      value={analytics.volume.paymentCount}
-                    />
-                    <Stat
-                      label="Average payment"
-                      value={`$${analytics.volume.averageUsdc}`}
-                    />
-                    <Stat
-                      label="Last 30 days"
-                      value={`$${analytics.volume.last30DaysUsdc}`}
-                    />
-                  </div>
-                  <p className="text-[10px] text-white/40">
-                    Settled volume counts confirmed on-chain receipts. Checkout
-                    links have moved ${analytics.volume.checkoutVolumeUsdc}{" "}
-                    across {analytics.volume.checkoutCount} credited payments.
-                  </p>
-                </div>
 
-                <div className={`${CARD} space-y-4`}>
-                  <span className={LABEL}>Subscriptions</span>
-                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                    <Stat
-                      label="Active (customer)"
-                      value={analytics.subscriptions.activeCustomer}
-                    />
-                    <Stat
-                      label="Active (premium)"
-                      value={analytics.subscriptions.activePremium}
-                    />
-                    <Stat
-                      label="Active total"
-                      value={analytics.subscriptions.activeTotal}
-                    />
-                    <Stat
-                      label="Cancelling"
-                      value={analytics.subscriptions.cancellingAtPeriodEnd}
-                    />
-                  </div>
-                  <p className="text-[10px] text-white/40">
-                    Customer subscriptions are plans your merchants sell.
-                    Premium is merchants subscribing to SubScript — your own
-                    revenue.
-                  </p>
-                </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={loadAnalytics}
+                  disabled={analyticsLoading}
+                  className="flex items-center gap-1.5 rounded-xl border border-[#e2e8f0] bg-white px-3.5 py-2 text-xs font-bold text-[#2775ca] hover:bg-[#f8fafc] transition shadow-sm disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${analyticsLoading ? "animate-spin" : ""}`} />
+                  Refresh Data
+                </button>
+              </div>
+            </div>
 
-                <div className={`${CARD} space-y-4`}>
-                  <span className={LABEL}>Users</span>
-                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                    <Stat
-                      label="Total users"
-                      value={analytics.growth.usersTotal}
-                    />
-                    <Stat
-                      label="Individuals"
-                      value={analytics.growth.usersRoleUser}
-                    />
-                    <Stat
-                      label="Enterprise"
-                      value={analytics.growth.usersRoleEnterprise}
-                    />
-                    <Stat
-                      label="New (30d)"
-                      value={analytics.growth.usersNew30d}
-                    />
-                  </div>
-                  <p className="text-[10px] text-white/40">
-                    Every signed-up account has a role, so this is the headline
-                    user count. The merchant and customer figures below are
-                    subsets that overlap each other — a merchant who also pays
-                    for things is counted in both — so do not add them up.
-                  </p>
-                </div>
+            {/* Dual Sidebar Layout: SubSidebar on Left, Section View on Right */}
+            <div className="flex flex-col lg:flex-row items-start gap-6">
+              {/* Analytics Sub-Sidebar */}
+              <AnalyticsSubSidebar
+                activeSection={analyticsSection}
+                onSelectSection={setAnalyticsSection}
+                badges={{
+                  volume: analytics?.volume?.last30DaysUsdc ? `$${analytics.volume.last30DaysUsdc}` : undefined,
+                  subscriptions: analytics?.subscriptions?.activeTotal,
+                  growth: analytics?.growth?.usersTotal,
+                  kycPending: analytics?.kyc?.pending,
+                  hasHealthWarning: Boolean(
+                    (analytics?.health?.stuckReceipts ?? 0) > 0 ||
+                    sponsor?.underfunded ||
+                    (analytics?.health?.downgradeFailures ?? 0) > 0
+                  ),
+                }}
+              />
 
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                  <div className={`${CARD} space-y-4`}>
-                    <span className={LABEL}>Growth</span>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Stat
-                        label="Merchants"
-                        value={analytics.growth.merchantsTotal}
-                      />
-                      <Stat
-                        label="Verified"
-                        value={analytics.growth.merchantsVerified}
-                      />
-                      <Stat
-                        label="New merchants (30d)"
-                        value={analytics.growth.merchantsNew30d}
-                      />
-                      <Stat
-                        label="Customers"
-                        value={analytics.growth.customersTotal}
-                      />
-                    </div>
+              {/* Sub-Section Content Area */}
+              <div className="flex-1 min-w-0 w-full">
+                {analyticsLoading && !analytics ? (
+                  analyticsSection === "volume" ? (
+                    <VolumeSkeleton />
+                  ) : analyticsSection === "subscriptions" ? (
+                    <SubscriptionsSkeleton />
+                  ) : analyticsSection === "growth" ? (
+                    <GrowthSkeleton />
+                  ) : analyticsSection === "kyc" ? (
+                    <KycSkeleton />
+                  ) : (
+                    <HealthSkeleton />
+                  )
+                ) : !analytics ? (
+                  <div className="rounded-2xl border border-[#e2e8f0] bg-white p-8 text-center text-xs text-[#64748b]">
+                    No analytics available. Click &quot;Refresh Data&quot; to fetch latest protocol metrics.
                   </div>
-
-                  <div className={`${CARD} space-y-4`}>
-                    <span className={LABEL}>Health</span>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Stat
-                        label="Revocations pending"
-                        value={analytics.health.revocationPending}
-                        danger={analytics.health.revocationPending > 0}
+                ) : (
+                  <>
+                    {analyticsSection === "volume" && (
+                      <VolumeView analytics={analytics} />
+                    )}
+                    {analyticsSection === "subscriptions" && (
+                      <SubscriptionsView analytics={analytics} />
+                    )}
+                    {analyticsSection === "growth" && (
+                      <GrowthView analytics={analytics} />
+                    )}
+                    {analyticsSection === "kyc" && (
+                      <KycView
+                        analytics={analytics}
+                        onNavigateToKycTab={() => setTab("kyc")}
                       />
-                      <Stat
-                        label="Downgrade failures"
-                        value={analytics.health.downgradeFailures}
-                        danger={analytics.health.downgradeFailures > 0}
-                      />
-                      <Stat
-                        label="Stuck receipts"
-                        value={analytics.health.stuckReceipts}
-                        danger={analytics.health.stuckReceipts > 0}
-                      />
-                      <Stat
-                        label="KYC awaiting review"
-                        value={analytics.kyc.pending}
-                        danger={analytics.kyc.pending > 0}
-                      />
-                    </div>
-                    <p className="text-[10px] text-white/40">
-                      Stuck receipts are unconfirmed for more than 7 days —
-                      usually a memo that never finalized on chain.
-                    </p>
-                  </div>
-                </div>
-              </>
-            )}
+                    )}
+                    {analyticsSection === "health" && (
+                      <HealthView analytics={analytics} sponsor={sponsor} />
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
@@ -2359,7 +2264,7 @@ export default function AdminDashboardPage() {
                     type="text"
                     value={newAdminLabel}
                     onChange={(e) => setNewAdminLabel(e.target.value)}
-                    placeholder="Label (optional)"
+                    placeholder="Alias (optional)"
                     className={`${INPUT} sm:w-48`}
                   />
                   <button
@@ -2399,7 +2304,7 @@ export default function AdminDashboardPage() {
                       key={a.wallet}
                       className="flex items-center justify-between gap-3 rounded-2xl border border-white/5 bg-white/[0.03] p-3 text-xs"
                     >
-                      <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
                         <Shield
                           className={`h-4 w-4 shrink-0 ${
                             a.tier === "root"
@@ -2407,23 +2312,88 @@ export default function AdminDashboardPage() {
                               : "text-white/40"
                           }`}
                         />
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <p className="font-mono font-bold text-white truncate">
                             {a.wallet}
                           </p>
-                          <p className="text-[10px] text-white/50">
-                            {a.tier === "root" ? (
-                              "Root — configured in environment, not revocable here"
-                            ) : (
-                              <>
-                                {a.label ? `${a.label} · ` : ""}
+                          {a.tier === "root" ? (
+                            <p className="text-[10px] text-white/50">
+                              Root — configured in environment, not revocable here
+                            </p>
+                          ) : editingAdminWallet === a.wallet ? (
+                            <form
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                handleUpdateAdminAlias(a.wallet);
+                              }}
+                              className="mt-1.5 flex items-center gap-2"
+                            >
+                              <input
+                                type="text"
+                                value={editAdminAliasValue}
+                                onChange={(e) =>
+                                  setEditAdminAliasValue(e.target.value)
+                                }
+                                placeholder="Admin alias..."
+                                maxLength={120}
+                                className={`${INPUT} !py-1 !px-2.5 !text-[11px] max-w-[200px]`}
+                                autoFocus
+                              />
+                              <button
+                                type="submit"
+                                disabled={aliasUpdateBusy}
+                                className="flex items-center gap-1 rounded-lg bg-[#2775ca]/20 border border-[#2775ca]/40 px-2.5 py-1 text-[10px] font-bold text-[#2775ca] hover:bg-[#2775ca]/30 transition disabled:opacity-40"
+                              >
+                                {aliasUpdateBusy ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  "Save"
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingAdminWallet(null);
+                                  setEditAdminAliasValue("");
+                                }}
+                                className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white/60 hover:bg-white/10 transition"
+                              >
+                                Cancel
+                              </button>
+                            </form>
+                          ) : (
+                            <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-white/50 mt-0.5">
+                              {a.label ? (
+                                <span className="font-bold text-white/90 bg-white/10 px-1.5 py-0.5 rounded border border-white/10">
+                                  {a.label}
+                                </span>
+                              ) : (
+                                <span className="italic text-white/30">
+                                  No alias
+                                </span>
+                              )}
+                              {viewerIsRoot && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingAdminWallet(a.wallet);
+                                    setEditAdminAliasValue(a.label || "");
+                                  }}
+                                  className="inline-flex items-center justify-center h-4 w-4 rounded text-white/40 hover:text-[#2775ca] transition ml-0.5"
+                                  title={a.label ? "Edit alias" : "Set alias"}
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </button>
+                              )}
+                              <span>·</span>
+                              <span>
                                 Granted by{" "}
                                 {a.grantedBy
                                   ? `${a.grantedBy.slice(0, 10)}…`
                                   : "unknown"}
-                              </>
-                            )}
-                          </p>
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">

@@ -6,6 +6,7 @@ import {
     type DmPushInput,
 } from "@/lib/dms/notifications";
 import { accountDisplayName } from "@/lib/identityDisplay";
+import { assertNotBlocked } from "@/lib/dms/blocks";
 
 type CreateUserPaymentRequestInput = {
     requester: string;
@@ -26,6 +27,10 @@ export async function createUserPaymentRequest({
     expiresAt = null,
     dmOnly = false,
 }: CreateUserPaymentRequestInput) {
+    if (receiver) {
+        await assertNotBlocked(requester, receiver, "creating payment request");
+    }
+
     const created = await withPgClient(async (client) => {
         await client.query("begin");
         try {

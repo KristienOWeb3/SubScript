@@ -95,6 +95,66 @@ export async function POST(request: Request) {
     }
 }
 
+export async function PATCH(request: Request) {
+    const auth = await requireRootAdmin(request);
+    if (!auth.ok) return auth.response;
+
+    try {
+        const body = await request.json().catch(() => ({}));
+        const rawWallet = typeof body?.wallet === "string" ? body.wallet.trim() : "";
+        const label = typeof body?.label === "string" ? body.label.trim().slice(0, 120) || null : null;
+
+        if (!ADDRESS_PATTERN.test(rawWallet)) {
+            return NextResponse.json(
+                { error: "Enter a valid wallet address (0x followed by 40 hex characters)." },
+                { status: 400 },
+            );
+        }
+        const wallet = rawWallet.toLowerCase();
+
+        /* Root admins are configured in env — there is no DB row to update. */
+        if (listRootAdmins().includes(wallet)) {
+            return NextResponse.json(
+                { error: "Root admin labels cannot be managed here." },
+                { status: 400 },
+            );
+        }
+
+        try {
+            await prisma.adminWallet.update({
+                where: { wallet },
+                data: { label },
+            });
+        } catch (e: unknown) {
+            if (
+                typeof e === "object" &&
+                e !== null &&
+                "code" in e &&
+                (e as { code: string }).code === "P2025"
+            ) {
+                return NextResponse.json(
+                    { error: "That wallet is not a delegated admin." },
+                    { status: 404 },
+                );
+            }
+            throw e;
+        }
+
+        await recordAdminAction({
+            actor: auth.admin.wallet,
+            action: "ADMIN_WALLET_UPDATE_LABEL",
+            target: wallet,
+            detail: { label },
+            request,
+        });
+
+        return NextResponse.json({ success: true, wallet, label });
+    } catch (error) {
+        console.error("[admin/admins] update label failed:", error);
+        return NextResponse.json({ error: "Failed to update admin label" }, { status: 500 });
+    }
+}
+
 export async function DELETE(request: Request) {
     const auth = await requireRootAdmin(request);
     if (!auth.ok) return auth.response;

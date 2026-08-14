@@ -77,5 +77,13 @@ photo_*.jpg
 .codex/
 .claudeignore
 .kilo/
+lighthouse-report.json
+scripts/run-lh-direct.mjs
+scripts/audit-fast.mjs
+scripts/run-lighthouse.mjs
+scripts/parse-lh-report.mjs
+scripts/test-lh.mjs
+scripts/audit-landing-page.mjs
+scripts/lighthouse-suite.mjs
 
 

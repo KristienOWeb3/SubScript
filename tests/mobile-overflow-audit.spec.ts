@@ -347,7 +347,8 @@ async function auditOverflow(page: Page, label: string) {
         style.display === "none" ||
         style.visibility === "hidden" ||
         Number(style.opacity) === 0 ||
-        element.closest("[aria-hidden='true']")
+        element.closest("[aria-hidden='true']") ||
+        (htmlElement.getAttribute("class") || "").includes("sr-only")
       ) {
         continue;
       }

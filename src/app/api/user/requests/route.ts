@@ -5,6 +5,7 @@ import { parseUsdcToMicros } from "@/lib/dms/system";
 import { sanitizeInput } from "@/utils/security";
 import { getAccountRole, requireAccountRole } from "@/lib/accounts/roles";
 import { createUserPaymentRequest } from "@/lib/userPaymentRequests";
+import { assertNotBlocked } from "@/lib/dms/blocks";
 
 export async function POST(request: Request) {
     try {
@@ -29,13 +30,14 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Receiver address is required for user-to-user DM requests" }, { status: 400 });
         }
         normalizedReceiver = receiverAddress.toLowerCase();
-        const receiverRole = await getAccountRole(normalizedReceiver);
-        if (receiverRole !== "USER") {
-            return NextResponse.json({ error: "Users can only request USDC from user wallets. Merchant wallets cannot be requested by users." }, { status: 403 });
-        }
         const normalizedRequester = requester.toLowerCase();
         if (normalizedRequester === normalizedReceiver) {
             return NextResponse.json({ error: "You cannot request USDC from yourself" }, { status: 400 });
+        }
+        await assertNotBlocked(normalizedRequester, normalizedReceiver, "payment request");
+        const receiverRole = await getAccountRole(normalizedReceiver);
+        if (receiverRole !== "USER") {
+            return NextResponse.json({ error: "Users can only request USDC from user wallets. Merchant wallets cannot be requested by users." }, { status: 403 });
         }
 
         const amountMicros = parseUsdcToMicros(amountUsdc);

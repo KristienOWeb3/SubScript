@@ -15,6 +15,7 @@ import {
     resolveSpendingAuthority,
 } from "@/lib/commitId";
 import { sanitizeInput } from "@/utils/security";
+import { assertNotBlocked } from "@/lib/dms/blocks";
 
 export const maxDuration = 120;
 
@@ -119,6 +120,11 @@ export async function POST(request: Request) {
         const totalAmountMicros = parsedRecipients.reduce(
             (sum, r) => sum + r.amountMicros, BigInt(0)
         );
+
+        /* Block check: prevent transfers to or from any blocked accounts */
+        for (const recipient of parsedRecipients) {
+            await assertNotBlocked(fundingWallet, recipient.receiver, "sending funds");
+        }
 
         // Spending limit enforcement (Finding 54)
         /* Keyed to the funding wallet: these are the limits the *owner of the money* set on their

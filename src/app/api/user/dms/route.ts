@@ -8,6 +8,8 @@ import { sanitizeInput } from "@/utils/security";
 import { getAccountRole, requireAccountRole } from "@/lib/accounts/roles";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { createDmAndNotify } from "@/lib/dms/notifications";
+import { assertNotBlocked } from "@/lib/dms/blocks";
+import { hasActiveDmConnection } from "@/lib/dms/connections";
 import { sendSubscriptionCancellationReasonEmail } from "@/lib/email/transactional";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 import { readSubscriptionCheckoutMeta } from "@/lib/subscriptionCheckout";
@@ -114,6 +116,77 @@ export async function GET(request: Request) {
                 .map((m: any) => m.walletAddress.toLowerCase()),
         );
 
+        /* Load active connections and blocks so empty accepted threads and block states render */
+        const normalizedUserWallet = wallet.toLowerCase();
+        const [acceptedConnections, userBlocks] = await Promise.all([
+            prisma.dmConnection.findMany({
+                where: {
+                    OR: [
+                        { user1Address: normalizedUserWallet, status: "ACCEPTED" },
+                        { user2Address: normalizedUserWallet, status: "ACCEPTED" },
+                    ],
+                },
+                orderBy: { lastInteractionAt: "desc" },
+            }),
+            prisma.dmBlock.findMany({
+                where: {
+                    OR: [
+                        { blockerAddress: normalizedUserWallet },
+                        { blockedAddress: normalizedUserWallet },
+                    ],
+                },
+            }),
+        ]);
+
+        const blockedAddresses = Array.from(
+            new Set(
+                userBlocks.map((b) =>
+                    b.blockerAddress === normalizedUserWallet ? b.blockedAddress : b.blockerAddress
+                )
+            )
+        );
+
+        // Fetch profiles for any connected peers that had no messages in dms
+        const connectionPeerAddresses = acceptedConnections.map((c) =>
+            c.user1Address === normalizedUserWallet ? c.user2Address : c.user1Address
+        );
+        const missingProfileAddrs = connectionPeerAddresses.filter((a) => !uniqueAddresses.has(a));
+
+        if (missingProfileAddrs.length > 0) {
+            const [missingAliases, missingCustomers, missingRoles] = await Promise.all([
+                prisma.addressAlias.findMany({
+                    where: { address: { in: missingProfileAddrs } },
+                }),
+                prisma.customer.findMany({
+                    where: { walletAddress: { in: missingProfileAddrs } },
+                    select: { walletAddress: true, profilePic: true },
+                }),
+                prisma.accountRole.findMany({
+                    where: { address: { in: missingProfileAddrs } },
+                    select: { address: true, role: true },
+                }),
+            ]);
+            missingAliases.forEach((a) => aliasMap.set(a.address.toLowerCase(), a.alias));
+            missingCustomers.forEach((c) => profilePicMap.set(c.walletAddress.toLowerCase(), c.profilePic));
+            missingRoles.forEach((r) => roleMap.set(r.address.toLowerCase(), r.role));
+        }
+
+        const formattedConnections = acceptedConnections.map((conn) => {
+            const peer = conn.user1Address === normalizedUserWallet ? conn.user2Address : conn.user1Address;
+            const alias = aliasMap.get(peer);
+            return {
+                id: conn.id,
+                peerAddress: peer,
+                peerName: accountDisplayName(alias),
+                peerRole: roleMap.get(peer) || null,
+                peerProfilePic: profilePicMap.get(peer) || null,
+                peerVerified: verifiedMerchants.has(peer),
+                isBlocked: blockedAddresses.includes(peer),
+                establishedAt: conn.establishedAt,
+                lastInteractionAt: conn.lastInteractionAt,
+            };
+        });
+
         const formatted = dms.map((dm: any) => ({
             id: dm.id,
             senderAddress: dm.senderAddress,
@@ -140,7 +213,12 @@ export async function GET(request: Request) {
             createdAt: dm.createdAt
         }));
 
-        return NextResponse.json({ success: true, dms: formatted }, { status: 200 });
+        return NextResponse.json({
+            success: true,
+            dms: formatted,
+            connections: formattedConnections,
+            blockedAddresses,
+        }, { status: 200 });
     } catch (err: any) {
         console.error("Failed to load DMs:", err);
         return NextResponse.json({ error: err.message || "Internal Server Error" }, { status: 500 });
@@ -176,21 +254,25 @@ export async function POST(request: Request) {
             if (normalizedReceiver === normalizedWallet) {
                 return NextResponse.json({ error: "You cannot send USDC to your own connected wallet." }, { status: 400 });
             }
+            await assertNotBlocked(normalizedWallet, normalizedReceiver, "peer transfer");
             const receiverRole = await getAccountRole(normalizedReceiver);
             if (receiverRole !== "USER") {
                 return NextResponse.json({ error: "Users cannot start or append peer-transfer DMs with merchant wallets." }, { status: 403 });
             }
-            const existingThread = await prisma.subscriptDm.findFirst({
-                where: {
-                    OR: [
-                        { senderAddress: normalizedWallet, receiverAddress: normalizedReceiver },
-                        { senderAddress: normalizedReceiver, receiverAddress: normalizedWallet },
-                    ],
-                },
-                select: { id: true },
-            });
-            if (!existingThread) {
-                return NextResponse.json({ error: "A DM thread must already exist before logging a peer transfer." }, { status: 403 });
+            const [existingThread, isConnected] = await Promise.all([
+                prisma.subscriptDm.findFirst({
+                    where: {
+                        OR: [
+                            { senderAddress: normalizedWallet, receiverAddress: normalizedReceiver },
+                            { senderAddress: normalizedReceiver, receiverAddress: normalizedWallet },
+                        ],
+                    },
+                    select: { id: true },
+                }),
+                hasActiveDmConnection(normalizedWallet, normalizedReceiver),
+            ]);
+            if (!existingThread && !isConnected) {
+                return NextResponse.json({ error: "A DM thread or accepted connection must already exist before logging a peer transfer." }, { status: 403 });
             }
             if (!amountUsdc || isNaN(Number(amountUsdc)) || Number(amountUsdc) <= 0) {
                 return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
@@ -269,21 +351,25 @@ export async function POST(request: Request) {
             if (normalizedReceiver === normalizedWallet) {
                 return NextResponse.json({ error: "You cannot send a reaction to your own wallet." }, { status: 400 });
             }
+            await assertNotBlocked(normalizedWallet, normalizedReceiver, "sending reaction");
             const receiverRole = await getAccountRole(normalizedReceiver);
             if (receiverRole !== "USER") {
                 return NextResponse.json({ error: "Reactions can only be sent inside peer-to-peer user threads." }, { status: 403 });
             }
-            const existingThread = await prisma.subscriptDm.findFirst({
-                where: {
-                    OR: [
-                        { senderAddress: normalizedWallet, receiverAddress: normalizedReceiver },
-                        { senderAddress: normalizedReceiver, receiverAddress: normalizedWallet },
-                    ],
-                },
-                select: { id: true },
-            });
-            if (!existingThread) {
-                return NextResponse.json({ error: "A DM thread must already exist before sending a reaction." }, { status: 403 });
+            const [existingThread, isConnected] = await Promise.all([
+                prisma.subscriptDm.findFirst({
+                    where: {
+                        OR: [
+                            { senderAddress: normalizedWallet, receiverAddress: normalizedReceiver },
+                            { senderAddress: normalizedReceiver, receiverAddress: normalizedWallet },
+                        ],
+                    },
+                    select: { id: true },
+                }),
+                hasActiveDmConnection(normalizedWallet, normalizedReceiver),
+            ]);
+            if (!existingThread && !isConnected) {
+                return NextResponse.json({ error: "A DM thread or accepted connection must already exist before sending a reaction." }, { status: 403 });
             }
 
             /* Anti-spam: a sender can nudge/react to a given peer at most once per hour.

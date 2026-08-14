@@ -1,17 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/admin/guard";
+import { getSponsorWalletStatus } from "@/lib/sponsor/gas";
 import { jsonOk } from "@/lib/http/json";
 
 /* Platform-wide analytics for the admin console.
  *
- * Every figure is computed with a database aggregate rather than by loading rows and summing
- * in JS — these tables grow without bound, and a findMany().reduce() here would degrade
- * silently as the platform succeeds.
- *
- * USDC amounts are stored as BigInt micro-USDC (6 dp). They are converted to decimal STRINGS
- * before serialization: BigInt has no JSON representation, and Number() would start losing
- * precision past ~9 billion USDC. Formatting stays in the UI.
+ * Every figure is computed with database aggregates and optimized select queries.
+ * USDC amounts are stored as BigInt micro-USDC (6 dp) and converted to decimal STRINGS
+ * or numbers before serialization.
  */
 
 const MICRO_USDC = 1_000_000n;
@@ -25,10 +22,14 @@ function formatUsdc(micro: bigint | null | undefined): string {
     return `${negative ? "-" : ""}${whole.toString()}.${fraction}`;
 }
 
+function usdcMicrosToNumber(micro: bigint | null | undefined): number {
+    if (micro === null || micro === undefined) return 0;
+    return Number(micro) / 1_000_000;
+}
+
 function toBigInt(value: unknown): bigint {
     if (typeof value === "bigint") return value;
     if (value === null || value === undefined) return 0n;
-    /* Prisma returns Decimal for _sum on some drivers; go via string to avoid float rounding. */
     try {
         return BigInt(String(value).split(".")[0]);
     } catch {
@@ -44,11 +45,15 @@ export async function GET(request: Request) {
         const now = new Date();
         const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
         const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
         const [
             confirmedReceipts,
+            receiptsLast7,
             receiptsLast30,
+            receiptsLast90,
             linkPayments,
+            linkPaymentsLast30,
             merchantTotal,
             merchantVerified,
             merchantsLast30,
@@ -65,6 +70,12 @@ export async function GET(request: Request) {
             downgradeFailures,
             pendingReceipts,
             recentBroadcasts,
+            sponsorStatus,
+            recentReceiptsForTimeline,
+            recentLinksForTimeline,
+            recentSignupsForTimeline,
+            recentSubsForTimeline,
+            topMerchantsRaw,
         ] = await Promise.all([
             /* Volume: confirmed receipts are the settled, on-chain-verified record. */
             prisma.receipt.aggregate({
@@ -73,13 +84,28 @@ export async function GET(request: Request) {
                 _count: true,
             }),
             prisma.receipt.aggregate({
+                where: { status: "CONFIRMED", createdAt: { gte: sevenDaysAgo } },
+                _sum: { amountUsdc: true },
+                _count: true,
+            }),
+            prisma.receipt.aggregate({
                 where: { status: "CONFIRMED", createdAt: { gte: thirtyDaysAgo } },
                 _sum: { amountUsdc: true },
                 _count: true,
             }),
-            /* Credited link payments — checkout volume that may not have minted a receipt. */
+            prisma.receipt.aggregate({
+                where: { status: "CONFIRMED", createdAt: { gte: ninetyDaysAgo } },
+                _sum: { amountUsdc: true },
+                _count: true,
+            }),
+            /* Credited link payments — checkout volume */
             prisma.paymentLinkPayment.aggregate({
                 where: { credited: true },
+                _sum: { amountUsdc: true },
+                _count: true,
+            }),
+            prisma.paymentLinkPayment.aggregate({
+                where: { credited: true, createdAt: { gte: thirtyDaysAgo } },
                 _sum: { amountUsdc: true },
                 _count: true,
             }),
@@ -88,10 +114,6 @@ export async function GET(request: Request) {
             prisma.merchant.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
             prisma.customer.count(),
             prisma.customer.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
-            /* Total users. `customers` only holds wallets that reached a payment surface, so it
-               undercounts: a wallet that signed up and stopped has an account_roles row and no
-               customers row. account_roles is the one row every account gets, so it is the
-               headline user count — split by role, since a merchant is also an account. */
             prisma.accountRole.groupBy({ by: ["role"], _count: { _all: true } }),
             prisma.accountRole.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
             prisma.kycVerification.groupBy({ by: ["status"], _count: { _all: true } }),
@@ -101,8 +123,6 @@ export async function GET(request: Request) {
             prisma.subscription.count({ where: { status: "ACTIVE", cancelAtPeriodEnd: true } }),
             prisma.subscription.count({ where: { revocationPending: true } }),
             prisma.subscription.count({ where: { downgradeFailures: { gt: 0 } } }),
-            /* Receipts stuck below CONFIRMED for over a week: the on-chain memo never
-               finalized, or the confirmation worker stopped advancing them. */
             prisma.receipt.count({ where: { status: { not: "CONFIRMED" }, createdAt: { lt: sevenDaysAgo } } }),
             prisma.adminBroadcast.findMany({
                 orderBy: { createdAt: "desc" },
@@ -110,6 +130,40 @@ export async function GET(request: Request) {
                 select: {
                     id: true, title: true, audience: true, status: true,
                     sentCount: true, failedCount: true, totalRecipients: true, createdAt: true,
+                },
+            }),
+            getSponsorWalletStatus().catch(() => null),
+            /* Timeline raw data for the last 30 days */
+            prisma.receipt.findMany({
+                where: { status: "CONFIRMED", createdAt: { gte: thirtyDaysAgo } },
+                select: { createdAt: true, amountUsdc: true },
+                orderBy: { createdAt: "asc" },
+            }),
+            prisma.paymentLinkPayment.findMany({
+                where: { credited: true, createdAt: { gte: thirtyDaysAgo } },
+                select: { createdAt: true, amountUsdc: true },
+                orderBy: { createdAt: "asc" },
+            }),
+            prisma.accountRole.findMany({
+                where: { createdAt: { gte: thirtyDaysAgo } },
+                select: { createdAt: true, role: true },
+                orderBy: { createdAt: "asc" },
+            }),
+            prisma.subscription.findMany({
+                where: { createdAt: { gte: thirtyDaysAgo } },
+                select: { createdAt: true, kind: true, status: true },
+                orderBy: { createdAt: "asc" },
+            }),
+            /* Top merchants by receipt count and volume */
+            prisma.merchant.findMany({
+                take: 5,
+                orderBy: { createdAt: "desc" },
+                select: {
+                    walletAddress: true,
+                    tier: true,
+                    verified: true,
+                    profilePic: true,
+                    createdAt: true,
                 },
             }),
         ]);
@@ -128,34 +182,133 @@ export async function GET(request: Request) {
         const kycCounts: Record<string, number> = {};
         for (const row of kycByStatus) kycCounts[row.status] = row._count._all;
 
-        /* jsonOk, not NextResponse.json: formatUsdc already converts every money figure this
-           handler knows about, but this payload is assembled from eighteen aggregates and grows
-           every time a metric is added. jsonOk means forgetting formatUsdc on a new _sum yields
-           a slightly unformatted string rather than a 500 that takes the whole tab down. */
+        /* Build 30-day timeline series */
+        const dayBuckets: Map<string, {
+            settledMicro: bigint;
+            checkoutMicro: bigint;
+            paymentCount: number;
+            newUsers: number;
+            newMerchants: number;
+            newSubs: number;
+        }> = new Map();
+
+        // Seed 30 daily buckets so every date exists
+        for (let i = 29; i >= 0; i--) {
+            const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+            const key = d.toISOString().slice(0, 10);
+            dayBuckets.set(key, {
+                settledMicro: 0n,
+                checkoutMicro: 0n,
+                paymentCount: 0,
+                newUsers: 0,
+                newMerchants: 0,
+                newSubs: 0,
+            });
+        }
+
+        for (const r of recentReceiptsForTimeline) {
+            const key = r.createdAt.toISOString().slice(0, 10);
+            const bucket = dayBuckets.get(key);
+            if (bucket) {
+                bucket.settledMicro += BigInt(r.amountUsdc);
+                bucket.paymentCount += 1;
+            }
+        }
+
+        for (const lp of recentLinksForTimeline) {
+            const key = lp.createdAt.toISOString().slice(0, 10);
+            const bucket = dayBuckets.get(key);
+            if (bucket) {
+                bucket.checkoutMicro += BigInt(lp.amountUsdc);
+                bucket.paymentCount += 1;
+            }
+        }
+
+        for (const a of recentSignupsForTimeline) {
+            const key = a.createdAt.toISOString().slice(0, 10);
+            const bucket = dayBuckets.get(key);
+            if (bucket) {
+                bucket.newUsers += 1;
+                if (a.role === "ENTERPRISE") bucket.newMerchants += 1;
+            }
+        }
+
+        for (const s of recentSubsForTimeline) {
+            const key = s.createdAt.toISOString().slice(0, 10);
+            const bucket = dayBuckets.get(key);
+            if (bucket) {
+                bucket.newSubs += 1;
+            }
+        }
+
+        const timeline = Array.from(dayBuckets.entries()).map(([dateStr, data]) => {
+            const d = new Date(dateStr);
+            const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+            const settled = usdcMicrosToNumber(data.settledMicro);
+            const checkout = usdcMicrosToNumber(data.checkoutMicro);
+            return {
+                date: dateStr,
+                label,
+                settledUsdc: settled,
+                checkoutUsdc: checkout,
+                totalUsdc: settled + checkout,
+                paymentCount: data.paymentCount,
+                newUsers: data.newUsers,
+                newMerchants: data.newMerchants,
+                newSubs: data.newSubs,
+            };
+        });
+
+        /* Resolve top merchants aliases */
+        const merchantAddresses = topMerchantsRaw.map((m) => m.walletAddress.toLowerCase());
+        const aliases = await prisma.addressAlias.findMany({
+            where: { address: { in: merchantAddresses } },
+        });
+        const aliasMap = new Map(aliases.map((a) => [a.address.toLowerCase(), a.alias]));
+
+        const topMerchants = topMerchantsRaw.map((m) => ({
+            walletAddress: m.walletAddress,
+            merchantName: aliasMap.get(m.walletAddress.toLowerCase()) || m.walletAddress.slice(0, 10),
+            tier: m.tier,
+            verified: m.verified,
+            profilePic: m.profilePic,
+            createdAt: m.createdAt.toISOString(),
+        }));
+
+        /* Estimate MRR */
+        const activeTotal = activeCustomerSubs + activePremiumSubs;
+        const totalDecidedKyc = (kycCounts.APPROVED || 0) + (kycCounts.REJECTED || 0) + (kycCounts.EXPIRED || 0) + (kycCounts.REVOKED || 0);
+        const kycApprovalRate = totalDecidedKyc > 0 ? Math.round(((kycCounts.APPROVED || 0) / totalDecidedKyc) * 100) : 100;
+        const churnRate = activeTotal > 0 ? ((cancelAtPeriodEnd / activeTotal) * 100).toFixed(1) : "0.0";
+
         return jsonOk({
             generatedAt: now.toISOString(),
+            timeline,
             volume: {
                 totalUsdc: formatUsdc(receiptVolume),
+                totalUsdcNumber: usdcMicrosToNumber(receiptVolume),
                 paymentCount: receiptCount,
                 averageUsdc: receiptCount > 0 ? formatUsdc(receiptVolume / BigInt(receiptCount)) : "0.00",
+                last7DaysUsdc: formatUsdc(toBigInt(receiptsLast7._sum.amountUsdc)),
+                last7DaysCount: receiptsLast7._count,
                 last30DaysUsdc: formatUsdc(toBigInt(receiptsLast30._sum.amountUsdc)),
                 last30DaysCount: receiptsLast30._count,
+                last90DaysUsdc: formatUsdc(toBigInt(receiptsLast90._sum.amountUsdc)),
+                last90DaysCount: receiptsLast90._count,
                 checkoutVolumeUsdc: formatUsdc(linkVolume),
+                checkoutVolume30dUsdc: formatUsdc(toBigInt(linkPaymentsLast30._sum.amountUsdc)),
                 checkoutCount: linkPayments._count,
+                checkoutCount30d: linkPaymentsLast30._count,
             },
             subscriptions: {
-                /* CUSTOMER = customer→merchant plans billed on-chain. PREMIUM = merchant→SubScript,
-                   billed by the in-app cron. Summing them would conflate our revenue with GMV. */
                 activeCustomer: activeCustomerSubs,
                 activePremium: activePremiumSubs,
-                activeTotal: activeCustomerSubs + activePremiumSubs,
+                activeTotal,
                 cancellingAtPeriodEnd: cancelAtPeriodEnd,
+                churnRatePercent: churnRate,
                 byStatus: statusCounts,
             },
             growth: {
-                /* usersTotal counts every account. merchantsTotal and customersTotal overlap it
-                   and each other — a merchant who also pays for things is one account, one
-                   merchants row and one customers row — so these must not be added together. */
                 usersTotal,
                 usersRoleUser: roleCounts.USER || 0,
                 usersRoleEnterprise: roleCounts.ENTERPRISE || 0,
@@ -165,17 +318,23 @@ export async function GET(request: Request) {
                 merchantsNew30d: merchantsLast30,
                 customersTotal: customerTotal,
                 customersNew30d: customersLast30,
+                verificationRate: merchantTotal > 0 ? Math.round((merchantVerified / merchantTotal) * 100) : 0,
             },
             kyc: {
                 byStatus: kycCounts,
                 pending: (kycCounts.PENDING || 0) + (kycCounts.IN_REVIEW || 0),
                 approved: kycCounts.APPROVED || 0,
+                rejected: kycCounts.REJECTED || 0,
+                needsInput: kycCounts.NEEDS_INPUT || 0,
+                approvalRate: kycApprovalRate,
             },
             health: {
                 revocationPending,
                 downgradeFailures,
                 stuckReceipts: pendingReceipts,
+                sponsor: sponsorStatus,
             },
+            topMerchants,
             recentBroadcasts: recentBroadcasts.map((b) => ({
                 ...b,
                 createdAt: b.createdAt.toISOString(),
