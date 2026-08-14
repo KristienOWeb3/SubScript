@@ -256,7 +256,7 @@ export default function Navbar() {
                             type="button"
                             onClick={() => setMobileMenuOpen(true)}
                             className="p-2 text-zinc-200 hover:text-white transition-colors min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
-                            aria-label="Open navigation menu"
+                            aria-label="Open Menu"
                             aria-expanded={mobileMenuOpen}
                             aria-controls="mobile-navigation"
                         >
@@ -298,7 +298,7 @@ export default function Navbar() {
                                 type="button"
                                 onClick={() => setMobileMenuOpen(false)}
                                 className="p-2 text-zinc-300 hover:text-white transition-colors min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
-                                aria-label="Close navigation menu"
+                                aria-label="Close Menu"
                             >
                                 <CloseIcon className="w-6 h-6" aria-hidden="true" />
                             </button>
