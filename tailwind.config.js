@@ -14,7 +14,9 @@ module.exports = {
                 'muted-gray': '#a1a1aa',
             },
             fontFamily: {
-                sans: ['var(--font-sukar)', 'Sukar', 'SF Pro Display', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+                sans: ['var(--font-sukar)', 'Sukar', 'sans-serif'],
+                serif: ['var(--font-sukar)', 'Sukar', 'sans-serif'],
+                mono: ['var(--font-sukar)', 'Sukar', 'sans-serif'],
             },
             transitionTimingFunction: {
                 DEFAULT: 'cubic-bezier(0.34, 1.56, 0.64, 1)',

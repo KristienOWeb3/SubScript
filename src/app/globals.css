@@ -2,6 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer components {
+  .koboyo-icon {
+    display: inline-block;
+    width: var(--koboyo-icon-size, 1em);
+    height: var(--koboyo-icon-size, 1em);
+    flex: none;
+    vertical-align: -0.125em;
+    background-color: currentColor;
+    -webkit-mask-position: center;
+    mask-position: center;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+  }
+}
+
 .topo-admin-header {
   background-color: #353935;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='720' height='420' viewBox='0 0 720 420'%3E%3Cg fill='none' stroke='%23d8dee9' stroke-opacity='.2' stroke-width='1'%3E%3Cpath d='M-40 95Q130 10 300 120t460-15M-40 130Q130 45 300 155t460-15M-40 165Q130 80 300 190t460-15M70-40q75 150 250 180t390-70M105-40q75 150 250 180t390-70M400 300c-170-110-230-10-135 65s270 50 330-35-55-160-175-95-150 180-15 210'/%3E%3Cpath stroke='%23edf2f7' stroke-opacity='.4' stroke-width='2' d='M-40 200Q130 115 300 225t460-15M400 300c-120-80-180-5-110 52s220 34 272-30-42-120-150-62'/%3E%3C/g%3E%3C/svg%3E");
@@ -117,6 +134,7 @@ body {
 * {
   box-sizing: border-box;
   max-width: 100%;
+  font-family: var(--font-sukar), Sukar, sans-serif;
 }
 
 /* Glassmorphism Card Style */
@@ -464,39 +482,206 @@ body {
   }
 }
 /* User dashboard redesign palette. Kept scoped so merchant/admin surfaces retain their themes. */
-.user-dashboard-redesign .dashboard-blue-panel {
+.user-dashboard-redesign {
+  background: #fffff0;
+  color: #000000;
+}
+
+.user-dashboard-redesign .dashboard-blue-panel,
+.user-dashboard-redesign .commit-vault-shell {
   background-color: rgb(39 117 202 / 20%);
 }
 
+.user-dashboard-content .text-white,
+.user-dashboard-content [class*="text-white/"],
+.user-dashboard-redesign [role="dialog"] .text-white,
+.user-dashboard-redesign [role="dialog"] [class*="text-white/"] {
+  color: #000000 !important;
+}
+
+.user-dashboard-content [class*="text-[#ccff00]"],
+.user-dashboard-redesign [role="dialog"] [class*="text-[#ccff00]"],
+.user-dashboard-content [class*="text-emerald"],
+.user-dashboard-content [class*="text-sky"] {
+  color: #000000 !important;
+}
+
+.user-dashboard-content [class*="bg-black/"],
+.user-dashboard-redesign [role="dialog"] [class*="bg-black/"] {
+  background-color: rgb(39 117 202 / 20%) !important;
+}
+
+.user-dashboard-content [class*="bg-[#ccff00]"],
+.user-dashboard-redesign [role="dialog"] [class*="bg-[#ccff00]"] {
+  background-color: #353935 !important;
+}
+
+.user-dashboard-content [class*="border-white/"],
+.user-dashboard-redesign [role="dialog"] [class*="border-white/"] {
+  border-color: rgb(0 0 0 / 22%) !important;
+}
+
+.user-dashboard-content [class*="border-[#ccff00]"],
+.user-dashboard-redesign [role="dialog"] [class*="border-[#ccff00]"] {
+  border-color: rgb(0 0 0 / 30%) !important;
+}
+
+.user-dashboard-content .liquid-glass,
+.user-dashboard-redesign [role="dialog"].liquid-glass {
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+.user-dashboard-content [class*="bg-emerald"],
+.user-dashboard-content [class*="bg-sky"] {
+  background-color: rgb(39 117 202 / 20%) !important;
+}
+
+.user-dashboard-redesign .fixed.inset-0 {
+  backdrop-filter: blur(24px) saturate(125%);
+  -webkit-backdrop-filter: blur(24px) saturate(125%);
+}
+
+.user-dashboard-redesign [role="dialog"] {
+  background-color: #fffff0 !important;
+  color: #000000 !important;
+  border-color: rgb(0 0 0 / 20%) !important;
+}
+
+.user-dashboard-redesign .wallet-actions button[aria-label="Deposit"] {
+  background: #353935;
+  color: #fffff0;
+}
+
+.user-dashboard-redesign .wallet-actions button[aria-label="Send Out"] {
+  background: rgb(39 117 202 / 20%);
+  color: #000000;
+}
+
+.user-dashboard-redesign .profile-trigger:not(.profile-trigger-expanded) > div {
+  border-color: transparent !important;
+  background: transparent !important;
+}
+
+.user-dashboard-redesign nav[aria-label="Primary navigation"] {
+  border: 1px solid rgb(0 0 0 / 18%);
+  background: rgb(39 117 202 / 20%) !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(22px) saturate(125%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(125%) !important;
+}
+
+.user-dashboard-redesign nav[aria-label="Primary navigation"] button[aria-current="page"] {
+  border-color: #353935 !important;
+  background: #353935 !important;
+  color: #fffff0 !important;
+  box-shadow: none !important;
+}
+
+.user-dashboard-loading .subscript-skeleton,
+.user-dashboard-loading .subscript-skeleton--faint {
+  background: rgb(39 117 202 / 20%) !important;
+  border-color: rgb(0 0 0 / 12%) !important;
+  box-shadow: none !important;
+}
+
+.user-dashboard-loading .liquid-glass {
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+.user-dashboard-loading [class*="bg-black/"],
+.user-dashboard-loading [class*="bg-[#131522]"] {
+  background-color: rgb(39 117 202 / 20%) !important;
+}
+
 @media (max-width: 767px) {
-  .user-dashboard-redesign .text-white,
-  .user-dashboard-redesign [class*="text-white/"] {
-    color: rgb(0 0 0 / 82%) !important;
-  }
-
-  .user-dashboard-redesign [class*="bg-black/"] {
-    background-color: rgb(39 117 202 / 20%) !important;
-  }
-
-  .user-dashboard-redesign [class*="border-white/"] {
-    border-color: rgb(0 0 0 / 22%) !important;
-  }
-
-  .user-dashboard-redesign .liquid-glass {
-    background-image: none !important;
+  .user-dashboard-redesign .dashboard-wallet-summary {
+    background: transparent !important;
+    border: 0 !important;
     box-shadow: none !important;
   }
 
-  .user-dashboard-redesign nav[aria-label="Primary navigation"] {
-    border: 1px solid rgb(0 0 0 / 18%);
-    background: rgb(39 117 202 / 20%) !important;
-    box-shadow: none !important;
+  .user-dashboard-redesign .wallet-actions {
+    width: 100%;
   }
 
-  .user-dashboard-redesign nav[aria-label="Primary navigation"] button[aria-current="page"] {
-    border-color: #353935 !important;
-    background: #353935 !important;
-    color: #fffff0 !important;
-    box-shadow: none !important;
+  .user-dashboard-redesign .commit-vault-shell {
+    background: transparent !important;
+    border: 0 !important;
   }
+
+  .user-dashboard-redesign .commit-vault-shell > div[data-testid="vault-carousel"] > div {
+    min-width: 100%;
+  }
+}
+
+/* Admin workspace contrast: the operational surface is light, while the blue status banner
+   keeps its intentional white-on-blue hierarchy. */
+.admin-topography {
+  background-color: #fffff0 !important;
+  color: #000000;
+}
+
+.admin-topography .text-white,
+.admin-topography [class*="text-white/"] {
+  color: #000000 !important;
+}
+
+.admin-topography .topo-admin-blue,
+.admin-topography .topo-admin-blue .text-white,
+.admin-topography .topo-admin-blue [class*="text-white/"] {
+  color: #fffff0 !important;
+}
+
+.admin-topography .topo-admin-blue {
+  background-color: #2775ca !important;
+}
+
+.admin-topography [class*="bg-white/"] {
+  background-color: rgb(39 117 202 / 8%) !important;
+}
+
+.admin-topography [class*="border-white/"] {
+  border-color: rgb(0 0 0 / 15%) !important;
+}
+/* Loading placeholders share the redesign tokens so the first paint matches the loaded dashboard. */
+.user-dashboard-redesign .subscript-skeleton,
+.user-dashboard-loading .subscript-skeleton {
+  background-color: rgb(39 117 202 / 20%) !important;
+  border-color: rgb(0 0 0 / 15%) !important;
+  color: #000000 !important;
+}
+
+.user-dashboard-redesign .subscript-skeleton--faint,
+.user-dashboard-loading .subscript-skeleton--faint {
+  background-color: rgb(39 117 202 / 12%) !important;
+}
+
+.user-dashboard-redesign .subscript-skeleton::after,
+.user-dashboard-loading .subscript-skeleton::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(255 255 240 / 10%) 38%,
+    rgb(255 255 240 / 48%) 58%,
+    transparent 100%
+  );
+}
+
+.user-dashboard-loading [class*="border-white/"],
+.user-dashboard-loading [class*="divide-white/"] > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgb(0 0 0 / 14%) !important;
+}
+
+.user-dashboard-loading .liquid-glass,
+.user-dashboard-loading .dashboard-loading-wallet {
+  background-color: rgb(39 117 202 / 20%) !important;
+}
+
+.user-dashboard-content > [aria-hidden="true"][class*="top-0"] {
+  height: 10rem;
+  background-color: rgb(255 255 240 / 96%) !important;
+  backdrop-filter: blur(34px) saturate(145%);
+  -webkit-backdrop-filter: blur(34px) saturate(145%);
 }

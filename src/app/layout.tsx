@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
-import { Inter, Instrument_Serif } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
 import PrivyProviderWrapper from "@/components/PrivyProviderWrapper";
@@ -29,22 +28,6 @@ const sukar = localFont({
     ],
     variable: "--font-sukar",
     display: "swap",
-});
-
-const inter = Inter({
-    subsets: ["latin"],
-    variable: "--font-inter",
-    display: "swap",
-    preload: true,
-});
-
-const instrumentSerif = Instrument_Serif({
-    subsets: ["latin"],
-    weight: ["400"],
-    style: ["normal", "italic"],
-    variable: "--font-instrument",
-    display: "swap",
-    preload: true,
 });
 
 function normalizePublicUrl(value: string | undefined) {
@@ -294,7 +277,7 @@ export default async function RootLayout({
                     }}
                 />
             </head>
-            <body className={`${sukar.variable} ${inter.variable} ${instrumentSerif.variable} font-sans antialiased`} style={{ backgroundColor: "#000000" }}>
+            <body className={`${sukar.variable} font-sans antialiased`} style={{ backgroundColor: "#000000" }}>
                 <script
                     nonce={nonce}
                     suppressHydrationWarning

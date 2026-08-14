@@ -21,7 +21,7 @@ export default function NotFound() {
             <div className="relative z-10 w-full max-w-md text-center">
                 <p
                     className="select-none text-[120px] font-bold italic leading-none tracking-tighter text-white/90 sm:text-[160px]"
-                    style={{ fontFamily: "var(--font-instrument)" }}
+                    style={{ fontFamily: "var(--font-sukar)" }}
                 >
                     404
                 </p>

@@ -134,33 +134,41 @@ export async function getVerifiedSessionToken(headers: Headers): Promise<Verifie
 
        NOT EXISTS (rather than a join) so a wallet with several ban rows cannot duplicate
        session rows, and expires_at is honoured so temporary bans lapse on their own. */
-    const liveSessions = await pgQuery<{ token: string }>(
-        `select s.token
-           from sessions s
-          where s.token = ANY($1)
-            and s.expires_at > now()
-            and not exists (
-                select 1
-                  from banned_accounts b
-                 where lower(b.address) = lower(s.wallet)
-                   and (b.expires_at is null or b.expires_at > now())
-            )`,
-        [hashes]
-    );
-    const liveHashes = new Set(liveSessions.map(s => s.token));
+    try {
+        const liveSessions = await pgQuery<{ token: string }>(
+            `select s.token
+               from sessions s
+              where s.token = ANY($1)
+                and s.expires_at > now()
+                and not exists (
+                    select 1
+                      from banned_accounts b
+                     where lower(b.address) = lower(s.wallet)
+                       and (b.expires_at is null or b.expires_at > now())
+                )`,
+            [hashes]
+        );
+        const liveHashes = new Set(liveSessions.map(s => s.token));
 
-    let newestSession: Candidate | null = null;
-    for (const candidate of candidates) {
-        if (liveHashes.has(candidate.hash)) {
-            if (!newestSession || candidate.issuedAt > newestSession.issuedAt) {
-                newestSession = candidate;
+        let newestSession: Candidate | null = null;
+        for (const candidate of candidates) {
+            if (liveHashes.has(candidate.hash)) {
+                if (!newestSession || candidate.issuedAt > newestSession.issuedAt) {
+                    newestSession = candidate;
+                }
             }
         }
-    }
 
-    if (!newestSession) return null;
-    const { issuedAt: _issuedAt, hash: _hash, ...verifiedSession } = newestSession;
-    return verifiedSession;
+        if (!newestSession) return null;
+        return {
+            token: newestSession.token,
+            wallet: newestSession.wallet,
+            expiresAt: newestSession.expiresAt,
+        };
+    } catch (e: any) {
+        console.error(`[auth] Session database verification failed: ${e.message}`);
+        return null;
+    }
 }
 
 /**
