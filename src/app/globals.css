@@ -463,3 +463,40 @@ body {
     animation: pulse 2s ease-in-out infinite !important;
   }
 }
+/* User dashboard redesign palette. Kept scoped so merchant/admin surfaces retain their themes. */
+.user-dashboard-redesign .dashboard-blue-panel {
+  background-color: rgb(39 117 202 / 20%);
+}
+
+@media (max-width: 767px) {
+  .user-dashboard-redesign .text-white,
+  .user-dashboard-redesign [class*="text-white/"] {
+    color: rgb(0 0 0 / 82%) !important;
+  }
+
+  .user-dashboard-redesign [class*="bg-black/"] {
+    background-color: rgb(39 117 202 / 20%) !important;
+  }
+
+  .user-dashboard-redesign [class*="border-white/"] {
+    border-color: rgb(0 0 0 / 22%) !important;
+  }
+
+  .user-dashboard-redesign .liquid-glass {
+    background-image: none !important;
+    box-shadow: none !important;
+  }
+
+  .user-dashboard-redesign nav[aria-label="Primary navigation"] {
+    border: 1px solid rgb(0 0 0 / 18%);
+    background: rgb(39 117 202 / 20%) !important;
+    box-shadow: none !important;
+  }
+
+  .user-dashboard-redesign nav[aria-label="Primary navigation"] button[aria-current="page"] {
+    border-color: #353935 !important;
+    background: #353935 !important;
+    color: #fffff0 !important;
+    box-shadow: none !important;
+  }
+}
