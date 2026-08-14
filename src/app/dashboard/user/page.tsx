@@ -3679,6 +3679,8 @@ export default function UserDashboard() {
                           openVaultCommit();
                         }}
                         className={`flex h-12 items-center justify-center gap-2 overflow-hidden rounded-2xl border border-black/30 bg-[#D5E3EE] text-black transition-all duration-300 ${expandedCommitAction === "commit" ? "w-44 px-3" : "w-12"}`}
+                        title="Commit to a service"
+                        aria-label="Commit to a service"
                       >
                         <Plus className="h-6 w-6 shrink-0" />
                         {expandedCommitAction === "commit" && <span className="whitespace-nowrap text-[10px] font-bold">Commit to a service</span>}
