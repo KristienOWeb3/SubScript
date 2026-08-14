@@ -1,0 +1,522 @@
+{
+  "Activity": {
+    "slug": "activity",
+    "url": "https://koboyo.com/icons/svg/activity.svg",
+    "destPath": "public/icons/koboyo/Activity.svg"
+  },
+  "AlertCircle": {
+    "slug": "info-circle",
+    "url": "https://koboyo.com/icons/svg/info-circle.svg",
+    "destPath": "public/icons/koboyo/AlertCircle.svg"
+  },
+  "AlertTriangle": {
+    "slug": "warning",
+    "url": "https://koboyo.com/icons/svg/warning.svg",
+    "destPath": "public/icons/koboyo/AlertTriangle.svg"
+  },
+  "ArrowDown": {
+    "slug": "arrow-down",
+    "url": "https://koboyo.com/icons/svg/arrow-down.svg",
+    "destPath": "public/icons/koboyo/ArrowDown.svg"
+  },
+  "ArrowDownToLine": {
+    "slug": "arrow-down-to-line",
+    "url": "https://koboyo.com/icons/svg/arrow-down-to-line.svg",
+    "destPath": "public/icons/koboyo/ArrowDownToLine.svg"
+  },
+  "ArrowLeft": {
+    "slug": "arrow-left",
+    "url": "https://koboyo.com/icons/svg/arrow-left.svg",
+    "destPath": "public/icons/koboyo/ArrowLeft.svg"
+  },
+  "ArrowRight": {
+    "slug": "arrow-right",
+    "url": "https://koboyo.com/icons/svg/arrow-right.svg",
+    "destPath": "public/icons/koboyo/ArrowRight.svg"
+  },
+  "ArrowRightLeft": {
+    "slug": "arrow-right-left",
+    "url": "https://koboyo.com/icons/svg/arrow-right-left.svg",
+    "destPath": "public/icons/koboyo/ArrowRightLeft.svg"
+  },
+  "ArrowUp": {
+    "slug": "arrow-up",
+    "url": "https://koboyo.com/icons/svg/arrow-up.svg",
+    "destPath": "public/icons/koboyo/ArrowUp.svg"
+  },
+  "ArrowUpRight": {
+    "slug": "arrow-up-right",
+    "url": "https://koboyo.com/icons/svg/arrow-up-right.svg",
+    "destPath": "public/icons/koboyo/ArrowUpRight.svg"
+  },
+  "Award": {
+    "slug": "award",
+    "url": "https://koboyo.com/icons/svg/award.svg",
+    "destPath": "public/icons/koboyo/Award.svg"
+  },
+  "Ban": {
+    "slug": "ban",
+    "url": "https://koboyo.com/icons/svg/ban.svg",
+    "destPath": "public/icons/koboyo/Ban.svg"
+  },
+  "BarChart3": {
+    "slug": "bar-chart",
+    "url": "https://koboyo.com/icons/svg/bar-chart.svg",
+    "destPath": "public/icons/koboyo/BarChart3.svg"
+  },
+  "Bell": {
+    "slug": "bell",
+    "url": "https://koboyo.com/icons/svg/bell.svg",
+    "destPath": "public/icons/koboyo/Bell.svg"
+  },
+  "BookOpen": {
+    "slug": "book-open",
+    "url": "https://koboyo.com/icons/svg/book-open.svg",
+    "destPath": "public/icons/koboyo/BookOpen.svg"
+  },
+  "Broadcast": {
+    "slug": "megaphone",
+    "url": "https://koboyo.com/icons/svg/megaphone.svg",
+    "destPath": "public/icons/koboyo/Broadcast.svg"
+  },
+  "Building2": {
+    "slug": "bank",
+    "url": "https://koboyo.com/icons/svg/bank.svg",
+    "destPath": "public/icons/koboyo/Building2.svg"
+  },
+  "Calendar": {
+    "slug": "calendar",
+    "url": "https://koboyo.com/icons/svg/calendar.svg",
+    "destPath": "public/icons/koboyo/Calendar.svg"
+  },
+  "Camera": {
+    "slug": "camera",
+    "url": "https://koboyo.com/icons/svg/camera.svg",
+    "destPath": "public/icons/koboyo/Camera.svg"
+  },
+  "Check": {
+    "slug": "check",
+    "url": "https://koboyo.com/icons/svg/check.svg",
+    "destPath": "public/icons/koboyo/Check.svg"
+  },
+  "CheckCircle": {
+    "slug": "circle-check",
+    "url": "https://koboyo.com/icons/svg/circle-check.svg",
+    "destPath": "public/icons/koboyo/CheckCircle.svg"
+  },
+  "CheckCircle2": {
+    "slug": "circle-check",
+    "url": "https://koboyo.com/icons/svg/circle-check.svg",
+    "destPath": "public/icons/koboyo/CheckCircle2.svg"
+  },
+  "ChevronDown": {
+    "slug": "chevron-down",
+    "url": "https://koboyo.com/icons/svg/chevron-down.svg",
+    "destPath": "public/icons/koboyo/ChevronDown.svg"
+  },
+  "ChevronLeft": {
+    "slug": "chevron-left",
+    "url": "https://koboyo.com/icons/svg/chevron-left.svg",
+    "destPath": "public/icons/koboyo/ChevronLeft.svg"
+  },
+  "ChevronRight": {
+    "slug": "chevron-right",
+    "url": "https://koboyo.com/icons/svg/chevron-right.svg",
+    "destPath": "public/icons/koboyo/ChevronRight.svg"
+  },
+  "ChevronUp": {
+    "slug": "chevron-up",
+    "url": "https://koboyo.com/icons/svg/chevron-up.svg",
+    "destPath": "public/icons/koboyo/ChevronUp.svg"
+  },
+  "Clock": {
+    "slug": "clock",
+    "url": "https://koboyo.com/icons/svg/clock.svg",
+    "destPath": "public/icons/koboyo/Clock.svg"
+  },
+  "Code": {
+    "slug": "code",
+    "url": "https://koboyo.com/icons/svg/code.svg",
+    "destPath": "public/icons/koboyo/Code.svg"
+  },
+  "Code2": {
+    "slug": "code",
+    "url": "https://koboyo.com/icons/svg/code.svg",
+    "destPath": "public/icons/koboyo/Code2.svg"
+  },
+  "Copy": {
+    "slug": "copy",
+    "url": "https://koboyo.com/icons/svg/copy.svg",
+    "destPath": "public/icons/koboyo/Copy.svg"
+  },
+  "CreditCard": {
+    "slug": "credit-card",
+    "url": "https://koboyo.com/icons/svg/credit-card.svg",
+    "destPath": "public/icons/koboyo/CreditCard.svg"
+  },
+  "Crown": {
+    "slug": "crown",
+    "url": "https://koboyo.com/icons/svg/crown.svg",
+    "destPath": "public/icons/koboyo/Crown.svg"
+  },
+  "DollarSign": {
+    "slug": "dollar-sign",
+    "url": "https://koboyo.com/icons/svg/dollar-sign.svg",
+    "destPath": "public/icons/koboyo/DollarSign.svg"
+  },
+  "Download": {
+    "slug": "download",
+    "url": "https://koboyo.com/icons/svg/download.svg",
+    "destPath": "public/icons/koboyo/Download.svg"
+  },
+  "ExternalLink": {
+    "slug": "external-link",
+    "url": "https://koboyo.com/icons/svg/external-link.svg",
+    "destPath": "public/icons/koboyo/ExternalLink.svg"
+  },
+  "Eye": {
+    "slug": "eye",
+    "url": "https://koboyo.com/icons/svg/eye.svg",
+    "destPath": "public/icons/koboyo/Eye.svg"
+  },
+  "EyeOff": {
+    "slug": "eye-off",
+    "url": "https://koboyo.com/icons/svg/eye-off.svg",
+    "destPath": "public/icons/koboyo/EyeOff.svg"
+  },
+  "FileText": {
+    "slug": "file-text",
+    "url": "https://koboyo.com/icons/svg/file-text.svg",
+    "destPath": "public/icons/koboyo/FileText.svg"
+  },
+  "Filter": {
+    "slug": "filter",
+    "url": "https://koboyo.com/icons/svg/filter.svg",
+    "destPath": "public/icons/koboyo/Filter.svg"
+  },
+  "Gift": {
+    "slug": "gift",
+    "url": "https://koboyo.com/icons/svg/gift.svg",
+    "destPath": "public/icons/koboyo/Gift.svg"
+  },
+  "Globe": {
+    "slug": "globe",
+    "url": "https://koboyo.com/icons/svg/globe.svg",
+    "destPath": "public/icons/koboyo/Globe.svg"
+  },
+  "Globe2": {
+    "slug": "globe-2",
+    "url": "https://koboyo.com/icons/svg/globe-2.svg",
+    "destPath": "public/icons/koboyo/Globe2.svg"
+  },
+  "Heart": {
+    "slug": "heart",
+    "url": "https://koboyo.com/icons/svg/heart.svg",
+    "destPath": "public/icons/koboyo/Heart.svg"
+  },
+  "HelpCircle": {
+    "slug": "question-circle",
+    "url": "https://koboyo.com/icons/svg/question-circle.svg",
+    "destPath": "public/icons/koboyo/HelpCircle.svg"
+  },
+  "Home": {
+    "slug": "house",
+    "url": "https://koboyo.com/icons/svg/house.svg",
+    "destPath": "public/icons/koboyo/Home.svg"
+  },
+  "Inbox": {
+    "slug": "inbox",
+    "url": "https://koboyo.com/icons/svg/inbox.svg",
+    "destPath": "public/icons/koboyo/Inbox.svg"
+  },
+  "Key": {
+    "slug": "key",
+    "url": "https://koboyo.com/icons/svg/key.svg",
+    "destPath": "public/icons/koboyo/Key.svg"
+  },
+  "KeyRound": {
+    "slug": "key-round",
+    "url": "https://koboyo.com/icons/svg/key-round.svg",
+    "destPath": "public/icons/koboyo/KeyRound.svg"
+  },
+  "Layers": {
+    "slug": "layers",
+    "url": "https://koboyo.com/icons/svg/layers.svg",
+    "destPath": "public/icons/koboyo/Layers.svg"
+  },
+  "Link2": {
+    "slug": "link-2",
+    "url": "https://koboyo.com/icons/svg/link-2.svg",
+    "destPath": "public/icons/koboyo/Link2.svg"
+  },
+  "Loader2": {
+    "slug": "spinner",
+    "url": "https://koboyo.com/icons/svg/spinner.svg",
+    "destPath": "public/icons/koboyo/Loader2.svg"
+  },
+  "Lock": {
+    "slug": "lock",
+    "url": "https://koboyo.com/icons/svg/lock.svg",
+    "destPath": "public/icons/koboyo/Lock.svg"
+  },
+  "LockKeyhole": {
+    "slug": "lock-keyhole",
+    "url": "https://koboyo.com/icons/svg/lock-keyhole.svg",
+    "destPath": "public/icons/koboyo/LockKeyhole.svg"
+  },
+  "LogOut": {
+    "slug": "log-out",
+    "url": "https://koboyo.com/icons/svg/log-out.svg",
+    "destPath": "public/icons/koboyo/LogOut.svg"
+  },
+  "Mail": {
+    "slug": "mail",
+    "url": "https://koboyo.com/icons/svg/mail.svg",
+    "destPath": "public/icons/koboyo/Mail.svg"
+  },
+  "MailCheck": {
+    "slug": "mail-check",
+    "url": "https://koboyo.com/icons/svg/mail-check.svg",
+    "destPath": "public/icons/koboyo/MailCheck.svg"
+  },
+  "Menu": {
+    "slug": "menu",
+    "url": "https://koboyo.com/icons/svg/menu.svg",
+    "destPath": "public/icons/koboyo/Menu.svg"
+  },
+  "MessageSquare": {
+    "slug": "message-square",
+    "url": "https://koboyo.com/icons/svg/message-square.svg",
+    "destPath": "public/icons/koboyo/MessageSquare.svg"
+  },
+  "Pause": {
+    "slug": "pause",
+    "url": "https://koboyo.com/icons/svg/pause.svg",
+    "destPath": "public/icons/koboyo/Pause.svg"
+  },
+  "Pencil": {
+    "slug": "pencil",
+    "url": "https://koboyo.com/icons/svg/pencil.svg",
+    "destPath": "public/icons/koboyo/Pencil.svg"
+  },
+  "PieChart": {
+    "slug": "pie-chart",
+    "url": "https://koboyo.com/icons/svg/pie-chart.svg",
+    "destPath": "public/icons/koboyo/PieChart.svg"
+  },
+  "Play": {
+    "slug": "play",
+    "url": "https://koboyo.com/icons/svg/play.svg",
+    "destPath": "public/icons/koboyo/Play.svg"
+  },
+  "PlayCircle": {
+    "slug": "play-circle",
+    "url": "https://koboyo.com/icons/svg/play-circle.svg",
+    "destPath": "public/icons/koboyo/PlayCircle.svg"
+  },
+  "PlugZap": {
+    "slug": "plug-zap",
+    "url": "https://koboyo.com/icons/svg/plug-zap.svg",
+    "destPath": "public/icons/koboyo/PlugZap.svg"
+  },
+  "Plus": {
+    "slug": "plus",
+    "url": "https://koboyo.com/icons/svg/plus.svg",
+    "destPath": "public/icons/koboyo/Plus.svg"
+  },
+  "Power": {
+    "slug": "power",
+    "url": "https://koboyo.com/icons/svg/power.svg",
+    "destPath": "public/icons/koboyo/Power.svg"
+  },
+  "QrCode": {
+    "slug": "qr-code",
+    "url": "https://koboyo.com/icons/svg/qr-code.svg",
+    "destPath": "public/icons/koboyo/QrCode.svg"
+  },
+  "ReceiptText": {
+    "slug": "receipt-text",
+    "url": "https://koboyo.com/icons/svg/receipt-text.svg",
+    "destPath": "public/icons/koboyo/ReceiptText.svg"
+  },
+  "RefreshCcw": {
+    "slug": "refresh-ccw",
+    "url": "https://koboyo.com/icons/svg/refresh-ccw.svg",
+    "destPath": "public/icons/koboyo/RefreshCcw.svg"
+  },
+  "RefreshCw": {
+    "slug": "refresh-cw",
+    "url": "https://koboyo.com/icons/svg/refresh-cw.svg",
+    "destPath": "public/icons/koboyo/RefreshCw.svg"
+  },
+  "RotateCw": {
+    "slug": "rotate-cw",
+    "url": "https://koboyo.com/icons/svg/rotate-cw.svg",
+    "destPath": "public/icons/koboyo/RotateCw.svg"
+  },
+  "Save": {
+    "slug": "save",
+    "url": "https://koboyo.com/icons/svg/save.svg",
+    "destPath": "public/icons/koboyo/Save.svg"
+  },
+  "Search": {
+    "slug": "search",
+    "url": "https://koboyo.com/icons/svg/search.svg",
+    "destPath": "public/icons/koboyo/Search.svg"
+  },
+  "Send": {
+    "slug": "send",
+    "url": "https://koboyo.com/icons/svg/send.svg",
+    "destPath": "public/icons/koboyo/Send.svg"
+  },
+  "Server": {
+    "slug": "server",
+    "url": "https://koboyo.com/icons/svg/server.svg",
+    "destPath": "public/icons/koboyo/Server.svg"
+  },
+  "Share2": {
+    "slug": "share-2",
+    "url": "https://koboyo.com/icons/svg/share-2.svg",
+    "destPath": "public/icons/koboyo/Share2.svg"
+  },
+  "Shield": {
+    "slug": "shield",
+    "url": "https://koboyo.com/icons/svg/shield.svg",
+    "destPath": "public/icons/koboyo/Shield.svg"
+  },
+  "ShieldAlert": {
+    "slug": "shield-alert",
+    "url": "https://koboyo.com/icons/svg/shield-alert.svg",
+    "destPath": "public/icons/koboyo/ShieldAlert.svg"
+  },
+  "ShieldCheck": {
+    "slug": "shield-check",
+    "url": "https://koboyo.com/icons/svg/shield-check.svg",
+    "destPath": "public/icons/koboyo/ShieldCheck.svg"
+  },
+  "ShieldOff": {
+    "slug": "shield-off",
+    "url": "https://koboyo.com/icons/svg/shield-off.svg",
+    "destPath": "public/icons/koboyo/ShieldOff.svg"
+  },
+  "ShieldX": {
+    "slug": "shield-x",
+    "url": "https://koboyo.com/icons/svg/shield-x.svg",
+    "destPath": "public/icons/koboyo/ShieldX.svg"
+  },
+  "ShoppingBag": {
+    "slug": "shopping-bag",
+    "url": "https://koboyo.com/icons/svg/shopping-bag.svg",
+    "destPath": "public/icons/koboyo/ShoppingBag.svg"
+  },
+  "Sliders": {
+    "slug": "toggle",
+    "url": "https://koboyo.com/icons/svg/toggle.svg",
+    "destPath": "public/icons/koboyo/Sliders.svg"
+  },
+  "Sparkles": {
+    "slug": "sparkles",
+    "url": "https://koboyo.com/icons/svg/sparkles.svg",
+    "destPath": "public/icons/koboyo/Sparkles.svg"
+  },
+  "SquaresFour": {
+    "slug": "grid",
+    "url": "https://koboyo.com/icons/svg/grid.svg",
+    "destPath": "public/icons/koboyo/SquaresFour.svg"
+  },
+  "Tag": {
+    "slug": "tag",
+    "url": "https://koboyo.com/icons/svg/tag.svg",
+    "destPath": "public/icons/koboyo/Tag.svg"
+  },
+  "Terminal": {
+    "slug": "terminal",
+    "url": "https://koboyo.com/icons/svg/terminal.svg",
+    "destPath": "public/icons/koboyo/Terminal.svg"
+  },
+  "TimerReset": {
+    "slug": "timer-reset",
+    "url": "https://koboyo.com/icons/svg/timer-reset.svg",
+    "destPath": "public/icons/koboyo/TimerReset.svg"
+  },
+  "Trash2": {
+    "slug": "trash-2",
+    "url": "https://koboyo.com/icons/svg/trash-2.svg",
+    "destPath": "public/icons/koboyo/Trash2.svg"
+  },
+  "TrendingDown": {
+    "slug": "trending-down",
+    "url": "https://koboyo.com/icons/svg/trending-down.svg",
+    "destPath": "public/icons/koboyo/TrendingDown.svg"
+  },
+  "TrendingUp": {
+    "slug": "trending-up",
+    "url": "https://koboyo.com/icons/svg/trending-up.svg",
+    "destPath": "public/icons/koboyo/TrendingUp.svg"
+  },
+  "Trophy": {
+    "slug": "trophy",
+    "url": "https://koboyo.com/icons/svg/trophy.svg",
+    "destPath": "public/icons/koboyo/Trophy.svg"
+  },
+  "Upload": {
+    "slug": "upload",
+    "url": "https://koboyo.com/icons/svg/upload.svg",
+    "destPath": "public/icons/koboyo/Upload.svg"
+  },
+  "User": {
+    "slug": "user",
+    "url": "https://koboyo.com/icons/svg/user.svg",
+    "destPath": "public/icons/koboyo/User.svg"
+  },
+  "UserCheck": {
+    "slug": "user-check",
+    "url": "https://koboyo.com/icons/svg/user-check.svg",
+    "destPath": "public/icons/koboyo/UserCheck.svg"
+  },
+  "UserPlus": {
+    "slug": "user-plus",
+    "url": "https://koboyo.com/icons/svg/user-plus.svg",
+    "destPath": "public/icons/koboyo/UserPlus.svg"
+  },
+  "UserX": {
+    "slug": "user-x",
+    "url": "https://koboyo.com/icons/svg/user-x.svg",
+    "destPath": "public/icons/koboyo/UserX.svg"
+  },
+  "Users": {
+    "slug": "users",
+    "url": "https://koboyo.com/icons/svg/users.svg",
+    "destPath": "public/icons/koboyo/Users.svg"
+  },
+  "Wallet": {
+    "slug": "wallet",
+    "url": "https://koboyo.com/icons/svg/wallet.svg",
+    "destPath": "public/icons/koboyo/Wallet.svg"
+  },
+  "WalletCards": {
+    "slug": "wallet-cards",
+    "url": "https://koboyo.com/icons/svg/wallet-cards.svg",
+    "destPath": "public/icons/koboyo/WalletCards.svg"
+  },
+  "Webhook": {
+    "slug": "webhook",
+    "url": "https://koboyo.com/icons/svg/webhook.svg",
+    "destPath": "public/icons/koboyo/Webhook.svg"
+  },
+  "X": {
+    "slug": "x",
+    "url": "https://koboyo.com/icons/svg/x.svg",
+    "destPath": "public/icons/koboyo/X.svg"
+  },
+  "XCircle": {
+    "slug": "circle-x",
+    "url": "https://koboyo.com/icons/svg/circle-x.svg",
+    "destPath": "public/icons/koboyo/XCircle.svg"
+  },
+  "Zap": {
+    "slug": "zap",
+    "url": "https://koboyo.com/icons/svg/zap.svg",
+    "destPath": "public/icons/koboyo/Zap.svg"
+  }
+}

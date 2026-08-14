@@ -22,7 +22,8 @@ const config: Config = {
             },
             fontFamily: {
                 sans: ['var(--font-sukar)', 'system-ui', 'sans-serif'],
-                serif: ['var(--font-instrument)', 'Georgia', 'serif'],
+                serif: ['var(--font-sukar)', 'Sukar', 'sans-serif'],
+                mono: ['var(--font-sukar)', 'Sukar', 'sans-serif'],
             },
             boxShadow: {
                 'glow-teal': '0 0 25px rgba(0, 210, 180, 0.4)',

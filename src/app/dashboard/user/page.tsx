@@ -29,14 +29,14 @@ import jsQR from "jsqr";
 import { motion, AnimatePresence } from "framer-motion";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
 import LiquidGlassEffect from "@/components/LiquidGlassEffect";
-import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+
 import NotificationBell from "@/components/dashboard/NotificationBell";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
 import ConfirmModal from "@/components/ConfirmModal";
 import QrScannerModal from "@/components/QrScannerModal";
 import SendSingleModal from "@/components/SendSingleModal";
-import VaultShareManager from "@/components/VaultShareManager";
+
 import DmRequestsModal from "@/components/dashboard/DmRequestsModal";
 import DmInviteManagerModal from "@/components/dashboard/DmInviteManagerModal";
 import BlockedUsersModal from "@/components/dashboard/BlockedUsersModal";
@@ -2844,14 +2844,14 @@ export default function UserDashboard() {
 
   if (loading) {
     return (
-      <div className="relative overflow-x-hidden bg-[#060608] text-white font-sans md:h-[100dvh] md:overflow-hidden">
-        <AnimatedGradientBg variant="dashboard" />
-        <div className="fixed inset-0 pointer-events-none z-0 bg-gradient-to-b from-black/35 via-black/15 to-black/45" />
+      <div className="user-dashboard-loading relative overflow-x-hidden bg-[#FFFFF0] text-black font-sans md:h-[100dvh] md:overflow-hidden">
+
+        <div className="fixed inset-0 pointer-events-none z-0 hidden bg-[#353935] md:block" />
 
         <div className="relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0">
         {/* Desktop Sidebar Skeleton — mirrors UserDesktopSidebar: profile pill, 6 half-rounded
             nav pills that bleed into the content panel, promo card, then two footer links. */}
-        <aside className="hidden md:flex h-full max-h-screen w-20 lg:w-64 shrink-0 flex-col justify-between overflow-y-auto bg-[#08080a] p-4 lg:p-5">
+        <aside className="hidden md:flex h-full max-h-screen w-20 lg:w-64 shrink-0 flex-col justify-between overflow-y-auto bg-[#353935] p-4 lg:p-5">
           <div className="space-y-6">
             <div className="flex items-center justify-center lg:justify-start gap-2.5 rounded-full lg:px-2 lg:py-1.5">
               <div className="h-6 w-6 shrink-0 subscript-skeleton rounded-full" />
@@ -2883,7 +2883,7 @@ export default function UserDashboard() {
         {/* Content Pane Skeleton — mirrors the desktop Home layout: header with title + action
             circles, then a 46fr/54fr main grid with the balance row (big card + circles) on the
             left and the active-subscriptions panel on the right. */}
-        <div className="relative z-10 min-w-0 flex-1 flex flex-col md:mt-[14px] md:h-[calc(100vh-14px)] bg-[#131522]/90 backdrop-blur-xl md:rounded-tl-[28px] border-t border-l border-white/10 shadow-[-8px_0_24px_rgba(0,0,0,0.36)] overflow-hidden">
+        <div className="relative z-10 min-w-0 flex-1 flex flex-col bg-[#FFFFF0] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[20px] md:border md:border-black/10 overflow-hidden">
           <div className="md:hidden fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
             <div className="w-full max-w-md liquid-glass rounded-full px-5 py-3 pointer-events-auto bg-black/30 backdrop-blur-lg border border-white/5 flex items-center justify-between">
               <div className="h-7 w-7 subscript-skeleton rounded-full" />
@@ -2905,7 +2905,7 @@ export default function UserDashboard() {
               {/* LEFT 46% */}
               <div className="flex flex-col gap-4 min-w-0">
                 {/* Balance row: figures left, stacked 38px circle actions right, inside one card */}
-                <div className="liquid-glass flex items-center justify-between gap-4 rounded-[20px] border border-white/5 bg-black/40 px-6 py-[22px] shadow-2xl backdrop-blur-xl">
+                <div className="dashboard-loading-wallet flex flex-col items-center justify-center gap-4 px-6 py-[22px] text-center md:flex-row md:justify-between md:rounded-[20px] md:border md:border-black/20 md:bg-[#2775CA]/20 md:text-left">
                   <div className="min-w-0 space-y-2">
                     <div className="h-2.5 w-40 subscript-skeleton rounded-full" />
                     <div className="h-10 w-44 subscript-skeleton rounded-xl" />
@@ -2919,7 +2919,7 @@ export default function UserDashboard() {
                 </div>
 
                 {/* Two equal square cards */}
-                <div className="grid grid-cols-2 gap-3.5">
+                <div className="grid grid-cols-[42fr_58fr] gap-3.5">
                   {[1, 2].map((i) => (
                     <div key={i} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-[18px] rounded-[18px] shadow-xl min-h-[120px] flex flex-col justify-between">
                       <div className="space-y-2">
@@ -2993,7 +2993,7 @@ export default function UserDashboard() {
         {/* Mobile Bottom Bar Skeleton */}
         {isMobile && (
           <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3">
-            <div className="liquid-glass flex flex-1 items-center justify-around rounded-full bg-black/30 backdrop-blur-lg px-3 py-[1.1rem] shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]">
+            <div className="flex flex-1 items-center justify-around rounded-full border border-black/15 bg-[#2775CA]/20 px-3 py-[1.1rem] backdrop-blur-2xl">
               {[1, 2, 3, 4].map((i) => (
                 <div key={i} className="h-6 w-6 subscript-skeleton rounded-full" />
               ))}
@@ -3007,8 +3007,8 @@ export default function UserDashboard() {
 
   if (redirectMessage) {
     return (
-      <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[#060608] px-6 text-white">
-        <AnimatedGradientBg variant="dashboard" />
+      <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[#FFFFF0] px-6 text-black">
+
         <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl border border-white/10 bg-black/45 p-6 sm:p-8 text-center shadow-2xl backdrop-blur-xl">
           <span className="inline-flex p-3 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 mb-2">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -3336,8 +3336,8 @@ export default function UserDashboard() {
         )}
 
         {/* The wireframe's 14px top slit + 28px inner radius, with a refined translucent surface. */}
-        <div className={`relative z-10 min-w-0 flex-1 bg-[#FFFFF0] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[20px] md:border md:border-black/10 ${isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : "h-[100dvh] overflow-y-auto overscroll-y-contain md:h-auto md:overflow-y-auto"}`}>
-          <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-0 z-30 h-24 bg-[#FFFFF0]/70 backdrop-blur-xl [mask-image:linear-gradient(to_bottom,black,transparent)] md:hidden" />
+        <div className={`user-dashboard-content relative z-10 min-w-0 flex-1 bg-[#FFFFF0] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[20px] md:border md:border-black/10 ${isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : "h-[100dvh] overflow-y-auto overscroll-y-contain md:h-auto md:overflow-y-auto"}`}>
+          <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-0 z-30 h-32 bg-[#FFFFF0]/90 backdrop-blur-3xl saturate-150 [mask-image:linear-gradient(to_bottom,black_0%,black_35%,transparent_100%)] md:hidden" />
           {/* Mobile headers (only shown on small screens) */}
           {isMobile && (
             <div className="w-full">
@@ -3377,14 +3377,14 @@ export default function UserDashboard() {
       }`}>
         {/* Title Header (Desktop only — hidden on inbox so the chat frame fills the viewport) */}
         {!isMobile && activeTab !== "inbox" && (
-          <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 mb-8 pb-6 border-b border-white/5">
+          <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 mb-8 pb-6 border-b border-black/10">
             <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight">
+              <h1 className="text-3xl font-extrabold text-[#111827] uppercase tracking-tight">
                 User Dashboard
               </h1>
               {/* Beside the title, per the desktop placement. This header is already desktop-only,
                   so no breakpoint class is needed here; the mobile header carries its own bell. */}
-              <NotificationBell audience="USER" accent="#ccff00" />
+              <NotificationBell audience="USER" accent="#2775CA" />
             </div>
           </div>
         )}
@@ -3415,14 +3415,14 @@ export default function UserDashboard() {
                   {/* LEFT COLUMN */}
                   <div className="flex min-w-0 flex-col gap-4">
                     {/* ===== Wallet balance: figures left, stacked circle actions right ===== */}
-                    <section className="dashboard-blue-panel relative flex flex-col items-center justify-center gap-4 overflow-hidden rounded-[20px] border border-black/35 px-6 py-7 text-black md:flex-row md:justify-between md:py-[22px]">
-                      <div className="flex min-w-0 flex-col">
+                    <section data-testid="wallet-summary" className="dashboard-wallet-summary relative flex flex-col items-center justify-center gap-4 overflow-hidden px-3 py-3 text-center text-black md:flex-row md:justify-between md:rounded-[20px] md:border md:border-black/35 md:bg-[#2775CA]/20 md:px-6 md:py-[22px] md:text-left">
+                      <div className="flex min-w-0 flex-col items-center md:items-start">
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-[10px] font-black uppercase tracking-[0.08em] text-[#ccff00]/85">Wallet Balance</span>
+                          <span className="font-mono text-[10px] font-black uppercase tracking-[0.08em] text-black/75">Wallet Balance</span>
                           <button
                             type="button"
                             onClick={toggleBalanceVisible}
-                            className="text-white/40 hover:text-white transition-colors"
+                            className="text-black/55 hover:text-black transition-colors"
                             aria-label="Toggle balance visibility"
                           >
                             {balanceVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
@@ -3431,50 +3431,42 @@ export default function UserDashboard() {
                             type="button"
                             onClick={handleManualRefreshBalances}
                             disabled={isRefreshingBalances}
-                            className="text-white/40 hover:text-white disabled:opacity-50 transition-all"
+                            className="text-black/55 hover:text-black disabled:opacity-50 transition-all"
                             title="Refresh balance"
                           >
                             <RefreshCw className={`h-3 w-3 ${isRefreshingBalances ? "animate-spin" : ""}`} />
                           </button>
                         </div>
-                        <div className="mt-1.5 truncate text-[42px] font-extrabold leading-none tracking-[-0.8px] text-white select-all sm:text-[38px]">
+                        <div className="mt-1.5 max-w-full text-[42px] font-extrabold leading-none text-black select-all sm:text-[38px]">
                           {balanceVisible ? `$${formatHeadlineAmount(walletBalance)}` : "••••••"}
                         </div>
-                        <p className="mt-1.5 font-mono text-sm font-bold text-white/55 sm:text-xs">
+                        <p className="mt-1.5 w-full text-center font-mono text-sm font-bold text-black/65 sm:text-xs md:text-left">
                           {balanceVisible ? `${detectedCurrency.symbol}${formatHeadlineAmount(localBalance)}` : "••••"}
                         </p>
                       </div>
 
-                      <div className="flex shrink-0 flex-row gap-2.5 md:flex-col">
-                        <button
-                          type="button"
-                          onClick={() => { setSelectedDmPeer(null); setSendFundsOpen(true); }}
-                          className="grid h-[46px] w-[130px] place-items-center rounded-full border border-black/35 bg-[#D5E3EE] text-black transition active:scale-95 md:h-[38px] md:w-[38px]"
-                          aria-label="Send"
-                        >
-                          <span className="flex items-center gap-2 text-xs font-semibold"><ArrowUpRight className="h-4 w-4" /> Send Out</span>
-                        </button>
+                      <div data-testid="wallet-actions" className="wallet-actions flex w-full shrink-0 flex-row justify-center gap-2.5 md:w-auto md:flex-col">
                         <button
                           type="button"
                           onClick={() => setReceiveOpen(true)}
                           className="grid h-[46px] w-[130px] place-items-center rounded-full border border-[#353935] bg-[#353935] text-[#FFFFF0] transition active:scale-95 md:h-[38px] md:w-[38px]"
                           aria-label="Deposit"
                         >
-                          <span className="flex items-center gap-2 text-xs font-semibold"><ArrowDown className="h-4 w-4" /> Deposit</span>
+                          <span className="text-xs font-semibold">Deposit</span>
                         </button>
                         <button
                           type="button"
-                          onClick={() => setScannerOpen(true)}
-                          className="md:hidden grid h-[38px] w-[38px] place-items-center rounded-full border-[1.5px] border-[#ccff00]/50 text-[#ccff00] transition-all hover:scale-105 hover:bg-[#ccff00] hover:text-black active:scale-95"
-                          aria-label="Scan QR"
+                          onClick={() => { setSelectedDmPeer(null); setSendFundsOpen(true); }}
+                          className="grid h-[46px] w-[130px] place-items-center rounded-full border border-black/35 bg-[#2775CA]/20 text-black transition active:scale-95 md:h-[38px] md:w-[38px]"
+                          aria-label="Send Out"
                         >
-                          <QrCode className="h-4 w-4" />
+                          <span className="text-xs font-semibold">Send Out</span>
                         </button>
                       </div>
                     </section>
 
                     {/* ===== Two equal square cards ===== */}
-                    <div className="grid grid-cols-2 gap-3.5">
+                    <div data-testid="home-summary-cards" className="grid grid-cols-[42fr_58fr] gap-3.5">
                       <div className="dashboard-blue-panel flex min-h-[140px] flex-col justify-between rounded-[18px] border border-black/35 p-[18px] text-black">
                         <div>
                           <p className="font-mono text-[10px] font-black uppercase tracking-[0.06em] text-white/50">Spending past (USDC)</p>
@@ -3570,7 +3562,7 @@ export default function UserDashboard() {
                         key={value}
                         type="button"
                         onClick={() => setTxFilter(value)}
-                        className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all ${
+                        className={`shrink-0 whitespace-nowrap px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all ${
                           txFilter === value
                             ? "bg-[#353935] text-[#FFFFF0]"
                             : "bg-transparent text-black/70 hover:bg-black/5"
@@ -3625,8 +3617,8 @@ export default function UserDashboard() {
                   subtitle="Fund prepaid balances for metered services"
                 />
 
-                <section className="rounded-3xl border border-black/35 bg-[#2775CA]/20 p-5 sm:p-8">
-                  <div className="mb-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <section className="commit-vault-shell p-0 sm:rounded-3xl sm:border sm:border-black/35 sm:bg-[#2775CA]/20 sm:p-8">
+                  <div className="mb-5 flex items-end justify-between gap-3">
                     <div>
                       <div className="flex items-center gap-2">
                         <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Prepaid Metered Vaults</h2>
@@ -3655,7 +3647,7 @@ export default function UserDashboard() {
                         </button>
                       </p>
                     </div>
-                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                    <div className="flex shrink-0 items-center gap-2">
                       <button
                         type="button"
                         onClick={async () => {
@@ -3689,44 +3681,48 @@ export default function UserDashboard() {
                   </div>
 
                   {isVaultsLoading ? (
-                    <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    <div data-testid="vault-carousel" className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                       <VaultCardSkeleton />
                       <VaultCardSkeleton />
                     </div>
                   ) : vaults.length === 0 ? (
-                    <div className="flex h-36 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 p-4 text-center">
-                      <Shield className="mb-2 h-6 w-6 text-white/20" />
-                      <p className="text-xs text-white/45">No vaults yet.</p>
+                    <div data-testid="vault-carousel" className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                       <button
                         type="button"
                         onClick={() => openVaultCommit()}
-                        className="mt-2 text-[10px] font-bold text-[#ccff00] hover:underline"
+                        data-testid="add-vault-card"
+                        className="relative flex min-h-[360px] w-full shrink-0 snap-center items-center justify-center overflow-hidden rounded-3xl border border-black/20 bg-[#2775CA]/20 backdrop-blur-2xl"
+                        aria-label="Commit to another vault"
                       >
-                        Commit to your first service
+                        <div className="absolute inset-0 bg-[#FFFFF0]/35 blur-2xl" aria-hidden="true" />
+                        <Plus className="relative z-10 h-12 w-12 text-black" />
                       </button>
                     </div>
                   ) : (
-                    <div className="space-y-3">
+                    <div data-testid="vault-carousel" className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                       {vaults.map((vault) => (
-                        <div key={vault.id} className="w-full shrink-0 snap-center"><MeteredVaultRow
-                          vault={vault}
-                          onCommit={(v) => openVaultCommit(v.merchantAddress)}
-                          onWithdraw={(v) => openVaultWithdraw(v.merchantAddress)}
-                          onReclaim={handleVaultReclaim}
-                          onCancelService={handleCancelService}
-                          onResumeService={(v) => handleResumeService(v.merchantAddress)}
-                          onConfigureAutoTopUp={(v) => {
-                            setEditingVault(v);
-                            setConfigVaultOpen(true);
-                          }}
-                          cancelBusy={vaultCancelBusyId === String(vault.id || vault.merchantAddress)}
-                          resumeBusy={vaultResumeBusyId === String(vault.id || vault.merchantAddress)}
-                          reclaimBusy={vaultReclaimBusyId === String(vault.id || vault.merchantAddress)}
-                          balanceVisible={balanceVisible}
-                        /></div>
+                        <div key={vault.id} className="w-full shrink-0 snap-center">
+                          <MeteredVaultRow
+                            vault={vault}
+                            onCommit={(v) => openVaultCommit(v.merchantAddress)}
+                            onWithdraw={(v) => openVaultWithdraw(v.merchantAddress)}
+                            onReclaim={handleVaultReclaim}
+                            onCancelService={handleCancelService}
+                            onResumeService={(v) => handleResumeService(v.merchantAddress)}
+                            onConfigureAutoTopUp={(v) => {
+                              setEditingVault(v);
+                              setConfigVaultOpen(true);
+                            }}
+                            cancelBusy={vaultCancelBusyId === String(vault.id || vault.merchantAddress)}
+                            resumeBusy={vaultResumeBusyId === String(vault.id || vault.merchantAddress)}
+                            reclaimBusy={vaultReclaimBusyId === String(vault.id || vault.merchantAddress)}
+                            balanceVisible={balanceVisible}
+                          />
+                        </div>
                       ))}
-                      <button type="button" onClick={() => openVaultCommit()} className="flex min-h-[360px] w-full shrink-0 snap-center items-center justify-center rounded-3xl border border-dashed border-black/35 bg-[#FFFFF0]/55 backdrop-blur-md" aria-label="Commit to another vault">
-                        <Plus className="h-12 w-12 text-black" />
+                      <button type="button" onClick={() => openVaultCommit()} data-testid="add-vault-card" className="relative flex min-h-[360px] w-full shrink-0 snap-center items-center justify-center overflow-hidden rounded-3xl border border-black/20 bg-[#2775CA]/20 backdrop-blur-2xl" aria-label="Commit to another vault">
+                        <div className="absolute inset-0 bg-[#FFFFF0]/35 blur-2xl" aria-hidden="true" />
+                        <Plus className="relative z-10 h-12 w-12 text-black" />
                       </button>
                     </div>
                   )}
@@ -4388,31 +4384,31 @@ export default function UserDashboard() {
             )}
 
               {activeTab === "dns" && (
-                <section className="pb-20 max-w-2xl font-sans text-white">
+                <section className="pb-20 max-w-2xl font-sans text-black">
                 {/* 1. MAIN MENU VIEW */}
                 {accountSubView === "menu" && (
                   <div className="space-y-6">
                     <SectionTitle title="Account Settings" subtitle="Manage your identity, spending limits, and security." />
 
-                    {/* Refer & Earn Banner (Inspiration from Screenshot 2) */}
+                    {/* Refer & Earn Banner */}
                     <div 
                       onClick={() => setActiveTab("referrals")}
-                      className="cursor-pointer relative overflow-hidden rounded-3xl border border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 p-5 flex items-center justify-between transition-all duration-300 shadow-lg group"
+                      className="cursor-pointer relative overflow-hidden rounded-3xl border border-emerald-500/30 bg-emerald-50 hover:bg-emerald-100/70 p-5 flex items-center justify-between transition-all duration-300 shadow-sm group"
                     >
                       <div className="flex items-center gap-4">
-                        <div className="p-3 rounded-2xl bg-emerald-500/10 text-emerald-400">
+                        <div className="p-3 rounded-2xl bg-emerald-500/15 text-emerald-700">
                           <Gift className="h-6 w-6" />
                         </div>
                         <div>
-                          <h4 className="text-sm font-black uppercase tracking-wider text-white group-hover:text-emerald-300 transition-colors">Refer and Earn</h4>
-                          <p className="text-[10px] text-white/50 leading-relaxed mt-0.5">Invite your friends and earn on SubScript</p>
+                          <h4 className="text-sm font-black uppercase tracking-wider text-emerald-950 group-hover:text-emerald-800 transition-colors">Refer and Earn</h4>
+                          <p className="text-[11px] text-emerald-800/70 leading-relaxed mt-0.5">Invite your friends and earn on SubScript</p>
                         </div>
                       </div>
-                      <ChevronRight className="h-5 w-5 text-white/30 group-hover:text-white/60 group-hover:translate-x-1 transition-all" />
+                      <ChevronRight className="h-5 w-5 text-emerald-700/40 group-hover:text-emerald-700 group-hover:translate-x-1 transition-all" />
                     </div>
 
                     {/* Settings Menu Options Card */}
-                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-3 space-y-1 shadow-2xl">
+                    <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-3 space-y-1 shadow-sm">
                       {/* Admin console. The desktop sidebar link is inside `hidden md:flex`, so on a
                           phone this is the ONLY way in. A Link rather than a sub-view because /admin
                           is its own route; visibility is cosmetic, since the /admin layout re-checks
@@ -4420,164 +4416,164 @@ export default function UserDashboard() {
                       {isAdmin && (
                         <Link
                           href="/admin"
-                          className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                          className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
                         >
                           <div className="flex items-center gap-3">
-                            <div className="p-2.5 rounded-xl bg-[#ccff00]/10 text-[#ccff00] transition-all">
+                            <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-600 transition-all">
                               <Shield className="h-4 w-4" />
                             </div>
                             <div>
-                              <span className="block text-xs font-bold text-[#ccff00] uppercase tracking-wide">Admin</span>
-                              <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Platform controls, analytics and moderation</span>
+                              <span className="block text-xs font-bold text-black uppercase tracking-wide">Admin</span>
+                              <span className="block text-[9px] text-black/50 font-sans mt-0.5 font-normal normal-case">Platform controls, analytics and moderation</span>
                             </div>
                           </div>
-                          <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                          <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
                         </Link>
                       )}
 
                       <button
                         onClick={() => setAccountSubView("profile")}
-                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                        className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                          <div className="p-2.5 rounded-xl bg-black/5 text-black/70 group-hover:bg-[#353935] group-hover:text-white transition-all">
                             <User className="h-4 w-4" />
                           </div>
                           <div>
-                            <span className="block text-xs font-bold text-white uppercase tracking-wide">My Profile</span>
-                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Edit your identity and registered alias</span>
+                            <span className="block text-xs font-bold text-black uppercase tracking-wide">My Profile</span>
+                            <span className="block text-[9px] text-black/50 font-sans mt-0.5 font-normal normal-case">Edit your identity and registered alias</span>
                           </div>
                         </div>
-                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                        <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
                       </button>
 
                       <button
                         onClick={() => setAccountSubView("kyc")}
-                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                        className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                          <div className="p-2.5 rounded-xl bg-black/5 text-black/70 group-hover:bg-[#353935] group-hover:text-white transition-all">
                             <CheckCircle2 className="h-4 w-4" />
                           </div>
                           <div>
-                            <span className="block text-xs font-bold text-white uppercase tracking-wide">KYC Verification</span>
-                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Start or review provider verification</span>
+                            <span className="block text-xs font-bold text-black uppercase tracking-wide">KYC Verification</span>
+                            <span className="block text-[9px] text-black/50 font-sans mt-0.5 font-normal normal-case">Start or review provider verification</span>
                           </div>
                         </div>
-                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                        <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
                       </button>
 
                       <button
                         onClick={() => setAccountSubView("spend-analysis")}
-                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                        className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                          <div className="p-2.5 rounded-xl bg-black/5 text-black/70 group-hover:bg-[#353935] group-hover:text-white transition-all">
                             <PieChart className="h-4 w-4" />
                           </div>
                           <div>
-                            <span className="block text-xs font-bold text-white uppercase tracking-wide">Spend Analysis</span>
-                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">View spending breakdown and categories</span>
+                            <span className="block text-xs font-bold text-black uppercase tracking-wide">Spend Analysis</span>
+                            <span className="block text-[9px] text-black/50 font-sans mt-0.5 font-normal normal-case">View spending breakdown and categories</span>
                           </div>
                         </div>
-                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                        <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
                       </button>
 
                       <button
                         onClick={() => setAccountSubView("limits")}
-                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                        className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                          <div className="p-2.5 rounded-xl bg-black/5 text-black/70 group-hover:bg-[#353935] group-hover:text-white transition-all">
                             <CreditCard className="h-4 w-4" />
                           </div>
                           <div>
-                            <span className="block text-xs font-bold text-white uppercase tracking-wide">Spending Limits</span>
-                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">See spending limits and caps</span>
+                            <span className="block text-xs font-bold text-black uppercase tracking-wide">Spending Limits</span>
+                            <span className="block text-[9px] text-black/50 font-sans mt-0.5 font-normal normal-case">See spending limits and caps</span>
                           </div>
                         </div>
-                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                        <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
                       </button>
 
                       <button
                         onClick={() => setAccountSubView("transactions")}
-                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                        className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                          <div className="p-2.5 rounded-xl bg-black/5 text-black/70 group-hover:bg-[#353935] group-hover:text-white transition-all">
                             <Activity className="h-4 w-4" />
                           </div>
                           <div>
-                            <span className="block text-xs font-bold text-white uppercase tracking-wide">Transactions</span>
-                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">See all transaction logs and history</span>
+                            <span className="block text-xs font-bold text-black uppercase tracking-wide">Transactions</span>
+                            <span className="block text-[9px] text-black/50 font-sans mt-0.5 font-normal normal-case">See all transaction logs and history</span>
                           </div>
                         </div>
-                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                        <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
                       </button>
 
                       <button
                         onClick={() => setAccountSubView("notifications")}
-                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                        className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                          <div className="p-2.5 rounded-xl bg-black/5 text-black/70 group-hover:bg-[#353935] group-hover:text-white transition-all">
                             <Sliders className="h-4 w-4" />
                           </div>
                           <div>
-                            <span className="block text-xs font-bold text-white uppercase tracking-wide">Notifications</span>
-                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Set your notification preferences</span>
+                            <span className="block text-xs font-bold text-black uppercase tracking-wide">Notifications</span>
+                            <span className="block text-[9px] text-black/50 font-sans mt-0.5 font-normal normal-case">Set your notification preferences</span>
                           </div>
                         </div>
-                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                        <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
                       </button>
 
                       <button
                         onClick={() => setAccountSubView("security")}
-                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                        className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                          <div className="p-2.5 rounded-xl bg-black/5 text-black/70 group-hover:bg-[#353935] group-hover:text-white transition-all">
                             <Lock className="h-4 w-4" />
                           </div>
                           <div>
-                            <span className="block text-xs font-bold text-white uppercase tracking-wide">Security</span>
-                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case font-normal normal-case">Change privacy settings and export private key</span>
+                            <span className="block text-xs font-bold text-black uppercase tracking-wide">Security</span>
+                            <span className="block text-[9px] text-black/50 font-sans mt-0.5 font-normal normal-case">Change privacy settings and export private key</span>
                           </div>
                         </div>
-                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                        <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
                       </button>
 
                       <button
                         onClick={() => setAccountSubView("support")}
-                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                        className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                          <div className="p-2.5 rounded-xl bg-black/5 text-black/70 group-hover:bg-[#353935] group-hover:text-white transition-all">
                             <MessageSquare className="h-4 w-4" />
                           </div>
                           <div>
-                            <span className="block text-xs font-bold text-white uppercase tracking-wide">Support</span>
-                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Support</span>
+                            <span className="block text-xs font-bold text-black uppercase tracking-wide">Support</span>
+                            <span className="block text-[9px] text-black/50 font-sans mt-0.5 font-normal normal-case">Contact support team</span>
                           </div>
                         </div>
-                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                        <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
                       </button>
 
                       <button
                         onClick={handleDeleteAccount}
                         disabled={deleteAccountLoading}
-                        className="w-full text-left p-4 hover:bg-red-500/[0.06] rounded-2xl flex items-center justify-between transition-all group disabled:opacity-50"
+                        className="w-full text-left p-4 hover:bg-red-500/[0.08] rounded-2xl flex items-center justify-between transition-all group disabled:opacity-50"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-xl bg-red-500/10 text-red-400 group-hover:bg-red-500/20 transition-all">
+                          <div className="p-2.5 rounded-xl bg-red-500/10 text-red-600 group-hover:bg-red-500/20 transition-all">
                             {deleteAccountLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertCircle className="h-4 w-4" />}
                           </div>
                           <div>
-                            <span className="block text-xs font-bold text-red-400 uppercase tracking-wide">Delete Account</span>
-                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Permanently erase your profile and sign out</span>
+                            <span className="block text-xs font-bold text-red-600 uppercase tracking-wide">Delete Account</span>
+                            <span className="block text-[9px] text-red-600/70 font-sans mt-0.5 font-normal normal-case">Permanently erase your profile and sign out</span>
                           </div>
                         </div>
-                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-red-400/60 group-hover:translate-x-0.5 transition-all" />
+                        <ChevronRight className="h-4 w-4 text-red-600/40 group-hover:text-red-600 group-hover:translate-x-0.5 transition-all" />
                       </button>
                     </div>
                   </div>
@@ -4589,50 +4585,50 @@ export default function UserDashboard() {
                     <div className="flex items-center gap-4 font-sans text-xs">
                       <button
                         onClick={() => setAccountSubView("menu")}
-                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                        className="p-2 rounded-full hover:bg-black/5 text-black/60 hover:text-black transition-all"
                       >
                         <ChevronLeft className="h-5 w-5" />
                       </button>
-                      <h2 className="text-sm font-black uppercase tracking-wider text-white">KYC Verification</h2>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-black">KYC Verification</h2>
                     </div>
-                    <KycVerificationPanel accent="#ccff00" variant="user" />
+                    <KycVerificationPanel accent="#2775CA" variant="user" />
                   </div>
                 )}
 
-                {/* 2. PROFILE VIEW (Inspiration from Screenshot 1) */}
+                {/* 2. PROFILE VIEW */}
                 {accountSubView === "profile" && (
                   <div className="space-y-6">
                     <div className="flex items-center gap-4 font-sans text-xs">
                       <button 
                         onClick={() => setAccountSubView("menu")}
-                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                        className="p-2 rounded-full hover:bg-black/5 text-black/60 hover:text-black transition-all"
                       >
                         <ChevronLeft className="h-5 w-5" />
                       </button>
-                      <h2 className="text-sm font-black uppercase tracking-wider text-white">My Profile</h2>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-black">My Profile</h2>
                     </div>
 
                     <div className="flex flex-col items-center justify-center space-y-3 py-6">
                       <div className="relative group">
                         <Avatar profilePic={profilePic} size="lg" />
-                        <label className="absolute bottom-0 right-0 p-1.5 rounded-full bg-[#ccff00] text-black border-2 border-[#0a0a0c] cursor-pointer hover:scale-105 transition-all">
+                        <label className="absolute bottom-0 right-0 p-1.5 rounded-full bg-[#353935] text-white border-2 border-[#FFFFF0] cursor-pointer hover:scale-105 transition-all">
                           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
                           <input type="file" accept="image/*" onChange={handleProfilePicUpload} disabled={uploadingPic} className="hidden" />
                         </label>
                       </div>
-                      <span className="rounded-full bg-white/5 px-3 py-1 text-[9px] font-bold text-white/45 uppercase tracking-widest">
+                      <span className="rounded-full bg-black/5 px-3 py-1 text-[9px] font-bold text-black/60 uppercase tracking-widest">
                         User account
                       </span>
-                      {uploadError && <p className="text-[10px] text-red-300 font-sans">{uploadError}</p>}
+                      {uploadError && <p className="text-[10px] text-red-600 font-sans">{uploadError}</p>}
                     </div>
 
-                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-6 space-y-4 shadow-2xl">
+                    <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-6 space-y-4 shadow-sm">
                       {/* SubScript DNS alias (Spenda ID / Username) */}
-                      <div className="pb-3 border-b border-white/5 space-y-2">
+                      <div className="pb-3 border-b border-black/10 space-y-2">
                         <div className="flex items-center justify-between">
                           <div>
-                            <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">SubScript DNS (Display Name)</label>
-                            <span className="block font-mono text-xs font-bold text-[#ccff00] mt-1">
+                            <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-black/50">SubScript DNS (Display Name)</label>
+                            <span className="block font-mono text-xs font-bold text-[#2775CA] mt-1">
                               {registeredDomain ? `@${registeredDomain}` : "No DNS Alias"}
                             </span>
                           </div>
@@ -4642,7 +4638,7 @@ export default function UserDashboard() {
                         <div className="pt-1">
                           {registeredDomain ? (
                             <div className="flex items-center justify-between text-xs font-sans pt-1">
-                              <span className="text-[10px] text-white/50">DNS Alias active</span>
+                              <span className="text-[10px] text-black/60">DNS Alias active</span>
                               <button
                                 onClick={async () => {
                                   setDnsLoading(true);
@@ -4664,7 +4660,7 @@ export default function UserDashboard() {
                                     setDnsLoading(false);
                                   }
                                 }}
-                                className="px-3 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider rounded-xl transition"
+                                className="px-3 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-600 text-[10px] font-bold uppercase tracking-wider rounded-xl transition"
                               >
                                 {dnsLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Unregister Name"}
                               </button>
@@ -4678,70 +4674,70 @@ export default function UserDashboard() {
                                     value={dnsDomain}
                                     onChange={(e) => setDnsDomain(e.target.value)}
                                     placeholder="Enter custom alias / display name"
-                                    className="w-full bg-white/[0.04] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#ccff00]/40 font-mono pr-12"
+                                    className="w-full bg-white border border-black/15 rounded-xl px-3 py-2 text-xs text-black placeholder:text-black/35 focus:outline-none focus:border-[#2775CA] font-mono pr-12"
                                     required
                                   />
-                                  <span className="absolute right-3 top-2 text-xs font-black text-white/35">.sub</span>
+                                  <span className="absolute right-3 top-2 text-xs font-black text-black/40">.sub</span>
                                 </div>
                                 <button
                                   type="submit"
                                   disabled={dnsLoading}
-                                  className="px-4 py-2 bg-[#ccff00]/10 border border-[#ccff00]/30 hover:bg-[#ccff00]/20 text-[#ccff00] text-xs font-bold uppercase tracking-wider rounded-xl transition"
+                                  className="px-4 py-2 bg-[#353935] hover:bg-black text-white text-xs font-bold uppercase tracking-wider rounded-xl transition"
                                 >
                                   {dnsLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Save Name"}
                                 </button>
                               </div>
                             </form>
                           )}
-                          {dnsError && <p className="text-[10px] text-red-300 font-sans mt-1">{dnsError}</p>}
-                          {dnsSuccess && <p className="text-[10px] text-emerald-300 font-sans mt-1">{dnsSuccess}</p>}
+                          {dnsError && <p className="text-[10px] text-red-600 font-sans mt-1">{dnsError}</p>}
+                          {dnsSuccess && <p className="text-[10px] text-emerald-600 font-sans mt-1">{dnsSuccess}</p>}
                         </div>
                       </div>
 
                       {/* Linked Wallet Address */}
-                      <div className="pb-3 border-b border-white/5 flex items-center justify-between">
+                      <div className="pb-3 border-b border-black/10 flex items-center justify-between">
                         <div>
-                          <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Wallet Address</label>
-                          <span className="block font-mono text-[11px] text-white/70 mt-1 truncate max-w-[170px] xs:max-w-[210px] sm:max-w-xs">{userWallet}</span>
+                          <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-black/50">Wallet Address</label>
+                          <span className="block font-mono text-[11px] text-black/80 mt-1 truncate max-w-[170px] xs:max-w-[210px] sm:max-w-xs">{userWallet}</span>
                         </div>
                         <button
                           onClick={() => {
                             navigator.clipboard.writeText(userWallet || "");
                             triggerToast("Address copied to clipboard");
                           }}
-                          className="p-2 rounded-xl bg-white/5 text-white/40 hover:text-white transition"
+                          className="p-2 rounded-xl bg-black/5 text-black/60 hover:text-black transition"
                         >
                           <Copy className="h-3.5 w-3.5" />
                         </button>
                       </div>
 
                       {/* Linked Email */}
-                      <div className="pb-3 border-b border-white/5 flex items-center justify-between">
+                      <div className="pb-3 border-b border-black/10 flex items-center justify-between">
                         <div>
-                          <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Email Address</label>
-                          <span className="block font-sans text-xs text-white/60 mt-1">
+                          <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-black/50">Email Address</label>
+                          <span className="block font-sans text-xs text-black/70 mt-1">
                             {userSettings?.walletBackup?.email || userEmail || "Not linked"}
                           </span>
                         </div>
-                        <Lock className="h-4 w-4 text-white/20 shrink-0" />
+                        <Lock className="h-4 w-4 text-black/30 shrink-0" />
                       </div>
 
                       {/* Linked Role */}
                       <div className="flex items-center justify-between">
                         <div>
-                          <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Account Role</label>
-                          <span className="block font-sans text-xs text-white/60 mt-1">User Account</span>
+                          <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-black/50">Account Role</label>
+                          <span className="block font-sans text-xs text-black/70 mt-1">User Account</span>
                         </div>
-                        <Lock className="h-4 w-4 text-white/20 shrink-0" />
+                        <Lock className="h-4 w-4 text-black/30 shrink-0" />
                       </div>
                     </div>
 
                     {/* Help & Support Panel */}
-                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 space-y-3 shadow-2xl">
-                      <h4 className="text-[10px] font-black uppercase tracking-wider text-white/50 flex items-center gap-1.5">
-                        <HelpCircle className="h-3.5 w-3.5 text-[#00d2b4]" /> Help &amp; Support
+                    <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 space-y-3 shadow-sm">
+                      <h4 className="text-[10px] font-black uppercase tracking-wider text-black/70 flex items-center gap-1.5">
+                        <HelpCircle className="h-3.5 w-3.5 text-[#2775CA]" /> Help &amp; Support
                       </h4>
-                      <p className="text-[10px] leading-relaxed text-white/45 font-sans">
+                      <p className="text-[10px] leading-relaxed text-black/60 font-sans">
                         Billing question, incorrect charge, or something not working? Real humans read every
                         message. Include your wallet address and a receipt ID or transaction hash if it&apos;s
                         about a payment.
@@ -4749,23 +4745,23 @@ export default function UserDashboard() {
                       <div className="space-y-2 font-sans text-xs">
                         <a
                           href="mailto:support@subscriptonarc.com"
-                          className="flex items-center justify-between rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3 transition hover:border-[#00d2b4]/25 hover:bg-[#00d2b4]/5"
+                          className="flex items-center justify-between rounded-2xl border border-black/10 bg-black/[0.02] px-4 py-3 transition hover:border-[#2775CA]/30 hover:bg-[#2775CA]/5"
                         >
-                          <span className="text-white/60">General support</span>
-                          <span className="font-mono text-[11px] font-bold text-[#00d2b4]">support@subscriptonarc.com</span>
+                          <span className="text-black/70">General support</span>
+                          <span className="font-mono text-[11px] font-bold text-[#2775CA]">support@subscriptonarc.com</span>
                         </a>
                         <a
                           href="mailto:compliance@subscriptonarc.com"
-                          className="flex items-center justify-between rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3 transition hover:border-[#00d2b4]/25 hover:bg-[#00d2b4]/5"
+                          className="flex items-center justify-between rounded-2xl border border-black/10 bg-black/[0.02] px-4 py-3 transition hover:border-[#2775CA]/30 hover:bg-[#2775CA]/5"
                         >
-                          <span className="text-white/60">Billing, refunds &amp; privacy</span>
-                          <span className="font-mono text-[11px] font-bold text-[#00d2b4]">compliance@subscriptonarc.com</span>
+                          <span className="text-black/70">Billing, refunds &amp; privacy</span>
+                          <span className="font-mono text-[11px] font-bold text-[#2775CA]">compliance@subscriptonarc.com</span>
                         </a>
                         <a
                           href="/support"
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="block w-full rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/5 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-[#00d2b4] transition hover:bg-[#00d2b4]/10"
+                          className="block w-full rounded-2xl border border-[#2775CA]/30 bg-[#2775CA]/10 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-[#2775CA] transition hover:bg-[#2775CA]/20"
                         >
                           Open the Help Center
                         </a>
@@ -4774,15 +4770,14 @@ export default function UserDashboard() {
 
                     <button
                       onClick={() => disconnect()}
-                      className="w-full py-4 border border-red-500/25 hover:bg-red-500/5 text-red-400 rounded-3xl text-xs font-black uppercase tracking-widest transition shadow-[0_0_15px_rgba(239,68,68,0.05)]"
+                      className="w-full py-4 border border-red-500/30 hover:bg-red-500/10 text-red-600 rounded-3xl text-xs font-black uppercase tracking-widest transition shadow-sm"
                     >
                       Disconnect Account
                     </button>
                   </div>
                 )}
 
-                {/* 3. SPENDING LIMITS VIEW */}
-                {/* ========== SPEND ANALYSIS VIEW ========== */}
+                {/* 3. SPEND ANALYSIS VIEW */}
                 {accountSubView === "spend-analysis" && (() => {
                   /* ---- Category classification engine ----
                      Keyed off tx.kind, which the feed already assigns from the source record, so
@@ -4793,10 +4788,10 @@ export default function UserDashboard() {
                      spending, and summing it here inflated the headline figure. */
                   const spendCategories = (() => {
                     const cats: Record<string, { label: string; color: string; bgColor: string; borderColor: string; icon: string; total: number; items: typeof recentTransactions }> = {
-                      subscriptions: { label: "Subscriptions", color: "#ccff00", bgColor: "rgba(204,255,0,0.08)", borderColor: "rgba(204,255,0,0.25)", icon: "🔄", total: 0, items: [] },
-                      payments: { label: "Payments", color: "#38bdf8", bgColor: "rgba(56,189,248,0.08)", borderColor: "rgba(56,189,248,0.25)", icon: "💳", total: 0, items: [] },
-                      transfers: { label: "Transfers", color: "#a78bfa", bgColor: "rgba(167,139,250,0.08)", borderColor: "rgba(167,139,250,0.25)", icon: "↗️", total: 0, items: [] },
-                      withdrawals: { label: "Withdrawals", color: "#f97316", bgColor: "rgba(249,115,22,0.08)", borderColor: "rgba(249,115,22,0.25)", icon: "📦", total: 0, items: [] },
+                      subscriptions: { label: "Subscriptions", color: "#2775CA", bgColor: "rgba(39,117,202,0.08)", borderColor: "rgba(39,117,202,0.25)", icon: "🔄", total: 0, items: [] },
+                      payments: { label: "Payments", color: "#0284c7", bgColor: "rgba(2,132,199,0.08)", borderColor: "rgba(2,132,199,0.25)", icon: "💳", total: 0, items: [] },
+                      transfers: { label: "Transfers", color: "#7c3aed", bgColor: "rgba(124,58,237,0.08)", borderColor: "rgba(124,58,237,0.25)", icon: "↗️", total: 0, items: [] },
+                      withdrawals: { label: "Withdrawals", color: "#ea580c", bgColor: "rgba(234,88,12,0.08)", borderColor: "rgba(234,88,12,0.25)", icon: "📦", total: 0, items: [] },
                     };
                     const bucketFor = (kind: string) =>
                       kind === "recurring" ? "subscriptions"
@@ -4935,17 +4930,17 @@ export default function UserDashboard() {
                         <div className="flex items-center gap-3">
                           <button
                             onClick={() => setAccountSubView("menu")}
-                            className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                            className="p-2 rounded-full hover:bg-black/5 text-black/60 hover:text-black transition-all"
                           >
                             <ChevronLeft className="h-5 w-5" />
                           </button>
-                          <h2 className="text-base font-black uppercase tracking-wider text-white">Transaction History</h2>
+                          <h2 className="text-base font-black uppercase tracking-wider text-black">Transaction History</h2>
                         </div>
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
                             onClick={toggleBalanceVisible}
-                            className="p-2 rounded-xl border border-white/10 bg-white/5 text-white/60 hover:text-white transition-all"
+                            className="p-2 rounded-xl border border-black/10 bg-white text-black/70 hover:bg-black/5 transition-all shadow-sm"
                             aria-label={balanceVisible ? "Hide balances" : "Show balances"}
                             title={balanceVisible ? "Hide sensitive amounts" : "Show sensitive amounts"}
                           >
@@ -4954,7 +4949,7 @@ export default function UserDashboard() {
                           <button
                             type="button"
                             onClick={exportSpendCsv}
-                            className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white transition hover:bg-white/10"
+                            className="flex items-center gap-1.5 rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold text-black transition hover:bg-black/5 shadow-sm"
                           >
                             <Download className="h-3.5 w-3.5" />
                             <span>Download</span>
@@ -4963,26 +4958,26 @@ export default function UserDashboard() {
                       </div>
 
                       {/* ---- Hero: Total Spending ---- */}
-                      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl">
+                      <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-6 sm:p-8 shadow-sm">
                         <div className="flex items-center justify-between">
-                          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/50">Total spending</p>
-                          <div className="p-2 rounded-xl bg-white/5">
-                            <BarChart3 className="h-4 w-4 text-[#ccff00]" />
+                          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-black/50">Total spending</p>
+                          <div className="p-2 rounded-xl bg-black/5">
+                            <BarChart3 className="h-4 w-4 text-[#2775CA]" />
                           </div>
                         </div>
-                        <p className="mt-3 text-4xl sm:text-5xl font-extrabold tracking-tight text-white">
+                        <p className="mt-3 text-4xl sm:text-5xl font-extrabold tracking-tight text-black">
                           {balanceVisible ? `$${totalSpending.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "••••"}
                         </p>
                         <div className="mt-2 flex items-center gap-2">
                           {monthlySpendUsdc > 0 ? (
                             <>
-                              <TrendingUp className="h-3.5 w-3.5 text-[#ccff00]" />
-                              <span className="text-[10px] font-bold text-[#ccff00]">
+                              <TrendingUp className="h-3.5 w-3.5 text-[#2775CA]" />
+                              <span className="text-[10px] font-bold text-[#2775CA]">
                                 {balanceVisible ? `$${monthlySpendUsdc.toFixed(2)}/mo recurring` : "••••/mo recurring"}
                               </span>
                             </>
                           ) : (
-                            <span className="text-[10px] font-bold text-white/30">No active recurring spend</span>
+                            <span className="text-[10px] font-bold text-black/40">No active recurring spend</span>
                           )}
                         </div>
 
@@ -5003,7 +4998,7 @@ export default function UserDashboard() {
                           </div>
                         )}
                         {totalSpending === 0 && (
-                          <div className="mt-5 flex h-3 w-full overflow-hidden rounded-full bg-white/[0.06]" />
+                          <div className="mt-5 flex h-3 w-full overflow-hidden rounded-full bg-black/5" />
                         )}
                       </div>
 
@@ -5012,31 +5007,31 @@ export default function UserDashboard() {
                         {allCategoryEntries.map(([key, cat]) => (
                           <div
                             key={key}
-                            className="rounded-2xl p-4 border transition-all hover:scale-[1.02] active:scale-[0.98]"
+                            className="rounded-2xl p-4 border transition-all hover:scale-[1.02] active:scale-[0.98] shadow-sm"
                             style={{ backgroundColor: cat.bgColor, borderColor: cat.borderColor }}
                           >
                             <div className="flex items-center gap-2 mb-2">
                               <span className="text-base">{cat.icon}</span>
                               <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: cat.color }}>{cat.label}</span>
                             </div>
-                            <p className="text-xl font-extrabold tracking-tight text-white">
+                            <p className="text-xl font-extrabold tracking-tight text-black">
                               {balanceVisible ? `$${cat.total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "••••"}
                             </p>
                             {totalSpending > 0 && (
-                              <p className="text-[9px] font-bold text-white/30 mt-1">{((cat.total / totalSpending) * 100).toFixed(0)}% of total</p>
+                              <p className="text-[9px] font-bold text-black/50 mt-1">{((cat.total / totalSpending) * 100).toFixed(0)}% of total</p>
                             )}
                           </div>
                         ))}
                       </div>
 
                       {/* ---- Smart category banner ---- */}
-                      <div className="rounded-2xl border border-[#ccff00]/15 bg-[#ccff00]/[0.04] p-4 flex items-start gap-3">
-                        <div className="p-2 rounded-xl bg-[#ccff00]/10 shrink-0">
-                          <Tag className="h-5 w-5 text-[#ccff00]" />
+                      <div className="rounded-2xl border border-[#2775CA]/20 bg-[#2775CA]/5 p-4 flex items-start gap-3">
+                        <div className="p-2 rounded-xl bg-[#2775CA]/10 shrink-0">
+                          <Tag className="h-5 w-5 text-[#2775CA]" />
                         </div>
                         <div>
-                          <h4 className="text-xs font-black uppercase tracking-wider text-white">Smart category</h4>
-                          <p className="text-[10px] text-white/45 leading-relaxed mt-1">
+                          <h4 className="text-xs font-black uppercase tracking-wider text-black">Smart category</h4>
+                          <p className="text-[10px] text-black/60 leading-relaxed mt-1">
                             Transactions are categorized by type as they arrive. The totals above cover money
                             going out only — payments you received are excluded, and are listed under the
                             Received filter below.
@@ -5047,36 +5042,36 @@ export default function UserDashboard() {
                       {/* ---- Search + filters ---- */}
                       <div className="space-y-3">
                         <div className="relative">
-                          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30 pointer-events-none" />
+                          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-black/40 pointer-events-none" />
                           <input
                             type="text"
                             value={spendSearchQuery}
                             onChange={(e) => setSpendSearchQuery(e.target.value)}
                             placeholder="Search for any transaction"
-                            className="w-full rounded-2xl border border-white/10 bg-white/[0.04] pl-11 pr-4 py-3.5 text-xs text-white placeholder:text-white/25 focus:border-[#ccff00]/30 focus:outline-none focus:ring-1 focus:ring-[#ccff00]/20 transition-all"
+                            className="w-full rounded-2xl border border-black/15 bg-white pl-11 pr-4 py-3.5 text-xs text-black placeholder:text-black/35 focus:border-[#2775CA] focus:outline-none focus:ring-1 focus:ring-[#2775CA]/20 transition-all shadow-sm"
                           />
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2.5 font-sans">
                           {/* Category Filter Pill Dropdown */}
                           <div className="relative inline-flex items-center">
-                            <div className="pointer-events-none absolute left-3 flex items-center text-white/40">
-                              <Filter className="h-3.5 w-3.5 text-[#ccff00]" />
+                            <div className="pointer-events-none absolute left-3 flex items-center text-black/40">
+                              <Filter className="h-3.5 w-3.5 text-[#2775CA]" />
                             </div>
                             <select
                               value={spendCategory}
                               onChange={(e) => setSpendCategory(e.target.value)}
-                              className="appearance-none rounded-xl border border-white/10 bg-white/[0.04] pl-9 pr-7 py-2 text-xs font-bold text-white/90 focus:border-[#ccff00]/50 focus:outline-none cursor-pointer"
+                              className="appearance-none rounded-xl border border-black/15 bg-white pl-9 pr-7 py-2 text-xs font-bold text-black focus:border-[#2775CA] focus:outline-none cursor-pointer shadow-sm"
                             >
-                              <option value="all" className="bg-[#121212] text-white">All Categories 🈳</option>
-                              <option value="recurring" className="bg-[#121212] text-white">Subscriptions 🔄</option>
-                              <option value="one-time" className="bg-[#121212] text-white">One Time 💳</option>
-                              <option value="transfers" className="bg-[#121212] text-white">Transfers ↗️</option>
-                              <option value="withdrawals" className="bg-[#121212] text-white">Withdrawals 📦</option>
-                              <option value="sent" className="bg-[#121212] text-white">Sent (Debit)</option>
-                              <option value="received" className="bg-[#121212] text-white">Received (Credit)</option>
+                              <option value="all">All Categories 🈳</option>
+                              <option value="recurring">Subscriptions 🔄</option>
+                              <option value="one-time">One Time 💳</option>
+                              <option value="transfers">Transfers ↗️</option>
+                              <option value="withdrawals">Withdrawals 📦</option>
+                              <option value="sent">Sent (Debit)</option>
+                              <option value="received">Received (Credit)</option>
                             </select>
-                            <ChevronDown className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-white/40" />
+                            <ChevronDown className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-black/40" />
                           </div>
 
                           {/* Status Filter Dropdown */}
@@ -5084,14 +5079,14 @@ export default function UserDashboard() {
                             <select
                               value={spendStatus}
                               onChange={(e) => setSpendStatus(e.target.value)}
-                              className="appearance-none rounded-xl border border-white/10 bg-white/[0.04] pl-3 pr-7 py-2 text-xs font-bold text-white/90 focus:border-[#ccff00]/50 focus:outline-none cursor-pointer"
+                              className="appearance-none rounded-xl border border-black/15 bg-white pl-3 pr-7 py-2 text-xs font-bold text-black focus:border-[#2775CA] focus:outline-none cursor-pointer shadow-sm"
                             >
-                              <option value="all" className="bg-[#121212] text-white">All Status ∨</option>
-                              <option value="COMPLETED" className="bg-[#121212] text-white">Completed</option>
-                              <option value="PENDING" className="bg-[#121212] text-white">Pending</option>
-                              <option value="FAILED" className="bg-[#121212] text-white">Failed</option>
+                              <option value="all">All Status ∨</option>
+                              <option value="COMPLETED">Completed</option>
+                              <option value="PENDING">Pending</option>
+                              <option value="FAILED">Failed</option>
                             </select>
-                            <ChevronDown className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-white/40" />
+                            <ChevronDown className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-black/40" />
                           </div>
 
                           {/* Date Preset Filter */}
@@ -5104,13 +5099,13 @@ export default function UserDashboard() {
                                 setSpendEndDate("");
                               }
                             }}
-                            className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-white/90 focus:border-[#ccff00]/50 focus:outline-none cursor-pointer"
+                            className="rounded-xl border border-black/15 bg-white px-3 py-2 text-xs font-bold text-black focus:border-[#2775CA] focus:outline-none cursor-pointer shadow-sm"
                           >
-                            <option value="all" className="bg-[#121212] text-white">All Time</option>
-                            <option value="today" className="bg-[#121212] text-white">Today</option>
-                            <option value="7days" className="bg-[#121212] text-white">Last 7 Days</option>
-                            <option value="30days" className="bg-[#121212] text-white">Last 30 Days</option>
-                            <option value="custom" className="bg-[#121212] text-white">Custom Date Range…</option>
+                            <option value="all">All Time</option>
+                            <option value="today">Today</option>
+                            <option value="7days">Last 7 Days</option>
+                            <option value="30days">Last 30 Days</option>
+                            <option value="custom">Custom Date Range…</option>
                           </select>
 
                           {spendFiltersActive && (
@@ -5124,13 +5119,13 @@ export default function UserDashboard() {
                                 setSpendEndDate("");
                                 setSpendMonth("");
                               }}
-                              className="rounded-xl bg-white/10 px-3 py-2 text-[11px] font-bold text-white/80 transition hover:bg-white/20"
+                              className="rounded-xl bg-black/5 hover:bg-black/10 px-3 py-2 text-[11px] font-bold text-black/80 transition"
                             >
                               Clear filters
                             </button>
                           )}
 
-                          <span className="ml-auto font-mono text-[10px] font-semibold text-white/40">
+                          <span className="ml-auto font-mono text-[10px] font-semibold text-black/40">
                             Showing {spendTxList.length} of {recentTransactions.length}
                           </span>
                         </div>
@@ -5141,55 +5136,55 @@ export default function UserDashboard() {
                               type="date"
                               value={spendStartDate}
                               onChange={(e) => setSpendStartDate(e.target.value)}
-                              className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-white/90 focus:border-[#ccff00]/50 focus:outline-none"
+                              className="rounded-xl border border-black/15 bg-white px-3 py-2 text-xs text-black focus:border-[#2775CA] focus:outline-none shadow-sm"
                             />
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-white/30">to</span>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-black/40">to</span>
                             <input
                               type="date"
                               value={spendEndDate}
                               onChange={(e) => setSpendEndDate(e.target.value)}
-                              className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-white/90 focus:border-[#ccff00]/50 focus:outline-none"
+                              className="rounded-xl border border-black/15 bg-white px-3 py-2 text-xs text-black focus:border-[#2775CA] focus:outline-none shadow-sm"
                             />
                           </div>
                         )}
                       </div>
 
                       {/* ---- Month summary: In / Out for whatever is on screen ---- */}
-                      <div className="liquid-glass rounded-3xl border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl">
+                      <div className="rounded-3xl border border-black/10 bg-white/80 p-5 shadow-sm backdrop-blur-md">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div className="flex items-center gap-3">
                             <select
                               value={spendMonth}
                               onChange={(e) => setSpendMonth(e.target.value)}
-                              className="rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-base font-extrabold text-white focus:border-[#ccff00]/50 focus:outline-none cursor-pointer"
+                              className="rounded-xl border border-black/15 bg-white px-3.5 py-2 text-base font-extrabold text-black focus:border-[#2775CA] focus:outline-none cursor-pointer shadow-sm"
                             >
-                              <option value="" className="bg-[#121212] text-white">All months ∨</option>
+                              <option value="">All months ∨</option>
                               {availableMonths.map((key) => (
-                                <option key={key} value={key} className="bg-[#121212] text-white">
+                                <option key={key} value={key}>
                                   {monthLabel(key)} ∨
                                 </option>
                               ))}
                             </select>
-                            <span className="rounded-full bg-[#7c3aed]/20 border border-[#7c3aed]/40 px-3 py-1 text-xs font-bold text-[#a78bfa] flex items-center gap-1.5">
+                            <span className="rounded-full bg-[#7c3aed]/10 border border-[#7c3aed]/30 px-3 py-1 text-xs font-bold text-[#7c3aed] flex items-center gap-1.5">
                               <span>🪙</span> Monthly Overview
                             </span>
                           </div>
                           <div className="flex items-center gap-6">
                             <div>
-                              <span className="text-xs font-bold text-white/50">In</span>{" "}
-                              <span className="text-lg font-extrabold tracking-tight text-[#ccff00]">
+                              <span className="text-xs font-bold text-black/50">In</span>{" "}
+                              <span className="text-lg font-extrabold tracking-tight text-emerald-700">
                                 {balanceVisible ? money(monthIn) : "••••"}
                               </span>
                             </div>
                             <div>
-                              <span className="text-xs font-bold text-white/50">Out</span>{" "}
-                              <span className="text-lg font-extrabold tracking-tight text-white">
+                              <span className="text-xs font-bold text-black/50">Out</span>{" "}
+                              <span className="text-lg font-extrabold tracking-tight text-black">
                                 {balanceVisible ? money(monthOut) : "••••"}
                               </span>
                             </div>
                           </div>
                         </div>
-                        <p className="mt-3 text-[10px] leading-relaxed text-white/35">
+                        <p className="mt-3 text-[10px] leading-relaxed text-black/50">
                           Totals cover the {spendTxList.length} transaction{spendTxList.length === 1 ? "" : "s"} listed
                           below, excluding failed ones.
                           {summaryHasRecurring
@@ -5199,40 +5194,40 @@ export default function UserDashboard() {
                       </div>
 
                       {/* ---- Transaction list ---- */}
-                      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl shadow-2xl overflow-hidden">
+                      <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl shadow-sm overflow-hidden">
                         {spendTxList.length === 0 ? (
                           <div className="flex flex-col items-center justify-center py-12 text-center">
-                            <DollarSign className="h-8 w-8 text-white/15 mb-3" />
-                            <p className="text-xs text-white/35">{spendFiltersActive ? "No matching transactions." : "No transactions yet."}</p>
+                            <DollarSign className="h-8 w-8 text-black/20 mb-3" />
+                            <p className="text-xs text-black/50">{spendFiltersActive ? "No matching transactions." : "No transactions yet."}</p>
                           </div>
                         ) : (
-                          <div className="divide-y divide-white/[0.05]">
+                          <div className="divide-y divide-black/5">
                             {spendTxList.map((tx) => (
-                              <div key={tx.id} className="flex items-center gap-3 px-5 py-4 hover:bg-white/[0.02] transition-colors">
-                                <div className="h-10 w-10 shrink-0 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center overflow-hidden">
+                              <div key={tx.id} className="flex items-center gap-3 px-5 py-4 hover:bg-black/[0.02] transition-colors">
+                                <div className="h-10 w-10 shrink-0 rounded-full bg-black/5 border border-black/10 flex items-center justify-center overflow-hidden">
                                   {tx.pic ? (
                                     <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
                                   ) : (
-                                    <span className="text-sm font-black text-[#ccff00]">{(tx.name || "?").charAt(0).toUpperCase()}</span>
+                                    <span className="text-sm font-black text-[#2775CA]">{(tx.name || "?").charAt(0).toUpperCase()}</span>
                                   )}
                                 </div>
                                 <div className="min-w-0 flex-1">
-                                  <p className="truncate text-sm font-bold text-white">{tx.name}</p>
-                                  <p className="truncate text-[10px] text-white/40">
+                                  <p className="truncate text-sm font-bold text-black">{tx.name}</p>
+                                  <p className="truncate text-[10px] text-black/50">
                                     {tx.detail} • {new Date(tx.time).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}
                                   </p>
                                 </div>
                                 <div className="text-right shrink-0">
-                                  <span className={`text-sm font-extrabold ${tx.status === "FAILED" ? "text-red-400/50 line-through" : tx.incoming ? "text-[#ccff00]" : "text-white"}`}>
+                                  <span className={`text-sm font-extrabold ${tx.status === "FAILED" ? "text-red-500/60 line-through" : tx.incoming ? "text-emerald-700" : "text-black"}`}>
                                     {balanceVisible ? tx.amountLabel : "••••"}
                                   </span>
                                   <span className="mt-0.5 flex items-center justify-end gap-1.5">
                                     {tx.status !== "COMPLETED" && (
-                                      <span className={`text-[8px] font-bold uppercase tracking-wider ${tx.status === "PENDING" ? "text-amber-400/70" : "text-red-400/70"}`}>
+                                      <span className={`text-[8px] font-bold uppercase tracking-wider ${tx.status === "PENDING" ? "text-amber-600" : "text-red-600"}`}>
                                         {tx.status}
                                       </span>
                                     )}
-                                    <span className={`text-[8px] font-bold uppercase tracking-wider ${tx.kind === "recurring" ? "text-[#ccff00]/60" : "text-sky-400/60"}`}>
+                                    <span className={`text-[8px] font-bold uppercase tracking-wider ${tx.kind === "recurring" ? "text-[#2775CA]" : "text-sky-600"}`}>
                                       {tx.kind === "recurring" ? "Recurring" : "One-time"}
                                     </span>
                                   </span>
@@ -5251,19 +5246,19 @@ export default function UserDashboard() {
                     <div className="flex items-center gap-4">
                       <button 
                         onClick={() => setAccountSubView("menu")}
-                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                        className="p-2 rounded-full hover:bg-black/5 text-black/60 hover:text-black transition-all"
                       >
                         <ChevronLeft className="h-5 w-5" />
                       </button>
-                      <h2 className="text-sm font-black uppercase tracking-wider text-white">Spending Limits</h2>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-black">Spending Limits</h2>
                     </div>
 
                     {userSettings && (
-                      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
-                        <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                          <CreditCard className="h-4 w-4 text-[#ccff00]" /> Edit Spending Limits
+                      <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm">
+                        <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/60 flex items-center gap-2">
+                          <CreditCard className="h-4 w-4 text-[#2775CA]" /> Edit Spending Limits
                         </h3>
-                        <p className="text-[10px] text-white/40 leading-relaxed font-sans">
+                        <p className="text-[10px] text-black/50 leading-relaxed font-sans">
                           Limit the maximum USDC that can be debited from your wallet within a period. Leave empty for no limit.
                         </p>
                         <form
@@ -5303,7 +5298,7 @@ export default function UserDashboard() {
                           <button
                             type="submit"
                             disabled={savingSettingsField === "spendingLimits"}
-                            className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition disabled:opacity-50"
+                            className="w-full rounded-2xl bg-[#353935] hover:bg-black text-white py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition disabled:opacity-50"
                           >
                             {savingSettingsField === "spendingLimits" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Limits"}
                           </button>
@@ -5389,40 +5384,40 @@ export default function UserDashboard() {
                       <div className="flex items-center gap-4">
                         <button 
                           onClick={() => setAccountSubView("menu")}
-                          className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                          className="p-2 rounded-full hover:bg-black/5 text-black/60 hover:text-black transition-all"
                         >
                           <ChevronLeft className="h-5 w-5" />
                         </button>
-                        <h2 className="text-sm font-black uppercase tracking-wider text-white">Transactions</h2>
+                        <h2 className="text-sm font-black uppercase tracking-wider text-black">Transactions</h2>
                       </div>
 
-                      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
+                      <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                          <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                            <Activity className="h-4 w-4 text-[#ccff00]" /> Recent Transactions History
+                          <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/60 flex items-center gap-2">
+                            <Activity className="h-4 w-4 text-[#2775CA]" /> Recent Transactions History
                           </h3>
-                          <span className="text-[10px] font-mono font-semibold text-white/40">
+                          <span className="text-[10px] font-mono font-semibold text-black/50">
                             Showing {filteredSettingsTx.length} of {settingsTransactions.length}
                           </span>
                         </div>
 
                         {/* Interactive Filter Toolbar */}
-                        <div className="space-y-3 p-4 rounded-2xl bg-white/[0.02] border border-white/5 font-sans">
+                        <div className="space-y-3 p-4 rounded-2xl bg-black/[0.02] border border-black/10 font-sans">
                           <div className="flex flex-wrap items-center gap-3">
                             {/* Search */}
                             <div className="relative flex-1 min-w-[200px]">
-                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/40" />
+                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-black/40" />
                               <input
                                 type="text"
                                 value={settingsTxSearch}
                                 onChange={(e) => setSettingsTxSearch(e.target.value)}
                                 placeholder="Search name, receipt ID, memo..."
-                                className="w-full bg-white/[0.04] border border-white/10 rounded-xl pl-9 pr-8 py-1.5 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[#ccff00]/50"
+                                className="w-full bg-white border border-black/15 rounded-xl pl-9 pr-8 py-1.5 text-xs text-black placeholder:text-black/35 focus:outline-none focus:border-[#2775CA]"
                               />
                               {settingsTxSearch && (
                                 <button
                                   onClick={() => setSettingsTxSearch("")}
-                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white text-xs"
+                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-black/40 hover:text-black text-xs"
                                 >
                                   ✕
                                 </button>
@@ -5433,27 +5428,27 @@ export default function UserDashboard() {
                             <select
                               value={settingsTxCategory}
                               onChange={(e) => setSettingsTxCategory(e.target.value)}
-                              className="bg-white/[0.04] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white/90 focus:outline-none focus:border-[#ccff00]/50"
+                              className="bg-white border border-black/15 rounded-xl px-3 py-1.5 text-xs text-black focus:outline-none focus:border-[#2775CA]"
                             >
-                              <option value="all" className="bg-[#121212] text-white">All Categories</option>
-                              <option value="subscriptions" className="bg-[#121212] text-white">Subscriptions</option>
-                              <option value="one-time" className="bg-[#121212] text-white">One Time</option>
-                              <option value="transfers" className="bg-[#121212] text-white">Transfers</option>
-                              <option value="withdrawals" className="bg-[#121212] text-white">Withdrawals</option>
-                              <option value="sent" className="bg-[#121212] text-white">Sent (Debit)</option>
-                              <option value="received" className="bg-[#121212] text-white">Received (Credit)</option>
+                              <option value="all">All Categories</option>
+                              <option value="subscriptions">Subscriptions</option>
+                              <option value="one-time">One Time</option>
+                              <option value="transfers">Transfers</option>
+                              <option value="withdrawals">Withdrawals</option>
+                              <option value="sent">Sent (Debit)</option>
+                              <option value="received">Received (Credit)</option>
                             </select>
 
                             {/* Status Dropdown */}
                             <select
                               value={settingsTxStatus}
                               onChange={(e) => setSettingsTxStatus(e.target.value)}
-                              className="bg-white/[0.04] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white/90 focus:outline-none focus:border-[#ccff00]/50"
+                              className="bg-white border border-black/15 rounded-xl px-3 py-1.5 text-xs text-black focus:outline-none focus:border-[#2775CA]"
                             >
-                              <option value="all" className="bg-[#121212] text-white">All Statuses</option>
-                              <option value="CONFIRMED" className="bg-[#121212] text-white">Confirmed</option>
-                              <option value="PENDING" className="bg-[#121212] text-white">Pending</option>
-                              <option value="FAILED" className="bg-[#121212] text-white">Failed</option>
+                              <option value="all">All Statuses</option>
+                              <option value="CONFIRMED">Confirmed</option>
+                              <option value="PENDING">Pending</option>
+                              <option value="FAILED">Failed</option>
                             </select>
 
                             {/* Date Preset Dropdown */}
@@ -5466,13 +5461,13 @@ export default function UserDashboard() {
                                   setSettingsTxEndDate("");
                                 }
                               }}
-                              className="bg-white/[0.04] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white/90 focus:outline-none focus:border-[#ccff00]/50"
+                              className="bg-white border border-black/15 rounded-xl px-3 py-1.5 text-xs text-black focus:outline-none focus:border-[#2775CA]"
                             >
-                              <option value="all" className="bg-[#121212] text-white">All Time</option>
-                              <option value="today" className="bg-[#121212] text-white">Today</option>
-                              <option value="7days" className="bg-[#121212] text-white">Last 7 Days</option>
-                              <option value="30days" className="bg-[#121212] text-white">Last 30 Days</option>
-                              <option value="custom" className="bg-[#121212] text-white">Custom Date Range...</option>
+                              <option value="all">All Time</option>
+                              <option value="today">Today</option>
+                              <option value="7days">Last 7 Days</option>
+                              <option value="30days">Last 30 Days</option>
+                              <option value="custom">Custom Date Range...</option>
                             </select>
 
                             {/* Clear Filters */}
@@ -5486,7 +5481,7 @@ export default function UserDashboard() {
                                   setSettingsTxStartDate("");
                                   setSettingsTxEndDate("");
                                 }}
-                                className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-[11px] font-bold text-white/80 transition-all"
+                                className="px-3 py-1.5 rounded-xl bg-black/5 hover:bg-black/10 text-[11px] font-bold text-black/80 transition-all"
                               >
                                 Reset Filters
                               </button>
@@ -5495,14 +5490,14 @@ export default function UserDashboard() {
 
                           {/* Custom Date Pickers */}
                           {settingsTxDatePreset === "custom" && (
-                            <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-white/70">
+                            <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-black/70">
                               <div className="flex items-center gap-1.5">
                                 <span>From:</span>
                                 <input
                                   type="date"
                                   value={settingsTxStartDate}
                                   onChange={(e) => setSettingsTxStartDate(e.target.value)}
-                                  className="bg-white/[0.04] border border-white/10 rounded-xl px-2.5 py-1 text-xs text-white focus:outline-none focus:border-[#ccff00]/50"
+                                  className="bg-white border border-black/15 rounded-xl px-2.5 py-1 text-xs text-black focus:outline-none focus:border-[#2775CA]"
                                 />
                               </div>
                               <div className="flex items-center gap-1.5">
@@ -5511,17 +5506,18 @@ export default function UserDashboard() {
                                   type="date"
                                   value={settingsTxEndDate}
                                   onChange={(e) => setSettingsTxEndDate(e.target.value)}
-                                  className="bg-white/[0.04] border border-white/10 rounded-xl px-2.5 py-1 text-xs text-white focus:outline-none focus:border-[#ccff00]/50"
+                                  className="bg-white border border-black/15 rounded-xl px-2.5 py-1 text-xs text-black focus:outline-none focus:border-[#2775CA]"
                                 />
                               </div>
                             </div>
                           )}
                         </div>
 
+                        {/* Desktop Table View */}
                         <div className="overflow-x-auto hidden md:block">
                           <table className="w-full text-left font-sans text-xs">
                             <thead>
-                              <tr className="border-b border-white/5 text-white/40 uppercase text-[9px] tracking-wider">
+                              <tr className="border-b border-black/10 text-black/50 uppercase text-[9px] tracking-wider">
                                 <th className="pb-3">Payment</th>
                                 <th className="pb-3">Date &amp; Time</th>
                                 <th className="pb-3">Amount</th>
@@ -5532,7 +5528,7 @@ export default function UserDashboard() {
                             <tbody>
                               {filteredSettingsTx.length === 0 ? (
                                 <tr>
-                                  <td colSpan={5} className="text-center py-6 text-white/30">
+                                  <td colSpan={5} className="text-center py-6 text-black/40">
                                     No payments match your active filters.
                                   </td>
                                 </tr>
@@ -5541,16 +5537,16 @@ export default function UserDashboard() {
                                   const counterparty = tx.counterpartyName
                                     || formatAddress(tx.direction === "sent" ? tx.merchantAddress : tx.payerAddress);
                                   return (
-                                  <tr key={tx.receiptId} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
-                                    <td className="py-4 font-semibold text-white/80">
+                                  <tr key={tx.receiptId} className="border-b border-black/5 hover:bg-black/[0.02] transition-all">
+                                    <td className="py-4 font-semibold text-black/90">
                                       {tx.direction === "sent" ? `Paid ${counterparty}` : `Received from ${counterparty}`}
                                     </td>
-                                    <td className="py-4 text-white/50">{new Date(tx.createdAt).toLocaleString()}</td>
-                                    <td className="py-4 font-mono font-bold text-white">
+                                    <td className="py-4 text-black/60">{new Date(tx.createdAt).toLocaleString()}</td>
+                                    <td className="py-4 font-mono font-bold text-black">
                                       ${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
                                     </td>
                                     <td className="py-4">
-                                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-500/15 text-amber-400"}`}>
+                                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-700" : "bg-amber-500/15 text-amber-700"}`}>
                                         {humanStatus(tx.status)}
                                       </span>
                                     </td>
@@ -5560,7 +5556,7 @@ export default function UserDashboard() {
                                           href={`/receipt/${tx.receiptId}`}
                                           target="_blank"
                                           rel="noopener noreferrer"
-                                          className="text-[#ccff00]/80 hover:text-[#ccff00] hover:underline inline-flex items-center gap-1"
+                                          className="text-[#2775CA] hover:underline inline-flex items-center gap-1 font-semibold"
                                           title="Open this receipt in a new tab"
                                         >
                                           View receipt
@@ -5569,7 +5565,7 @@ export default function UserDashboard() {
                                           href={`/receipt/${tx.receiptId}?invite=1`}
                                           target="_blank"
                                           rel="noopener noreferrer"
-                                          className="text-white/60 hover:text-[#ccff00] hover:underline inline-flex items-center gap-1"
+                                          className="text-black/60 hover:text-[#2775CA] hover:underline inline-flex items-center gap-1"
                                           title="Grant another address permission to view this private receipt"
                                         >
                                           Share
@@ -5587,7 +5583,7 @@ export default function UserDashboard() {
                         {/* Mobile Card-Stack View */}
                         <div className="block md:hidden space-y-3">
                           {filteredSettingsTx.length === 0 ? (
-                            <div className="text-center py-6 text-white/30 text-xs font-sans">
+                            <div className="text-center py-6 text-black/40 text-xs font-sans">
                               No payments match your active filters.
                             </div>
                           ) : (
@@ -5595,22 +5591,22 @@ export default function UserDashboard() {
                               const counterparty = tx.counterpartyName
                                 || formatAddress(tx.direction === "sent" ? tx.merchantAddress : tx.payerAddress);
                               return (
-                                <div key={tx.receiptId} className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2 text-xs font-mono">
+                                <div key={tx.receiptId} className="p-4 rounded-2xl bg-black/[0.02] border border-black/10 space-y-2 text-xs font-mono">
                                   <div className="flex items-center justify-between">
-                                    <span className="font-bold text-white/90">
+                                    <span className="font-bold text-black/90">
                                       {tx.direction === "sent" ? `Paid ${counterparty}` : `Received ${counterparty}`}
                                     </span>
-                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-500/15 text-amber-400"}`}>
+                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-700" : "bg-amber-500/15 text-amber-700"}`}>
                                       {humanStatus(tx.status)}
                                     </span>
                                   </div>
                                   <div className="flex items-center justify-between text-[11px] pt-1">
-                                    <span className="text-white/40">{new Date(tx.createdAt).toLocaleDateString()}</span>
-                                    <span className="font-bold text-white">${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC</span>
+                                    <span className="text-black/50">{new Date(tx.createdAt).toLocaleDateString()}</span>
+                                    <span className="font-bold text-black">${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC</span>
                                   </div>
-                                  <div className="pt-2 flex items-center justify-end gap-3 border-t border-white/5 text-[10px]">
-                                    <a href={`/receipt/${tx.receiptId}`} target="_blank" rel="noopener noreferrer" className="text-[#ccff00]">View receipt</a>
-                                    <a href={`/receipt/${tx.receiptId}?invite=1`} target="_blank" rel="noopener noreferrer" className="text-white/60">Share</a>
+                                  <div className="pt-2 flex items-center justify-end gap-3 border-t border-black/10 text-[10px]">
+                                    <a href={`/receipt/${tx.receiptId}`} target="_blank" rel="noopener noreferrer" className="text-[#2775CA] font-semibold">View receipt</a>
+                                    <a href={`/receipt/${tx.receiptId}?invite=1`} target="_blank" rel="noopener noreferrer" className="text-black/60">Share</a>
                                   </div>
                                 </div>
                               );
@@ -5628,28 +5624,28 @@ export default function UserDashboard() {
                     <div className="flex items-center gap-4">
                       <button 
                         onClick={() => setAccountSubView("menu")}
-                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                        className="p-2 rounded-full hover:bg-black/5 text-black/60 hover:text-black transition-all"
                       >
                         <ChevronLeft className="h-5 w-5" />
                       </button>
-                      <h2 className="text-sm font-black uppercase tracking-wider text-white">Notifications</h2>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-black">Notifications</h2>
                     </div>
 
                     {userSettings && (
-                      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
-                        <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                          <Sliders className="h-4 w-4 text-[#ccff00]" /> Notification Preferences
+                      <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm">
+                        <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/60 flex items-center gap-2">
+                          <Sliders className="h-4 w-4 text-[#2775CA]" /> Notification Preferences
                         </h3>
                         <div className="space-y-4 font-sans text-xs">
                           <div className="flex items-center justify-between">
                             <div className="space-y-0.5">
-                              <p className="text-white font-bold">Push Notifications</p>
-                              <p className="text-[9px] text-white/40">Enable alerts inside the browser portal</p>
+                              <p className="text-black font-bold">Push Notifications</p>
+                              <p className="text-[10px] text-black/50">Enable alerts inside the browser portal</p>
                             </div>
                             <button
                               onClick={() => handleToggleSetting("pushEnabled", userSettings.pushEnabled)}
                               disabled={savingSettingsField === "pushEnabled"}
-                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.pushEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.pushEnabled ? "bg-[#2775CA]" : "bg-black/15"}`}
                             >
                               <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.pushEnabled ? "translate-x-5" : "translate-x-0"}`} />
                             </button>
@@ -5657,8 +5653,8 @@ export default function UserDashboard() {
 
                           <div className="flex items-center justify-between">
                             <div className="space-y-0.5">
-                              <p className="text-white font-bold">Browser Push (This Device)</p>
-                              <p className="text-[9px] text-white/40">
+                              <p className="text-black font-bold">Browser Push (This Device)</p>
+                              <p className="text-[10px] text-black/50">
                                 {browserPushSupported
                                   ? "Receive alerts even when SubScript is closed"
                                   : "Not supported in this browser"}
@@ -5671,23 +5667,23 @@ export default function UserDashboard() {
                               aria-label="Browser Push on this device"
                               onClick={handleToggleBrowserPush}
                               disabled={browserPushBusy || !browserPushSupported}
-                              className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${browserPushOn ? "bg-[#ccff00]" : "bg-white/10"} ${browserPushBusy || !browserPushSupported ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                              className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${browserPushOn ? "bg-[#2775CA]" : "bg-black/15"} ${browserPushBusy || !browserPushSupported ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
                             >
                               <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${browserPushOn ? "translate-x-5" : "translate-x-0"}`} />
                             </button>
                           </div>
 
                           {browserPushOn && (
-                            <div className="flex items-center justify-between rounded-2xl border border-white/5 bg-white/[0.025] px-4 py-3">
+                            <div className="flex items-center justify-between rounded-2xl border border-black/10 bg-black/[0.02] px-4 py-3">
                               <div className="space-y-0.5">
-                                <p className="text-white font-bold">Verify this device</p>
-                                <p className="text-[9px] text-white/40">Send a private test alert to your registered browsers</p>
+                                <p className="text-black font-bold">Verify this device</p>
+                                <p className="text-[10px] text-black/50">Send a private test alert to your registered browsers</p>
                               </div>
                               <button
                                 type="button"
                                 onClick={handleTestBrowserPush}
                                 disabled={browserPushTestBusy}
-                                className="rounded-xl border border-[#ccff00]/30 bg-[#ccff00]/10 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-[#ccff00] transition hover:bg-[#ccff00]/15 disabled:cursor-not-allowed disabled:opacity-50"
+                                className="rounded-xl border border-[#2775CA]/30 bg-[#2775CA]/10 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-[#2775CA] transition hover:bg-[#2775CA]/20 disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 {browserPushTestBusy ? "Sending…" : "Send test"}
                               </button>
@@ -5696,13 +5692,13 @@ export default function UserDashboard() {
 
                           <div className="flex items-center justify-between">
                             <div className="space-y-0.5">
-                              <p className="text-white font-bold">Debit Success</p>
-                              <p className="text-[9px] text-white/40">Notify immediately when a subscription billing succeeds</p>
+                              <p className="text-black font-bold">Debit Success</p>
+                              <p className="text-[10px] text-black/50">Notify immediately when a subscription billing succeeds</p>
                             </div>
                             <button
                               onClick={() => handleToggleSetting("debitSuccessEnabled", userSettings.debitSuccessEnabled)}
                               disabled={savingSettingsField === "debitSuccessEnabled"}
-                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.debitSuccessEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.debitSuccessEnabled ? "bg-[#2775CA]" : "bg-black/15"}`}
                             >
                               <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.debitSuccessEnabled ? "translate-x-5" : "translate-x-0"}`} />
                             </button>
@@ -5710,13 +5706,13 @@ export default function UserDashboard() {
 
                           <div className="flex items-center justify-between">
                             <div className="space-y-0.5">
-                              <p className="text-white font-bold">Expiry Warnings</p>
-                              <p className="text-[9px] text-white/40">Alert 3 days before any subscription renewal or cap expiry</p>
+                              <p className="text-black font-bold">Expiry Warnings</p>
+                              <p className="text-[10px] text-black/50">Alert 3 days before any subscription renewal or cap expiry</p>
                             </div>
                             <button
                               onClick={() => handleToggleSetting("expiryWarningEnabled", userSettings.expiryWarningEnabled)}
                               disabled={savingSettingsField === "expiryWarningEnabled"}
-                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.expiryWarningEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.expiryWarningEnabled ? "bg-[#2775CA]" : "bg-black/15"}`}
                             >
                               <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.expiryWarningEnabled ? "translate-x-5" : "translate-x-0"}`} />
                             </button>
@@ -5733,52 +5729,52 @@ export default function UserDashboard() {
                     <div className="flex items-center gap-4">
                       <button 
                         onClick={() => setAccountSubView("menu")}
-                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                        className="p-2 rounded-full hover:bg-black/5 text-black/60 hover:text-black transition-all"
                       >
                         <ChevronLeft className="h-5 w-5" />
                       </button>
-                      <h2 className="text-sm font-black uppercase tracking-wider text-white">Security & Keys</h2>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-black">Security & Keys</h2>
                     </div>
 
                     {/* Wallet Security Card */}
-                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-4 shadow-2xl">
-                      <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                        <Wallet className="h-4 w-4 text-[#ccff00]" /> Wallet Security & Compatibility
+                    <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-8 space-y-4 shadow-sm">
+                      <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/60 flex items-center gap-2">
+                        <Wallet className="h-4 w-4 text-[#2775CA]" /> Wallet Security & Compatibility
                       </h3>
                       
                       {userSettings?.walletBackup ? (
                         <div className="space-y-3">
-                          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 flex items-start gap-3">
-                            <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
+                          <div className="rounded-2xl border border-emerald-500/30 bg-emerald-50 px-4 py-3 flex items-start gap-3">
+                            <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
                             <div>
-                              <h4 className="text-xs font-bold text-emerald-300">Server-Signed Wallet (Embedded)</h4>
-                              <p className="text-[10px] text-white/50 leading-relaxed mt-1">
+                              <h4 className="text-xs font-bold text-emerald-950">Server-Signed Wallet (Embedded)</h4>
+                              <p className="text-[10px] text-emerald-800/80 leading-relaxed mt-1">
                                 Your account is secured with a server-signed embedded wallet generated via email/social login.
                               </p>
-                              <span className="inline-block mt-2 rounded-md bg-emerald-500/20 text-emerald-300 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">
+                              <span className="inline-block mt-2 rounded-md bg-emerald-500/20 text-emerald-800 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">
                                 Mobile App Compatible
                               </span>
                             </div>
                           </div>
-                          <p className="text-[10px] text-white/40 leading-relaxed">
+                          <p className="text-[10px] text-black/50 leading-relaxed">
                             This wallet will be automatically portable to our upcoming mobile app. All transaction signatures are co-signed by the SubScript server.
                           </p>
                         </div>
                       ) : (
                         <div className="space-y-3">
-                          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 flex items-start gap-3">
-                            <AlertCircle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+                          <div className="rounded-2xl border border-amber-500/30 bg-amber-50 px-4 py-3 flex items-start gap-3">
+                            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
                             <div>
-                              <h4 className="text-xs font-bold text-amber-300">Client-Connected Wallet (Web3)</h4>
-                              <p className="text-[10px] text-white/50 leading-relaxed mt-1">
+                              <h4 className="text-xs font-bold text-amber-950">Client-Connected Wallet (Web3)</h4>
+                              <p className="text-[10px] text-amber-800/80 leading-relaxed mt-1">
                                 Your account uses an external browser/Web3 wallet (e.g. MetaMask, WalletConnect).
                               </p>
-                              <span className="inline-block mt-2 rounded-md bg-amber-500/20 text-amber-300 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">
+                              <span className="inline-block mt-2 rounded-md bg-amber-500/20 text-amber-800 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">
                                 Web Only (No Mobile App Support)
                               </span>
                             </div>
                           </div>
-                          <p className="text-[10px] text-white/40 leading-relaxed">
+                          <p className="text-[10px] text-black/50 leading-relaxed">
                             Note: External Web3 wallets are compatible with our web dashboard only. Our upcoming mobile app will strictly support email/Apple/Google login (Server-Signed wallets). To use the mobile app, we recommend creating a new account using your email.
                           </p>
                         </div>
@@ -5787,58 +5783,58 @@ export default function UserDashboard() {
 
                     {/* Key export exists only for wallet providers that expose a recoverable key. */}
                     {userSettings?.walletBackup?.available && (
-                      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-5 shadow-2xl">
+                      <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-8 space-y-5 shadow-sm">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                           <div className="space-y-2">
-                            <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                              <Lock className="h-4 w-4 text-[#ccff00]" /> Wallet Backup
+                            <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/60 flex items-center gap-2">
+                              <Lock className="h-4 w-4 text-[#2775CA]" /> Wallet Backup
                             </h3>
-                            <p className="text-[10px] text-white/40 leading-relaxed">
+                            <p className="text-[10px] text-black/50 leading-relaxed">
                               Export the private key for your SubScript-generated email wallet. Store it offline; anyone with this key can control the wallet.
                             </p>
                           </div>
-                          <span className="rounded-full border border-[#ccff00]/25 bg-[#ccff00]/10 px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-[#ccff00]">
+                          <span className="rounded-full border border-[#2775CA]/30 bg-[#2775CA]/10 px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-[#2775CA]">
                             Exportable
                           </span>
                         </div>
 
-                        <div className="rounded-2xl border border-white/5 bg-black/30 p-4 space-y-2">
+                        <div className="rounded-2xl border border-black/10 bg-black/[0.02] p-4 space-y-2">
                           <div className="flex items-center justify-between gap-3">
-                            <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Account Email</span>
-                            <span className="min-w-0 truncate text-right text-[11px] font-mono text-white/70">{userSettings.walletBackup.email || userEmail || "Not linked"}</span>
+                            <span className="text-[9px] font-black uppercase tracking-[0.14em] text-black/50">Account Email</span>
+                            <span className="min-w-0 truncate text-right text-[11px] font-mono text-black/80">{userSettings.walletBackup.email || userEmail || "Not linked"}</span>
                           </div>
                           <div className="flex items-center justify-between gap-3">
-                            <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Provider</span>
-                            <span className="text-[11px] font-mono text-white/70">{userSettings.walletBackup.provider || "embedded"}</span>
+                            <span className="text-[9px] font-black uppercase tracking-[0.14em] text-black/50">Provider</span>
+                            <span className="text-[11px] font-mono text-black/80">{userSettings.walletBackup.provider || "embedded"}</span>
                           </div>
                         </div>
 
                         {exportedPrivateKey && (
                           <div className="space-y-3">
-                            <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-3">
-                              <p className="break-all font-mono text-[11px] leading-relaxed text-red-100">
+                            <div className="rounded-2xl border border-red-500/30 bg-red-50 p-3">
+                              <p className="break-all font-mono text-[11px] leading-relaxed text-red-900">
                                 {privateKeyVisible ? exportedPrivateKey : "*".repeat(Math.min(exportedPrivateKey.length, 64))}
                               </p>
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                              <button type="button" onClick={() => setPrivateKeyVisible((value) => !value)} className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-white transition flex items-center justify-center gap-2">
+                              <button type="button" onClick={() => setPrivateKeyVisible((value) => !value)} className="rounded-2xl border border-black/10 bg-white hover:bg-black/5 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-black transition flex items-center justify-center gap-2 shadow-sm">
                                 {privateKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {privateKeyVisible ? "Hide" : "Show"}
                               </button>
-                              <button type="button" onClick={handleCopyPrivateKey} className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition flex items-center justify-center gap-2">
+                              <button type="button" onClick={handleCopyPrivateKey} className="rounded-2xl border border-[#2775CA]/30 bg-[#2775CA]/10 hover:bg-[#2775CA]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#2775CA] transition flex items-center justify-center gap-2">
                                 <Copy className="h-4 w-4" /> Copy
                               </button>
-                              <button type="button" onClick={handleDownloadPrivateKey} className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition flex items-center justify-center gap-2">
+                              <button type="button" onClick={handleDownloadPrivateKey} className="rounded-2xl border border-[#2775CA]/30 bg-[#2775CA]/10 hover:bg-[#2775CA]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#2775CA] transition flex items-center justify-center gap-2">
                                 <Download className="h-4 w-4" /> Download
                               </button>
                             </div>
                           </div>
                         )}
 
-                        {walletBackupError && <p className="text-[11px] text-red-300">{walletBackupError}</p>}
+                        {walletBackupError && <p className="text-[11px] text-red-600">{walletBackupError}</p>}
 
                         {exportOtpStage ? (
                           <div className="space-y-3">
-                            <p className="text-[10px] text-white/50 leading-relaxed">
+                            <p className="text-[10px] text-black/60 leading-relaxed">
                               For your security, enter the 6-digit verification code we emailed you to reveal your private key.
                             </p>
                             <input
@@ -5849,14 +5845,14 @@ export default function UserDashboard() {
                               value={exportOtpCode}
                               onChange={(e) => setExportOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                               placeholder="000000"
-                              className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-3 text-center font-mono text-lg tracking-[0.4em] text-white placeholder:text-white/20 focus:border-[#ccff00]/50 focus:outline-none"
+                              className="w-full rounded-2xl border border-black/15 bg-white px-3 py-3 text-center font-mono text-lg tracking-[0.4em] text-black placeholder:text-black/30 focus:border-[#2775CA] focus:outline-none"
                             />
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                               <button
                                 type="button"
                                 onClick={handleExportWallet}
                                 disabled={walletBackupLoading || exportOtpCode.length !== 6}
-                                className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition disabled:opacity-50"
+                                className="w-full rounded-2xl bg-[#353935] hover:bg-black text-white py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition disabled:opacity-50"
                               >
                                 {walletBackupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                                 Confirm & Reveal
@@ -5865,7 +5861,7 @@ export default function UserDashboard() {
                                 type="button"
                                 onClick={() => { setExportOtpStage(false); setExportOtpCode(""); setWalletBackupError(null); }}
                                 disabled={walletBackupLoading}
-                                className="w-full rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 py-3.5 text-xs font-black uppercase tracking-[0.16em] text-white/70 transition"
+                                className="w-full rounded-2xl border border-black/10 bg-white hover:bg-black/5 py-3.5 text-xs font-black uppercase tracking-[0.16em] text-black/70 transition"
                               >
                                 Cancel
                               </button>
@@ -5874,7 +5870,7 @@ export default function UserDashboard() {
                               type="button"
                               onClick={requestExportOtp}
                               disabled={exportOtpSending}
-                              className="w-full text-center text-[10px] uppercase tracking-[0.14em] text-[#ccff00]/70 hover:text-[#ccff00] transition disabled:opacity-50"
+                              className="w-full text-center text-[10px] uppercase tracking-[0.14em] text-[#2775CA] hover:underline transition disabled:opacity-50"
                             >
                               {exportOtpSending ? "Resending…" : "Resend code"}
                             </button>
@@ -5884,7 +5880,7 @@ export default function UserDashboard() {
                             type="button"
                             onClick={requestExportOtp}
                             disabled={exportOtpSending}
-                            className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition disabled:opacity-50"
+                            className="w-full rounded-2xl bg-[#353935] hover:bg-black text-white py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition disabled:opacity-50"
                           >
                             {exportOtpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                             Export Private Key
@@ -5895,27 +5891,27 @@ export default function UserDashboard() {
                   </div>
                 )}
 
-                {/* 7. SUPPORT VIEW (Inspiration from Screenshot 3) */}
+                {/* 7. SUPPORT VIEW */}
                 {accountSubView === "support" && (
                   <div className="space-y-6">
                     <div className="flex items-center gap-4">
                       <button 
                         onClick={() => setAccountSubView("menu")}
-                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                        className="p-2 rounded-full hover:bg-black/5 text-black/60 hover:text-black transition-all"
                       >
                         <ChevronLeft className="h-5 w-5" />
                       </button>
-                      <h2 className="text-sm font-black uppercase tracking-wider text-white">Support</h2>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-black">Support</h2>
                     </div>
 
-                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl flex flex-col items-center justify-center text-center">
-                      <div className="p-4 rounded-full bg-[#ccff00]/10 text-[#ccff00] border border-[#ccff00]/25">
+                    <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm flex flex-col items-center justify-center text-center">
+                      <div className="p-4 rounded-full bg-[#2775CA]/10 text-[#2775CA] border border-[#2775CA]/30">
                         <MessageSquare className="h-10 w-10 animate-bounce" />
                       </div>
                       
                       <div className="space-y-2">
-                        <h3 className="text-base font-black uppercase tracking-wider text-white">Here for you 24/7!</h3>
-                        <p className="text-xs text-white/50 max-w-sm leading-relaxed font-sans">
+                        <h3 className="text-base font-black uppercase tracking-wider text-black">Here for you 24/7!</h3>
+                        <p className="text-xs text-black/60 max-w-sm leading-relaxed font-sans">
                           Talk to a SubScript rep or explore self-serve options below.
                         </p>
                       </div>
@@ -5925,28 +5921,28 @@ export default function UserDashboard() {
                           href="https://t.me/subscriptsupport"
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="w-full p-4 rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 flex items-center justify-between transition-all group font-bold text-xs uppercase tracking-wider text-[#ccff00]"
+                          className="w-full p-4 rounded-2xl border border-[#2775CA]/30 bg-[#2775CA]/10 hover:bg-[#2775CA]/20 flex items-center justify-between transition-all group font-bold text-xs uppercase tracking-wider text-[#2775CA]"
                         >
                           <span>Join Telegram Support Group</span>
-                          <ChevronRight className="h-4 w-4 text-[#ccff00]/50 group-hover:text-[#ccff00] transition" />
+                          <ChevronRight className="h-4 w-4 text-[#2775CA]/50 group-hover:text-[#2775CA] transition" />
                         </a>
 
                         <a
                           href="https://www.subscriptonarc.com/support"
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="w-full p-4 rounded-2xl border border-white/10 hover:bg-white/[0.03] flex items-center justify-between transition-all group font-bold text-xs uppercase tracking-wider text-white"
+                          className="w-full p-4 rounded-2xl border border-black/10 hover:bg-black/[0.03] flex items-center justify-between transition-all group font-bold text-xs uppercase tracking-wider text-black"
                         >
                           <span>Help Center & FAQs</span>
-                          <ChevronRight className="h-4 w-4 text-white/25 group-hover:text-white/60 transition" />
+                          <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 transition" />
                         </a>
 
                         <a
                           href="mailto:support@subscriptonarc.com"
-                          className="w-full p-4 rounded-2xl border border-white/10 hover:bg-white/[0.03] flex items-center justify-between transition-all group font-bold text-xs uppercase tracking-wider text-white"
+                          className="w-full p-4 rounded-2xl border border-black/10 hover:bg-black/[0.03] flex items-center justify-between transition-all group font-bold text-xs uppercase tracking-wider text-black"
                         >
                           <span>Email Support</span>
-                          <ChevronRight className="h-4 w-4 text-white/25 group-hover:text-white/60 transition" />
+                          <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 transition" />
                         </a>
                       </div>
                     </div>
@@ -6089,7 +6085,7 @@ export default function UserDashboard() {
           <nav
             aria-label="Primary navigation"
             className="liquid-glass flex flex-1 items-center justify-around rounded-full backdrop-blur-lg px-3 py-[1.1rem] shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
-            style={{ backgroundImage: "linear-gradient(to bottom, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.2))", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)" }}
+            style={{ backgroundColor: "rgb(39 117 202 / 20%)", backdropFilter: "blur(22px)", WebkitBackdropFilter: "blur(22px)" }}
           >
             <LiquidGlassEffect />
             {userBottomTabs.map((tab) => (
@@ -6179,7 +6175,7 @@ export default function UserDashboard() {
                       key={value}
                       type="button"
                       onClick={() => setTxFilter(value)}
-                      className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all ${
+                      className={`shrink-0 whitespace-nowrap px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all ${
                         txFilter === value ? "bg-[#ccff00] text-black" : "bg-white/[0.06] text-white/50 hover:bg-white/10"
                       }`}
                     >
@@ -6282,6 +6278,7 @@ export default function UserDashboard() {
         chainId={chainId}
         switchChainAsync={switchChainAsync}
         writeContractAsync={writeContractAsync}
+        onScanQr={() => setScannerOpen(true)}
         refetchUsdc={refetchUsdc}
       />
 
@@ -6886,7 +6883,7 @@ function HomeHeader({
     <div className="fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
       <header className="w-full max-w-md px-1 py-2 pointer-events-auto transition-all duration-300">
         <div className="flex items-center justify-between w-full">
-          <button type="button" onClick={handleProfileClick} aria-label={profileExpanded ? "Open settings" : "Show DNS name"} className={`flex h-12 items-center gap-2 overflow-hidden rounded-2xl border border-black/15 bg-[#2775CA]/20 px-2 text-black transition-all duration-300 ${profileExpanded ? "w-44" : "w-12"}`}>
+          <button type="button" onClick={handleProfileClick} aria-label={profileExpanded ? "Open settings" : "Show DNS name"} className={profileExpanded ? "profile-trigger profile-trigger-expanded flex h-12 max-w-[calc(100vw-7rem)] items-center gap-2 overflow-hidden rounded-2xl border border-black/15 bg-[#2775CA]/20 px-2 text-black transition-all duration-300" : "profile-trigger flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-0 bg-transparent p-0 text-black transition-all duration-300"}>
             <Avatar profilePic={profilePic} size="xs" />
             {profileExpanded && <span className="truncate text-[11px] font-semibold">{profileLabel}</span>}
           </button>
@@ -8034,8 +8031,8 @@ function DmRequestComposer({
 function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div>
-      <h1 className="text-2xl font-black uppercase tracking-tight text-white">{title}</h1>
-      <p className="mt-1 text-xs text-white/45">{subtitle}</p>
+      <h1 className="text-2xl font-black uppercase tracking-tight text-[#111827]">{title}</h1>
+      <p className="mt-1 text-xs text-black/60">{subtitle}</p>
     </div>
   );
 }
@@ -8043,7 +8040,7 @@ function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block space-y-2">
-      <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">{label}</span>
+      <span className="text-[10px] font-black uppercase tracking-[0.16em] text-black/50">{label}</span>
       {children}
     </label>
   );
@@ -8658,6 +8655,7 @@ function SendFundsModal({
   chainId,
   switchChainAsync,
   writeContractAsync,
+  onScanQr,
   refetchUsdc,
 }: {
   open: boolean;
@@ -8671,6 +8669,7 @@ function SendFundsModal({
   chainId: number | undefined;
   switchChainAsync: (parameters: { chainId: number }) => Promise<unknown>;
   writeContractAsync: any;
+  onScanQr?: () => void;
   refetchUsdc: () => void;
 }) {
   const [amount, setAmount] = useState("");
@@ -8855,6 +8854,11 @@ function SendFundsModal({
                   placeholder="Address or @alias"
                   className="w-full rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs font-mono text-white/80 focus:border-[#ccff00]/40 focus:outline-none"
                 />
+                {onScanQr && (
+                  <button type="button" onClick={onScanQr} className="mt-2 inline-flex items-center gap-2 rounded-full border border-black/20 bg-[#2775CA]/20 px-3 py-1.5 text-[10px] font-bold text-black" aria-label="Scan recipient QR">
+                    <QrCode className="h-3.5 w-3.5" /> Scan QR
+                  </button>
+                )}
                 <div className="min-h-[20px] px-2">
                   {resolving && <span className="text-xs text-[#ccff00] animate-pulse">(Resolving...)</span>}
                   {resolvedAddress && resolvedAddress !== localRecipient && (
@@ -9157,7 +9161,7 @@ function BalanceRoutingNotice({
 
 function VaultCardSkeleton() {
   return (
-    <div className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-black/30 p-4 sm:p-5">
+    <div className="flex min-h-[360px] w-full shrink-0 snap-center flex-col gap-4 rounded-3xl border border-black/20 bg-[#2775CA]/20 p-4 text-black sm:p-5">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <div className="h-11 w-11 rounded-2xl subscript-skeleton shrink-0" />
@@ -9173,17 +9177,17 @@ function VaultCardSkeleton() {
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="flex flex-col justify-between rounded-2xl border border-white/10 bg-black/40 p-4 min-h-[96px] subscript-skeleton">
-          <div className="h-3 w-20 rounded-md bg-white/10" />
-          <div className="h-6 w-32 rounded-lg bg-white/10 mt-2" />
+        <div className="flex min-h-[96px] flex-col justify-between rounded-2xl border border-black/15 bg-[#FFFFF0]/55 p-4 subscript-skeleton">
+          <div className="h-3 w-20 rounded-md bg-black/10" />
+          <div className="mt-2 h-6 w-32 rounded-lg bg-black/10" />
         </div>
-        <div className="flex flex-col justify-between rounded-2xl border border-white/10 bg-black/40 p-4 min-h-[96px] subscript-skeleton">
-          <div className="h-3 w-20 rounded-md bg-white/10" />
-          <div className="h-6 w-40 rounded-lg bg-white/10 mt-2" />
+        <div className="flex min-h-[96px] flex-col justify-between rounded-2xl border border-black/15 bg-[#FFFFF0]/55 p-4 subscript-skeleton">
+          <div className="h-3 w-20 rounded-md bg-black/10" />
+          <div className="mt-2 h-6 w-40 rounded-lg bg-black/10" />
         </div>
       </div>
 
-      <div className="h-16 rounded-2xl border border-white/5 bg-black/20 subscript-skeleton" />
+      <div className="h-16 rounded-2xl border border-black/10 bg-[#FFFFF0]/45 subscript-skeleton" />
 
       <div className="flex items-center gap-3 pt-2">
         <div className="h-[92px] w-[90px] rounded-2xl subscript-skeleton shrink-0" />
@@ -9322,11 +9326,11 @@ function MeteredVaultRow({
       : `Auto top-up on · ${formatUsdc(vault.topUpAmountUsdc)} at ${formatUsdc(vault.thresholdUsdc)}`;
 
   return (
-    <div className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-black/30 p-4 sm:p-5 transition hover:border-white/20 hover:bg-black/40">
+    <div className="flex min-h-[360px] flex-col gap-4 rounded-3xl border border-black/20 bg-[#2775CA]/20 p-4 text-black transition sm:p-5">
       {/* Top Header: Vault Icon + Merchant Name (Left) | Top up (+) & Pause (||) / Play (▶) buttons (Right) */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black/50 shrink-0">
+          <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border border-black/15 bg-[#2775CA]/20 shrink-0">
             {vault.merchantPic ? (
               <img src={vault.merchantPic} alt={vault.merchantName} className="h-full w-full object-cover" />
             ) : (
@@ -9406,62 +9410,42 @@ function MeteredVaultRow({
         </div>
       </div>
 
-      {/* Middle & Bottom Sections with VaultShareManager integration */}
-      {vault.id && (
-        <VaultShareManager
-          vaultId={vault.id}
-          balanceVisible={balanceVisible}
-          merchantLabel={vault.merchantName || "this merchant"}
-          balanceBox={
-            <div className="flex flex-col justify-between rounded-2xl border border-white/10 bg-black/40 p-4 min-h-[96px]">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-white/50">Vault Balance</span>
-              <div className="mt-1">
-                <p className="text-xl sm:text-2xl font-black text-white tracking-tight">
-                  {balanceVisible ? `${formatUsdc(remainingBalanceUsdc)} USDC` : "•••• USDC"}
-                </p>
-                <p className="text-[11px] font-medium text-white/50 mt-0.5">
-                  Used: {balanceVisible ? `${formatUsdc(vault.accruedUsageUsdc)} USDC` : "••• USDC"}
-                </p>
-              </div>
-              {/* Auto top-up state lives with the balance because it is a statement about this
-                  number: whether it refills itself, and if not, why not. */}
-              <button
-                type="button"
-                onClick={() => onConfigureAutoTopUp(vault)}
-                title={autoTopUpOn ? "Manage auto top-up" : "Set up auto top-up"}
-                className={`mt-3 flex w-full items-center justify-between gap-2 rounded-xl border px-2.5 py-1.5 text-[10px] font-bold transition ${
-                  autoTopUpFailure
-                    ? "border-amber-400/30 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
-                    : autoTopUpOn
-                      ? "border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00] hover:bg-[#ccff00]/20"
-                      : "border-white/10 bg-white/[0.03] text-white/50 hover:bg-white/10 hover:text-white"
-                }`}
-              >
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <RefreshCw className={`h-3 w-3 shrink-0 ${autoTopUpOn && !autoTopUpFailure ? "" : "opacity-60"}`} />
-                  <span className="truncate">{autoTopUpLabel}</span>
-                </span>
-                <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />
-              </button>
-            </div>
-          }
-          datesBox={
-            <div className="space-y-2 rounded-2xl border border-white/5 bg-black/20 p-3.5 text-xs text-white/60">
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px] text-white/50 sm:grid-cols-3">
-                <p>Lock date / Cycle started <span className="font-mono font-bold text-white/80">{numericDate(cycleStartDate)}</span></p>
-                <p>Release date / Cycle matures <span className="font-mono font-bold text-white/80">{numericDate(lockedUntilDate)}</span></p>
-                <p>Reported usage <span className="font-bold text-white/80">{balanceVisible ? formatUsdc(vault.accruedUsageUsdc) : "•••"} USDC</span></p>
-                <p>Max drawable <span className="font-bold text-white/80">{balanceVisible ? formatUsdc(String(drawableExposure)) : "•••"} USDC</span></p>
-                <p>Settlement due by <span className="font-mono font-bold text-white/80">{numericDate(reclaimDate)}</span></p>
-                <p>Reclaimable from <span className="font-mono font-bold text-white/80">{numericDate(reclaimDate)}</span></p>
-              </div>
-              <p className="text-[10px] leading-relaxed text-white/45 border-t border-white/5 pt-1.5">
-                The keeper settles usage after <span className="font-semibold text-white/70">{textDate(lockedUntilDate)}</span> and unused escrow returns to you automatically.
-              </p>
-            </div>
-          }
-        />
-      )}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1.08fr_0.92fr]">
+        <div className="rounded-2xl border border-black/15 bg-[#2775CA]/20 p-4">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-black/65">Vault Balance</span>
+          <p className="mt-1 text-2xl font-black tracking-tight text-black">
+            {balanceVisible ? formatUsdc(remainingBalanceUsdc) + " USDC" : "•••• USDC"}
+          </p>
+          <p className="mt-0.5 text-[11px] font-medium text-black/60">
+            Used: {balanceVisible ? formatUsdc(vault.accruedUsageUsdc) + " USDC" : "••• USDC"}
+          </p>
+          <button
+            type="button"
+            onClick={() => onConfigureAutoTopUp(vault)}
+            title={autoTopUpOn ? "Manage auto top-up" : "Set up auto top-up"}
+            className="mt-3 flex w-full items-center justify-between gap-2 rounded-xl border border-black/15 bg-[#FFFFF0]/60 px-2.5 py-1.5 text-[10px] font-bold text-black transition hover:bg-[#FFFFF0]"
+          >
+            <span className="flex min-w-0 items-center gap-1.5">
+              <RefreshCw className="h-3 w-3 shrink-0" />
+              <span className="truncate">{autoTopUpLabel}</span>
+            </span>
+            <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />
+          </button>
+        </div>
+        <div className="space-y-2 rounded-2xl border border-black/15 bg-[#FFFFF0]/65 p-3.5 text-xs text-black/65">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px]">
+            <p>Lock date / Cycle started <span className="font-mono font-bold text-black">{numericDate(cycleStartDate)}</span></p>
+            <p>Release date / Cycle matures <span className="font-mono font-bold text-black">{numericDate(lockedUntilDate)}</span></p>
+            <p>Reported usage <span className="font-bold text-black">{balanceVisible ? formatUsdc(vault.accruedUsageUsdc) : "•••"} USDC</span></p>
+            <p>Max drawable <span className="font-bold text-black">{balanceVisible ? formatUsdc(String(drawableExposure)) : "•••"} USDC</span></p>
+            <p>Settlement due by <span className="font-mono font-bold text-black">{numericDate(reclaimDate)}</span></p>
+            <p>Reclaimable from <span className="font-mono font-bold text-black">{numericDate(reclaimDate)}</span></p>
+          </div>
+          <p className="border-t border-black/10 pt-1.5 text-[10px] leading-relaxed text-black/60">
+            The keeper settles usage after <span className="font-semibold text-black">{textDate(lockedUntilDate)}</span> and unused escrow returns to you automatically.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

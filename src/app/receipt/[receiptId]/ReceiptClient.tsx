@@ -309,16 +309,16 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
             <div className="w-full max-w-lg space-y-6">
                 <section className="w-full border border-white/10 bg-white/[0.03] rounded-3xl p-6 sm:p-8 shadow-2xl space-y-8">
                     <div className="flex items-start justify-between gap-4">
-                        <div>
-                            <div className="flex items-center gap-2">
+                        <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
                                 <p className="text-[10px] uppercase tracking-[0.24em] text-white/40">SubScript Receipt</p>
                                 <span className="inline-flex items-center gap-1 rounded bg-[#00d2b4]/10 px-1.5 py-0.5 text-[9px] font-medium text-[#00d2b4] border border-[#00d2b4]/20">
                                     <Lock className="h-2.5 w-2.5" /> Opt-In Privacy
                                 </span>
                             </div>
-                            <h1 className="mt-2 text-2xl font-bold tracking-tight break-words">{receipt.receipt_id}</h1>
+                            <h1 className="mt-2 text-xl sm:text-2xl font-bold tracking-tight break-all">{receipt.receipt_id}</h1>
                         </div>
-                        <div className={`rounded-2xl border p-3 ${receiptConfirmed ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300" : receiptStatus.tone === "failure" ? "border-red-400/20 bg-red-400/10 text-red-300" : "border-amber-400/20 bg-amber-400/10 text-amber-200"}`}>
+                        <div className={`shrink-0 rounded-2xl border p-3 ${receiptConfirmed ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300" : receiptStatus.tone === "failure" ? "border-red-400/20 bg-red-400/10 text-red-300" : "border-amber-400/20 bg-amber-400/10 text-amber-200"}`}>
                             {receiptConfirmed ? <CheckCircle2 className="h-6 w-6" /> : receiptStatus.tone === "failure" ? <ShieldAlert className="h-6 w-6" /> : receiptStatus.tone === "pending" ? <Loader2 className="h-6 w-6 animate-spin" /> : <Lock className="h-6 w-6" />}
                         </div>
                     </div>

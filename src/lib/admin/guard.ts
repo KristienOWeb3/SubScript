@@ -26,10 +26,15 @@ export type AdminIdentity = {
 };
 
 export async function getAdminSession(headers: Headers): Promise<AdminIdentity | null> {
-    const session = await getVerifiedSessionToken(headers);
-    if (!session) return null;
-    if (!(await isAdminWallet(session.wallet))) return null;
-    return { wallet: session.wallet, isRoot: isRootAdmin(session.wallet) };
+    try {
+        const session = await getVerifiedSessionToken(headers);
+        if (!session) return null;
+        if (!(await isAdminWallet(session.wallet))) return null;
+        return { wallet: session.wallet, isRoot: isRootAdmin(session.wallet) };
+    } catch (error) {
+        console.error("[admin] getAdminSession error:", error);
+        return null;
+    }
 }
 
 /**

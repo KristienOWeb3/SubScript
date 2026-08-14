@@ -99,7 +99,7 @@ export default function KycVerificationPanel({
     accent = "#00d2b4",
     variant = "merchant",
 }: {
-    accent?: "#00d2b4" | "#ccff00";
+    accent?: "#00d2b4" | "#ccff00" | "#2775CA";
     variant?: "user" | "merchant";
 }) {
     const [verification, setVerification] = useState<KycVerification | null>(null);
@@ -147,7 +147,7 @@ export default function KycVerificationPanel({
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [countryCode]);
 
     useEffect(() => {
         void loadVerification();
@@ -155,6 +155,7 @@ export default function KycVerificationPanel({
 
     const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault();
+        if (!consent) return;
         setSubmitting(true);
         setError(null);
         setRedirectUrl(null);
@@ -183,9 +184,11 @@ export default function KycVerificationPanel({
     };
 
     const canSubmit = !verification || verification.canResubmit;
-    const accentText = accent === "#ccff00" ? "text-[#ccff00]" : "text-[#00d2b4]";
+    const accentText = accent === "#ccff00" ? "text-[#ccff00]" : accent === "#2775CA" ? "text-[#2775CA]" : "text-[#00d2b4]";
     const accentBorder = accent === "#ccff00"
         ? "border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/15"
+        : accent === "#2775CA"
+        ? "border-[#2775CA]/25 bg-[#2775CA]/10 hover:bg-[#2775CA]/15"
         : "border-[#00d2b4]/25 bg-[#00d2b4]/10 hover:bg-[#00d2b4]/15";
 
     return (

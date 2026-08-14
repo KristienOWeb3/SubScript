@@ -50,17 +50,23 @@ export function AdminOverviewDashboard({
   const [merchantSearch, setMerchantSearch] = useState("");
 
   const metrics = overviewData?.metrics || analyticsData;
-  const rawTimeline = metrics?.timeline14d || analyticsData?.timeline || [];
+  const rawTimeline = Array.isArray(metrics?.timeline14d)
+    ? metrics.timeline14d
+    : Array.isArray(analyticsData?.timeline)
+      ? analyticsData.timeline
+      : [];
 
-  const timelineData: DataPoint[] = rawTimeline.map((t: any) => ({
-    date: t.date,
-    label: t.label,
-    value: t.volume ?? t.settledUsdc ?? 0,
-    secondaryValue: t.checkoutUsdc ?? 0,
-    meta: { paymentCount: t.paymentCount },
-  }));
+  const timelineData: DataPoint[] = rawTimeline
+    .filter((t: any) => t && typeof t === "object")
+    .map((t: any) => ({
+      date: typeof t.date === "string" ? t.date : "",
+      label: typeof t.label === "string" ? t.label : "",
+      value: Number(t.volume ?? t.settledUsdc ?? 0) || 0,
+      secondaryValue: Number(t.checkoutUsdc ?? 0) || 0,
+      meta: { paymentCount: t.paymentCount },
+    }));
 
-  const sparklineVolume = rawTimeline.map((t: any) => t.volume ?? t.settledUsdc ?? 0);
+  const sparklineVolume = timelineData.map((t) => t.value);
 
   const totalVolumeStr = metrics?.totalVolumeUsdc ?? analyticsData?.volume?.totalUsdc ?? "0.00";
   const volume30dStr = metrics?.volume30dUsdc ?? analyticsData?.volume?.last30DaysUsdc ?? "0.00";
@@ -68,7 +74,10 @@ export function AdminOverviewDashboard({
   const kycPending = metrics?.kycPendingCount ?? analyticsData?.kyc?.pending ?? 0;
   const stuckReceipts = metrics?.stuckReceiptsCount ?? analyticsData?.health?.stuckReceipts ?? 0;
 
-  const verifiedMerchantsCount = merchants.filter((m) => m.verified).length;
+  const safeMerchants = (Array.isArray(merchants) ? merchants : []).filter(
+    (merchant): merchant is Record<string, any> => Boolean(merchant && typeof merchant === "object")
+  );
+  const verifiedMerchantsCount = safeMerchants.filter((m) => Boolean(m?.verified)).length;
 
   const streamSegments: DonutSegment[] = [
     { label: "Settled Receipts", value: Math.max(1, analyticsData?.volume?.paymentCount ?? 12), color: "#2775ca" },
@@ -83,11 +92,15 @@ export function AdminOverviewDashboard({
     setTimeout(() => setCopiedAddress(null), 2000);
   };
 
-  const filteredMerchants = merchants
+  const filteredMerchants = safeMerchants
     .filter(
       (m) =>
-        m.merchantName?.toLowerCase().includes(merchantSearch.toLowerCase()) ||
-        m.walletAddress.toLowerCase().includes(merchantSearch.toLowerCase())
+        (typeof m.merchantName === "string" ? m.merchantName : "")
+          .toLowerCase()
+          .includes(merchantSearch.toLowerCase()) ||
+        (typeof m.walletAddress === "string" ? m.walletAddress : "")
+          .toLowerCase()
+          .includes(merchantSearch.toLowerCase())
     )
     .slice(0, 6);
 
@@ -123,8 +136,8 @@ export function AdminOverviewDashboard({
 
         <StatCardWithSparkline
           label="Registered Merchants"
-          value={merchants.length}
-          badgeText={`${verifiedMerchantsCount} verified (${merchants.length > 0 ? Math.round((verifiedMerchantsCount / merchants.length) * 100) : 0}%)`}
+          value={safeMerchants.length}
+          badgeText={`${verifiedMerchantsCount} verified (${safeMerchants.length > 0 ? Math.round((verifiedMerchantsCount / safeMerchants.length) * 100) : 0}%)`}
           icon={Building2}
           color="#00d2b4"
         />
@@ -187,8 +200,8 @@ export function AdminOverviewDashboard({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Gas Sponsor Runway Gauge */}
         <RunwayGaugeChart
-          valueUsdc={sponsor?.balanceUsdc}
-          topupsRemaining={sponsor?.estimatedTopupsRemaining}
+          valueUsdc={sponsor?.balanceUsdc ?? null}
+          topupsRemaining={sponsor?.estimatedTopupsRemaining ?? null}
           underfunded={Boolean(sponsor?.underfunded)}
           emergencyStop={Boolean(sponsor?.emergencyStop)}
           dailyBurnRateUsdc={sponsor?.topupUsdc ?? "0.10"}
@@ -265,7 +278,7 @@ export function AdminOverviewDashboard({
               onClick={() => onNavigateTab("merchants")}
               className="rounded-lg border border-[#e2e8f0] bg-white px-3 py-1.5 text-xs font-bold text-[#2775ca] hover:bg-[#f8fafc] transition shrink-0"
             >
-              View All ({merchants.length})
+              View All ({safeMerchants.length})
             </button>
           </div>
         </div>
@@ -289,15 +302,20 @@ export function AdminOverviewDashboard({
                   </td>
                 </tr>
               ) : (
-                filteredMerchants.map((merchant) => (
-                  <tr key={merchant.walletAddress} className="hover:bg-[#f8fafc] transition">
+                filteredMerchants.map((merchant, index) => {
+                  const walletAddress = typeof merchant.walletAddress === "string" ? merchant.walletAddress : "";
+                  const merchantName = typeof merchant.merchantName === "string" ? merchant.merchantName : "";
+                  const verified = Boolean(merchant.verified);
+
+                  return (
+                    <tr key={walletAddress || `merchant-${index}`} className="hover:bg-[#f8fafc] transition">
                     <td className="py-3 px-3">
                       <div className="flex items-center gap-2.5">
                         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#f1f5f9] text-[#2775ca] shrink-0 font-bold">
                           {merchant.profilePic ? (
                             <img
                               src={merchant.profilePic}
-                              alt={merchant.merchantName}
+                              alt={merchantName || "Merchant"}
                               className="h-full w-full rounded-lg object-cover"
                             />
                           ) : (
@@ -305,32 +323,35 @@ export function AdminOverviewDashboard({
                           )}
                         </div>
                         <span className="font-bold text-[#0f172a] uppercase tracking-wider truncate max-w-[130px]">
-                          {merchant.merchantName}
+                          {merchantName || "Unnamed"}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => handleCopy(merchant.merchantName, `name-${merchant.walletAddress}`)}
-                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[#94a3b8] hover:text-[#2775ca] transition"
-                          title="Copy merchant name"
-                        >
-                          {copiedAddress === `name-${merchant.walletAddress}` ? (
-                            <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                          ) : (
-                            <Copy className="h-3 w-3" />
-                          )}
-                        </button>
+                        {merchantName && (
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(merchantName, `name-${walletAddress}`)}
+                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[#94a3b8] hover:text-[#2775ca] transition"
+                            title="Copy merchant name"
+                          >
+                            {copiedAddress === `name-${walletAddress}` ? (
+                              <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                            ) : (
+                              <Copy className="h-3 w-3" />
+                            )}
+                          </button>
+                        )}
                       </div>
                     </td>
                     <td className="py-3 px-3 font-mono text-xs text-[#64748b]">
                       <div className="flex items-center gap-1.5">
-                        <span>{merchant.walletAddress.slice(0, 8)}...{merchant.walletAddress.slice(-6)}</span>
+                        <span>{walletAddress ? `${walletAddress.slice(0, 8)}...${walletAddress.slice(-6)}` : "Unknown wallet"}</span>
                         <button
                           type="button"
-                          onClick={() => handleCopy(merchant.walletAddress, `addr-${merchant.walletAddress}`)}
+                          onClick={() => handleCopy(walletAddress, `addr-${walletAddress}`)}
+                          disabled={!walletAddress}
                           className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[#94a3b8] hover:text-[#2775ca] transition"
                           title="Copy wallet address"
                         >
-                          {copiedAddress === `addr-${merchant.walletAddress}` ? (
+                          {copiedAddress === `addr-${walletAddress}` ? (
                             <CheckCircle2 className="h-3 w-3 text-emerald-500" />
                           ) : (
                             <Copy className="h-3 w-3" />
@@ -340,11 +361,11 @@ export function AdminOverviewDashboard({
                     </td>
                     <td className="py-3 px-3">
                       <span className="rounded-full bg-[#f1f5f9] border border-[#e2e8f0] px-2 py-0.5 text-[9px] font-bold text-[#64748b]">
-                        {merchant.tier}
+                        {merchant.tier || "Unassigned"}
                       </span>
                     </td>
                     <td className="py-3 px-3">
-                      {merchant.verified ? (
+                      {verified ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 text-[9px] font-bold text-emerald-600">
                           <ShieldCheck className="h-3 w-3" /> Verified
                         </span>
@@ -357,25 +378,26 @@ export function AdminOverviewDashboard({
                     <td className="py-3 px-3 text-right">
                       <button
                         type="button"
-                        onClick={() => onToggleVerification(merchant.walletAddress, merchant.verified)}
-                        disabled={verifyBusy === merchant.walletAddress}
+                        onClick={() => walletAddress && onToggleVerification(walletAddress, verified)}
+                        disabled={!walletAddress || verifyBusy === walletAddress}
                         className={`rounded-lg border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider transition ${
-                          merchant.verified
+                          verified
                             ? "border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
                             : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                         }`}
                       >
-                        {verifyBusy === merchant.walletAddress ? (
+                        {verifyBusy === walletAddress ? (
                           <RefreshCw className="h-3 w-3 animate-spin mx-auto" />
-                        ) : merchant.verified ? (
+                        ) : verified ? (
                           "Unverify"
                         ) : (
                           "Verify"
                         )}
                       </button>
                     </td>
-                  </tr>
-                ))
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

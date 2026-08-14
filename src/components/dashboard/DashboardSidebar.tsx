@@ -87,13 +87,13 @@ export default function DashboardSidebar({
 
     const rowBase = isCollapsed
         ? "group flex w-full items-center justify-center rounded-2xl text-center font-semibold transition-all relative"
-        : "group flex w-full items-center justify-center lg:justify-start gap-3 rounded-lg text-left font-semibold transition-all relative";
+        : "group flex w-full items-center justify-center lg:justify-start gap-3 rounded-[4px] text-left font-semibold transition-all relative";
     
     const activeRow = isCollapsed
         ? isLightPanel
             ? "bg-[color:var(--sb-panel)] text-[#0f172a] font-bold shadow-sm"
             : "bg-[color:var(--sb-panel)] text-[color:var(--sb-accent)] font-bold shadow-md border border-[color:var(--sb-accent)]/20"
-        : "bg-[#FFFFF0] text-[#353935] font-bold shadow-sm";
+        : "bg-[#FFFFF0] text-[#353935] font-bold shadow-none";
     
     const idleRow = "text-white/70 hover:bg-white/[0.06] hover:text-white";
 

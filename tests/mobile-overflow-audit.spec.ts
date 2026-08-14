@@ -555,10 +555,40 @@ test.describe("mobile overflow audit", () => {
     const mobileSubscriptionsTitle = mobilePage.getByText("Active Subscriptions", { exact: true });
     const mobileLedgerTitle = mobilePage.getByText("Transaction History", { exact: true });
     await expect(mobileWalletLabel).toBeVisible({ timeout: 120_000 });
+    const dashboardFontFamilies = await mobilePage
+      .locator("body, button, [class*='font-mono']")
+      .evaluateAll((elements) =>
+        elements.slice(0, 24).map((element) => getComputedStyle(element).fontFamily.toLowerCase()),
+      );
+    expect(dashboardFontFamilies.length).toBeGreaterThan(0);
+    expect(dashboardFontFamilies.every((fontFamily) => fontFamily.includes("sukar"))).toBe(true);
     await expect(mobileSpendingLabel).toBeVisible();
     await expect(mobileCommitLabel).toBeVisible();
     await expect(mobileSubscriptionsTitle).toBeHidden();
     await expect(mobileLedgerTitle).toBeVisible();
+    const walletSummary = mobilePage.getByTestId("wallet-summary");
+    await expect(walletSummary).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await expect(walletSummary).toHaveCSS("text-align", "center");
+
+    const walletActions = mobilePage.getByTestId("wallet-actions");
+    const walletActionLabels = await walletActions.getByRole("button").allTextContents();
+    expect(walletActionLabels).toEqual(["Deposit", "Send Out"]);
+    await expect(walletActions.locator("svg")).toHaveCount(0);
+
+    await walletActions.getByRole("button", { name: "Send Out", exact: true }).click();
+    const sendDialog = mobilePage.getByRole("dialog", { name: "Send USDC" });
+    await expect(sendDialog).toBeVisible();
+    await expect(sendDialog.getByRole("button", { name: "Scan recipient QR" })).toBeVisible();
+    await sendDialog.getByRole("button", { name: "Close send dialog" }).click();
+
+    const summaryCards = mobilePage.getByTestId("home-summary-cards");
+    const summaryBoxes = await summaryCards.locator(":scope > *").evaluateAll((elements) =>
+      elements.map((element) => element.getBoundingClientRect().width),
+    );
+    expect(summaryBoxes).toHaveLength(2);
+    expect(summaryBoxes[1]).toBeGreaterThan(summaryBoxes[0]);
+
+    await expect(mobilePage.getByRole("button", { name: "One Time", exact: true })).toHaveCSS("white-space", "nowrap");
 
     /* The wireframe collapses the 46fr/54fr grid to a single column below lg, so the panel is
        stacked underneath rather than removed. Funding the vault still lives behind the Commit
@@ -583,17 +613,25 @@ test.describe("mobile overflow audit", () => {
 
     const bottomNav = mobilePage.locator('nav[aria-label="Primary navigation"]');
     await expect(bottomNav).toBeVisible();
+    const koboyoIcons = bottomNav.locator("[data-icon]");
+    expect(await koboyoIcons.count()).toBeGreaterThan(0);
+    const iconMasks = await koboyoIcons.evaluateAll((icons) =>
+      icons.map((icon) => getComputedStyle(icon).maskImage),
+    );
+    expect(iconMasks.every((mask) => mask.includes("/icons/koboyo/") && mask.endsWith('.svg")'))).toBe(true);
     const bottomNavBox = await bottomNav.boundingBox();
     expect(bottomNavBox).not.toBeNull();
     expect(bottomNavBox!.height).toBeGreaterThanOrEqual(79);
 
     const styleAttr = await bottomNav.getAttribute("style") || "";
-    expect(styleAttr).toContain("gradient");
+    expect(styleAttr).not.toContain("gradient");
     await mobilePage.screenshot({ path: testInfo.outputPath("mobile-user-home.png"), fullPage: true });
 
     await bottomNav.getByRole("button", { name: "Commit" }).click();
     await expect(mobilePage.getByRole("heading", { name: "Manage Commit" })).toBeVisible();
     await expect(mobilePage.getByRole("button", { name: "Commit to a service" })).toBeVisible();
+    await expect(mobilePage.getByTestId("vault-carousel")).toHaveCSS("overflow-x", "auto");
+    await expect(mobilePage.getByTestId("add-vault-card")).toBeVisible();
     await mobilePage.screenshot({ path: testInfo.outputPath("mobile-manage-commit.png"), fullPage: true });
 
     const overflowResult = await auditOverflow(mobilePage, "mobile manage commit");
@@ -706,3 +744,4 @@ test.describe("mobile overflow audit", () => {
     expect(failures).toEqual([]);
   });
 });
+
