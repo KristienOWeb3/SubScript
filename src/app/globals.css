@@ -492,26 +492,114 @@ body {
   background-color: rgb(39 117 202 / 20%);
 }
 
-.user-dashboard-content .text-white,
-.user-dashboard-content [class*="text-white/"],
+.user-dashboard-content .text-white:not([data-dm-bubble="dark"] *):not([data-dm-dark="true"] *):not([data-dm-bubble="dark"]):not([data-dm-dark="true"]),
+.user-dashboard-content [class*="text-white/"]:not([data-dm-bubble="dark"] *):not([data-dm-dark="true"] *):not([data-dm-bubble="dark"]):not([data-dm-dark="true"]),
 .user-dashboard-redesign [role="dialog"] .text-white,
 .user-dashboard-redesign [role="dialog"] [class*="text-white/"] {
   color: #000000 !important;
 }
 
-.user-dashboard-content [class*="text-[#ccff00]"],
+/* Explicit rule for dark chat bubbles in DMs: pure white text */
+.user-dashboard-redesign [data-dm-bubble="dark"],
+.user-dashboard-redesign [data-dm-bubble="dark"] *,
+.user-dashboard-redesign [data-dm-dark="true"],
+.user-dashboard-redesign [data-dm-dark="true"] *,
+.user-dashboard-content [data-dm-bubble="dark"],
+.user-dashboard-content [data-dm-bubble="dark"] *,
+.user-dashboard-content [data-dm-dark="true"],
+.user-dashboard-content [data-dm-dark="true"] * {
+  color: #ffffff !important;
+}
+
+.user-dashboard-redesign [data-dm-bubble="dark"] [class*="text-white/40"],
+.user-dashboard-redesign [data-dm-bubble="dark"] [class*="text-white/45"],
+.user-dashboard-redesign [data-dm-bubble="dark"] [class*="text-white/50"],
+.user-dashboard-redesign [data-dm-bubble="dark"] [class*="text-white/55"],
+.user-dashboard-redesign [data-dm-bubble="dark"] [class*="text-white/60"],
+.user-dashboard-redesign [data-dm-bubble="dark"] [class*="text-white/70"],
+.user-dashboard-redesign [data-dm-bubble="dark"] [class*="text-white/90"],
+.user-dashboard-content [data-dm-bubble="dark"] [class*="text-white/40"],
+.user-dashboard-content [data-dm-bubble="dark"] [class*="text-white/45"],
+.user-dashboard-content [data-dm-bubble="dark"] [class*="text-white/50"],
+.user-dashboard-content [data-dm-bubble="dark"] [class*="text-white/55"],
+.user-dashboard-content [data-dm-bubble="dark"] [class*="text-white/60"],
+.user-dashboard-content [data-dm-bubble="dark"] [class*="text-white/70"],
+.user-dashboard-content [data-dm-bubble="dark"] [class*="text-white/90"] {
+  color: rgba(255, 255, 255, 0.82) !important;
+}
+
+/* Explicit rule for all action buttons inside DMs: dark text on light surfaces */
+.user-dashboard-redesign .dm-quick-button,
+.user-dashboard-redesign .dm-action-menu-button,
+.user-dashboard-redesign .dm-action-menu-trigger,
+.user-dashboard-redesign [data-testid="mobile-dm-action-footer"] button,
+.user-dashboard-redesign [data-testid="desktop-dm-action-footer"] button,
+.user-dashboard-redesign .dm-quick-button *,
+.user-dashboard-redesign .dm-action-menu-button *,
+.user-dashboard-redesign .dm-action-menu-trigger *,
+.user-dashboard-content .dm-quick-button,
+.user-dashboard-content .dm-action-menu-button,
+.user-dashboard-content .dm-action-menu-trigger,
+.user-dashboard-content [data-testid="mobile-dm-action-footer"] button,
+.user-dashboard-content [data-testid="desktop-dm-action-footer"] button {
+  color: #111827 !important;
+  background-color: #ffffff !important;
+  border-color: rgba(0, 0, 0, 0.16) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+  font-weight: 800 !important;
+}
+
+.user-dashboard-redesign .dm-quick-button:hover,
+.user-dashboard-redesign .dm-action-menu-button:hover,
+.user-dashboard-redesign .dm-action-menu-trigger:hover,
+.user-dashboard-redesign [data-testid="mobile-dm-action-footer"] button:hover,
+.user-dashboard-redesign [data-testid="desktop-dm-action-footer"] button:hover,
+.user-dashboard-content .dm-quick-button:hover,
+.user-dashboard-content .dm-action-menu-button:hover,
+.user-dashboard-content .dm-action-menu-trigger:hover,
+.user-dashboard-content [data-testid="mobile-dm-action-footer"] button:hover,
+.user-dashboard-content [data-testid="desktop-dm-action-footer"] button:hover {
+  background-color: #f3f4f6 !important;
+  color: #000000 !important;
+  border-color: #2775CA !important;
+}
+
+.user-dashboard-redesign .subscript-input,
+.user-dashboard-redesign input,
+.user-dashboard-redesign textarea,
+.user-dashboard-redesign select {
+  color: #111827 !important;
+  background-color: #ffffff !important;
+  border-color: rgba(0, 0, 0, 0.18) !important;
+}
+
+.user-dashboard-redesign .subscript-input::placeholder,
+.user-dashboard-redesign input::placeholder,
+.user-dashboard-redesign textarea::placeholder {
+  color: rgba(17, 24, 39, 0.45) !important;
+}
+
+.user-dashboard-redesign .subscript-input:focus,
+.user-dashboard-redesign input:focus,
+.user-dashboard-redesign textarea:focus,
+.user-dashboard-redesign select:focus {
+  border-color: #2775CA !important;
+  background-color: #ffffff !important;
+}
+
+.user-dashboard-content [class*="text-[#ccff00]"]:not([data-dm-bubble="dark"] *),
 .user-dashboard-redesign [role="dialog"] [class*="text-[#ccff00]"],
-.user-dashboard-content [class*="text-emerald"],
-.user-dashboard-content [class*="text-sky"] {
+.user-dashboard-content [class*="text-emerald"]:not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class*="text-sky"]:not([data-dm-bubble="dark"] *) {
   color: #000000 !important;
 }
 
-.user-dashboard-content [class*="bg-black/"],
+.user-dashboard-content [class*="bg-black/"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
 .user-dashboard-redesign [role="dialog"] [class*="bg-black/"] {
   background-color: rgb(39 117 202 / 20%) !important;
 }
 
-.user-dashboard-content [class*="bg-[#ccff00]"],
+.user-dashboard-content [class*="bg-[#ccff00]"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
 .user-dashboard-redesign [role="dialog"] [class*="bg-[#ccff00]"] {
   background-color: #353935 !important;
 }

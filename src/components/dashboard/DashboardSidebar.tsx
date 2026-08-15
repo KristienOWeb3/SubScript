@@ -262,29 +262,31 @@ export default function DashboardSidebar({
                     )
                 ) : (
                     !isCollapsed && promo && promoVisible && (
-                        <div className="relative hidden rounded-2xl border border-[color:var(--sb-accent)]/20 bg-[color:var(--sb-accent)]/[0.06] p-3.5 text-white shadow-sm lg:block">
-                            <div className="mb-2 flex items-center justify-between">
-                                <span className="rounded bg-[color:var(--sb-accent)] px-2 py-0.5 text-[10px] font-bold text-black">
-                                    {promo.badge}
-                                </span>
+                        <div className="relative hidden overflow-hidden rounded-2xl border border-[color:var(--sb-accent)]/20 bg-[color:var(--sb-accent)]/[0.06] p-3.5 text-white shadow-sm transition-all duration-300 lg:block">
+                            <div className="min-w-[180px]">
+                                <div className="mb-2 flex items-center justify-between gap-2">
+                                    <span className="shrink-0 rounded bg-[color:var(--sb-accent)] px-2 py-0.5 text-[10px] font-bold text-black">
+                                        {promo.badge}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPromoVisible(false)}
+                                        aria-label={`Dismiss ${promo.title}`}
+                                        className="shrink-0 text-white/50 transition-colors hover:text-white"
+                                    >
+                                        <X className="h-3.5 w-3.5" />
+                                    </button>
+                                </div>
+                                <p className="text-xs font-extrabold leading-tight text-white">{promo.title}</p>
+                                <p className="mt-1 text-[10px] leading-snug text-white/70">{promo.body}</p>
                                 <button
                                     type="button"
-                                    onClick={() => setPromoVisible(false)}
-                                    aria-label={`Dismiss ${promo.title}`}
-                                    className="text-white/50 transition-colors hover:text-white"
+                                    onClick={promo.onCta}
+                                    className="mt-2.5 shrink-0 rounded-md bg-[color:var(--sb-accent)] px-3 py-1 text-[10px] font-bold text-black transition hover:opacity-80"
                                 >
-                                    <X className="h-3.5 w-3.5" />
+                                    {promo.ctaLabel}
                                 </button>
                             </div>
-                            <p className="text-xs font-extrabold leading-tight text-white">{promo.title}</p>
-                            <p className="mt-1 text-[10px] leading-snug text-white/50">{promo.body}</p>
-                            <button
-                                type="button"
-                                onClick={promo.onCta}
-                                className="mt-2.5 rounded-md bg-[color:var(--sb-accent)] px-3 py-1 text-[10px] font-bold text-black transition hover:opacity-80"
-                            >
-                                {promo.ctaLabel}
-                            </button>
                         </div>
                     )
                 )}

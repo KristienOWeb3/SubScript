@@ -2837,12 +2837,10 @@ export default function UserDashboard() {
           </div>
         </aside>
 
-        {/* Content Pane Skeleton — mirrors the desktop Home layout: header with title + action
-            circles, then a 46fr/54fr main grid with the balance row (big card + circles) on the
-            left and the active-subscriptions panel on the right. */}
+        {/* Content Pane Skeleton — mirrors the mobile & desktop Home layout */}
         <div className="relative z-10 min-w-0 flex-1 flex flex-col bg-[#FFFFF0] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[20px] md:border md:border-black/10 overflow-hidden">
           <div className="md:hidden fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
-            <div className="w-full max-w-md liquid-glass rounded-full px-5 py-3 pointer-events-auto bg-black/30 backdrop-blur-lg border border-white/5 flex items-center justify-between">
+            <div className="w-full max-w-md rounded-full px-5 py-3 pointer-events-auto bg-[#FFFFF0]/90 backdrop-blur-lg border border-black/10 shadow-sm flex items-center justify-between">
               <div className="h-7 w-7 subscript-skeleton rounded-full" />
               <div className="flex gap-2">
                 <div className="h-7 w-12 subscript-skeleton subscript-skeleton--faint rounded-full" />
@@ -2851,58 +2849,53 @@ export default function UserDashboard() {
             </div>
           </div>
 
-          <main className="flex-1 overflow-y-auto min-h-0 mx-auto w-full max-w-7xl px-5 lg:px-8 pt-24 lg:pt-8 pb-28 lg:pb-12">
-            {/* Title Header — one line, no subtitle, matching the "User Dashboard" heading */}
-            <div className="hidden md:flex items-center justify-between gap-6 mb-8 pb-6 border-b border-white/5">
+          <main className="flex-1 overflow-y-auto min-h-0 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 pt-24 lg:pt-8 pb-28 lg:pb-12">
+            {/* Title Header on Desktop */}
+            <div className="hidden md:flex items-center justify-between gap-6 mb-8 pb-6 border-b border-black/10">
               <div className="h-8 w-64 subscript-skeleton rounded-lg" />
             </div>
 
             <div className="flex flex-col gap-5">
               <div className="grid grid-cols-1 gap-5 lg:grid-cols-[46fr_54fr]">
-              {/* LEFT 46% */}
-              <div className="flex flex-col gap-4 min-w-0">
-                {/* Balance row: figures left, stacked 38px circle actions right, inside one card */}
-                <div className="dashboard-loading-wallet flex flex-col items-center justify-center gap-4 px-6 py-[22px] text-center md:flex-row md:justify-between md:rounded-[20px] md:border md:border-black/20 md:bg-[#2775CA]/20 md:text-left">
-                  <div className="min-w-0 space-y-2">
-                    <div className="h-2.5 w-40 subscript-skeleton rounded-full" />
-                    <div className="h-10 w-44 subscript-skeleton rounded-xl" />
-                    <div className="h-3 w-28 subscript-skeleton subscript-skeleton--faint rounded-full" />
-                  </div>
-                  <div className="flex shrink-0 flex-col gap-2.5">
-                    {[1, 2].map((i) => (
-                      <div key={i} className="h-[38px] w-[38px] subscript-skeleton rounded-full" />
-                    ))}
-                  </div>
-                </div>
-
-                {/* Two equal square cards */}
-                <div className="grid grid-cols-[42fr_58fr] gap-3.5">
-                  {[1, 2].map((i) => (
-                    <div key={i} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-[18px] rounded-[18px] shadow-xl min-h-[120px] flex flex-col justify-between">
-                      <div className="space-y-2">
-                        <div className="h-2.5 w-24 subscript-skeleton rounded-full" />
-                        <div className="h-6 w-20 subscript-skeleton rounded-lg" />
-                      </div>
-                      <div className="h-3 w-28 subscript-skeleton subscript-skeleton--faint rounded-full" />
+                {/* LEFT: Balance card + Actions */}
+                <div className="flex flex-col gap-4 min-w-0">
+                  <div className="flex flex-col gap-4 rounded-3xl border border-black/20 bg-[#2775CA]/20 p-5 shadow-sm">
+                    <div className="space-y-2">
+                      <div className="h-2.5 w-32 subscript-skeleton rounded-full" />
+                      <div className="h-10 w-52 subscript-skeleton rounded-2xl" />
                     </div>
-                  ))}
+                    {/* Action buttons row */}
+                    <div className="flex items-center gap-2">
+                      <div className="h-11 flex-1 subscript-skeleton rounded-2xl" />
+                      <div className="h-11 flex-1 subscript-skeleton rounded-2xl" />
+                    </div>
+                    {/* Two sub stats */}
+                    <div className="grid grid-cols-2 gap-2.5 pt-1">
+                      <div className="rounded-2xl border border-black/10 bg-white/70 p-3 space-y-1.5 shadow-sm">
+                        <div className="h-2 w-16 subscript-skeleton rounded-full" />
+                        <div className="h-4 w-20 subscript-skeleton rounded-lg" />
+                      </div>
+                      <div className="rounded-2xl border border-black/10 bg-white/70 p-3 space-y-1.5 shadow-sm">
+                        <div className="h-2 w-20 subscript-skeleton rounded-full" />
+                        <div className="h-4 w-16 subscript-skeleton rounded-lg" />
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
 
-              {/* RIGHT 54%: Active Subscriptions tall panel */}
-              <div className="hidden md:block min-w-0">
-                <div className="min-h-[260px] h-full liquid-glass border border-white/5 bg-black/40 p-5 rounded-[20px] shadow-2xl backdrop-blur-xl flex flex-col">
+                {/* RIGHT: Active Subscriptions */}
+                <div className="hidden md:flex min-h-[260px] h-full flex-col rounded-3xl border border-black/15 bg-white/80 p-5 shadow-sm">
                   <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
                     <div className="h-3 w-36 subscript-skeleton rounded-full" />
-                    <div className="h-5 w-14 subscript-skeleton rounded-full" />
+                    <div className="h-5 w-16 subscript-skeleton rounded-full" />
                   </div>
                   <div className="flex-1 space-y-3 overflow-hidden">
                     {[1, 2, 3].map((i) => (
-                      <div key={i} className="flex items-center justify-between py-2 border-b border-white/5">
+                      <div key={i} className="flex items-center justify-between py-2 border-b border-black/5">
                         <div className="flex items-center gap-3">
                           <div className="h-9 w-9 subscript-skeleton rounded-full" />
                           <div className="space-y-1.5">
-                            <div className="h-3 w-24 subscript-skeleton rounded-full" />
+                            <div className="h-3 w-28 subscript-skeleton rounded-full" />
                             <div className="h-2 w-16 subscript-skeleton subscript-skeleton--faint rounded-full" />
                           </div>
                         </div>
@@ -2913,10 +2906,8 @@ export default function UserDashboard() {
                 </div>
               </div>
 
-              </div>
-
-              {/* Recent Transactions — full-width sibling of the grid, 5 filter chips, 6 rows */}
-              <div className="liquid-glass border border-white/5 bg-black/40 p-5 rounded-[20px] shadow-2xl backdrop-blur-xl">
+              {/* Recent Transactions */}
+              <div className="rounded-3xl border border-black/10 bg-white/80 p-5 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div className="h-3 w-36 subscript-skeleton rounded-full" />
                   <div className="h-4 w-16 subscript-skeleton rounded-full" />
@@ -2926,12 +2917,12 @@ export default function UserDashboard() {
                     <div key={i} className="h-7 w-20 subscript-skeleton rounded-full" />
                   ))}
                 </div>
-                <div className="mt-4 divide-y divide-white/[0.06]">
-                  {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div className="mt-4 divide-y divide-black/5">
+                  {[1, 2, 3, 4, 5].map((i) => (
                     <div key={i} className="flex items-center gap-3 py-3">
                       <div className="h-10 w-10 subscript-skeleton rounded-full shrink-0" />
                       <div className="flex-1 min-w-0 space-y-1.5">
-                        <div className="h-3 w-28 subscript-skeleton rounded-full" />
+                        <div className="h-3 w-32 subscript-skeleton rounded-full" />
                         <div className="h-2 w-20 subscript-skeleton subscript-skeleton--faint rounded-full" />
                       </div>
                       <div className="shrink-0 space-y-1.5 text-right">
@@ -3460,8 +3451,8 @@ export default function UserDashboard() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => openVaultCommit()}
-                          className="mt-2 flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[#ccff00] hover:opacity-70 transition-opacity"
+                          onClick={() => setActiveTab("commit")}
+                          className="mt-2 flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[#2775CA] hover:opacity-70 transition-opacity"
                         >
                           Manage Commits <ArrowUpRight className="h-3 w-3" />
                         </button>
@@ -3506,35 +3497,6 @@ export default function UserDashboard() {
                   <div className="flex items-center justify-between">
                     <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-white/70">Transaction History</h2>
                     <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const rows = [
-                            ["ID", "Name", "Type", "Detail", "Amount USDC", "Local Amount", "Timestamp"],
-                            ...filteredTransactions.map((tx) => [
-                              tx.id,
-                              tx.name,
-                              tx.incoming ? "Incoming" : "Outgoing",
-                              tx.detail || "",
-                              tx.amountLabel,
-                              tx.localAmountLabel,
-                              new Date(tx.time).toISOString()
-                            ])
-                          ];
-                          const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
-                          const encodedUri = encodeURI(csvContent);
-                          const link = document.createElement("a");
-                          link.setAttribute("href", encodedUri);
-                          link.setAttribute("download", `subscript-transactions-${new Date().toISOString().slice(0, 10)}.csv`);
-                          document.body.appendChild(link);
-                          link.click();
-                          document.body.removeChild(link);
-                        }}
-                        className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-black/70 hover:text-black transition-colors"
-                        title="Download transaction history as CSV"
-                      >
-                        <Download className="h-3 w-3" /> Download
-                      </button>
                       <button
                         type="button"
                         onClick={() => {
@@ -3645,7 +3607,7 @@ export default function UserDashboard() {
                           type="button"
                           onClick={() => {
                             if (vaultCarouselRef.current) {
-                              vaultCarouselRef.current.scrollBy({ left: -380, behavior: "smooth" });
+                              vaultCarouselRef.current.scrollBy({ left: -vaultCarouselRef.current.clientWidth, behavior: "smooth" });
                             }
                           }}
                           className="flex h-10 w-10 items-center justify-center rounded-2xl border border-black/20 bg-white/70 hover:bg-white text-black transition-all active:scale-95 shadow-sm"
@@ -3658,7 +3620,7 @@ export default function UserDashboard() {
                           type="button"
                           onClick={() => {
                             if (vaultCarouselRef.current) {
-                              vaultCarouselRef.current.scrollBy({ left: 380, behavior: "smooth" });
+                              vaultCarouselRef.current.scrollBy({ left: vaultCarouselRef.current.clientWidth, behavior: "smooth" });
                             }
                           }}
                           className="flex h-10 w-10 items-center justify-center rounded-2xl border border-black/20 bg-white/70 hover:bg-white text-black transition-all active:scale-95 shadow-sm"
@@ -3701,17 +3663,17 @@ export default function UserDashboard() {
                   </div>
 
                   {isVaultsLoading ? (
-                    <div ref={vaultCarouselRef} data-testid="vault-carousel" className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    <div ref={vaultCarouselRef} data-testid="vault-carousel" className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-3 scroll-smooth [scroll-snap-type:x_mandatory] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                       <VaultCardSkeleton />
                       <VaultCardSkeleton />
                     </div>
                   ) : vaults.length === 0 ? (
-                    <div ref={vaultCarouselRef} data-testid="vault-carousel" className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    <div ref={vaultCarouselRef} data-testid="vault-carousel" className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-3 scroll-smooth [scroll-snap-type:x_mandatory] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                       <button
                         type="button"
                         onClick={() => openVaultCommit()}
                         data-testid="add-vault-card"
-                        className="relative flex min-h-[360px] w-full shrink-0 snap-center items-center justify-center overflow-hidden rounded-3xl border border-black/20 bg-[#2775CA]/20 backdrop-blur-2xl"
+                        className="relative flex min-h-[360px] w-full min-w-full shrink-0 snap-center [scroll-snap-stop:always] items-center justify-center overflow-hidden rounded-3xl border border-black/20 bg-[#2775CA]/20 backdrop-blur-2xl"
                         aria-label="Commit to another vault"
                       >
                         <div className="absolute inset-0 bg-[#FFFFF0]/35 blur-2xl" aria-hidden="true" />
@@ -3719,9 +3681,9 @@ export default function UserDashboard() {
                       </button>
                     </div>
                   ) : (
-                    <div ref={vaultCarouselRef} data-testid="vault-carousel" className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    <div ref={vaultCarouselRef} data-testid="vault-carousel" className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-3 scroll-smooth [scroll-snap-type:x_mandatory] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                       {vaults.map((vault) => (
-                        <div key={vault.id} className="w-full shrink-0 snap-center">
+                        <div key={vault.id} className="w-full min-w-full shrink-0 snap-center [scroll-snap-stop:always]">
                           <MeteredVaultRow
                             vault={vault}
                             onCommit={(v) => openVaultCommit(v.merchantAddress)}
@@ -3740,7 +3702,7 @@ export default function UserDashboard() {
                           />
                         </div>
                       ))}
-                      <button type="button" onClick={() => openVaultCommit()} data-testid="add-vault-card" className="relative flex min-h-[360px] w-full shrink-0 snap-center items-center justify-center overflow-hidden rounded-3xl border border-black/20 bg-[#2775CA]/20 backdrop-blur-2xl" aria-label="Commit to another vault">
+                      <button type="button" onClick={() => openVaultCommit()} data-testid="add-vault-card" className="relative flex min-h-[360px] w-full min-w-full shrink-0 snap-center [scroll-snap-stop:always] items-center justify-center overflow-hidden rounded-3xl border border-black/20 bg-[#2775CA]/20 backdrop-blur-2xl" aria-label="Commit to another vault">
                         <div className="absolute inset-0 bg-[#FFFFF0]/35 blur-2xl" aria-hidden="true" />
                         <Plus className="relative z-10 h-12 w-12 text-black" />
                       </button>
@@ -3805,13 +3767,13 @@ export default function UserDashboard() {
                           )}
 
                           {selectedThreadDms.length === 0 && !isCurrentPeerBlocked && (
-                            <div className="py-12 flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.01] text-center p-6 space-y-3 mx-2">
-                              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/20 text-[#ccff00]">
+                            <div className="py-12 flex flex-col items-center justify-center rounded-2xl border border-dashed border-black/15 bg-black/[0.02] text-center p-6 space-y-3 mx-2">
+                              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#2775CA]/10 border border-[#2775CA]/20 text-[#2775CA]">
                                 <MessageSquare className="h-6 w-6" />
                               </div>
                               <div className="space-y-1">
-                                <h3 className="text-sm font-bold text-white">Connection Established</h3>
-                                <p className="text-xs text-white/50 max-w-xs">
+                                <h3 className="text-sm font-bold text-[#111827]">Connection Established</h3>
+                                <p className="text-xs text-black/60 max-w-sm">
                                   You and {activeThreadLabel} are connected. Send funds or request a payment to begin transacting.
                                 </p>
                               </div>
@@ -3844,7 +3806,7 @@ export default function UserDashboard() {
                         {/* Bottom Action Footer for Mobile */}
                         <div
                           data-testid="mobile-dm-action-footer"
-                          className="relative z-30 shrink-0 border-t border-white/5 bg-black/30 px-1 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-xl rounded-t-2xl"
+                          className="relative z-30 shrink-0 border-t border-black/10 bg-[#FFFFF0] px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-xl rounded-t-2xl shadow-md text-black"
                         >
                           {isCurrentPeerBlocked ? (
                             <p className="text-center text-[11px] text-white/40 py-2">
@@ -4051,10 +4013,10 @@ export default function UserDashboard() {
                             {/* Bottom Action Footer for Desktop */}
                             <div
                               data-testid="desktop-dm-action-footer"
-                              className="sticky bottom-0 z-20 shrink-0 rounded-2xl border border-black/10 bg-white/90 p-3 backdrop-blur-xl shadow-md mt-3"
+                              className="sticky bottom-0 z-20 shrink-0 rounded-2xl border border-black/10 bg-[#FFFFF0] p-3 backdrop-blur-xl shadow-md mt-3 text-black"
                             >
                               {isCurrentPeerBlocked ? (
-                                <p className="text-center text-[11px] text-white/40 py-2">
+                                <p className="text-center text-[11px] text-black/50 py-2">
                                   Messaging is disabled for blocked contacts.
                                 </p>
                               ) : isActiveDmMerchant ? (
@@ -4916,15 +4878,6 @@ export default function UserDashboard() {
                       tx.status,
                       new Date(tx.time).toISOString(),
                     ]);
-                    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-                    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-                    const url = URL.createObjectURL(blob);
-                    const link = document.createElement("a");
-                    link.setAttribute("href", url);
-                    link.setAttribute("download", `subscript-transaction-history-${new Date().toISOString().slice(0, 10)}.csv`);
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
                   };
 
                   return (
@@ -4949,14 +4902,6 @@ export default function UserDashboard() {
                             title={balanceVisible ? "Hide sensitive amounts" : "Show sensitive amounts"}
                           >
                             {balanceVisible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={exportSpendCsv}
-                            className="flex items-center gap-1.5 rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold text-black transition hover:bg-black/5 shadow-sm"
-                          >
-                            <Download className="h-3.5 w-3.5" />
-                            <span>Download</span>
                           </button>
                         </div>
                       </div>
@@ -7390,15 +7335,16 @@ function DmBubble({
       {incoming && <Avatar profilePic={dm.senderProfilePic} />}
       <div className={`max-w-[85%] sm:max-w-[75%] ${incoming ? "items-start" : "items-end"} flex flex-col gap-1.5 min-w-0`}>
         <div 
+          data-dm-bubble={incoming ? "dark" : "sent"}
           className={`px-5 py-4 shadow-md select-none transition-all duration-200 w-full break-words [word-break:break-word] overflow-hidden ${
             incoming 
-              ? `${focused ? "border-[#ccff00]/40 bg-[#ccff00]/[0.08]" : "border-white/10 bg-black/40 backdrop-blur-xl text-white"} rounded-[22px] rounded-bl-[4px] border shadow-xl` 
+              ? `${focused ? "border-[#2775CA] bg-[#18181b]" : "border-black/20 bg-[#18181b] backdrop-blur-xl text-white"} rounded-[22px] rounded-bl-[4px] border shadow-xl` 
               : "bg-gradient-to-br from-[#00b2ff] to-[#007aff] text-white rounded-[22px] rounded-br-[4px] border-none shadow-[0_4px_16px_rgba(0,122,255,0.2)]"
           }`}
         >
           <p 
             className={`mb-2 text-[9px] font-black uppercase tracking-[0.16em] ${
-              incoming ? "text-[#ccff00]" : "text-white/70"
+              incoming ? "text-[#38bdf8]" : "text-white/80"
             }`}
           >
             {humanStatus(dm.messageType)}
@@ -7632,19 +7578,19 @@ function MerchantPlanManager({
   const planLabel = activePlan ? activePlan.name : "Active Plan";
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3 text-black">
       <motion.div
         layout
         transition={{ type: "spring", stiffness: 450, damping: 32 }}
-        className="order-2 flex flex-wrap items-center gap-2 rounded-2xl border border-[#ccff00]/15 bg-[#ccff00]/[0.06] p-3"
+        className="order-2 flex flex-wrap items-center gap-2 rounded-2xl border border-black/15 bg-white p-3 shadow-sm text-black"
       >
         <div className="min-w-0 flex-1">
-          <p className={`text-[9px] font-black uppercase tracking-[0.16em] ${isCanceledAtPeriodEnd ? "text-amber-400" : "text-[#ccff00]/70"}`}>
+          <p className={`text-[9px] font-black uppercase tracking-[0.16em] ${isCanceledAtPeriodEnd ? "text-amber-700" : "text-[#2775CA]"}`}>
             {hasActiveSubscription
               ? (isCanceledAtPeriodEnd ? `${planLabel} (Canceled)` : planLabel)
               : "Merchant Plan Controls"}
           </p>
-          <p className="truncate text-xs font-bold text-white">
+          <p className="truncate text-xs font-bold text-[#111827]">
             {hasActiveSubscription
               ? `${formatUsdc(activeSubscription.amountCapUsdc)} USDC / ${formatPlanPeriod(activeSubscription.billingIntervalSeconds)}${isCanceledAtPeriodEnd ? " · Access active" : ""}`
               : `Choose a plan from ${merchantLabel}`}
@@ -7661,7 +7607,7 @@ function MerchantPlanManager({
               type="button"
               onClick={() => activePlan && onSubscribe(activePlan)}
               disabled={loadingAction === `subscribe-plan-${activePlan?.id}`}
-              className="dm-quick-button flex-1 min-w-0 text-center truncate relative overflow-hidden border-[#ccff00]/30 bg-[#ccff00]/10 text-[#ccff00]"
+              className="dm-quick-button flex-1 min-w-0 text-center truncate relative overflow-hidden border-black/15 bg-white text-black shadow-sm font-black"
             >
               Resubscribe
             </motion.button>
@@ -7675,7 +7621,7 @@ function MerchantPlanManager({
               type="button"
               onClick={onCancel}
               disabled={loadingAction === `cancel-sub-${activeSubscription.subscriptionId}`}
-              className={`dm-quick-button flex-1 min-w-0 text-center truncate relative overflow-hidden border-red-400/20 bg-red-500/10 text-red-200 ${
+              className={`dm-quick-button flex-1 min-w-0 text-center truncate relative overflow-hidden border-red-500/20 bg-red-50 text-red-700 font-black shadow-sm ${
                 loadingAction === `cancel-sub-${activeSubscription.subscriptionId}` ? "quick-action-loading" : ""
               }`}
             >
@@ -7689,7 +7635,7 @@ function MerchantPlanManager({
           transition={{ type: "spring", stiffness: 450, damping: 32 }}
           type="button"
           onClick={onToggle}
-          className={`dm-quick-button dm-action-menu-trigger relative overflow-hidden ${hasActiveSubscription ? "flex-1 min-w-0 text-center truncate" : ""}`}
+          className={`dm-quick-button dm-action-menu-trigger relative overflow-hidden border-black/15 bg-white text-black font-black shadow-sm ${hasActiveSubscription ? "flex-1 min-w-0 text-center truncate" : ""}`}
         >
           {open ? "Hide Plans" : hasActiveSubscription ? (isCanceledAtPeriodEnd ? "Reactivate Plan" : "Manage Plan") : "Subscribe"}
         </motion.button>
@@ -7703,15 +7649,15 @@ function MerchantPlanManager({
             exit={{ opacity: 0, y: 8, scale: 0.95, scaleY: 0.9 }}
             transition={{ type: "spring", stiffness: 420, damping: 30 }}
             style={{ transformOrigin: "top center" }}
-            className="order-1 max-h-[min(48dvh,28rem)] space-y-3 overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-black/45 p-3"
+            className="order-1 max-h-[min(48dvh,28rem)] space-y-3 overflow-y-auto overscroll-contain rounded-2xl border border-black/15 bg-[#FFFFF0] p-3 text-black shadow-lg"
           >
             {loading ? (
-              <div className="flex items-center justify-center gap-2 py-5 text-[10px] font-black uppercase tracking-[0.16em] text-white/45">
-                <Loader2 className="h-4 w-4 animate-spin" />
+              <div className="flex items-center justify-center gap-2 py-5 text-[10px] font-black uppercase tracking-[0.16em] text-black/50">
+                <Loader2 className="h-4 w-4 animate-spin text-[#2775CA]" />
                 Loading plans
               </div>
             ) : plans.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-white/10 px-4 py-5 text-center text-xs text-white/45">
+              <div className="rounded-xl border border-dashed border-black/20 px-4 py-5 text-center text-xs text-black/60">
                 This merchant has not published active plans yet.
               </div>
             ) : (
@@ -7744,16 +7690,16 @@ function MerchantPlanManager({
                       transition={{ type: "spring", stiffness: 420, damping: 30, delay: index * 0.04 }}
                       whileHover={{ scale: 1.025, y: -2 }}
                       whileTap={{ scale: 0.98 }}
-                      className="rounded-xl border border-white/10 bg-white/[0.03] p-3"
+                      className="rounded-xl border border-black/10 bg-white p-3 shadow-sm"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="truncate text-xs font-black uppercase tracking-[0.08em] text-white">{plan.name}</p>
-                          <p className="mt-1 text-[10px] font-bold text-[#ccff00]">
+                          <p className="truncate text-xs font-black uppercase tracking-[0.08em] text-[#111827]">{plan.name}</p>
+                          <p className="mt-1 text-[10px] font-bold text-[#2775CA]">
                             {formatUsdc(plan.amountUsdc)} USDC / {formatPlanPeriod(plan.periodSeconds)}
                           </p>
                           {plan.description && (
-                            <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-white/45">
+                            <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-black/60">
                               {plan.description}
                             </p>
                           )}
@@ -7762,7 +7708,7 @@ function MerchantPlanManager({
                               href={plan.detailsUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="mt-2 inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.1em] text-[#00d2b4] hover:text-[#00d2b4]/80"
+                              className="mt-2 inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.1em] text-[#2775CA] hover:underline"
                             >
                               View full plan <ExternalLink className="h-3 w-3" />
                             </a>
@@ -7773,7 +7719,7 @@ function MerchantPlanManager({
                             initial={{ scale: 0 }}
                             animate={{ scale: 1 }}
                             transition={{ type: "spring", stiffness: 450, damping: 32 }}
-                            className="rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-[#ccff00]"
+                            className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-emerald-700"
                           >
                             Current
                           </motion.span>
@@ -7786,10 +7732,10 @@ function MerchantPlanManager({
                         type="button"
                         onClick={() => onSubscribe(plan)}
                         disabled={isCurrent || isUnavailableChange || loadingAction === loadingKey}
-                        className={`mt-3 w-full rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition ${
+                        className={`mt-3 w-full rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition shadow-sm ${
                           isCurrent || isUnavailableChange
-                            ? "border-white/5 bg-white/[0.03] text-white/25"
-                            : "border-[#ccff00]/25 bg-[#ccff00]/10 text-white hover:bg-[#ccff00]/18"
+                            ? "border-black/10 bg-black/5 text-black/30 cursor-not-allowed"
+                            : "border-black/20 bg-[#D5E3EE] text-[#111827] hover:bg-[#c2d7e6]"
                         } ${loadingAction === loadingKey ? "quick-action-loading" : ""}`}
                       >
                         {isCurrent
@@ -7807,7 +7753,7 @@ function MerchantPlanManager({
                         type="button"
                         onClick={() => onAskFriend(plan)}
                         disabled={giftBusy}
-                        className={`mt-2 w-full rounded-xl border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-[#00d2b4] transition hover:bg-[#00d2b4]/18 disabled:opacity-45 ${giftBusy ? "quick-action-loading" : ""}`}
+                        className={`mt-2 w-full rounded-xl border border-black/15 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-[#111827] transition hover:bg-black/5 disabled:opacity-45 shadow-sm ${giftBusy ? "quick-action-loading" : ""}`}
                       >
                         {giftBusy ? "Creating link" : "Ask a Friend to Pay"}
                       </motion.button>
@@ -8789,7 +8735,7 @@ function SendFundsModal({
                   className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3 text-xs font-mono text-[#111827] focus:border-[#2775CA] focus:outline-none"
                 />
                 {onScanQr && (
-                  <button type="button" onClick={onScanQr} className="mt-2 inline-flex items-center gap-2 rounded-full border border-black/15 bg-white px-3 py-1.5 text-[10px] font-bold text-black shadow-sm" aria-label="Scan recipient QR">
+                  <button type="button" onClick={onScanQr} className="mt-2 inline-flex md:hidden items-center gap-2 rounded-full border border-black/15 bg-white px-3 py-1.5 text-[10px] font-bold text-black shadow-sm" aria-label="Scan recipient QR">
                     <QrCode className="h-3.5 w-3.5" /> Scan QR
                   </button>
                 )}
@@ -9283,16 +9229,6 @@ function MeteredVaultRow({
 
         {/* Top Right Action Icons & Desktop Labels */}
         <div className="flex items-center gap-2 shrink-0">
-          {/* Manage Commit Link */}
-          <Link
-            href={`/commit/${vault.merchantAddress}`}
-            title="Manage commit"
-            className="flex h-10 w-auto px-3.5 items-center justify-center gap-1.5 rounded-2xl border border-black/15 bg-white/80 hover:bg-white text-black transition text-[11px] font-bold shadow-sm"
-          >
-            <span className="hidden sm:inline">Manage</span>
-            <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
-          </Link>
-
           {/* Top Up (+) Button */}
           <button
             type="button"
