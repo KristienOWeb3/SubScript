@@ -6071,6 +6071,7 @@ Please complete the following implementation tasks:
                     verified={Boolean(userSettings?.verified)}
                     isAdmin={isAdmin}
                     mobileEnabled={isConnected}
+                    isPremium={isPremium}
                 />
                 <div className="merchant-dashboard-workspace relative min-w-0 flex-1 overflow-y-auto bg-[#D4E3E8] md:h-[100dvh] md:rounded-tl-[70px]">
             {/* Session Consent Alerts Overlay */}

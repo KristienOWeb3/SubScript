@@ -43,6 +43,7 @@ export default function MerchantDashboardNav({
     verified,
     isAdmin,
     mobileEnabled,
+    isPremium,
 }: {
     activeId: string;
     onSelect: (id: string) => void;
@@ -51,6 +52,7 @@ export default function MerchantDashboardNav({
     verified?: boolean;
     isAdmin?: boolean;
     mobileEnabled?: boolean;
+    isPremium?: boolean;
 }) {
     const [paymentsOpen, setPaymentsOpen] = useState(true);
     const [developerOpen, setDeveloperOpen] = useState(true);
@@ -71,11 +73,23 @@ export default function MerchantDashboardNav({
     return (
         <>
             <aside className="hidden h-full w-[clamp(280px,17vw,340px)] shrink-0 flex-col bg-[#FFFFF0] px-6 pb-8 pt-9 text-black md:flex">
-                <div className="flex items-center gap-5">
-                    <span className="text-[31px] font-semibold tracking-tight text-[#082824]">MERCHANT</span>
-                    <button onClick={() => onSelect("premium")} className="flex h-16 w-16 items-center justify-center rounded-full bg-[#EFE2AC] text-black transition hover:brightness-95 shadow-sm" aria-label="Open Premium">
-                        <DiamondIcon className="h-9 w-9" />
-                    </button>
+                <div className="flex items-center justify-between">
+                    <span className="text-[28px] font-bold tracking-tight text-[#082824]">MERCHANT</span>
+                    <div className="relative">
+                        {isPremium && (
+                            <span className="absolute -inset-1 rounded-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 opacity-80 blur-sm animate-pulse pointer-events-none" />
+                        )}
+                        <button
+                            onClick={() => onSelect("premium")}
+                            className={`relative flex h-9 w-9 items-center justify-center rounded-full bg-[#EFE2AC] text-black transition hover:brightness-95 shadow-sm ${
+                                isPremium ? "ring-2 ring-amber-400/90 shadow-[0_0_16px_rgba(245,158,11,0.6)]" : ""
+                            }`}
+                            aria-label="Open Premium"
+                            title={isPremium ? "Premium Pro Active" : "Open Premium"}
+                        >
+                            <DiamondIcon className="h-4.5 w-4.5" />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="relative mt-5">
