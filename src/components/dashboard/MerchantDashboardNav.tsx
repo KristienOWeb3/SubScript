@@ -52,8 +52,8 @@ export default function MerchantDashboardNav({
     isAdmin?: boolean;
     mobileEnabled?: boolean;
 }) {
-    const [paymentsOpen, setPaymentsOpen] = useState(paymentIds.has(activeId));
-    const [developerOpen, setDeveloperOpen] = useState(developerIds.has(activeId));
+    const [paymentsOpen, setPaymentsOpen] = useState(true);
+    const [developerOpen, setDeveloperOpen] = useState(true);
     const [moreOpen, setMoreOpen] = useState(false);
     const [accountMenuOpen, setAccountMenuOpen] = useState(false);
 
