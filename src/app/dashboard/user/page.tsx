@@ -9354,15 +9354,14 @@ function MeteredVaultRow({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1.08fr_0.92fr]">
-        <div className="rounded-2xl border border-black/15 bg-white/80 p-4 shadow-sm">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-black/65">Vault Balance</span>
-          <p className="mt-1 text-2xl font-black tracking-tight text-black">
-            {balanceVisible ? formatUsdc(remainingBalanceUsdc) + " USDC" : "•••• USDC"}
-          </p>
-          <p className="mt-0.5 text-[11px] font-medium text-black/60">
-            Used: {balanceVisible ? formatUsdc(vault.accruedUsageUsdc) + " USDC" : "••• USDC"}
-          </p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1.2fr_0.8fr]">
+        <div className="rounded-2xl border border-black/15 bg-white/80 p-4 shadow-sm flex flex-col justify-between">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-black/65">Vault Balance</span>
+            <p className="mt-1 text-2xl sm:text-3xl font-black tracking-tight text-black">
+              {balanceVisible ? formatUsdc(remainingBalanceUsdc) + " USDC" : "•••• USDC"}
+            </p>
+          </div>
           <button
             type="button"
             onClick={() => onConfigureAutoTopUp(vault)}
@@ -9376,14 +9375,10 @@ function MeteredVaultRow({
             <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />
           </button>
         </div>
-        <div className="space-y-2 rounded-2xl border border-black/15 bg-[#FFFFF0]/80 p-3.5 text-xs text-black/65 shadow-sm">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px]">
-            <p>Lock date / Cycle started <span className="font-mono font-bold text-black">{numericDate(cycleStartDate)}</span></p>
-            <p>Release date / Cycle matures <span className="font-mono font-bold text-black">{numericDate(lockedUntilDate)}</span></p>
-            <p>Reported usage <span className="font-bold text-black">{balanceVisible ? formatUsdc(vault.accruedUsageUsdc) : "•••"} USDC</span></p>
-            <p>Max drawable <span className="font-bold text-black">{balanceVisible ? formatUsdc(String(drawableExposure)) : "•••"} USDC</span></p>
-            <p>Settlement due by <span className="font-mono font-bold text-black">{numericDate(reclaimDate)}</span></p>
-            <p>Reclaimable from <span className="font-mono font-bold text-black">{numericDate(reclaimDate)}</span></p>
+        <div className="flex flex-col justify-between rounded-2xl border border-black/15 bg-[#FFFFF0]/80 p-3.5 text-xs text-black/65 shadow-sm space-y-2">
+          <div className="space-y-1 text-[10px]">
+            <p className="flex justify-between items-center"><span className="text-black/50 uppercase font-bold">Reported Usage</span> <span className="font-bold text-black">{balanceVisible ? formatUsdc(vault.accruedUsageUsdc) : "•••"} USDC</span></p>
+            <p className="flex justify-between items-center"><span className="text-black/50 uppercase font-bold">Reclaimable From</span> <span className="font-mono font-bold text-black">{textDate(reclaimDate)}</span></p>
           </div>
           <p className="border-t border-black/10 pt-1.5 text-[10px] leading-relaxed text-black/60">
             The keeper settles usage after <span className="font-semibold text-black">{textDate(lockedUntilDate)}</span> and unused escrow returns to you automatically.
@@ -9391,7 +9386,7 @@ function MeteredVaultRow({
         </div>
       </div>
 
-      <div className="mt-1 rounded-2xl border border-black/10 bg-white/70 p-3">
+      <div className="mt-0.5 rounded-2xl border border-black/10 bg-white/70 p-3 shadow-sm">
         <VaultShareManager
           vaultId={vault.id || vault.merchantAddress}
           merchantLabel={vault.merchantName}

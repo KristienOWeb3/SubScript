@@ -2,10 +2,10 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Copy, Loader2, Plus, Shield, User, X } from "@/components/icons";
+import { Copy, Loader2, Plus, Shield, User, X, Check, ArrowUpRight } from "@/components/icons";
 import { parseUsdcToMicros } from "@/components/SubUserManager";
 
-/* Same 6-decimal micro-USDC wire convention as SubUserManager: decimal strings so BigInt survives
+/* Same 6-decimal micro-USDC wire convention: decimal strings so BigInt survives
    JSON, parsed with BigInt rather than Number so large caps stay exact. */
 const MICROS_PER_USDC = 1_000_000n;
 
@@ -17,7 +17,7 @@ function formatUsdc(micros: string | null): string {
     return fraction ? `${whole}.${fraction}` : whole.toString();
 }
 
-type Share = {
+export type Share = {
     commitId: string;
     displayName: string | null;
     profilePic?: string | null;
@@ -28,7 +28,7 @@ type Share = {
     createdAt: string;
 };
 
-type SharesResponse = {
+export type SharesResponse = {
     vaultId: string;
     rootCommitId: string;
     escrowUsdc: string;
@@ -39,16 +39,15 @@ type SharesResponse = {
 };
 
 const STATUS_STYLES: Record<string, string> = {
-    ACTIVE: "border-[#ccff00]/30 bg-[#ccff00]/10 text-[#ccff00]",
-    PAUSED: "border-amber-400/30 bg-amber-400/10 text-amber-300",
-    REVOKED: "border-red-400/30 bg-red-400/10 text-red-300",
+    ACTIVE: "border-emerald-500/30 bg-emerald-500/15 text-emerald-800",
+    PAUSED: "border-amber-500/30 bg-amber-500/15 text-amber-800",
+    REVOKED: "border-red-500/30 bg-red-500/15 text-red-800",
 };
 
 function utilizationPercent(share: Share): number | null {
     if (share.spendLimitUsdc === null) return null;
     const limit = BigInt(share.spendLimitUsdc);
     if (limit === 0n) return 100;
-    /* Scaled by 100 before dividing so a cap past Number.MAX_SAFE_INTEGER keeps its precision. */
     return Number((BigInt(share.spentUsdc) * 100n) / limit);
 }
 
@@ -63,31 +62,23 @@ type DmContact = {
 export default function VaultShareManager({
     vaultId,
     merchantLabel,
-    balanceBox,
-    datesBox,
     balanceVisible = true,
 }: {
     vaultId: string;
     merchantLabel: string;
-    balanceBox?: React.ReactNode;
-    datesBox?: React.ReactNode;
-    /* Driven by the Eye toggle on the commit tab. Defaults to visible so other call sites
-       (and any future embed) are unaffected. */
     balanceVisible?: boolean;
 }) {
     const [data, setData] = useState<SharesResponse | null>(null);
-    const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState<Busy>(null);
     const [copiedId, setCopiedId] = useState<string | null>(null);
 
-    /* Amounts collapse to dots when the commit tab's Eye toggle is off. The dot count matches
-       the convention used across the dashboard rather than the real digit count, so the mask
-       never hints at the magnitude. */
+    // Modals
+    const [addModalOpen, setAddModalOpen] = useState(false);
+    const [selectedShare, setSelectedShare] = useState<Share | null>(null);
+
     const money = (value: string | null) => (balanceVisible ? formatUsdc(value) : "••••");
-    /* A Commit ID is a bearer credential — anyone holding it can bill this vault — so it is
-       masked alongside the amounts rather than left in the clear on a shared screen. */
     const secretId = (value: string) => (balanceVisible ? value : "•".repeat(24));
 
     const [name, setName] = useState("");
@@ -108,7 +99,6 @@ export default function VaultShareManager({
             if (json.success && Array.isArray(json.dms)) {
                 const contactsMap = new Map<string, DmContact>();
                 json.dms.forEach((dm: any) => {
-                    // Ignore system notifications
                     if (dm.messageType === "SYSTEM" || dm.senderRole === "SYSTEM") return;
 
                     if (dm.senderRole !== "ENTERPRISE" && dm.senderAddress) {
@@ -132,7 +122,6 @@ export default function VaultShareManager({
                         }
                     }
                 });
-                // Ensure user's own address is explicitly filtered out
                 if (myAddress) {
                     contactsMap.delete(myAddress);
                 }
@@ -144,8 +133,8 @@ export default function VaultShareManager({
     }, []);
 
     useEffect(() => {
-        if (open) void loadDmContacts();
-    }, [open, loadDmContacts]);
+        if (addModalOpen) void loadDmContacts();
+    }, [addModalOpen, loadDmContacts]);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -164,7 +153,6 @@ export default function VaultShareManager({
         }
     }, [vaultId]);
 
-    /* Fetch immediately so the Primary Commit ID is always visible on the dashboard. */
     useEffect(() => {
         if (!data) void load();
     }, [data, load]);
@@ -179,7 +167,7 @@ export default function VaultShareManager({
         const myAddress = sessionData?.wallet ? sessionData.wallet.toLowerCase() : null;
 
         if (myAddress && (targetInput === myAddress || targetInput === myAddress.slice(0, 10))) {
-            setFormError("You cannot add yourself as a friend on your commitment.");
+            setFormError("You cannot add yourself as a user on your commitment.");
             return;
         }
 
@@ -206,12 +194,16 @@ export default function VaultShareManager({
             setCap("");
             setSuccessMsg(
                 json.dmSent
-                    ? "Share created! Notification card sent to your open DM thread with this friend."
-                    : "Share created successfully.",
+                    ? "User added! Commit key sent to your open DM thread with this user."
+                    : "User added to commit successfully.",
             );
             await load();
+            setTimeout(() => {
+                setAddModalOpen(false);
+                setSuccessMsg(null);
+            }, 1200);
         } catch (err: any) {
-            setFormError(err.message || "Could not create share");
+            setFormError(err.message || "Could not add user to commit");
         } finally {
             setCreating(false);
         }
@@ -242,6 +234,9 @@ export default function VaultShareManager({
             const json = await res.json();
             if (!res.ok) throw new Error(json.error || "Could not update share");
             await load();
+            if (selectedShare?.commitId === commitId) {
+                setSelectedShare(null);
+            }
         } catch (err: any) {
             setError(err.message || "Could not update share");
         } finally {
@@ -254,7 +249,7 @@ export default function VaultShareManager({
         if (action === "revoke") {
             setConfirmModal({
                 title: "Revoke Commit ID",
-                message: "Revoke this commit ID for good? This cannot be undone.",
+                message: "Revoke this commit ID permanently? This user will no longer be able to spend.",
                 confirmText: "Revoke",
                 onConfirm: () => executeAction(commitId, action),
             });
@@ -270,13 +265,6 @@ export default function VaultShareManager({
             return;
         }
         void executeAction(commitId, action);
-    };
-
-    const handleRecap = (share: Share) => {
-        setRecapModal({
-            share,
-            value: share.spendLimitUsdc ? formatUsdc(share.spendLimitUsdc) : "",
-        });
     };
 
     const submitRecap = async (share: Share, entered: string) => {
@@ -298,6 +286,7 @@ export default function VaultShareManager({
             if (!res.ok) throw new Error(json.error || "Could not update cap");
             await load();
             setRecapModal(null);
+            setSelectedShare(null);
         } catch (err: any) {
             setError(err.message || "Could not update cap");
         } finally {
@@ -320,381 +309,361 @@ export default function VaultShareManager({
     const atCeiling = data ? liveShares >= data.maxShares : false;
 
     return (
-        <div className="space-y-4">
-            {/* Middle Section: Vault Balance Box (Left) & Commit ID (Right) */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {balanceBox}
-                <div className="flex flex-col justify-between rounded-2xl border border-white/10 bg-black/40 p-4 min-h-[96px]">
-                    <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-white/50">
-                            Commit ID:
-                        </span>
-                        {copiedId === data?.rootCommitId && (
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-[#00d2b4]">
-                                Copied
-                            </span>
-                        )}
-                    </div>
-                    <div className="mt-2 flex items-center justify-between gap-2">
-                        {data?.rootCommitId ? (
-                            <code className="truncate font-mono text-xs font-bold text-[#00d2b4] sm:text-sm">
-                                {secretId(data.rootCommitId)}
-                            </code>
-                        ) : (
-                            <div className="h-5 w-36 rounded-md subscript-skeleton" />
-                        )}
-                        {data?.rootCommitId && (
-                            <button
-                                type="button"
-                                onClick={() => copyId(data.rootCommitId)}
-                                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-[#00d2b4]/30 bg-[#00d2b4]/10 text-[#00d2b4] transition hover:bg-[#00d2b4]/25"
-                                title="Copy Primary Commit ID"
-                            >
-                                <Copy className="h-4 w-4" />
-                            </button>
-                        )}
-                    </div>
+        <div className="space-y-3">
+            {/* Scoped Root Commit ID Pill with 1-Tap Copy */}
+            <div className="flex items-center justify-between gap-2 rounded-2xl border border-black/10 bg-[#FFFFF0] px-3.5 py-2 text-black shadow-sm">
+                <span className="text-[10px] font-black uppercase tracking-wider text-black/60">
+                    Commit ID:
+                </span>
+                <div className="flex items-center gap-2 min-w-0">
+                    {data?.rootCommitId ? (
+                        <code className="truncate font-mono text-xs font-bold text-[#2775CA]">
+                            {secretId(data.rootCommitId)}
+                        </code>
+                    ) : (
+                        <div className="h-4 w-28 rounded bg-black/10 animate-pulse" />
+                    )}
+                    {data?.rootCommitId && (
+                        <button
+                            type="button"
+                            onClick={() => copyId(data.rootCommitId)}
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-black/15 bg-white text-black hover:bg-black/5 transition shadow-sm"
+                            title="Copy Primary Commit ID"
+                            aria-label="Copy Primary Commit ID"
+                        >
+                            {copiedId === data.rootCommitId ? (
+                                <Check className="h-3.5 w-3.5 text-emerald-600" />
+                            ) : (
+                                <Copy className="h-3.5 w-3.5" />
+                            )}
+                        </button>
+                    )}
                 </div>
             </div>
 
-            {/* Dates & Keeper Settlement Section */}
-            {datesBox}
-
-            {/* Friends Avatar Row Section */}
-            <div className="pt-2">
-                <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-none">
+            {/* Horizontal Members / Users Avatar Row with Prominent (+) Button */}
+            <div className="pt-1">
+                <div className="flex items-center gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     {loading && !data ? (
                         <>
-                            <div className="flex h-[92px] w-[90px] shrink-0 flex-col items-center justify-center rounded-2xl border border-white/10 bg-black/40 p-3 subscript-skeleton" />
-                            <div className="flex h-[92px] w-[90px] shrink-0 flex-col items-center justify-center rounded-2xl border border-white/10 bg-black/40 p-3 subscript-skeleton" />
+                            <div className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-2xl bg-white/60 animate-pulse" />
+                            <div className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-2xl bg-white/60 animate-pulse" />
                         </>
                     ) : (
                         liveSharesList.map((share) => {
-                            const initial = share.displayName ? share.displayName[0].toUpperCase() : "A";
+                            const initial = share.displayName ? share.displayName[0].toUpperCase() : "U";
                             return (
-                                <div
+                                <button
                                     key={share.commitId}
-                                    onClick={() => setOpen(true)}
-                                    className="flex min-w-[90px] cursor-pointer shrink-0 flex-col items-center justify-center rounded-2xl border border-white/10 bg-black/40 p-3 text-center transition hover:border-[#00d2b4]/40 hover:bg-black/60"
+                                    type="button"
+                                    onClick={() => setSelectedShare(share)}
+                                    className="group flex min-w-[76px] cursor-pointer shrink-0 flex-col items-center justify-center rounded-2xl border border-black/10 bg-white/80 p-2.5 text-center transition hover:border-[#2775CA] hover:bg-white shadow-sm"
+                                    title={`Manage ${share.displayName || "User"}`}
                                 >
-                                    <div className="mb-1.5 flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white/10 text-sm font-black text-white shrink-0">
+                                    <div className="mb-1 flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-black/15 bg-[#2775CA]/10 text-xs font-black text-[#2775CA] shrink-0 shadow-inner group-hover:scale-105 transition-transform">
                                         {share.profilePic ? (
-                                            <img src={share.profilePic} alt={share.displayName || "Friend"} className="h-full w-full object-cover" />
+                                            <img src={share.profilePic} alt={share.displayName || "User"} className="h-full w-full object-cover" />
                                         ) : (
                                             initial
                                         )}
                                     </div>
-                                    <span className="w-full truncate text-[11px] font-bold text-white">
-                                        {share.displayName || "Friend"}
+                                    <span className="w-full truncate text-[10px] font-bold text-black">
+                                        {share.displayName || "User"}
                                     </span>
-                                    <span className="mt-0.5 text-[9px] font-medium uppercase tracking-wider text-white/50">
-                                        {money(share.spentUsdc)} USED
+                                    <span className="text-[8px] font-bold uppercase tracking-wider text-[#2775CA]">
+                                        ${money(share.spentUsdc)} USED
                                     </span>
-                                </div>
+                                </button>
                             );
                         })
                     )}
 
-                    {/* Add a Friend Card */}
+                    {/* Circular (+) Add User Button matching Mockup */}
                     <button
                         type="button"
-                        onClick={() => setOpen((prev) => !prev)}
-                        className="flex min-w-[90px] shrink-0 flex-col items-center justify-center rounded-2xl border border-dashed border-[#00d2b4]/40 bg-[#00d2b4]/[0.04] p-3 text-center transition hover:border-[#00d2b4] hover:bg-[#00d2b4]/10"
+                        onClick={() => {
+                            setFormError(null);
+                            setSuccessMsg(null);
+                            setAddModalOpen(true);
+                        }}
+                        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-black/20 bg-white text-black hover:bg-black/5 hover:border-[#2775CA] hover:text-[#2775CA] transition-all shadow-sm active:scale-95"
+                        title="Add user to this commit"
+                        aria-label="Add user to this commit"
                     >
-                        <div className="mb-1.5 flex h-10 w-10 items-center justify-center rounded-xl border border-[#00d2b4]/20 bg-[#00d2b4]/10 text-[#00d2b4]">
-                            <Plus className="h-5 w-5" />
-                        </div>
-                        <span className="text-[11px] font-bold text-[#00d2b4]">
-                            Add a friend
-                        </span>
+                        <Plus className="h-5 w-5" />
                     </button>
                 </div>
             </div>
 
-            <AnimatePresence initial={false}>
-                {open && (
+            {/* ADD USER TO COMMIT MODAL */}
+            <AnimatePresence>
+                {addModalOpen && (
                     <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ type: "spring", stiffness: 450, damping: 32 }}
-                        className="overflow-hidden"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
                     >
-                        <div className="space-y-3 pt-3">
-                            <p className="text-[10px] leading-relaxed text-white/45">
-                                Give someone a Commit ID and {merchantLabel} can bill their usage against
-                                this commitment — no wallet or account needed on their side. They can never
-                                spend past the cap you set.
-                            </p>
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0, y: 10 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.95, opacity: 0, y: 10 }}
+                            className="w-full max-w-md rounded-3xl border border-black/10 bg-[#FFFFF0] p-6 shadow-2xl space-y-5 text-black"
+                        >
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-base font-black uppercase tracking-wider text-[#111827]">
+                                        Add User to Commit
+                                    </h3>
+                                    <p className="text-[11px] text-black/60 font-sans">
+                                        Share {merchantLabel} commitment credits with team members or friends.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setAddModalOpen(false)}
+                                    className="p-1.5 rounded-full hover:bg-black/5 text-black/50 hover:text-black transition"
+                                >
+                                    <X className="h-5 w-5" />
+                                </button>
+                            </div>
 
                             {data && (
-                                <div className="flex flex-wrap gap-x-4 gap-y-1 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2">
-                                    <Stat label="Committed" value={`${money(data.escrowUsdc)} USDC`} />
-                                    <Stat label="Assigned" value={`${money(data.allocatedUsdc)} USDC`} />
-                                    <Stat
-                                        label="Unassigned"
-                                        value={`${money(data.unallocatedUsdc)} USDC`}
-                                        accent
-                                    />
+                                <div className="flex items-center justify-between rounded-2xl border border-black/10 bg-white/80 p-3 text-xs shadow-sm">
+                                    <span className="font-bold text-black/60 uppercase text-[10px] tracking-wider">Unassigned Escrow</span>
+                                    <span className="font-mono font-black text-sm text-[#2775CA]">${money(data.unallocatedUsdc)} USDC</span>
                                 </div>
                             )}
 
-                            {error && (
-                                <p className="rounded-xl border border-red-400/20 bg-red-400/5 px-3 py-2 text-[10px] text-red-300">
-                                    {error}
+                            {/* DM Contacts Quick Picker */}
+                            {dmContacts.length > 0 && (
+                                <div className="space-y-1.5">
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-black/50">Select from DMs:</span>
+                                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                                        {dmContacts.map((c) => (
+                                            <button
+                                                key={c.address}
+                                                type="button"
+                                                onClick={() => setName(c.displayName)}
+                                                className="flex items-center gap-1.5 rounded-xl border border-black/15 bg-white px-2.5 py-1 text-[10px] text-black hover:border-[#2775CA] hover:bg-[#2775CA]/5 transition shadow-sm"
+                                            >
+                                                {c.profilePic ? (
+                                                    <img src={c.profilePic} alt={c.displayName} className="h-3.5 w-3.5 rounded-full object-cover shrink-0" />
+                                                ) : (
+                                                    <User className="h-3 w-3 text-black/40 shrink-0" />
+                                                )}
+                                                <span className="font-bold truncate max-w-[120px]">{c.displayName}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Inputs */}
+                            <div className="space-y-3 font-sans">
+                                <div>
+                                    <label className="block text-[10px] font-black uppercase tracking-wider text-black/60 mb-1">User Name or Alias</label>
+                                    <input
+                                        value={name}
+                                        onChange={(e) => setName(e.target.value)}
+                                        placeholder="e.g. Choppa, alex.sub, or 0x..."
+                                        maxLength={128}
+                                        className="w-full rounded-2xl border border-black/15 bg-white px-3.5 py-2.5 text-xs text-[#111827] placeholder:text-black/30 focus:border-[#2775CA] focus:outline-none shadow-sm"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black uppercase tracking-wider text-black/60 mb-1">Spend Cap in USDC (Optional)</label>
+                                    <input
+                                        value={cap}
+                                        onChange={(e) => setCap(e.target.value)}
+                                        placeholder="e.g. 500.00 (leave empty for uncapped)"
+                                        inputMode="decimal"
+                                        className="w-full rounded-2xl border border-black/15 bg-white px-3.5 py-2.5 text-xs text-[#111827] placeholder:text-black/30 focus:border-[#2775CA] focus:outline-none shadow-sm"
+                                    />
+                                </div>
+                            </div>
+
+                            {formError && (
+                                <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] font-bold text-red-700">
+                                    {formError}
                                 </p>
                             )}
 
-                            {loading && !data ? (
-                                <div className="space-y-2 animate-pulse py-2">
-                                    {Array.from({ length: 2 }).map((_, i) => (
-                                        <div key={i} className="rounded-xl border border-white/5 bg-white/[0.02] p-3 space-y-2">
-                                            <div className="flex justify-between items-center">
-                                                <div className="h-3 w-28 rounded bg-white/15" />
-                                                <div className="h-3 w-12 rounded bg-white/10" />
-                                            </div>
-                                            <div className="h-1.5 w-full rounded-full bg-white/10" />
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <>
-                                    {data?.shares.length === 0 && (
-                                        <p className="px-1 py-2 text-[10px] text-white/35">
-                                            Not shared with any friends yet.
-                                        </p>
-                                    )}
-
-                                    <div className="space-y-2">
-                                        {data?.shares.map((share) => {
-                                            const pct = utilizationPercent(share);
-                                            const isRevoked = share.status === "REVOKED";
-                                            const rowBusy = busy?.commitId === share.commitId;
-
-                                            const shareCreated = new Date(share.createdAt).getTime();
-                                            const thirtyDaysLater = shareCreated + 30 * 24 * 60 * 60 * 1000;
-                                            const canWithdraw = Date.now() >= thirtyDaysLater;
-                                            const daysLeft = Math.ceil((thirtyDaysLater - Date.now()) / (1000 * 60 * 60 * 24));
-                                            return (
-                                                <div
-                                                    key={share.commitId}
-                                                    className={`rounded-2xl border border-white/5 bg-white/[0.04] p-3 ${isRevoked ? "opacity-50" : ""}`}
-                                                >
-                                                    <div className="flex flex-wrap items-center justify-between gap-2">
-                                                        <span className="flex min-w-0 items-center gap-2">
-                                                            {share.profilePic ? (
-                                                                <img src={share.profilePic} alt={share.displayName || "Friend"} className="h-4 w-4 rounded-full object-cover shrink-0" />
-                                                            ) : (
-                                                                <User className="h-3.5 w-3.5 shrink-0 text-white/40" />
-                                                            )}
-                                                            <span className="truncate text-[11px] font-bold text-white/85">
-                                                                {share.displayName || "Unnamed"}
-                                                            </span>
-                                                        </span>
-                                                        <span
-                                                            className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
-                                                                STATUS_STYLES[share.status] ?? STATUS_STYLES.REVOKED
-                                                            }`}
-                                                        >
-                                                            {share.status}
-                                                        </span>
-                                                    </div>
-
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => copyId(share.commitId)}
-                                                        className="mt-2 flex w-full items-center justify-between gap-2 rounded-xl border border-white/5 bg-black/30 px-2.5 py-1.5 text-left transition-colors hover:border-[#00d2b4]/30"
-                                                    >
-                                                        <code className="truncate font-mono text-[10px] text-white/55">
-                                                            {secretId(share.commitId)}
-                                                        </code>
-                                                        <span className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-[#00d2b4]">
-                                                            {copiedId === share.commitId ? "Copied" : "Copy"}
-                                                        </span>
-                                                    </button>
-
-                                                    <div className="mt-2 space-y-1">
-                                                        <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-wider">
-                                                            <span className="text-white/35">
-                                                                {money(share.spentUsdc)} spent
-                                                            </span>
-                                                            <span className="text-white/50">
-                                                                {share.spendLimitUsdc === null
-                                                                    ? "Uncapped"
-                                                                    : `${money(share.remainingUsdc)} left of ${money(share.spendLimitUsdc)}`}
-                                                            </span>
-                                                        </div>
-                                                        {pct !== null && (
-                                                            <div
-                                                                className="h-1 overflow-hidden rounded-full bg-white/10"
-                                                                role="progressbar"
-                                                                aria-valuenow={Math.min(pct, 100)}
-                                                                aria-valuemin={0}
-                                                                aria-valuemax={100}
-                                                                aria-label="Cap used"
-                                                            >
-                                                                <div
-                                                                    className={`h-full rounded-full ${pct >= 100 ? "bg-red-400" : pct >= 80 ? "bg-amber-400" : "bg-[#ccff00]"}`}
-                                                                    style={{ width: `${Math.min(pct, 100)}%` }}
-                                                                />
-                                                            </div>
-                                                        )}
-                                                    </div>
-
-                                                    {!isRevoked && (
-                                                        <div className="mt-2.5 flex flex-wrap gap-1.5">
-                                                            <RowAction
-                                                                label="Change cap"
-                                                                busy={rowBusy && busy?.action === "recap"}
-                                                                disabled={rowBusy}
-                                                                onClick={() => handleRecap(share)}
-                                                            />
-                                                            {share.status === "ACTIVE" ? (
-                                                                <RowAction
-                                                                    label="Pause sharing"
-                                                                    busy={rowBusy && busy?.action === "pause"}
-                                                                    disabled={rowBusy}
-                                                                    onClick={() => runAction(share.commitId, "pause")}
-                                                                />
-                                                            ) : (
-                                                                <RowAction
-                                                                    label="Resume sharing"
-                                                                    busy={rowBusy && busy?.action === "resume"}
-                                                                    disabled={rowBusy}
-                                                                    onClick={() => runAction(share.commitId, "resume")}
-                                                                />
-                                                            )}
-                                                            <RowAction
-                                                                label="Revoke"
-                                                                danger
-                                                                busy={rowBusy && busy?.action === "revoke"}
-                                                                disabled={rowBusy}
-                                                                onClick={() => runAction(share.commitId, "revoke")}
-                                                            />
-                                                            {canWithdraw ? (
-                                                                <RowAction
-                                                                    label="Withdraw / Reclaim"
-                                                                    danger
-                                                                    busy={rowBusy && busy?.action === "withdraw"}
-                                                                    disabled={rowBusy}
-                                                                    onClick={() => runAction(share.commitId, "withdraw")}
-                                                                />
-                                                            ) : (
-                                                                <span className="flex items-center rounded-xl bg-white/5 px-2 py-1 text-[8px] font-black uppercase tracking-wider text-white/40">
-                                                                    Withdrawal unlocks in {daysLeft}d
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-
-                                    <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-3">
-                                        <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-white/45">
-                                            Share with a new friend
-                                        </p>
-
-                                        {dmContacts.length > 0 && (
-                                            <div className="mb-2.5 space-y-1">
-                                                <span className="text-[9px] font-bold uppercase tracking-wider text-white/40">Select from open DMs:</span>
-                                                <div className="flex flex-wrap gap-1.5 pt-0.5">
-                                                    {dmContacts.map((c) => (
-                                                        <button
-                                                            key={c.address}
-                                                            type="button"
-                                                            onClick={() => setName(c.displayName)}
-                                                            className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-black/40 px-2 py-1 text-[10px] text-white/80 transition hover:border-[#00d2b4]/40 hover:bg-black/60 hover:text-white"
-                                                        >
-                                                            {c.profilePic ? (
-                                                                <img src={c.profilePic} alt={c.displayName} className="h-3.5 w-3.5 rounded-full object-cover shrink-0" />
-                                                            ) : (
-                                                                <User className="h-3 w-3 text-white/40 shrink-0" />
-                                                            )}
-                                                            <span className="font-medium truncate max-w-[110px]">{c.displayName}</span>
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                        <div className="flex flex-col gap-2 sm:flex-row">
-                                            <input
-                                                value={name}
-                                                onChange={(e) => setName(e.target.value)}
-                                                placeholder="Their name or @DNS (e.g. alex.subscript)"
-                                                maxLength={128}
-                                                className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[11px] text-white placeholder:text-white/25 focus:border-[#00d2b4]/40 focus:outline-none"
-                                            />
-                                            <input
-                                                value={cap}
-                                                onChange={(e) => setCap(e.target.value)}
-                                                placeholder="Cap in USDC"
-                                                inputMode="decimal"
-                                                className="min-w-0 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[11px] text-white placeholder:text-white/25 focus:border-[#00d2b4]/40 focus:outline-none sm:w-32"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={handleCreate}
-                                                disabled={creating || atCeiling}
-                                                className="flex items-center justify-center gap-1.5 rounded-xl bg-[#ccff00] px-4 py-2 text-[10px] font-black uppercase tracking-wider text-black transition-opacity hover:opacity-90 disabled:opacity-40"
-                                            >
-                                                {creating && <Loader2 className="h-3 w-3 animate-spin" />}
-                                                Share
-                                            </button>
-                                        </div>
-                                        <p className="mt-1.5 text-[9px] leading-normal text-white/35">
-                                            Input a name or SubScript DNS handle. If you have an open DM thread with them, a share card will be sent directly to your chat.
-                                        </p>
-                                        {successMsg && (
-                                            <p className="mt-2 text-[10px] font-medium text-[#00d2b4]">{successMsg}</p>
-                                        )}
-                                        {formError && (
-                                            <p className="mt-2 text-[10px] text-red-300">{formError}</p>
-                                        )}
-                                        {atCeiling && (
-                                            <p className="mt-2 text-[10px] text-amber-300">
-                                                You have reached the {data?.maxShares}-friend limit for this
-                                                commitment. Revoke a share to free a slot.
-                                            </p>
-                                        )}
-                                    </div>
-                                </>
+                            {successMsg && (
+                                <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11px] font-bold text-emerald-800">
+                                    {successMsg}
+                                </p>
                             )}
-                        </div>
+
+                            <div className="flex justify-end gap-2 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setAddModalOpen(false)}
+                                    className="px-4 py-2.5 rounded-2xl border border-black/15 bg-white text-xs font-bold text-black hover:bg-black/5 transition shadow-sm"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleCreate}
+                                    disabled={creating || atCeiling || !name.trim()}
+                                    className="px-5 py-2.5 rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] text-white text-xs font-black uppercase tracking-wider transition flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
+                                >
+                                    {creating && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                                    Add User & Send Key
+                                </button>
+                            </div>
+                        </motion.div>
                     </motion.div>
                 )}
             </AnimatePresence>
 
-            {/* Custom SubScript Confirmation Modal */}
+            {/* MANAGE USER MODAL */}
+            <AnimatePresence>
+                {selectedShare && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0, y: 10 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.95, opacity: 0, y: 10 }}
+                            className="w-full max-w-md rounded-3xl border border-black/10 bg-[#FFFFF0] p-6 shadow-2xl space-y-4 text-black"
+                        >
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border border-black/15 bg-[#2775CA]/10 text-sm font-black text-[#2775CA] shrink-0">
+                                        {selectedShare.profilePic ? (
+                                            <img src={selectedShare.profilePic} alt={selectedShare.displayName || "User"} className="h-full w-full object-cover" />
+                                        ) : (
+                                            selectedShare.displayName ? selectedShare.displayName[0].toUpperCase() : "U"
+                                        )}
+                                    </div>
+                                    <div>
+                                        <h3 className="text-base font-black uppercase tracking-wider text-[#111827]">
+                                            {selectedShare.displayName || "User"}
+                                        </h3>
+                                        <span className={`inline-block rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${STATUS_STYLES[selectedShare.status] ?? STATUS_STYLES.REVOKED}`}>
+                                            {selectedShare.status}
+                                        </span>
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedShare(null)}
+                                    className="p-1.5 rounded-full hover:bg-black/5 text-black/50 hover:text-black transition"
+                                >
+                                    <X className="h-5 w-5" />
+                                </button>
+                            </div>
+
+                            {/* Scoped Commit ID */}
+                            <div className="rounded-2xl border border-black/10 bg-white/80 p-3 space-y-1 shadow-sm">
+                                <span className="text-[9px] font-black uppercase tracking-wider text-black/50">Delegated Commit Key</span>
+                                <div className="flex items-center justify-between gap-2">
+                                    <code className="truncate font-mono text-xs text-black/80">{secretId(selectedShare.commitId)}</code>
+                                    <button
+                                        type="button"
+                                        onClick={() => copyId(selectedShare.commitId)}
+                                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-black/15 bg-white text-black hover:bg-black/5 transition shadow-sm"
+                                        title="Copy Delegated Key"
+                                    >
+                                        {copiedId === selectedShare.commitId ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Usage & Cap */}
+                            <div className="rounded-2xl border border-black/10 bg-white/80 p-4 space-y-2 shadow-sm">
+                                <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider">
+                                    <span className="text-black/60">Usage</span>
+                                    <span className="text-[#2775CA]">${money(selectedShare.spentUsdc)} USDC Used</span>
+                                </div>
+                                <div className="flex items-center justify-between text-[10px] font-bold text-black/50">
+                                    <span>Cap</span>
+                                    <span>{selectedShare.spendLimitUsdc === null ? "Uncapped Pool" : `$${money(selectedShare.spendLimitUsdc)} Limit (${money(selectedShare.remainingUsdc)} left)`}</span>
+                                </div>
+                                {utilizationPercent(selectedShare) !== null && (
+                                    <div className="h-2 overflow-hidden rounded-full bg-black/10">
+                                        <div
+                                            className={`h-full rounded-full ${utilizationPercent(selectedShare)! >= 100 ? "bg-red-500" : utilizationPercent(selectedShare)! >= 80 ? "bg-amber-500" : "bg-[#2775CA]"}`}
+                                            style={{ width: `${Math.min(utilizationPercent(selectedShare)!, 100)}%` }}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex flex-wrap gap-2 pt-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setRecapModal({ share: selectedShare, value: selectedShare.spendLimitUsdc ? formatUsdc(selectedShare.spendLimitUsdc) : "" })}
+                                    className="flex-1 py-2.5 rounded-2xl border border-black/15 bg-white text-black hover:bg-black/5 text-xs font-bold transition shadow-sm"
+                                >
+                                    Edit Cap
+                                </button>
+                                {selectedShare.status === "ACTIVE" ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => runAction(selectedShare.commitId, "pause")}
+                                        className="flex-1 py-2.5 rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-800 hover:bg-amber-500/20 text-xs font-bold transition shadow-sm"
+                                    >
+                                        Pause Access
+                                    </button>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={() => runAction(selectedShare.commitId, "resume")}
+                                        className="flex-1 py-2.5 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-800 hover:bg-emerald-500/20 text-xs font-bold transition shadow-sm"
+                                    >
+                                        Resume Access
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => runAction(selectedShare.commitId, "revoke")}
+                                    className="py-2.5 px-4 rounded-2xl border border-red-500/30 bg-red-500/10 text-red-700 hover:bg-red-500/20 text-xs font-bold transition shadow-sm"
+                                >
+                                    Revoke
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* CONFIRMATION MODAL */}
             <AnimatePresence>
                 {confirmModal && (
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
                     >
                         <motion.div
                             initial={{ scale: 0.95, opacity: 0 }}
                             animate={{ scale: 1, opacity: 1 }}
                             exit={{ scale: 0.95, opacity: 0 }}
-                            className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#121212] p-6 shadow-2xl space-y-4"
+                            className="w-full max-w-sm rounded-3xl border border-black/10 bg-[#FFFFF0] p-6 shadow-2xl space-y-4 text-black"
                         >
-                            <h3 className="text-base font-bold text-white uppercase tracking-wider">{confirmModal.title}</h3>
-                            <p className="text-xs text-white/60 leading-relaxed">{confirmModal.message}</p>
+                            <h3 className="text-base font-bold text-[#111827] uppercase tracking-wider">{confirmModal.title}</h3>
+                            <p className="text-xs text-black/60 leading-relaxed font-sans">{confirmModal.message}</p>
                             <div className="flex justify-end gap-2 pt-2">
                                 <button
                                     type="button"
                                     onClick={() => setConfirmModal(null)}
-                                    className="px-4 py-2 text-xs font-bold text-white/50 hover:text-white transition"
+                                    className="px-4 py-2 text-xs font-bold text-black/60 hover:text-black transition"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="button"
                                     onClick={confirmModal.onConfirm}
-                                    className="px-4 py-2 rounded-xl bg-red-500/20 border border-red-500/30 text-red-300 hover:bg-red-500/30 text-xs font-bold uppercase tracking-wider transition"
+                                    className="px-4 py-2 rounded-xl bg-red-600 text-white text-xs font-bold uppercase tracking-wider transition shadow-sm hover:bg-red-700"
                                 >
                                     {confirmModal.confirmText}
                                 </button>
@@ -704,45 +673,45 @@ export default function VaultShareManager({
                 )}
             </AnimatePresence>
 
-            {/* Custom SubScript Recap Modal */}
+            {/* RECAP / EDIT CAP MODAL */}
             <AnimatePresence>
                 {recapModal && (
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
                     >
                         <motion.div
                             initial={{ scale: 0.95, opacity: 0 }}
                             animate={{ scale: 1, opacity: 1 }}
                             exit={{ scale: 0.95, opacity: 0 }}
-                            className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#121212] p-6 shadow-2xl space-y-4"
+                            className="w-full max-w-sm rounded-3xl border border-black/10 bg-[#FFFFF0] p-6 shadow-2xl space-y-4 text-black"
                         >
-                            <h3 className="text-base font-bold text-white uppercase tracking-wider">Update Spend Cap</h3>
-                            <p className="text-xs text-white/60 leading-relaxed">
-                                Enter new spend cap in USDC for {recapModal.share.displayName || "this friend"} (already spent {formatUsdc(recapModal.share.spentUsdc)} USDC):
+                            <h3 className="text-base font-bold text-[#111827] uppercase tracking-wider">Update Spend Cap</h3>
+                            <p className="text-xs text-black/60 leading-relaxed font-sans">
+                                Enter new spend cap in USDC for {recapModal.share.displayName || "this user"} (already spent ${formatUsdc(recapModal.share.spentUsdc)} USDC):
                             </p>
                             <input
                                 type="text"
                                 value={recapModal.value}
                                 onChange={(e) => setRecapModal({ ...recapModal, value: e.target.value })}
-                                placeholder="Cap in USDC"
+                                placeholder="Cap in USDC (leave blank for uncapped)"
                                 inputMode="decimal"
-                                className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-xs text-white placeholder:text-white/25 focus:border-[#00d2b4]/40 focus:outline-none"
+                                className="w-full rounded-2xl border border-black/15 bg-white px-3.5 py-2.5 text-xs text-[#111827] placeholder:text-black/30 focus:border-[#2775CA] focus:outline-none shadow-sm font-sans"
                             />
                             <div className="flex justify-end gap-2 pt-2">
                                 <button
                                     type="button"
                                     onClick={() => setRecapModal(null)}
-                                    className="px-4 py-2 text-xs font-bold text-white/50 hover:text-white transition"
+                                    className="px-4 py-2 text-xs font-bold text-black/60 hover:text-black transition"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => submitRecap(recapModal.share, recapModal.value)}
-                                    className="px-4 py-2 rounded-xl bg-[#ccff00] text-black text-xs font-bold uppercase tracking-wider transition hover:opacity-90"
+                                    className="px-4 py-2 rounded-xl bg-[#2775CA] hover:bg-[#1f62ab] text-white text-xs font-bold uppercase tracking-wider transition shadow-sm"
                                 >
                                     Save Cap
                                 </button>
@@ -752,46 +721,5 @@ export default function VaultShareManager({
                 )}
             </AnimatePresence>
         </div>
-    );
-}
-
-function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
-    return (
-        <span className="flex flex-col">
-            <span className="text-[8px] font-black uppercase tracking-[0.16em] text-white/35">{label}</span>
-            <span className={`text-[11px] font-bold ${accent ? "text-[#ccff00]" : "text-white/75"}`}>
-                {value}
-            </span>
-        </span>
-    );
-}
-
-function RowAction({
-    label,
-    onClick,
-    busy,
-    disabled,
-    danger,
-}: {
-    label: string;
-    onClick: () => void;
-    busy?: boolean;
-    disabled?: boolean;
-    danger?: boolean;
-}) {
-    return (
-        <button
-            type="button"
-            onClick={onClick}
-            disabled={disabled}
-            className={`flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider transition-colors disabled:opacity-40 ${
-                danger
-                    ? "border-red-400/20 text-red-300 hover:border-red-400/40"
-                    : "border-white/10 text-white/60 hover:border-white/25 hover:text-white/85"
-            }`}
-        >
-            {busy && <Loader2 className="h-2.5 w-2.5 animate-spin" />}
-            {label}
-        </button>
     );
 }
