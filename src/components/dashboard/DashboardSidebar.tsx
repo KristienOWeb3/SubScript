@@ -90,12 +90,10 @@ export default function DashboardSidebar({
         : "group flex w-full items-center justify-center lg:justify-start gap-3 rounded-[4px] text-left font-semibold transition-all relative";
     
     const activeRow = isCollapsed
-        ? isLightPanel
-            ? "bg-[color:var(--sb-panel)] text-[#0f172a] font-bold shadow-sm"
-            : "bg-[color:var(--sb-panel)] text-[color:var(--sb-accent)] font-bold shadow-md border border-[color:var(--sb-accent)]/20"
+        ? "bg-[#FFFFF0] text-[#353935] font-bold shadow-sm"
         : "bg-[#FFFFF0] text-[#353935] font-bold shadow-none";
     
-    const idleRow = "text-white/70 hover:bg-white/[0.06] hover:text-white";
+    const idleRow = "text-white/75 hover:bg-white/[0.08] hover:text-white";
 
     const renderRow = (item: DashboardSidebarItem, compact: boolean) => {
         const Icon = item.icon;
@@ -113,10 +111,8 @@ export default function DashboardSidebar({
                 <Icon
                     className={`h-4.5 w-4.5 shrink-0 ${
                         isActive
-                            ? isLightPanel
-                                ? "text-[#0f172a]"
-                                : "text-[color:var(--sb-accent)]"
-                            : "text-white/60 group-hover:text-white"
+                            ? "text-[#353935]"
+                            : "text-white/70 group-hover:text-white"
                     }`}
                 />
                 {!isCollapsed && (

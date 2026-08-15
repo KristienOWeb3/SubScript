@@ -40,6 +40,7 @@ import SendSingleModal from "@/components/SendSingleModal";
 import DmRequestsModal from "@/components/dashboard/DmRequestsModal";
 import DmInviteManagerModal from "@/components/dashboard/DmInviteManagerModal";
 import BlockedUsersModal from "@/components/dashboard/BlockedUsersModal";
+import VaultShareManager from "@/components/VaultShareManager";
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
 import { MerchantVerifiedTick } from "@/components/MerchantVerifiedBadge";
@@ -198,7 +199,6 @@ type AccountSubView =
   | "menu"
   | "profile"
   | "kyc"
-  | "limits"
   | "transactions"
   | "notifications"
   | "security"
@@ -712,16 +712,13 @@ export default function UserDashboard() {
   const [exportOtpCode, setExportOtpCode] = useState("");
   const [exportOtpSending, setExportOtpSending] = useState(false);
 
-  const [dailyLimitInput, setDailyLimitInput] = useState("");
-  const [weeklyLimitInput, setWeeklyLimitInput] = useState("");
-  const [monthlyLimitInput, setMonthlyLimitInput] = useState("");
-
   // Prepaid Metered Vault States
   const [vaults, setVaults] = useState<any[]>([]);
   const [isVaultsLoading, setIsVaultsLoading] = useState(false);
   const [configVaultOpen, setConfigVaultOpen] = useState(false);
   const [topupVaultOpen, setTopupVaultOpen] = useState(false);
   const [editingVault, setEditingVault] = useState<any | null>(null);
+  const vaultCarouselRef = useRef<HTMLDivElement | null>(null);
 
   // Referrals States
   const [referrals, setReferrals] = useState<any[]>([]);
@@ -763,14 +760,6 @@ export default function UserDashboard() {
     pendingAccountSubView.current = null;
     setAccountSubView(pending ?? "menu");
   }, [activeTab]);
-
-  useEffect(() => {
-    if (userSettings) {
-      setDailyLimitInput(userSettings.spendingLimitDaily ? (Number(userSettings.spendingLimitDaily) / 1_000_000).toString() : "");
-      setWeeklyLimitInput(userSettings.spendingLimitWeekly ? (Number(userSettings.spendingLimitWeekly) / 1_000_000).toString() : "");
-      setMonthlyLimitInput(userSettings.spendingLimitMonthly ? (Number(userSettings.spendingLimitMonthly) / 1_000_000).toString() : "");
-    }
-  }, [userSettings]);
 
   const fetchReferrals = useCallback(async () => {
     setReferralsLoading(true);
@@ -844,38 +833,6 @@ export default function UserDashboard() {
       }
     } catch (err) {
       console.error(`Error saving user setting ${field}:`, err);
-    } finally {
-      setSavingSettingsField(null);
-    }
-  };
-
-  const handleSaveSpendingLimits = async (daily: string, weekly: string, monthly: string) => {
-    setSavingSettingsField("spendingLimits");
-    try {
-      const dailyVal = daily ? (Number(daily) * 1_000_000).toString() : null;
-      const weeklyVal = weekly ? (Number(weekly) * 1_000_000).toString() : null;
-      const monthlyVal = monthly ? (Number(monthly) * 1_000_000).toString() : null;
-
-      const res = await fetch("/api/user/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          spendingLimitDaily: dailyVal,
-          spendingLimitWeekly: weeklyVal,
-          spendingLimitMonthly: monthlyVal,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setUserSettings((prev: any) => ({
-          ...prev,
-          spendingLimitDaily: dailyVal,
-          spendingLimitWeekly: weeklyVal,
-          spendingLimitMonthly: monthlyVal,
-        }));
-      }
-    } catch (err) {
-      console.error("Error saving spending limits:", err);
     } finally {
       setSavingSettingsField(null);
     }
@@ -3449,18 +3406,18 @@ export default function UserDashboard() {
                         <button
                           type="button"
                           onClick={() => setReceiveOpen(true)}
-                          className="grid h-[46px] w-[130px] place-items-center rounded-full border border-[#353935] bg-[#353935] text-[#FFFFF0] transition active:scale-95 md:h-[38px] md:w-[38px]"
+                          className="flex h-11 min-w-[130px] items-center justify-center gap-2 rounded-full border border-[#353935] bg-[#353935] px-5 text-[#FFFFF0] transition hover:bg-black active:scale-95 shadow-sm"
                           aria-label="Deposit"
                         >
-                          <span className="text-xs font-semibold">Deposit</span>
+                          <span className="text-xs font-bold">Deposit</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => { setSelectedDmPeer(null); setSendFundsOpen(true); }}
-                          className="grid h-[46px] w-[130px] place-items-center rounded-full border border-black/35 bg-[#2775CA]/20 text-black transition active:scale-95 md:h-[38px] md:w-[38px]"
+                          className="flex h-11 min-w-[130px] items-center justify-center gap-2 rounded-full border border-[#2775CA] bg-[#2775CA] px-5 text-white transition hover:bg-[#1f62ab] active:scale-95 shadow-sm"
                           aria-label="Send Out"
                         >
-                          <span className="text-xs font-semibold">Send Out</span>
+                          <span className="text-xs font-bold">Send Out</span>
                         </button>
                       </div>
                     </section>
@@ -3513,19 +3470,19 @@ export default function UserDashboard() {
                   </div>
 
                   {/* RIGHT TALL PANEL - Active Subscriptions (hidden on mobile) */}
-                  <section className="liquid-glass hidden md:flex min-h-[260px] flex-col rounded-[20px] border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl">
+                  <section className="dashboard-blue-panel hidden md:flex min-h-[260px] flex-col rounded-[20px] border border-black/15 bg-white/80 p-5 shadow-sm text-black">
                     <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
-                      <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions</h2>
-                      <span className="w-fit rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00]">
+                      <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-black/70">Active Subscriptions</h2>
+                      <span className="w-fit rounded-full border border-[#2775CA]/20 bg-[#2775CA]/10 px-3 py-1 text-[10px] font-bold text-[#2775CA]">
                         {subscriptions.filter((s) => s.status === "ACTIVE" && !s.cancelAtPeriodEnd).length} active
                       </span>
                     </div>
 
                     <div className="min-h-0 flex-1 overflow-y-auto pr-1 scrollbar-thin">
                       {sortedSubscriptions.length === 0 ? (
-                        <div className="flex h-full min-h-[180px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center">
-                          <CreditCard className="mb-3 h-8 w-8 text-white/25" />
-                          <p className="text-xs text-white/45">No active subscriptions</p>
+                        <div className="flex h-full min-h-[180px] flex-col items-center justify-center rounded-2xl border border-dashed border-black/10 bg-black/[0.02] text-center">
+                          <CreditCard className="mb-3 h-8 w-8 text-black/25" />
+                          <p className="text-xs text-black/50">No active subscriptions</p>
                         </div>
                       ) : (
                         <div className="space-y-3">
@@ -3548,12 +3505,47 @@ export default function UserDashboard() {
                 <section className="dashboard-blue-panel min-h-[390px] rounded-[20px] border border-black/35 p-5 text-black">
                   <div className="flex items-center justify-between">
                     <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-white/70">Transaction History</h2>
-                    <Link
-                      href="/dashboard/user/transactions"
-                      className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-white/45 hover:text-[#ccff00] transition-colors"
-                    >
-                      View All <ArrowUpRight className="h-3 w-3" />
-                    </Link>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const rows = [
+                            ["ID", "Name", "Type", "Detail", "Amount USDC", "Local Amount", "Timestamp"],
+                            ...filteredTransactions.map((tx) => [
+                              tx.id,
+                              tx.name,
+                              tx.incoming ? "Incoming" : "Outgoing",
+                              tx.detail || "",
+                              tx.amountLabel,
+                              tx.localAmountLabel,
+                              new Date(tx.time).toISOString()
+                            ])
+                          ];
+                          const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+                          const encodedUri = encodeURI(csvContent);
+                          const link = document.createElement("a");
+                          link.setAttribute("href", encodedUri);
+                          link.setAttribute("download", `subscript-transactions-${new Date().toISOString().slice(0, 10)}.csv`);
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                        }}
+                        className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-black/70 hover:text-black transition-colors"
+                        title="Download transaction history as CSV"
+                      >
+                        <Download className="h-3 w-3" /> Download
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAccountSubView("transactions");
+                          setActiveTab("dns");
+                        }}
+                        className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-black/70 hover:text-black transition-colors"
+                      >
+                        View All <ArrowUpRight className="h-3 w-3" />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="dashboard-filter-scroll mt-4 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -3648,6 +3640,34 @@ export default function UserDashboard() {
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
+                      <div className="hidden sm:flex items-center gap-1.5 mr-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (vaultCarouselRef.current) {
+                              vaultCarouselRef.current.scrollBy({ left: -380, behavior: "smooth" });
+                            }
+                          }}
+                          className="flex h-10 w-10 items-center justify-center rounded-2xl border border-black/20 bg-white/70 hover:bg-white text-black transition-all active:scale-95 shadow-sm"
+                          title="Previous vault"
+                          aria-label="Previous vault"
+                        >
+                          <ChevronLeft className="h-5 w-5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (vaultCarouselRef.current) {
+                              vaultCarouselRef.current.scrollBy({ left: 380, behavior: "smooth" });
+                            }
+                          }}
+                          className="flex h-10 w-10 items-center justify-center rounded-2xl border border-black/20 bg-white/70 hover:bg-white text-black transition-all active:scale-95 shadow-sm"
+                          title="Next vault"
+                          aria-label="Next vault"
+                        >
+                          <ChevronRight className="h-5 w-5" />
+                        </button>
+                      </div>
                       <button
                         type="button"
                         onClick={async () => {
@@ -3660,7 +3680,7 @@ export default function UserDashboard() {
                         className={`flex h-12 items-center justify-center gap-2 overflow-hidden rounded-2xl border border-black/30 bg-[#D5E3EE] text-black transition-all duration-300 disabled:opacity-50 ${expandedCommitAction === "refresh" ? "w-36 px-3" : "w-12"}`}
                         title="Refresh vault usage for committed apps"
                       >
-                        <RefreshCw className={`h-3.5 w-3.5 ${isVaultsLoading ? "animate-spin text-[#ccff00]" : ""}`} />
+                        <RefreshCw className={`h-3.5 w-3.5 ${isVaultsLoading ? "animate-spin text-[#2775CA]" : ""}`} />
                         {expandedCommitAction === "refresh" && <span className="whitespace-nowrap text-[10px] font-bold">{isVaultsLoading ? "Refreshing..." : "Refresh Usage"}</span>}
                       </button>
                       <button
@@ -3681,12 +3701,12 @@ export default function UserDashboard() {
                   </div>
 
                   {isVaultsLoading ? (
-                    <div data-testid="vault-carousel" className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    <div ref={vaultCarouselRef} data-testid="vault-carousel" className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                       <VaultCardSkeleton />
                       <VaultCardSkeleton />
                     </div>
                   ) : vaults.length === 0 ? (
-                    <div data-testid="vault-carousel" className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    <div ref={vaultCarouselRef} data-testid="vault-carousel" className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                       <button
                         type="button"
                         onClick={() => openVaultCommit()}
@@ -3699,7 +3719,7 @@ export default function UserDashboard() {
                       </button>
                     </div>
                   ) : (
-                    <div data-testid="vault-carousel" className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    <div ref={vaultCarouselRef} data-testid="vault-carousel" className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                       {vaults.map((vault) => (
                         <div key={vault.id} className="w-full shrink-0 snap-center">
                           <MeteredVaultRow
@@ -3966,25 +3986,25 @@ export default function UserDashboard() {
 
                             {/* Message bubbles pane */}
                             <div ref={attachDmScroller} onScroll={handleDmScroll} className="min-h-0 flex-1 overflow-y-auto overscroll-contain will-change-transform translate-z-0 pr-1 space-y-4">
-                              <div className="mx-auto w-fit max-w-full rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-5 py-2 text-center text-[10px] font-black uppercase tracking-[0.16em] text-[#ccff00] backdrop-blur-md shadow-md mt-2">
+                              <div className="mx-auto w-fit max-w-full rounded-full border border-[#2775CA]/20 bg-[#2775CA]/10 px-5 py-2 text-center text-[10px] font-black uppercase tracking-[0.16em] text-[#2775CA] backdrop-blur-md shadow-sm mt-2">
                                 {isActiveDmMerchant
                                   ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
                                   : "Direct peer-to-peer system messages only"}
                               </div>
-                              <div className="mx-auto w-fit rounded-full border border-white/10 bg-white/5 backdrop-blur-md px-5 py-1 text-[10px] font-bold text-white/60">
+                              <div className="mx-auto w-fit rounded-full border border-black/10 bg-black/5 backdrop-blur-md px-5 py-1 text-[10px] font-bold text-black/60">
                                 {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                               </div>
 
                               {isCurrentPeerBlocked && (
-                                <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-3.5 flex items-center justify-between gap-3 text-xs text-rose-300">
+                                <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-3.5 flex items-center justify-between gap-3 text-xs text-rose-700">
                                   <div className="flex items-center gap-2">
-                                    <UserX className="h-4 w-4 shrink-0 text-rose-400" />
+                                    <UserX className="h-4 w-4 shrink-0 text-rose-600" />
                                     <span>Contact blocked. Messaging and sends disabled.</span>
                                   </div>
                                   <button
                                     type="button"
                                     onClick={() => selectedDmPeer && handleUnblockPeer(selectedDmPeer)}
-                                    className="rounded-xl border border-white/10 bg-white/10 hover:bg-white/20 px-3 py-1 text-[10px] font-bold text-white transition-all shrink-0"
+                                    className="rounded-xl border border-black/15 bg-white hover:bg-black/5 px-3 py-1 text-[10px] font-bold text-black transition-all shrink-0 shadow-sm"
                                   >
                                     Unblock
                                   </button>
@@ -3992,13 +4012,13 @@ export default function UserDashboard() {
                               )}
 
                               {selectedThreadDms.length === 0 && !isCurrentPeerBlocked && (
-                                <div className="py-16 flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.01] text-center p-6 space-y-3">
-                                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/20 text-[#ccff00]">
+                                <div className="py-16 flex flex-col items-center justify-center rounded-2xl border border-dashed border-black/15 bg-black/[0.02] text-center p-6 space-y-3">
+                                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#2775CA]/10 border border-[#2775CA]/20 text-[#2775CA]">
                                     <MessageSquare className="h-6 w-6" />
                                   </div>
                                   <div className="space-y-1">
-                                    <h3 className="text-sm font-bold text-white">Connection Established</h3>
-                                    <p className="text-xs text-white/50 max-w-sm">
+                                    <h3 className="text-sm font-bold text-[#111827]">Connection Established</h3>
+                                    <p className="text-xs text-black/60 max-w-sm">
                                       You and {activeThreadLabel} are connected. Send funds or request a payment below to start transacting.
                                     </p>
                                   </div>
@@ -4031,7 +4051,7 @@ export default function UserDashboard() {
                             {/* Bottom Action Footer for Desktop */}
                             <div
                               data-testid="desktop-dm-action-footer"
-                              className="sticky bottom-0 z-20 shrink-0 rounded-2xl border border-white/10 bg-black/40 p-3 backdrop-blur-xl shadow-2xl mt-3"
+                              className="sticky bottom-0 z-20 shrink-0 rounded-2xl border border-black/10 bg-white/90 p-3 backdrop-blur-xl shadow-md mt-3"
                             >
                               {isCurrentPeerBlocked ? (
                                 <p className="text-center text-[11px] text-white/40 py-2">
@@ -4099,14 +4119,14 @@ export default function UserDashboard() {
               <section className="space-y-5 max-w-lg pb-6 lg:pb-0">
                 <SectionTitle title="Payment Links" subtitle="Create a shareable link to receive USDC. Anyone who pays is auto-onboarded and a DM opens with them." />
 
-                <form onSubmit={handleCreateShareableLink} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-5 shadow-2xl">
+                <form onSubmit={handleCreateShareableLink} className="border border-black/10 bg-white/80 rounded-3xl p-5 sm:p-8 space-y-5 shadow-sm text-black">
                   <Field label="USDC Amount">
                     <input
                       value={linkAmount}
                       onChange={(event) => setLinkAmount(event.target.value)}
                       placeholder="25.00"
                       inputMode="decimal"
-                      className="subscript-input"
+                      className="subscript-input bg-white border border-black/15 text-[#111827]"
                       required
                     />
                   </Field>
@@ -4116,13 +4136,13 @@ export default function UserDashboard() {
                       value={linkMemo}
                       onChange={(event) => setLinkMemo(event.target.value)}
                       placeholder="e.g. Graphic design work, dinner split, coffee, monthly consulting..."
-                      className="subscript-input"
+                      className="subscript-input bg-white border border-black/15 text-[#111827]"
                       maxLength={120}
                     />
                   </Field>
 
                   {linkError && (
-                    <div className="rounded-2xl border border-red-400/20 bg-red-500/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-red-300">
+                    <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-red-700">
                       {linkError}
                     </div>
                   )}
@@ -4130,7 +4150,7 @@ export default function UserDashboard() {
                   <button
                     type="submit"
                     disabled={linkLoading}
-                    className={`dm-quick-button dm-action-menu-trigger relative w-full min-w-0 overflow-hidden py-3 text-center ${linkLoading ? "quick-action-loading" : ""}`}
+                    className={`w-full py-3.5 rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] text-white text-xs font-black uppercase tracking-[0.16em] shadow-sm transition flex items-center justify-center gap-1.5 ${linkLoading ? "opacity-60 cursor-not-allowed" : ""}`}
                   >
                     {linkLoading ? (
                       <span className="flex items-center justify-center gap-1.5">
@@ -4144,14 +4164,14 @@ export default function UserDashboard() {
                 </form>
 
                 {linkResultUrl && (
-                  <div className="liquid-glass border border-[#ccff00]/20 bg-[#ccff00]/[0.04] rounded-3xl p-5 sm:p-6 space-y-3 shadow-2xl">
-                    <h3 className="text-[10px] font-black uppercase tracking-[0.16em] text-[#ccff00]">Your shareable link</h3>
-                    <p className="break-all rounded-2xl border border-white/10 bg-black/40 px-4 py-3 font-mono text-xs text-white/80">{linkResultUrl}</p>
+                  <div className="border border-black/10 bg-white/90 rounded-3xl p-5 sm:p-6 space-y-3 shadow-sm text-black">
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.16em] text-[#2775CA]">Your shareable link</h3>
+                    <p className="break-all rounded-2xl border border-black/10 bg-black/5 px-4 py-3 font-mono text-xs text-black/80">{linkResultUrl}</p>
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
                         onClick={copyLinkUrl}
-                        className="dm-quick-button min-w-0"
+                        className="rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] text-white py-3 text-xs font-bold transition shadow-sm"
                       >
                         {linkCopied ? "Copied ✓" : "Copy link"}
                       </button>
@@ -4159,14 +4179,14 @@ export default function UserDashboard() {
                         type="button"
                         onClick={() => setLinkQrShown((shown) => !shown)}
                         aria-expanded={linkQrShown}
-                        className="dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-center"
+                        className="rounded-2xl border border-black/15 bg-white text-black hover:bg-black/5 py-3 text-xs font-bold transition shadow-sm flex items-center justify-center gap-1.5"
                       >
-                        {linkQrShown ? "Hide QR" : "Show QR"} <QrCode className="h-3 w-3" />
+                        {linkQrShown ? "Hide QR" : "Show QR"} <QrCode className="h-3.5 w-3.5" />
                       </button>
                     </div>
                     {linkQrShown && (
                       <div className="flex flex-col items-center gap-3 pt-1">
-                        <div className="rounded-3xl bg-white p-4">
+                        <div className="rounded-3xl bg-white p-4 border border-black/10 shadow-md">
                           <QRCode
                             value={linkResultUrl}
                             size={isMobile ? 196 : 280}
@@ -4186,21 +4206,21 @@ export default function UserDashboard() {
                             logoPadding={2}
                           />
                         </div>
-                        <p className="text-[11px] leading-relaxed text-center text-white/45">
+                        <p className="text-[11px] leading-relaxed text-center text-black/60">
                           Let the payer scan this with their phone camera to open the payment link.
                         </p>
                       </div>
                     )}
-                    <p className="text-[11px] leading-relaxed text-white/45">
-                      Share this anywhere. When someone pays, they're auto-onboarded as a SubScript user and a DM thread opens between you.
+                    <p className="text-[11px] leading-relaxed text-black/60">
+                      Share this anywhere. When someone pays, they&apos;re auto-onboarded as a SubScript user and a DM thread opens between you.
                     </p>
                   </div>
                 )}
 
-                <div className="flex items-start gap-3 rounded-3xl border border-white/5 bg-black/30 p-4">
-                  <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-white/40" />
-                  <p className="text-[11px] leading-relaxed text-white/45">
-                    Want to bill a specific person privately instead? Open their thread in <button type="button" onClick={() => setActiveTab("inbox")} className="font-bold text-[#ccff00] underline-offset-2 hover:underline">DMs</button> and tap Request.
+                <div className="flex items-start gap-3 rounded-3xl border border-black/10 bg-white/70 p-4 text-black shadow-sm">
+                  <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-black/40" />
+                  <p className="text-[11px] leading-relaxed text-black/60">
+                    Want to bill a specific person privately instead? Open their thread in <button type="button" onClick={() => setActiveTab("inbox")} className="font-bold text-[#2775CA] underline-offset-2 hover:underline">DMs</button> and tap Request.
                   </p>
                 </div>
               </section>
@@ -4214,37 +4234,37 @@ export default function UserDashboard() {
                   <button
                     type="button"
                     onClick={() => setSendSingleModalOpen(true)}
-                    className="flex w-full sm:w-auto shrink-0 items-center justify-center gap-2 rounded-xl border border-[#ccff00]/30 bg-[#ccff00]/10 px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-[#ccff00] transition hover:border-[#ccff00]/50 hover:bg-[#ccff00]/20"
+                    className="flex w-full sm:w-auto shrink-0 items-center justify-center gap-2 rounded-2xl border border-[#353935] bg-[#353935] px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-[#FFFFF0] transition hover:bg-black shadow-sm"
                   >
                     <Send className="h-3.5 w-3.5" /> Single Send
                   </button>
                 </div>
-                  <div ref={batchFormRef} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
+                  <div ref={batchFormRef} className="border border-black/10 bg-white/80 rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm text-black">
                     {batchRows.map((row, index) => (
-                      <div key={index} className="rounded-3xl border border-white/5 bg-black/20 p-4 space-y-3 relative">
+                      <div key={index} className="rounded-3xl border border-black/10 bg-black/5 p-4 space-y-3 relative text-black">
                         {batchRows.length > 1 && (
                           <button
                             type="button"
                             onClick={() => setBatchRows((rows) => rows.filter((_, idx) => idx !== index))}
-                            className="absolute right-3 top-3 text-white/30 hover:text-white transition"
+                            className="absolute right-3 top-3 text-black/40 hover:text-black transition"
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>
                         )}
-                        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">Recipient {index + 1}</p>
+                        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-black/60">Recipient {index + 1}</p>
                         
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="text-[9px] uppercase font-bold text-white/35">Address or DNS name</span>
+                            <span className="text-[9px] uppercase font-bold text-black/60">Address or DNS name</span>
                             <button
                               type="button"
                               onClick={() => {
                                 setQrTargetIndex(index);
                                 setQrScannerOpen(true);
                               }}
-                              className="flex md:hidden items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-[#ccff00] hover:underline"
+                              className="flex md:hidden items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-[#2775CA] hover:underline"
                             >
-                              <QrCode className="h-3.5 w-3.5 text-[#ccff00]" /> Scan QR
+                              <QrCode className="h-3.5 w-3.5 text-[#2775CA]" /> Scan QR
                             </button>
                           </div>
                           <div className="relative flex items-center gap-2">
@@ -4252,7 +4272,7 @@ export default function UserDashboard() {
                               value={row.address}
                               onChange={(event) => setBatchRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, address: event.target.value } : item))}
                               placeholder="alice.sub or 0x..."
-                              className="subscript-input"
+                              className="subscript-input bg-white border border-black/15 text-[#111827]"
                             />
                             <button
                               type="button"
@@ -4261,16 +4281,16 @@ export default function UserDashboard() {
                                 setQrScannerOpen(true);
                               }}
                               title={`Scan QR Code for Recipient #${index + 1}`}
-                              className="flex md:hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:border-[#ccff00]/40 hover:bg-[#ccff00]/10 hover:text-[#ccff00] transition"
+                              className="flex md:hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-black/15 bg-white text-black hover:bg-black/5 transition shadow-sm"
                             >
-                              <QrCode className="h-4 w-4 text-[#ccff00]" />
+                              <QrCode className="h-4 w-4 text-black" />
                             </button>
                           </div>
                         </div>
 
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="text-[9px] uppercase font-bold text-white/35">USDC Amount</span>
+                            <span className="text-[9px] uppercase font-bold text-black/60">USDC Amount</span>
                             <button
                               type="button"
                               onClick={() => {
@@ -4287,7 +4307,7 @@ export default function UserDashboard() {
                                   )
                                 );
                               }}
-                              className="text-[9px] font-black uppercase tracking-wider text-[#ccff00] hover:underline"
+                              className="text-[9px] font-black uppercase tracking-wider text-[#2775CA] hover:underline"
                             >
                               The Rest
                             </button>
@@ -4297,7 +4317,7 @@ export default function UserDashboard() {
                               value={row.amount}
                               onChange={(event) => setBatchRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, amount: event.target.value } : item))}
                               placeholder="USDC amount"
-                              className="subscript-input pr-20 font-mono"
+                              className="subscript-input bg-white border border-black/15 text-[#111827] pr-20 font-mono"
                             />
                             <button
                               type="button"
@@ -4315,7 +4335,7 @@ export default function UserDashboard() {
                                   )
                                 );
                               }}
-                              className="absolute right-2.5 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg bg-[#ccff00]/10 text-[#ccff00] hover:bg-[#ccff00]/20 border border-[#ccff00]/30 transition z-10"
+                              className="absolute right-2.5 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg bg-[#2775CA]/10 text-[#2775CA] hover:bg-[#2775CA]/20 border border-[#2775CA]/30 transition z-10"
                             >
                               The Rest
                             </button>
@@ -4325,14 +4345,14 @@ export default function UserDashboard() {
                     ))}
 
                     {batchProgress && (
-                      <div className="bg-[#ccff00]/10 border border-[#ccff00]/20 rounded-2xl p-4 flex items-center gap-3">
-                        <Loader2 className="w-4 h-4 animate-spin text-[#ccff00]" />
-                        <span className="text-xs text-white/80 font-medium">{batchProgress}</span>
+                      <div className="bg-[#2775CA]/10 border border-[#2775CA]/20 rounded-2xl p-4 flex items-center gap-3 text-black">
+                        <Loader2 className="w-4 h-4 animate-spin text-[#2775CA]" />
+                        <span className="text-xs text-black font-medium">{batchProgress}</span>
                       </div>
                     )}
 
                     {batchSelfSendRows.length > 0 && (
-                      <div className="rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-[11px] leading-relaxed text-red-300">
+                      <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-[11px] leading-relaxed text-red-700">
                         Recipient {batchSelfSendRows.map((row) => row.index + 1).join(", ")} uses your connected wallet address. Remove it before running the batch.
                       </div>
                     )}
@@ -4346,8 +4366,8 @@ export default function UserDashboard() {
                     {batchSendStatus && (
                       <p className={`rounded-2xl border p-3 text-[11px] leading-relaxed ${
                         batchSendStatus.startsWith("Success") 
-                          ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" 
-                          : "bg-red-500/10 border-red-500/20 text-red-400"
+                          ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-800" 
+                          : "bg-red-500/15 border-red-500/30 text-red-800"
                       }`}>
                         {batchSendStatus}
                       </p>
@@ -4356,7 +4376,7 @@ export default function UserDashboard() {
                     <button
                       type="button"
                       onClick={() => setBatchRows((rows) => [...rows, { address: "", amount: "" }])}
-                      className="w-full rounded-2xl border border-white/5 bg-black/20 hover:bg-[#ccff00]/5 hover:border-[#ccff00]/20 text-[#ccff00] py-3.5 text-xs font-black uppercase tracking-[0.16em] transition"
+                      className="w-full rounded-2xl border border-black/15 bg-white hover:bg-black/5 text-black py-3.5 text-xs font-black uppercase tracking-[0.16em] transition shadow-sm"
                     >
                       Add Recipient
                     </button>
@@ -4365,7 +4385,7 @@ export default function UserDashboard() {
                       type="button"
                       onClick={handleBatchSend}
                       disabled={batchSendLoading || batchSelfSendRows.length > 0}
-                      className={`w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] ${
+                      className={`w-full rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] text-white py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-sm ${
                         batchSendLoading || batchSelfSendRows.length > 0 ? "opacity-60 cursor-not-allowed" : ""
                       }`}
                     >
@@ -4440,8 +4460,8 @@ export default function UserDashboard() {
                             <User className="h-4 w-4" />
                           </div>
                           <div>
-                            <span className="block text-xs font-bold text-black uppercase tracking-wide">My Profile</span>
-                            <span className="block text-[9px] text-black/50 font-sans mt-0.5 font-normal normal-case">Edit your identity and registered alias</span>
+                            <span className="block text-xs font-bold text-black uppercase tracking-wide">Account Profile</span>
+                            <span className="block text-[9px] text-black/50 font-sans mt-0.5 font-normal normal-case">Manage your alias and avatar</span>
                           </div>
                         </div>
                         <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
@@ -4453,11 +4473,11 @@ export default function UserDashboard() {
                       >
                         <div className="flex items-center gap-3">
                           <div className="p-2.5 rounded-xl bg-black/5 text-black/70 group-hover:bg-[#353935] group-hover:text-white transition-all">
-                            <CheckCircle2 className="h-4 w-4" />
+                            <Shield className="h-4 w-4" />
                           </div>
                           <div>
                             <span className="block text-xs font-bold text-black uppercase tracking-wide">KYC Verification</span>
-                            <span className="block text-[9px] text-black/50 font-sans mt-0.5 font-normal normal-case">Start or review provider verification</span>
+                            <span className="block text-[9px] text-black/50 font-sans mt-0.5 font-normal normal-case">Identity verification & compliance</span>
                           </div>
                         </div>
                         <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
@@ -4469,27 +4489,11 @@ export default function UserDashboard() {
                       >
                         <div className="flex items-center gap-3">
                           <div className="p-2.5 rounded-xl bg-black/5 text-black/70 group-hover:bg-[#353935] group-hover:text-white transition-all">
-                            <PieChart className="h-4 w-4" />
+                            <TrendingUp className="h-4 w-4" />
                           </div>
                           <div>
                             <span className="block text-xs font-bold text-black uppercase tracking-wide">Spend Analysis</span>
                             <span className="block text-[9px] text-black/50 font-sans mt-0.5 font-normal normal-case">View spending breakdown and categories</span>
-                          </div>
-                        </div>
-                        <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
-                      </button>
-
-                      <button
-                        onClick={() => setAccountSubView("limits")}
-                        className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-xl bg-black/5 text-black/70 group-hover:bg-[#353935] group-hover:text-white transition-all">
-                            <CreditCard className="h-4 w-4" />
-                          </div>
-                          <div>
-                            <span className="block text-xs font-bold text-black uppercase tracking-wide">Spending Limits</span>
-                            <span className="block text-[9px] text-black/50 font-sans mt-0.5 font-normal normal-case">See spending limits and caps</span>
                           </div>
                         </div>
                         <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
@@ -5241,73 +5245,6 @@ export default function UserDashboard() {
                   );
                 })()}
 
-                {accountSubView === "limits" && (
-                  <div className="space-y-6">
-                    <div className="flex items-center gap-4">
-                      <button 
-                        onClick={() => setAccountSubView("menu")}
-                        className="p-2 rounded-full hover:bg-black/5 text-black/60 hover:text-black transition-all"
-                      >
-                        <ChevronLeft className="h-5 w-5" />
-                      </button>
-                      <h2 className="text-sm font-black uppercase tracking-wider text-black">Spending Limits</h2>
-                    </div>
-
-                    {userSettings && (
-                      <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm">
-                        <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/60 flex items-center gap-2">
-                          <CreditCard className="h-4 w-4 text-[#2775CA]" /> Edit Spending Limits
-                        </h3>
-                        <p className="text-[10px] text-black/50 leading-relaxed font-sans">
-                          Limit the maximum USDC that can be debited from your wallet within a period. Leave empty for no limit.
-                        </p>
-                        <form
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            handleSaveSpendingLimits(dailyLimitInput, weeklyLimitInput, monthlyLimitInput);
-                          }}
-                          className="space-y-4 font-sans text-xs"
-                        >
-                          <Field label="Daily Limit (USDC)">
-                            <input
-                              type="number"
-                              value={dailyLimitInput}
-                              onChange={(e) => setDailyLimitInput(e.target.value)}
-                              placeholder="e.g. 50"
-                              className="subscript-input"
-                            />
-                          </Field>
-                          <Field label="Weekly Limit (USDC)">
-                            <input
-                              type="number"
-                              value={weeklyLimitInput}
-                              onChange={(e) => setWeeklyLimitInput(e.target.value)}
-                              placeholder="e.g. 200"
-                              className="subscript-input"
-                            />
-                          </Field>
-                          <Field label="Monthly Limit (USDC)">
-                            <input
-                              type="number"
-                              value={monthlyLimitInput}
-                              onChange={(e) => setMonthlyLimitInput(e.target.value)}
-                              placeholder="e.g. 500"
-                              className="subscript-input"
-                            />
-                          </Field>
-                          <button
-                            type="submit"
-                            disabled={savingSettingsField === "spendingLimits"}
-                            className="w-full rounded-2xl bg-[#353935] hover:bg-black text-white py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition disabled:opacity-50"
-                          >
-                            {savingSettingsField === "spendingLimits" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Limits"}
-                          </button>
-                        </form>
-                      </div>
-                    )}
-                  </div>
-                )}
-
                 {/* 4. TRANSACTIONS VIEW */}
                 {accountSubView === "transactions" && (() => {
                   const filteredSettingsTx = settingsTransactions.filter((tx) => {
@@ -5960,16 +5897,16 @@ export default function UserDashboard() {
                 ) : (
                   <>
                 {/* Referral Link Card */}
-                <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
-                  <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                    <Gift className="h-4 w-4 text-[#ccff00]" /> Your Referral Link
+                <div className="border border-black/10 bg-white/80 rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm text-black">
+                  <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/60 flex items-center gap-2">
+                    <Gift className="h-4 w-4 text-[#2775CA]" /> Your Referral Link
                   </h3>
-                  <p className="text-[10px] text-white/40 leading-relaxed">
+                  <p className="text-[10px] text-black/60 leading-relaxed">
                     Share your invite link with others. When they create an account and register a role, their signup is logged in your referral registry.
                   </p>
 
                   <div className="flex flex-col sm:flex-row gap-3">
-                    <div className="flex-1 rounded-2xl border border-white/10 bg-black/40 px-4 py-3 font-mono text-xs text-white/70 overflow-x-auto whitespace-nowrap select-all flex items-center">
+                    <div className="flex-1 rounded-2xl border border-black/15 bg-black/5 px-4 py-3 font-mono text-xs text-black/80 overflow-x-auto whitespace-nowrap select-all flex items-center">
                       {referralLink}
                     </div>
                     <button
@@ -5982,7 +5919,7 @@ export default function UserDashboard() {
                         triggerToast("Referral link copied!");
                         setTimeout(() => setReferralCopySuccess(false), 3000);
                       }}
-                      className="rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 px-6 py-3.5 text-xs font-black uppercase tracking-[0.16em] transition flex items-center justify-center gap-2 shrink-0 shadow-[0_0_15px_rgba(204,255,0,0.15)]"
+                      className="rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] text-white px-6 py-3.5 text-xs font-black uppercase tracking-[0.16em] transition flex items-center justify-center gap-2 shrink-0 shadow-sm disabled:opacity-50"
                     >
                       {referralCopySuccess ? "Copied!" : "Copy Link"}
                     </button>
@@ -5991,26 +5928,26 @@ export default function UserDashboard() {
 
                 {/* Referral Statistics Card */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 shadow-2xl flex flex-col justify-between">
-                    <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Total Signups</span>
-                    <span className="mt-2 font-mono text-3xl font-black text-[#ccff00]">{referralsCount}</span>
+                  <div className="border border-black/10 bg-white/80 rounded-3xl p-5 shadow-sm flex flex-col justify-between text-black">
+                    <span className="text-[9px] font-black uppercase tracking-[0.14em] text-black/50">Total Signups</span>
+                    <span className="mt-2 font-mono text-3xl font-black text-[#2775CA]">{referralsCount}</span>
                   </div>
-                  <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 shadow-2xl flex flex-col justify-between">
-                    <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Program Status</span>
-                    <span className="mt-2 font-mono text-base font-black text-emerald-400">Active</span>
+                  <div className="border border-black/10 bg-white/80 rounded-3xl p-5 shadow-sm flex flex-col justify-between text-black">
+                    <span className="text-[9px] font-black uppercase tracking-[0.14em] text-black/50">Program Status</span>
+                    <span className="mt-2 font-mono text-base font-black text-emerald-700">Active</span>
                   </div>
                 </div>
 
                 {/* Referrals Registry List */}
-                <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
-                  <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                    <Users className="h-4 w-4 text-[#ccff00]" /> Referred Signups
+                <div className="border border-black/10 bg-white/80 rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm text-black">
+                  <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/60 flex items-center gap-2">
+                    <Users className="h-4 w-4 text-[#2775CA]" /> Referred Signups
                   </h3>
 
                   <div className="overflow-x-auto">
                     <table className="w-full text-left font-sans text-xs">
                       <thead>
-                        <tr className="border-b border-white/5 text-white/40 uppercase text-[9px] tracking-wider">
+                        <tr className="border-b border-black/10 text-black/50 uppercase text-[9px] tracking-wider">
                           <th className="pb-3">Referred Account</th>
                           <th className="pb-3">Alias</th>
                           <th className="pb-3">Registered</th>
@@ -6020,40 +5957,40 @@ export default function UserDashboard() {
                       <tbody>
                         {referrals.length === 0 ? (
                           <tr>
-                            <td colSpan={4} className="text-center py-6 text-white/30">
+                            <td colSpan={4} className="text-center py-6 text-black/40">
                               No signups registered under your link yet.
                             </td>
                           </tr>
                         ) : (
                           referrals.map((ref) => (
-                            <tr key={ref.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
-                              <td className="py-4 font-semibold text-white/80"><Identity address={ref.referredAddress} knownAlias={ref.alias} /></td>
-                              <td className="py-4 font-semibold text-white/60">{ref.alias ? `@${ref.alias}` : "-"}</td>
-                              <td className="py-4 text-white/50">{new Date(ref.createdAt).toLocaleDateString()}</td>
+                            <tr key={ref.id} className="border-b border-black/5 hover:bg-black/[0.02] transition-all">
+                              <td className="py-4 font-semibold text-black"><Identity address={ref.referredAddress} knownAlias={ref.alias} /></td>
+                              <td className="py-4 font-semibold text-black/70">{ref.alias ? `@${ref.alias}` : "-"}</td>
+                              <td className="py-4 text-black/60">{new Date(ref.createdAt).toLocaleDateString()}</td>
                               <td className="py-4 text-right">
                                 {ref.kycStatus === "APPROVED" ? (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                                    <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-800 border border-emerald-500/30">
+                                    <ShieldCheck className="w-3 h-3 text-emerald-700" />
                                     {ref.kycLevel === "ENHANCED" ? "Level 2 (Enhanced)" : "Level 1 (Verified)"}
                                   </span>
                                 ) : ref.kycStatus === "PENDING" || ref.kycStatus === "IN_REVIEW" ? (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30">
-                                    <Clock className="w-3 h-3 text-amber-400" />
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-800 border border-amber-500/30">
+                                    <Clock className="w-3 h-3 text-amber-700" />
                                     In Review
                                   </span>
                                 ) : ref.kycStatus === "NEEDS_INPUT" ? (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider bg-orange-500/15 text-orange-400 border border-orange-500/30">
-                                    <AlertTriangle className="w-3 h-3 text-orange-400" />
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider bg-orange-500/15 text-orange-800 border border-orange-500/30">
+                                    <AlertTriangle className="w-3 h-3 text-orange-700" />
                                     Needs Input
                                   </span>
                                 ) : ref.kycStatus === "REJECTED" || ref.kycStatus === "REVOKED" ? (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider bg-red-500/15 text-red-400 border border-red-500/30">
-                                    <ShieldAlert className="w-3 h-3 text-red-400" />
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider bg-red-500/15 text-red-800 border border-red-500/30">
+                                    <ShieldAlert className="w-3 h-3 text-red-700" />
                                     Rejected
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider bg-white/5 text-white/40 border border-white/10">
-                                    <Shield className="w-3 h-3 text-white/30" />
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider bg-black/5 text-black/50 border border-black/10">
+                                    <Shield className="w-3 h-3 text-black/40" />
                                     No KYC
                                   </span>
                                 )}
@@ -6523,7 +6460,7 @@ export default function UserDashboard() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-5 backdrop-blur-md"
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-5 backdrop-blur-md"
             onClick={() => !vaultActionBusy && setVaultActionOpen(false)}
           >
             <motion.form
@@ -6533,13 +6470,13 @@ export default function UserDashboard() {
               transition={{ type: "spring", stiffness: 450, damping: 32 }}
               onClick={(event) => event.stopPropagation()}
               onSubmit={submitVaultAction}
-              className="w-full max-w-sm space-y-4 rounded-3xl border border-[#ccff00]/20 bg-[#0c0c10] p-6 shadow-2xl"
+              className="w-full max-w-sm space-y-4 rounded-3xl border border-black/10 bg-[#FFFFF0] text-black p-6 shadow-2xl"
             >
               <div>
-                <h2 className="text-sm font-black uppercase tracking-[0.14em] text-white">
+                <h2 className="text-sm font-black uppercase tracking-[0.14em] text-[#111827]">
                   {vaultActionMode === "commit" ? "Commit to a service" : "Withdraw from vault"}
                 </h2>
-                <p className="mt-2 text-xs leading-relaxed text-white/50">
+                <p className="mt-2 text-xs leading-relaxed text-black/60">
                   {vaultActionMode === "commit"
                     ? "Escrow USDC for a merchant's metered service. This clears any owed balance first, then activates the service for the cycle once the commit is met."
                     : "Withdraw unused committed balance back to your wallet. Dropping below the required commit pauses the service until you re-commit."}
@@ -6547,7 +6484,7 @@ export default function UserDashboard() {
               </div>
               <Field label="Merchant">
                 {vaultActionMerchantLocked ? (
-                  <div className="subscript-input flex items-center">
+                  <div className="subscript-input flex items-center bg-white border border-black/15 text-[#111827]">
                     {merchantDisplayName(vaults.find((vault: any) => vault.merchantAddress?.toLowerCase() === vaultActionMerchant.toLowerCase())?.merchantName)}
                   </div>
                 ) : (
@@ -6555,7 +6492,7 @@ export default function UserDashboard() {
                     value={vaultActionMerchant}
                     onChange={(event) => setVaultActionMerchant(event.target.value)}
                     placeholder="Merchant name"
-                    className="subscript-input"
+                    className="subscript-input bg-white border border-black/15 text-[#111827]"
                     required
                   />
                 )}
@@ -6566,19 +6503,19 @@ export default function UserDashboard() {
                   onChange={(event) => setVaultActionAmount(event.target.value)}
                   placeholder="25.00"
                   inputMode="decimal"
-                  className="subscript-input"
+                  className="subscript-input bg-white border border-black/15 text-[#111827]"
                   autoFocus
                   required
                 />
               </Field>
-              {vaultActionError && <p className="text-[11px] font-bold text-red-300">{vaultActionError}</p>}
+              {vaultActionError && <p className="text-[11px] font-bold text-red-600 bg-red-500/10 border border-red-500/20 rounded-xl p-3">{vaultActionError}</p>}
               {vaultUnverifiedWarning ? (
-                <div className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] p-4">
+                <div className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">
                   <div className="flex items-start gap-2">
-                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                     <div className="space-y-1">
-                      <p className="text-[11px] font-black uppercase tracking-wide text-amber-300">Unverified merchant</p>
-                      <p className="text-[11px] leading-relaxed text-white/70">
+                      <p className="text-[11px] font-black uppercase tracking-wide text-amber-900">Unverified merchant</p>
+                      <p className="text-[11px] leading-relaxed text-amber-800">
                         SubScript has not verified this merchant. Committing escrows funds they can bill
                         metered usage against. Only commit to merchants you trust and have independently
                         verified. Funds lost to a fraudulent merchant may not be recoverable.
@@ -6590,7 +6527,7 @@ export default function UserDashboard() {
                       type="button"
                       onClick={() => { setVaultUnverifiedWarning(false); }}
                       disabled={vaultActionBusy}
-                      className="dm-quick-button min-w-0 border-white/10 bg-white/[0.06] text-white/55"
+                      className="rounded-2xl border border-black/15 bg-black/5 text-black hover:bg-black/10 py-2.5 text-xs font-bold transition"
                     >
                       Go back
                     </button>
@@ -6598,7 +6535,7 @@ export default function UserDashboard() {
                       type="button"
                       onClick={() => { setVaultUnverifiedWarning(false); submitVaultAction(undefined, { acknowledgedUnverified: true }); }}
                       disabled={vaultActionBusy}
-                      className="dm-quick-button min-w-0 border-amber-500/30 bg-amber-500/15 text-amber-200"
+                      className="rounded-2xl border border-amber-500/40 bg-amber-500/20 text-amber-900 py-2.5 text-xs font-bold transition"
                     >
                       Commit anyway
                     </button>
@@ -6610,14 +6547,14 @@ export default function UserDashboard() {
                   type="button"
                   onClick={() => setVaultActionOpen(false)}
                   disabled={vaultActionBusy}
-                  className="dm-quick-button min-w-0 border-white/10 bg-white/[0.06] text-white/55"
+                  className="rounded-2xl border border-black/15 bg-black/5 text-black hover:bg-black/10 py-2.5 text-xs font-bold transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={vaultActionBusy}
-                  className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white ${vaultActionBusy ? "quick-action-loading" : ""}`}
+                  className={`rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] text-white py-2.5 text-xs font-bold transition shadow-sm ${vaultActionBusy ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   {vaultActionBusy ? "Working..." : vaultActionMode === "commit" ? "Commit" : "Withdraw"}
                 </button>
@@ -7099,27 +7036,27 @@ function DmThreadSelect({
 }) {
   return (
     <div className="space-y-4">
-      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 shadow-2xl relative space-y-4">
+      <div className="border border-black/10 bg-white/80 rounded-3xl p-5 shadow-sm relative space-y-4 text-black">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ccff00]">SubScript DMs</p>
-          <h1 className="mt-1 text-xl font-black uppercase tracking-tight text-white">Payment Threads</h1>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#2775CA]">SubScript DMs</p>
+          <h1 className="mt-1 text-xl font-black uppercase tracking-tight text-[#111827]">Payment Threads</h1>
         </div>
-        <p className="text-[11px] leading-relaxed text-white/45">
+        <p className="text-[11px] leading-relaxed text-black/60">
           Receipts, peer payments, and connection requests.
         </p>
 
         {/* Action Toolbar */}
-        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5">
+        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-black/10">
           {onOpenRequests && (
             <button
               type="button"
               onClick={onOpenRequests}
-              className="relative flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white transition-all active:scale-95"
+              className="relative flex items-center gap-1.5 rounded-full border border-black/15 bg-white hover:bg-black/5 px-3 py-1.5 text-[10px] font-bold text-black transition-all active:scale-95 shadow-sm"
             >
-              <Inbox className="h-3 w-3 text-[#ccff00]" />
+              <Inbox className="h-3.5 w-3.5 text-[#2775CA]" />
               <span>Requests</span>
               {pendingRequestsCount > 0 && (
-                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#ccff00] px-1 text-[9px] font-black text-black">
+                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#2775CA] px-1 text-[9px] font-black text-white">
                   {pendingRequestsCount}
                 </span>
               )}
@@ -7130,9 +7067,9 @@ function DmThreadSelect({
             <button
               type="button"
               onClick={onOpenInvite}
-              className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white/80 hover:text-white transition-all active:scale-95"
+              className="flex items-center gap-1.5 rounded-full border border-black/15 bg-white hover:bg-black/5 px-3 py-1.5 text-[10px] font-bold text-black transition-all active:scale-95 shadow-sm"
             >
-              <Link2 className="h-3 w-3 text-white/60" />
+              <Link2 className="h-3.5 w-3.5 text-black/60" />
               <span>My Invite</span>
             </button>
           )}
@@ -7141,24 +7078,24 @@ function DmThreadSelect({
             <button
               type="button"
               onClick={onOpenBlocked}
-              className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 px-2.5 py-1.5 text-[10px] font-bold text-white/50 hover:text-rose-300 transition-all active:scale-95 ml-auto"
+              className="flex items-center gap-1.5 rounded-full border border-black/15 bg-white hover:bg-rose-50 px-2.5 py-1.5 text-[10px] font-bold text-black/60 hover:text-rose-600 transition-all active:scale-95 ml-auto shadow-sm"
               title="Blocked contacts"
             >
-              <UserX className="h-3 w-3" />
+              <UserX className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
       </div>
 
       {threads.length === 0 ? (
-        <div className="mt-6 flex flex-col items-center justify-center rounded-[28px] border border-dashed border-white/10 bg-white/[0.02] p-8 text-center space-y-2">
-          <Mail className="h-8 w-8 text-white/20" />
-          <p className="text-xs text-white/45">No conversations or connections yet.</p>
+        <div className="mt-6 flex flex-col items-center justify-center rounded-[28px] border border-dashed border-black/15 bg-black/[0.02] p-8 text-center space-y-2 text-black">
+          <Mail className="h-8 w-8 text-black/30" />
+          <p className="text-xs text-black/60">No conversations or connections yet.</p>
           {onOpenInvite && (
             <button
               type="button"
               onClick={onOpenInvite}
-              className="mt-2 text-[10px] font-bold text-[#ccff00] hover:underline"
+              className="mt-2 text-[10px] font-bold text-[#2775CA] hover:underline"
             >
               Share your invite link
             </button>
@@ -7187,37 +7124,37 @@ function DmThreadSelect({
                 transition={{ type: "spring", stiffness: 450, damping: 32 }}
                 type="button"
                 onClick={() => onSelect(thread.peerAddress)}
-                className={`flex w-full items-center gap-3.5 rounded-2xl border p-3.5 text-left shadow-lg transition-colors duration-200 ${
+                className={`flex w-full items-center gap-3.5 rounded-2xl border p-3.5 text-left shadow-sm transition-colors duration-200 ${
                   isSelected
-                    ? "border-[#ccff00] bg-[#ccff00]/[0.06] shadow-[0_0_15px_rgba(204,255,0,0.1)]"
-                    : "border-white/5 bg-black/25 hover:border-[#ccff00]/30 hover:bg-[#ccff00]/[0.04]"
+                    ? "border-[#2775CA] bg-[#2775CA]/10 text-black"
+                    : "border-black/10 bg-white/80 hover:bg-white text-black"
                 }`}
               >
                 <Avatar profilePic={thread.peerProfilePic} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="flex min-w-0 items-center gap-1.5 truncate text-xs font-black uppercase tracking-[0.12em] text-white">
+                    <p className="flex min-w-0 items-center gap-1.5 truncate text-xs font-black uppercase tracking-[0.12em] text-[#111827]">
                       <span className="truncate">{peerLabel}</span>
                       <MerchantVerifiedTick verified={thread.peerVerified} size="xs" />
                     </p>
-                    <span className="text-[9px] font-bold text-white/35 shrink-0">
+                    <span className="text-[9px] font-bold text-black/50 shrink-0">
                       {dateLabel}
                     </span>
                   </div>
-                  <p className="mt-1 truncate text-[11px] text-white/45">{latestPreview}</p>
+                  <p className="mt-1 truncate text-[11px] text-black/65">{latestPreview}</p>
                   <div className="mt-1.5 flex items-center gap-2">
-                    <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#ccff00]/60">
+                    <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#2775CA]">
                       {messageCountLabel}
                     </span>
                     {thread.isBlocked && (
-                      <span className="rounded-full bg-rose-500/10 border border-rose-500/20 px-1.5 py-0.2 text-[8px] font-bold text-rose-400">
+                      <span className="rounded-full bg-rose-500/10 border border-rose-500/30 px-1.5 py-0.2 text-[8px] font-bold text-rose-700">
                         Blocked
                       </span>
                     )}
                   </div>
                 </div>
                 {thread.pendingCount > 0 && (
-                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#ccff00] px-1.5 text-[9px] font-black text-black shrink-0">
+                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#2775CA] px-1.5 text-[9px] font-black text-white shrink-0">
                     {thread.pendingCount}
                   </span>
                 )}
@@ -7927,7 +7864,7 @@ function DmRequestComposer({
             transition={{ type: "spring", stiffness: 450, damping: 32 }}
             style={{ transformOrigin: "bottom center" }}
             onSubmit={onSubmit}
-            className="max-h-[min(55dvh,30rem)] overflow-y-auto overscroll-contain rounded-[28px] border border-[#ccff00]/20 bg-black/55 p-4 shadow-[0_14px_45px_rgba(0,0,0,0.35)] backdrop-blur-xl"
+            className="max-h-[min(55dvh,30rem)] overflow-y-auto overscroll-contain rounded-[28px] border border-black/10 bg-white/95 p-4 shadow-xl backdrop-blur-xl text-black"
           >
             <div className="grid grid-cols-2 gap-3">
               <Field label="Amount">
@@ -7936,7 +7873,7 @@ function DmRequestComposer({
                   onChange={(event) => onAmountChange(event.target.value)}
                   placeholder="25.00"
                   inputMode="decimal"
-                  className="subscript-input"
+                  className="subscript-input bg-white border border-black/15 text-[#111827]"
                   required
                 />
               </Field>
@@ -7944,7 +7881,7 @@ function DmRequestComposer({
                 <select
                   value={duration}
                   onChange={(event) => onDurationChange(event.target.value as (typeof dmRequestDurationOptions)[number]["value"])}
-                  className="subscript-input"
+                  className="subscript-input bg-white border border-black/15 text-[#111827]"
                 >
                   {dmRequestDurationOptions.map((option) => (
                     <option key={option.value} value={option.value}>{option.label}</option>
@@ -7959,12 +7896,12 @@ function DmRequestComposer({
                   onChange={(event) => onNoteChange(event.target.value)}
                   placeholder="What is this request for?"
                   rows={2}
-                  className="subscript-input resize-none"
+                  className="subscript-input bg-white border border-black/15 text-[#111827] resize-none"
                 />
               </Field>
             </div>
             {status && (
-              <div className="mt-3 rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00]">
+              <div className="mt-3 rounded-2xl border border-[#2775CA]/20 bg-[#2775CA]/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#2775CA]">
                 {status}
               </div>
             )}
@@ -7976,7 +7913,7 @@ function DmRequestComposer({
                 type="button"
                 onClick={onToggle}
                 disabled={loading}
-                className="dm-quick-button min-w-0 border-white/10 bg-white/[0.06] text-white/55"
+                className="rounded-2xl border border-black/15 bg-white text-black hover:bg-black/5 py-2.5 text-xs font-bold transition shadow-sm"
               >
                 Cancel
               </motion.button>
@@ -7986,7 +7923,7 @@ function DmRequestComposer({
                 transition={{ type: "spring", stiffness: 450, damping: 32 }}
                 type="submit"
                 disabled={loading}
-                className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white ${loading ? "quick-action-loading" : ""}`}
+                className={`rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] text-white py-2.5 text-xs font-bold transition shadow-sm ${loading ? "opacity-60 cursor-not-allowed" : ""}`}
               >
                 Send
               </motion.button>
@@ -7996,7 +7933,7 @@ function DmRequestComposer({
       </AnimatePresence>
 
       {status && !open && (
-        <div className="rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/5 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00]">
+        <div className="rounded-2xl border border-[#2775CA]/20 bg-[#2775CA]/10 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-[#2775CA]">
           {status}
         </div>
       )}
@@ -8009,16 +7946,16 @@ function DmRequestComposer({
         type="button"
         onClick={onToggle}
         disabled={loading}
-        className={`relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full border py-3 text-center text-xs font-black uppercase tracking-[0.16em] shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-lg transition-all ${
+        className={`relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full border py-3 text-center text-xs font-black uppercase tracking-[0.16em] shadow-md backdrop-blur-lg transition-all ${
           open
-            ? "border-[#ccff00]/40 bg-[#ccff00]/15 text-[#ccff00]"
-            : "liquid-glass border-white/5 bg-black/30 text-white hover:text-[#ccff00]"
+            ? "border-[#2775CA]/40 bg-[#2775CA]/15 text-[#2775CA]"
+            : "border-black/15 bg-white text-black hover:bg-black/5"
         }`}
       >
         <motion.span
           animate={{ rotate: open ? 45 : 0 }}
           transition={{ type: "spring", stiffness: 450, damping: 32 }}
-          className={`grid h-5 w-5 place-items-center rounded-full text-sm leading-none ${open ? "bg-[#ccff00]/20 text-[#ccff00]" : "bg-[#ccff00]/15 text-[#ccff00]"}`}
+          className={`grid h-5 w-5 place-items-center rounded-full text-sm leading-none ${open ? "bg-[#2775CA]/20 text-[#2775CA]" : "bg-[#2775CA]/15 text-[#2775CA]"}`}
         >
           +
         </motion.span>
@@ -8342,19 +8279,19 @@ function DepositModal({
   return (
     <AnimatePresence>
       {open && userWallet && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4 sm:p-5 backdrop-blur-xl">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} role="dialog" aria-modal="true" aria-labelledby="deposit-dialog-title" className="relative flex flex-col max-h-[85vh] sm:max-h-[90vh] w-full max-w-sm overflow-hidden rounded-3xl border border-white/10 bg-[#0d0e11] p-5 sm:p-6 shadow-2xl backdrop-blur-xl liquid-glass" {...depositSwipe}>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 sm:p-5 backdrop-blur-md">
+          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} role="dialog" aria-modal="true" aria-labelledby="deposit-dialog-title" className="relative flex flex-col max-h-[85vh] sm:max-h-[90vh] w-full max-w-sm overflow-hidden rounded-3xl border border-black/10 bg-[#FFFFF0] text-black p-5 sm:p-6 shadow-2xl" {...depositSwipe}>
             {/* Header (Pinned) */}
-            <div className="shrink-0 flex items-center justify-between mb-3 border-b border-white/5 pb-3">
-              <h3 id="deposit-dialog-title" className="text-sm font-black uppercase tracking-wider text-white">
+            <div className="shrink-0 flex items-center justify-between mb-3 border-b border-black/10 pb-3">
+              <h3 id="deposit-dialog-title" className="text-sm font-black uppercase tracking-wider text-[#111827]">
                 {activeSubMode === "menu" ? "Deposit USDC" : activeSubMode === "direct" ? "Direct Deposit" : "Circle CCTP Bridge"}
               </h3>
-              <button type="button" onClick={closeDepositModal} disabled={cctpInProgress} aria-label="Close deposit dialog" className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30 transition-all"><X className="h-4 w-4" /></button>
+              <button type="button" onClick={closeDepositModal} disabled={cctpInProgress} aria-label="Close deposit dialog" className="flex h-9 w-9 items-center justify-center rounded-full bg-black/5 text-black/60 hover:bg-black/10 disabled:cursor-not-allowed disabled:opacity-30 transition-all"><X className="h-4 w-4" /></button>
             </div>
             
             {/* Tabs for non-menu active modes (Pinned) */}
             {activeSubMode !== "menu" && bridgeAvailable && (
-              <div className="shrink-0 relative mb-4 grid grid-cols-2 w-full gap-1 rounded-2xl bg-black/40 p-1 border border-white/5">
+              <div className="shrink-0 relative mb-4 grid grid-cols-2 w-full gap-1 rounded-2xl bg-black/5 p-1 border border-black/10">
                 {(["direct", "cctp"] as const).map((tab) => {
                   const isActive = activeSubMode === tab;
                   return (
@@ -8367,13 +8304,13 @@ function DepositModal({
                         setCctpStatus("idle");
                       }}
                       className={`relative flex items-center justify-center py-2 px-3 text-[10px] font-black uppercase tracking-wider rounded-xl z-10 transition-colors duration-200 ${
-                        isActive ? "text-black" : "text-white/50 hover:text-white/85"
+                        isActive ? "text-white" : "text-black/60 hover:text-black"
                       }`}
                     >
                       {isActive && (
                         <motion.div
                           layoutId="depositActivePill"
-                          className="absolute inset-0 bg-[#ccff00] rounded-xl -z-10 shadow-md"
+                          className="absolute inset-0 bg-[#353935] rounded-xl -z-10 shadow-sm"
                           transition={{ type: "spring", stiffness: 380, damping: 30 }}
                         />
                       )}
@@ -8387,7 +8324,7 @@ function DepositModal({
             )}
 
             {/* Scrollable Body Content */}
-            <div className="flex-1 overflow-y-auto min-h-0 w-full relative pr-0.5 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto min-h-0 w-full relative pr-0.5 custom-scrollbar text-black">
               <AnimatePresence mode="wait" initial={false} custom={subDirection}>
                 <motion.div
                   key={activeSubMode}
@@ -8417,50 +8354,47 @@ function DepositModal({
                 >
                   {activeSubMode === "menu" && (
               <div className="space-y-4 py-1">
-                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-[#ccff00] p-2.5 shadow-[0_0_20px_rgba(204,255,0,0.2)]">
+                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-[#353935] p-2.5 shadow-md">
                   <img src="/logo.png" alt="SubScript Logo" className="h-full w-full object-contain" />
                 </div>
-                <div className="rounded-3xl border border-yellow-500/25 bg-yellow-500/5 p-4 text-left">
-                  <p className="text-[9px] font-black uppercase tracking-[0.16em] text-yellow-400">External USDC Detected</p>
-                  <p className="mt-1.5 text-[11px] text-white/70 leading-relaxed">
+                <div className="rounded-3xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-left">
+                  <p className="text-[9px] font-black uppercase tracking-[0.16em] text-yellow-800">External USDC Detected</p>
+                  <p className="mt-1.5 text-[11px] text-black/80 leading-relaxed">
                     We found <strong>{(sepoliaUsdc + mainnetUsdc).toFixed(2)} USDC</strong> outside Arc. Sepolia USDC can be bridged here; Mainnet bridging is not yet available.
                   </p>
                 </div>
                 <div className="space-y-3 pt-1">
-                  {/* Belt-and-braces: the effect above already keeps the chooser from opening
-                      while the bridge is paused, so this only matters if that guard is ever
-                      relaxed. A dead bridge button is worse here than anywhere else in the app. */}
                   {bridgeAvailable && (
                   <button
                     type="button"
                     onClick={() => setActiveSubMode("cctp")}
                     disabled={sepoliaUsdc <= 0}
-                    className="flex w-full items-center gap-4 rounded-3xl border border-[#ccff00]/20 bg-[#ccff00]/5 p-4 text-left hover:bg-[#ccff00]/10 transition-all group"
+                    className="flex w-full items-center gap-4 rounded-3xl border border-black/15 bg-white p-4 text-left hover:bg-black/5 transition-all group shadow-sm"
                   >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#ccff00] text-black group-hover:scale-105 transition-all shrink-0">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#2775CA] text-white group-hover:scale-105 transition-all shrink-0">
                       <Globe className="h-5 w-5" />
                     </div>
                     <div className="flex-1">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-white">Circle CCTP Bridge</h4>
-                      <p className="mt-1 text-[9px] text-white/45 leading-normal">{sepoliaUsdc > 0 ? `Bridge up to ${sepoliaUsdc.toFixed(2)} USDC from Sepolia to Arc.` : "No bridgeable Sepolia USDC detected."}</p>
+                      <h4 className="text-xs font-black uppercase tracking-wider text-[#111827]">Circle CCTP Bridge</h4>
+                      <p className="mt-1 text-[9px] text-black/60 leading-normal">{sepoliaUsdc > 0 ? `Bridge up to ${sepoliaUsdc.toFixed(2)} USDC from Sepolia to Arc.` : "No bridgeable Sepolia USDC detected."}</p>
                     </div>
-                    <ArrowRight className="h-4 w-4 text-white/35 group-hover:translate-x-1 transition-all shrink-0" />
+                    <ArrowRight className="h-4 w-4 text-black/40 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
                   )}
 
                   <button
                     type="button"
                     onClick={() => setActiveSubMode("direct")}
-                    className="flex w-full items-center gap-4 rounded-3xl border border-white/10 bg-white/[0.035] p-4 text-left hover:bg-white/[0.06] transition-all group"
+                    className="flex w-full items-center gap-4 rounded-3xl border border-black/15 bg-white p-4 text-left hover:bg-black/5 transition-all group shadow-sm"
                   >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10 text-white/80 group-hover:scale-105 transition-all shrink-0">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#353935] text-[#FFFFF0] group-hover:scale-105 transition-all shrink-0">
                       <Wallet className="h-5 w-5" />
                     </div>
                     <div className="flex-1">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-white">Direct Deposit</h4>
-                      <p className="mt-1 text-[9px] text-white/45 leading-normal">Show QR code & address to send USDC directly.</p>
+                      <h4 className="text-xs font-black uppercase tracking-wider text-[#111827]">Direct Deposit</h4>
+                      <p className="mt-1 text-[9px] text-black/60 leading-normal">Show QR code & address to send USDC directly.</p>
                     </div>
-                    <ArrowRight className="h-4 w-4 text-white/35 group-hover:translate-x-1 transition-all shrink-0" />
+                    <ArrowRight className="h-4 w-4 text-black/40 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
                 </div>
               </div>
@@ -8468,12 +8402,12 @@ function DepositModal({
 
             {activeSubMode === "direct" && (
               <div className="text-center space-y-2.5 py-1">
-                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-[#ccff00] p-2 shadow-[0_0_20px_rgba(204,255,0,0.2)]">
+                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-[#353935] p-2.5 shadow-md">
                   <img src="/logo.png" alt="SubScript Logo" className="h-full w-full object-contain" />
                 </div>
-                <p className="text-[11px] text-white/50 leading-tight">Send native USDC on Arc Testnet to your SubScript wallet address.</p>
-                <p className="rounded-xl border border-amber-400/20 bg-amber-400/[0.05] p-2 text-[10px] leading-relaxed text-amber-200/75">Arc Testnet only. Sending another token or using another network will not credit this balance.</p>
-                <div className="mx-auto my-2 w-fit rounded-2xl bg-white p-3 shadow-lg">
+                <p className="text-[11px] text-black/70 leading-tight">Send native USDC on Arc Testnet to your SubScript wallet address.</p>
+                <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-2 text-[10px] leading-relaxed text-amber-900">Arc Testnet only. Sending another token or using another network will not credit this balance.</p>
+                <div className="mx-auto my-2 w-fit rounded-2xl bg-white p-3 shadow-md border border-black/10">
                   <QRCode
                     value={userWallet}
                     size={140}
@@ -8498,11 +8432,11 @@ function DepositModal({
                   onClick={onCopy}
                   className={`flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-2.5 text-xs font-black transition-all ${
                     copied
-                      ? "border-[#ccff00]/40 bg-[#ccff00]/15 text-[#ccff00]"
-                      : "border-white/10 bg-white/[0.05] text-white/80 hover:bg-white/10 hover:border-white/20"
+                      ? "border-[#2775CA] bg-[#2775CA] text-white"
+                      : "border-black/15 bg-white text-[#111827] hover:bg-black/5"
                   }`}
                 >
-                  {copied ? <Check className="h-4 w-4 text-[#ccff00]" /> : <Copy className="h-4 w-4" />}
+                  {copied ? <Check className="h-4 w-4 text-white" /> : <Copy className="h-4 w-4" />}
                   {copied ? "Copied to clipboard!" : formatAddress(userWallet)}
                 </button>
               </div>
@@ -8511,7 +8445,7 @@ function DepositModal({
             {activeSubMode === "cctp" && (
               <div className="space-y-4 text-left">
                 <div className="flex justify-between items-center">
-                  <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[9px] font-bold text-[#ccff00]">
+                  <span className="rounded-full bg-[#2775CA]/10 px-3 py-1 text-[9px] font-bold text-[#2775CA] border border-[#2775CA]/20">
                     Sepolia available: {bridgeableUsdc.toFixed(2)} USDC
                   </span>
                 </div>
@@ -8519,50 +8453,50 @@ function DepositModal({
                 {cctpStatus === "idle" ? (
                   <div className="space-y-4">
                     {cctpRecovery && (
-                      <div className="rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-[10px] leading-relaxed text-amber-100/80">
-                        <p className="font-bold uppercase tracking-wider text-amber-200">Bridge recovery found</p>
+                      <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-[10px] leading-relaxed text-amber-900">
+                        <p className="font-bold uppercase tracking-wider text-amber-950">Bridge recovery found</p>
                         <p className="mt-2">{cctpRecovery.amount} USDC was already burned on Sepolia. Resume attestation and Arc minting. Do not start another burn.</p>
                         <a href={`https://sepolia.etherscan.io/tx/${cctpRecovery.burnHash}`} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block font-bold underline">View burn transaction</a>
                       </div>
                     )}
                     {!cctpRecovery && <div className="space-y-1.5">
-                      <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Amount to Bridge (USDC)</span>
+                      <span className="text-[9px] font-black uppercase tracking-[0.16em] text-black/60">Amount to Bridge (USDC)</span>
                       <div className="relative">
                         <input
                           type="number"
                           value={cctpAmount}
                           onChange={(e) => { setCctpAmount(e.target.value); setCctpReviewOpen(false); setCctpError(null); }}
-                          className="subscript-input pr-16"
+                          className="subscript-input bg-white border border-black/15 text-[#111827] pr-16"
                           placeholder="0.00"
                         />
                         <button
                           type="button"
                           onClick={() => { setCctpAmount(bridgeableUsdc.toString()); setCctpReviewOpen(false); }}
-                          className="absolute right-3 top-2.5 px-2 py-1 rounded bg-white/10 text-[9px] font-black uppercase tracking-wider text-[#ccff00] hover:bg-white/20 transition-all"
+                          className="absolute right-3 top-2.5 px-2 py-1 rounded bg-black/10 text-[9px] font-black uppercase tracking-wider text-black hover:bg-black/20 transition-all"
                         >
                           Max
                         </button>
                       </div>
                     </div>}
 
-                    {cctpError && <p className="text-[11px] text-red-300 bg-red-950/15 border border-red-500/20 rounded-xl p-3">{cctpError}</p>}
+                    {cctpError && <p className="text-[11px] text-red-700 bg-red-500/10 border border-red-500/20 rounded-xl p-3">{cctpError}</p>}
 
-                    {mainnetUsdc > 0 && <p className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/55">{mainnetUsdc.toFixed(2)} USDC was detected on Ethereum Mainnet but is excluded from this Sepolia-only bridge.</p>}
+                    {mainnetUsdc > 0 && <p className="rounded-xl border border-black/10 bg-black/5 p-3 text-[10px] leading-relaxed text-black/70">{mainnetUsdc.toFixed(2)} USDC was detected on Ethereum Mainnet but is excluded from this Sepolia-only bridge.</p>}
 
                     {cctpReviewOpen && !cctpRecovery && (
-                      <div className="space-y-3 rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-xs">
-                        <div className="flex justify-between"><span className="text-white/45">From</span><span className="font-bold">Ethereum Sepolia</span></div>
-                        <div className="flex justify-between"><span className="text-white/45">To</span><span className="font-bold">Arc Testnet</span></div>
-                        <div className="flex justify-between"><span className="text-white/45">Amount</span><span className="font-bold">{Number(cctpAmount).toFixed(2)} USDC</span></div>
-                        <p className="border-t border-white/10 pt-3 text-[10px] leading-relaxed text-amber-200/80">This starts an approval and burn on Sepolia, followed by Circle attestation and minting on Arc. Keep this page open until completion.</p>
-                        <button type="button" onClick={() => setCctpReviewOpen(false)} className="text-[10px] font-bold uppercase tracking-wider text-white/55">Back to edit</button>
+                      <div className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-black">
+                        <div className="flex justify-between"><span className="text-black/60">From</span><span className="font-bold">Ethereum Sepolia</span></div>
+                        <div className="flex justify-between"><span className="text-black/60">To</span><span className="font-bold">Arc Testnet</span></div>
+                        <div className="flex justify-between"><span className="text-black/60">Amount</span><span className="font-bold">{Number(cctpAmount).toFixed(2)} USDC</span></div>
+                        <p className="border-t border-black/10 pt-3 text-[10px] leading-relaxed text-amber-900">This starts an approval and burn on Sepolia, followed by Circle attestation and minting on Arc. Keep this page open until completion.</p>
+                        <button type="button" onClick={() => setCctpReviewOpen(false)} className="text-[10px] font-bold uppercase tracking-wider text-black/60 hover:text-black">Back to edit</button>
                       </div>
                     )}
 
                     <button
                       type="button"
                       onClick={() => cctpRecovery ? handleResumeCctp() : handleStartCctp(cctpAmount)}
-                      className="subscript-primary-button mt-2"
+                      className="w-full mt-2 rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] text-white py-3 font-bold text-xs shadow-sm transition flex items-center justify-center gap-2"
                     >
                       {cctpRecovery ? "Resume existing bridge" : cctpReviewOpen ? "Confirm bridge" : "Review bridge"}
                     </button>
@@ -8571,58 +8505,58 @@ function DepositModal({
                   <div className="space-y-5 py-4">
                     {cctpStatus === "success" ? (
                       <div className="flex flex-col items-center gap-4 text-center">
-                        <CheckCircle2 className="h-12 w-12 text-[#ccff00]" />
-                        <h4 className="text-sm font-black uppercase tracking-wider text-white">Bridging Successful</h4>
-                        <p className="text-xs text-white/50 leading-normal">{cctpMessage}</p>
+                        <CheckCircle2 className="h-12 w-12 text-emerald-600" />
+                        <h4 className="text-sm font-black uppercase tracking-wider text-[#111827]">Bridging Successful</h4>
+                        <p className="text-xs text-black/60 leading-normal">{cctpMessage}</p>
                         <button
                           type="button"
                           onClick={() => cctpRecovery ? handleResumeCctp() : setCctpStatus("idle")}
-                          className="mt-4 rounded-xl border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white/75"
+                          className="mt-4 rounded-xl border border-black/15 bg-white px-4 py-2 text-[10px] font-black uppercase tracking-wider text-black shadow-sm"
                         >
                           Done
                         </button>
                       </div>
                     ) : cctpStatus === "error" ? (
                       <div className="flex flex-col items-center gap-4 text-center">
-                        <AlertCircle className="h-12 w-12 text-red-400" />
-                        <h4 className="text-sm font-black uppercase tracking-wider text-white">Bridging Failed</h4>
-                        <p className="text-xs text-red-300 px-4 leading-normal">{cctpError}</p>
+                        <AlertCircle className="h-12 w-12 text-red-500" />
+                        <h4 className="text-sm font-black uppercase tracking-wider text-[#111827]">Bridging Failed</h4>
+                        <p className="text-xs text-red-700 px-4 leading-normal">{cctpError}</p>
                         <button
                           type="button"
                           onClick={() => setCctpStatus("idle")}
-                          className="mt-4 rounded-xl border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white/75"
+                          className="mt-4 rounded-xl border border-black/15 bg-white px-4 py-2 text-[10px] font-black uppercase tracking-wider text-black shadow-sm"
                         >
                           {cctpRecovery ? "Resume existing bridge" : "Try Again"}
                         </button>
                       </div>
                     ) : (
                       <div className="space-y-6">
-                        <div className="flex items-center gap-4 bg-black/30 border border-white/5 rounded-2xl p-4">
-                          <Loader2 className="h-6 w-6 animate-spin text-[#ccff00] shrink-0" />
+                        <div className="flex items-center gap-4 bg-black/5 border border-black/10 rounded-2xl p-4">
+                          <Loader2 className="h-6 w-6 animate-spin text-[#2775CA] shrink-0" />
                           <div className="space-y-1">
-                            <p className="text-xs font-bold text-white uppercase tracking-wider">CCTP Bridge Progress</p>
-                            <p className="text-[10px] text-white/50 leading-normal">{cctpMessage}</p>
+                            <p className="text-xs font-bold text-black uppercase tracking-wider">CCTP Bridge Progress</p>
+                            <p className="text-[10px] text-black/60 leading-normal">{cctpMessage}</p>
                           </div>
                         </div>
 
-                        <div className="space-y-2 border-t border-white/5 pt-4 text-[10px] font-bold text-white/40">
-                          <div className={`flex justify-between items-center ${cctpStatus === "switching" ? "text-[#ccff00]" : ""}`}>
+                        <div className="space-y-2 border-t border-black/10 pt-4 text-[10px] font-bold text-black/60">
+                          <div className={`flex justify-between items-center ${cctpStatus === "switching" ? "text-[#2775CA]" : ""}`}>
                             <span>1. Network Switch</span>
                             <span>{cctpStatus === "switching" ? "In Progress" : ""}</span>
                           </div>
-                          <div className={`flex justify-between items-center ${cctpStatus === "approving" ? "text-[#ccff00]" : ""}`}>
+                          <div className={`flex justify-between items-center ${cctpStatus === "approving" ? "text-[#2775CA]" : ""}`}>
                             <span>2. Approve TokenMessenger</span>
                             <span>{cctpStatus === "approving" ? "In Progress" : ""}</span>
                           </div>
-                          <div className={`flex justify-between items-center ${cctpStatus === "burning" ? "text-[#ccff00]" : ""}`}>
+                          <div className={`flex justify-between items-center ${cctpStatus === "burning" ? "text-[#2775CA]" : ""}`}>
                             <span>3. Burn USDC on Sepolia</span>
                             <span>{cctpStatus === "burning" ? "In Progress" : ""}</span>
                           </div>
-                          <div className={`flex justify-between items-center ${cctpStatus === "attesting" ? "text-[#ccff00]" : ""}`}>
+                          <div className={`flex justify-between items-center ${cctpStatus === "attesting" ? "text-[#2775CA]" : ""}`}>
                             <span>4. Fetch Circle Attestation</span>
                             <span>{cctpStatus === "attesting" ? "In Progress" : ""}</span>
                           </div>
-                          <div className={`flex justify-between items-center ${cctpStatus === "claiming" ? "text-[#ccff00]" : ""}`}>
+                          <div className={`flex justify-between items-center ${cctpStatus === "claiming" ? "text-[#2775CA]" : ""}`}>
                             <span>5. Mint USDC on Arc Testnet</span>
                             <span>{cctpStatus === "claiming" ? "In Progress" : ""}</span>
                           </div>
@@ -8820,20 +8754,20 @@ function SendFundsModal({
   return (
     <AnimatePresence>
       {open && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 backdrop-blur-xl">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} role="dialog" aria-modal="true" aria-labelledby="send-funds-title" className="w-full max-w-sm liquid-glass border border-white/10 rounded-3xl p-6 shadow-2xl bg-black/50 backdrop-blur-xl relative overflow-hidden">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-5 backdrop-blur-md">
+          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} role="dialog" aria-modal="true" aria-labelledby="send-funds-title" className="w-full max-w-sm border border-black/10 rounded-3xl p-6 shadow-2xl bg-[#FFFFF0] text-black relative overflow-hidden">
             <div className="flex items-center justify-between mb-4">
-              <h3 id="send-funds-title" className="text-sm font-black uppercase tracking-wider text-white">Send USDC</h3>
-              <button type="button" onClick={onClose} disabled={loading} aria-label="Close send dialog" className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30 transition-all"><X className="h-4 w-4" /></button>
+              <h3 id="send-funds-title" className="text-sm font-black uppercase tracking-wider text-[#111827]">Send USDC</h3>
+              <button type="button" onClick={onClose} disabled={loading} aria-label="Close send dialog" className="flex h-9 w-9 items-center justify-center rounded-full bg-black/5 text-black/60 hover:bg-black/10 disabled:cursor-not-allowed disabled:opacity-30 transition-all"><X className="h-4 w-4" /></button>
             </div>
 
             {onGoToBatch && (
-              <div className="mb-6 rounded-xl border border-white/10 bg-white/5 p-3 text-xs flex items-center justify-between">
-                <span className="text-white/60">Sending to multiple people?</span>
+              <div className="mb-4 rounded-2xl border border-black/10 bg-black/5 p-3 text-xs flex items-center justify-between">
+                <span className="text-black/70">Sending to multiple people?</span>
                 <button
                   type="button"
                   onClick={onGoToBatch}
-                  className="text-[#ccff00] hover:underline font-bold flex items-center gap-1"
+                  className="text-[#2775CA] hover:underline font-bold flex items-center gap-1"
                 >
                   Batch Distribution <ArrowUpRight className="h-3 w-3" />
                 </button>
@@ -8842,7 +8776,7 @@ function SendFundsModal({
 
             <form onSubmit={handleSend} className="space-y-4 text-left">
               <div className="space-y-1">
-                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">To Recipient</span>
+                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-black/60">To Recipient</span>
                 <input
                   type="text"
                   value={localRecipient}
@@ -8852,34 +8786,34 @@ function SendFundsModal({
                     setStatus(null);
                   }}
                   placeholder="Address or @alias"
-                  className="w-full rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs font-mono text-white/80 focus:border-[#ccff00]/40 focus:outline-none"
+                  className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3 text-xs font-mono text-[#111827] focus:border-[#2775CA] focus:outline-none"
                 />
                 {onScanQr && (
-                  <button type="button" onClick={onScanQr} className="mt-2 inline-flex items-center gap-2 rounded-full border border-black/20 bg-[#2775CA]/20 px-3 py-1.5 text-[10px] font-bold text-black" aria-label="Scan recipient QR">
+                  <button type="button" onClick={onScanQr} className="mt-2 inline-flex items-center gap-2 rounded-full border border-black/15 bg-white px-3 py-1.5 text-[10px] font-bold text-black shadow-sm" aria-label="Scan recipient QR">
                     <QrCode className="h-3.5 w-3.5" /> Scan QR
                   </button>
                 )}
                 <div className="min-h-[20px] px-2">
-                  {resolving && <span className="text-xs text-[#ccff00] animate-pulse">(Resolving...)</span>}
+                  {resolving && <span className="text-xs text-[#2775CA] animate-pulse">(Resolving...)</span>}
                   {resolvedAddress && resolvedAddress !== localRecipient && (
-                    <div className="text-[10px] text-white/40 truncate">{resolvedAddress}</div>
+                    <div className="text-[10px] text-black/60 truncate font-mono">{resolvedAddress}</div>
                   )}
                 </div>
                 {resolvedAddress && userWallet && resolvedAddress.toLowerCase() === userWallet.toLowerCase() && (
-                  <div className="mt-2 rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-[11px] leading-relaxed text-red-300">
+                  <div className="mt-2 rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-[11px] leading-relaxed text-red-700">
                     This is your wallet address. Choose another recipient.
                   </div>
                 )}
               </div>
 
               <div className="space-y-1">
-                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Amount (USDC)</span>
+                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-black/60">Amount (USDC)</span>
                 <input
                   type="number"
                   step="any"
                   value={amount}
                   onChange={(e) => { setAmount(e.target.value); setReviewOpen(false); setStatus(null); setTransactionHash(null); }}
-                  className="subscript-input"
+                  className="subscript-input bg-white border border-black/15 text-[#111827]"
                   placeholder="0.00"
                   required
                 />
@@ -8892,31 +8826,31 @@ function SendFundsModal({
               />
 
               {reviewOpen && status !== "success" && (
-                <div className="space-y-3 rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-xs">
-                  <div className="flex justify-between gap-3"><span className="text-white/45">You send</span><span className="font-bold text-white">{Number(amount).toFixed(2)} USDC</span></div>
-                  <div className="space-y-1"><span className="text-white/45">Recipient</span><p className="break-all font-mono text-[10px] text-white/80">{resolvedAddress}</p></div>
-                  <div className="flex justify-between gap-3"><span className="text-white/45">Network</span><span className="font-bold text-white">Arc</span></div>
-                  <p className="border-t border-white/10 pt-3 text-[10px] leading-relaxed text-amber-200/80">On-chain transfers cannot be reversed. Verify the recipient and amount before confirming.</p>
-                  <button type="button" onClick={() => setReviewOpen(false)} disabled={loading} className="text-[10px] font-bold uppercase tracking-wider text-white/55 hover:text-white">Back to edit</button>
+                <div className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-black">
+                  <div className="flex justify-between gap-3"><span className="text-black/60">You send</span><span className="font-bold text-[#111827]">{Number(amount).toFixed(2)} USDC</span></div>
+                  <div className="space-y-1"><span className="text-black/60">Recipient</span><p className="break-all font-mono text-[10px] text-black/80">{resolvedAddress}</p></div>
+                  <div className="flex justify-between gap-3"><span className="text-black/60">Network</span><span className="font-bold text-[#111827]">Arc</span></div>
+                  <p className="border-t border-black/10 pt-3 text-[10px] leading-relaxed text-amber-900">On-chain transfers cannot be reversed. Verify the recipient and amount before confirming.</p>
+                  <button type="button" onClick={() => setReviewOpen(false)} disabled={loading} className="text-[10px] font-bold uppercase tracking-wider text-black/60 hover:text-black">Back to edit</button>
                 </div>
               )}
 
               {status && status !== "success" && (
-                <p className={`text-[11px] rounded-xl border p-3 ${loading ? "border-amber-400/20 bg-amber-400/[0.06] text-amber-200" : "border-red-500/20 bg-red-950/15 text-red-300"}`} aria-live="polite">{status}</p>
+                <p className={`text-[11px] rounded-xl border p-3 ${loading ? "border-amber-500/30 bg-amber-500/10 text-amber-900" : "border-red-500/30 bg-red-500/10 text-red-700"}`} aria-live="polite">{status}</p>
               )}
 
               {status === "success" && (
                 <div className="flex flex-col items-center gap-2 py-4 text-center">
-                  <CheckCircle2 className="h-10 w-10 text-[#ccff00]" />
-                  <p className="text-xs text-white/80 font-bold">Transfer confirmed on Arc</p>
-                  <button type="button" onClick={onClose} className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-white">Done</button>
+                  <CheckCircle2 className="h-10 w-10 text-emerald-600" />
+                  <p className="text-xs text-black font-bold">Transfer confirmed on Arc</p>
+                  <button type="button" onClick={onClose} className="mt-2 w-full rounded-2xl border border-black/15 bg-white px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-black shadow-sm">Done</button>
                 </div>
               )}
 
               {status !== "success" && <button
                 type="submit"
                 disabled={loading || !resolvedAddress || isSelfSend}
-                className="subscript-primary-button w-full mt-2"
+                className="w-full mt-2 rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] text-white py-3 font-bold text-xs shadow-sm transition disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Confirming…</> : reviewOpen ? "Confirm and send" : "Review transfer"}
               </button>}
@@ -9326,21 +9260,21 @@ function MeteredVaultRow({
       : `Auto top-up on · ${formatUsdc(vault.topUpAmountUsdc)} at ${formatUsdc(vault.thresholdUsdc)}`;
 
   return (
-    <div className="flex min-h-[360px] flex-col gap-4 rounded-3xl border border-black/20 bg-[#2775CA]/20 p-4 text-black transition sm:p-5">
-      {/* Top Header: Vault Icon + Merchant Name (Left) | Top up (+) & Pause (||) / Play (▶) buttons (Right) */}
+    <div className="flex min-h-[360px] flex-col gap-4 rounded-3xl border border-black/20 bg-[#2775CA]/15 p-4 text-black transition sm:p-5">
+      {/* Top Header: Vault Icon + Merchant Name (Left) | Manage Commit, Top up (+) & Pause (||) / Play (▶) buttons (Right) */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border border-black/15 bg-[#2775CA]/20 shrink-0">
             {vault.merchantPic ? (
               <img src={vault.merchantPic} alt={vault.merchantName} className="h-full w-full object-cover" />
             ) : (
-              <Building2 className="h-5 w-5 text-[#ccff00]" />
+              <Building2 className="h-5 w-5 text-[#2775CA]" />
             )}
           </div>
           <div className="min-w-0">
-            <h4 className="truncate text-sm sm:text-base font-black text-white uppercase tracking-wider">{vault.merchantName}</h4>
+            <h4 className="truncate text-sm sm:text-base font-black text-[#111827] uppercase tracking-wider">{vault.merchantName}</h4>
             <div className="flex items-center gap-2 mt-0.5">
-              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${blocked ? "bg-amber-500/15 text-amber-300" : disputed ? "bg-red-500/15 text-red-300" : cancelled ? "bg-orange-500/15 text-orange-300" : awaitingSettlement ? "bg-sky-500/15 text-sky-300" : "bg-emerald-500/15 text-emerald-300"}`}>
+              <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${blocked ? "bg-amber-500/15 text-amber-700 border border-amber-500/30" : disputed ? "bg-red-500/15 text-red-700 border border-red-500/30" : cancelled ? "bg-orange-500/15 text-orange-700 border border-orange-500/30" : awaitingSettlement ? "bg-sky-500/15 text-sky-700 border border-sky-500/30" : "bg-emerald-500/15 text-emerald-700 border border-emerald-500/30"}`}>
                 {blocked ? "Inactive" : disputed ? "Disputed" : cancelled ? "Paused" : awaitingSettlement ? "Settling" : "Active"}
               </span>
             </div>
@@ -9349,12 +9283,22 @@ function MeteredVaultRow({
 
         {/* Top Right Action Icons & Desktop Labels */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Manage Commit Link */}
+          <Link
+            href={`/commit/${vault.merchantAddress}`}
+            title="Manage commit"
+            className="flex h-10 w-auto px-3.5 items-center justify-center gap-1.5 rounded-2xl border border-black/15 bg-white/80 hover:bg-white text-black transition text-[11px] font-bold shadow-sm"
+          >
+            <span className="hidden sm:inline">Manage</span>
+            <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
+          </Link>
+
           {/* Top Up (+) Button */}
           <button
             type="button"
             onClick={() => onCommit(vault)}
             title="Top up commit"
-            className="flex h-10 w-10 sm:w-auto sm:px-3.5 items-center justify-center gap-1.5 rounded-2xl border border-white/10 bg-white/5 text-white hover:border-[#ccff00]/40 hover:bg-[#ccff00]/10 hover:text-[#ccff00] transition text-[11px] font-bold"
+            className="flex h-10 w-10 sm:w-auto sm:px-3.5 items-center justify-center gap-1.5 rounded-2xl border border-[#353935] bg-[#353935] text-[#FFFFF0] hover:bg-black transition text-[11px] font-bold shadow-sm"
           >
             <Plus className="h-4 w-4 shrink-0" />
             <span className="hidden sm:inline">Top up commit</span>
@@ -9368,7 +9312,7 @@ function MeteredVaultRow({
                 onClick={() => !resumeBusy && (balance >= STANDARD_COMMIT_MICROS ? onResumeService(vault) : onCommit(vault))}
                 disabled={resumeBusy}
                 title="Resume service"
-                className={`relative overflow-hidden flex h-10 w-10 sm:w-auto sm:px-3.5 items-center justify-center gap-1.5 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition text-[11px] font-bold ${resumeBusy ? "quick-action-loading opacity-50 cursor-not-allowed" : ""}`}
+                className={`relative overflow-hidden flex h-10 w-10 sm:w-auto sm:px-3.5 items-center justify-center gap-1.5 rounded-2xl border border-emerald-500/30 bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 transition text-[11px] font-bold shadow-sm ${resumeBusy ? "quick-action-loading opacity-50 cursor-not-allowed" : ""}`}
               >
                 <Play className="h-4 w-4 fill-current shrink-0" />
                 <span className="hidden sm:inline">Resume service</span>
@@ -9379,7 +9323,7 @@ function MeteredVaultRow({
                 onClick={() => !cancelBusy && onCancelService(vault)}
                 disabled={cancelBusy}
                 title="Pause service"
-                className={`relative overflow-hidden flex h-10 w-10 sm:w-auto sm:px-3.5 items-center justify-center gap-1.5 rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:border-red-400/30 hover:bg-red-500/10 hover:text-red-300 transition text-[11px] font-bold ${cancelBusy ? "quick-action-loading opacity-50 cursor-not-allowed" : ""}`}
+                className={`relative overflow-hidden flex h-10 w-10 sm:w-auto sm:px-3.5 items-center justify-center gap-1.5 rounded-2xl border border-black/15 bg-white/80 text-black hover:border-red-400/40 hover:bg-red-500/10 hover:text-red-700 transition text-[11px] font-bold shadow-sm ${cancelBusy ? "quick-action-loading opacity-50 cursor-not-allowed" : ""}`}
               >
                 <Pause className="h-4 w-4 fill-current shrink-0" />
                 <span className="hidden sm:inline">Pause service</span>
@@ -9391,7 +9335,7 @@ function MeteredVaultRow({
             <button
               type="button"
               onClick={() => onWithdraw(vault)}
-              className="rounded-2xl border bg-white/5 border-white/10 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white/80 hover:bg-white/15 transition"
+              className="rounded-2xl border border-black/15 bg-white/80 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-black hover:bg-white transition shadow-sm"
             >
               Withdraw
             </button>
@@ -9402,7 +9346,7 @@ function MeteredVaultRow({
               type="button"
               onClick={() => !reclaimBusy && onReclaim(vault)}
               disabled={reclaimBusy}
-              className={`rounded-2xl border px-3 py-2 text-[10px] font-black uppercase tracking-wider transition ${reclaimBusy ? "cursor-not-allowed border-white/5 bg-black/20 text-white/30" : "bg-amber-400/10 border-amber-300/30 text-amber-200 hover:bg-amber-400/20"}`}
+              className={`rounded-2xl border px-3 py-2 text-[10px] font-black uppercase tracking-wider transition shadow-sm ${reclaimBusy ? "cursor-not-allowed border-black/10 bg-black/10 text-black/30" : "bg-amber-400/20 border-amber-400/40 text-amber-800 hover:bg-amber-400/30"}`}
             >
               {reclaimBusy ? "Reclaiming…" : "Reclaim escrow"}
             </button>
@@ -9410,20 +9354,19 @@ function MeteredVaultRow({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1.08fr_0.92fr]">
-        <div className="rounded-2xl border border-black/15 bg-[#2775CA]/20 p-4">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-black/65">Vault Balance</span>
-          <p className="mt-1 text-2xl font-black tracking-tight text-black">
-            {balanceVisible ? formatUsdc(remainingBalanceUsdc) + " USDC" : "•••• USDC"}
-          </p>
-          <p className="mt-0.5 text-[11px] font-medium text-black/60">
-            Used: {balanceVisible ? formatUsdc(vault.accruedUsageUsdc) + " USDC" : "••• USDC"}
-          </p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1.2fr_0.8fr]">
+        <div className="rounded-2xl border border-black/15 bg-white/80 p-4 shadow-sm flex flex-col justify-between">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-black/65">Vault Balance</span>
+            <p className="mt-1 text-2xl sm:text-3xl font-black tracking-tight text-black">
+              {balanceVisible ? formatUsdc(remainingBalanceUsdc) + " USDC" : "•••• USDC"}
+            </p>
+          </div>
           <button
             type="button"
             onClick={() => onConfigureAutoTopUp(vault)}
             title={autoTopUpOn ? "Manage auto top-up" : "Set up auto top-up"}
-            className="mt-3 flex w-full items-center justify-between gap-2 rounded-xl border border-black/15 bg-[#FFFFF0]/60 px-2.5 py-1.5 text-[10px] font-bold text-black transition hover:bg-[#FFFFF0]"
+            className="mt-3 flex w-full items-center justify-between gap-2 rounded-xl border border-black/15 bg-[#FFFFF0] px-2.5 py-1.5 text-[10px] font-bold text-black transition hover:bg-white shadow-sm"
           >
             <span className="flex min-w-0 items-center gap-1.5">
               <RefreshCw className="h-3 w-3 shrink-0" />
@@ -9432,10 +9375,10 @@ function MeteredVaultRow({
             <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />
           </button>
         </div>
-        <div className="space-y-2 rounded-2xl border border-black/15 bg-[#FFFFF0]/65 p-3.5 text-xs text-black/65">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px]">
-            <p>Lock date / Cycle started <span className="font-mono font-bold text-black">{numericDate(cycleStartDate)}</span></p>
-            <p>Release date / Cycle matures <span className="font-mono font-bold text-black">{numericDate(lockedUntilDate)}</span></p>
+        <div className="space-y-2 rounded-2xl border border-black/15 bg-[#FFFFF0]/80 p-3.5 text-xs text-black/65 shadow-sm">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
+            <p>Cycle started <span className="font-mono font-bold text-black">{numericDate(cycleStartDate)}</span></p>
+            <p>Cycle matures <span className="font-mono font-bold text-black">{numericDate(lockedUntilDate)}</span></p>
             <p>Reported usage <span className="font-bold text-black">{balanceVisible ? formatUsdc(vault.accruedUsageUsdc) : "•••"} USDC</span></p>
             <p>Max drawable <span className="font-bold text-black">{balanceVisible ? formatUsdc(String(drawableExposure)) : "•••"} USDC</span></p>
             <p>Settlement due by <span className="font-mono font-bold text-black">{numericDate(reclaimDate)}</span></p>
@@ -9445,6 +9388,14 @@ function MeteredVaultRow({
             The keeper settles usage after <span className="font-semibold text-black">{textDate(lockedUntilDate)}</span> and unused escrow returns to you automatically.
           </p>
         </div>
+      </div>
+
+      <div className="mt-0.5 rounded-2xl border border-black/10 bg-white/70 p-3 shadow-sm">
+        <VaultShareManager
+          vaultId={vault.id || vault.merchantAddress}
+          merchantLabel={vault.merchantName}
+          balanceVisible={balanceVisible}
+        />
       </div>
     </div>
   );
@@ -9569,38 +9520,38 @@ function ConfigureVaultModal({
   return (
     <AnimatePresence>
       {open && editingVault && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 backdrop-blur-xl">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm liquid-glass border border-white/10 rounded-3xl p-6 shadow-2xl bg-black/50 backdrop-blur-xl relative overflow-hidden text-left max-h-[90vh] overflow-y-auto">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-5 backdrop-blur-md">
+          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm border border-black/10 rounded-3xl p-6 shadow-2xl bg-[#FFFFF0] text-black relative overflow-hidden text-left max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-1">
-              <h3 className="text-sm font-black uppercase tracking-wider text-white">Auto top-up</h3>
-              <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 transition-all"><X className="h-4 w-4" /></button>
+              <h3 className="text-sm font-black uppercase tracking-wider text-[#111827]">Auto top-up</h3>
+              <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-black/5 text-black/60 hover:bg-black/10 transition-all"><X className="h-4 w-4" /></button>
             </div>
-            <p className="mb-4 text-[11px] text-white/50">{merchantName}</p>
+            <p className="mb-4 text-[11px] text-black/60">{merchantName}</p>
 
             <form onSubmit={handleSubmit} className="space-y-4 text-left">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Refill when below</span>
+                  <span className="text-[9px] font-black uppercase tracking-[0.16em] text-black/60">Refill when below</span>
                   <input
                     type="number"
                     step="any"
                     min="0"
                     value={threshold}
                     onChange={(e) => setThreshold(e.target.value)}
-                    className="subscript-input"
+                    className="subscript-input bg-white border border-black/15 text-[#111827]"
                     placeholder="2.00"
                     required
                   />
                 </div>
                 <div className="space-y-1">
-                  <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Add each time</span>
+                  <span className="text-[9px] font-black uppercase tracking-[0.16em] text-black/60">Add each time</span>
                   <input
                     type="number"
                     step="any"
                     min="2"
                     value={topUpAmount}
                     onChange={(e) => setTopUpAmount(e.target.value)}
-                    className="subscript-input"
+                    className="subscript-input bg-white border border-black/15 text-[#111827]"
                     placeholder="10.00"
                     required
                   />
@@ -9608,28 +9559,28 @@ function ConfigureVaultModal({
               </div>
 
               <div className="space-y-1">
-                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Monthly cap</span>
+                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-black/60">Monthly cap</span>
                 <input
                   type="number"
                   step="any"
                   min="0"
                   value={monthlyLimit}
                   onChange={(e) => setMonthlyLimit(e.target.value)}
-                  className="subscript-input"
+                  className="subscript-input bg-white border border-black/15 text-[#111827]"
                   placeholder="50.00"
                   required
                 />
-                <p className="text-[10px] leading-relaxed text-white/45 pt-1">
-                  Turning this on approves <span className="font-semibold text-white/70">{monthlyLimit || "0"} USDC</span> to
+                <p className="text-[10px] leading-relaxed text-black/60 pt-1">
+                  Turning this on approves <span className="font-semibold text-black">{monthlyLimit || "0"} USDC</span> to
                   the vault on-chain. That approval is the hard ceiling — we can never move more than it in a month,
                   and you can revoke it from any wallet. Refills come from your SubScript wallet balance.
                 </p>
               </div>
 
               {enabled && (
-                <div className="rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2 text-[10px] text-white/50">
+                <div className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-[10px] text-black/70">
                   Used this month:{" "}
-                  <span className="font-bold text-white/75">
+                  <span className="font-bold text-black">
                     {(Number(editingVault.monthlySpentUsdc || 0) / 1_000_000).toFixed(2)} /{" "}
                     {(Number(editingVault.monthlyLimitUsdc || 0) / 1_000_000).toFixed(2)} USDC
                   </span>
@@ -9637,14 +9588,14 @@ function ConfigureVaultModal({
               )}
 
               {needsAcknowledgement && (
-                <label className="flex items-start gap-2.5 rounded-xl border border-amber-400/25 bg-amber-500/10 p-3">
+                <label className="flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
                   <input
                     type="checkbox"
                     checked={acknowledgeUnverified}
                     onChange={(e) => setAcknowledgeUnverified(e.target.checked)}
-                    className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-[#ccff00]"
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-[#2775CA]"
                   />
-                  <span className="text-[10px] leading-relaxed text-amber-100/90">
+                  <span className="text-[10px] leading-relaxed text-amber-900 font-medium">
                     I understand {merchantName} is not verified by SubScript, and that they report the usage that
                     triggers each automatic refill.
                   </span>
@@ -9652,23 +9603,23 @@ function ConfigureVaultModal({
               )}
 
               {status && status !== "success" && !needsAcknowledgement && (
-                <p className="text-[11px] text-red-300 bg-red-950/15 border border-red-500/20 rounded-xl p-3">{status}</p>
+                <p className="text-[11px] text-red-700 bg-red-500/10 border border-red-500/20 rounded-xl p-3">{status}</p>
               )}
               {status && needsAcknowledgement && (
-                <p className="text-[11px] text-amber-200/90 bg-amber-950/15 border border-amber-500/20 rounded-xl p-3">{status}</p>
+                <p className="text-[11px] text-amber-800 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">{status}</p>
               )}
 
               {status === "success" && (
                 <div className="flex flex-col items-center gap-2 py-4 text-center">
-                  <CheckCircle2 className="h-10 w-10 text-[#ccff00]" />
-                  <p className="text-xs text-white/80 font-bold">Auto top-up saved</p>
+                  <CheckCircle2 className="h-10 w-10 text-emerald-600" />
+                  <p className="text-xs text-black font-bold">Auto top-up saved</p>
                 </div>
               )}
 
               <button
                 type="submit"
                 disabled={loading || disabling || status === "success" || (needsAcknowledgement && !acknowledgeUnverified)}
-                className="subscript-primary-button w-full mt-2"
+                className="w-full mt-2 rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] text-white py-3 font-bold text-xs shadow-sm transition disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : enabled ? "Update auto top-up" : "Approve & turn on"}
               </button>
@@ -9678,7 +9629,7 @@ function ConfigureVaultModal({
                   type="button"
                   onClick={handleDisable}
                   disabled={loading || disabling}
-                  className="w-full rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-[11px] font-bold text-white/60 hover:bg-white/10 hover:text-white transition disabled:opacity-50"
+                  className="w-full rounded-2xl border border-black/15 bg-black/5 px-4 py-2.5 text-[11px] font-bold text-black/70 hover:bg-black/10 transition disabled:opacity-50"
                 >
                   {disabling ? "Turning off…" : "Turn off auto top-up"}
                 </button>
@@ -9751,49 +9702,49 @@ function TopupVaultModal({
   return (
     <AnimatePresence>
       {open && vault && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 backdrop-blur-xl">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm liquid-glass border border-white/10 rounded-3xl p-6 shadow-2xl bg-black/50 backdrop-blur-xl relative overflow-hidden text-left">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-5 backdrop-blur-md">
+          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm border border-black/10 rounded-3xl p-6 shadow-2xl bg-[#FFFFF0] text-black relative overflow-hidden text-left">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-black uppercase tracking-wider text-white">Manual Deposit</h3>
-              <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 transition-all"><X className="h-4 w-4" /></button>
+              <h3 className="text-sm font-black uppercase tracking-wider text-[#111827]">Manual Deposit</h3>
+              <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-black/5 text-black/60 hover:bg-black/10 transition-all"><X className="h-4 w-4" /></button>
             </div>
 
             <form onSubmit={handleTopup} className="space-y-4 text-left">
               <div className="space-y-1">
-                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Merchant Vault</span>
-                <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs font-mono text-white/80">
+                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-black/60">Merchant Vault</span>
+                <div className="rounded-2xl border border-black/10 bg-black/5 px-4 py-3 text-xs font-mono text-black/80">
                   {merchantDisplayName(vault.merchantName)}
                 </div>
               </div>
 
               <div className="space-y-1">
-                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Amount to Deposit (USDC)</span>
+                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-black/60">Amount to Deposit (USDC)</span>
                 <input
                   type="number"
                   step="any"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  className="subscript-input"
+                  className="subscript-input bg-white border border-black/15 text-[#111827]"
                   placeholder="10.00"
                   required
                 />
               </div>
 
               {status && status !== "success" && (
-                <p className="text-[11px] text-red-300 bg-red-950/15 border border-red-500/20 rounded-xl p-3">{status}</p>
+                <p className="text-[11px] text-red-700 bg-red-500/10 border border-red-500/20 rounded-xl p-3">{status}</p>
               )}
 
               {status === "success" && (
                 <div className="flex flex-col items-center gap-2 py-4 text-center">
-                  <CheckCircle2 className="h-10 w-10 text-[#ccff00]" />
-                  <p className="text-xs text-white/80 font-bold">deposit success!</p>
+                  <CheckCircle2 className="h-10 w-10 text-emerald-600" />
+                  <p className="text-xs text-black font-bold">Deposit success!</p>
                 </div>
               )}
 
               <button
                 type="submit"
                 disabled={loading || status === "success"}
-                className="subscript-primary-button w-full mt-2"
+                className="w-full mt-2 rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] text-white py-3 font-bold text-xs shadow-sm transition disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Deposit USDC"}
               </button>

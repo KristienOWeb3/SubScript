@@ -157,12 +157,12 @@ export default function NotificationBell({
     const skeletonContent = (
         <div className="p-4 space-y-3">
             {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="flex items-start gap-3 p-3 rounded-2xl bg-white/[0.02] border border-white/5 animate-pulse">
-                    <div className="w-8 h-8 rounded-xl bg-white/10 shrink-0" />
+                <div key={i} className="flex items-start gap-3 p-3 rounded-2xl bg-black/[0.03] border border-black/5 animate-pulse">
+                    <div className="w-8 h-8 rounded-xl bg-black/10 shrink-0" />
                     <div className="flex-1 space-y-2">
-                        <div className="h-3.5 bg-white/10 rounded w-3/4" />
-                        <div className="h-3 bg-white/5 rounded w-5/6" />
-                        <div className="h-2.5 bg-white/5 rounded w-1/4" />
+                        <div className="h-3.5 bg-black/10 rounded w-3/4" />
+                        <div className="h-3 bg-black/5 rounded w-5/6" />
+                        <div className="h-2.5 bg-black/5 rounded w-1/4" />
                     </div>
                 </div>
             ))}
@@ -170,20 +170,20 @@ export default function NotificationBell({
     );
 
     const panelContent = (
-        <div ref={panelRef} className="flex flex-col h-full w-full">
+        <div ref={panelRef} className="flex flex-col h-full w-full bg-[#FFFFF0] text-black">
             {/* Header */}
-            <div className="flex items-center justify-between gap-3 border-b border-white/10 px-5 py-4 shrink-0 bg-white/[0.03] backdrop-blur-xl">
+            <div className="flex items-center justify-between gap-3 border-b border-black/10 px-5 py-4 shrink-0 bg-white/70 backdrop-blur-xl">
                 <div className="flex items-center gap-2.5">
                     <div
                         className="w-2 h-2 rounded-full shadow-[0_0_10px_var(--nb-accent)]"
                         style={{ backgroundColor: accent }}
                     />
-                    <h3 className="text-xs font-black text-white uppercase tracking-wider">
+                    <h3 className="text-xs font-black text-[#111827] uppercase tracking-wider">
                         Notifications
                     </h3>
                     {unread > 0 && (
                         <span
-                            className="rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-black shadow-sm"
+                            className="rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white shadow-sm"
                             style={{ backgroundColor: accent }}
                         >
                             {unread} new
@@ -205,7 +205,7 @@ export default function NotificationBell({
                         type="button"
                         onClick={() => setOpen(false)}
                         aria-label="Close notifications"
-                        className="rounded-full p-1 text-white/40 transition hover:bg-white/10 hover:text-white"
+                        className="rounded-full p-1 text-black/40 transition hover:bg-black/10 hover:text-black"
                     >
                         <X className="h-4 w-4" />
                     </button>
@@ -218,37 +218,37 @@ export default function NotificationBell({
                     skeletonContent
                 ) : failed ? (
                     <div className="px-5 py-12 text-center space-y-3">
-                        <p className="text-xs text-white/50">We couldn&apos;t load your notifications.</p>
+                        <p className="text-xs text-black/60">We couldn&apos;t load your notifications.</p>
                         <button
                             type="button"
                             onClick={() => void load()}
-                            className="px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-white/5 border border-white/10 text-white hover:bg-white/10 transition flex items-center gap-2 mx-auto"
+                            className="px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-black/5 border border-black/10 text-black hover:bg-black/10 transition flex items-center gap-2 mx-auto"
                         >
                             <RefreshCw className="w-3.5 h-3.5" /> Try again
                         </button>
                     </div>
                 ) : items.length === 0 ? (
                     <div className="px-5 py-14 text-center space-y-3">
-                        <div className="mx-auto w-12 h-12 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-center shadow-inner">
-                            <Bell className="h-5 w-5 text-white/30" />
+                        <div className="mx-auto w-12 h-12 rounded-2xl bg-black/[0.03] border border-black/5 flex items-center justify-center shadow-inner">
+                            <Bell className="h-5 w-5 text-black/30" />
                         </div>
-                        <p className="text-xs font-bold text-white/70 uppercase tracking-wider">All caught up</p>
-                        <p className="text-[10px] text-white/40 max-w-xs mx-auto leading-relaxed">
+                        <p className="text-xs font-bold text-black/75 uppercase tracking-wider">All caught up</p>
+                        <p className="text-[10px] text-black/45 max-w-xs mx-auto leading-relaxed">
                             System alerts, admin announcements, and activity updates will appear here.
                         </p>
                     </div>
                 ) : (
-                    <ul className="divide-y divide-white/5">
+                    <ul className="divide-y divide-black/5">
                         {items.map((item) => {
                             const isUnread = !item.readAt;
                             const itemContent = (
                                 <div className="flex items-start gap-3.5 group">
-                                    <div className="p-2 rounded-xl bg-white/[0.04] border border-white/5 shrink-0 group-hover:border-white/10 transition-colors">
+                                    <div className="p-2 rounded-xl bg-black/[0.04] border border-black/5 shrink-0 group-hover:border-black/10 transition-colors">
                                         {getSourceIcon(item.source)}
                                     </div>
                                     <div className="min-w-0 flex-1 space-y-1">
                                         <div className="flex items-start justify-between gap-2">
-                                            <p className={`text-xs leading-snug ${isUnread ? "font-extrabold text-white" : "font-semibold text-white/70"}`}>
+                                            <p className={`text-xs leading-snug ${isUnread ? "font-extrabold text-[#111827]" : "font-semibold text-black/75"}`}>
                                                 {item.title}
                                             </p>
                                             {isUnread && (
@@ -258,8 +258,8 @@ export default function NotificationBell({
                                                 />
                                             )}
                                         </div>
-                                        <p className="text-[11px] leading-relaxed text-white/50">{item.body}</p>
-                                        <p className="text-[9px] font-mono text-white/30 tracking-wider uppercase pt-0.5">
+                                        <p className="text-[11px] leading-relaxed text-black/60">{item.body}</p>
+                                        <p className="text-[9px] font-mono text-black/40 tracking-wider uppercase pt-0.5">
                                             {relativeTime(item.createdAt)}
                                         </p>
                                     </div>
@@ -267,7 +267,7 @@ export default function NotificationBell({
                             );
 
                             return (
-                                <li key={item.id} className={`px-5 py-3.5 transition-all ${isUnread ? "bg-white/[0.02] hover:bg-white/[0.05]" : "hover:bg-white/[0.03]"}`}>
+                                <li key={item.id} className={`px-5 py-3.5 transition-all ${isUnread ? "bg-black/[0.02] hover:bg-black/[0.05]" : "hover:bg-black/[0.03]"}`}>
                                     {item.url ? (
                                         <a href={item.url} className="block" onClick={() => setOpen(false)}>
                                             {itemContent}
@@ -295,8 +295,8 @@ export default function NotificationBell({
                 aria-expanded={open}
                 className={`relative grid h-9 w-9 place-items-center rounded-full border transition-all duration-200 focus:outline-none ${
                     open
-                        ? "border-white/30 bg-white/10 text-white scale-105 shadow-[0_0_15px_rgba(255,255,255,0.15)]"
-                        : "border-white/10 bg-white/[0.04] text-white/70 hover:border-white/30 hover:bg-white/[0.08] hover:text-white"
+                        ? "border-black/30 bg-black/10 text-black scale-105"
+                        : "border-black/10 bg-black/[0.04] text-black/70 hover:border-black/30 hover:bg-black/[0.08] hover:text-black"
                 }`}
             >
                 <AnimatePresence mode="wait" initial={false}>
@@ -308,7 +308,7 @@ export default function NotificationBell({
                             exit={{ rotate: 90, opacity: 0 }}
                             transition={{ duration: 0.15 }}
                         >
-                            <X className="h-4 w-4 text-white" />
+                            <X className="h-4 w-4 text-black" />
                         </motion.div>
                     ) : (
                         <motion.div
@@ -330,13 +330,13 @@ export default function NotificationBell({
                 )}
             </button>
 
-            {/* Portal Panels (Escapes parent stacking context & sidebar bounds) */}
+            {/* Portal Panels */}
             {mounted &&
                 createPortal(
                     <AnimatePresence>
                         {open && (
                             <>
-                                {/* Mobile Overlay Panel (Full Width below header) */}
+                                {/* Mobile Overlay Panel */}
                                 <motion.div
                                     key="mobile-portal-panel"
                                     role="dialog"
@@ -345,7 +345,7 @@ export default function NotificationBell({
                                     animate={{ opacity: 1, y: 0, scale: 1 }}
                                     exit={{ opacity: 0, y: -20, scale: 0.96 }}
                                     transition={{ type: "spring", stiffness: 350, damping: 28 }}
-                                    className="fixed left-3 right-3 top-[76px] bottom-20 z-[99999] sm:hidden flex flex-col overflow-hidden rounded-3xl border border-white/15 bg-[#0a0a0d]/98 backdrop-blur-2xl shadow-[0_30px_70px_rgba(0,0,0,0.95)]"
+                                    className="fixed left-3 right-3 top-[76px] bottom-20 z-[99999] sm:hidden flex flex-col overflow-hidden rounded-3xl border border-black/15 bg-[#FFFFF0] backdrop-blur-2xl shadow-[0_30px_70px_rgba(0,0,0,0.35)]"
                                     style={{ "--nb-accent": accent } as React.CSSProperties}
                                 >
                                     {panelContent}
@@ -360,7 +360,7 @@ export default function NotificationBell({
                                     animate={{ opacity: 1, y: 0, scale: 1 }}
                                     exit={{ opacity: 0, y: -10, scale: 0.95 }}
                                     transition={{ duration: 0.18, ease: "easeOut" }}
-                                    className="fixed z-[99999] w-[390px] max-w-[calc(100vw-2rem)] max-h-[32rem] hidden sm:flex flex-col overflow-hidden rounded-3xl border border-white/15 bg-[#0a0a0d]/98 backdrop-blur-2xl shadow-[0_30px_70px_rgba(0,0,0,0.9)]"
+                                    className="fixed z-[99999] w-[390px] max-w-[calc(100vw-2rem)] max-h-[32rem] hidden sm:flex flex-col overflow-hidden rounded-3xl border border-black/15 bg-[#FFFFF0] backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.25)]"
                                     style={{
                                         top: `${desktopPos.top}px`,
                                         right: `${desktopPos.right}px`,
