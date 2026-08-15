@@ -179,37 +179,28 @@ export default function DashboardSidebar({
             <div className="space-y-5">
                 {/* Header: Identity pill + Retract/Expand Toggle */}
                 <div className={`flex items-center gap-2 ${isCollapsed ? "flex-col justify-center" : "justify-between"}`}>
-                    {isLoading ? (
-                        <div className={`admin-skeleton-shimmer inline-flex max-w-full items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.04] p-1.5 ${
+                    <button
+                        type="button"
+                        onClick={identity.onClick}
+                        className={`inline-flex max-w-full items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.08] text-white p-1.5 text-left shadow-sm transition hover:border-white/25 hover:bg-white/[0.14] ${
                             isCollapsed ? "justify-center" : "px-2.5 py-1.5"
-                        }`}>
-                            <div className="h-6 w-6 rounded-full bg-white/20 shrink-0" />
-                            {!isCollapsed && <div className="hidden lg:block h-3.5 w-24 rounded bg-white/20" />}
-                        </div>
-                    ) : (
-                        <button
-                            type="button"
-                            onClick={identity.onClick}
-                            className={`inline-flex max-w-full items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.08] text-white p-1.5 text-left shadow-sm transition hover:border-white/25 hover:bg-white/[0.14] ${
-                                isCollapsed ? "justify-center" : "px-2.5 py-1.5"
-                            }`}
-                            title={identity.title || identity.label}
-                        >
-                            <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/20 text-white text-[11px] font-bold">
-                                {identity.avatarUrl ? (
-                                    /* eslint-disable-next-line @next/next/no-img-element */
-                                    <img src={identity.avatarUrl} alt="" className="h-full w-full object-cover" />
-                                ) : (
-                                    identity.fallback
-                                )}
-                            </div>
-                            {!isCollapsed && (
-                                <span className="hidden truncate font-mono text-[11px] font-bold text-white lg:inline max-w-[120px]">
-                                    {identity.label}
-                                </span>
+                        }`}
+                        title={identity.title || identity.label}
+                    >
+                        <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/20 text-white text-[11px] font-bold">
+                            {identity.avatarUrl ? (
+                                /* eslint-disable-next-line @next/next/no-img-element */
+                                <img src={identity.avatarUrl} alt="" className="h-full w-full object-cover" />
+                            ) : (
+                                identity.fallback
                             )}
-                        </button>
-                    )}
+                        </div>
+                        {!isCollapsed && (
+                            <span className="hidden truncate font-mono text-[11px] font-bold text-white lg:inline max-w-[120px]">
+                                {identity.label}
+                            </span>
+                        )}
+                    </button>
 
                     {/* Retract / Expand Sidebar Button */}
                     <button
@@ -228,86 +219,43 @@ export default function DashboardSidebar({
                 </div>
 
                 <nav className="space-y-1.5" aria-label={ariaLabel}>
-                    {isLoading ? (
-                        Array.from({ length: 7 }).map((_, i) => (
-                            <div
-                                key={i}
-                                className={`admin-skeleton-shimmer flex items-center gap-3 py-3 px-3.5 rounded-full ${
-                                    i === 0 ? "bg-white/10" : "bg-transparent"
-                                } ${isCollapsed ? "justify-center px-2" : ""}`}
-                            >
-                                <div className="h-4.5 w-4.5 rounded-md bg-white/20 shrink-0" />
-                                {!isCollapsed && (
-                                    <div
-                                        className="hidden lg:block h-3 rounded bg-white/20"
-                                        style={{ width: `${55 + (i % 3) * 18}%` }}
-                                    />
-                                )}
-                            </div>
-                        ))
-                    ) : (
-                        items.map((item) => renderRow(item, false))
-                    )}
+                    {items.map((item) => renderRow(item, false))}
                 </nav>
             </div>
 
             <div className="mt-6 space-y-4">
-                {isLoading ? (
-                    !isCollapsed && (
-                        <div className="admin-skeleton-shimmer hidden lg:block rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 space-y-2">
-                            <div className="h-4 w-16 rounded bg-white/20" />
-                            <div className="h-3 w-32 rounded bg-white/20" />
-                            <div className="h-2.5 w-full rounded bg-white/10" />
-                        </div>
-                    )
-                ) : (
-                    !isCollapsed && promo && promoVisible && (
-                        <div className="relative hidden overflow-hidden rounded-2xl border border-[color:var(--sb-accent)]/20 bg-[color:var(--sb-accent)]/[0.06] p-3.5 text-white shadow-sm transition-all duration-300 lg:block">
-                            <div className="min-w-[180px]">
-                                <div className="mb-2 flex items-center justify-between gap-2">
-                                    <span className="shrink-0 rounded bg-[color:var(--sb-accent)] px-2 py-0.5 text-[10px] font-bold text-black">
-                                        {promo.badge}
-                                    </span>
-                                    <button
-                                        type="button"
-                                        onClick={() => setPromoVisible(false)}
-                                        aria-label={`Dismiss ${promo.title}`}
-                                        className="shrink-0 text-white/50 transition-colors hover:text-white"
-                                    >
-                                        <X className="h-3.5 w-3.5" />
-                                    </button>
-                                </div>
-                                <p className="text-xs font-extrabold leading-tight text-white">{promo.title}</p>
-                                <p className="mt-1 text-[10px] leading-snug text-white/70">{promo.body}</p>
+                {!isCollapsed && promo && promoVisible && (
+                    <div className="relative hidden overflow-hidden rounded-2xl border border-[color:var(--sb-accent)]/20 bg-[color:var(--sb-accent)]/[0.06] p-3.5 text-white shadow-sm transition-all duration-300 lg:block">
+                        <div className="min-w-[180px]">
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                                <span className="shrink-0 rounded bg-[color:var(--sb-accent)] px-2 py-0.5 text-[10px] font-bold text-black">
+                                    {promo.badge}
+                                </span>
                                 <button
                                     type="button"
-                                    onClick={promo.onCta}
-                                    className="mt-2.5 shrink-0 rounded-md bg-[color:var(--sb-accent)] px-3 py-1 text-[10px] font-bold text-black transition hover:opacity-80"
+                                    onClick={() => setPromoVisible(false)}
+                                    aria-label={`Dismiss ${promo.title}`}
+                                    className="shrink-0 text-white/50 transition-colors hover:text-white"
                                 >
-                                    {promo.ctaLabel}
+                                    <X className="h-3.5 w-3.5" />
                                 </button>
                             </div>
+                            <p className="text-xs font-extrabold leading-tight text-white">{promo.title}</p>
+                            <p className="mt-1 text-[10px] leading-snug text-white/70">{promo.body}</p>
+                            <button
+                                type="button"
+                                onClick={promo.onCta}
+                                className="mt-2.5 shrink-0 rounded-md bg-[color:var(--sb-accent)] px-3 py-1 text-[10px] font-bold text-black transition hover:opacity-80"
+                            >
+                                {promo.ctaLabel}
+                            </button>
                         </div>
-                    )
+                    </div>
                 )}
 
                 {footerItems.length > 0 && (
                     <div className="space-y-1">
-                        {isLoading
-                            ? Array.from({ length: 2 }).map((_, i) => (
-                                  <div
-                                      key={i}
-                                      className={`admin-skeleton-shimmer flex items-center gap-3 py-2.5 px-3.5 rounded-full ${
-                                          isCollapsed ? "justify-center px-2" : ""
-                                      }`}
-                                  >
-                                      <div className="h-4 w-4 rounded-md bg-white/15 shrink-0" />
-                                      {!isCollapsed && (
-                                          <div className="hidden lg:block h-3 w-16 rounded bg-white/15" />
-                                      )}
-                                  </div>
-                              ))
-                            : footerItems.map((item) => renderRow(item, true))}
+                        {footerItems.map((item) => renderRow(item, true))}
                     </div>
                 )}
             </div>

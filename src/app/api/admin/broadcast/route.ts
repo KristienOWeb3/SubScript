@@ -1,7 +1,7 @@
 import { runAdminQueriesSequentially } from "@/lib/admin/db";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/admin/guard";
+import { requireAdmin, requireRootAdmin } from "@/lib/admin/guard";
 import { recordAdminAction } from "@/lib/admin/audit";
 import { sendPushToWallet } from "@/lib/push";
 import { jsonOk } from "@/lib/http/json";
@@ -224,3 +224,55 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Broadcast failed" }, { status: 500 });
     }
 }
+
+export async function DELETE(request: Request) {
+    const auth = await requireRootAdmin(request);
+    if (!auth.ok) return auth.response;
+
+    try {
+        const { searchParams } = new URL(request.url);
+        let id = searchParams.get("id");
+        if (!id) {
+            const body = await request.json().catch(() => ({}));
+            id = body?.id ? String(body.id).trim() : null;
+        }
+
+        if (!id) {
+            return NextResponse.json({ error: "Broadcast id is required" }, { status: 400 });
+        }
+
+        const existing = await prisma.adminBroadcast.findUnique({
+            where: { id },
+        });
+
+        if (!existing) {
+            return NextResponse.json({ error: "Broadcast not found" }, { status: 404 });
+        }
+
+        try {
+            await prisma.accountNotification.deleteMany({
+                where: { broadcastId: id },
+            });
+        } catch {
+            /* ignore if notifications table/broadcastId isn't reachable */
+        }
+
+        await prisma.adminBroadcast.delete({
+            where: { id },
+        });
+
+        await recordAdminAction({
+            actor: auth.admin.wallet,
+            action: "BROADCAST_DELETED",
+            target: id,
+            detail: { title: existing.title, audience: existing.audience, sentCount: existing.sentCount },
+            request,
+        });
+
+        return jsonOk({ success: true, deletedId: id });
+    } catch (error: any) {
+        console.error("[admin/broadcast] delete failed:", error);
+        return NextResponse.json({ error: error.message || "Failed to delete broadcast" }, { status: 500 });
+    }
+}
+

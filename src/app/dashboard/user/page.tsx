@@ -32,6 +32,7 @@ import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 
 import NotificationBell from "@/components/dashboard/NotificationBell";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
+import { useTheme } from "@/hooks/useTheme";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
 import ConfirmModal from "@/components/ConfirmModal";
 import QrScannerModal from "@/components/QrScannerModal";
@@ -198,6 +199,7 @@ type UserTab = "home" | "commit" | "links" | "batch" | "inbox" | "dns" | "referr
 type AccountSubView =
   | "menu"
   | "profile"
+  | "appearance"
   | "kyc"
   | "transactions"
   | "notifications"
@@ -730,6 +732,7 @@ export default function UserDashboard() {
   const [referralsLoaded, setReferralsLoaded] = useState<boolean>(false);
   const [referralCopySuccess, setReferralCopySuccess] = useState<boolean>(false);
 
+  const { theme, setTheme } = useTheme();
   const [accountSubView, setAccountSubView] = useState<AccountSubView>("menu");
   const [spendSearchQuery, setSpendSearchQuery] = useState("");
   const [spendCategory, setSpendCategory] = useState("all");
@@ -4445,6 +4448,22 @@ export default function UserDashboard() {
                       </button>
 
                       <button
+                        onClick={() => setAccountSubView("appearance")}
+                        className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-black/5 text-black/70 group-hover:bg-[#353935] group-hover:text-white transition-all">
+                            <Sliders className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-black uppercase tracking-wide">Appearance &amp; Theme</span>
+                            <span className="block text-[9px] text-black/50 font-sans mt-0.5 font-normal normal-case">Switch between Light, Dark, and System mode</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                      </button>
+
+                      <button
                         onClick={() => setAccountSubView("kyc")}
                         className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
                       >
@@ -4556,6 +4575,86 @@ export default function UserDashboard() {
                         </div>
                         <ChevronRight className="h-4 w-4 text-red-600/40 group-hover:text-red-600 group-hover:translate-x-0.5 transition-all" />
                       </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* APPEARANCE & THEME VIEW */}
+                {accountSubView === "appearance" && (
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-4 font-sans text-xs">
+                      <button
+                        onClick={() => setAccountSubView("menu")}
+                        className="p-2 rounded-full hover:bg-black/5 text-black/60 hover:text-black transition-all"
+                      >
+                        <ChevronLeft className="h-5 w-5" />
+                      </button>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-black">Appearance &amp; Theme</h2>
+                    </div>
+
+                    <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
+                      <div>
+                        <h3 className="text-base font-bold text-black">Dashboard Theme</h3>
+                        <p className="text-xs text-black/60 mt-1">
+                          Choose your preferred appearance for the SubScript dashboard.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                        {[
+                          {
+                            id: "light" as const,
+                            title: "Light Theme",
+                            desc: "Cream (#FFFFF0) & soft slate panel",
+                            accent: "bg-[#FFFFF0] border-black/20 text-[#082824]",
+                            badge: "bg-[#D4E3E8] text-[#082824]",
+                          },
+                          {
+                            id: "dark" as const,
+                            title: "Dark Theme",
+                            desc: "Deep emerald (#082824) & dark cards",
+                            accent: "bg-[#082824] border-white/20 text-white",
+                            badge: "bg-[#8AB4DB] text-[#082824]",
+                          },
+                          {
+                            id: "system" as const,
+                            title: "System Default",
+                            desc: "Syncs with your OS dark/light mode",
+                            accent: "bg-slate-100 border-slate-300 text-slate-900",
+                            badge: "bg-slate-200 text-slate-800",
+                          },
+                        ].map((t) => {
+                          const isSelected = theme === t.id;
+                          return (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() => setTheme(t.id)}
+                              className={`flex flex-col justify-between p-4 rounded-2xl border text-left transition-all relative ${
+                                isSelected
+                                  ? "border-[#082824] ring-2 ring-[#082824]/20 shadow-md bg-black/[0.02]"
+                                  : "border-black/10 hover:border-black/25 bg-white"
+                              }`}
+                            >
+                              <div className="space-y-2">
+                                <div className={`h-16 w-full rounded-xl border p-2 flex flex-col justify-between ${t.accent}`}>
+                                  <div className="flex items-center justify-between">
+                                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${t.badge}`}>
+                                      {t.title}
+                                    </span>
+                                    {isSelected && <Check className="h-4 w-4 text-emerald-600" />}
+                                  </div>
+                                  <div className="h-2 w-12 rounded-full bg-current opacity-30" />
+                                </div>
+                                <div>
+                                  <p className="font-bold text-xs text-black">{t.title}</p>
+                                  <p className="text-[10px] text-black/55 mt-0.5 leading-snug">{t.desc}</p>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 )}
