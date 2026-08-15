@@ -110,45 +110,39 @@ export default function WithdrawModal({
 
                     {/* Modal container */}
                     <motion.div
-                        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                        initial={{ opacity: 0, scale: 0.95, y: 15 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                        transition={{ type: "spring", duration: 0.5 }}
-                        role="dialog"
-                        aria-modal="true"
-                        aria-labelledby="withdraw-dialog-title"
-                        className="relative max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overflow-x-hidden overscroll-contain liquid-glass border border-white/10 rounded-[32px] p-6 sm:p-8 shadow-2xl z-10 text-white bg-black/85 backdrop-blur-2xl"
+                        exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                        transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                        className="relative max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overflow-x-hidden overscroll-contain border border-black/15 rounded-3xl p-6 sm:p-8 shadow-2xl z-10 text-black bg-[#FFFFF0] font-sans"
                     >
-                        {/* Background glowing glow */}
-                        <div className="absolute -top-24 -right-24 w-48 h-48 bg-[#00d2b4]/10 rounded-full blur-[80px] pointer-events-none" />
-
                         {/* Header */}
-                        <div className="flex justify-between items-center mb-6 relative z-10">
-                            <div className="flex items-center gap-2.5">
-                                <div className="w-9 h-9 bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-xl flex items-center justify-center shadow-lg shadow-[#00d2b4]/5">
-                                    <Wallet className="w-4.5 h-4.5 text-[#00d2b4]" />
+                        <div className="flex justify-between items-center mb-6 relative z-10 border-b border-black/10 pb-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 bg-[#082824] rounded-xl flex items-center justify-center text-white shadow-sm">
+                                    <Wallet className="w-4.5 h-4.5" />
                                 </div>
                                 <div>
-                                    <h3 id="withdraw-dialog-title" className="text-sm font-bold uppercase tracking-wider text-white">Withdraw Settlement</h3>
-                                    <p className="text-[10px] text-white/40 font-mono mt-0.5">On-chain USDC payout · Arc Network</p>
+                                    <h3 id="withdraw-dialog-title" className="text-sm font-bold uppercase tracking-wider text-[#082824]">Withdraw Settlement</h3>
+                                    <p className="text-[10px] text-black/50 font-mono mt-0.5">On-chain USDC payout · Arc Network</p>
                                 </div>
                             </div>
                             <button
                                 onClick={resetStates}
                                 disabled={isWithdrawing}
                                 aria-label="Close withdrawal dialog"
-                                className="p-2 hover:bg-white/5 border border-transparent hover:border-white/10 rounded-xl transition-all text-white/50 hover:text-white"
+                                className="p-1.5 hover:bg-black/5 rounded-full transition-all text-black/50 hover:text-black"
                             >
                                 <X className="w-4 h-4" />
                             </button>
                         </div>
 
                         {/* Claimable Balance Display */}
-                        <div className="bg-white/[0.02] border border-white/10 rounded-2xl p-5 mb-6 text-center backdrop-blur-md relative z-10">
-                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest leading-none mb-2">Claimable Settlement Balance</p>
-                            <p className="text-3xl font-black text-white leading-none tracking-tight">
+                        <div className="bg-[#D4E3E8] border border-black/10 rounded-2xl p-5 mb-6 text-center relative z-10">
+                            <p className="text-[10px] text-black/60 uppercase font-bold tracking-widest leading-none mb-2">Claimable Settlement Balance</p>
+                            <p className="text-3xl font-bold text-[#082824] leading-none tracking-tight">
                                 {vaultBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                <span className="text-xs text-[#00d2b4] font-bold ml-1.5 font-mono">USDC</span>
+                                <span className="text-xs text-black/60 font-semibold ml-1.5 font-mono">USDC</span>
                             </p>
                         </div>
 
@@ -156,22 +150,22 @@ export default function WithdrawModal({
                         <div className="relative z-10">
                             {/* Destination Picker */}
                             <div className="space-y-3 mb-6 font-sans text-xs">
-                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-1.5">Select Payout Destination</p>
+                                <p className="text-[10px] text-black/50 uppercase font-bold tracking-widest mb-1.5">Select Payout Destination</p>
                                 
                                 <button
                                     type="button"
                                     onClick={() => { setDestinationType("connected"); setErrorMsg(null); setSingleReviewTarget(null); }}
                                     className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center justify-between ${
                                         destinationType === "connected"
-                                            ? "border-[#00d2b4]/40 bg-[#00d2b4]/10 text-white shadow-lg shadow-[#00d2b4]/5"
-                                            : "border-white/5 bg-white/[0.01] hover:bg-white/[0.03] text-white/70"
+                                            ? "border-[#082824] bg-white ring-2 ring-[#082824]/20 shadow-sm"
+                                            : "border-black/10 bg-white hover:bg-black/[0.02] text-black/70"
                                     }`}
                                 >
                                     <div>
-                                        <p className="font-semibold mb-0.5 text-white">Connected Merchant Wallet</p>
-                                        <p className="text-[10px] font-mono opacity-50">{connectedAddress ? `${connectedAddress.slice(0, 10)}...${connectedAddress.slice(-8)}` : "None connected"}</p>
+                                        <p className="font-semibold mb-0.5 text-black">Connected Merchant Wallet</p>
+                                        <p className="text-[10px] font-mono text-black/50">{connectedAddress ? `${connectedAddress.slice(0, 10)}...${connectedAddress.slice(-8)}` : "None connected"}</p>
                                     </div>
-                                    <ShieldCheck className={`w-4.5 h-4.5 ${destinationType === "connected" ? "text-[#00d2b4]" : "opacity-0"}`} />
+                                    <ShieldCheck className={`w-4.5 h-4.5 ${destinationType === "connected" ? "text-[#082824]" : "opacity-0"}`} />
                                 </button>
 
                                 <button
@@ -180,22 +174,22 @@ export default function WithdrawModal({
                                     disabled={!hasConfiguredPayout}
                                     className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center justify-between ${
                                         !hasConfiguredPayout
-                                            ? "opacity-40 cursor-not-allowed border-white/5 bg-white/[0.01]"
+                                            ? "opacity-40 cursor-not-allowed border-black/10 bg-white"
                                             : destinationType === "configured"
-                                                ? "border-[#00d2b4]/40 bg-[#00d2b4]/10 text-white shadow-lg shadow-[#00d2b4]/5"
-                                                : "border-white/5 bg-white/[0.01] hover:bg-white/[0.03] text-white/70"
+                                                ? "border-[#082824] bg-white ring-2 ring-[#082824]/20 shadow-sm"
+                                                : "border-black/10 bg-white hover:bg-black/[0.02] text-black/70"
                                     }`}
                                 >
                                     <div>
-                                        <p className="font-semibold mb-0.5 text-white">Saved Payout Destination</p>
-                                        <p className="text-[10px] font-mono opacity-50">
+                                        <p className="font-semibold mb-0.5 text-black">Saved Payout Destination</p>
+                                        <p className="text-[10px] font-mono text-black/50">
                                             {hasConfiguredPayout
                                                 ? `${payoutDestination!.slice(0, 10)}...${payoutDestination!.slice(-8)}` 
                                                 : "No payout destination configured"
                                             }
                                         </p>
                                     </div>
-                                    <ShieldCheck className={`w-4.5 h-4.5 ${destinationType === "configured" ? "text-[#00d2b4]" : "opacity-0"}`} />
+                                    <ShieldCheck className={`w-4.5 h-4.5 ${destinationType === "configured" ? "text-[#082824]" : "opacity-0"}`} />
                                 </button>
 
                                 <button
@@ -203,15 +197,15 @@ export default function WithdrawModal({
                                     onClick={() => { setDestinationType("custom"); setErrorMsg(null); setSingleReviewTarget(null); }}
                                     className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center justify-between ${
                                         destinationType === "custom"
-                                            ? "border-[#00d2b4]/40 bg-[#00d2b4]/10 text-white shadow-lg shadow-[#00d2b4]/5"
-                                            : "border-white/5 bg-white/[0.01] hover:bg-white/[0.03] text-white/70"
+                                            ? "border-[#082824] bg-white ring-2 ring-[#082824]/20 shadow-sm"
+                                            : "border-black/10 bg-white hover:bg-black/[0.02] text-black/70"
                                     }`}
                                 >
                                     <div>
-                                        <p className="font-semibold mb-0.5 text-white">Custom Payout Wallet Address</p>
-                                        <p className="text-[10px] opacity-50">Send claimable settlement balance to an external wallet</p>
+                                        <p className="font-semibold mb-0.5 text-black">Custom Payout Wallet Address</p>
+                                        <p className="text-[10px] text-black/50">Send claimable settlement balance to an external wallet</p>
                                     </div>
-                                    <ShieldCheck className={`w-4.5 h-4.5 ${destinationType === "custom" ? "text-[#00d2b4]" : "opacity-0"}`} />
+                                    <ShieldCheck className={`w-4.5 h-4.5 ${destinationType === "custom" ? "text-[#082824]" : "opacity-0"}`} />
                                 </button>
 
                                 <AnimatePresence>
@@ -227,14 +221,14 @@ export default function WithdrawModal({
                                                 placeholder="Enter target wallet address (0x...)"
                                                 value={customAddress}
                                                 onChange={(e) => { setCustomAddress(e.target.value); setErrorMsg(null); setSingleReviewTarget(null); }}
-                                                className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-xs text-white placeholder-white/20 focus:outline-none focus:border-[#00d2b4] transition-colors font-mono box-border"
+                                                className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-xs text-black placeholder:text-black/30 focus:outline-none focus:border-[#8AB4DB] transition-colors font-mono box-border"
                                             />
                                             <input
                                                 type="text"
                                                 placeholder="Confirm target wallet address (0x...)"
                                                 value={confirmCustomAddress}
                                                 onChange={(e) => { setConfirmCustomAddress(e.target.value); setErrorMsg(null); setSingleReviewTarget(null); }}
-                                                className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-xs text-white placeholder-white/20 focus:outline-none focus:border-[#00d2b4] transition-colors font-mono box-border"
+                                                className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-xs text-black placeholder:text-black/30 focus:outline-none focus:border-[#8AB4DB] transition-colors font-mono box-border"
                                             />
                                         </motion.div>
                                     )}
@@ -242,26 +236,26 @@ export default function WithdrawModal({
                             </div>
 
                             {vaultBalance < 1.0 && (
-                                <p className="text-amber-400 text-[10px] mb-4 font-semibold">Minimum withdrawal amount is 1.00 USDC.</p>
+                                <p className="text-amber-700 text-[10px] mb-4 font-semibold">Minimum withdrawal amount is 1.00 USDC.</p>
                             )}
                             {errorMsg && (
-                                <p className="text-red-400 text-[10px] mb-4 font-mono font-semibold">{errorMsg}</p>
+                                <p className="text-red-500 text-[10px] mb-4 font-mono font-semibold">{errorMsg}</p>
                             )}
 
                             {singleReviewTarget && (
-                                <div className="mb-5 space-y-3 rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-xs">
+                                <div className="mb-5 space-y-3 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-4 text-xs">
                                     <div className="flex items-center justify-between gap-3">
-                                        <span className="text-white/45">Amount</span>
-                                        <span className="font-bold text-white">{vaultBalance.toFixed(2)} USDC</span>
+                                        <span className="text-black/60">Amount</span>
+                                        <span className="font-bold text-[#082824]">{vaultBalance.toFixed(2)} USDC</span>
                                     </div>
                                     <div className="space-y-1">
-                                        <span className="text-white/45">Destination</span>
-                                        <p className="break-all font-mono text-[10px] text-white/90">{singleReviewTarget}</p>
+                                        <span className="text-black/60">Destination</span>
+                                        <p className="break-all font-mono text-[10px] text-black font-semibold">{singleReviewTarget}</p>
                                     </div>
-                                    <p className="border-t border-white/10 pt-3 text-[10px] leading-relaxed text-amber-200/80">
+                                    <p className="border-t border-black/10 pt-3 text-[10px] leading-relaxed text-amber-900">
                                         This on-chain transfer cannot be reversed. Verify the destination address before confirming.
                                     </p>
-                                    <button type="button" onClick={() => setSingleReviewTarget(null)} className="text-[10px] font-bold uppercase tracking-wider text-white/60 hover:text-white transition-colors">
+                                    <button type="button" onClick={() => setSingleReviewTarget(null)} className="text-[10px] font-bold uppercase tracking-wider text-black/60 hover:text-black transition-colors">
                                         ← Back to edit
                                     </button>
                                 </div>
@@ -271,11 +265,11 @@ export default function WithdrawModal({
                                 type="button"
                                 onClick={singleReviewTarget ? handleSingleConfirm : reviewSingleWithdrawal}
                                 disabled={isWithdrawing || vaultBalance < 1.0}
-                                className="w-full py-3.5 bg-[#00d2b4] hover:bg-[#00d2b4]/90 disabled:opacity-40 text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_25px_rgba(0,210,180,0.25)] hover:scale-[1.01] active:scale-[0.99]"
+                                className="w-full py-3.5 bg-[#8AB4DB] hover:bg-[#7aa7d0] disabled:opacity-40 text-[#082824] font-bold rounded-full text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-md hover:scale-[1.01] active:scale-[0.99]"
                             >
                                 {isWithdrawing ? (
                                     <>
-                                        <Loader2 className="w-4 h-4 animate-spin text-black" />
+                                        <Loader2 className="w-4 h-4 animate-spin text-[#082824]" />
                                         Waiting for on-chain confirmation...
                                     </>
                                 ) : (

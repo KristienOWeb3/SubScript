@@ -312,6 +312,7 @@ export default function AdminDashboardPage() {
   );
   const [bcConfirm, setBcConfirm] = useState("");
   const [bcBusy, setBcBusy] = useState<"preview" | "send" | null>(null);
+  const [deletingBroadcastId, setDeletingBroadcastId] = useState<string | null>(null);
 
   const [invReceiptId, setInvReceiptId] = useState("");
   const [invAddress, setInvAddress] = useState("");
@@ -604,6 +605,33 @@ export default function AdminDashboardPage() {
       setError(err.message || "Broadcast failed");
     } finally {
       setBcBusy(null);
+    }
+  };
+
+  const deleteBroadcast = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this broadcast record?")) return;
+    setDeletingBroadcastId(id);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch(`/api/admin/broadcast?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Failed to delete broadcast");
+      setAnalytics((prev: any) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          recentBroadcasts: (prev.recentBroadcasts || []).filter((b: any) => b.id !== id),
+        };
+      });
+      setNotice("Broadcast deleted.");
+      setTimeout(() => setNotice(null), 3000);
+    } catch (err: any) {
+      setError(err.message || "Failed to delete broadcast");
+    } finally {
+      setDeletingBroadcastId(null);
     }
   };
 
@@ -1082,15 +1110,15 @@ export default function AdminDashboardPage() {
           <div className={`${CARD} space-y-4`}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-lg font-black uppercase tracking-wide text-white">
+                <h2 className="text-lg font-black uppercase tracking-wide text-[#0f172a]">
                   Merchant Verifications
                 </h2>
-                <p className="text-xs text-white/50">
+                <p className="text-xs text-[#475569]">
                   Verified merchants show a badge at checkout and in DMs.
                 </p>
               </div>
               <div className="relative w-full sm:w-64">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-white/30" />
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                 <input
                   type="text"
                   value={searchQuery}
@@ -1102,7 +1130,7 @@ export default function AdminDashboardPage() {
             </div>
 
             {/* Quick Manual Verify Form */}
-            <form onSubmit={handleManualVerifyMerchant} className="flex flex-col sm:flex-row gap-2.5 p-4 rounded-xl bg-white/[0.03] border border-white/10">
+            <form onSubmit={handleManualVerifyMerchant} className="flex flex-col sm:flex-row gap-2.5 p-4 rounded-xl bg-slate-50 border border-slate-200">
               <input
                 type="text"
                 value={manualMerchantAddress}
@@ -1114,7 +1142,7 @@ export default function AdminDashboardPage() {
               <button
                 type="submit"
                 disabled={manualMerchantBusy}
-                className="shrink-0 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-emerald-300 transition hover:bg-emerald-400/20 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                className="shrink-0 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50 flex items-center justify-center gap-1.5"
               >
                 {manualMerchantBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
                 Verify Merchant
@@ -1124,7 +1152,7 @@ export default function AdminDashboardPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-white/10 text-[10px] font-black uppercase tracking-wider text-white/40">
+                  <tr className="border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-[#64748b]">
                     <th className="py-3 px-3">Merchant</th>
                     <th className="py-3 px-3">Wallet Address</th>
                     <th className="py-3 px-3">Tier</th>
@@ -1132,12 +1160,12 @@ export default function AdminDashboardPage() {
                     <th className="py-3 px-3 text-right">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5">
+                <tbody className="divide-y divide-slate-100">
                   {filteredMerchants.length === 0 ? (
                     <tr>
                       <td
                         colSpan={5}
-                        className="py-6 text-center text-white/40"
+                        className="py-6 text-center text-[#64748b]"
                       >
                         No merchants found.
                       </td>
@@ -1146,11 +1174,11 @@ export default function AdminDashboardPage() {
                     filteredMerchants.map((merchant) => (
                       <tr
                         key={merchant.walletAddress}
-                        className="hover:bg-white/[0.02]"
+                        className="hover:bg-slate-50/70 transition-colors"
                       >
                         <td className="py-3.5 px-3">
                           <div className="flex items-center gap-2.5">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 border border-white/10 font-bold text-white shrink-0">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 border border-slate-200 font-bold text-[#0f172a] shrink-0">
                               {merchant.profilePic ? (
                                 <img
                                   src={merchant.profilePic}
@@ -1161,7 +1189,7 @@ export default function AdminDashboardPage() {
                                 <Building2 className="h-4 w-4 text-[#2775ca]" />
                               )}
                             </div>
-                            <span className="font-bold text-white uppercase tracking-wider">
+                            <span className="font-bold text-[#0f172a] uppercase tracking-wider">
                               {merchant.merchantName}
                             </span>
                             <button
@@ -1172,32 +1200,32 @@ export default function AdminDashboardPage() {
                                   merchant.merchantName
                                 )
                               }
-                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/50 hover:text-white hover:bg-white/15 transition"
+                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition"
                               title="Copy merchant name"
                             >
                               {copiedMerchant === merchant.walletAddress ? (
-                                <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                                <CheckCircle2 className="h-3 w-3 text-emerald-600" />
                               ) : (
                                 <Copy className="h-3 w-3" />
                               )}
                             </button>
                           </div>
                         </td>
-                        <td className="py-3.5 px-3 font-mono text-white/60">
+                        <td className="py-3.5 px-3 font-mono text-[#334155]">
                           {merchant.walletAddress}
                         </td>
                         <td className="py-3.5 px-3">
-                          <span className="rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[9px] font-bold text-white/70">
+                          <span className="rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-[9px] font-bold text-slate-700">
                             {merchant.tier}
                           </span>
                         </td>
                         <td className="py-3.5 px-3">
                           {merchant.verified ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 text-[9px] font-bold text-emerald-300">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[9px] font-bold text-emerald-800">
                               <ShieldCheck className="h-3 w-3" /> Verified
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[9px] font-bold text-amber-300">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[9px] font-bold text-amber-800">
                               Unverified
                             </span>
                           )}
@@ -1214,8 +1242,8 @@ export default function AdminDashboardPage() {
                             disabled={verifyBusy === merchant.walletAddress}
                             className={`rounded-xl border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition ${
                               merchant.verified
-                                ? "border-red-400/30 bg-red-400/10 text-red-300 hover:bg-red-400/20"
-                                : "border-emerald-400/30 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20"
+                                ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                                : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                             }`}
                           >
                             {verifyBusy === merchant.walletAddress ? (
@@ -1241,10 +1269,10 @@ export default function AdminDashboardPage() {
             <div className={`${CARD} space-y-4`}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h2 className="text-lg font-black uppercase tracking-wide text-white">
+                  <h2 className="text-lg font-black uppercase tracking-wide text-[#0f172a]">
                     KYC Review
                   </h2>
-                  <p className="text-xs text-white/50">
+                  <p className="text-xs text-[#475569]">
                     Approving an enterprise account also grants its
                     verified-merchant badge. Individuals only get their KYC
                     status.
@@ -1252,7 +1280,7 @@ export default function AdminDashboardPage() {
                 </div>
                 <div className="flex w-full gap-2 sm:w-auto">
                   <div className="relative flex-1 sm:w-56">
-                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-white/30" />
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                     <input
                       type="text"
                       value={kycSearch}
@@ -1279,7 +1307,7 @@ export default function AdminDashboardPage() {
                       <option
                         key={s}
                         value={s}
-                        className="bg-[#121212] text-white"
+                        className="bg-white text-[#0f172a]"
                       >
                         {s === "all" ? "All statuses" : s.replace("_", " ")}
                       </option>
@@ -1295,7 +1323,7 @@ export default function AdminDashboardPage() {
                   label="Loading verification queue"
                 />
               ) : kycRecords.length === 0 ? (
-                <p className="py-6 text-center text-xs text-white/40">
+                <p className="py-6 text-center text-xs text-[#64748b]">
                   No verifications match this filter.
                 </p>
               ) : (
@@ -1306,22 +1334,22 @@ export default function AdminDashboardPage() {
                     return (
                       <div
                         key={record.id}
-                        className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 space-y-3"
+                        className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3"
                       >
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                              <code className="font-mono text-xs text-white/80">
+                              <code className="font-mono text-xs font-semibold text-[#0f172a]">
                                 {record.walletAddress}
                               </code>
                               <KycStatusPill status={record.status} />
                               {record.adminAsserted && (
-                                <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[9px] font-bold text-amber-300">
+                                <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[9px] font-bold text-amber-800">
                                   Admin-asserted
                                 </span>
                               )}
                             </div>
-                            <p className="mt-1.5 text-[10px] text-white/40">
+                            <p className="mt-1.5 text-[11px] text-[#475569]">
                               {record.accountRole} · {record.kind} ·{" "}
                               {record.countryCode} · {record.requestedLevel} ·
                               via {record.provider}
@@ -1335,7 +1363,7 @@ export default function AdminDashboardPage() {
                                 : ""}
                             </p>
                             {record.decidedAt && (
-                              <p className="mt-1 text-[9px] text-[#00d2b4]/90 font-mono">
+                              <p className="mt-1 text-[10px] text-emerald-700 font-mono">
                                 Decided{" "}
                                 {new Date(record.decidedAt).toLocaleString()}
                                 {record.lastAdminActor
@@ -1355,7 +1383,7 @@ export default function AdminDashboardPage() {
                                 setForceExpiry("");
                                 setForceConfirm("");
                               }}
-                              className="shrink-0 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-300 transition hover:bg-amber-400/20"
+                              className="shrink-0 rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-800 transition hover:bg-amber-100"
                             >
                               Force approve
                             </button>
@@ -1363,7 +1391,7 @@ export default function AdminDashboardPage() {
                         </div>
 
                         {transitions.length === 0 ? (
-                          <p className="text-[10px] text-white/30">
+                          <p className="text-[10px] text-[#64748b]">
                             {record.status === "APPROVED"
                               ? "Approved. It can still be expired or revoked once it has been re-loaded."
                               : "Terminal state — the applicant must resubmit, or a root admin can force approve."}
@@ -1371,10 +1399,6 @@ export default function AdminDashboardPage() {
                         ) : (
                           <div className="flex flex-wrap items-center gap-2">
                             {(() => {
-                              /* One dropdown serving every transition offered on this row. The
-                                 server validates the code against the specific target status, so
-                                 a code picked for REJECTED and then applied to APPROVED is
-                                 refused there rather than silently accepted. */
                               const codes = Array.from(
                                 new Set(
                                   transitions.flatMap(
@@ -1396,7 +1420,7 @@ export default function AdminDashboardPage() {
                                 >
                                   <option
                                     value=""
-                                    className="bg-[#121212] text-white"
+                                    className="bg-white text-[#0f172a]"
                                   >
                                     Reason…
                                   </option>
@@ -1404,7 +1428,7 @@ export default function AdminDashboardPage() {
                                     <option
                                       key={code}
                                       value={code}
-                                      className="bg-[#121212] text-white"
+                                      className="bg-white text-[#0f172a]"
                                     >
                                       {code.replace(/_/g, " ")}
                                     </option>
@@ -1420,10 +1444,10 @@ export default function AdminDashboardPage() {
                                 onClick={() => decideKyc(record, next)}
                                 className={`rounded-xl border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition disabled:opacity-50 ${
                                   next === "APPROVED"
-                                    ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20"
+                                    ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
                                     : next === "REJECTED" || next === "REVOKED"
-                                    ? "border-red-400/30 bg-red-400/10 text-red-300 hover:bg-red-400/20"
-                                    : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+                                    ? "border-red-300 bg-red-50 text-red-800 hover:bg-red-100"
+                                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
                                 }`}
                               >
                                 {busy ? (
@@ -1445,11 +1469,11 @@ export default function AdminDashboardPage() {
             {viewerIsRoot && (
               <div className={`${CARD} space-y-4 border-emerald-500/30`}>
                 <div className="flex items-start gap-2">
-                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
                   <div>
                     <span className={LABEL}>Direct KYC Upgrade &amp; Approval</span>
-                    <p className="mt-1 text-[11px] text-white/50">
-                      Instantly upgrade and approve KYC for any user or merchant using their wallet address or SubScript DNS name (e.g. <code className="text-emerald-300">name.sub</code>). Approval persists across future DNS changes as it is anchored to the underlying wallet address. Records acting admin actor and timestamp in audit logs.
+                    <p className="mt-1 text-[11px] text-[#475569]">
+                      Instantly upgrade and approve KYC for any user or merchant using their wallet address or SubScript DNS name (e.g. <code className="text-emerald-700 font-bold">name.sub</code>). Approval persists across future DNS changes as it is anchored to the underlying wallet address. Records acting admin actor and timestamp in audit logs.
                     </p>
                   </div>
                 </div>
@@ -1479,8 +1503,8 @@ export default function AdminDashboardPage() {
                     onChange={(e) => setDirectKycLevel(e.target.value)}
                     className={INPUT}
                   >
-                    <option value="STANDARD" className="bg-[#121212] text-white">Standard</option>
-                    <option value="ENHANCED" className="bg-[#121212] text-white">Enhanced</option>
+                    <option value="STANDARD" className="bg-white text-[#0f172a]">Standard</option>
+                    <option value="ENHANCED" className="bg-white text-[#0f172a]">Enhanced</option>
                   </select>
                   <input
                     type="text"
@@ -1492,7 +1516,7 @@ export default function AdminDashboardPage() {
                   <button
                     type="submit"
                     disabled={directKycBusy}
-                    className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-emerald-300 transition hover:bg-emerald-400/20 disabled:opacity-50 sm:col-span-2 flex items-center justify-center gap-1.5"
+                    className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50 sm:col-span-2 flex items-center justify-center gap-1.5"
                   >
                     {directKycBusy ? (
                       <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" />
@@ -1510,12 +1534,12 @@ export default function AdminDashboardPage() {
             {viewerIsRoot && (
               <div className={`${CARD} space-y-4 border-amber-500/30`}>
                 <div className="flex items-start gap-2">
-                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                   <div>
                     <span className={LABEL}>Open a manual verification</span>
-                    <p className="mt-1 text-[11px] text-white/50">
+                    <p className="mt-1 text-[11px] text-[#475569]">
                       For a wallet that never applied. The record is marked{" "}
-                      <code className="text-amber-300">manual_admin</code>{" "}
+                      <code className="text-amber-700 font-bold">manual_admin</code>{" "}
                       permanently, and records the consent as admin-supplied
                       rather than given by the user. It opens as PENDING —
                       approving it is a second, separate decision.
@@ -1550,13 +1574,13 @@ export default function AdminDashboardPage() {
                   >
                     <option
                       value="STANDARD"
-                      className="bg-[#121212] text-white"
+                      className="bg-white text-[#0f172a]"
                     >
                       Standard
                     </option>
                     <option
                       value="ENHANCED"
-                      className="bg-[#121212] text-white"
+                      className="bg-white text-[#0f172a]"
                     >
                       Enhanced
                     </option>
@@ -1572,7 +1596,7 @@ export default function AdminDashboardPage() {
                   <button
                     type="submit"
                     disabled={kycBusy === "create"}
-                    className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-amber-300 transition hover:bg-amber-400/20 disabled:opacity-50 sm:col-span-2"
+                    className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-amber-800 transition hover:bg-amber-100 disabled:opacity-50 sm:col-span-2"
                   >
                     {kycBusy === "create" ? (
                       <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" />
@@ -1587,16 +1611,16 @@ export default function AdminDashboardPage() {
             {forceTarget && (
               <div className={`${CARD} space-y-4 border-red-500/40`}>
                 <div className="flex items-start gap-2">
-                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-red-300" />
+                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
                   <div>
                     <span className={LABEL}>
                       Force approve {forceTarget.walletAddress}
                     </span>
-                    <p className="mt-1 text-[11px] text-white/50">
+                    <p className="mt-1 text-[11px] text-[#475569]">
                       This overrides the compliance guard that stops a manual
                       verification counting as production KYC, and lifts it out
                       of{" "}
-                      <strong className="text-white/70">
+                      <strong className="text-[#0f172a]">
                         {forceTarget.status}
                       </strong>{" "}
                       regardless of the normal transition rules. Your wallet,
@@ -1646,7 +1670,7 @@ export default function AdminDashboardPage() {
                         forceConfirm !== KYC_FORCE_CONFIRMATION ||
                         kycBusy === forceTarget.id
                       }
-                      className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-red-300 transition hover:bg-red-400/20 disabled:opacity-40"
+                      className="rounded-xl border border-red-300 bg-red-50 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-red-800 transition hover:bg-red-100 disabled:opacity-40"
                     >
                       {kycBusy === forceTarget.id ? (
                         <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" />
@@ -1657,7 +1681,7 @@ export default function AdminDashboardPage() {
                     <button
                       type="button"
                       onClick={() => setForceTarget(null)}
-                      className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-white/70 transition hover:bg-white/10"
+                      className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-700 transition hover:bg-slate-100"
                     >
                       Cancel
                     </button>
@@ -1667,7 +1691,7 @@ export default function AdminDashboardPage() {
             )}
 
             {!viewerIsRoot && (
-              <p className="px-1 text-[10px] text-white/35">
+              <p className="px-1 text-[10px] text-[#64748b]">
                 <FileText className="mr-1 inline h-3 w-3" />
                 Force approval and manual records are restricted to root admins
                 (ADMIN_WALLET_ADDRESSES).
@@ -1681,12 +1705,12 @@ export default function AdminDashboardPage() {
             <div className={`${CARD}`}>
               <div className="flex items-center justify-between mb-4">
                 <span className={LABEL}>Security Access Control</span>
-                <ShieldAlert className="h-5 w-5 text-red-400" />
+                <ShieldAlert className="h-5 w-5 text-red-600" />
               </div>
-              <h3 className="text-base font-bold text-white">
+              <h3 className="text-base font-bold text-[#0f172a]">
                 Ban Account or IP
               </h3>
-              <p className="mt-1 text-[11px] text-white/50">
+              <p className="mt-1 text-[11px] text-[#475569]">
                 Wallet bans take effect on the banned user&apos;s next request —
                 existing sessions stop working immediately. IP ban changes are
                 checked against the shared ban store on every API request.
@@ -1699,8 +1723,8 @@ export default function AdminDashboardPage() {
                     onClick={() => setBanType("ACCOUNT")}
                     className={`flex-1 rounded-xl py-1.5 text-[11px] font-bold transition ${
                       banType === "ACCOUNT"
-                        ? "bg-red-500/20 border border-red-500/40 text-red-300"
-                        : "bg-white/5 text-white/50"
+                        ? "bg-red-50 border border-red-300 text-red-800 shadow-sm"
+                        : "bg-slate-100 text-[#475569] hover:bg-slate-200"
                     }`}
                   >
                     Wallet Address
@@ -1710,8 +1734,8 @@ export default function AdminDashboardPage() {
                     onClick={() => setBanType("IP")}
                     className={`flex-1 rounded-xl py-1.5 text-[11px] font-bold transition ${
                       banType === "IP"
-                        ? "bg-red-500/20 border border-red-500/40 text-red-300"
-                        : "bg-white/5 text-white/50"
+                        ? "bg-red-50 border border-red-300 text-red-800 shadow-sm"
+                        : "bg-slate-100 text-[#475569] hover:bg-slate-200"
                     }`}
                   >
                     IP Address
@@ -1744,7 +1768,7 @@ export default function AdminDashboardPage() {
                 <button
                   type="submit"
                   disabled={banBusy || !banTarget.trim()}
-                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-red-500/20 border border-red-500/40 py-2 text-xs font-black uppercase tracking-wider text-red-300 transition hover:bg-red-500/30 disabled:opacity-40"
+                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-red-600 py-2.5 text-xs font-black uppercase tracking-wider text-white transition hover:bg-red-700 disabled:opacity-40 shadow-sm"
                 >
                   {banBusy ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -1758,13 +1782,13 @@ export default function AdminDashboardPage() {
             <div className={`${CARD} space-y-4 border-amber-500/30`}>
               <div className="flex items-center justify-between">
                 <span className={LABEL}>Payout Control</span>
-                <ShieldAlert className="h-5 w-5 text-amber-400" />
+                <ShieldAlert className="h-5 w-5 text-amber-600" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-white">
+                <h3 className="text-base font-bold text-[#0f172a]">
                   Freeze Withdrawals
                 </h3>
-                <p className="mt-1 text-[11px] text-white/50">
+                <p className="mt-1 text-[11px] text-[#475569]">
                   Stops funds leaving one account while everything else keeps
                   working — the person can still sign in, read receipts, and
                   reply to you. Use this for a payout dispute or a suspected
@@ -1793,8 +1817,8 @@ export default function AdminDashboardPage() {
                         onClick={() => setHoldScope(scope)}
                         className={`flex-1 rounded-xl py-1.5 text-[11px] font-bold transition ${
                           holdScope === scope
-                            ? "bg-amber-500/20 border border-amber-500/40 text-amber-300"
-                            : "bg-white/5 text-white/50 hover:bg-white/10"
+                            ? "bg-amber-50 border border-amber-300 text-amber-800 shadow-sm"
+                            : "bg-slate-100 text-[#475569] hover:bg-slate-200"
                         }`}
                       >
                         {scope === "USER"
@@ -1805,7 +1829,7 @@ export default function AdminDashboardPage() {
                       </button>
                     ))}
                   </div>
-                  <p className="mt-1.5 text-[10px] text-white/35">
+                  <p className="mt-1.5 text-[10px] text-[#64748b]">
                     {holdScope === "USER"
                       ? "Blocks vault withdrawals only. Merchant payouts to this address still run."
                       : holdScope === "MERCHANT"
@@ -1837,7 +1861,7 @@ export default function AdminDashboardPage() {
                     onChange={(e) => setHoldExpiry(e.target.value)}
                     className={INPUT}
                   />
-                  <p className="mt-1.5 text-[10px] text-white/35">
+                  <p className="mt-1.5 text-[10px] text-[#64748b]">
                     Leave empty to hold until an admin lifts it.
                   </p>
                 </div>
@@ -1849,7 +1873,7 @@ export default function AdminDashboardPage() {
                     !holdTarget.trim() ||
                     holdReason.trim().length < 3
                   }
-                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-amber-500/20 border border-amber-500/40 py-2 text-xs font-black uppercase tracking-wider text-amber-300 transition hover:bg-amber-500/30 disabled:opacity-40"
+                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-amber-600 py-2.5 text-xs font-black uppercase tracking-wider text-white transition hover:bg-amber-700 disabled:opacity-40 shadow-sm"
                 >
                   {holdBusy === "place" ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -1861,7 +1885,7 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className={`${CARD} space-y-4`}>
-              <h3 className="text-sm font-black uppercase tracking-wider text-white">
+              <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">
                 Withdrawal Holds
               </h3>
               {holdsLoading && holds.length === 0 ? (
@@ -1871,39 +1895,37 @@ export default function AdminDashboardPage() {
                   label="Loading withdrawal holds"
                 />
               ) : holds.length === 0 ? (
-                <p className="text-xs text-white/40">No withdrawal holds.</p>
+                <p className="text-xs text-[#64748b]">No withdrawal holds.</p>
               ) : (
                 <div className="space-y-2">
                   {holds.map((h) => (
                     <div
                       key={h.address}
-                      className={`flex items-center justify-between gap-3 rounded-2xl border p-3 ${
+                      className={`flex items-center justify-between gap-3 rounded-2xl border p-3.5 ${
                         h.active
-                          ? "border-amber-500/25 bg-amber-500/5"
-                          : "border-white/5 bg-white/[0.03]"
+                          ? "border-amber-200 bg-amber-50/60"
+                          : "border-slate-200 bg-slate-50"
                       }`}
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <p className="truncate font-mono text-[11px] text-white/80">
+                          <p className="truncate font-mono text-[11px] font-bold text-[#0f172a]">
                             {h.address}
                           </p>
                           <span
                             className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold ${
                               h.active
-                                ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
-                                : "border-white/10 bg-white/5 text-white/40"
+                                ? "border-amber-300 bg-amber-50 text-amber-800"
+                                : "border-slate-200 bg-slate-100 text-slate-600"
                             }`}
                           >
                             {h.active ? h.scope : "LAPSED"}
                           </span>
                         </div>
-                        <p className="mt-1 truncate text-[10px] text-white/40">
+                        <p className="mt-1 truncate text-[11px] text-[#475569]">
                           {h.reason || "No reason recorded"}
                         </p>
-                        {/* Who and when, per the audit requirement — the console should answer
-                            "who froze this" without anyone opening the database. */}
-                        <p className="mt-0.5 truncate text-[9px] text-white/30">
+                        <p className="mt-0.5 truncate text-[10px] text-[#64748b]">
                           By {h.placedBy} on{" "}
                           {new Date(h.createdAt).toLocaleString()}
                           {h.expiresAt
@@ -1917,7 +1939,7 @@ export default function AdminDashboardPage() {
                         type="button"
                         onClick={() => handleLiftHold(h.address)}
                         disabled={holdBusy === h.address}
-                        className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white/70 transition hover:bg-white/10 disabled:opacity-40"
+                        className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-700 transition hover:bg-slate-100 disabled:opacity-40 shadow-sm"
                       >
                         {holdBusy === h.address ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1933,11 +1955,11 @@ export default function AdminDashboardPage() {
 
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div className={`${CARD} space-y-4`}>
-                <h3 className="text-sm font-black uppercase tracking-wider text-white">
+                <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">
                   Banned Wallets
                 </h3>
                 {bannedAccounts.length === 0 ? (
-                  <p className="text-xs text-white/40">No banned wallets.</p>
+                  <p className="text-xs text-[#64748b]">No banned wallets.</p>
                 ) : (
                   <div className="space-y-2">
                     {bannedAccounts.map((b) => (
@@ -1953,11 +1975,11 @@ export default function AdminDashboardPage() {
               </div>
 
               <div className={`${CARD} space-y-4`}>
-                <h3 className="text-sm font-black uppercase tracking-wider text-white">
+                <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">
                   Banned IPs
                 </h3>
                 {bannedIps.length === 0 ? (
-                  <p className="text-xs text-white/40">No banned IPs.</p>
+                  <p className="text-xs text-[#64748b]">No banned IPs.</p>
                 ) : (
                   <div className="space-y-2">
                     {bannedIps.map((b) => (
@@ -2127,12 +2149,12 @@ export default function AdminDashboardPage() {
                   <div className="flex items-center justify-between">
                     <span className={LABEL}>Maintenance Mode</span>
                     {flags.maintenanceEnabled && (
-                      <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[9px] font-bold text-red-300 border border-red-500/30">
+                      <span className="rounded-full bg-red-50 px-2 py-0.5 text-[9px] font-bold text-red-800 border border-red-200">
                         Site is down
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-white/50">
+                  <p className="text-[11px] text-[#475569]">
                     Returns 503 across the whole product. This console, the
                     admin API, and sign-in stay reachable so you can always turn
                     it back off.
@@ -2153,7 +2175,7 @@ export default function AdminDashboardPage() {
                         updateFlag({ maintenanceEnabled: false }, "maintenance")
                       }
                       disabled={flagBusy === "maintenance"}
-                      className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-500/15 border border-emerald-500/40 py-2.5 text-xs font-black uppercase tracking-wider text-emerald-300 transition hover:bg-emerald-500/25 disabled:opacity-40"
+                      className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-xs font-black uppercase tracking-wider text-white transition hover:bg-emerald-700 disabled:opacity-40 shadow-sm"
                     >
                       {flagBusy === "maintenance" ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -2187,7 +2209,7 @@ export default function AdminDashboardPage() {
                           maintenanceConfirm.trim().toLowerCase() !==
                             "take it down"
                         }
-                        className="w-full flex items-center justify-center gap-2 rounded-xl bg-red-500/20 border border-red-500/40 py-2.5 text-xs font-black uppercase tracking-wider text-red-300 transition hover:bg-red-500/30 disabled:opacity-30"
+                        className="w-full flex items-center justify-center gap-2 rounded-xl bg-red-600 py-2.5 text-xs font-black uppercase tracking-wider text-white transition hover:bg-red-700 disabled:opacity-30 shadow-sm"
                       >
                         {flagBusy === "maintenance" ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
@@ -2220,7 +2242,7 @@ export default function AdminDashboardPage() {
                 <span className={LABEL}>Push Notification</span>
                 <Bell className="h-5 w-5 text-[#2775ca]" />
               </div>
-              <p className="text-[11px] text-white/50">
+              <p className="text-[11px] text-[#475569]">
                 Delivered to everyone in the audience who has push enabled. This
                 cannot be recalled once sent — preview it on your own wallet
                 first.
@@ -2238,7 +2260,7 @@ export default function AdminDashboardPage() {
                     className={`rounded-xl px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider transition ${
                       bcAudience === a
                         ? "bg-[#2775ca]/15 border border-[#2775ca]/40 text-[#2775ca]"
-                        : "border border-white/10 bg-white/5 text-white/50 hover:bg-white/10"
+                        : "border border-slate-200 bg-white text-[#475569] hover:bg-slate-100"
                     }`}
                   >
                     {a}
@@ -2277,7 +2299,7 @@ export default function AdminDashboardPage() {
                   disabled={
                     bcBusy !== null || !bcTitle.trim() || !bcBody.trim()
                   }
-                  className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 py-2.5 text-xs font-bold text-white transition hover:bg-white/10 disabled:opacity-40"
+                  className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-40 shadow-sm"
                 >
                   {bcBusy === "preview" ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -2287,7 +2309,7 @@ export default function AdminDashboardPage() {
                 </button>
               </div>
 
-              <div className="border-t border-white/5 pt-4 space-y-2">
+              <div className="border-t border-slate-200 pt-4 space-y-2">
                 <input
                   type="text"
                   value={bcConfirm}
@@ -2304,7 +2326,7 @@ export default function AdminDashboardPage() {
                     !bcBody.trim() ||
                     bcConfirm.trim().toLowerCase() !== bcAudience
                   }
-                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#2775ca]/15 border border-[#2775ca]/40 py-2.5 text-xs font-black uppercase tracking-wider text-[#2775ca] transition hover:bg-[#2775ca]/25 disabled:opacity-30"
+                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#2775ca] py-2.5 text-xs font-black uppercase tracking-wider text-white transition hover:bg-[#1d5fb0] disabled:opacity-30 shadow-sm"
                 >
                   {bcBusy === "send" ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -2315,30 +2337,47 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            {analytics && analytics.recentBroadcasts.length > 0 && (
+            {analytics && (analytics.recentBroadcasts || []).length > 0 && (
               <div className={`${CARD} space-y-3`}>
-                <h3 className="text-sm font-black uppercase tracking-wider text-white">
+                <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">
                   Recent Broadcasts
                 </h3>
                 <div className="space-y-2">
                   {analytics.recentBroadcasts.map((b) => (
                     <div
                       key={b.id}
-                      className="rounded-2xl border border-white/5 bg-white/[0.03] p-3 text-xs"
+                      className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5 text-xs flex items-center justify-between gap-3"
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="font-bold text-white truncate">
-                          {b.title}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-bold text-[#0f172a] truncate">
+                            {b.title}
+                          </p>
+                          <span className="text-[10px] text-[#64748b] shrink-0">
+                            {new Date(b.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[11px] text-[#475569]">
+                          {b.audience} · {b.sentCount}/{b.totalRecipients}{" "}
+                          delivered
+                          {b.failedCount > 0 && ` · ${b.failedCount} failed`}
                         </p>
-                        <span className="text-[10px] text-white/40 shrink-0">
-                          {new Date(b.createdAt).toLocaleDateString()}
-                        </span>
                       </div>
-                      <p className="mt-1 text-[10px] text-white/50">
-                        {b.audience} · {b.sentCount}/{b.totalRecipients}{" "}
-                        delivered
-                        {b.failedCount > 0 && ` · ${b.failedCount} failed`}
-                      </p>
+                      {viewerIsRoot && (
+                        <button
+                          type="button"
+                          onClick={() => deleteBroadcast(b.id)}
+                          disabled={deletingBroadcastId === b.id}
+                          className="p-2 rounded-xl text-red-600 hover:bg-red-50 transition border border-transparent hover:border-red-200 shrink-0 disabled:opacity-40"
+                          title="Delete broadcast record"
+                        >
+                          {deletingBroadcastId === b.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -2353,10 +2392,10 @@ export default function AdminDashboardPage() {
               <span className={LABEL}>Receipt Access</span>
               <ReceiptText className="h-5 w-5 text-[#2775ca]" />
             </div>
-            <h3 className="text-base font-bold text-white">
+            <h3 className="text-base font-bold text-[#0f172a]">
               Invite an address to view a receipt
             </h3>
-            <p className="text-[11px] text-white/50">
+            <p className="text-[11px] text-[#475569]">
               Grants a wallet permission to view someone else&apos;s payment
               record. The reason is recorded in the audit log alongside the
               payer and merchant.
@@ -2392,7 +2431,7 @@ export default function AdminDashboardPage() {
                   !invAddress.trim() ||
                   invReason.trim().length < 3
                 }
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#2775ca]/15 border border-[#2775ca]/40 py-2 text-xs font-black uppercase tracking-wider text-[#2775ca] transition hover:bg-[#2775ca]/25 disabled:opacity-40"
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#2775ca] py-2.5 text-xs font-black uppercase tracking-wider text-white transition hover:bg-[#1d5fb0] disabled:opacity-40 shadow-sm"
               >
                 {invBusy ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -2411,11 +2450,11 @@ export default function AdminDashboardPage() {
                 <span className={LABEL}>Access Management</span>
                 <Users className="h-5 w-5 text-[#2775ca]" />
               </div>
-              <h3 className="text-base font-bold text-white">Admin Wallets</h3>
-              <p className="mt-1 text-[11px] text-white/50">
-                <span className="font-bold text-white/70">Root</span> admins
+              <h3 className="text-base font-bold text-[#0f172a]">Admin Wallets</h3>
+              <p className="mt-1 text-[11px] text-[#475569]">
+                <span className="font-bold text-[#0f172a]">Root</span> admins
                 come from the{" "}
-                <code className="font-mono">ADMIN_WALLET_ADDRESSES</code>{" "}
+                <code className="font-mono bg-slate-100 px-1 py-0.5 rounded text-[#0f172a]">ADMIN_WALLET_ADDRESSES</code>{" "}
                 environment variable and cannot be revoked here — that is the
                 recovery path if this console is ever misconfigured. Only root
                 admins can grant or revoke access.
@@ -2443,7 +2482,7 @@ export default function AdminDashboardPage() {
                   <button
                     type="submit"
                     disabled={adminBusy || !newAdminWallet.trim()}
-                    className="flex items-center justify-center gap-2 rounded-xl bg-[#2775ca]/15 border border-[#2775ca]/40 px-4 py-2 text-xs font-black uppercase tracking-wider text-[#2775ca] transition hover:bg-[#2775ca]/25 disabled:opacity-40"
+                    className="flex items-center justify-center gap-2 rounded-xl bg-[#2775ca] px-4 py-2 text-xs font-black uppercase tracking-wider text-white transition hover:bg-[#1d5fb0] disabled:opacity-40 shadow-sm"
                   >
                     {adminBusy ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -2454,7 +2493,7 @@ export default function AdminDashboardPage() {
                   </button>
                 </form>
               ) : (
-                <p className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-[11px] text-white/50">
+                <p className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-[11px] text-[#475569]">
                   You have admin access but are not a root admin, so you cannot
                   add or remove admins.
                 </p>
@@ -2462,34 +2501,34 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className={`${CARD} space-y-3`}>
-              <h3 className="text-sm font-black uppercase tracking-wider text-white">
+              <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">
                 Current Admins
               </h3>
               {adminsLoading ? (
                 <SkeletonRows count={4} label="Loading administrators" />
               ) : admins.length === 0 ? (
-                <p className="text-xs text-white/40">No admins found.</p>
+                <p className="text-xs text-[#64748b]">No admins found.</p>
               ) : (
                 <div className="space-y-2">
                   {admins.map((a) => (
                     <div
                       key={a.wallet}
-                      className="flex items-center justify-between gap-3 rounded-2xl border border-white/5 bg-white/[0.03] p-3 text-xs"
+                      className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3.5 text-xs"
                     >
                       <div className="flex items-center gap-3 min-w-0 flex-1">
                         <Shield
                           className={`h-4 w-4 shrink-0 ${
                             a.tier === "root"
                               ? "text-[#2775ca]"
-                              : "text-white/40"
+                              : "text-slate-400"
                           }`}
                         />
                         <div className="min-w-0 flex-1">
-                          <p className="font-mono font-bold text-white truncate">
+                          <p className="font-mono font-bold text-[#0f172a] truncate">
                             {a.wallet}
                           </p>
                           {a.tier === "root" ? (
-                            <p className="text-[10px] text-white/50">
+                            <p className="text-[10px] text-[#64748b]">
                               Root — configured in environment, not revocable here
                             </p>
                           ) : editingAdminWallet === a.wallet ? (
@@ -2514,7 +2553,7 @@ export default function AdminDashboardPage() {
                               <button
                                 type="submit"
                                 disabled={aliasUpdateBusy}
-                                className="flex items-center gap-1 rounded-lg bg-[#2775ca]/20 border border-[#2775ca]/40 px-2.5 py-1 text-[10px] font-bold text-[#2775ca] hover:bg-[#2775ca]/30 transition disabled:opacity-40"
+                                className="flex items-center gap-1 rounded-lg bg-[#2775ca] px-2.5 py-1 text-[10px] font-bold text-white hover:bg-[#1d5fb0] transition disabled:opacity-40"
                               >
                                 {aliasUpdateBusy ? (
                                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -2528,19 +2567,19 @@ export default function AdminDashboardPage() {
                                   setEditingAdminWallet(null);
                                   setEditAdminAliasValue("");
                                 }}
-                                className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white/60 hover:bg-white/10 transition"
+                                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold text-slate-600 hover:bg-slate-100 transition"
                               >
                                 Cancel
                               </button>
                             </form>
                           ) : (
-                            <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-white/50 mt-0.5">
+                            <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-[#64748b] mt-0.5">
                               {a.label ? (
-                                <span className="font-bold text-white/90 bg-white/10 px-1.5 py-0.5 rounded border border-white/10">
+                                <span className="font-bold text-[#0f172a] bg-slate-200 px-1.5 py-0.5 rounded border border-slate-300">
                                   {a.label}
                                 </span>
                               ) : (
-                                <span className="italic text-white/30">
+                                <span className="italic text-slate-400">
                                   No alias
                                 </span>
                               )}
@@ -2551,7 +2590,7 @@ export default function AdminDashboardPage() {
                                     setEditingAdminWallet(a.wallet);
                                     setEditAdminAliasValue(a.label || "");
                                   }}
-                                  className="inline-flex items-center justify-center h-4 w-4 rounded text-white/40 hover:text-[#2775ca] transition ml-0.5"
+                                  className="inline-flex items-center justify-center h-4 w-4 rounded text-slate-400 hover:text-[#2775ca] transition ml-0.5"
                                   title={a.label ? "Edit alias" : "Set alias"}
                                 >
                                   <Pencil className="h-3 w-3" />
@@ -2573,7 +2612,7 @@ export default function AdminDashboardPage() {
                           className={`rounded-full px-2 py-0.5 text-[9px] font-bold border ${
                             a.tier === "root"
                               ? "bg-[#2775ca]/10 border-[#2775ca]/30 text-[#2775ca]"
-                              : "bg-white/5 border-white/10 text-white/60"
+                              : "bg-slate-100 border-slate-200 text-slate-700"
                           }`}
                         >
                           {a.tier}
@@ -2582,7 +2621,7 @@ export default function AdminDashboardPage() {
                           <button
                             type="button"
                             onClick={() => handleRevokeAdmin(a.wallet)}
-                            className="flex items-center gap-1 rounded-xl border border-red-400/30 bg-red-400/10 px-2.5 py-1 text-[10px] font-bold text-red-300 hover:bg-red-400/20 transition"
+                            className="flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-2.5 py-1 text-[10px] font-bold text-red-700 hover:bg-red-100 transition"
                           >
                             <Trash2 className="h-3 w-3" />
                             Revoke
@@ -2617,35 +2656,34 @@ function Stat({
     <div
       className={`rounded-2xl border p-4 ${
         danger
-          ? "border-amber-500/30 bg-amber-500/[0.06]"
-          : "border-white/5 bg-white/[0.03]"
+          ? "border-amber-300 bg-amber-50"
+          : "border-slate-200 bg-slate-50"
       }`}
     >
       <p
         className={`text-2xl font-black ${
-          danger ? "text-amber-300" : "text-white"
+          danger ? "text-amber-800" : "text-[#0f172a]"
         }`}
       >
         {value}
       </p>
-      <p className="text-[10px] font-bold uppercase tracking-wider text-white/40">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-[#64748b]">
         {label}
       </p>
     </div>
   );
 }
 
-/* Status chip for the KYC queue. Colour carries the same meaning as elsewhere in the console:
-   green settled-good, red settled-bad, amber needs a human, white/neutral in flight. */
+/* Status chip for the KYC queue */
 function KycStatusPill({ status }: { status: string }) {
   const tone =
     status === "APPROVED"
-      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
       : status === "REJECTED" || status === "REVOKED"
-      ? "border-red-500/30 bg-red-500/10 text-red-300"
+      ? "border-red-200 bg-red-50 text-red-900"
       : status === "NEEDS_INPUT" || status === "EXPIRED"
-      ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
-      : "border-white/10 bg-white/5 text-white/70";
+      ? "border-amber-200 bg-amber-50 text-amber-900"
+      : "border-slate-200 bg-slate-100 text-slate-800";
   return (
     <span
       className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${tone}`}
@@ -2655,8 +2693,7 @@ function KycStatusPill({ status }: { status: string }) {
   );
 }
 
-/* Switch row for the System tab. Kept dumb — every state change round-trips through the
-   API so the rendered state always reflects what the server actually stored. */
+/* Switch row for the System tab */
 function Toggle({
   title,
   description,
@@ -2673,10 +2710,10 @@ function Toggle({
   onToggle: () => void;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 rounded-2xl border border-white/5 bg-white/[0.03] p-4">
+    <div className="flex items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <div className="min-w-0">
-        <p className="text-sm font-bold text-white">{title}</p>
-        <p className="mt-1 text-[11px] leading-relaxed text-white/50">
+        <p className="text-sm font-bold text-[#0f172a]">{title}</p>
+        <p className="mt-1 text-[11px] leading-relaxed text-[#475569]">
           {description}
         </p>
       </div>
@@ -2687,13 +2724,13 @@ function Toggle({
         aria-pressed={enabled}
         className={`relative h-7 w-12 shrink-0 rounded-full border transition disabled:opacity-40 ${
           enabled
-            ? "border-[#2775ca]/50 bg-[#2775ca]/25"
-            : "border-white/15 bg-white/10"
+            ? "border-[#2775ca] bg-[#2775ca]"
+            : "border-slate-300 bg-slate-200"
         }`}
       >
         <span
           className={`absolute top-1 h-5 w-5 rounded-full transition-all ${
-            enabled ? "left-6 bg-[#2775ca]" : "left-1 bg-white/50"
+            enabled ? "left-6 bg-white shadow-sm" : "left-1 bg-white shadow-sm"
           }`}
         />
         {busy && (
@@ -2714,18 +2751,19 @@ function BanRow({
   onUnban: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 rounded-2xl border border-white/5 bg-white/[0.03] p-3 text-xs">
+    <div className="flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs">
       <div className="min-w-0">
-        <p className="font-mono font-bold text-white truncate">{target}</p>
-        {reason && <p className="text-[10px] text-white/50">{reason}</p>}
+        <p className="font-mono font-bold text-[#0f172a] truncate">{target}</p>
+        {reason && <p className="text-[10px] text-[#475569]">{reason}</p>}
       </div>
       <button
         type="button"
         onClick={onUnban}
-        className="rounded-xl border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white/70 hover:bg-white/15 transition shrink-0"
+        className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold text-slate-700 hover:bg-slate-100 transition shrink-0 shadow-sm"
       >
         Unban
       </button>
     </div>
   );
 }
+

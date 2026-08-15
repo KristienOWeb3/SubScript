@@ -36,8 +36,9 @@ import {
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
     Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
     Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, ChevronRight, User, Share2,
-    ShieldCheck, Save, SquaresFour, MessageSquare, HelpCircle, Send, Terminal, Bell, Search
+    ShieldCheck, Save, SquaresFour, MessageSquare, HelpCircle, Send, Terminal, Bell, Search, ChevronLeft, ArrowLeft
 } from "@/components/icons";
+import { useTheme } from "@/hooks/useTheme";
 import { QRCode } from "react-qrcode-logo";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
 import type { MerchantAnalyticsSummary, MerchantSubscriptionDetail } from "@/lib/analytics/merchantSubscriptions";
@@ -80,6 +81,18 @@ const tabs = [
 
 
 type TabId = "overview" | "premium" | "analytics" | "payment-links" | "plans" | "apikeys" | "checkout" | "webhooks" | "settings" | "payroll" | "offramp";
+
+type MerchantSubView =
+    | "menu"
+    | "profile"
+    | "appearance"
+    | "dns"
+    | "kyc"
+    | "dunning"
+    | "transactions"
+    | "notifications"
+    | "security"
+    | "support";
 
 type MerchantPlan = {
     id: string;
@@ -651,6 +664,8 @@ export default function DashboardPage() {
     };
 
 
+    const { theme, setTheme } = useTheme();
+    const [merchantSubView, setMerchantSubView] = useState<MerchantSubView>("menu");
     const [activeTab, setActiveTab] = useState<TabId>("overview");
 
     /* A tab switch always starts at the top — otherwise a scroll depth carried over
@@ -3303,856 +3318,1071 @@ Please complete the following implementation tasks:
     const renderSettingsTab = () => {
         if (!userSettings) {
             return (
-                <div className="space-y-6 max-w-4xl mx-auto">
+                <div className="space-y-6 max-w-3xl mx-auto">
                     <SkeletonCard label="Loading help and support" lines={3} headline={false} />
-                    <SkeletonCard label="Loading failed-renewal policy" lines={3} headline={false} />
                     <SkeletonCard label="Loading profile settings" lines={4} headline={false} />
                 </div>
             );
         }
 
-        return (
-            <div className="space-y-8 max-w-4xl mx-auto">
-                {/* Admin console. The sidebar Admin tab lives inside `hidden md:block`, so on a phone
-                    this card is the only way in. Visibility is cosmetic — the /admin layout re-checks
-                    admin status server-side on every request. */}
-                {isAdmin && (
-                    <Link
-                        href="/admin"
-                        className="liquid-glass flex items-center justify-between gap-4 rounded-3xl border border-[#ccff00]/20 bg-[#ccff00]/[0.04] p-6 shadow-2xl transition hover:bg-[#ccff00]/[0.08] md:hidden"
+        const renderBackHeader = (title: string, subtitle?: string) => (
+            <div className="flex flex-col gap-1 mb-6">
+                <div className="flex items-center gap-3">
+                    <button
+                        type="button"
+                        onClick={() => setMerchantSubView("menu")}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-white px-3.5 py-1.5 text-xs font-semibold text-black/70 hover:bg-black/5 hover:text-black transition shadow-sm"
                     >
-                        <div className="flex items-center gap-3">
-                            <div className="rounded-xl bg-[#ccff00]/10 p-2.5 text-[#ccff00]">
-                                <Shield className="h-4 w-4" />
-                            </div>
-                            <div>
-                                <span className="block text-sm font-bold uppercase tracking-wider text-[#ccff00]">Admin</span>
-                                <span className="mt-0.5 block font-sans text-[11px] text-white/40">
-                                    Platform controls, analytics and moderation
-                                </span>
-                            </div>
-                        </div>
-                        <ChevronRight className="h-4 w-4 shrink-0 text-white/30" />
-                    </Link>
-                )}
-                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-4">
-                    <div>
-                        <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
-                            <HelpCircle className="w-4 h-4 text-[#082824]" />
-                            Help &amp; Support
-                        </h2>
-                        <p className="text-[11px] text-black/60 font-sans">
-                            Integration help, activation issues, billing questions, or security disclosures. Real
-                            humans read every message.
-                        </p>
-                    </div>
-                    <div className="grid gap-2 sm:grid-cols-3 font-sans text-xs">
-                        <a
-                            href="mailto:support@subscriptonarc.com"
-                            className="rounded-2xl border border-black/10 bg-[#D4E3E8]/40 px-4 py-3 transition hover:bg-[#D4E3E8]"
-                        >
-                            <span className="block text-[9px] font-semibold uppercase tracking-wider text-black/50">General support</span>
-                            <span className="mt-1 block break-all font-mono text-[10px] font-bold text-[#082824]">support@subscriptonarc.com</span>
-                        </a>
-                        <a
-                            href="mailto:compliance@subscriptonarc.com"
-                            className="rounded-2xl border border-black/10 bg-[#D4E3E8]/40 px-4 py-3 transition hover:bg-[#D4E3E8]"
-                        >
-                            <span className="block text-[9px] font-semibold uppercase tracking-wider text-black/50">Billing, legal &amp; security</span>
-                            <span className="mt-1 block break-all font-mono text-[10px] font-bold text-[#082824]">compliance@subscriptonarc.com</span>
-                        </a>
-                        <a
-                            href="/support"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center justify-center rounded-2xl border border-black/10 bg-[#D4E3E8] px-4 py-3 text-center text-[10px] font-semibold text-[#082824] transition hover:bg-[#D4E3E8]/80"
-                        >
-                            Open the Help Center
-                        </a>
-                    </div>
+                        <ChevronLeft className="h-4 w-4" /> Back to Settings
+                    </button>
+                    <h2 className="text-base font-bold text-[#082824] uppercase tracking-wider">{title}</h2>
                 </div>
+                {subtitle && <p className="text-xs text-black/55 mt-1 ml-1">{subtitle}</p>}
+            </div>
+        );
 
-                {/* Dunning / failed-renewal policy */}
-                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-4">
-                    <div>
-                        <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
-                            <ArrowRightLeft className="w-4 h-4 text-[#082824]" />
-                            Failed-Renewal Policy (Dunning)
-                        </h2>
-                        <p className="text-[11px] text-black/60 font-sans">
-                            When a customer&apos;s renewal fails (insufficient balance), the keeper retries roughly
-                            once a day. Choose how many attempts to make before the subscription is stopped and the
-                            customer is notified. More attempts ≈ more days of grace.
-                        </p>
-                    </div>
-                    <div className="flex flex-col sm:flex-row gap-3 sm:items-center font-sans">
-                        <input
-                            type="number"
-                            min="1"
-                            max="10"
-                            step="1"
-                            value={dunningMaxFailures}
-                            onChange={(e) => setDunningMaxFailures(e.target.value)}
-                            className="w-full sm:w-32 bg-white border border-black/15 rounded-xl px-4 py-3 text-black text-xs focus:outline-none focus:border-[#8AB4DB] transition-colors"
-                        />
-                        <button
-                            type="button"
-                            onClick={handleSaveDunning}
-                            disabled={dunningSaving}
-                            className="w-full sm:w-auto shrink-0 px-6 py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] disabled:opacity-50 text-[#082824] text-xs font-semibold rounded-full transition-all flex items-center justify-center gap-2"
-                        >
-                            {dunningSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                            Save
-                        </button>
-                        {dunningMessage && (
-                            <span className="text-[10px] text-black/60">{dunningMessage}</span>
-                        )}
-                    </div>
-                </div>
-
-                {/* Profile & Identity Section */}
-                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6">
-                    <div>
-                        <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
-                            <User className="w-4 h-4 text-[#082824]" />
-                            Profile & Identity
-                        </h2>
-                        <p className="text-[11px] text-black/60 font-sans">
-                            Manage your merchant identity, custom alias, and branding.
-                        </p>
-                    </div>
-
-                    <div className="flex flex-col md:flex-row items-start md:items-center gap-6 pb-6 border-b border-black/10">
-                        <div className="relative group shrink-0">
-                            <div className="w-20 h-20 rounded-full border border-black/15 overflow-hidden bg-[#D4E3E8] flex items-center justify-center text-[#082824] relative">
-                                {userSettings.profilePic ? (
-                                    <img src={userSettings.profilePic} alt="Merchant Avatar" className="w-full h-full object-cover" />
-                                ) : (
-                                    <User className="w-8 h-8 text-[#082824]" />
-                                )}
-                                {uploadingPic && (
-                                    <div className="absolute inset-0 bg-white/80 flex items-center justify-center">
-                                        <Loader2 className="w-5 h-5 animate-spin text-[#082824]" />
-                                    </div>
-                                )}
-                            </div>
-                            <label className="absolute -bottom-1 -right-1 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] p-1.5 rounded-full cursor-pointer shadow-sm hover:scale-105 active:scale-95 transition-all">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                                <input type="file" accept="image/*" onChange={handleProfilePicUpload} disabled={uploadingPic} className="hidden" />
-                            </label>
+        return (
+            <div className="space-y-6 max-w-3xl mx-auto font-sans text-black">
+                {/* 1. MAIN SETTINGS MENU HUB */}
+                {merchantSubView === "menu" && (
+                    <div className="space-y-6">
+                        <div>
+                            <h1 className="text-xl font-bold text-[#082824] sm:text-2xl">Merchant Settings</h1>
+                            <p className="text-xs text-black/60 mt-1">Manage your business profile, theme, DNS namespace, and payouts.</p>
                         </div>
 
-                        <div className="flex-1 space-y-1">
-                            <h3 className="text-sm font-semibold text-black">Merchant Profile Photo</h3>
-                            <p className="text-[10px] text-black/60 leading-relaxed font-sans max-w-sm">
-                                Upload a brand logo or profile picture. JPG/PNG, maximum 2MB size limit.
-                            </p>
-                            {uploadError && <p className="text-[10px] text-red-500 mt-1 font-sans">{uploadError}</p>}
-                        </div>
-                    </div>
-
-                    {/* SubScript DNS Registration */}
-                    <div className="space-y-4 pt-4 border-t border-black/10">
-                        <h3 className="text-xs font-semibold text-black">SubScript DNS Registration (Business Name)</h3>
-                        <p className="text-[10px] leading-relaxed text-amber-900 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 font-sans">
-                            {merchantAliasNextChange
-                                ? <>Your DNS name is locked until <strong>{new Date(merchantAliasNextChange).toLocaleDateString()}</strong>. You can change it again then. Business names cannot be unregistered.</>
-                                : <>Heads up: a DNS name can only be changed <strong>once every 365 days</strong>. Choose carefully, because after a change you won't be able to switch again for a year.</>}
-                        </p>
-                        {userSettings.alias ? (
-                            <div className="p-4 rounded-2xl border border-black/10 bg-[#D4E3E8] flex items-center justify-between">
-                                <div>
-                                    <p className="text-[9px] uppercase tracking-wider font-semibold text-black/60">Registered Alias</p>
-                                    <h4 className="font-mono text-lg font-bold text-[#082824] mt-1">{userSettings.alias}</h4>
-                                </div>
-                                <span className="px-3 py-1.5 border border-black/15 bg-white text-black/70 text-[10px] font-semibold rounded-full select-none">
-                                    Permanent
-                                </span>
-                            </div>
-                        ) : dnsConfirmPending ? (
-                            <div className="p-5 rounded-2xl border border-black/10 bg-[#EFE2AC] space-y-4">
-                                <div>
-                                    <p className="text-[9px] uppercase tracking-wider font-semibold text-black/60">Confirm DNS name</p>
-                                    <h4 className="font-mono text-lg font-bold text-[#082824] mt-1">{dnsConfirmPending}</h4>
-                                </div>
-                                <p className="text-[10px] leading-relaxed text-black/70">
-                                    This is locked for <strong>365 days</strong> once registered. Make sure it's right.
-                                </p>
-                                <div className="flex gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setDnsConfirmPending(null)}
-                                        disabled={dnsLoading}
-                                        className="flex-1 py-2.5 border border-black/15 bg-white hover:bg-black/5 text-black/70 text-[10px] font-semibold rounded-full transition-all"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={confirmDnsRegistration}
-                                        disabled={dnsLoading}
-                                        className="flex-1 py-2.5 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] text-[10px] font-semibold rounded-full transition-all flex items-center justify-center gap-2"
-                                    >
-                                        {dnsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirm & Register"}
-                                    </button>
-                                </div>
-                            </div>
-                        ) : (
-                            <form onSubmit={handleRegisterDns} className="space-y-3 font-sans text-xs">
-                                <div className="space-y-1">
-                                    <label className="text-black/60 font-semibold text-[10px] tracking-wide">Domain Alias</label>
-                                    <div className="flex gap-2">
-                                        <div className="relative flex-1">
-                                            <input
-                                                type="text"
-                                                value={dnsDomain}
-                                                onChange={(e) => setDnsDomain(e.target.value)}
-                                                placeholder="my-company"
-                                                className="w-full bg-white border border-black/15 rounded-xl px-4 py-2.5 text-black focus:outline-none focus:border-[#8AB4DB] font-mono"
-                                                required
-                                            />
-                                            <div className="absolute right-3 top-2.5 flex gap-1">
-                                                <select
-                                                    value={dnsSuffix}
-                                                    onChange={(e) => setDnsSuffix(e.target.value)}
-                                                    className="bg-transparent text-black/60 text-xs font-bold border-none focus:outline-none cursor-pointer"
-                                                >
-                                                    <option value=".hq" className="bg-white text-black">.hq</option>
-                                                    <option value=".biz" className="bg-white text-black">.biz</option>
-                                                </select>
-                                            </div>
+                        {/* Settings Menu Options List */}
+                        <div className="border border-black/10 bg-white/90 backdrop-blur-md rounded-3xl p-3 space-y-1 shadow-sm">
+                            {isAdmin && (
+                                <Link
+                                    href="/admin"
+                                    className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-600">
+                                            <Shield className="h-4 w-4" />
                                         </div>
-                                        <button
-                                            type="submit"
-                                            disabled={dnsLoading}
-                                            className="px-6 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] font-semibold rounded-full transition-all"
-                                        >
-                                            {dnsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Register"}
-                                        </button>
+                                        <div>
+                                            <span className="block text-xs font-bold text-black uppercase tracking-wide">Admin Console</span>
+                                            <span className="block text-[10px] text-black/50 mt-0.5">Platform controls, analytics and moderation</span>
+                                        </div>
                                     </div>
-                                    <p className="text-[10px] text-black/50">
-                                        Enterprise custom namespaces allow customers to identify your business link securely.
-                                    </p>
-                                </div>
-                            </form>
-                        )}
-                        {dnsError && <p className="text-[10px] text-red-500">{dnsError}</p>}
-                        {dnsSuccess && <p className="text-[10px] text-emerald-600">{dnsSuccess}</p>}
-                    </div>
+                                    <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                                </Link>
+                            )}
 
-                    <div className="space-y-4 pt-4 border-t border-black/10">
-                        <h3 className="text-xs font-semibold text-black">Verification & Plan</h3>
-                        <p className="text-[10px] text-black/60 leading-relaxed font-sans max-w-sm">
-                            Verification (KYC) adds a public trust badge. Your plan controls which product features are unlocked. They are independent, so you can hold either without the other.
-                        </p>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <div className={`p-4 rounded-2xl border ${userSettings.verified ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'} space-y-2`}>
-                                <div className="flex items-center justify-between">
-                                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-black">KYC Tier</h4>
-                                    <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${userSettings.verified ? 'bg-emerald-500/20 text-emerald-800' : 'bg-amber-500/20 text-amber-800'}`}>
-                                        {userSettings.verified ? 'Verified' : 'Unverified'}
-                                    </span>
-                                </div>
-                                <ul className="space-y-1 text-[10px] text-black/70 leading-relaxed font-sans">
-                                    {userSettings.verified ? (
-                                        <>
-                                            <li className="flex items-center gap-1 text-emerald-700">✓ Verified badge on your public profile</li>
-                                            <li className="flex items-center gap-1 text-emerald-700">✓ Customers can commit without a risk warning</li>
-                                            <li className="flex items-center gap-1 text-emerald-700">✓ Ready for regulated rails as they launch</li>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <li className="flex items-center gap-1 text-black/60">• Public profile shows unverified</li>
-                                            <li className="flex items-center gap-1 text-black/60">• Customers see a warning before committing funds</li>
-                                            <li className="flex items-center gap-1 text-black/60">• Complete business verification below to upgrade</li>
-                                        </>
-                                    )}
-                                </ul>
-                            </div>
-
-                            <div className={`p-4 rounded-2xl border ${userSettings.tier === 'PREMIUM' ? 'border-[#8AB4DB]/40 bg-[#D4E3E8]' : 'border-black/10 bg-black/[0.02]'} space-y-2`}>
-                                <div className="flex items-center justify-between">
-                                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-black">Plan</h4>
-                                    <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${userSettings.tier === 'PREMIUM' ? 'bg-[#8AB4DB] text-[#082824]' : 'bg-black/10 text-black/70'}`}>
-                                        {userSettings.tier === 'PREMIUM' ? 'Premium' : 'Free'}
-                                    </span>
-                                </div>
-                                <ul className="space-y-1 text-[10px] text-black/70 leading-relaxed font-sans">
-                                    <li className="flex items-center gap-1 text-emerald-700">✓ Create unlimited payment links</li>
-                                    <li className={`flex items-center gap-1 ${userSettings.tier === 'PREMIUM' ? 'text-emerald-700' : 'text-red-500'}`}>
-                                        {userSettings.tier === 'PREMIUM' ? '✓' : '✗'} API Keys &amp; Webhook endpoints
-                                    </li>
-                                    <li className={`flex items-center gap-1 ${userSettings.tier === 'PREMIUM' ? 'text-emerald-700' : 'text-red-500'}`}>
-                                        {userSettings.tier === 'PREMIUM' ? '✓' : '✗'} Customer commitment vaults
-                                    </li>
-                                </ul>
-                                {userSettings.tier !== 'PREMIUM' && (
-                                    <p className="text-[9px] text-black/50 italic pt-1 font-sans">Upgrade plan under the "Premium" tab.</p>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Identity Verification (KYC/KYB) */}
-                    <KycVerificationPanel />
-                </div>
-
-                {/* Wallet Recovery & Backup */}
-                {userSettings.walletBackup?.available && (
-                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-5">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                            <div>
-                                <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
-                                    <Lock className="w-4 h-4 text-[#082824]" />
-                                    Wallet Recovery & Backup
-                                </h2>
-                                <p className="text-[11px] text-black/60 font-sans leading-relaxed max-w-xl">
-                                    Export the private key for your email-created merchant wallet after email verification.
-                                    Importing this key into a wallet app lets you use <strong className="text-black/80">Sign in with Wallet</strong> and
-                                    opens this same merchant account.
-                                </p>
-                            </div>
-                            <span className="self-start rounded-full border border-black/10 bg-[#D4E3E8] px-3 py-1 text-[9px] font-semibold text-[#082824]">
-                                Exportable
-                            </span>
-                        </div>
-
-                        {merchantExportedPrivateKey && (
-                            <div className="space-y-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
-                                <p className="text-[10px] font-bold text-amber-900">
-                                    Keep this secret offline. SubScript will never ask you to paste it into the app.
-                                </p>
-                                <div className="flex items-center gap-2 rounded-xl border border-black/15 bg-white px-3 py-2.5">
-                                    <code className="min-w-0 flex-1 truncate text-[10px] text-black/80">
-                                        {merchantPrivateKeyVisible ? merchantExportedPrivateKey : "••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"}
-                                    </code>
-                                    <button
-                                        type="button"
-                                        onClick={() => setMerchantPrivateKeyVisible((visible) => !visible)}
-                                        className="p-1.5 text-black/40 hover:text-black"
-                                        aria-label={merchantPrivateKeyVisible ? "Hide private key" : "Show private key"}
-                                    >
-                                        {merchantPrivateKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleCopy(merchantExportedPrivateKey, "Merchant Wallet Private Key")}
-                                        className="p-1.5 text-black/40 hover:text-black"
-                                        aria-label="Copy private key"
-                                    >
-                                        {copiedText === "Merchant Wallet Private Key"
-                                            ? <Check className="h-4 w-4 text-[#082824]" />
-                                            : <Copy className="h-4 w-4" />}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={downloadMerchantWalletBackup}
-                                        className="p-1.5 text-black/40 hover:text-black"
-                                        aria-label="Download private key backup"
-                                    >
-                                        <ArrowDownToLine className="h-4 w-4" />
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-
-                        {merchantWalletBackupError && (
-                            <p className="text-[11px] text-red-500">{merchantWalletBackupError}</p>
-                        )}
-
-                        {merchantExportOtpStage ? (
-                            <div className="space-y-3">
-                                <p className="text-[10px] text-black/60">
-                                    Enter the 6-digit code sent to {userSettings.walletBackup.email}.
-                                </p>
-                                <input
-                                    type="text"
-                                    inputMode="numeric"
-                                    autoComplete="one-time-code"
-                                    maxLength={6}
-                                    value={merchantExportOtpCode}
-                                    onChange={(event) => setMerchantExportOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                                    placeholder="000000"
-                                    className="w-full rounded-2xl border border-black/15 bg-white px-3 py-3 text-center font-mono text-lg tracking-[0.4em] text-black placeholder:text-black/30 focus:border-[#8AB4DB] focus:outline-none"
-                                />
-                                <div className="grid gap-2 sm:grid-cols-2">
-                                    <button
-                                        type="button"
-                                        onClick={handleMerchantWalletExport}
-                                        disabled={merchantWalletBackupLoading || merchantExportOtpCode.length !== 6}
-                                        className="w-full rounded-full bg-[#8AB4DB] hover:bg-[#7aa7d0] py-3 text-xs font-semibold text-[#082824] transition disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                        {merchantWalletBackupLoading ? "Unlocking…" : "Confirm & Reveal"}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setMerchantExportOtpStage(false);
-                                            setMerchantExportOtpCode("");
-                                            setMerchantWalletBackupError(null);
-                                        }}
-                                        disabled={merchantWalletBackupLoading}
-                                        className="w-full rounded-full border border-black/15 bg-white hover:bg-black/5 py-3 text-xs font-semibold text-black/70 transition disabled:opacity-50"
-                                    >
-                                        Cancel
-                                    </button>
-                                </div>
-                            </div>
-                        ) : (
+                            {/* Profile & Branding */}
                             <button
                                 type="button"
-                                onClick={requestMerchantExportOtp}
-                                disabled={merchantExportOtpSending}
-                                className="w-full rounded-full bg-[#8AB4DB] hover:bg-[#7aa7d0] py-3.5 text-xs font-semibold text-[#082824] transition disabled:cursor-not-allowed disabled:opacity-50"
+                                onClick={() => setMerchantSubView("profile")}
+                                className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
                             >
-                                {merchantExportOtpSending ? "Sending verification code…" : "Verify email & export wallet"}
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2.5 rounded-xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
+                                        <User className="h-4 w-4" />
+                                    </div>
+                                    <div>
+                                        <span className="block text-xs font-bold text-black uppercase tracking-wide">Profile &amp; Branding</span>
+                                        <span className="block text-[10px] text-black/50 mt-0.5">Logo, alias, payout destination, and exit survey</span>
+                                    </div>
+                                </div>
+                                <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
                             </button>
-                        )}
+
+                            {/* Appearance & Theme */}
+                            <button
+                                type="button"
+                                onClick={() => setMerchantSubView("appearance")}
+                                className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2.5 rounded-xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
+                                        <Sliders className="h-4 w-4" />
+                                    </div>
+                                    <div>
+                                        <span className="block text-xs font-bold text-black uppercase tracking-wide">Appearance &amp; Theme</span>
+                                        <span className="block text-[10px] text-black/50 mt-0.5">Switch between Light, Dark, and System mode</span>
+                                    </div>
+                                </div>
+                                <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                            </button>
+
+                            {/* SubScript DNS */}
+                            <button
+                                type="button"
+                                onClick={() => setMerchantSubView("dns")}
+                                className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2.5 rounded-xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
+                                        <Globe className="h-4 w-4" />
+                                    </div>
+                                    <div>
+                                        <span className="block text-xs font-bold text-black uppercase tracking-wide">SubScript DNS</span>
+                                        <span className="block text-[10px] text-black/50 mt-0.5">Register your business namespace (.hq / .biz)</span>
+                                    </div>
+                                </div>
+                                <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                            </button>
+
+                            {/* KYC Verification & Plan */}
+                            <button
+                                type="button"
+                                onClick={() => setMerchantSubView("kyc")}
+                                className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2.5 rounded-xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
+                                        <ShieldCheck className="h-4 w-4" />
+                                    </div>
+                                    <div>
+                                        <span className="block text-xs font-bold text-black uppercase tracking-wide">KYC Verification &amp; Tier</span>
+                                        <span className="block text-[10px] text-black/50 mt-0.5">Business trust badge and verification status</span>
+                                    </div>
+                                </div>
+                                <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                            </button>
+
+                            {/* Failed-Renewal Policy (Dunning) */}
+                            <button
+                                type="button"
+                                onClick={() => setMerchantSubView("dunning")}
+                                className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2.5 rounded-xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
+                                        <ArrowRightLeft className="h-4 w-4" />
+                                    </div>
+                                    <div>
+                                        <span className="block text-xs font-bold text-black uppercase tracking-wide">Failed-Renewal Policy</span>
+                                        <span className="block text-[10px] text-black/50 mt-0.5">Configure automated retry attempts (dunning)</span>
+                                    </div>
+                                </div>
+                                <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                            </button>
+
+                            {/* Transactions & Receipt History */}
+                            <button
+                                type="button"
+                                onClick={() => setMerchantSubView("transactions")}
+                                className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2.5 rounded-xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
+                                        <Activity className="h-4 w-4" />
+                                    </div>
+                                    <div>
+                                        <span className="block text-xs font-bold text-black uppercase tracking-wide">Transaction Logs</span>
+                                        <span className="block text-[10px] text-black/50 mt-0.5">Filter and search payment receipt records</span>
+                                    </div>
+                                </div>
+                                <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                            </button>
+
+                            {/* Notifications & Alerts */}
+                            <button
+                                type="button"
+                                onClick={() => setMerchantSubView("notifications")}
+                                className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2.5 rounded-xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
+                                        <Bell className="h-4 w-4" />
+                                    </div>
+                                    <div>
+                                        <span className="block text-xs font-bold text-black uppercase tracking-wide">Notifications &amp; Alerts</span>
+                                        <span className="block text-[10px] text-black/50 mt-0.5">Push, email, and payout alert preferences</span>
+                                    </div>
+                                </div>
+                                <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                            </button>
+
+                            {/* Security & Backup */}
+                            <button
+                                type="button"
+                                onClick={() => setMerchantSubView("security")}
+                                className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2.5 rounded-xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
+                                        <Lock className="h-4 w-4" />
+                                    </div>
+                                    <div>
+                                        <span className="block text-xs font-bold text-black uppercase tracking-wide">Security &amp; Wallet Recovery</span>
+                                        <span className="block text-[10px] text-black/50 mt-0.5">Export merchant private key and multi-sig</span>
+                                    </div>
+                                </div>
+                                <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                            </button>
+
+                            {/* Help & Support */}
+                            <button
+                                type="button"
+                                onClick={() => setMerchantSubView("support")}
+                                className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2.5 rounded-xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
+                                        <HelpCircle className="h-4 w-4" />
+                                    </div>
+                                    <div>
+                                        <span className="block text-xs font-bold text-black uppercase tracking-wide">Help &amp; Support</span>
+                                        <span className="block text-[10px] text-black/50 mt-0.5">Integration docs, contact team, compliance</span>
+                                    </div>
+                                </div>
+                                <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                            </button>
+                        </div>
                     </div>
                 )}
 
-                {/* Payout & Settlement Wallet Section */}
-                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6">
-                    <div>
-                        <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
-                            <Wallet className="w-4 h-4 text-[#082824]" />
-                            Payout Destination
-                        </h2>
-                        <p className="text-[11px] text-black/60 font-sans">
-                            Save the default wallet offered during settlement withdrawals. Changing this setting does not move funds.
-                        </p>
-                    </div>
+                {/* 2. APPEARANCE & THEME SUBVIEW */}
+                {merchantSubView === "appearance" && (
+                    <div className="space-y-6">
+                        {renderBackHeader("Appearance & Theme", "Customize how your merchant portal looks.")}
 
-                    <div className="space-y-4 font-sans text-xs">
-                        <div className="space-y-1">
-                            <label className="text-black/60 font-semibold text-[10px] tracking-wide">Payout Destination Address</label>
-                            <div className="flex gap-2">
-                                <input
-                                    type="text"
-                                    value={payoutDestinationDraft}
-                                    placeholder="0x..."
-                                    onChange={(e) => { setPayoutDestinationDraft(e.target.value); setPayoutDestinationError(null); }}
-                                    className="flex-1 bg-white border border-black/15 rounded-xl px-4 py-2.5 text-black focus:outline-none focus:border-[#8AB4DB] font-mono"
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 space-y-6 shadow-sm">
+                            <div>
+                                <h3 className="text-base font-bold text-[#082824]">Dashboard Theme</h3>
+                                <p className="text-xs text-black/60 mt-1">
+                                    Choose your preferred color theme for the SubScript merchant dashboard.
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                                {[
+                                    {
+                                        id: "light" as const,
+                                        title: "Light Theme",
+                                        desc: "Cream (#FFFFF0) & soft slate panel",
+                                        accent: "bg-[#FFFFF0] border-black/20 text-[#082824]",
+                                        badge: "bg-[#D4E3E8] text-[#082824]",
+                                    },
+                                    {
+                                        id: "dark" as const,
+                                        title: "Dark Theme",
+                                        desc: "Deep emerald (#082824) & dark cards",
+                                        accent: "bg-[#082824] border-white/20 text-white",
+                                        badge: "bg-[#8AB4DB] text-[#082824]",
+                                    },
+                                    {
+                                        id: "system" as const,
+                                        title: "System Default",
+                                        desc: "Syncs with your OS setting",
+                                        accent: "bg-slate-100 border-slate-300 text-slate-900",
+                                        badge: "bg-slate-200 text-slate-800",
+                                    },
+                                ].map((t) => {
+                                    const isSelected = theme === t.id;
+                                    return (
+                                        <button
+                                            key={t.id}
+                                            type="button"
+                                            onClick={() => setTheme(t.id)}
+                                            className={`flex flex-col justify-between p-4 rounded-2xl border text-left transition-all relative ${
+                                                isSelected
+                                                    ? "border-[#082824] ring-2 ring-[#082824]/20 shadow-md bg-black/[0.02]"
+                                                    : "border-black/10 hover:border-black/25 bg-white"
+                                            }`}
+                                        >
+                                            <div className="space-y-2">
+                                                <div className={`h-16 w-full rounded-xl border p-2 flex flex-col justify-between ${t.accent}`}>
+                                                    <div className="flex items-center justify-between">
+                                                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${t.badge}`}>
+                                                            {t.title}
+                                                        </span>
+                                                        {isSelected && <Check className="h-4 w-4 text-emerald-600" />}
+                                                    </div>
+                                                    <div className="h-2 w-12 rounded-full bg-current opacity-30" />
+                                                </div>
+                                                <div>
+                                                    <p className="font-bold text-xs text-black">{t.title}</p>
+                                                    <p className="text-[10px] text-black/55 mt-0.5 leading-snug">{t.desc}</p>
+                                                </div>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* 3. PROFILE & BRANDING SUBVIEW */}
+                {merchantSubView === "profile" && (
+                    <div className="space-y-6">
+                        {renderBackHeader("Profile & Branding", "Manage your merchant logo, identity, and exit survey.")}
+
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
+                            <div className="flex flex-col md:flex-row items-start md:items-center gap-6 pb-6 border-b border-black/10">
+                                <div className="relative group shrink-0">
+                                    <div className="w-20 h-20 rounded-full border border-black/15 overflow-hidden bg-[#D4E3E8] flex items-center justify-center text-[#082824] relative">
+                                        {userSettings.profilePic ? (
+                                            <img src={userSettings.profilePic} alt="Merchant Avatar" className="w-full h-full object-cover" />
+                                        ) : (
+                                            <User className="w-8 h-8 text-[#082824]" />
+                                        )}
+                                        {uploadingPic && (
+                                            <div className="absolute inset-0 bg-white/80 flex items-center justify-center">
+                                                <Loader2 className="w-5 h-5 animate-spin text-[#082824]" />
+                                            </div>
+                                        )}
+                                    </div>
+                                    <label className="absolute -bottom-1 -right-1 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] p-1.5 rounded-full cursor-pointer shadow-sm hover:scale-105 active:scale-95 transition-all">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                        <input type="file" accept="image/*" onChange={handleProfilePicUpload} disabled={uploadingPic} className="hidden" />
+                                    </label>
+                                </div>
+
+                                <div className="flex-1 space-y-1">
+                                    <h3 className="text-sm font-semibold text-black">Merchant Profile Photo</h3>
+                                    <p className="text-[10px] text-black/60 leading-relaxed font-sans max-w-sm">
+                                        Upload a brand logo or profile picture. JPG/PNG, maximum 2MB size limit.
+                                    </p>
+                                    {uploadError && <p className="text-[10px] text-red-500 mt-1 font-sans">{uploadError}</p>}
+                                </div>
+                            </div>
+
+                            {/* Payout Destination */}
+                            <div className="space-y-4 pt-2">
+                                <h3 className="text-xs font-semibold text-black flex items-center gap-2">
+                                    <Wallet className="w-4 h-4 text-[#082824]" /> Payout Destination Address
+                                </h3>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={payoutDestinationDraft}
+                                        placeholder="0x..."
+                                        onChange={(e) => { setPayoutDestinationDraft(e.target.value); setPayoutDestinationError(null); }}
+                                        className="flex-1 bg-white border border-black/15 rounded-xl px-4 py-2.5 text-black text-xs focus:outline-none focus:border-[#8AB4DB] font-mono"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => handleUpdatePayoutDestination(payoutDestinationDraft)}
+                                        disabled={savingSettingsField === "payoutDestination" || payoutDestinationDraft.trim() === (userSettings.payoutDestination || "")}
+                                        className="rounded-full bg-[#8AB4DB] hover:bg-[#7aa7d0] px-5 py-2.5 text-xs font-semibold text-[#082824] disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                        {savingSettingsField === "payoutDestination" ? "Saving…" : "Save Destination"}
+                                    </button>
+                                </div>
+                                {payoutDestinationError && <p className="text-[10px] text-red-500" role="alert">{payoutDestinationError}</p>}
+                            </div>
+
+                            {/* Exit Survey Question */}
+                            <div className="space-y-3 pt-4 border-t border-black/10">
+                                <h3 className="text-xs font-semibold text-black flex items-center gap-2">
+                                    <MessageSquare className="w-4 h-4 text-[#082824]" /> Customer Exit Survey Prompt
+                                </h3>
+                                <p className="text-[11px] text-black/60">
+                                    Ask cancelling customers your own question. Leave blank to use the default prompt.
+                                </p>
+                                <textarea
+                                    value={churnQuestionDraft}
+                                    onChange={(e) => setChurnQuestionDraft(e.target.value)}
+                                    maxLength={280}
+                                    rows={3}
+                                    placeholder="e.g. What could we have done to keep you subscribed?"
+                                    className="w-full resize-none rounded-2xl border border-black/15 bg-white px-4 py-3 text-xs text-black placeholder:text-black/30 focus:border-[#8AB4DB] focus:outline-none"
                                 />
-                                <button type="button" onClick={() => handleUpdatePayoutDestination(payoutDestinationDraft)} disabled={savingSettingsField === "payoutDestination" || payoutDestinationDraft.trim() === (userSettings.payoutDestination || "")} className="rounded-full bg-[#8AB4DB] hover:bg-[#7aa7d0] px-5 py-2.5 text-xs font-semibold text-[#082824] disabled:cursor-not-allowed disabled:opacity-40">{savingSettingsField === "payoutDestination" ? "Saving…" : "Review & save"}</button>
-                            </div>
-                            <p className="text-[10px] text-black/50">
-                                Enter a valid EVM address. You will still review the destination before each withdrawal.
-                            </p>
-                            {payoutDestinationError && <p className="text-[10px] text-red-500" role="alert">{payoutDestinationError}</p>}
-                        </div>
-                    </div>
-                </div>
-
-                {/* Preferences Section */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Notification Preferences */}
-                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6">
-                        <div>
-                            <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
-                                <Sliders className="w-4 h-4 text-[#082824]" />
-                                Notifications
-                            </h2>
-                            <p className="text-[11px] text-black/60 font-sans">
-                                Set up real-time alert preferences.
-                            </p>
-                        </div>
-
-                        <div className="space-y-4 font-sans text-xs">
-                            <div className="flex items-center justify-between opacity-50 select-none cursor-not-allowed">
-                                <div className="space-y-0.5">
-                                    <p className="text-black font-semibold flex items-center gap-1.5">Push Notifications <span className="text-[8px] bg-black/5 text-black/60 px-1.5 py-0.5 rounded font-bold uppercase">Soon</span></p>
-                                    <p className="text-[10px] text-black/50">Merchant inbox alerts are not live yet</p>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[9px] text-black/40">{churnQuestionDraft.length}/280</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleUpdateChurnSurveyQuestion(churnQuestionDraft)}
+                                        disabled={savingSettingsField === "churnSurveyQuestion" || (churnQuestionDraft.trim() === (userSettings?.churnSurveyQuestion || ""))}
+                                        className="px-5 py-2 text-xs font-semibold rounded-full bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                    >
+                                        {savingSettingsField === "churnSurveyQuestion" ? "Saving..." : "Save question"}
+                                    </button>
                                 </div>
-                                <button
-                                    onClick={() => {}}
-                                    disabled={true}
-                                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-black/10 opacity-50"
-                                >
-                                    <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black/30 shadow translate-x-0" />
-                                </button>
-                            </div>
-
-                            <div className="flex items-center justify-between opacity-50 select-none cursor-not-allowed">
-                                <div className="space-y-0.5">
-                                    <p className="text-black font-semibold flex items-center gap-1.5">Email Alerts <span className="text-[8px] bg-black/5 text-black/60 px-1.5 py-0.5 rounded font-bold uppercase">Soon</span></p>
-                                    <p className="text-[10px] text-black/50">Get payout summaries by email</p>
-                                </div>
-                                <button
-                                    onClick={() => {}}
-                                    disabled={true}
-                                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-black/10 opacity-50"
-                                >
-                                    <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black/30 shadow translate-x-0" />
-                                </button>
-                            </div>
-
-                            <div className="flex items-center justify-between opacity-50 select-none cursor-not-allowed">
-                                <div className="space-y-0.5">
-                                    <p className="text-black font-semibold flex items-center gap-1.5">Payout Alerts <span className="text-[8px] bg-black/5 text-black/60 px-1.5 py-0.5 rounded font-bold uppercase">Soon</span></p>
-                                    <p className="text-[10px] text-black/50">You&apos;ll get payout alerts in your inbox once payments start coming in</p>
-                                </div>
-                                <button
-                                    onClick={() => {}}
-                                    disabled={true}
-                                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-black/10 opacity-50"
-                                >
-                                    <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black/30 shadow translate-x-0" />
-                                </button>
-                            </div>
-
-                            <div className="flex items-center justify-between opacity-50 select-none cursor-not-allowed">
-                                <div className="space-y-0.5">
-                                    <p className="text-black font-semibold flex items-center gap-1.5">Client Disputes <span className="text-[8px] bg-black/5 text-black/60 px-1.5 py-0.5 rounded font-bold uppercase">Soon</span></p>
-                                    <p className="text-[10px] text-black/50">Receive immediate alerts on cancel or payment failure events</p>
-                                </div>
-                                <button
-                                    onClick={() => {}}
-                                    disabled={true}
-                                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-black/10 opacity-50"
-                                >
-                                    <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black/30 shadow translate-x-0" />
-                                </button>
                             </div>
                         </div>
                     </div>
+                )}
 
-                    {/* Exit Survey — merchant-defined cancellation question (SUB-501) */}
-                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6">
-                        <div>
-                            <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
-                                <MessageSquare className="w-4 h-4 text-[#082824]" />
-                                Exit Survey
-                            </h2>
-                            <p className="text-[11px] text-black/60 font-sans">
-                                Ask cancelling customers your own question. Leave blank to use the default prompt.
+                {/* 4. SUBSCRIPT DNS SUBVIEW */}
+                {merchantSubView === "dns" && (
+                    <div className="space-y-6">
+                        {renderBackHeader("SubScript DNS", "Configure your business namespace on Arc.")}
+
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-4 shadow-sm">
+                            <h3 className="text-xs font-semibold text-black">SubScript DNS Registration (Business Name)</h3>
+                            <p className="text-[10px] leading-relaxed text-amber-900 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 font-sans">
+                                {merchantAliasNextChange
+                                    ? <>Your DNS name is locked until <strong>{new Date(merchantAliasNextChange).toLocaleDateString()}</strong>. You can change it again then. Business names cannot be unregistered.</>
+                                    : <>Heads up: a DNS name can only be changed <strong>once every 365 days</strong>. Choose carefully, because after a change you won&apos;t be able to switch again for a year.</>}
                             </p>
+                            {userSettings.alias ? (
+                                <div className="p-4 rounded-2xl border border-black/10 bg-[#D4E3E8] flex items-center justify-between">
+                                    <div>
+                                        <p className="text-[9px] uppercase tracking-wider font-semibold text-black/60">Registered Alias</p>
+                                        <h4 className="font-mono text-lg font-bold text-[#082824] mt-1">{userSettings.alias}</h4>
+                                    </div>
+                                    <span className="px-3 py-1.5 border border-black/15 bg-white text-black/70 text-[10px] font-semibold rounded-full select-none">
+                                        Permanent
+                                    </span>
+                                </div>
+                            ) : dnsConfirmPending ? (
+                                <div className="p-5 rounded-2xl border border-black/10 bg-[#EFE2AC] space-y-4">
+                                    <div>
+                                        <p className="text-[9px] uppercase tracking-wider font-semibold text-black/60">Confirm DNS name</p>
+                                        <h4 className="font-mono text-lg font-bold text-[#082824] mt-1">{dnsConfirmPending}</h4>
+                                    </div>
+                                    <p className="text-[10px] leading-relaxed text-black/70">
+                                        This is locked for <strong>365 days</strong> once registered. Make sure it&apos;s right.
+                                    </p>
+                                    <div className="flex gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setDnsConfirmPending(null)}
+                                            disabled={dnsLoading}
+                                            className="flex-1 py-2.5 border border-black/15 bg-white hover:bg-black/5 text-black/70 text-[10px] font-semibold rounded-full transition-all"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={confirmDnsRegistration}
+                                            disabled={dnsLoading}
+                                            className="flex-1 py-2.5 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] text-[10px] font-semibold rounded-full transition-all flex items-center justify-center gap-2"
+                                        >
+                                            {dnsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirm & Register"}
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <form onSubmit={handleRegisterDns} className="space-y-3 font-sans text-xs">
+                                    <div className="space-y-1">
+                                        <label className="text-black/60 font-semibold text-[10px] tracking-wide">Domain Alias</label>
+                                        <div className="flex gap-2">
+                                            <div className="relative flex-1">
+                                                <input
+                                                    type="text"
+                                                    value={dnsDomain}
+                                                    onChange={(e) => setDnsDomain(e.target.value)}
+                                                    placeholder="my-company"
+                                                    className="w-full bg-white border border-black/15 rounded-xl px-4 py-2.5 text-black focus:outline-none focus:border-[#8AB4DB] font-mono"
+                                                    required
+                                                />
+                                                <div className="absolute right-3 top-2.5 flex gap-1">
+                                                    <select
+                                                        value={dnsSuffix}
+                                                        onChange={(e) => setDnsSuffix(e.target.value)}
+                                                        className="bg-transparent text-black/60 text-xs font-bold border-none focus:outline-none cursor-pointer"
+                                                    >
+                                                        <option value=".hq" className="bg-white text-black">.hq</option>
+                                                        <option value=".biz" className="bg-white text-black">.biz</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="submit"
+                                                disabled={dnsLoading}
+                                                className="px-6 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] font-semibold rounded-full transition-all"
+                                            >
+                                                {dnsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Register"}
+                                            </button>
+                                        </div>
+                                        <p className="text-[10px] text-black/50">
+                                            Enterprise custom namespaces allow customers to identify your business link securely.
+                                        </p>
+                                    </div>
+                                </form>
+                            )}
+                            {dnsError && <p className="text-[10px] text-red-500">{dnsError}</p>}
+                            {dnsSuccess && <p className="text-[10px] text-emerald-600">{dnsSuccess}</p>}
                         </div>
+                    </div>
+                )}
 
-                        <div className="space-y-3 font-sans">
-                            <textarea
-                                value={churnQuestionDraft}
-                                onChange={(e) => setChurnQuestionDraft(e.target.value)}
-                                maxLength={280}
-                                rows={3}
-                                placeholder="e.g. What could we have done to keep you subscribed?"
-                                className="w-full resize-none rounded-2xl border border-black/15 bg-white px-4 py-3 text-xs text-black placeholder:text-black/30 focus:border-[#8AB4DB] focus:outline-none"
-                            />
-                            <div className="flex items-center justify-between">
-                                <span className="text-[9px] text-black/40">{churnQuestionDraft.length}/280</span>
+                {/* 5. KYC & PLAN SUBVIEW */}
+                {merchantSubView === "kyc" && (
+                    <div className="space-y-6">
+                        {renderBackHeader("KYC Verification & Tier", "Identity verification and platform trust badges.")}
+
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div className={`p-4 rounded-2xl border ${userSettings.verified ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'} space-y-2`}>
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-black">KYC Tier</h4>
+                                        <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${userSettings.verified ? 'bg-emerald-500/20 text-emerald-800' : 'bg-amber-500/20 text-amber-800'}`}>
+                                            {userSettings.verified ? 'Verified' : 'Unverified'}
+                                        </span>
+                                    </div>
+                                    <ul className="space-y-1 text-[10px] text-black/70 leading-relaxed font-sans">
+                                        {userSettings.verified ? (
+                                            <>
+                                                <li className="flex items-center gap-1 text-emerald-700">✓ Verified badge on your public profile</li>
+                                                <li className="flex items-center gap-1 text-emerald-700">✓ Customers can commit without a risk warning</li>
+                                                <li className="flex items-center gap-1 text-emerald-700">✓ Ready for regulated rails as they launch</li>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <li className="flex items-center gap-1 text-black/60">• Public profile shows unverified</li>
+                                                <li className="flex items-center gap-1 text-black/60">• Customers see a warning before committing funds</li>
+                                                <li className="flex items-center gap-1 text-black/60">• Complete business verification below to upgrade</li>
+                                            </>
+                                        )}
+                                    </ul>
+                                </div>
+
+                                <div className={`p-4 rounded-2xl border ${userSettings.tier === 'PREMIUM' ? 'border-[#8AB4DB]/40 bg-[#D4E3E8]' : 'border-black/10 bg-black/[0.02]'} space-y-2`}>
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-black">Plan Tier</h4>
+                                        <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${userSettings.tier === 'PREMIUM' ? 'bg-[#8AB4DB] text-[#082824]' : 'bg-black/10 text-black/70'}`}>
+                                            {userSettings.tier === 'PREMIUM' ? 'Premium' : 'Free'}
+                                        </span>
+                                    </div>
+                                    <ul className="space-y-1 text-[10px] text-black/70 leading-relaxed font-sans">
+                                        <li className="flex items-center gap-1 text-emerald-700">✓ Create unlimited payment links</li>
+                                        <li className={`flex items-center gap-1 ${userSettings.tier === 'PREMIUM' ? 'text-emerald-700' : 'text-red-500'}`}>
+                                            {userSettings.tier === 'PREMIUM' ? '✓' : '✗'} API Keys &amp; Webhook endpoints
+                                        </li>
+                                        <li className={`flex items-center gap-1 ${userSettings.tier === 'PREMIUM' ? 'text-emerald-700' : 'text-red-500'}`}>
+                                            {userSettings.tier === 'PREMIUM' ? '✓' : '✗'} Customer commitment vaults
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* Identity Verification (KYC/KYB) */}
+                            <KycVerificationPanel />
+                        </div>
+                    </div>
+                )}
+
+                {/* 6. DUNNING / FAILED-RENEWAL POLICY SUBVIEW */}
+                {merchantSubView === "dunning" && (
+                    <div className="space-y-6">
+                        {renderBackHeader("Failed-Renewal Policy", "Manage automatic keeper retries and customer grace periods.")}
+
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-4 shadow-sm">
+                            <div>
+                                <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
+                                    <ArrowRightLeft className="w-4 h-4 text-[#082824]" />
+                                    Keeper Retry Settings (Dunning)
+                                </h2>
+                                <p className="text-[11px] text-black/60 font-sans">
+                                    When a customer&apos;s renewal fails (insufficient balance), the keeper retries roughly
+                                    once a day. Choose how many attempts to make before the subscription is stopped and the
+                                    customer is notified. More attempts ≈ more days of grace.
+                                </p>
+                            </div>
+                            <div className="flex flex-col sm:flex-row gap-3 sm:items-center font-sans">
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="10"
+                                    step="1"
+                                    value={dunningMaxFailures}
+                                    onChange={(e) => setDunningMaxFailures(e.target.value)}
+                                    className="w-full sm:w-32 bg-white border border-black/15 rounded-xl px-4 py-3 text-black text-xs focus:outline-none focus:border-[#8AB4DB] transition-colors"
+                                />
                                 <button
                                     type="button"
-                                    onClick={() => handleUpdateChurnSurveyQuestion(churnQuestionDraft)}
-                                    disabled={savingSettingsField === "churnSurveyQuestion" || (churnQuestionDraft.trim() === (userSettings?.churnSurveyQuestion || ""))}
-                                    className="px-5 py-2 text-xs font-semibold rounded-full bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                    onClick={handleSaveDunning}
+                                    disabled={dunningSaving}
+                                    className="w-full sm:w-auto shrink-0 px-6 py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] disabled:opacity-50 text-[#082824] text-xs font-semibold rounded-full transition-all flex items-center justify-center gap-2"
                                 >
-                                    {savingSettingsField === "churnSurveyQuestion" ? "Saving..." : "Save question"}
+                                    {dunningSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                                    Save Policy
                                 </button>
+                                {dunningMessage && (
+                                    <span className="text-[10px] text-black/60">{dunningMessage}</span>
+                                )}
                             </div>
                         </div>
                     </div>
+                )}
 
-                    {/* Security Toggles */}
-                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6">
-                        <div>
-                            <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
-                                <Lock className="w-4 h-4 text-[#082824]" />
-                                Security Settings
-                            </h2>
-                            <p className="text-[11px] text-black/60 font-sans">
-                                Configure merchant authorization preferences.
-                            </p>
-                        </div>
+                {/* 7. TRANSACTIONS & RECEIPTS SUBVIEW */}
+                {merchantSubView === "transactions" && (
+                    <div className="space-y-6">
+                        {renderBackHeader("Transaction Logs", "Search, filter, and review settlement receipt logs.")}
 
-                        <div className="space-y-4 font-sans text-xs">
-                            <div className="flex items-center justify-between opacity-50 select-none cursor-not-allowed">
-                                <div className="space-y-0.5">
-                                    <p className="text-black font-semibold flex items-center gap-1.5">Multi-Sig Payout Verification <span className="text-[8px] bg-black/5 text-black/60 px-1.5 py-0.5 rounded font-bold uppercase">Soon</span></p>
-                                    <p className="text-[10px] text-black/50">Require secondary signature verification for payouts</p>
-                                </div>
-                                <button
-                                    onClick={() => {}}
-                                    disabled={true}
-                                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-black/10 opacity-50"
-                                >
-                                    <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black/30 shadow translate-x-0" />
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Transaction History Receipt Logs */}
-                {(() => {
-                    const filteredSettingsTx = settingsTransactions.filter((tx) => {
-                        if (settingsTxSearch.trim()) {
-                            const q = settingsTxSearch.trim().toLowerCase();
-                            const matchId = (tx.receiptId || "").toLowerCase().includes(q);
-                            const matchHash = (tx.txHash || "").toLowerCase().includes(q);
-                            const matchName = (tx.counterpartyName || "").toLowerCase().includes(q);
-                            const matchMemo = (tx.memoNote || "").toLowerCase().includes(q);
-                            const matchPayer = (tx.payerAddress || "").toLowerCase().includes(q);
-                            const matchMerchant = (tx.merchantAddress || "").toLowerCase().includes(q);
-                            if (!matchId && !matchHash && !matchName && !matchMemo && !matchPayer && !matchMerchant) {
-                                return false;
-                            }
-                        }
-
-                        if (settingsTxCategory !== "all") {
-                            const memo = (tx.memoNote || "").toLowerCase();
-                            const isSub = memo.includes("sub") || memo.includes("plan") || memo.includes("recurring") || !!tx.paymentLinkId;
-                            const isTransfer = memo.includes("transfer") || memo.includes("peer");
-                            const isWithdrawal = memo.includes("withdraw") || memo.includes("balance to wallet");
-                            const isOneTime = !isSub && !isTransfer && !isWithdrawal;
-
-                            if (settingsTxCategory === "subscriptions") {
-                                if (!isSub) return false;
-                            } else if (settingsTxCategory === "one-time") {
-                                if (!isOneTime) return false;
-                            } else if (settingsTxCategory === "transfers") {
-                                if (!isTransfer) return false;
-                            } else if (settingsTxCategory === "withdrawals") {
-                                if (!isWithdrawal) return false;
-                            } else if (settingsTxCategory === "sent") {
-                                const isOutgoing = tx.payerAddress.toLowerCase() === address.toLowerCase();
-                                if (!isOutgoing) return false;
-                            } else if (settingsTxCategory === "received") {
-                                const isOutgoing = tx.payerAddress.toLowerCase() === address.toLowerCase();
-                                if (isOutgoing) return false;
-                            }
-                        }
-
-                        if (settingsTxStatus !== "all") {
-                            if (String(tx.status || "").toUpperCase() !== settingsTxStatus.toUpperCase()) {
-                                return false;
-                            }
-                        }
-
-                        if (settingsTxDatePreset !== "all" || settingsTxStartDate || settingsTxEndDate) {
-                            const txDate = new Date(tx.createdAt).getTime();
-                            const now = Date.now();
-
-                            if (settingsTxDatePreset === "today") {
-                                const todayStart = new Date();
-                                todayStart.setHours(0, 0, 0, 0);
-                                if (txDate < todayStart.getTime()) return false;
-                            } else if (settingsTxDatePreset === "7days") {
-                                if (txDate < now - 7 * 24 * 60 * 60 * 1000) return false;
-                            } else if (settingsTxDatePreset === "30days") {
-                                if (txDate < now - 30 * 24 * 60 * 60 * 1000) return false;
-                            } else if (settingsTxDatePreset === "custom") {
-                                if (settingsTxStartDate) {
-                                    const startMs = new Date(settingsTxStartDate).getTime();
-                                    if (!isNaN(startMs) && txDate < startMs) return false;
+                        {(() => {
+                            const filteredSettingsTx = settingsTransactions.filter((tx) => {
+                                if (settingsTxSearch.trim()) {
+                                    const q = settingsTxSearch.trim().toLowerCase();
+                                    const matchId = (tx.receiptId || "").toLowerCase().includes(q);
+                                    const matchHash = (tx.txHash || "").toLowerCase().includes(q);
+                                    const matchName = (tx.counterpartyName || "").toLowerCase().includes(q);
+                                    const matchMemo = (tx.memoNote || "").toLowerCase().includes(q);
+                                    const matchPayer = (tx.payerAddress || "").toLowerCase().includes(q);
+                                    const matchMerchant = (tx.merchantAddress || "").toLowerCase().includes(q);
+                                    if (!matchId && !matchHash && !matchName && !matchMemo && !matchPayer && !matchMerchant) {
+                                        return false;
+                                    }
                                 }
-                                if (settingsTxEndDate) {
-                                    const endMs = new Date(settingsTxEndDate).setHours(23, 59, 59, 999);
-                                    if (!isNaN(endMs) && txDate > endMs) return false;
+
+                                if (settingsTxCategory !== "all") {
+                                    const memo = (tx.memoNote || "").toLowerCase();
+                                    const isSub = memo.includes("sub") || memo.includes("plan") || memo.includes("recurring") || !!tx.paymentLinkId;
+                                    const isTransfer = memo.includes("transfer") || memo.includes("peer");
+                                    const isWithdrawal = memo.includes("withdraw") || memo.includes("balance to wallet");
+                                    const isOneTime = !isSub && !isTransfer && !isWithdrawal;
+
+                                    if (settingsTxCategory === "subscriptions") {
+                                        if (!isSub) return false;
+                                    } else if (settingsTxCategory === "one-time") {
+                                        if (!isOneTime) return false;
+                                    } else if (settingsTxCategory === "transfers") {
+                                        if (!isTransfer) return false;
+                                    } else if (settingsTxCategory === "withdrawals") {
+                                        if (!isWithdrawal) return false;
+                                    } else if (settingsTxCategory === "sent") {
+                                        const isOutgoing = tx.payerAddress.toLowerCase() === address.toLowerCase();
+                                        if (!isOutgoing) return false;
+                                    } else if (settingsTxCategory === "received") {
+                                        const isOutgoing = tx.payerAddress.toLowerCase() === address.toLowerCase();
+                                        if (isOutgoing) return false;
+                                    }
                                 }
-                            }
-                        }
 
-                        return true;
-                    });
+                                if (settingsTxStatus !== "all") {
+                                    if (String(tx.status || "").toUpperCase() !== settingsTxStatus.toUpperCase()) {
+                                        return false;
+                                    }
+                                }
 
-                    return (
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                <div>
-                                    <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
-                                        <Activity className="w-4 h-4 text-[#082824]" />
-                                        Transaction History Logs
-                                    </h2>
-                                    <p className="text-[11px] text-black/60 font-sans">
-                                        Review recent transactions and payments.
-                                    </p>
-                                </div>
-                                <span className="text-[10px] font-mono font-semibold text-black/50">
-                                    Showing {filteredSettingsTx.length} of {settingsTransactions.length}
-                                </span>
-                            </div>
+                                if (settingsTxDatePreset !== "all" || settingsTxStartDate || settingsTxEndDate) {
+                                    const txDate = new Date(tx.createdAt).getTime();
+                                    const now = Date.now();
 
-                            {/* Customizable Filter Control Bar */}
-                            <div className="space-y-3 p-4 rounded-2xl bg-[#D4E3E8]/40 border border-black/10 font-sans">
-                                <div className="flex flex-wrap items-center gap-3">
-                                    {/* Search Input */}
-                                    <div className="relative flex-1 min-w-[200px]">
-                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-black/40" />
-                                        <input
-                                            type="text"
-                                            value={settingsTxSearch}
-                                            onChange={(e) => setSettingsTxSearch(e.target.value)}
-                                            placeholder="Search name, receipt ID, memo..."
-                                            className="w-full bg-white border border-black/15 rounded-xl pl-9 pr-8 py-1.5 text-xs text-black placeholder-black/40 focus:outline-none focus:border-[#8AB4DB]"
-                                        />
-                                        {settingsTxSearch && (
-                                            <button
-                                                onClick={() => setSettingsTxSearch("")}
-                                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-black/40 hover:text-black text-xs"
+                                    if (settingsTxDatePreset === "today") {
+                                        const todayStart = new Date();
+                                        todayStart.setHours(0, 0, 0, 0);
+                                        if (txDate < todayStart.getTime()) return false;
+                                    } else if (settingsTxDatePreset === "7days") {
+                                        if (txDate < now - 7 * 24 * 60 * 60 * 1000) return false;
+                                    } else if (settingsTxDatePreset === "30days") {
+                                        if (txDate < now - 30 * 24 * 60 * 60 * 1000) return false;
+                                    } else if (settingsTxDatePreset === "custom") {
+                                        if (settingsTxStartDate) {
+                                            const startMs = new Date(settingsTxStartDate).getTime();
+                                            if (!isNaN(startMs) && txDate < startMs) return false;
+                                        }
+                                        if (settingsTxEndDate) {
+                                            const endMs = new Date(settingsTxEndDate).setHours(23, 59, 59, 999);
+                                            if (!isNaN(endMs) && txDate > endMs) return false;
+                                        }
+                                    }
+                                }
+
+                                return true;
+                            });
+
+                            return (
+                                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
+                                    <div className="space-y-4">
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={settingsTxSearch}
+                                                onChange={(e) => setSettingsTxSearch(e.target.value)}
+                                                placeholder="Search by receipt ID, hash, or wallet address..."
+                                                className="w-full bg-white border border-black/15 rounded-xl pl-9 pr-4 py-2.5 text-xs text-black focus:outline-none focus:border-[#8AB4DB]"
+                                            />
+                                            <Search className="w-4 h-4 text-black/40 absolute left-3 top-3" />
+                                        </div>
+
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <select
+                                                value={settingsTxCategory}
+                                                onChange={(e) => setSettingsTxCategory(e.target.value)}
+                                                className="bg-white border border-black/15 rounded-xl px-3 py-1.5 text-xs text-black focus:outline-none focus:border-[#8AB4DB]"
                                             >
-                                                ✕
-                                            </button>
+                                                <option value="all">All Types</option>
+                                                <option value="subscriptions">Subscriptions</option>
+                                                <option value="one-time">One-Time</option>
+                                                <option value="transfers">Transfers</option>
+                                                <option value="withdrawals">Withdrawals</option>
+                                            </select>
+
+                                            <select
+                                                value={settingsTxStatus}
+                                                onChange={(e) => setSettingsTxStatus(e.target.value)}
+                                                className="bg-white border border-black/15 rounded-xl px-3 py-1.5 text-xs text-black focus:outline-none focus:border-[#8AB4DB]"
+                                            >
+                                                <option value="all">All Statuses</option>
+                                                <option value="COMPLETED">Completed</option>
+                                                <option value="PENDING">Pending</option>
+                                                <option value="FAILED">Failed</option>
+                                            </select>
+
+                                            <select
+                                                value={settingsTxDatePreset}
+                                                onChange={(e) => setSettingsTxDatePreset(e.target.value)}
+                                                className="bg-white border border-black/15 rounded-xl px-3 py-1.5 text-xs text-black focus:outline-none focus:border-[#8AB4DB]"
+                                            >
+                                                <option value="all">All Time</option>
+                                                <option value="today">Today</option>
+                                                <option value="7days">Last 7 Days</option>
+                                                <option value="30days">Last 30 Days</option>
+                                                <option value="custom">Custom Date</option>
+                                            </select>
+
+                                            {(settingsTxCategory !== "all" || settingsTxStatus !== "all" || settingsTxDatePreset !== "all" || settingsTxSearch) && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSettingsTxSearch("");
+                                                        setSettingsTxCategory("all");
+                                                        setSettingsTxStatus("all");
+                                                        setSettingsTxDatePreset("all");
+                                                        setSettingsTxStartDate("");
+                                                        setSettingsTxEndDate("");
+                                                    }}
+                                                    className="px-3 py-1.5 rounded-full bg-black/5 hover:bg-black/10 text-[11px] font-semibold text-black/80 transition-all"
+                                                >
+                                                    Reset Filters
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {settingsTxDatePreset === "custom" && (
+                                            <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-black/70">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span>From:</span>
+                                                    <input
+                                                        type="date"
+                                                        value={settingsTxStartDate}
+                                                        onChange={(e) => setSettingsTxStartDate(e.target.value)}
+                                                        className="bg-white border border-black/15 rounded-xl px-2.5 py-1 text-xs text-black focus:outline-none focus:border-[#8AB4DB]"
+                                                    />
+                                                </div>
+                                                <div className="flex items-center gap-1.5">
+                                                    <span>To:</span>
+                                                    <input
+                                                        type="date"
+                                                        value={settingsTxEndDate}
+                                                        onChange={(e) => setSettingsTxEndDate(e.target.value)}
+                                                        className="bg-white border border-black/15 rounded-xl px-2.5 py-1 text-xs text-black focus:outline-none focus:border-[#8AB4DB]"
+                                                    />
+                                                </div>
+                                            </div>
                                         )}
                                     </div>
 
-                                    {/* Category Selector */}
-                                    <select
-                                        value={settingsTxCategory}
-                                        onChange={(e) => setSettingsTxCategory(e.target.value)}
-                                        className="bg-white border border-black/15 rounded-xl px-3 py-1.5 text-xs text-black focus:outline-none focus:border-[#8AB4DB]"
-                                    >
-                                        <option value="all">All Categories</option>
-                                        <option value="subscriptions">Subscriptions</option>
-                                        <option value="one-time">One Time</option>
-                                        <option value="transfers">Transfers</option>
-                                        <option value="withdrawals">Withdrawals</option>
-                                        <option value="sent">Sent (Debit)</option>
-                                        <option value="received">Received (Credit)</option>
-                                    </select>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left font-sans text-xs">
+                                            <thead>
+                                                <tr className="border-b border-black/10 text-black/50 uppercase text-[9px] tracking-wider font-semibold">
+                                                    <th className="pb-3">Receipt ID</th>
+                                                    <th className="pb-3">Date &amp; Time</th>
+                                                    <th className="pb-3">Type</th>
+                                                    <th className="pb-3">Amount</th>
+                                                    <th className="pb-3">Status</th>
+                                                    <th className="pb-3 text-right">Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {filteredSettingsTx.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={6} className="text-center py-6 text-black/40">
+                                                            No transaction logs match your active filters.
+                                                        </td>
+                                                    </tr>
+                                                ) : (
+                                                    filteredSettingsTx.map((tx) => {
+                                                        const isOutgoing = tx.payerAddress.toLowerCase() === address.toLowerCase();
+                                                        return (
+                                                            <tr key={tx.receiptId} className="border-b border-black/10 hover:bg-black/[0.01] transition-all">
+                                                                <td className="py-4 font-mono font-semibold text-black/80">{tx.receiptId.slice(0, 8)}...</td>
+                                                                <td className="py-4 text-black/60">{new Date(tx.createdAt).toLocaleString()}</td>
+                                                                <td className="py-4">
+                                                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wider ${isOutgoing ? "bg-red-500/10 text-red-700" : "bg-emerald-500/10 text-emerald-700"}`}>
+                                                                        {isOutgoing ? "Debit" : "Credit"}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="py-4 font-mono font-bold text-[#082824]">
+                                                                    {(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
+                                                                </td>
+                                                                <td className="py-4">
+                                                                    <FinancialStatusBadge status={tx.status} />
+                                                                </td>
+                                                                <td className="py-4 text-right">
+                                                                    <div className="inline-flex items-center gap-3">
+                                                                        <a
+                                                                            href={`/receipt/${tx.receiptId}?invite=1`}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            className="text-black/60 hover:text-[#082824] hover:underline inline-flex items-center gap-1"
+                                                                            title="Grant another address permission to view this private receipt"
+                                                                        >
+                                                                            Grant access
+                                                                        </a>
+                                                                        <a
+                                                                            href={`${activeArcChain.blockExplorers.default.url}/tx/${tx.txHash}`}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            className="text-[#082824] hover:underline inline-flex items-center gap-1 font-semibold"
+                                                                        >
+                                                                            Tx <ExternalLink className="w-3 h-3" />
+                                                                        </a>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                    </div>
+                )}
 
-                                    {/* Status Selector */}
-                                    <select
-                                        value={settingsTxStatus}
-                                        onChange={(e) => setSettingsTxStatus(e.target.value)}
-                                        className="bg-white border border-black/15 rounded-xl px-3 py-1.5 text-xs text-black focus:outline-none focus:border-[#8AB4DB]"
-                                    >
-                                        <option value="all">All Statuses</option>
-                                        <option value="CONFIRMED">Confirmed</option>
-                                        <option value="PENDING">Pending</option>
-                                        <option value="FAILED">Failed</option>
-                                    </select>
+                {/* 8. NOTIFICATIONS & ALERTS SUBVIEW */}
+                {merchantSubView === "notifications" && (
+                    <div className="space-y-6">
+                        {renderBackHeader("Notifications & Alerts", "Configure delivery channels and webhook preferences.")}
 
-                                    {/* Date Range Selector */}
-                                    <select
-                                        value={settingsTxDatePreset}
-                                        onChange={(e) => {
-                                            setSettingsTxDatePreset(e.target.value);
-                                            if (e.target.value !== "custom") {
-                                                setSettingsTxStartDate("");
-                                                setSettingsTxEndDate("");
-                                            }
-                                        }}
-                                        className="bg-white border border-black/15 rounded-xl px-3 py-1.5 text-xs text-black focus:outline-none focus:border-[#8AB4DB]"
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
+                            <div className="space-y-4 font-sans text-xs">
+                                <div className="flex items-center justify-between opacity-50 select-none cursor-not-allowed">
+                                    <div className="space-y-0.5">
+                                        <p className="text-black font-semibold flex items-center gap-1.5">Push Notifications <span className="text-[8px] bg-black/5 text-black/60 px-1.5 py-0.5 rounded font-bold uppercase">Soon</span></p>
+                                        <p className="text-[10px] text-black/50">Merchant inbox alerts are not live yet</p>
+                                    </div>
+                                    <button
+                                        onClick={() => {}}
+                                        disabled={true}
+                                        className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-black/10 opacity-50"
                                     >
-                                        <option value="all">All Time</option>
-                                        <option value="today">Today</option>
-                                        <option value="7days">Last 7 Days</option>
-                                        <option value="30days">Last 30 Days</option>
-                                        <option value="custom">Custom Date Range...</option>
-                                    </select>
+                                        <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black/30 shadow translate-x-0" />
+                                    </button>
+                                </div>
 
-                                    {/* Reset Button */}
-                                    {(settingsTxSearch || settingsTxCategory !== "all" || settingsTxStatus !== "all" || settingsTxDatePreset !== "all" || settingsTxStartDate || settingsTxEndDate) && (
+                                <div className="flex items-center justify-between opacity-50 select-none cursor-not-allowed">
+                                    <div className="space-y-0.5">
+                                        <p className="text-black font-semibold flex items-center gap-1.5">Email Alerts <span className="text-[8px] bg-black/5 text-black/60 px-1.5 py-0.5 rounded font-bold uppercase">Soon</span></p>
+                                        <p className="text-[10px] text-black/50">Get payout summaries by email</p>
+                                    </div>
+                                    <button
+                                        onClick={() => {}}
+                                        disabled={true}
+                                        className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-black/10 opacity-50"
+                                    >
+                                        <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black/30 shadow translate-x-0" />
+                                    </button>
+                                </div>
+
+                                <div className="flex items-center justify-between opacity-50 select-none cursor-not-allowed">
+                                    <div className="space-y-0.5">
+                                        <p className="text-black font-semibold flex items-center gap-1.5">Payout Alerts <span className="text-[8px] bg-black/5 text-black/60 px-1.5 py-0.5 rounded font-bold uppercase">Soon</span></p>
+                                        <p className="text-[10px] text-black/50">You&apos;ll get payout alerts in your inbox once payments start coming in</p>
+                                    </div>
+                                    <button
+                                        onClick={() => {}}
+                                        disabled={true}
+                                        className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-black/10 opacity-50"
+                                    >
+                                        <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black/30 shadow translate-x-0" />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* 9. SECURITY & BACKUP SUBVIEW */}
+                {merchantSubView === "security" && (
+                    <div className="space-y-6">
+                        {renderBackHeader("Security & Wallet Recovery", "Merchant wallet key export and multi-sig authorization.")}
+
+                        <div className="space-y-6">
+                            {/* Wallet Recovery & Backup */}
+                            {userSettings.walletBackup?.available && (
+                                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-5 shadow-sm">
+                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                        <div>
+                                            <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
+                                                <Lock className="w-4 h-4 text-[#082824]" />
+                                                Wallet Recovery &amp; Backup
+                                            </h2>
+                                            <p className="text-[11px] text-black/60 font-sans leading-relaxed max-w-xl">
+                                                Export the private key for your email-created merchant wallet after email verification.
+                                                Importing this key into a wallet app lets you use <strong className="text-black/80">Sign in with Wallet</strong> and
+                                                opens this same merchant account.
+                                            </p>
+                                        </div>
+                                        <span className="self-start rounded-full border border-black/10 bg-[#D4E3E8] px-3 py-1 text-[9px] font-semibold text-[#082824]">
+                                            Exportable
+                                        </span>
+                                    </div>
+
+                                    {merchantExportedPrivateKey && (
+                                        <div className="space-y-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
+                                            <p className="text-[10px] font-bold text-amber-900">
+                                                Keep this secret offline. SubScript will never ask you to paste it into the app.
+                                            </p>
+                                            <div className="flex items-center gap-2 rounded-xl border border-black/15 bg-white px-3 py-2.5">
+                                                <code className="min-w-0 flex-1 truncate text-[10px] text-black/80">
+                                                    {merchantPrivateKeyVisible ? merchantExportedPrivateKey : "••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"}
+                                                </code>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setMerchantPrivateKeyVisible((visible) => !visible)}
+                                                    className="p-1.5 text-black/40 hover:text-black"
+                                                    aria-label={merchantPrivateKeyVisible ? "Hide private key" : "Show private key"}
+                                                >
+                                                    {merchantPrivateKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleCopy(merchantExportedPrivateKey, "Merchant Wallet Private Key")}
+                                                    className="p-1.5 text-black/40 hover:text-black"
+                                                    aria-label="Copy private key"
+                                                >
+                                                    {copiedText === "Merchant Wallet Private Key"
+                                                        ? <Check className="h-4 w-4 text-[#082824]" />
+                                                        : <Copy className="h-4 w-4" />}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={downloadMerchantWalletBackup}
+                                                    className="p-1.5 text-black/40 hover:text-black"
+                                                    aria-label="Download private key backup"
+                                                >
+                                                    <ArrowDownToLine className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {merchantWalletBackupError && (
+                                        <p className="text-[11px] text-red-500">{merchantWalletBackupError}</p>
+                                    )}
+
+                                    {merchantExportOtpStage ? (
+                                        <div className="space-y-3">
+                                            <p className="text-[10px] text-black/60">
+                                                Enter the 6-digit code sent to {userSettings.walletBackup.email}.
+                                            </p>
+                                            <input
+                                                type="text"
+                                                inputMode="numeric"
+                                                autoComplete="one-time-code"
+                                                maxLength={6}
+                                                value={merchantExportOtpCode}
+                                                onChange={(event) => setMerchantExportOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                                                placeholder="000000"
+                                                className="w-full rounded-2xl border border-black/15 bg-white px-3 py-3 text-center font-mono text-lg tracking-[0.4em] text-black placeholder:text-black/30 focus:border-[#8AB4DB] focus:outline-none"
+                                            />
+                                            <div className="grid gap-2 sm:grid-cols-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={handleMerchantWalletExport}
+                                                    disabled={merchantWalletBackupLoading || merchantExportOtpCode.length !== 6}
+                                                    className="w-full rounded-full bg-[#8AB4DB] hover:bg-[#7aa7d0] py-3 text-xs font-semibold text-[#082824] transition disabled:cursor-not-allowed disabled:opacity-50"
+                                                >
+                                                    {merchantWalletBackupLoading ? "Unlocking…" : "Confirm & Reveal"}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setMerchantExportOtpStage(false);
+                                                        setMerchantExportOtpCode("");
+                                                        setMerchantWalletBackupError(null);
+                                                    }}
+                                                    disabled={merchantWalletBackupLoading}
+                                                    className="w-full rounded-full border border-black/15 bg-white hover:bg-black/5 py-3 text-xs font-semibold text-black/70 transition disabled:opacity-50"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
                                         <button
-                                            onClick={() => {
-                                                setSettingsTxSearch("");
-                                                setSettingsTxCategory("all");
-                                                setSettingsTxStatus("all");
-                                                setSettingsTxDatePreset("all");
-                                                setSettingsTxStartDate("");
-                                                setSettingsTxEndDate("");
-                                            }}
-                                            className="px-3 py-1.5 rounded-full bg-black/5 hover:bg-black/10 text-[11px] font-semibold text-black/80 transition-all"
+                                            type="button"
+                                            onClick={requestMerchantExportOtp}
+                                            disabled={merchantExportOtpSending}
+                                            className="w-full rounded-full bg-[#8AB4DB] hover:bg-[#7aa7d0] py-3.5 text-xs font-semibold text-[#082824] transition disabled:cursor-not-allowed disabled:opacity-50"
                                         >
-                                            Reset Filters
+                                            {merchantExportOtpSending ? "Sending verification code…" : "Verify email & export wallet"}
                                         </button>
                                     )}
                                 </div>
+                            )}
 
-                                {/* Custom Date Inputs */}
-                                {settingsTxDatePreset === "custom" && (
-                                    <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-black/70">
-                                        <div className="flex items-center gap-1.5">
-                                            <span>From:</span>
-                                            <input
-                                                type="date"
-                                                value={settingsTxStartDate}
-                                                onChange={(e) => setSettingsTxStartDate(e.target.value)}
-                                                className="bg-white border border-black/15 rounded-xl px-2.5 py-1 text-xs text-black focus:outline-none focus:border-[#8AB4DB]"
-                                            />
+                            {/* Security Toggles */}
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-4 shadow-sm">
+                                <div>
+                                    <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
+                                        <Lock className="w-4 h-4 text-[#082824]" />
+                                        Advanced Security
+                                    </h2>
+                                    <p className="text-[11px] text-black/60 font-sans">
+                                        Configure multi-sig and secondary confirmation controls.
+                                    </p>
+                                </div>
+
+                                <div className="space-y-4 font-sans text-xs">
+                                    <div className="flex items-center justify-between opacity-50 select-none cursor-not-allowed">
+                                        <div className="space-y-0.5">
+                                            <p className="text-black font-semibold flex items-center gap-1.5">Multi-Sig Payout Verification <span className="text-[8px] bg-black/5 text-black/60 px-1.5 py-0.5 rounded font-bold uppercase">Soon</span></p>
+                                            <p className="text-[10px] text-black/50">Require secondary signature verification for payouts</p>
                                         </div>
-                                        <div className="flex items-center gap-1.5">
-                                            <span>To:</span>
-                                            <input
-                                                type="date"
-                                                value={settingsTxEndDate}
-                                                onChange={(e) => setSettingsTxEndDate(e.target.value)}
-                                                className="bg-white border border-black/15 rounded-xl px-2.5 py-1 text-xs text-black focus:outline-none focus:border-[#8AB4DB]"
-                                            />
-                                        </div>
+                                        <button
+                                            onClick={() => {}}
+                                            disabled={true}
+                                            className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-black/10 opacity-50"
+                                        >
+                                            <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black/30 shadow translate-x-0" />
+                                        </button>
                                     </div>
-                                )}
-                            </div>
-
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left font-sans text-xs">
-                                    <thead>
-                                        <tr className="border-b border-black/10 text-black/50 uppercase text-[9px] tracking-wider font-semibold">
-                                            <th className="pb-3">Receipt ID</th>
-                                            <th className="pb-3">Date &amp; Time</th>
-                                            <th className="pb-3">Type</th>
-                                            <th className="pb-3">Amount</th>
-                                            <th className="pb-3">Status</th>
-                                            <th className="pb-3 text-right">Action</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {filteredSettingsTx.length === 0 ? (
-                                            <tr>
-                                                <td colSpan={6} className="text-center py-6 text-black/40">
-                                                    No transaction logs match your active filters.
-                                                </td>
-                                            </tr>
-                                        ) : (
-                                            filteredSettingsTx.map((tx) => {
-                                                const isOutgoing = tx.payerAddress.toLowerCase() === address.toLowerCase();
-                                                return (
-                                                    <tr key={tx.receiptId} className="border-b border-black/10 hover:bg-black/[0.01] transition-all">
-                                                        <td className="py-4 font-mono font-semibold text-black/80">{tx.receiptId.slice(0, 8)}...</td>
-                                                        <td className="py-4 text-black/60">{new Date(tx.createdAt).toLocaleString()}</td>
-                                                        <td className="py-4">
-                                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wider ${isOutgoing ? "bg-red-500/10 text-red-700" : "bg-emerald-500/10 text-emerald-700"}`}>
-                                                                {isOutgoing ? "Debit" : "Credit"}
-                                                            </span>
-                                                        </td>
-                                                        <td className="py-4 font-mono font-bold text-[#082824]">
-                                                            {(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
-                                                        </td>
-                                                        <td className="py-4">
-                                                            <FinancialStatusBadge status={tx.status} />
-                                                        </td>
-                                                        <td className="py-4 text-right">
-                                                            <div className="inline-flex items-center gap-3">
-                                                                <a
-                                                                    href={`/receipt/${tx.receiptId}?invite=1`}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="text-black/60 hover:text-[#082824] hover:underline inline-flex items-center gap-1"
-                                                                    title="Grant another address permission to view this private receipt"
-                                                                >
-                                                                    Grant access
-                                                                </a>
-                                                                <a
-                                                                    href={`${activeArcChain.blockExplorers.default.url}/tx/${tx.txHash}`}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="text-[#082824] hover:underline inline-flex items-center gap-1 font-semibold"
-                                                                >
-                                                                    Tx <ExternalLink className="w-3 h-3" />
-                                                                </a>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })
-                                        )}
-                                    </tbody>
-                                </table>
+                                </div>
                             </div>
                         </div>
-                    );
-                })()}
+                    </div>
+                )}
+
+                {/* 10. HELP & SUPPORT SUBVIEW */}
+                {merchantSubView === "support" && (
+                    <div className="space-y-6">
+                        {renderBackHeader("Help & Support", "Get help with integrations, smart contracts, and billing.")}
+
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
+                            <div>
+                                <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
+                                    <HelpCircle className="w-4 h-4 text-[#082824]" />
+                                    SubScript Merchant Support
+                                </h2>
+                                <p className="text-[11px] text-black/60 font-sans">
+                                    Integration help, activation issues, billing questions, or security disclosures. Real
+                                    humans read every message.
+                                </p>
+                            </div>
+                            <div className="grid gap-3 sm:grid-cols-3 font-sans text-xs">
+                                <a
+                                    href="mailto:support@subscriptonarc.com"
+                                    className="rounded-2xl border border-black/10 bg-[#D4E3E8]/40 px-4 py-3 transition hover:bg-[#D4E3E8]"
+                                >
+                                    <span className="block text-[9px] font-semibold uppercase tracking-wider text-black/50">General support</span>
+                                    <span className="mt-1 block break-all font-mono text-[10px] font-bold text-[#082824]">support@subscriptonarc.com</span>
+                                </a>
+                                <a
+                                    href="mailto:compliance@subscriptonarc.com"
+                                    className="rounded-2xl border border-black/10 bg-[#D4E3E8]/40 px-4 py-3 transition hover:bg-[#D4E3E8]"
+                                >
+                                    <span className="block text-[9px] font-semibold uppercase tracking-wider text-black/50">Billing &amp; Compliance</span>
+                                    <span className="mt-1 block break-all font-mono text-[10px] font-bold text-[#082824]">compliance@subscriptonarc.com</span>
+                                </a>
+                                <a
+                                    href="/support"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center justify-center rounded-2xl border border-black/10 bg-[#082824] px-4 py-3 text-center text-[11px] font-semibold text-white transition hover:bg-[#0c3933]"
+                                >
+                                    Open Help Center
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     };
@@ -5841,6 +6071,7 @@ Please complete the following implementation tasks:
                     verified={Boolean(userSettings?.verified)}
                     isAdmin={isAdmin}
                     mobileEnabled={isConnected}
+                    isPremium={isPremium}
                 />
                 <div className="merchant-dashboard-workspace relative min-w-0 flex-1 overflow-y-auto bg-[#D4E3E8] md:h-[100dvh] md:rounded-tl-[70px]">
             {/* Session Consent Alerts Overlay */}

@@ -43,6 +43,7 @@ export default function MerchantDashboardNav({
     verified,
     isAdmin,
     mobileEnabled,
+    isPremium,
 }: {
     activeId: string;
     onSelect: (id: string) => void;
@@ -51,6 +52,7 @@ export default function MerchantDashboardNav({
     verified?: boolean;
     isAdmin?: boolean;
     mobileEnabled?: boolean;
+    isPremium?: boolean;
 }) {
     const [paymentsOpen, setPaymentsOpen] = useState(true);
     const [developerOpen, setDeveloperOpen] = useState(true);
@@ -64,18 +66,30 @@ export default function MerchantDashboardNav({
         setAccountMenuOpen(false);
     }, [activeId]);
 
-    const baseRow = "flex w-full items-center gap-3 rounded-full px-5 py-3.5 text-left text-[17px] transition";
-    const rowClass = (active: boolean) => `${baseRow} ${active ? "bg-[#D4E3E8] text-black" : "text-black/80 hover:bg-[#D4E3E8]/55"}`;
-    const childClass = (active: boolean) => `flex w-full items-center gap-3 rounded-full px-5 py-2.5 pl-10 text-left text-sm transition ${active ? "bg-[#D4E3E8] text-black" : "text-black/55 hover:bg-[#D4E3E8]/45 hover:text-black"}`;
+    const baseRow = "flex w-full items-center gap-3 rounded-full px-5 py-3.5 text-left text-[17px] font-medium transition-all duration-200";
+    const rowClass = (active: boolean) => `${baseRow} ${active ? "bg-[#082824] text-white shadow-md font-bold" : "text-black/80 hover:bg-[#D4E3E8]/55"}`;
+    const childClass = (active: boolean) => `flex w-full items-center gap-3 rounded-full px-5 py-2.5 pl-10 text-left text-sm font-medium transition-all duration-200 ${active ? "bg-[#082824] text-white shadow-md font-bold" : "text-black/65 hover:bg-[#D4E3E8]/45 hover:text-black"}`;
 
     return (
         <>
             <aside className="hidden h-full w-[clamp(280px,17vw,340px)] shrink-0 flex-col bg-[#FFFFF0] px-6 pb-8 pt-9 text-black md:flex">
-                <div className="flex items-center gap-5">
-                    <span className="text-[31px] font-semibold tracking-tight">MERCHANT</span>
-                    <button onClick={() => onSelect("premium")} className="flex h-16 w-16 items-center justify-center rounded-full bg-[#EFE2AC] text-black transition hover:brightness-95" aria-label="Open Premium">
-                        <DiamondIcon className="h-9 w-9" />
-                    </button>
+                <div className="flex items-center justify-between">
+                    <span className="text-[28px] font-bold tracking-tight text-[#082824]">MERCHANT</span>
+                    <div className="relative">
+                        {isPremium && (
+                            <span className="absolute -inset-1 rounded-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 opacity-80 blur-sm animate-pulse pointer-events-none" />
+                        )}
+                        <button
+                            onClick={() => onSelect("premium")}
+                            className={`relative flex h-9 w-9 items-center justify-center rounded-full bg-[#EFE2AC] text-black transition hover:brightness-95 shadow-sm ${
+                                isPremium ? "ring-2 ring-amber-400/90 shadow-[0_0_16px_rgba(245,158,11,0.6)]" : ""
+                            }`}
+                            aria-label="Open Premium"
+                            title={isPremium ? "Premium Pro Active" : "Open Premium"}
+                        >
+                            <DiamondIcon className="h-4.5 w-4.5" />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="relative mt-5">
@@ -84,11 +98,11 @@ export default function MerchantDashboardNav({
                         className="flex w-full items-center gap-3 rounded-full bg-[#D4E3E8] p-3 text-left transition hover:bg-[#c6d8de]"
                         aria-expanded={accountMenuOpen}
                     >
-                        <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#082824] text-sm font-semibold text-white">
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#082824] text-sm font-semibold text-white shadow-sm">
                             {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : identityLabel.slice(0, 1).toUpperCase()}
                         </span>
-                        <span className="min-w-0 flex-1 truncate text-lg">{identityLabel}</span>
-                        {verified && <span title="Verified" className="flex h-5 w-5 items-center justify-center rounded-full border border-black/30"><Check className="h-3 w-3" /></span>}
+                        <span className="min-w-0 flex-1 truncate text-lg font-semibold text-[#082824]">{identityLabel}</span>
+                        {verified && <span title="Verified" className="flex h-5 w-5 items-center justify-center rounded-full border border-black/30 text-[#082824]"><Check className="h-3 w-3" /></span>}
                         <ChevronDown className={`h-4 w-4 text-black/50 transition ${accountMenuOpen ? "rotate-180" : ""}`} />
                     </button>
 
@@ -128,27 +142,27 @@ export default function MerchantDashboardNav({
                 </div>
 
                 <nav className="mt-10 space-y-2" aria-label="Merchant dashboard navigation">
-                    <button onClick={() => onSelect("overview")} className={rowClass(activeId === "overview")}><SquaresFour className="h-5 w-5" /> Overview</button>
-                    <button onClick={() => onSelect("analytics")} className={rowClass(activeId === "analytics")}><BarChart3 className="h-5 w-5" /> Analytics</button>
+                    <button onClick={() => onSelect("overview")} className={rowClass(activeId === "overview")}><SquaresFour className="h-5 w-5 shrink-0" /> Overview</button>
+                    <button onClick={() => onSelect("analytics")} className={rowClass(activeId === "analytics")}><BarChart3 className="h-5 w-5 shrink-0" /> Analytics</button>
 
                     <div>
                         <button onClick={() => setPaymentsOpen((open) => !open)} className={rowClass(paymentIds.has(activeId))} aria-expanded={paymentsOpen}>
-                            <Sliders className="h-5 w-5" /><span className="flex-1">Payments &amp; Payroll</span><ChevronDown className={`h-4 w-4 transition ${paymentsOpen ? "rotate-180" : ""}`} />
+                            <Sliders className="h-5 w-5 shrink-0" /><span className="flex-1">Payments &amp; Payroll</span><ChevronDown className={`h-4 w-4 transition ${paymentsOpen ? "rotate-180" : ""}`} />
                         </button>
-                        {paymentsOpen && <div className="mt-1 space-y-1"><button onClick={() => onSelect("payment-links")} className={childClass(activeId === "payment-links")}><MessageSquare className="h-4 w-4" /> Payments &amp; Plans</button><button onClick={() => onSelect("payroll")} className={childClass(activeId === "payroll")}><Building2 className="h-4 w-4" /> Payroll</button></div>}
+                        {paymentsOpen && <div className="mt-1 space-y-1"><button onClick={() => onSelect("payment-links")} className={childClass(activeId === "payment-links")}><MessageSquare className="h-4 w-4 shrink-0" /> Payments &amp; Plans</button><button onClick={() => onSelect("payroll")} className={childClass(activeId === "payroll")}><Building2 className="h-4 w-4 shrink-0" /> Payroll</button></div>}
                     </div>
 
                     <div>
                         <button onClick={() => setDeveloperOpen((open) => !open)} className={rowClass(developerIds.has(activeId))} aria-expanded={developerOpen}>
-                            <Code2 className="h-5 w-5" /><span className="flex-1">Developer Tools</span><ChevronDown className={`h-4 w-4 transition ${developerOpen ? "rotate-180" : ""}`} />
+                            <Code2 className="h-5 w-5 shrink-0" /><span className="flex-1">Developer Tools</span><ChevronDown className={`h-4 w-4 transition ${developerOpen ? "rotate-180" : ""}`} />
                         </button>
-                        {developerOpen && <div className="mt-1 space-y-1"><button onClick={() => onSelect("apikeys")} className={childClass(activeId === "apikeys")}><Key className="h-4 w-4" /> API Keys</button><button onClick={() => onSelect("checkout")} className={childClass(activeId === "checkout")}><Code2 className="h-4 w-4" /> Checkout Setup</button><button onClick={() => onSelect("webhooks")} className={childClass(activeId === "webhooks")}><Webhook className="h-4 w-4" /> Webhooks</button></div>}
+                        {developerOpen && <div className="mt-1 space-y-1"><button onClick={() => onSelect("apikeys")} className={childClass(activeId === "apikeys")}><Key className="h-4 w-4 shrink-0" /> API Keys</button><button onClick={() => onSelect("checkout")} className={childClass(activeId === "checkout")}><Code2 className="h-4 w-4 shrink-0" /> Checkout Setup</button><button onClick={() => onSelect("webhooks")} className={childClass(activeId === "webhooks")}><Webhook className="h-4 w-4 shrink-0" /> Webhooks</button></div>}
                     </div>
                 </nav>
 
                 <div className="mt-auto space-y-2 pt-8">
-                    <button onClick={() => onSelect("settings")} className={rowClass(activeId === "settings")}><Sliders className="h-5 w-5" /> Settings</button>
-                    <Link href="/support" target="_blank" className={rowClass(false)}><HelpCircle className="h-5 w-5" /> Help Center</Link>
+                    <button onClick={() => onSelect("settings")} className={rowClass(activeId === "settings")}><Sliders className="h-5 w-5 shrink-0" /> Settings</button>
+                    <Link href="/support" target="_blank" className={rowClass(false)}><HelpCircle className="h-5 w-5 shrink-0" /> Help Center</Link>
                 </div>
             </aside>
 
@@ -164,7 +178,7 @@ export default function MerchantDashboardNav({
                     ["apikeys", "Developer", Code2],
                 ].map(([id, label, Icon]) => {
                     const active = activeId === id || (id === "payment-links" && paymentIds.has(activeId)) || (id === "apikeys" && developerIds.has(activeId));
-                    return <button key={String(id)} onClick={() => onSelect(String(id))} className={`flex min-w-0 flex-col items-center gap-1 rounded-full px-3 py-2 text-[10px] ${active ? "bg-[#D4E3E8] text-black" : "text-black/50"}`}><Icon className="h-4 w-4" /><span className="truncate">{String(label)}</span></button>;
+                    return <button key={String(id)} onClick={() => onSelect(String(id))} className={`flex min-w-0 flex-col items-center gap-1 rounded-full px-3 py-2 text-[10px] transition ${active ? "bg-[#082824] text-white shadow-sm font-bold" : "text-black/50"}`}><Icon className="h-4 w-4" /><span className="truncate">{String(label)}</span></button>;
                 })}
                 <button onClick={() => setMoreOpen(true)} className="flex flex-col items-center gap-1 rounded-full px-3 py-2 text-[10px] text-black/50"><Menu className="h-4 w-4" /> More</button>
             </nav>}

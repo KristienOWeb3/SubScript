@@ -719,35 +719,26 @@ body {
   }
 }
 
-/* Admin workspace contrast: the operational surface is light, while the blue status banner
-   keeps its intentional white-on-blue hierarchy. */
+/* Admin workspace contrast: clean slate foundation with intentional white-on-blue header */
 .admin-topography {
-  background-color: #fffff0 !important;
-  color: #000000;
-}
-
-.admin-topography .text-white,
-.admin-topography [class*="text-white/"] {
-  color: #000000 !important;
-}
-
-.admin-topography .topo-admin-blue,
-.admin-topography .topo-admin-blue .text-white,
-.admin-topography .topo-admin-blue [class*="text-white/"] {
-  color: #fffff0 !important;
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
 }
 
 .admin-topography .topo-admin-blue {
   background-color: #2775ca !important;
+  color: #ffffff !important;
 }
 
-.admin-topography [class*="bg-white/"] {
-  background-color: rgb(39 117 202 / 8%) !important;
+.admin-topography .topo-admin-blue h1,
+.admin-topography .topo-admin-blue h2,
+.admin-topography .topo-admin-blue h3,
+.admin-topography .topo-admin-blue p,
+.admin-topography .topo-admin-blue span,
+.admin-topography .topo-admin-blue button {
+  color: #ffffff !important;
 }
 
-.admin-topography [class*="border-white/"] {
-  border-color: rgb(0 0 0 / 15%) !important;
-}
 /* Loading placeholders share the redesign tokens so the first paint matches the loaded dashboard. */
 .user-dashboard-redesign .subscript-skeleton,
 .user-dashboard-loading .subscript-skeleton {
