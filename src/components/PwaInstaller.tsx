@@ -85,15 +85,15 @@ export default function PwaInstaller() {
 
     return (
         <div className="fixed bottom-4 left-1/2 z-[80] -translate-x-1/2 px-4 w-full max-w-sm">
-            <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/80 px-4 py-3 shadow-2xl backdrop-blur-xl">
+            <div className="flex items-center gap-3 rounded-2xl border border-black/15 bg-white/95 px-4 py-3 shadow-2xl backdrop-blur-xl text-black">
                 <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-white">Install SubScript</p>
-                    <p className="text-[10px] text-white/50 leading-snug">Add it to your home screen for one-tap access and notifications.</p>
+                    <p className="text-xs font-bold text-[#111827]">Install SubScript</p>
+                    <p className="text-[10px] text-black/60 leading-snug">Add to your home screen for one-tap access and instant updates.</p>
                 </div>
                 <button
                     type="button"
                     onClick={install}
-                    className="shrink-0 rounded-xl bg-[#00d2b4] px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-black transition hover:brightness-110"
+                    className="shrink-0 rounded-xl bg-[#2775CA] px-3.5 py-2 text-[10px] font-black uppercase tracking-wider text-white transition hover:bg-[#1f62ab]"
                 >
                     Install
                 </button>
@@ -101,7 +101,7 @@ export default function PwaInstaller() {
                     type="button"
                     onClick={dismiss}
                     aria-label="Dismiss install prompt"
-                    className="shrink-0 rounded-xl border border-white/10 px-2.5 py-2 text-[10px] font-bold uppercase tracking-wider text-white/50 transition hover:text-white"
+                    className="shrink-0 rounded-xl border border-black/10 px-2.5 py-2 text-[10px] font-bold uppercase tracking-wider text-black/45 transition hover:bg-black/5 hover:text-black"
                 >
                     ✕
                 </button>

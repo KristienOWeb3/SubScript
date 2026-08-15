@@ -40,7 +40,7 @@ type SendSingleModalProps = {
 function Field({ label, children }: { label: string; children: ReactNode }) {
     return (
         <label className="block space-y-2">
-            <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">{label}</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.16em] text-black/60">{label}</span>
             {children}
         </label>
     );
@@ -132,21 +132,19 @@ export default function SendSingleModal({
                         role="dialog"
                         aria-modal="true"
                         aria-label="Send USDC"
-                        className="relative my-auto w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-black/50 p-6 shadow-2xl liquid-glass backdrop-blur-xl"
+                        className="relative my-auto w-full max-w-md overflow-hidden rounded-3xl border border-black/10 bg-[#FFFFF0] text-black p-6 shadow-2xl"
                     >
-                        <div className="pointer-events-none absolute -right-16 -top-16 h-36 w-36 rounded-full bg-[#ccff00]/20 blur-3xl" />
-
                         <div className="relative z-10 mb-5 flex items-center justify-between">
                             <div>
-                                <h3 className="text-sm font-black uppercase tracking-wider text-white">Single Send</h3>
-                                <p className="mt-1 text-[11px] text-white/45">Transfer USDC to one recipient.</p>
+                                <h3 className="text-sm font-black uppercase tracking-wider text-[#111827]">Single Send</h3>
+                                <p className="mt-1 text-[11px] text-black/55">Transfer USDC to one recipient.</p>
                             </div>
                             <button
                                 type="button"
                                 onClick={onClose}
                                 disabled={loading}
                                 aria-label="Close"
-                                className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 transition-all hover:bg-white/10 disabled:opacity-40"
+                                className="flex h-9 w-9 items-center justify-center rounded-full bg-black/5 text-black/60 transition-all hover:bg-black/10 disabled:opacity-40"
                             >
                                 <X className="h-4 w-4" />
                             </button>
@@ -160,22 +158,22 @@ export default function SendSingleModal({
                                             value={recipient}
                                             onChange={(event) => onRecipientChange(event.target.value)}
                                             placeholder="alice.sub or 0x..."
-                                            className="subscript-input pr-10"
+                                            className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3 text-xs font-mono text-[#111827] focus:border-[#2775CA] focus:outline-none pr-10 shadow-sm"
                                             required
                                         />
                                         {resolving ? (
-                                            <Loader2 className="absolute right-3.5 top-3.5 h-4 w-4 animate-spin text-[#ccff00]" />
+                                            <Loader2 className="absolute right-3.5 top-3.5 h-4 w-4 animate-spin text-[#2775CA]" />
                                         ) : (
-                                            <User className="absolute right-3.5 top-3.5 h-4 w-4 text-white/30" />
+                                            <User className="absolute right-3.5 top-3.5 h-4 w-4 text-black/30" />
                                         )}
                                     </div>
                                     <button
                                         type="button"
                                         onClick={onScanQr}
                                         title="Scan QR Code"
-                                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/70 transition hover:border-[#ccff00]/40 hover:bg-[#ccff00]/10 hover:text-[#ccff00] md:hidden"
+                                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-black/10 bg-white text-black/70 transition hover:border-[#2775CA] hover:bg-[#2775CA]/10 hover:text-[#2775CA] md:hidden shadow-sm"
                                     >
-                                        <QrCode className="h-5 w-5 text-[#ccff00]" />
+                                        <QrCode className="h-5 w-5 text-[#2775CA]" />
                                     </button>
                                 </div>
                             </Field>
@@ -184,33 +182,33 @@ export default function SendSingleModal({
                                 <div
                                     className={`flex items-center justify-between rounded-2xl border p-4 text-xs transition-all duration-300 ${
                                         resolved.address
-                                            ? "border-[#ccff00]/20 bg-[#ccff00]/5 text-white/80"
-                                            : "border-red-500/20 bg-red-500/5 text-red-400"
+                                            ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-900"
+                                            : "border-red-500/20 bg-red-500/10 text-red-700"
                                     }`}
                                 >
                                     <div className="flex min-w-0 items-center gap-3">
                                         {resolved.address && (
-                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-black/30">
+                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-black/10 bg-black/5">
                                                 {resolved.profilePic ? (
                                                     <img src={resolved.profilePic} alt="Resolved avatar" className="h-full w-full object-cover" />
                                                 ) : (
-                                                    <User className="h-4 w-4 text-white/40" />
+                                                    <User className="h-4 w-4 text-black/50" />
                                                 )}
                                             </div>
                                         )}
                                         <div className="min-w-0">
                                             {resolved.address ? (
                                                 <>
-                                                    <p className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider text-white">
+                                                    <p className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider text-[#111827]">
                                                         {resolved.alias ? `Resolved ${resolved.alias}` : "Address Validated"}
-                                                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+                                                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
                                                     </p>
-                                                    <p className="mt-0.5 truncate font-mono text-[10px] text-white/50">{resolved.address}</p>
+                                                    <p className="mt-0.5 truncate font-mono text-[10px] text-black/60">{resolved.address}</p>
                                                 </>
                                             ) : (
                                                 <>
-                                                    <p className="text-[9px] font-bold uppercase tracking-wider">Resolution Error</p>
-                                                    <p className="mt-0.5 text-[10px] text-white/50">
+                                                    <p className="text-[9px] font-bold uppercase tracking-wider text-red-700">Resolution Error</p>
+                                                    <p className="mt-0.5 text-[10px] text-black/60">
                                                         Could not find address alias matching &quot;{resolved.alias}&quot;
                                                     </p>
                                                 </>
@@ -227,7 +225,7 @@ export default function SendSingleModal({
                                         onChange={(event) => onAmountChange(event.target.value)}
                                         placeholder="5.00"
                                         inputMode="decimal"
-                                        className="subscript-input pr-16 font-mono"
+                                        className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3 text-xs font-mono text-[#111827] focus:border-[#2775CA] focus:outline-none pr-16 shadow-sm"
                                         required
                                     />
                                     <button
@@ -235,7 +233,7 @@ export default function SendSingleModal({
                                         onClick={() => {
                                             if (walletBalance > 0) onAmountChange(walletBalance.toString());
                                         }}
-                                        className="absolute right-2.5 z-10 rounded-lg border border-[#ccff00]/30 bg-[#ccff00]/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-[#ccff00] transition hover:bg-[#ccff00]/20"
+                                        className="absolute right-2.5 z-10 rounded-lg border border-black/10 bg-black/5 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-black transition hover:bg-black/10"
                                     >
                                         Max
                                     </button>
@@ -248,8 +246,8 @@ export default function SendSingleModal({
                                 <p
                                     className={`rounded-2xl border p-3 text-[11px] leading-relaxed ${
                                         status.startsWith("Success")
-                                            ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
-                                            : "border-red-500/20 bg-red-500/10 text-red-400"
+                                            ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700"
+                                            : "border-red-500/20 bg-red-500/10 text-red-700"
                                     }`}
                                 >
                                     {status}
@@ -257,7 +255,7 @@ export default function SendSingleModal({
                             )}
 
                             {selfSend && (
-                                <div className="rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-[11px] leading-relaxed text-red-300">
+                                <div className="rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-[11px] leading-relaxed text-red-700">
                                     This is your connected wallet address. Enter another recipient before sending.
                                 </div>
                             )}
@@ -265,7 +263,7 @@ export default function SendSingleModal({
                             <button
                                 type="submit"
                                 disabled={submitBlocked}
-                                className={`flex w-full items-center justify-center gap-2 rounded-2xl border border-[#ccff00]/30 bg-[#ccff00]/10 py-3.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-[0_0_15px_rgba(204,255,0,0.15)] transition hover:border-[#ccff00]/50 hover:bg-[#ccff00]/20 ${
+                                className={`flex w-full items-center justify-center gap-2 rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] py-3.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm transition ${
                                     submitBlocked ? "cursor-not-allowed opacity-60" : ""
                                 }`}
                             >
@@ -280,15 +278,12 @@ export default function SendSingleModal({
                                 )}
                             </button>
 
-                            {/* Ghost styling so it never competes with the primary CTA above.
-                                Disabled mid-send: navigating away from an in-flight transfer would
-                                strand the user without its confirmation or its error. */}
                             <button
                                 type="button"
                                 onClick={onGoToBatch}
                                 disabled={loading}
-                                className={`w-full rounded-2xl py-2.5 text-[11px] font-bold text-white/50 transition hover:text-white ${
-                                    loading ? "cursor-not-allowed opacity-40 hover:text-white/50" : ""
+                                className={`w-full rounded-2xl py-2.5 text-[11px] font-bold text-black/55 transition hover:text-black ${
+                                    loading ? "cursor-not-allowed opacity-40 hover:text-black/55" : ""
                                 }`}
                             >
                                 Send to multiple people
