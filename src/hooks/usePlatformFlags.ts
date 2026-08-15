@@ -9,10 +9,9 @@ import { useEffect, useState } from "react";
  * config route 503s when Google is off). This exists so we don't render a control that would fail
  * when clicked, and so an already-open tab stops offering it.
  *
- * Defaults to everything ENABLED and stays there if the fetch fails. Same fail-open posture as
- * getPlatformFlags on the server: a flags endpoint having a bad day must not remove the user's
- * ability to sign in. The consequence is a brief window on first paint where a paused button is
- * visible; `loaded` is exposed for callers that would rather wait than flash it.
+ * Google remains available only after the flag request succeeds; external-wallet controls are
+ * fail-closed so a paused bridge or connector is not rendered during a stale or failed flag read.
+ * The server remains the authoritative boundary.
  */
 
 export type PublicPlatformFlags = {
@@ -22,7 +21,7 @@ export type PublicPlatformFlags = {
 
 const DEFAULTS: PublicPlatformFlags = {
     googleSigninEnabled: true,
-    externalWalletEnabled: true,
+    externalWalletEnabled: false,
 };
 
 export function usePlatformFlags(): PublicPlatformFlags & { loaded: boolean } {
@@ -39,11 +38,11 @@ export function usePlatformFlags(): PublicPlatformFlags & { loaded: boolean } {
                     if (!active || !json) return;
                     setFlags({
                         googleSigninEnabled: json.googleSigninEnabled !== false,
-                        externalWalletEnabled: json.externalWalletEnabled !== false,
+                        externalWalletEnabled: json.externalWalletEnabled === true,
                     });
                 })
                 .catch(() => {
-                    /* Keep the permissive defaults. */
+                    /* Keep external-wallet controls hidden until the kill-switch state is known. */
                 })
                 .finally(() => {
                     if (active) setLoaded(true);
@@ -52,7 +51,7 @@ export function usePlatformFlags(): PublicPlatformFlags & { loaded: boolean } {
 
         loadFlags();
 
-        const intervalId = setInterval(loadFlags, 60000);
+        const intervalId = setInterval(loadFlags, 15000);
         const handleVisibility = () => {
             if (document.visibilityState === "visible") loadFlags();
         };

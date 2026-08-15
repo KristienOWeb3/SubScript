@@ -21,6 +21,7 @@ export async function mirrorSubscriptionCreated({
     anchorNextPaymentSeconds,
     externalReference,
     sourceCheckoutId,
+    planId,
 }: {
     subscriptionId: string | bigint;
     merchantAddress: string;
@@ -44,28 +45,30 @@ export async function mirrorSubscriptionCreated({
     externalReference?: string | null;
     /* Checkout identity used to create/select the canonical plan. */
     sourceCheckoutId?: string | null;
+    /* Canonical merchant plan attribution for dashboard reporting. */
+    planId?: string | null;
 }) {
     const merchant = merchantAddress.toLowerCase();
-        const sub = subscriber.toLowerCase();
-        const id = BigInt(subscriptionId);
-        const period = BigInt(periodSeconds);
-        const now = new Date();
+    const sub = subscriber.toLowerCase();
+    const id = BigInt(subscriptionId);
+    const period = BigInt(periodSeconds);
+    const now = new Date();
         /* Fresh creates bill one period from now; reconciled subs bill at the chain's
            recorded nextPayment. lastSettlement is anchored one period earlier so the DB
            trigger derives the identical next_billing_date. */
-        const nextBilling = anchorNextPaymentSeconds && anchorNextPaymentSeconds > BigInt(0)
+    const nextBilling = anchorNextPaymentSeconds && anchorNextPaymentSeconds > BigInt(0)
             ? new Date(Number(anchorNextPaymentSeconds) * 1000)
             : new Date(now.getTime() + Number(period) * 1000);
-        const settlementAnchor = anchorNextPaymentSeconds && anchorNextPaymentSeconds > BigInt(0)
+    const settlementAnchor = anchorNextPaymentSeconds && anchorNextPaymentSeconds > BigInt(0)
             ? new Date(Number(anchorNextPaymentSeconds - period) * 1000)
             : now;
-        const beneficiary = beneficiaryAddress ? beneficiaryAddress.toLowerCase() : null;
-        const commitmentUntil = minCommitmentSeconds && minCommitmentSeconds > BigInt(0)
+    const beneficiary = beneficiaryAddress ? beneficiaryAddress.toLowerCase() : null;
+    const commitmentUntil = minCommitmentSeconds && minCommitmentSeconds > BigInt(0)
             ? new Date(now.getTime() + Number(minCommitmentSeconds) * 1000)
             : null;
         /* Sequence 0 (signup) is the first introductory cycle, so full price begins
            after `introCycles` whole periods. */
-        const promoSnapshot = promotion
+    const promoSnapshot = promotion
             ? {
                 promotionId: promotion.promotionId,
                 introAmountUsdc: promotion.introAmountUsdc,
@@ -73,18 +76,19 @@ export async function mirrorSubscriptionCreated({
                 firstRegularPaymentAt: new Date(now.getTime() + promotion.introCycles * Number(period) * 1000),
             }
             : {};
-        const merchantReference = externalReference?.trim() || null;
-        const checkoutSource = sourceCheckoutId?.trim().toLowerCase() || null;
+    const merchantReference = externalReference?.trim() || null;
+    const checkoutSource = sourceCheckoutId?.trim().toLowerCase() || null;
+    const canonicalPlanId = planId?.trim() || null;
 
         /* The subscriptions.merchant_address FK requires a merchants row. */
-        await prisma.merchant.upsert({
+    await prisma.merchant.upsert({
             where: { walletAddress: merchant },
             update: {},
             create: { walletAddress: merchant },
         });
 
     await prisma.subscription.upsert({
-            where: subscriptionKey(id),
+        where: subscriptionKey(id),
             update: {
                 merchantAddress: merchant,
                 subscriber: sub,
@@ -121,6 +125,15 @@ export async function mirrorSubscriptionCreated({
                 ...promoSnapshot,
             },
     });
+
+    if (canonicalPlanId) {
+        await prisma.$executeRaw`
+            UPDATE subscriptions
+            SET plan_id = ${canonicalPlanId}, updated_at = ${now}
+            WHERE contract_address = ${activeSubscriptionContract()}
+              AND subscription_id = ${id}
+        `;
+    }
 }
 
 export async function mirrorSubscriptionModified({
@@ -129,6 +142,7 @@ export async function mirrorSubscriptionModified({
     periodSeconds,
     externalReference,
     sourceCheckoutId,
+    planId,
 }: {
     subscriptionId: string | bigint;
     amountUsdc: bigint;
@@ -136,6 +150,7 @@ export async function mirrorSubscriptionModified({
     /* Undefined preserves the existing binding; a string fills or updates it. */
     externalReference?: string;
     sourceCheckoutId?: string;
+    planId?: string;
 }) {
     await prisma.subscription.update({
         where: subscriptionKey(subscriptionId),
@@ -152,6 +167,16 @@ export async function mirrorSubscriptionModified({
             updatedAt: new Date(),
         },
     });
+
+    if (planId !== undefined) {
+        const normalizedPlanId = planId.trim() || null;
+        await prisma.$executeRaw`
+            UPDATE subscriptions
+            SET plan_id = ${normalizedPlanId}, updated_at = ${new Date()}
+            WHERE contract_address = ${activeSubscriptionContract()}
+              AND subscription_id = ${BigInt(subscriptionId)}
+        `;
+    }
 }
 
 export async function mirrorSubscriptionCanceled(subscriptionId: string | bigint) {
@@ -196,22 +221,22 @@ export async function mirrorSubscriptionCancelAtPeriodEnd({
 }): Promise<boolean> {
     try {
         const merchant = merchantAddress.toLowerCase();
-        const sub = subscriber.toLowerCase();
-        const id = BigInt(subscriptionId);
-        const now = new Date();
-        const nextBilling = new Date(Number(nextPaymentSeconds) * 1000);
+    const sub = subscriber.toLowerCase();
+    const id = BigInt(subscriptionId);
+    const now = new Date();
+    const nextBilling = new Date(Number(nextPaymentSeconds) * 1000);
         /* The DB trigger derives next_billing_date from last_settlement_timestamp + interval, so
            anchor last settlement to the period start (nextPayment - period) to land next_billing
            exactly on the paid-through date. next_billing_date is also set explicitly for robustness. */
         const periodStart = new Date(Number(nextPaymentSeconds - periodSeconds) * 1000);
 
-        await prisma.merchant.upsert({
+    await prisma.merchant.upsert({
             where: { walletAddress: merchant },
             update: {},
             create: { walletAddress: merchant },
         });
         await prisma.subscription.upsert({
-            where: subscriptionKey(id),
+        where: subscriptionKey(id),
             update: {
                 status: "ACTIVE",
                 kind: "CUSTOMER",

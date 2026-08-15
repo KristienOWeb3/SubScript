@@ -1,3 +1,4 @@
+import { runAdminQueriesSequentially } from "@/lib/admin/db";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/admin/guard";
@@ -48,9 +49,9 @@ export async function GET(request: Request) {
       stuckReceiptsCount,
       recentReceipts14d,
       recentUsers14d,
-    ] = await Promise.all([
-      getSponsorWalletStatus(),
-      prisma.merchant.findMany({
+    ] = await runAdminQueriesSequentially([
+      () => getSponsorWalletStatus(),
+      () => prisma.merchant.findMany({
         orderBy: { createdAt: "desc" },
         take: 100,
         select: {
@@ -61,28 +62,28 @@ export async function GET(request: Request) {
           createdAt: true,
         },
       }),
-      prisma.bannedAccount.findMany({ orderBy: { createdAt: "desc" } }),
-      prisma.bannedIp.findMany({ orderBy: { createdAt: "desc" } }),
-      prisma.accountRole.count(),
-      prisma.receipt.aggregate({
+      () => prisma.bannedAccount.findMany({ orderBy: { createdAt: "desc" } }),
+      () => prisma.bannedIp.findMany({ orderBy: { createdAt: "desc" } }),
+      () => prisma.accountRole.count(),
+      () => prisma.receipt.aggregate({
         where: { status: "CONFIRMED" },
         _sum: { amountUsdc: true },
         _count: true,
       }),
-      prisma.receipt.aggregate({
+      () => prisma.receipt.aggregate({
         where: { status: "CONFIRMED", createdAt: { gte: thirtyDaysAgo } },
         _sum: { amountUsdc: true },
         _count: true,
       }),
-      prisma.subscription.count({ where: { status: "ACTIVE" } }),
-      prisma.kycVerification.count({ where: { status: { in: ["PENDING", "IN_REVIEW"] } } }),
-      prisma.receipt.count({ where: { status: { not: "CONFIRMED" }, createdAt: { lt: sevenDaysAgo } } }),
-      prisma.receipt.findMany({
+      () => prisma.subscription.count({ where: { status: "ACTIVE" } }),
+      () => prisma.kycVerification.count({ where: { status: { in: ["PENDING", "IN_REVIEW"] } } }),
+      () => prisma.receipt.count({ where: { status: { not: "CONFIRMED" }, createdAt: { lt: sevenDaysAgo } } }),
+      () => prisma.receipt.findMany({
         where: { status: "CONFIRMED", createdAt: { gte: fourteenDaysAgo } },
         select: { createdAt: true, amountUsdc: true },
         orderBy: { createdAt: "asc" },
       }),
-      prisma.accountRole.findMany({
+      () => prisma.accountRole.findMany({
         where: { createdAt: { gte: fourteenDaysAgo } },
         select: { createdAt: true },
         orderBy: { createdAt: "asc" },
@@ -157,6 +158,6 @@ export async function GET(request: Request) {
     });
   } catch (err: any) {
     console.error("Admin overview failed:", err);
-    return NextResponse.json({ error: err.message || "Internal Server Error" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to load admin overview." }, { status: 500 });
   }
 }

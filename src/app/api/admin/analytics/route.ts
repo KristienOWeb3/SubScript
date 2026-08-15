@@ -1,3 +1,4 @@
+import { runAdminQueriesSequentially } from "@/lib/admin/db";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/admin/guard";
@@ -76,55 +77,55 @@ export async function GET(request: Request) {
             recentSignupsForTimeline,
             recentSubsForTimeline,
             topMerchantsRaw,
-        ] = await Promise.all([
+        ] = await runAdminQueriesSequentially([
             /* Volume: confirmed receipts are the settled, on-chain-verified record. */
-            prisma.receipt.aggregate({
+            () => prisma.receipt.aggregate({
                 where: { status: "CONFIRMED" },
                 _sum: { amountUsdc: true },
                 _count: true,
             }),
-            prisma.receipt.aggregate({
+            () => prisma.receipt.aggregate({
                 where: { status: "CONFIRMED", createdAt: { gte: sevenDaysAgo } },
                 _sum: { amountUsdc: true },
                 _count: true,
             }),
-            prisma.receipt.aggregate({
+            () => prisma.receipt.aggregate({
                 where: { status: "CONFIRMED", createdAt: { gte: thirtyDaysAgo } },
                 _sum: { amountUsdc: true },
                 _count: true,
             }),
-            prisma.receipt.aggregate({
+            () => prisma.receipt.aggregate({
                 where: { status: "CONFIRMED", createdAt: { gte: ninetyDaysAgo } },
                 _sum: { amountUsdc: true },
                 _count: true,
             }),
             /* Credited link payments — checkout volume */
-            prisma.paymentLinkPayment.aggregate({
+            () => prisma.paymentLinkPayment.aggregate({
                 where: { credited: true },
                 _sum: { amountUsdc: true },
                 _count: true,
             }),
-            prisma.paymentLinkPayment.aggregate({
+            () => prisma.paymentLinkPayment.aggregate({
                 where: { credited: true, createdAt: { gte: thirtyDaysAgo } },
                 _sum: { amountUsdc: true },
                 _count: true,
             }),
-            prisma.merchant.count(),
-            prisma.merchant.count({ where: { verified: true } }),
-            prisma.merchant.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
-            prisma.customer.count(),
-            prisma.customer.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
-            prisma.accountRole.groupBy({ by: ["role"], _count: { _all: true } }),
-            prisma.accountRole.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
-            prisma.kycVerification.groupBy({ by: ["status"], _count: { _all: true } }),
-            prisma.subscription.groupBy({ by: ["status"], _count: { _all: true } }),
-            prisma.subscription.count({ where: { kind: "CUSTOMER", status: "ACTIVE" } }),
-            prisma.subscription.count({ where: { kind: "PREMIUM", status: "ACTIVE" } }),
-            prisma.subscription.count({ where: { status: "ACTIVE", cancelAtPeriodEnd: true } }),
-            prisma.subscription.count({ where: { revocationPending: true } }),
-            prisma.subscription.count({ where: { downgradeFailures: { gt: 0 } } }),
-            prisma.receipt.count({ where: { status: { not: "CONFIRMED" }, createdAt: { lt: sevenDaysAgo } } }),
-            prisma.adminBroadcast.findMany({
+            () => prisma.merchant.count(),
+            () => prisma.merchant.count({ where: { verified: true } }),
+            () => prisma.merchant.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
+            () => prisma.customer.count(),
+            () => prisma.customer.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
+            () => prisma.accountRole.groupBy({ by: ["role"], _count: { _all: true }, orderBy: { role: "asc" } }),
+            () => prisma.accountRole.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
+            () => prisma.kycVerification.groupBy({ by: ["status"], _count: { _all: true }, orderBy: { status: "asc" } }),
+            () => prisma.subscription.groupBy({ by: ["status"], _count: { _all: true }, orderBy: { status: "asc" } }),
+            () => prisma.subscription.count({ where: { kind: "CUSTOMER", status: "ACTIVE" } }),
+            () => prisma.subscription.count({ where: { kind: "PREMIUM", status: "ACTIVE" } }),
+            () => prisma.subscription.count({ where: { status: "ACTIVE", cancelAtPeriodEnd: true } }),
+            () => prisma.subscription.count({ where: { revocationPending: true } }),
+            () => prisma.subscription.count({ where: { downgradeFailures: { gt: 0 } } }),
+            () => prisma.receipt.count({ where: { status: { not: "CONFIRMED" }, createdAt: { lt: sevenDaysAgo } } }),
+            () => prisma.adminBroadcast.findMany({
                 orderBy: { createdAt: "desc" },
                 take: 5,
                 select: {
@@ -132,39 +133,36 @@ export async function GET(request: Request) {
                     sentCount: true, failedCount: true, totalRecipients: true, createdAt: true,
                 },
             }),
-            getSponsorWalletStatus().catch(() => null),
+            () => getSponsorWalletStatus().catch(() => null),
             /* Timeline raw data for the last 30 days */
-            prisma.receipt.findMany({
+            () => prisma.receipt.findMany({
                 where: { status: "CONFIRMED", createdAt: { gte: thirtyDaysAgo } },
                 select: { createdAt: true, amountUsdc: true },
                 orderBy: { createdAt: "asc" },
             }),
-            prisma.paymentLinkPayment.findMany({
+            () => prisma.paymentLinkPayment.findMany({
                 where: { credited: true, createdAt: { gte: thirtyDaysAgo } },
                 select: { createdAt: true, amountUsdc: true },
                 orderBy: { createdAt: "asc" },
             }),
-            prisma.accountRole.findMany({
+            () => prisma.accountRole.findMany({
                 where: { createdAt: { gte: thirtyDaysAgo } },
                 select: { createdAt: true, role: true },
                 orderBy: { createdAt: "asc" },
             }),
-            prisma.subscription.findMany({
+            () => prisma.subscription.findMany({
                 where: { createdAt: { gte: thirtyDaysAgo } },
                 select: { createdAt: true, kind: true, status: true },
                 orderBy: { createdAt: "asc" },
             }),
-            /* Top merchants by receipt count and volume */
-            prisma.merchant.findMany({
+            /* Top merchants by settled receipt volume. */
+            () => prisma.receipt.groupBy({
+                by: ["merchantAddress"],
+                where: { status: "CONFIRMED" },
+                _sum: { amountUsdc: true },
+                _count: { _all: true },
+                orderBy: { _sum: { amountUsdc: "desc" } },
                 take: 5,
-                orderBy: { createdAt: "desc" },
-                select: {
-                    walletAddress: true,
-                    tier: true,
-                    verified: true,
-                    profilePic: true,
-                    createdAt: true,
-                },
             }),
         ]);
 
@@ -173,14 +171,26 @@ export async function GET(request: Request) {
         const linkVolume = toBigInt(linkPayments._sum.amountUsdc);
 
         const statusCounts: Record<string, number> = {};
-        for (const row of subsByStatus) statusCounts[row.status] = row._count._all;
+        for (const row of (subsByStatus as unknown as Array<{ status: string; _count?: { _all?: number } }>)) {
+            if (row._count?._all !== undefined) {
+                statusCounts[row.status] = row._count._all;
+            }
+        }
 
         const roleCounts: Record<string, number> = {};
-        for (const row of accountsByRole) roleCounts[row.role] = row._count._all;
+        for (const row of (accountsByRole as unknown as Array<{ role: string; _count?: { _all?: number } }>)) {
+            if (row._count?._all !== undefined) {
+                roleCounts[row.role] = row._count._all;
+            }
+        }
         const usersTotal = Object.values(roleCounts).reduce((sum, n) => sum + n, 0);
 
         const kycCounts: Record<string, number> = {};
-        for (const row of kycByStatus) kycCounts[row.status] = row._count._all;
+        for (const row of (kycByStatus as unknown as Array<{ status: string; _count?: { _all?: number } }>)) {
+            if (row._count?._all !== undefined) {
+                kycCounts[row.status] = row._count._all;
+            }
+        }
 
         /* Build 30-day timeline series */
         const dayBuckets: Map<string, {
@@ -258,27 +268,66 @@ export async function GET(request: Request) {
                 newSubs: data.newSubs,
             };
         });
+        const ticketBuckets = [
+            { label: "< $10", value: 0, sublabel: "Under $10" },
+            { label: "$10 - $50", value: 0, sublabel: "$10 to $49.99" },
+            { label: "$50 - $250", value: 0, sublabel: "$50 to $249.99" },
+            { label: ">= $250", value: 0, sublabel: "$250 and above" },
+        ];
+        for (const payment of [...recentReceiptsForTimeline, ...recentLinksForTimeline]) {
+            const amount = usdcMicrosToNumber(toBigInt(payment.amountUsdc));
+            const bucketIndex = amount < 10 ? 0 : amount < 50 ? 1 : amount < 250 ? 2 : 3;
+            ticketBuckets[bucketIndex].value += 1;
+        }
 
-        /* Resolve top merchants aliases */
-        const merchantAddresses = topMerchantsRaw.map((m) => m.walletAddress.toLowerCase());
-        const aliases = await prisma.addressAlias.findMany({
-            where: { address: { in: merchantAddresses } },
-        });
+
+        /* Resolve the merchant profile and alias after ranking by actual settled volume. */
+        const rankedMerchants = topMerchantsRaw as unknown as Array<{
+            merchantAddress: string;
+            _sum: { amountUsdc: bigint | null };
+            _count: { _all: number };
+        }>;
+
+        const merchantAddresses = rankedMerchants.map((m) => m.merchantAddress.toLowerCase());
+        const [merchantProfiles, aliases] = await runAdminQueriesSequentially([
+            () => prisma.merchant.findMany({
+                where: { walletAddress: { in: merchantAddresses } },
+                select: {
+                    walletAddress: true,
+                    tier: true,
+                    verified: true,
+                    profilePic: true,
+                    createdAt: true,
+                },
+            }),
+            () => prisma.addressAlias.findMany({
+                where: { address: { in: merchantAddresses } },
+            }),
+        ]);
+        const profileMap = new Map(merchantProfiles.map((m) => [m.walletAddress.toLowerCase(), m]));
         const aliasMap = new Map(aliases.map((a) => [a.address.toLowerCase(), a.alias]));
 
-        const topMerchants = topMerchantsRaw.map((m) => ({
-            walletAddress: m.walletAddress,
-            merchantName: aliasMap.get(m.walletAddress.toLowerCase()) || m.walletAddress.slice(0, 10),
-            tier: m.tier,
-            verified: m.verified,
-            profilePic: m.profilePic,
-            createdAt: m.createdAt.toISOString(),
-        }));
+        const topMerchants = rankedMerchants.map((m) => {
+            const walletAddress = m.merchantAddress.toLowerCase();
+            const profile = profileMap.get(walletAddress);
+            const volumeMicro = toBigInt(m._sum.amountUsdc);
+            return {
+                walletAddress,
+                merchantName: aliasMap.get(walletAddress) || walletAddress.slice(0, 10),
+                tier: profile?.tier ?? "FREE",
+                verified: profile?.verified ?? false,
+                profilePic: profile?.profilePic ?? null,
+                createdAt: profile?.createdAt.toISOString() ?? null,
+                volumeUsdc: formatUsdc(volumeMicro),
+                volumeUsdcNumber: usdcMicrosToNumber(volumeMicro),
+                paymentCount: m._count._all,
+            };
+        });
 
         /* Estimate MRR */
         const activeTotal = activeCustomerSubs + activePremiumSubs;
         const totalDecidedKyc = (kycCounts.APPROVED || 0) + (kycCounts.REJECTED || 0) + (kycCounts.EXPIRED || 0) + (kycCounts.REVOKED || 0);
-        const kycApprovalRate = totalDecidedKyc > 0 ? Math.round(((kycCounts.APPROVED || 0) / totalDecidedKyc) * 100) : 100;
+        const kycApprovalRate = totalDecidedKyc > 0 ? Math.round(((kycCounts.APPROVED || 0) / totalDecidedKyc) * 100) : 0;
         const churnRate = activeTotal > 0 ? ((cancelAtPeriodEnd / activeTotal) * 100).toFixed(1) : "0.0";
 
         return jsonOk({
@@ -299,6 +348,7 @@ export async function GET(request: Request) {
                 checkoutVolume30dUsdc: formatUsdc(toBigInt(linkPaymentsLast30._sum.amountUsdc)),
                 checkoutCount: linkPayments._count,
                 checkoutCount30d: linkPaymentsLast30._count,
+                ticketBuckets,
             },
             subscriptions: {
                 activeCustomer: activeCustomerSubs,
@@ -342,6 +392,6 @@ export async function GET(request: Request) {
         });
     } catch (error: any) {
         console.error("[admin/analytics] failed:", error);
-        return NextResponse.json({ error: error?.message || "Failed to load analytics" }, { status: 500 });
+        return NextResponse.json({ error: "Failed to load analytics" }, { status: 500 });
     }
 }

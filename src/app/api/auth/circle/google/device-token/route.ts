@@ -1,3 +1,4 @@
+import { isGoogleSigninEnabled } from "@/lib/platform/flags";
 /* Mints a Circle social-login device token + encryption key for the given browser
    deviceId. The encryption key must come from Circle (not a client UUID), otherwise
    the social-login iframe fails with "Error encrypting data". */
@@ -6,6 +7,9 @@ import { createSocialLoginDeviceToken } from "@/lib/circle/client";
 
 export async function POST(request: Request) {
     try {
+        if (!(await isGoogleSigninEnabled())) {
+            return NextResponse.json({ error: "Google sign-in is temporarily unavailable." }, { status: 503 });
+        }
         const body = await request.json().catch(() => null);
         const deviceId = typeof body?.deviceId === "string" ? body.deviceId.trim() : "";
         if (!deviceId) {

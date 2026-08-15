@@ -35,7 +35,8 @@ function SignInContent() {
   const { signMessageAsync } = useSignMessage();
   /* Hides the web3 button when an operator pauses external wallets. Cosmetic only —
      /api/auth/verify-signature refuses the flow regardless. */
-  const { externalWalletEnabled } = usePlatformFlags();
+  const { externalWalletEnabled, googleSigninEnabled, loaded: platformFlagsLoaded } = usePlatformFlags();
+  const googleAvailable = CIRCLE_GOOGLE_ENABLED && platformFlagsLoaded && googleSigninEnabled;
 
   const [authMethod, setAuthMethod] = useState<"select" | "email">("select");
   const [email, setEmail] = useState(initialEmail);
@@ -361,7 +362,7 @@ function SignInContent() {
                 Continue with Email
               </button>
 
-              {CIRCLE_GOOGLE_ENABLED && (
+              {googleAvailable && (
                 <div onClick={() => posthog.capture("signin_method_selected", { method: "circle_google" })}>
                   <CircleGoogleWalletButton />
                 </div>

@@ -204,6 +204,8 @@ model MerchantPlan {
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
 
+  subscriptions Subscription[]
+
   @@index([merchantAddress])
   @@index([merchantAddress, active, targetSubscriber], map: "merchant_plans_visibility_idx")
   @@map("merchant_plans")
@@ -286,6 +288,8 @@ model Subscription {
   // Merchant-owned account/entitlement binding copied from the originating API checkout.
   externalReference       String?   @map("external_reference")
   sourceCheckoutId        String?   @map("source_checkout_id") @db.Uuid
+  planId                  String?   @map("plan_id") @db.Uuid
+  plan                    MerchantPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
   // Snapshot of the plan's commitment window at subscribe time (<= one period by constraint).
   minCommitmentUntil      DateTime? @map("min_commitment_until")
   // Immutable snapshot of introductory terms the subscriber authorized (see

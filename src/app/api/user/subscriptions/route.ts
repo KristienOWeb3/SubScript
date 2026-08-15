@@ -31,12 +31,23 @@ async function reconcileMerchantSubscription(subscriber: string, merchantAddress
     const onChain = await getSubscriptionOnChain(onChainId);
     if (!onChain || !onChain.isActive) return;
     const intro = await getIntroductoryTermsOnChain(onChainId);
+    const matchingPlans = await prisma.merchantPlan.findMany({
+        where: {
+            merchantAddress: merchant,
+            amountUsdc: onChain.amount,
+            periodSeconds: onChain.period,
+        },
+        select: { id: true },
+        take: 2,
+    });
+    const planId = matchingPlans.length === 1 ? matchingPlans[0].id : null;
     await mirrorSubscriptionCreated({
         subscriptionId: onChainId,
         merchantAddress: merchant,
         subscriber,
         amountUsdc: onChain.amount,
         periodSeconds: onChain.period,
+        planId,
         anchorNextPaymentSeconds: onChain.nextPayment,
         promotion: intro
             ? { promotionId: null, introAmountUsdc: intro.introAmountUsdc, introCycles: intro.introCycles }

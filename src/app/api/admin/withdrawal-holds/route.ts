@@ -54,10 +54,22 @@ export async function POST(request: Request) {
 
     try {
         const body = await request.json().catch(() => ({}));
-        const rawAddress = typeof body?.address === "string" ? body.address.trim() : "";
+        let rawAddress = typeof body?.address === "string" ? body.address.trim() : "";
+
+        // Support DNS alias lookup (e.g. merchant.sub)
+        if (rawAddress.includes(".") && !ADDRESS_PATTERN.test(rawAddress)) {
+            const aliasRow = await prisma.addressAlias.findUnique({
+                where: { alias: rawAddress.toLowerCase() },
+                select: { address: true },
+            });
+            if (aliasRow?.address) {
+                rawAddress = aliasRow.address;
+            }
+        }
+
         if (!ADDRESS_PATTERN.test(rawAddress)) {
             return NextResponse.json(
-                { error: "Enter a valid wallet address (0x followed by 40 hex characters)." },
+                { error: "Enter a valid wallet address or SubScript DNS name." },
                 { status: 400 },
             );
         }

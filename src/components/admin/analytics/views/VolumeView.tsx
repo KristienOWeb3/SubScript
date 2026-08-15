@@ -38,13 +38,7 @@ export function VolumeView({ analytics, onNavigateToMerchant }: VolumeViewProps)
 
   const sparklineData = (analytics?.timeline || []).map((t: any) => t.totalUsdc ?? 0);
 
-  // Volume by brackets
-  const bracketData = [
-    { label: "< $10", value: Math.max(1, Math.round((analytics?.volume?.paymentCount ?? 10) * 0.45)), sublabel: "Micro-subs" },
-    { label: "$10 - $50", value: Math.max(1, Math.round((analytics?.volume?.paymentCount ?? 10) * 0.35)), sublabel: "Standard plans" },
-    { label: "$50 - $250", value: Math.max(1, Math.round((analytics?.volume?.paymentCount ?? 10) * 0.15)), sublabel: "Pro tiers" },
-    { label: "> $250", value: Math.max(1, Math.round((analytics?.volume?.paymentCount ?? 10) * 0.05)), sublabel: "Enterprise" },
-  ];
+  const bracketData = analytics?.volume?.ticketBuckets ?? [];
 
   const handleCopy = (text: string, id: string) => {
     if (!text) return;
@@ -112,7 +106,7 @@ export function VolumeView({ analytics, onNavigateToMerchant }: VolumeViewProps)
         <BarMetricChart
           data={bracketData}
           title="Payment Distribution by Ticket Size"
-          subtitle="Estimated volume composition across payment sizes"
+          subtitle="Actual 30-day payment count across ticket sizes"
           height={200}
           valuePrefix=""
           barColor="#2775ca"
@@ -186,6 +180,8 @@ export function VolumeView({ analytics, onNavigateToMerchant }: VolumeViewProps)
                 <tr className="border-b border-[#f1f5f9] text-[10px] font-black uppercase tracking-wider text-[#64748b]">
                   <th className="py-2.5 px-3">Merchant</th>
                   <th className="py-2.5 px-3">Wallet Address</th>
+                  <th className="py-2.5 px-3 text-right">Volume</th>
+                  <th className="py-2.5 px-3 text-right">Payments</th>
                   <th className="py-2.5 px-3">Tier</th>
                   <th className="py-2.5 px-3">Status</th>
                   <th className="py-2.5 px-3 text-right">Actions</th>
@@ -236,6 +232,12 @@ export function VolumeView({ analytics, onNavigateToMerchant }: VolumeViewProps)
                           )}
                         </button>
                       </div>
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono font-bold text-[#0f172a]">
+                      ${m.volumeUsdc}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono text-[#64748b]">
+                      {Number(m.paymentCount || 0).toLocaleString()}
                     </td>
                     <td className="py-3 px-3">
                       <span className="rounded-full bg-[#f1f5f9] border border-[#e2e8f0] px-2 py-0.5 text-[9px] font-bold text-[#64748b]">

@@ -180,7 +180,7 @@ export default function DashboardSidebar({
                 {/* Header: Identity pill + Retract/Expand Toggle */}
                 <div className={`flex items-center gap-2 ${isCollapsed ? "flex-col justify-center" : "justify-between"}`}>
                     {isLoading ? (
-                        <div className={`inline-flex max-w-full items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.04] p-1.5 animate-pulse ${
+                        <div className={`admin-skeleton-shimmer inline-flex max-w-full items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.04] p-1.5 ${
                             isCollapsed ? "justify-center" : "px-2.5 py-1.5"
                         }`}>
                             <div className="h-6 w-6 rounded-full bg-white/20 shrink-0" />
@@ -232,7 +232,7 @@ export default function DashboardSidebar({
                         Array.from({ length: 7 }).map((_, i) => (
                             <div
                                 key={i}
-                                className={`flex items-center gap-3 py-3 px-3.5 rounded-full animate-pulse ${
+                                className={`admin-skeleton-shimmer flex items-center gap-3 py-3 px-3.5 rounded-full ${
                                     i === 0 ? "bg-white/10" : "bg-transparent"
                                 } ${isCollapsed ? "justify-center px-2" : ""}`}
                             >
@@ -254,7 +254,7 @@ export default function DashboardSidebar({
             <div className="mt-6 space-y-4">
                 {isLoading ? (
                     !isCollapsed && (
-                        <div className="hidden lg:block rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 animate-pulse space-y-2">
+                        <div className="admin-skeleton-shimmer hidden lg:block rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 space-y-2">
                             <div className="h-4 w-16 rounded bg-white/20" />
                             <div className="h-3 w-32 rounded bg-white/20" />
                             <div className="h-2.5 w-full rounded bg-white/10" />
@@ -297,7 +297,7 @@ export default function DashboardSidebar({
                             ? Array.from({ length: 2 }).map((_, i) => (
                                   <div
                                       key={i}
-                                      className={`flex items-center gap-3 py-2.5 px-3.5 rounded-full animate-pulse ${
+                                      className={`admin-skeleton-shimmer flex items-center gap-3 py-2.5 px-3.5 rounded-full ${
                                           isCollapsed ? "justify-center px-2" : ""
                                       }`}
                                   >

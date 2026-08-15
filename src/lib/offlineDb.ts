@@ -53,7 +53,6 @@ export function isConnectionError(err: any): boolean {
         code.startsWith("p1") || 
         code === "p2024" || 
         msg.includes("can't reach database server") ||
-        msg.includes("not found") ||
         msg.includes("enotfound") ||
         msg.includes("econnrefused") ||
         msg.includes("etimedout") ||

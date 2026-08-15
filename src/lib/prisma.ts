@@ -15,6 +15,11 @@ if (typeof BigInt !== "undefined" && !(BigInt.prototype as any).toJSON) {
         return this.toString();
     };
 }
+/* The JSON-backed fallback is a local-development convenience only. In production it can
+ * turn a failed database mutation into a false success response, which is unacceptable for
+ * admin, KYC, and financial writes. Production must surface the original Prisma error so
+ * callers can retry or fail closed. */
+const offlineFallbackEnabled = process.env.NODE_ENV !== "production";
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
@@ -56,7 +61,7 @@ function createPrismaProxy(client: any): any {
                         try {
                             return await target.accountRole.findUnique(args);
                         } catch (err) {
-                            if (isConnectionError(err)) {
+                            if (offlineFallbackEnabled && isConnectionError(err)) {
                                 console.warn("⚠️ Database is offline. Falling back to local offlineDb for accountRole.findUnique.");
                                 const address = args?.where?.address;
                                 if (!address) return null;
@@ -71,7 +76,7 @@ function createPrismaProxy(client: any): any {
                         try {
                             return await target.accountRole.upsert(args);
                         } catch (err) {
-                            if (isConnectionError(err)) {
+                            if (offlineFallbackEnabled && isConnectionError(err)) {
                                 console.warn("⚠️ Database is offline. Falling back to local offlineDb for accountRole.upsert.");
                                 const address = args?.where?.address || args?.create?.address;
                                 const role = args?.update?.role || args?.create?.role;
@@ -90,7 +95,7 @@ function createPrismaProxy(client: any): any {
                         try {
                             return await target.merchant.findUnique(args);
                         } catch (err) {
-                            if (isConnectionError(err)) {
+                            if (offlineFallbackEnabled && isConnectionError(err)) {
                                 console.warn("⚠️ Database is offline. Falling back to local offlineDb for merchant.findUnique.");
                                 const address = args?.where?.walletAddress;
                                 return { walletAddress: address, tier: "FREE", availableBalanceUsdc: BigInt(0), reservedBalanceUsdc: BigInt(0) };
@@ -102,7 +107,7 @@ function createPrismaProxy(client: any): any {
                         try {
                             return await target.merchant.upsert(args);
                         } catch (err) {
-                            if (isConnectionError(err)) {
+                            if (offlineFallbackEnabled && isConnectionError(err)) {
                                 console.warn("⚠️ Database is offline. Falling back to local offlineDb for merchant.upsert.");
                                 const address = args?.where?.walletAddress || args?.create?.walletAddress;
                                 upsertOfflineMerchant(address);
@@ -119,7 +124,7 @@ function createPrismaProxy(client: any): any {
                         try {
                             return await target.customer.findUnique(args);
                         } catch (err) {
-                            if (isConnectionError(err)) {
+                            if (offlineFallbackEnabled && isConnectionError(err)) {
                                 console.warn("⚠️ Database is offline. Falling back to local offlineDb for customer.findUnique.");
                                 const address = args?.where?.walletAddress;
                                 return { walletAddress: address };
@@ -131,7 +136,7 @@ function createPrismaProxy(client: any): any {
                         try {
                             return await target.customer.upsert(args);
                         } catch (err) {
-                            if (isConnectionError(err)) {
+                            if (offlineFallbackEnabled && isConnectionError(err)) {
                                 console.warn("⚠️ Database is offline. Falling back to local offlineDb for customer.upsert.");
                                 const address = args?.where?.walletAddress || args?.create?.walletAddress;
                                 upsertOfflineCustomer(address);

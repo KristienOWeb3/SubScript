@@ -80,6 +80,14 @@ function addPrismaPoolerOptions(connectionString: string) {
         parsed.searchParams.set("pgbouncer", "true");
     }
 
+    // Ensure connection limit and pool timeout are set to avoid connection pool exhaustion
+    if (!parsed.searchParams.has("connection_limit")) {
+        parsed.searchParams.set("connection_limit", process.env.PRISMA_CONNECTION_LIMIT || "15");
+    }
+    if (!parsed.searchParams.has("pool_timeout")) {
+        parsed.searchParams.set("pool_timeout", process.env.PRISMA_POOL_TIMEOUT || "30");
+    }
+
     return parsed.toString();
 }
 

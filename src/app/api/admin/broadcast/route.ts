@@ -1,3 +1,4 @@
+import { runAdminQueriesSequentially } from "@/lib/admin/db";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/admin/guard";
@@ -17,7 +18,6 @@ import { jsonOk } from "@/lib/http/json";
  */
 
 const MAX_RECIPIENTS = 5_000;
-const BATCH_SIZE = 25;
 /* Rows per createMany. Keeps one statement from growing with the account table. */
 const NOTIFY_CHUNK = 500;
 
@@ -87,28 +87,28 @@ export async function POST(request: Request) {
         const merchantWallets = new Set<string>();
 
         if (audience === "users" || audience === "both") {
-            const [cust, commits, embedded, roles, aliases] = await Promise.all([
-                prisma.customer.findMany({
+            const [cust, commits, embedded, roles, aliases] = await runAdminQueriesSequentially([
+                () => prisma.customer.findMany({
                     where: { closureStatus: "OPEN" },
                     select: { walletAddress: true },
                     take: MAX_RECIPIENTS,
-                }).catch(() => []),
-                prisma.userCommit.findMany({
+                }),
+                () => prisma.userCommit.findMany({
                     select: { walletAddress: true },
                     take: MAX_RECIPIENTS,
-                }).catch(() => []),
-                prisma.userEmbeddedWallet.findMany({
+                }),
+                () => prisma.userEmbeddedWallet.findMany({
                     select: { walletAddress: true },
                     take: MAX_RECIPIENTS,
-                }).catch(() => []),
-                prisma.accountRole.findMany({
+                }),
+                () => prisma.accountRole.findMany({
                     select: { address: true },
                     take: MAX_RECIPIENTS,
-                }).catch(() => []),
-                prisma.addressAlias.findMany({
+                }),
+                () => prisma.addressAlias.findMany({
                     select: { address: true },
                     take: MAX_RECIPIENTS,
-                }).catch(() => []),
+                }),
             ]);
 
             for (const c of cust) if (c.walletAddress) userWallets.add(c.walletAddress.toLowerCase());
@@ -187,16 +187,13 @@ export async function POST(request: Request) {
 
         let sent = 0;
         let failed = 0;
-        for (let i = 0; i < wallets.length; i += BATCH_SIZE) {
-            const batch = wallets.slice(i, i + BATCH_SIZE);
-            const results = await Promise.all(batch.map((wallet) => sendPushToWallet(wallet, payload)));
-            for (const result of results) {
-                /* A wallet with no registered device is neither sent nor failed — counting
-                   it as a failure would make every broadcast look broken, since most
-                   accounts never enable push. */
-                if (result.sent > 0) sent += 1;
-                else if (result.failed > 0) failed += 1;
-            }
+        for (const wallet of wallets) {
+            const result = await sendPushToWallet(wallet, payload);
+            /* A wallet with no registered device is neither sent nor failed — counting
+               it as a failure would make every broadcast look broken, since most
+               accounts never enable push. */
+            if (result.sent > 0) sent += 1;
+            else if (result.failed > 0) failed += 1;
         }
 
         const completed = await prisma.adminBroadcast.update({
@@ -224,6 +221,6 @@ export async function POST(request: Request) {
         });
     } catch (error: any) {
         console.error("[admin/broadcast] failed:", error);
-        return NextResponse.json({ error: error?.message || "Broadcast failed" }, { status: 500 });
+        return NextResponse.json({ error: "Broadcast failed" }, { status: 500 });
     }
 }

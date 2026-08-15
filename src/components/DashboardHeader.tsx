@@ -81,7 +81,7 @@ export default function DashboardHeader({
                 const res = await fetch("/api/auth/session");
                 if (res.ok) {
                     const data = await res.json();
-                    if (data.isAdmin || (data.wallet && data.wallet.toLowerCase() === "0x497b0e2c08fb93464354e7023f040e088b169a3f")) {
+                    if (data.isAdmin) {
                         setIsAdmin(true);
                     }
                 }
@@ -219,7 +219,7 @@ export default function DashboardHeader({
                         {isConnected && address ? (
                             <div className="flex items-center gap-1.5">
                                 <NotificationBell audience="MERCHANT" accent="#00d2b4" />
-                                {(isAdmin || address.toLowerCase() === "0x497b0e2c08fb93464354e7023f040e088b169a3f") && (
+                                {isAdmin && (
                                     <Link
                                         href="/admin"
                                         className="px-2.5 py-1 rounded-full border border-purple-500/40 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 text-[9px] font-bold uppercase tracking-wider transition"
@@ -295,7 +295,7 @@ export default function DashboardHeader({
                             <NotificationBell audience="MERCHANT" accent="#00d2b4" className="md:hidden" />
                             {isConnected && address ? (
                                 <>
-                                    {(isAdmin || address.toLowerCase() === "0x497b0e2c08fb93464354e7023f040e088b169a3f") && (
+                                    {isAdmin && (
                                         <Link
                                             href="/admin"
                                             className="px-3 py-1.5 rounded-full border border-purple-500/40 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 text-[10px] sm:text-xs font-bold uppercase tracking-wider transition"

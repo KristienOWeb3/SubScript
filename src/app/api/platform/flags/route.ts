@@ -19,6 +19,6 @@ export async function GET() {
                 flags.googleSigninEnabled && process.env.NEXT_PUBLIC_CIRCLE_GOOGLE_ENABLED === "true",
             externalWalletEnabled: flags.externalWalletEnabled,
         },
-        { headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60" } },
+        { headers: { "Cache-Control": "private, no-store, max-age=0" } },
     );
 }

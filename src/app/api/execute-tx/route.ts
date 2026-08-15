@@ -250,6 +250,20 @@ export async function POST(request: Request) {
                 throw holdError;
             }
         }
+        if (action === "transferUsdc") {
+            try {
+                await assertWithdrawalAllowed(wallet, accountRole === "ENTERPRISE" ? "MERCHANT" : "USER");
+            } catch (holdError: any) {
+                if (holdError instanceof WithdrawalHeldError) {
+                    console.warn(`[execute-tx] Withdrawal hold blocked merchant transfer from ${wallet.toLowerCase()}. requestId: ${requestId}`);
+                    return NextResponse.json(
+                        { error: holdError.message },
+                        { status: holdError.status },
+                    );
+                }
+                throw holdError;
+            }
+        }
 
         const { data: walletRecord, error: walletError } = await supabase
             .from("user_embedded_wallets")

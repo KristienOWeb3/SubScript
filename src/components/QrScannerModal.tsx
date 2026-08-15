@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import jsQR from "jsqr";
-import { X, QrCode, AlertCircle } from "@/components/icons";
+import { X, QrCode, AlertCircle, Zap, RotateCw, Check, Copy } from "@/components/icons";
 
 interface QrScannerModalProps {
   isOpen: boolean;
@@ -11,13 +11,58 @@ interface QrScannerModalProps {
   title?: string;
 }
 
-/* The names browsers use when the user (or a policy) refuses the camera. Distinct from
-   OverconstrainedError/NotFoundError, which mean "not with those constraints" and are the only
-   failures worth retrying with a looser request. */
+/* Identifies permission denial errors vs recoverable device/constraint errors */
 const isPermissionError = (err: unknown): boolean => {
   const name = (err as { name?: unknown } | null)?.name;
   return name === "NotAllowedError" || name === "PermissionDeniedError" || name === "SecurityError";
 };
+
+/* Scores video devices to prioritize the 1x standard/main rear camera over 0.5x ultra-wide */
+function scoreCameraDevice(device: MediaDeviceInfo): number {
+  const label = (device.label || "").toLowerCase();
+
+  const isFront =
+    label.includes("front") ||
+    label.includes("user") ||
+    label.includes("selfie") ||
+    label.includes("facing front") ||
+    label.includes("1, facing front");
+
+  if (isFront) return -100;
+
+  const isUltraWide =
+    label.includes("ultra") ||
+    label.includes("0.5") ||
+    label.includes("wide-angle") ||
+    label.includes("wide angle") ||
+    label.includes("macro") ||
+    label.includes("depth");
+
+  const isTelephoto =
+    label.includes("telephoto") ||
+    label.includes("tele") ||
+    label.includes("zoom") ||
+    label.includes("2x") ||
+    label.includes("3x") ||
+    label.includes("5x") ||
+    label.includes("10x");
+
+  const isExplicit1x =
+    label.includes("1x") ||
+    label.includes("main") ||
+    label.includes("primary") ||
+    label.includes("standard") ||
+    label.includes("camera2 0") ||
+    label.includes("camera 0");
+
+  const isWideOnly = (label.includes("wide") && !label.includes("ultra")) || label.includes("back");
+
+  if (isUltraWide) return -50;
+  if (isTelephoto) return -20;
+  if (isExplicit1x) return 100;
+  if (isWideOnly) return 80;
+  return 10;
+}
 
 export function QrScannerModal({
   isOpen,
@@ -32,14 +77,20 @@ export function QrScannerModal({
 
   const [cameraActive, setCameraActive] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successScanned, setSuccessScanned] = useState(false);
+  const [torchSupported, setTorchSupported] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
+  const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
+  const [cameraIndex, setCameraIndex] = useState<number>(0);
+  const [clipboardBusy, setClipboardBusy] = useState(false);
 
   const parseScannedData = (raw: string): string => {
     let result = raw.trim();
-    // EIP-681 ethereum:0x... parsing
+    // EIP-681 ethereum:0x... format
     if (result.toLowerCase().startsWith("ethereum:")) {
       result = result.replace(/^ethereum:/i, "").split("?")[0].split("/")[0].split("@")[0];
     }
-    // URL format https://.../pay?address=0x...
+    // Web URL format https://.../pay?address=0x... or /pay/0x...
     if (result.includes("address=")) {
       try {
         const url = new URL(result);
@@ -47,6 +98,11 @@ export function QrScannerModal({
         if (addr) result = addr;
       } catch {
         // keep raw
+      }
+    } else {
+      const match = result.match(/0x[a-fA-F0-9]{40}/);
+      if (match) {
+        result = match[0];
       }
     }
     return result;
@@ -72,49 +128,142 @@ export function QrScannerModal({
       streamRef.current = null;
     }
     setCameraActive(false);
+    setTorchOn(false);
+    setTorchSupported(false);
   }, []);
+
+  const toggleTorch = async () => {
+    if (!streamRef.current) return;
+    const [track] = streamRef.current.getVideoTracks();
+    if (!track) return;
+
+    try {
+      const nextState = !torchOn;
+      await (track as any).applyConstraints({
+        advanced: [{ torch: nextState }],
+      });
+      setTorchOn(nextState);
+    } catch (e) {
+      console.warn("Could not toggle torch:", e);
+    }
+  };
+
+  const switchCamera = () => {
+    if (availableCameras.length <= 1) return;
+    const nextIdx = (cameraIndex + 1) % availableCameras.length;
+    setCameraIndex(nextIdx);
+  };
 
   const startCamera = useCallback(async () => {
     stopCamera();
     setErrorMsg(null);
+    setSuccessScanned(false);
 
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error("Mobile camera API is not supported on this browser context.");
       }
 
-      let mediaStream: MediaStream;
+      // Enumerate devices to prioritize 1x main camera
+      let videoDevices: MediaDeviceInfo[] = [];
       try {
-        /* Phones: bind strictly to the rear camera. `exact` (not `ideal`) stops the browser
-           from silently substituting a front or auxiliary lens, and asking for 1080p biases
-           multi-lens phones toward the 1x main sensor — ultrawide modules cap out lower, so
-           they get filtered by the resolution constraint rather than chosen as the default. */
-        mediaStream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { exact: "environment" },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
-          audio: false,
-        });
-      } catch (rearError: any) {
-        /* A denial is terminal: retrying getUserMedia re-prompts on browsers that ask per call,
-           so the payer would dismiss up to three dialogs before seeing the real message. Only a
-           constraint failure ("this lens cannot do that") is worth relaxing and retrying. */
-        if (isPermissionError(rearError)) throw rearError;
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        videoDevices = devices.filter((d) => d.kind === "videoinput");
+        // Sort with 1x main camera first
+        videoDevices.sort((a, b) => scoreCameraDevice(b) - scoreCameraDevice(a));
+        setAvailableCameras(videoDevices);
+      } catch {
+        // Enumerate not permitted before initial prompt
+      }
+
+      let mediaStream: MediaStream | null = null;
+      const targetDevice = videoDevices[cameraIndex];
+
+      // 1. Try with chosen 1x main deviceId if available
+      if (targetDevice?.deviceId) {
         try {
-          // Rear camera exists but cannot hit 1080p — keep the lens, relax the resolution.
           mediaStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { exact: "environment" } },
+            video: {
+              deviceId: { exact: targetDevice.deviceId },
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+            },
             audio: false,
           });
-        } catch (relaxedError: any) {
-          if (isPermissionError(relaxedError)) throw relaxedError;
-          // Fallback for devices without a designated rear camera (e.g. desktop webcams)
+        } catch {
+          // DeviceId exact match failed; proceed to facingMode strategy
+        }
+      }
+
+      // 2. Strict 1x main back camera constraint with 1080p bias
+      if (!mediaStream) {
+        try {
           mediaStream = await navigator.mediaDevices.getUserMedia({
-            video: true,
+            video: {
+              facingMode: { ideal: "environment" },
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+            },
             audio: false,
           });
+        } catch (rearError: any) {
+          if (isPermissionError(rearError)) throw rearError;
+          // Fallback to standard environment or any camera
+          try {
+            mediaStream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: "environment" },
+              audio: false,
+            });
+          } catch (relaxedError: any) {
+            if (isPermissionError(relaxedError)) throw relaxedError;
+            mediaStream = await navigator.mediaDevices.getUserMedia({
+              video: true,
+              audio: false,
+            });
+          }
+        }
+      }
+
+      if (!mediaStream) {
+        throw new Error("Could not initialize video stream.");
+      }
+
+      // 3. Post-stream configuration: enforce 1x zoom & continuous focus
+      const [videoTrack] = mediaStream.getVideoTracks();
+      if (videoTrack) {
+        try {
+          const capabilities = (videoTrack.getCapabilities ? videoTrack.getCapabilities() : {}) as any;
+          const advancedConstraints: any = {};
+
+          // If device supports zoom (e.g. multi-lens sensor that started on 0.5x), force 1x magnification
+          if (capabilities.zoom) {
+            const minZoom = capabilities.zoom.min || 1;
+            const maxZoom = capabilities.zoom.max || 1;
+            if (minZoom <= 1 && maxZoom >= 1) {
+              advancedConstraints.zoom = 1.0;
+            } else if (minZoom > 1) {
+              advancedConstraints.zoom = minZoom;
+            }
+          }
+
+          // Request continuous auto focus for sharp QR acquisition
+          if (capabilities.focusMode && Array.isArray(capabilities.focusMode)) {
+            if (capabilities.focusMode.includes("continuous")) {
+              advancedConstraints.focusMode = "continuous";
+            } else if (capabilities.focusMode.includes("auto")) {
+              advancedConstraints.focusMode = "auto";
+            }
+          }
+
+          if (capabilities.torch) {
+            setTorchSupported(true);
+          }
+
+          if (Object.keys(advancedConstraints).length > 0) {
+            await (videoTrack as any).applyConstraints({ advanced: [advancedConstraints] }).catch(() => {});
+          }
+        } catch (e) {
+          console.warn("Could not apply 1x lens constraints:", e);
         }
       }
 
@@ -123,7 +272,7 @@ export function QrScannerModal({
 
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
-        videoRef.current.setAttribute("playsinline", "true"); // Mobile iOS Safari native inline video
+        videoRef.current.setAttribute("playsinline", "true");
         videoRef.current.setAttribute("autoplay", "true");
         videoRef.current.setAttribute("muted", "true");
         await videoRef.current.play().catch(() => {});
@@ -137,24 +286,46 @@ export function QrScannerModal({
       );
       setCameraActive(false);
     }
-  }, [stopCamera]);
+  }, [stopCamera, cameraIndex]);
 
   const handleScanSuccess = useCallback(
     (rawResult: string) => {
       const parsed = parseScannedData(rawResult);
       if (parsed) {
+        setSuccessScanned(true);
         triggerHaptic();
-        stopCamera();
-        onScan(parsed);
-        onClose();
+        setTimeout(() => {
+          stopCamera();
+          onScan(parsed);
+          onClose();
+        }, 220);
       }
     },
     [onScan, onClose, stopCamera]
   );
 
-  // Scan frame loop using BarcodeDetector (native OS hardware engine) or jsQR fallback
+  const handlePasteFromClipboard = async () => {
+    setClipboardBusy(true);
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && text.trim()) {
+        const parsed = parseScannedData(text.trim());
+        if (parsed) {
+          handleScanSuccess(parsed);
+          return;
+        }
+      }
+      setErrorMsg("Clipboard does not contain a valid address or QR link.");
+    } catch {
+      setErrorMsg("Clipboard access was not granted.");
+    } finally {
+      setClipboardBusy(false);
+    }
+  };
+
+  // Scan frame loop using BarcodeDetector (hardware accelerated) or jsQR fallback
   useEffect(() => {
-    if (!cameraActive || !isOpen) return;
+    if (!cameraActive || !isOpen || successScanned) return;
 
     let active = true;
     let barcodeDetector: any = null;
@@ -172,11 +343,11 @@ export function QrScannerModal({
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
     const scanFrame = async () => {
-      if (!active) return;
+      if (!active || successScanned) return;
       const video = videoRef.current;
 
-      if (video && video.readyState === video.HAVE_ENOUGH_DATA) {
-        // Option A: Mobile Native BarcodeDetector API (iOS Safari 17+ / Android Chrome hardware scanner)
+      if (video && video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth > 0) {
+        // Option A: Hardware BarcodeDetector API (iOS Safari 17+ / Chrome Android)
         if (barcodeDetector) {
           try {
             const barcodes = await barcodeDetector.detect(video);
@@ -185,7 +356,7 @@ export function QrScannerModal({
               return;
             }
           } catch {
-            // Fall back to canvas + jsQR below
+            // Fall back to jsQR below
           }
         }
 
@@ -217,7 +388,7 @@ export function QrScannerModal({
         cancelAnimationFrame(animFrameIdRef.current);
       }
     };
-  }, [cameraActive, isOpen, handleScanSuccess]);
+  }, [cameraActive, isOpen, successScanned, handleScanSuccess]);
 
   useEffect(() => {
     if (isOpen) {
@@ -233,25 +404,74 @@ export function QrScannerModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-xl p-4 sm:p-6 animate-in fade-in duration-200">
-      <div className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-white/10 bg-[#0d0e11] p-5 sm:p-6 shadow-2xl">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-2xl p-4 sm:p-6 animate-in fade-in duration-200"
+    >
+      <div className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-white/15 bg-[#0e1217]/95 p-5 sm:p-6 text-white shadow-2xl">
+        {/* Ambient Top Glow */}
+        <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-[#2775ca]/25 blur-3xl" />
+        <div className="pointer-events-none absolute -left-16 -bottom-16 h-40 w-40 rounded-full bg-[#2775ca]/15 blur-3xl" />
+
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-white/10">
-          <div className="flex items-center gap-2 text-white">
-            <QrCode className="h-5 w-5 text-[#ccff00]" />
-            <h3 className="text-sm font-black uppercase tracking-wider">{title}</h3>
+        <div className="relative z-10 flex items-center justify-between pb-4 border-b border-white/10">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#2775ca]/20 border border-[#2775ca]/40 text-[#2775ca]">
+              <QrCode className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-xs font-black uppercase tracking-wider text-white">{title}</h3>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[10px] font-bold text-white/60">1x Main Camera Active</span>
+              </div>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full p-2 text-white/50 hover:bg-white/10 hover:text-white transition"
-          >
-            <X className="h-4 w-4" />
-          </button>
+
+          <div className="flex items-center gap-1.5">
+            {/* Flashlight Toggle */}
+            {torchSupported && (
+              <button
+                type="button"
+                onClick={toggleTorch}
+                title={torchOn ? "Turn Torch Off" : "Turn Torch On"}
+                className={`flex h-8 w-8 items-center justify-center rounded-full border transition ${
+                  torchOn
+                    ? "border-amber-400 bg-amber-400/20 text-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.5)]"
+                    : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                <Zap className="h-3.5 w-3.5" />
+              </button>
+            )}
+
+            {/* Camera Switch Button */}
+            {availableCameras.length > 1 && (
+              <button
+                type="button"
+                onClick={switchCamera}
+                title="Switch Camera Lens"
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white transition"
+              >
+                <RotateCw className="h-3.5 w-3.5" />
+              </button>
+            )}
+
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/60 hover:bg-white/15 hover:text-white transition"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         {/* Viewfinder Viewport */}
-        <div className="relative mt-4 aspect-square w-full overflow-hidden rounded-2xl border border-white/10 bg-black/80 flex items-center justify-center">
+        <div className="relative mt-4 aspect-square w-full overflow-hidden rounded-2xl border border-white/15 bg-black flex items-center justify-center shadow-inner">
           <video
             ref={videoRef}
             className="h-full w-full object-cover"
@@ -261,26 +481,73 @@ export function QrScannerModal({
           />
           <canvas ref={canvasRef} className="hidden" />
 
-          {/* Mobile Native Camera Viewfinder Box */}
-          {cameraActive && (
+          {/* Viewfinder Box & Corner Brackets */}
+          {cameraActive && !errorMsg && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <div className="relative h-48 w-48 rounded-3xl border-2 border-[#ccff00] shadow-[0_0_30px_rgba(204,255,0,0.35)]">
-                <div className="absolute top-0 left-0 h-4 w-4 border-t-4 border-l-4 border-[#ccff00] rounded-tl-lg" />
-                <div className="absolute top-0 right-0 h-4 w-4 border-t-4 border-r-4 border-[#ccff00] rounded-tr-lg" />
-                <div className="absolute bottom-0 left-0 h-4 w-4 border-b-4 border-l-4 border-[#ccff00] rounded-bl-lg" />
-                <div className="absolute bottom-0 right-0 h-4 w-4 border-b-4 border-r-4 border-[#ccff00] rounded-br-lg" />
-                <div className="h-full w-full animate-pulse bg-[#ccff00]/5 rounded-3xl" />
+              <div
+                className={`relative h-52 w-52 rounded-3xl border-2 transition-all duration-300 ${
+                  successScanned
+                    ? "border-emerald-400 shadow-[0_0_35px_rgba(52,211,153,0.8)] bg-emerald-400/20 scale-105"
+                    : "border-[#2775ca]/90 shadow-[0_0_30px_rgba(39,117,202,0.4)]"
+                }`}
+              >
+                {/* Precision Corner Brackets */}
+                <div className="absolute -top-1 -left-1 h-5 w-5 border-t-4 border-l-4 border-[#2775ca] rounded-tl-xl" />
+                <div className="absolute -top-1 -right-1 h-5 w-5 border-t-4 border-r-4 border-[#2775ca] rounded-tr-xl" />
+                <div className="absolute -bottom-1 -left-1 h-5 w-5 border-b-4 border-l-4 border-[#2775ca] rounded-bl-xl" />
+                <div className="absolute -bottom-1 -right-1 h-5 w-5 border-b-4 border-r-4 border-[#2775ca] rounded-br-xl" />
+
+                {/* Animated Vertical Laser Sweep */}
+                {!successScanned && (
+                  <div className="absolute inset-x-2 h-0.5 bg-gradient-to-r from-transparent via-[#2775ca] to-transparent shadow-[0_0_10px_#2775ca] animate-[scannerSweep_2.2s_ease-in-out_infinite]" />
+                )}
+
+                {/* Success Feedback Icon */}
+                {successScanned && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xl animate-in zoom-in-50 duration-200">
+                      <Check className="h-8 w-8 stroke-[3]" />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          {/* Camera Error / Fallback State */}
+          {/* Camera Error / Permission Blocked State */}
           {errorMsg && (
-            <div className="p-6 text-center space-y-3">
-              <AlertCircle className="mx-auto h-10 w-10 text-orange-400" />
-              <p className="text-xs text-white/70 leading-relaxed">{errorMsg}</p>
+            <div className="p-6 text-center space-y-3 z-10">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-red-500/30 bg-red-500/10 text-red-400">
+                <AlertCircle className="h-6 w-6" />
+              </div>
+              <p className="text-xs text-white/75 leading-relaxed">{errorMsg}</p>
+              <button
+                type="button"
+                onClick={startCamera}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-xl border border-white/20 bg-white/10 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-white/20 transition"
+              >
+                <RotateCw className="h-3.5 w-3.5" />
+                Retry Camera
+              </button>
             </div>
           )}
+        </div>
+
+        {/* Footer Actions */}
+        <div className="relative z-10 mt-4 space-y-2.5">
+          <p className="text-center text-[11px] text-white/60">
+            Align the recipient QR code inside the frame to scan.
+          </p>
+
+          <button
+            type="button"
+            onClick={handlePasteFromClipboard}
+            disabled={clipboardBusy}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5 py-2.5 text-xs font-bold text-white/90 hover:bg-white/10 hover:text-white transition shadow-sm"
+          >
+            <Copy className="h-3.5 w-3.5 text-[#2775ca]" />
+            {clipboardBusy ? "Reading clipboard..." : "Paste Address from Clipboard"}
+          </button>
         </div>
       </div>
     </div>

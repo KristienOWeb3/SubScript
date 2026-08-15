@@ -162,6 +162,10 @@ export async function POST(request: Request) {
         const sourceCheckout = checkout || (sourceCheckoutId
             ? await prisma.paymentLink.findUnique({ where: { id: sourceCheckoutId } })
             : null);
+        const linkedPlan = !merchantPlan && sourceCheckoutId
+            ? await prisma.merchantPlan.findUnique({ where: { sourceCheckoutId }, select: { id: true } })
+            : null;
+        const canonicalPlanId = merchantPlan?.id || linkedPlan?.id || null;
         const externalReference = sourceCheckout?.externalReference?.trim() || null;
         const merchant = plan.merchantAddress.toLowerCase();
         const lockKey = `customer-subscription:${subscriber}:${merchant}`;
@@ -441,6 +445,7 @@ export async function POST(request: Request) {
                     minCommitmentSeconds: plan.minCommitmentSeconds,
                     externalReference,
                     sourceCheckoutId,
+                planId: canonicalPlanId,
                 });
                 await prisma.paymentLink.update({
                     where: { id: checkoutSessionId },
@@ -528,6 +533,7 @@ export async function POST(request: Request) {
                         } : null,
                         externalReference,
                         sourceCheckoutId,
+                    planId: canonicalPlanId,
                     });
                     return NextResponse.json({
                         success: true,
@@ -604,6 +610,7 @@ export async function POST(request: Request) {
                         : null,
                     externalReference,
                     sourceCheckoutId,
+                planId: canonicalPlanId,
                 });
                 if (checkoutSessionId) {
                     await prisma.paymentLink.update({
@@ -795,6 +802,7 @@ export async function POST(request: Request) {
                     : null,
                 externalReference,
                 sourceCheckoutId,
+            planId: canonicalPlanId,
             });
             if (appliedPromo) {
                 await confirmPromotionRedemption(appliedPromo.id, subscriber, BigInt(subId))

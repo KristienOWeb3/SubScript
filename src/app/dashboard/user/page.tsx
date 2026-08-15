@@ -753,6 +753,9 @@ export default function UserDashboard() {
     /* Also applied directly, so the navigation still lands when activeTab is already `tab`
        and the effect never runs. Both paths set the same value, so ordering cannot matter. */
     setAccountSubView(subView);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   }, []);
 
   useEffect(() => {
@@ -760,6 +763,20 @@ export default function UserDashboard() {
     pendingAccountSubView.current = null;
     setAccountSubView(pending ?? "menu");
   }, [activeTab]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const urlTab = params.get("tab") as UserTab | null;
+      const urlSubView = params.get("subview") as AccountSubView | null;
+      if (urlSubView === "spend-analysis" || window.location.hash === "#spend-analysis") {
+        goToAccountSubView("dns", "spend-analysis");
+      } else if (urlTab) {
+        setActiveTab(urlTab);
+        if (urlSubView) setAccountSubView(urlSubView);
+      }
+    }
+  }, [goToAccountSubView]);
 
   const fetchReferrals = useCallback(async () => {
     setReferralsLoading(true);
@@ -953,9 +970,6 @@ export default function UserDashboard() {
   const [batchSendLoading, setBatchSendLoading] = useState(false);
   const [batchProgress, setBatchProgress] = useState<string | null>(null);
 
-  const [qrModalOpen, setQrModalOpen] = useState(false);
-  const [qrTargetBatchIndex, setQrTargetBatchIndex] = useState<number | null>(null);
-
   const { address: accountAddress, chainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
@@ -1134,7 +1148,7 @@ export default function UserDashboard() {
 
       setUserWallet(data.wallet);
       setUserEmail(data.email);
-      setIsAdmin(Boolean(data.isAdmin) || data.wallet?.toLowerCase() === "0x497b0e2c08fb93464354e7023f040e088b169a3f");
+      setIsAdmin(Boolean(data.isAdmin));
       setIsEmbeddedWalletSession(Boolean(data.isEmbedded));
       await Promise.all([loadSubscriptions(), loadDms(), loadUserSettings(), loadVaults()]);
     } catch (e) {
@@ -2840,12 +2854,9 @@ export default function UserDashboard() {
         {/* Content Pane Skeleton — mirrors the mobile & desktop Home layout */}
         <div className="relative z-10 min-w-0 flex-1 flex flex-col bg-[#FFFFF0] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[20px] md:border md:border-black/10 overflow-hidden">
           <div className="md:hidden fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
-            <div className="w-full max-w-md rounded-full px-5 py-3 pointer-events-auto bg-[#FFFFF0]/90 backdrop-blur-lg border border-black/10 shadow-sm flex items-center justify-between">
-              <div className="h-7 w-7 subscript-skeleton rounded-full" />
-              <div className="flex gap-2">
-                <div className="h-7 w-12 subscript-skeleton subscript-skeleton--faint rounded-full" />
-                <div className="h-7 w-20 subscript-skeleton rounded-full" />
-              </div>
+            <div className="flex w-full max-w-md items-center justify-between px-1 py-2 pointer-events-auto">
+              <div className="h-12 w-12 subscript-skeleton rounded-full" />
+              <div className="h-10 w-10 subscript-skeleton subscript-skeleton--faint rounded-full" />
             </div>
           </div>
 
@@ -2859,26 +2870,35 @@ export default function UserDashboard() {
               <div className="grid grid-cols-1 gap-5 lg:grid-cols-[46fr_54fr]">
                 {/* LEFT: Balance card + Actions */}
                 <div className="flex flex-col gap-4 min-w-0">
-                  <div className="flex flex-col gap-4 rounded-3xl border border-black/20 bg-[#2775CA]/20 p-5 shadow-sm">
-                    <div className="space-y-2">
-                      <div className="h-2.5 w-32 subscript-skeleton rounded-full" />
-                      <div className="h-10 w-52 subscript-skeleton rounded-2xl" />
+                  <div className="flex flex-col items-center justify-center gap-4 px-3 py-3 text-center md:flex-row md:justify-between md:rounded-[20px] md:border md:border-black/35 md:bg-[#2775CA]/20 md:px-6 md:py-[22px] md:text-left">
+                    <div className="flex flex-col items-center gap-2 md:items-start">
+                      <div className="h-2.5 w-28 subscript-skeleton rounded-full" />
+                      <div className="h-10 w-48 subscript-skeleton rounded-2xl" />
+                      <div className="h-3 w-24 subscript-skeleton subscript-skeleton--faint rounded-full" />
                     </div>
-                    {/* Action buttons row */}
-                    <div className="flex items-center gap-2">
-                      <div className="h-11 flex-1 subscript-skeleton rounded-2xl" />
-                      <div className="h-11 flex-1 subscript-skeleton rounded-2xl" />
+                    <div className="flex w-full items-center justify-center gap-2.5 md:w-auto md:flex-col">
+                      <div className="h-11 min-w-[130px] flex-1 subscript-skeleton rounded-full" />
+                      <div className="h-11 min-w-[130px] flex-1 subscript-skeleton rounded-full" />
                     </div>
-                    {/* Two sub stats */}
-                    <div className="grid grid-cols-2 gap-2.5 pt-1">
-                      <div className="rounded-2xl border border-black/10 bg-white/70 p-3 space-y-1.5 shadow-sm">
-                        <div className="h-2 w-16 subscript-skeleton rounded-full" />
-                        <div className="h-4 w-20 subscript-skeleton rounded-lg" />
+                  </div>
+                  <div className="grid grid-cols-[42fr_58fr] gap-3.5">
+                    <div className="dashboard-blue-panel flex min-h-[140px] flex-col justify-between rounded-[18px] border border-black/35 p-[18px]">
+                      <div className="space-y-2.5">
+                        <div className="h-2.5 w-24 subscript-skeleton rounded-full" />
+                        <div className="h-3 w-8 subscript-skeleton subscript-skeleton--faint rounded-full" />
+                        <div className="h-6 w-24 subscript-skeleton rounded-lg" />
                       </div>
-                      <div className="rounded-2xl border border-black/10 bg-white/70 p-3 space-y-1.5 shadow-sm">
-                        <div className="h-2 w-20 subscript-skeleton rounded-full" />
-                        <div className="h-4 w-16 subscript-skeleton rounded-lg" />
+                      <div className="h-2.5 w-24 subscript-skeleton rounded-full" />
+                    </div>
+                    <div className="dashboard-blue-panel flex min-h-[140px] flex-col justify-between rounded-[18px] border border-black/35 p-[18px]">
+                      <div className="space-y-2.5">
+                        <div className="h-2.5 w-20 subscript-skeleton rounded-full" />
+                        <div className="flex gap-3">
+                          <div className="h-6 w-20 subscript-skeleton rounded-lg" />
+                          <div className="h-6 w-20 subscript-skeleton rounded-lg" />
+                        </div>
                       </div>
+                      <div className="h-2.5 w-24 subscript-skeleton rounded-full" />
                     </div>
                   </div>
                 </div>
@@ -2939,8 +2959,7 @@ export default function UserDashboard() {
         </div>
 
         {/* Mobile Bottom Bar Skeleton */}
-        {isMobile && (
-          <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3">
+          <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3 md:hidden">
             <div className="flex flex-1 items-center justify-around rounded-full border border-black/15 bg-[#2775CA]/20 px-3 py-[1.1rem] backdrop-blur-2xl">
               {[1, 2, 3, 4].map((i) => (
                 <div key={i} className="h-6 w-6 subscript-skeleton rounded-full" />
@@ -2948,7 +2967,6 @@ export default function UserDashboard() {
             </div>
             <div className="h-[3.3rem] w-[3.3rem] shrink-0 rounded-full subscript-skeleton" />
           </div>
-        )}
       </div>
     );
   }
@@ -3499,10 +3517,7 @@ export default function UserDashboard() {
                     <div className="flex items-center gap-3">
                       <button
                         type="button"
-                        onClick={() => {
-                          setAccountSubView("transactions");
-                          setActiveTab("dns");
-                        }}
+                        onClick={() => goToAccountSubView("dns", "spend-analysis")}
                         className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-black/70 hover:text-black transition-colors"
                       >
                         View All <ArrowUpRight className="h-3 w-3" />
@@ -6121,8 +6136,8 @@ export default function UserDashboard() {
           refetchMainnet().catch(console.error);
         }}
       />
-      <ScannerModal
-        open={scannerOpen}
+      <QrScannerModal
+        isOpen={scannerOpen}
         onClose={() => setScannerOpen(false)}
         onScan={(value) => {
           const raw = value.trim();
@@ -6509,22 +6524,6 @@ export default function UserDashboard() {
           </motion.div>
         )}
       </AnimatePresence>
-
-      <QrScannerModal
-        isOpen={qrModalOpen}
-        onClose={() => setQrModalOpen(false)}
-        onScan={(scannedAddress) => {
-          if (qrTargetBatchIndex === null) {
-            setSingleRecipient(scannedAddress);
-          } else {
-            setBatchRows((rows) =>
-              rows.map((row, idx) =>
-                idx === qrTargetBatchIndex ? { ...row, address: scannedAddress } : row
-              )
-            );
-          }
-        }}
-      />
 
       {confirmModal && (
         <ConfirmModal
@@ -8808,169 +8807,7 @@ function SendFundsModal({
   );
 }
 
-function ScannerModal({ open, onClose, onScan }: { open: boolean; onClose: () => void; onScan?: (value: string) => void }) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [supported, setSupported] = useState(true);
 
-  useEffect(() => {
-    if (!open) return;
-
-    let stream: MediaStream | null = null;
-    let detector: any = null;
-    let rafId = 0;
-    let stopped = false;
-
-    async function start() {
-      try {
-        if (!navigator.mediaDevices?.getUserMedia) {
-          setSupported(false);
-          return;
-        }
-
-        try {
-          // Phones: prefer the rear camera.
-          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        } catch {
-          // Desktops / devices without a rear camera have no "environment" facing mode — use any camera.
-          stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        }
-        if (stopped) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        const video = videoRef.current;
-        if (!video) return;
-        video.srcObject = stream;
-        await video.play();
-
-        /* Prefer the native BarcodeDetector (Android Chrome/Edge); fall back to jsQR
-           decoding of canvas frames so it also works on iOS Safari and Firefox. */
-        const BarcodeDetectorCtor = (globalThis as any).BarcodeDetector;
-        if (BarcodeDetectorCtor) {
-          try {
-            detector = new BarcodeDetectorCtor({ formats: ["qr_code"] });
-          } catch {
-            detector = null;
-          }
-        }
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d", { willReadFrequently: true });
-
-        const handleValue = (value: string) => {
-          stopped = true;
-          onScan?.(value.trim());
-          onClose();
-        };
-
-        const tick = async () => {
-          if (stopped || !videoRef.current) return;
-          const v = videoRef.current;
-          try {
-            if (detector) {
-              const codes = await detector.detect(v);
-              if (codes && codes.length > 0 && codes[0].rawValue) {
-                handleValue(String(codes[0].rawValue));
-                return;
-              }
-            } else if (ctx && v.videoWidth > 0) {
-              canvas.width = v.videoWidth;
-              canvas.height = v.videoHeight;
-              ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
-              const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
-              const code = jsQR(image.data, image.width, image.height, { inversionAttempts: "dontInvert" });
-              if (code?.data) {
-                handleValue(code.data);
-                return;
-              }
-            }
-          } catch {
-            /* transient detect errors are ignored; keep scanning */
-          }
-          rafId = requestAnimationFrame(tick);
-        };
-        rafId = requestAnimationFrame(tick);
-      } catch (err: any) {
-        if (err?.name === "NotAllowedError") {
-          setError("Camera permission was denied. Allow camera access to scan a QR code.");
-        } else {
-          setError(err?.message || "Could not start the camera.");
-        }
-      }
-    }
-
-    start();
-
-    return () => {
-      stopped = true;
-      if (rafId) cancelAnimationFrame(rafId);
-      if (stream) stream.getTracks().forEach((t) => t.stop());
-    };
-  }, [open, onScan, onClose]);
-
-  return (
-    <AnimatePresence>
-      {open && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 backdrop-blur-xl">
-          <motion.div
-            initial={{ scale: 0.92, y: 18 }}
-            animate={{ scale: 1, y: 0 }}
-            exit={{ scale: 0.92, y: 18 }}
-            className="w-full max-w-sm liquid-glass border border-white/10 rounded-3xl shadow-2xl relative overflow-hidden bg-black/50 backdrop-blur-xl p-6"
-          >
-            <div className="absolute -right-16 -top-16 h-36 w-36 rounded-full bg-[#ccff00]/20 blur-3xl" />
-            <div className="flex items-center justify-between mb-4 relative z-10">
-              <h3 className="text-sm font-black uppercase tracking-wider text-white flex items-center gap-2">
-                Scan to Pay
-              </h3>
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 transition-all"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="relative z-10">
-              {supported && !error ? (
-                <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black aspect-square">
-                  <video ref={videoRef} muted playsInline className="h-full w-full object-cover" />
-                  {/* Reticle */}
-                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                    <div className="h-44 w-44 rounded-2xl border-2 border-[#ccff00]/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" />
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center text-center py-6">
-                  <div className="flex h-20 w-20 items-center justify-center rounded-[28px] border border-[#ccff00]/30 bg-[#ccff00]/10 text-[#ccff00] mb-4">
-                    <QrCode className="h-9 w-9" />
-                  </div>
-                  <p className="text-xs text-white/65 leading-relaxed">
-                    {error || "This browser can't access the camera. Check camera permissions, or paste the address/link manually."}
-                  </p>
-                </div>
-              )}
-              <p className="mt-3 text-center text-[11px] text-white/45">
-                Point your camera at a SubScript wallet address or payment-link QR.
-              </p>
-            </div>
-
-            <div className="pt-4 relative z-10">
-              <button
-                type="button"
-                onClick={onClose}
-                className="subscript-primary-button w-full flex items-center justify-center gap-2"
-              >
-                {supported && !error ? "Cancel" : "Got it"} <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-}
 
 function BalanceRoutingNotice({
   amount,
