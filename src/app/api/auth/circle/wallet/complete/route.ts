@@ -1,3 +1,4 @@
+import { isGoogleSigninEnabled } from "@/lib/platform/flags";
 import { NextResponse } from "next/server";
 import { provisionEmbeddedWallet } from "@/lib/custody/provision";
 import { getAccountRole } from "@/lib/accounts/roles";
@@ -38,6 +39,9 @@ async function verifyGoogleIdToken(idToken: string, clientId: string): Promise<{
 
 export async function POST(request: Request) {
     try {
+        if (!(await isGoogleSigninEnabled())) {
+            return NextResponse.json({ error: "Google sign-in is temporarily unavailable." }, { status: 403 });
+        }
         const body = await request.json();
         const googleIdToken = body.googleIdToken || body.circleAuth?.oAuthInfo?.idToken;
 

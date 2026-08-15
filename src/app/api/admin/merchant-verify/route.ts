@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/admin/guard";
-import { recordAdminAction } from "@/lib/admin/audit";
+import { requestIp } from "@/lib/admin/audit";
 import { jsonOk } from "@/lib/http/json";
+import { withAdminDbRetry } from "@/lib/admin/db";
 
 /* Manual merchant verification — the badge payers are shown at checkout.
  *
@@ -29,42 +30,65 @@ export async function POST(request: Request) {
     if (!auth.ok) return auth.response;
 
     const body = await request.json().catch(() => null);
-    if (!body || typeof body.merchantAddress !== "string") {
+    if (!body || typeof body.merchantAddress !== "string" || typeof body.verified !== "boolean") {
       return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
     }
 
-    /* Lowercase to match how merchants are stored. Every other lookup normalizes
-       (overview/route.ts, payment-links/[id]/route.ts); passing a checksummed address
-       straight through misses the row and surfaces as a P2025 500. */
-    const merchantAddress = body.merchantAddress.trim().toLowerCase();
-    const verified = Boolean(body.verified);
+    let merchantAddress = body.merchantAddress.trim().toLowerCase();
 
-    const updated = await prisma.merchant.update({
-      where: { walletAddress: merchantAddress },
-      data: { verified },
-      select: MERCHANT_SELECT,
-    });
+    // Support DNS alias lookup (e.g. acme.sub)
+    if (merchantAddress.includes(".") && !/^0x[a-f0-9]{40}$/.test(merchantAddress)) {
+      const aliasRow = await withAdminDbRetry(() => prisma.addressAlias.findUnique({
+        where: { alias: merchantAddress },
+        select: { address: true },
+      }));
+      if (aliasRow?.address) {
+        merchantAddress = aliasRow.address.toLowerCase();
+      }
+    }
 
-    await recordAdminAction({
-      actor: auth.admin.wallet,
-      action: "MERCHANT_VERIFY",
-      target: merchantAddress,
-      detail: { verified },
-      request,
-    });
+    if (!/^0x[a-f0-9]{40}$/.test(merchantAddress)) {
+      return NextResponse.json({ error: "Enter a valid merchant wallet address or SubScript DNS name." }, { status: 400 });
+    }
+    const verified = body.verified;
+
+    const updated = await withAdminDbRetry(() =>
+      prisma.$transaction(async (tx) => {
+        const account = await tx.accountRole.findUnique({
+          where: { address: merchantAddress },
+          select: { role: true },
+        });
+        if (!account || account.role !== "ENTERPRISE") {
+          const error = new Error("That wallet is not an enterprise merchant account.");
+          (error as Error & { status?: number }).status = 409;
+          throw error;
+        }
+
+        const row = await tx.merchant.update({
+          where: { walletAddress: merchantAddress },
+          data: { verified },
+          select: MERCHANT_SELECT,
+        });
+        await tx.adminAuditLog.create({
+          data: {
+            actor: auth.admin.wallet,
+            action: "MERCHANT_VERIFY",
+            target: merchantAddress,
+            detail: { verified },
+            ip: requestIp(request),
+          },
+        });
+        return row;
+      }),
+    );
 
     return jsonOk({ success: true, merchant: updated });
   } catch (err: any) {
-    /* No merchants row for that address. Prisma's own message names the model and the
-       constraint, which is noise to an operator who just wants to know the address was
-       wrong — and leaking schema detail into the console is gratuitous. */
-    if (err?.code === "P2025") {
-      return NextResponse.json(
-        { error: "No merchant account exists for that address." },
-        { status: 404 },
-      );
-    }
     console.error("Failed to update merchant verification:", err);
-    return NextResponse.json({ error: err.message || "Internal Server Error" }, { status: 500 });
+    const status = Number.isInteger(err?.status) ? err.status : err?.code === "P2025" ? 404 : 500;
+    const error = status === 404 ? "Merchant account not found."
+      : status === 409 ? err.message
+      : "Failed to update merchant verification.";
+    return NextResponse.json({ error }, { status });
   }
 }

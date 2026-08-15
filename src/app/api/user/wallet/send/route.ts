@@ -15,6 +15,7 @@ import {
     resolveSpendingAuthority,
 } from "@/lib/commitId";
 import { sanitizeInput } from "@/utils/security";
+import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
 import { assertNotBlocked } from "@/lib/dms/blocks";
 
 export const maxDuration = 120;
@@ -90,6 +91,16 @@ export async function POST(request: Request) {
            Root callers resolve to themselves and behave exactly as before. */
         const authority = await resolveSpendingAuthority(normalizedSender);
         const fundingWallet = authority.fundingWallet;
+        try {
+            /* This route is a user-wallet outflow. For delegated sends the parent funding wallet
+               is the account whose funds leave the chain, so the hold is keyed to that wallet. */
+            await assertWithdrawalAllowed(fundingWallet, "USER");
+        } catch (holdError) {
+            if (holdError instanceof WithdrawalHeldError) {
+                return NextResponse.json({ error: holdError.message }, { status: holdError.status });
+            }
+            throw holdError;
+        }
 
         const parsedRecipients = recipients.map((item, index) => {
             if (!item.receiverAddress || !ethers.isAddress(item.receiverAddress)) {
@@ -309,6 +320,9 @@ export async function POST(request: Request) {
         }
         console.error("Embedded wallet send failed:", error);
         if (error instanceof CommitAccessError) {
+        if (error instanceof WithdrawalHeldError) {
+            return NextResponse.json({ error: error.message }, { status: error.status });
+        }
             return NextResponse.json({ error: error.message }, { status: error.httpStatus });
         }
         return NextResponse.json({ error: error.message || "Failed to send USDC" }, { status: 500 });

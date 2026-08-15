@@ -105,7 +105,8 @@ export default function SignupPage() {
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending: isConnecting } = useConnect();
   const { signMessageAsync } = useSignMessage();
-  const { externalWalletEnabled } = usePlatformFlags();
+  const { externalWalletEnabled, googleSigninEnabled, loaded: platformFlagsLoaded } = usePlatformFlags();
+  const googleAvailable = CIRCLE_GOOGLE_ENABLED && platformFlagsLoaded && googleSigninEnabled;
 
   const [authMethod, setAuthMethod] = useState<"select" | "email">("select");
   const [activeMerchantAddress, setActiveMerchantAddress] = useState<string | null>(null);
@@ -867,11 +868,11 @@ export default function SignupPage() {
               </button>
               <p className="-mt-2 px-3 text-center text-[10px] leading-relaxed text-white/40">
                 {merchantSignupIntent
-                  ? `Merchant accounts use email${CIRCLE_GOOGLE_ENABLED ? " or Google" : ""} sign-in for security, recovery, and professional invoicing.`
+                  ? `Merchant accounts use email${googleAvailable ? " or Google" : ""} sign-in for security, recovery, and professional invoicing.`
                   : "Email wallets use SubScript-managed recovery. Connect an external wallet for self-custody."}
               </p>
 
-              {CIRCLE_GOOGLE_ENABLED && (
+              {googleAvailable && (
                 /* The one auth path that can navigate away and remount this page, taking React
                    state with it — so the chosen role is armed here, at the hand-off, and nowhere
                    earlier. The write is bound to an attempt actually starting and expires with it. */

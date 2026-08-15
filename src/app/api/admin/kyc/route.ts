@@ -3,11 +3,13 @@ import {
     isAdminTransitionAllowed,
     parseAdminListParams,
     validateAdminDecision,
-    verifyAdminApiKey,
     type KycStatus,
 } from "@/lib/kyc";
 import { prisma } from "@/lib/prisma";
 import { jsonOk } from "@/lib/http/json";
+import { requireAdmin } from "@/lib/admin/guard";
+import { recordAdminAction, requestIp } from "@/lib/admin/audit";
+import { runAdminQueriesSequentially } from "@/lib/admin/db";
 
 /* Responses go out through jsonOk, not NextResponse.json, because both handlers echo whole
    `kyc_verifications` rows rather than a named projection (unlike api/admin/kyc/review, which
@@ -27,9 +29,8 @@ class KycAdminRouteError extends Error {
 }
 
 export async function GET(request: Request) {
-    if (!verifyAdminApiKey(request.headers)) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const auth = await requireAdmin(request);
+    if (!auth.ok) return auth.response;
 
     try {
         const params = parseAdminListParams(new URL(request.url).searchParams);
@@ -37,11 +38,13 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: params.error }, { status: 400 });
         }
 
-        const verifications = await prisma.kycVerification.findMany({
-            where: params.data.status ? { status: params.data.status } : undefined,
-            orderBy: { createdAt: "desc" },
-            take: params.data.limit,
-        });
+        const [verifications] = await runAdminQueriesSequentially([
+            () => prisma.kycVerification.findMany({
+                where: params.data.status ? { status: params.data.status } : undefined,
+                orderBy: { createdAt: "desc" },
+                take: params.data.limit,
+            }),
+        ]);
 
         return jsonOk({ success: true, verifications });
     } catch (error) {
@@ -51,9 +54,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-    if (!verifyAdminApiKey(request.headers)) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const auth = await requireAdmin(request);
+    if (!auth.ok) return auth.response;
 
     try {
         const payload = validateAdminDecision(await request.json().catch(() => null));
@@ -140,7 +142,7 @@ export async function POST(request: Request) {
                 data: {
                     verificationId: updated.id,
                     actorType: "ADMIN",
-                    actorId: "admin",
+                    actorId: auth.admin.wallet,
                     fromStatus,
                     toStatus: payload.data.status,
                     reasonCode: payload.data.reasonCode,
@@ -148,11 +150,12 @@ export async function POST(request: Request) {
             });
             await tx.auditEvent.create({
                 data: {
-                    actor: "admin",
+                    actor: auth.admin.wallet,
                     action: "KYC_STATUS_CHANGED",
                     resourceType: "KYC_VERIFICATION",
                     resourceId: updated.id,
                     metadata: {
+                    ipAddress: requestIp(request),
                         fromStatus,
                         toStatus: payload.data.status,
                         reasonCode: payload.data.reasonCode,
@@ -160,15 +163,28 @@ export async function POST(request: Request) {
                     },
                 },
             });
-            await tx.merchant.upsert({
-                where: { walletAddress: updated.walletAddress },
-                update: { verified: payload.data.status === "APPROVED" },
-                create: {
-                    walletAddress: updated.walletAddress,
-                    verified: payload.data.status === "APPROVED",
-                },
-            });
+            if (updated.accountRole === "ENTERPRISE") {
+                await tx.merchant.upsert({
+                    where: { walletAddress: updated.walletAddress },
+                    update: { verified: payload.data.status === "APPROVED" },
+                    create: {
+                        walletAddress: updated.walletAddress,
+                        verified: payload.data.status === "APPROVED",
+                    },
+                });
+            }
             return updated;
+        });
+
+        await recordAdminAction({
+            actor: auth.admin.wallet,
+            action: "KYC_DECISION",
+            target: verification.walletAddress,
+            detail: {
+                to: payload.data.status,
+                reasonCode: payload.data.reasonCode,
+            },
+            request,
         });
 
         return jsonOk({ success: true, verification });

@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   ReceiptText,
+  Users,
   Clock,
   ArrowRight,
   RefreshCw,
@@ -80,9 +81,9 @@ export function AdminOverviewDashboard({
   const verifiedMerchantsCount = safeMerchants.filter((m) => Boolean(m?.verified)).length;
 
   const streamSegments: DonutSegment[] = [
-    { label: "Settled Receipts", value: Math.max(1, analyticsData?.volume?.paymentCount ?? 12), color: "#2775ca" },
-    { label: "Checkout Links", value: Math.max(1, analyticsData?.volume?.checkoutCount ?? 5), color: "#00d2b4" },
-    { label: "Subscriptions", value: Math.max(1, activeSubs || 3), color: "#10b981" },
+    { label: "Settled Receipts", value: analyticsData?.volume?.paymentCount ?? 0, color: "#2775ca" },
+    { label: "Checkout Links", value: analyticsData?.volume?.checkoutCount ?? 0, color: "#00d2b4" },
+    { label: "Subscriptions", value: activeSubs, color: "#10b981" },
   ];
 
   const handleCopy = (text: string, key: string) => {
@@ -107,7 +108,7 @@ export function AdminOverviewDashboard({
   return (
     <div className="space-y-6">
       {/* KPI Stat Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCardWithSparkline
           label="Total Settled GMV"
           value={`$${totalVolumeStr}`}
@@ -132,6 +133,14 @@ export function AdminOverviewDashboard({
           badgeText="Recurring plans"
           icon={Layers}
           color="#6366f1"
+        />
+
+        <StatCardWithSparkline
+          label="Total Users"
+          value={totalUsers ?? 0}
+          badgeText="Registered platform accounts"
+          icon={Users}
+          color="#f59e0b"
         />
 
         <StatCardWithSparkline
@@ -214,7 +223,7 @@ export function AdminOverviewDashboard({
           title="Commerce Activity Breakdown"
           subtitle="Relative transaction frequency across payment rails"
           centerLabel="Activity"
-          centerValue={`${(analyticsData?.volume?.paymentCount ?? 12) + (analyticsData?.volume?.checkoutCount ?? 5)} txs`}
+          centerValue={`${(analyticsData?.volume?.paymentCount ?? 0) + (analyticsData?.volume?.checkoutCount ?? 0)} txs`}
         />
       </div>
 

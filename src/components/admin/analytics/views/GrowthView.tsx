@@ -100,11 +100,7 @@ export function GrowthView({ analytics }: GrowthViewProps) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Roles Donut */}
         <DonutMetricChart
-          segments={
-            roleSegments.length > 0
-              ? roleSegments
-              : [{ label: "Individual Users", value: growth?.usersTotal || 1, color: "#2775ca" }]
-          }
+          segments={roleSegments}
           title="Account Role Distribution"
           subtitle="Proportion of consumers vs business merchant operators"
           centerLabel="Accounts"
@@ -140,7 +136,7 @@ export function GrowthView({ analytics }: GrowthViewProps) {
                 <div className="w-full bg-[#f1f5f9] h-2.5 rounded-full overflow-hidden">
                   <div
                     className="bg-emerald-500 h-full rounded-full transition-all"
-                    style={{ width: `${Math.min(100, Math.max(10, verificationRate))}%` }}
+                    style={{ width: `${Math.min(100, verificationRate)}%` }}
                   />
                 </div>
               </div>
@@ -154,7 +150,7 @@ export function GrowthView({ analytics }: GrowthViewProps) {
                   <div
                     className="bg-[#00d2b4] h-full rounded-full transition-all"
                     style={{
-                      width: `${growth?.merchantsTotal > 0 ? ((growth?.merchantsNew30d || 0) / growth.merchantsTotal) * 100 : 25}%`,
+                      width: `${growth?.merchantsTotal > 0 ? ((growth?.merchantsNew30d || 0) / growth.merchantsTotal) * 100 : 0}%`,
                     }}
                   />
                 </div>

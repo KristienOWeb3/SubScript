@@ -29,7 +29,8 @@ export type AdminAction =
        auditor filtering this log wants those rows on their own, not buried among routine reviews. */
     | "KYC_DECISION"
     | "KYC_FORCE_APPROVE"
-    | "KYC_MANUAL_CREATE";
+    | "KYC_MANUAL_CREATE"
+    | "KYC_UPGRADE_APPROVED";
 
 export function requestIp(request: Request): string | null {
     const forwarded = request.headers.get("x-forwarded-for");

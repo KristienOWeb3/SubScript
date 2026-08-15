@@ -180,6 +180,8 @@ type KycRecord = {
   createdAt: string;
   updatedAt: string;
   adminAsserted: boolean;
+  lastAdminActor: string | null;
+  lastAdminActionAt: string | null;
   /* Joined from address_aliases for display. Null when the wallet has no DNS name. KYC itself
      is keyed on walletAddress, so renaming the alias never affects the record. */
   alias?: string | null;
@@ -249,6 +251,7 @@ const LABEL = "text-[10px] font-black uppercase tracking-wider text-[#64748b]";
 const INPUT =
   "w-full rounded-lg border border-[#cbd5e1] bg-white px-3.5 py-2 text-xs text-[#0f172a] placeholder:text-[#94a3b8] focus:border-[#2775ca] focus:outline-none focus:ring-2 focus:ring-[#2775ca]/15";
 
+const SUPPORT_EMAIL = "support@subscriptonarc.com";
 export default function AdminDashboardPage() {
   const [tab, setTab] = useState<TabId>("overview");
   const [loading, setLoading] = useState(true);
@@ -332,6 +335,15 @@ export default function AdminDashboardPage() {
   const [manualCountry, setManualCountry] = useState("");
   const [manualLevel, setManualLevel] = useState("STANDARD");
   const [manualReason, setManualReason] = useState("");
+
+  const [manualMerchantAddress, setManualMerchantAddress] = useState("");
+  const [manualMerchantBusy, setManualMerchantBusy] = useState(false);
+
+  const [directKycWallet, setDirectKycWallet] = useState("");
+  const [directKycReason, setDirectKycReason] = useState("");
+  const [directKycLevel, setDirectKycLevel] = useState("STANDARD");
+  const [directKycCountry, setDirectKycCountry] = useState("US");
+  const [directKycBusy, setDirectKycBusy] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -545,6 +557,18 @@ export default function AdminDashboardPage() {
       setFlagBusy(null);
     }
   };
+  const prepareMaintenanceBroadcast = (backOnline: boolean) => {
+    setBcAudience("both");
+    setBcTitle(backOnline ? "SubScript is back online" : "SubScript is temporarily down");
+    setBcBody(
+      backOnline
+        ? `SubScript is back online. Thank you for your patience. Contact ${SUPPORT_EMAIL} if you still need help.`
+        : `SubScript is temporarily down for maintenance. We will share an update when service is restored. Contact ${SUPPORT_EMAIL} for urgent support.`,
+    );
+    setBcUrl("/support");
+    setBcConfirm("");
+    setTab("broadcast");
+  };
 
   const sendBroadcast = async (testOnly: boolean) => {
     if (!bcTitle.trim() || !bcBody.trim()) return;
@@ -613,8 +637,7 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     loadData();
-    loadAnalytics();
-  }, [loadData, loadAnalytics]);
+  }, [loadData]);
 
   /* Declared above the tab effect below, which both calls it and lists it as a dependency. As a
      const it is in the temporal dead zone until this line runs, so declaring it further down threw
@@ -675,6 +698,57 @@ export default function AdminDashboardPage() {
       setError(err.message || "Failed to update verification");
     } finally {
       setVerifyBusy(null);
+    }
+  };
+
+  const handleManualVerifyMerchant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualMerchantAddress.trim()) return;
+    setManualMerchantBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/merchant-verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ merchantAddress: manualMerchantAddress.trim(), verified: true }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to verify merchant");
+      setManualMerchantAddress("");
+      await loadData();
+    } catch (err: any) {
+      setError(err.message || "Failed to verify merchant");
+    } finally {
+      setManualMerchantBusy(false);
+    }
+  };
+
+  const handleDirectKycUpgrade = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!directKycWallet.trim()) return;
+    setDirectKycBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/kyc/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "upgrade-kyc",
+          walletAddress: directKycWallet.trim(),
+          requestedLevel: directKycLevel,
+          countryCode: directKycCountry.trim().toUpperCase() || "US",
+          reason: directKycReason.trim() || "Manual KYC approval by administrator",
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to upgrade KYC");
+      setDirectKycWallet("");
+      setDirectKycReason("");
+      await loadKyc();
+    } catch (err: any) {
+      setError(err.message || "Failed to upgrade KYC");
+    } finally {
+      setDirectKycBusy(false);
     }
   };
 
@@ -990,16 +1064,18 @@ export default function AdminDashboardPage() {
         )}
 
         {tab === "overview" && (
-          <AdminOverviewDashboard
-            overviewData={overviewData}
-            analyticsData={analytics}
-            sponsor={sponsor}
-            merchants={merchants}
-            totalUsers={totalUsers}
-            onNavigateTab={setTab}
-            onToggleVerification={toggleVerification}
-            verifyBusy={verifyBusy}
-          />
+          loading && !overviewData ? <VolumeSkeleton /> : (
+            <AdminOverviewDashboard
+              overviewData={overviewData}
+              analyticsData={analytics}
+              sponsor={sponsor}
+              merchants={merchants}
+              totalUsers={totalUsers}
+              onNavigateTab={setTab}
+              onToggleVerification={toggleVerification}
+              verifyBusy={verifyBusy}
+            />
+          )
         )}
 
         {tab === "merchants" && (
@@ -1024,6 +1100,26 @@ export default function AdminDashboardPage() {
                 />
               </div>
             </div>
+
+            {/* Quick Manual Verify Form */}
+            <form onSubmit={handleManualVerifyMerchant} className="flex flex-col sm:flex-row gap-2.5 p-4 rounded-xl bg-white/[0.03] border border-white/10">
+              <input
+                type="text"
+                value={manualMerchantAddress}
+                onChange={(e) => setManualMerchantAddress(e.target.value)}
+                placeholder="Enter merchant wallet address or SubScript DNS name (e.g. acme.sub or 0x...)"
+                className={`${INPUT} flex-1`}
+                required
+              />
+              <button
+                type="submit"
+                disabled={manualMerchantBusy}
+                className="shrink-0 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-emerald-300 transition hover:bg-emerald-400/20 disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {manualMerchantBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                Verify Merchant
+              </button>
+            </form>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
@@ -1242,9 +1338,11 @@ export default function AdminDashboardPage() {
                               <p className="mt-1 text-[9px] text-[#00d2b4]/90 font-mono">
                                 Decided{" "}
                                 {new Date(record.decidedAt).toLocaleString()}
-                                {record.adminAsserted
-                                  ? " (upgraded by admin)"
-                                  : ""}
+                                {record.lastAdminActor
+                                  ? ` by ${record.lastAdminActor.slice(0, 8)}...${record.lastAdminActor.slice(-6)}`
+                                  : record.adminAsserted
+                                    ? " by an admin"
+                                    : ""}
                               </p>
                             )}
                           </div>
@@ -1343,6 +1441,71 @@ export default function AdminDashboardPage() {
                 </div>
               )}
             </div>
+
+            {viewerIsRoot && (
+              <div className={`${CARD} space-y-4 border-emerald-500/30`}>
+                <div className="flex items-start gap-2">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                  <div>
+                    <span className={LABEL}>Direct KYC Upgrade &amp; Approval</span>
+                    <p className="mt-1 text-[11px] text-white/50">
+                      Instantly upgrade and approve KYC for any user or merchant using their wallet address or SubScript DNS name (e.g. <code className="text-emerald-300">name.sub</code>). Approval persists across future DNS changes as it is anchored to the underlying wallet address. Records acting admin actor and timestamp in audit logs.
+                    </p>
+                  </div>
+                </div>
+                <form
+                  onSubmit={handleDirectKycUpgrade}
+                  className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+                >
+                  <input
+                    type="text"
+                    value={directKycWallet}
+                    onChange={(e) => setDirectKycWallet(e.target.value)}
+                    placeholder="0x address or name.sub"
+                    className={INPUT}
+                    required
+                  />
+                  <input
+                    type="text"
+                    value={directKycCountry}
+                    onChange={(e) => setDirectKycCountry(e.target.value)}
+                    placeholder="Country code (e.g. US, NG)"
+                    maxLength={2}
+                    className={INPUT}
+                    required
+                  />
+                  <select
+                    value={directKycLevel}
+                    onChange={(e) => setDirectKycLevel(e.target.value)}
+                    className={INPUT}
+                  >
+                    <option value="STANDARD" className="bg-[#121212] text-white">Standard</option>
+                    <option value="ENHANCED" className="bg-[#121212] text-white">Enhanced</option>
+                  </select>
+                  <input
+                    type="text"
+                    value={directKycReason}
+                    onChange={(e) => setDirectKycReason(e.target.value)}
+                    placeholder="Reason for manual upgrade"
+                    className={INPUT}
+                  />
+                  <button
+                    type="submit"
+                    disabled={directKycBusy}
+                    className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-emerald-300 transition hover:bg-emerald-400/20 disabled:opacity-50 sm:col-span-2 flex items-center justify-center gap-1.5"
+                  >
+                    {directKycBusy ? (
+                      <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <>
+                        <ShieldCheck className="h-3.5 w-3.5" />
+                        Upgrade &amp; Approve KYC
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
+            )}
 
             {viewerIsRoot && (
               <div className={`${CARD} space-y-4 border-amber-500/30`}>
@@ -1525,8 +1688,8 @@ export default function AdminDashboardPage() {
               </h3>
               <p className="mt-1 text-[11px] text-white/50">
                 Wallet bans take effect on the banned user&apos;s next request —
-                existing sessions stop working immediately. IP bans apply to API
-                traffic and can take up to an hour to lift everywhere.
+                existing sessions stop working immediately. IP ban changes are
+                checked against the shared ban store on every API request.
               </p>
 
               <form onSubmit={handleBan} className="mt-4 space-y-3 max-w-lg">
@@ -2034,6 +2197,16 @@ export default function AdminDashboardPage() {
                       </button>
                     </div>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => prepareMaintenanceBroadcast(flags.maintenanceEnabled)}
+                    className="w-full rounded-xl border border-[#2775ca]/30 bg-[#2775ca]/10 py-2.5 text-xs font-bold text-[#2775ca] transition hover:bg-[#2775ca]/20"
+                  >
+                    Prepare {flags.maintenanceEnabled ? "back-online" : "app-down"} notification
+                  </button>
+                  <p className="text-[10px] text-[#64748b]">
+                    The notification is prepared for users and merchants and includes {SUPPORT_EMAIL}.
+                  </p>
                 </div>
               </>
             )}
@@ -2290,12 +2463,11 @@ export default function AdminDashboardPage() {
 
             <div className={`${CARD} space-y-3`}>
               <h3 className="text-sm font-black uppercase tracking-wider text-white">
-                Current Admins{" "}
-                {adminsLoading && (
-                  <Loader2 className="inline h-3 w-3 animate-spin ml-1" />
-                )}
+                Current Admins
               </h3>
-              {admins.length === 0 && !adminsLoading ? (
+              {adminsLoading ? (
+                <SkeletonRows count={4} label="Loading administrators" />
+              ) : admins.length === 0 ? (
                 <p className="text-xs text-white/40">No admins found.</p>
               ) : (
                 <div className="space-y-2">

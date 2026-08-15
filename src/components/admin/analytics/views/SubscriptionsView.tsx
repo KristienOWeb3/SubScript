@@ -96,11 +96,7 @@ export function SubscriptionsView({ analytics }: SubscriptionsViewProps) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Status Donut Chart */}
         <DonutMetricChart
-          segments={
-            statusSegments.length > 0
-              ? statusSegments
-              : [{ label: "Active", value: activeTotal || 1, color: "#10b981" }]
-          }
+          segments={statusSegments}
           title="Subscription Health & Statuses"
           subtitle="Real-time distribution across all billing states"
           centerLabel="Total Active"
@@ -135,7 +131,7 @@ export function SubscriptionsView({ analytics }: SubscriptionsViewProps) {
                   <div
                     className="bg-emerald-500 h-full rounded-full transition-all"
                     style={{
-                      width: `${activeTotal > 0 ? ((subs?.activeCustomer || 0) / activeTotal) * 100 : 80}%`,
+                      width: `${activeTotal > 0 ? ((subs?.activeCustomer || 0) / activeTotal) * 100 : 0}%`,
                     }}
                   />
                 </div>
@@ -158,7 +154,7 @@ export function SubscriptionsView({ analytics }: SubscriptionsViewProps) {
                   <div
                     className="bg-[#2775ca] h-full rounded-full transition-all"
                     style={{
-                      width: `${activeTotal > 0 ? ((subs?.activePremium || 0) / activeTotal) * 100 : 20}%`,
+                      width: `${activeTotal > 0 ? ((subs?.activePremium || 0) / activeTotal) * 100 : 0}%`,
                     }}
                   />
                 </div>

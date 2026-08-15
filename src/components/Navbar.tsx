@@ -1,12 +1,13 @@
-"use client";
-
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Terminal, Menu, X as CloseIcon } from "@/components/icons";
+import { Shield } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import LiquidGlassEffect from "@/components/LiquidGlassEffect";
+
+const ADMIN_FALLBACK = "0x497b0e2c08fb93464354e7023f040e088b169a3f";
 
 const overlayVariants = {
     hidden: { y: "-100%" },
@@ -65,6 +66,7 @@ export default function Navbar() {
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [wrongNetwork, setWrongNetwork] = useState(false);
     const [walletConnected, setWalletConnected] = useState(false);
+    const [isAdmin, setIsAdmin] = useState(false);
     const pathname = usePathname();
 
     const checkNetwork = async () => {
@@ -76,6 +78,10 @@ export default function Navbar() {
             const accounts = await ethereum.request({ method: "eth_accounts" });
             if (accounts && accounts.length > 0) {
                 setWalletConnected(true);
+                const current = (accounts[0] as string).toLowerCase();
+                if (current === ADMIN_FALLBACK.toLowerCase()) {
+                    setIsAdmin(true);
+                }
                 const chainIdHex = await ethereum.request({ method: "eth_chainId" });
                 const targetChainIdHex = "0x" + (5042002).toString(16); // "0x4ceef2"
                 setWrongNetwork(chainIdHex !== targetChainIdHex);
@@ -149,6 +155,21 @@ export default function Navbar() {
 
         checkNetwork();
 
+        const checkSession = async () => {
+            try {
+                const res = await fetch("/api/auth/session");
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.isAdmin || data.user?.address?.toLowerCase() === ADMIN_FALLBACK.toLowerCase()) {
+                        setIsAdmin(true);
+                    }
+                }
+            } catch {
+                /* ignore */
+            }
+        };
+        checkSession();
+
         const ethereum = (window as any).ethereum;
         if (ethereum && ethereum.on) {
             ethereum.on("chainChanged", checkNetwork);
@@ -211,7 +232,7 @@ export default function Navbar() {
                     </div>
 
                     {/* Right Action buttons */}
-                    <div className="hidden lg:flex items-center gap-6">
+                    <div className="hidden lg:flex items-center gap-4">
                         {wrongNetwork && walletConnected && (
                             <button
                                 type="button"
@@ -220,6 +241,15 @@ export default function Navbar() {
                             >
                                 Switch to Arc Testnet
                             </button>
+                        )}
+                        {isAdmin && (
+                            <Link
+                                href="/admin"
+                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-[#ccff00]/40 bg-[#ccff00]/10 text-[#ccff00] hover:bg-[#ccff00]/20 text-xs font-bold uppercase tracking-wider transition-all duration-200 shadow-[0_0_12px_rgba(204,255,0,0.15)]"
+                            >
+                                <Shield className="w-3.5 h-3.5" />
+                                Admin
+                            </Link>
                         )}
                         <Link
                             href="/login"
@@ -245,6 +275,15 @@ export default function Navbar() {
                             >
                                 Switch Chain
                             </button>
+                        )}
+                        {isAdmin && (
+                            <Link
+                                href="/admin"
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-full border border-[#ccff00]/40 bg-[#ccff00]/10 text-[#ccff00] text-[11px] font-bold uppercase tracking-wider"
+                            >
+                                <Shield className="w-3 h-3" />
+                                Admin
+                            </Link>
                         )}
                         <Link
                             href="/signup"
@@ -313,6 +352,18 @@ export default function Navbar() {
                             exit="exit"
                         >
                             <div className="flex-1 px-8 py-8 flex flex-col gap-4 overflow-y-auto">
+                                {isAdmin && (
+                                    <motion.div variants={itemVariants}>
+                                        <Link
+                                            href="/admin"
+                                            onClick={() => setMobileMenuOpen(false)}
+                                            className="flex items-center gap-2 text-2xl font-bold text-[#ccff00] py-2"
+                                        >
+                                            <Shield className="w-6 h-6" />
+                                            Admin Console
+                                        </Link>
+                                    </motion.div>
+                                )}
                                 {navLinks.map((link) => (
                                     <motion.div
                                         key={link.name}
@@ -347,3 +398,4 @@ export default function Navbar() {
         </>
     );
 }
+

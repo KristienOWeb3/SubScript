@@ -24,7 +24,18 @@ export async function POST(request: Request) {
     const isBan = action === "BAN";
 
     if (type === "ACCOUNT") {
-      const address = cleanTarget.toLowerCase();
+      let address = cleanTarget.toLowerCase();
+
+      // Support DNS alias lookup (e.g. badactor.sub)
+      if (address.includes(".") && !/^0x[a-f0-9]{40}$/.test(address)) {
+        const aliasRow = await prisma.addressAlias.findUnique({
+          where: { alias: address },
+          select: { address: true },
+        });
+        if (aliasRow?.address) {
+          address = aliasRow.address.toLowerCase();
+        }
+      }
 
       /* Never let the console ban an admin — root or delegated. Account bans are enforced
          inside the session lookup, so banning an admin wallet revokes the session needed
@@ -50,7 +61,7 @@ export async function POST(request: Request) {
         actor: auth.admin.wallet,
         action: isBan ? "BAN_ACCOUNT" : "UNBAN_ACCOUNT",
         target: address,
-        detail: { reason: cleanReason },
+        detail: { reason: cleanReason, originalTarget: cleanTarget },
         request,
       });
 
@@ -95,6 +106,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid ban type" }, { status: 400 });
   } catch (err: any) {
     console.error("Failed to update ban:", err);
-    return NextResponse.json({ error: err.message || "Internal Server Error" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to update ban." }, { status: 500 });
   }
 }

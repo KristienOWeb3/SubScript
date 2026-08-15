@@ -272,10 +272,11 @@ test("applicant route derives role and commits case, event, audit, and badge ato
     assert.doesNotMatch(route, /providerCaseId[\s\S]*NextResponse\.json/);
 });
 
-test("admin route authenticates, validates filters, and uses optimistic atomic transitions", () => {
+test("admin route authenticates by wallet, attributes the actor, and uses optimistic atomic transitions", () => {
     const route = source("src/app/api/admin/kyc/route.ts");
 
-    assert.match(route, /verifyAdminApiKey\(request\.headers\)/g);
+    assert.match(route, /requireAdmin\(request\)/g);
+    assert.doesNotMatch(route, /verifyAdminApiKey/);
     assert.match(route, /parseAdminListParams/);
     assert.match(route, /validateAdminDecision/);
     assert.match(route, /isAdminTransitionAllowed/);
@@ -283,7 +284,9 @@ test("admin route authenticates, validates filters, and uses optimistic atomic t
     assert.match(route, /tx\.kycVerification\.updateMany/);
     assert.match(route, /status:\s*existing\.status[\s\S]*revision:\s*existing\.revision/);
     assert.match(route, /tx\.kycVerificationEvent\.create/);
+    assert.match(route, /actorId:\s*auth\.admin\.wallet/);
     assert.match(route, /tx\.auditEvent\.create/);
+    assert.match(route, /actor:\s*auth\.admin\.wallet/);
     assert.match(route, /verified:\s*payload\.data\.status === "APPROVED"/g);
 });
 

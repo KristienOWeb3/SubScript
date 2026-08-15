@@ -130,7 +130,7 @@ function maintenancePage(message: string | null): string {
     const safe = (message || DEFAULT_MAINTENANCE_MESSAGE).replace(/[<>&"]/g, (character) => {
         return { "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[character] as string;
     });
-    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SubScript — Temporarily Down</title></head><body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#000;color:#fff;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif"><main style="max-width:30rem;padding:2rem;text-align:center"><div style="font-size:.625rem;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:#ccff00">Maintenance</div><h1 style="margin:.75rem 0 0;font-size:1.5rem;font-weight:900;letter-spacing:-.02em">Temporarily down</h1><p style="margin:.75rem 0 0;font-size:.875rem;line-height:1.6;color:rgba(255,255,255,.6)">${safe}</p></main></body></html>`;
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SubScript — Temporarily Down</title></head><body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#000;color:#fff;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif"><main style="max-width:30rem;padding:2rem;text-align:center"><div style="font-size:.625rem;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:#ccff00">Maintenance</div><h1 style="margin:.75rem 0 0;font-size:1.5rem;font-weight:900;letter-spacing:-.02em">Temporarily down</h1><p style="margin:.75rem 0 0;font-size:.875rem;line-height:1.6;color:rgba(255,255,255,.6)">${safe}</p><p style="margin:1rem 0 0;font-size:.75rem;color:rgba(255,255,255,.5)">Need help? <a href="mailto:support@subscriptonarc.com" style="color:#ccff00">support@subscriptonarc.com</a></p></main></body></html>`;
 }
 
 /* Initialize Upstash Redis REST client */
@@ -676,8 +676,6 @@ export async function middleware(request: NextRequest) {
             try {
                 const isBanned = await redis.get(`ban:${ip}`);
                 if (isBanned) {
-                    // Cache the ban in memory as well to avoid future redis queries
-                    memoryBans.set(ip, Date.now() + 3600 * 1000); // 1 hour memory cache
                     return new NextResponse(
                         JSON.stringify({ error: "Access Denied: Banned IP" }),
                         { status: 403, headers: { "Content-Type": "application/json" } }

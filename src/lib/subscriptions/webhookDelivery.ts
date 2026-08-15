@@ -1,13 +1,22 @@
 import crypto from "node:crypto";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import type { EventType } from "@/lib/events/types";
+import { activeArcChain } from "@/lib/wagmi";
+import { ARC_TESTNET_CHAIN_ID } from "@/lib/contracts/constants";
 
-function lifecycleEventId(walletAddress: string, event: string, transitionKey: string): string {
-    const digest = crypto.createHash("sha256")
-        .update(`${walletAddress.toLowerCase()}:${event}:${transitionKey}`)
-        .digest("hex")
-        .slice(0, 40);
-    return `evt_subscription_${digest}`;
+export function resolveEnvironment(data: Record<string, unknown>): "TEST" | "LIVE" {
+    if (data.environment === "LIVE" || data.environment === "TEST") {
+        return data.environment as "TEST" | "LIVE";
+    }
+    if (typeof data.livemode === "boolean") {
+        return data.livemode ? "LIVE" : "TEST";
+    }
+    const chainId = Number(data.chainId || data.chain_id || 0);
+    if (chainId === 5042002) return "TEST";
+    if (chainId === 5042001) return "LIVE";
+    if (chainId > 0) return chainId === ARC_TESTNET_CHAIN_ID ? "TEST" : "LIVE";
+    const isMainnet = activeArcChain.id !== ARC_TESTNET_CHAIN_ID && process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet";
+    return isMainnet ? "LIVE" : "TEST";
 }
 
 /** Persist a subscription lifecycle delivery before attempting network I/O.
@@ -18,7 +27,7 @@ export async function dispatchDurableSubscriptionWebhook(
     data: Record<string, unknown>,
     transitionKey: string,
 ): Promise<{ eventId: string; queued: number }> {
-    const environment = (data.environment === "LIVE" || data.livemode === true) ? "LIVE" : "TEST";
+    const environment = resolveEnvironment(data);
     const eventType = event as EventType;
     const resourceType = "subscription";
     const resourceId = String(data.subscription_id || data.subscriptionId || "").replace(/^sub_/, "");
@@ -33,7 +42,7 @@ export async function dispatchDurableSubscriptionWebhook(
         resourceType,
         resourceId,
         resourceVersion,
-        data,
+        data: { ...data, environment, livemode: environment === "LIVE" },
         correlationId,
         causationId,
         transitionKey,

@@ -5,17 +5,13 @@ import { ethers } from "ethers";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import DashboardHeader from "@/components/DashboardHeader";
-import DashboardSidebar, { type DashboardSidebarItem } from "@/components/dashboard/DashboardSidebar";
-import NotificationBell from "@/components/dashboard/NotificationBell";
-import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+import MerchantDashboardNav from "@/components/dashboard/MerchantDashboardNav";
+import MerchantOverview from "@/components/dashboard/MerchantOverview";
 import DashboardSkeleton from "@/components/DashboardSkeleton";
 import { SkeletonCard, SkeletonRows, SkeletonStatGrid } from "@/components/ui/skeletons";
 import { getDashboardUrl } from "@/utils/navigation";
 import { buildCheckoutUrl, buildSubscribeUrl } from "@/lib/checkoutUrl";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
-import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
-import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
 import SendWalletModal from "@/components/SendWalletModal";
@@ -40,7 +36,7 @@ import {
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
     Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
     Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, ChevronRight, User, Share2,
-    ShieldCheck, Save, Home, SquaresFour, MessageSquare, HelpCircle, Send, Terminal, Bell, Search
+    ShieldCheck, Save, SquaresFour, MessageSquare, HelpCircle, Send, Terminal, Bell, Search
 } from "@/components/icons";
 import { QRCode } from "react-qrcode-logo";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
@@ -82,10 +78,6 @@ const tabs = [
     { id: "settings", label: "Profile & DNS", icon: User },
 ] as const;
 
-/* Admin console link, appended only for allowlisted wallets. Carries an href so the
-   sidebar renders it as a Link out to /admin rather than switching an in-page tab.
-   Hiding it is presentation only — /admin and every /api/admin route re-check server-side. */
-const ADMIN_TAB = { id: "admin", label: "Admin", icon: Shield, href: "/admin" } as const;
 
 type TabId = "overview" | "premium" | "analytics" | "payment-links" | "plans" | "apikeys" | "checkout" | "webhooks" | "settings" | "payroll" | "offramp";
 
@@ -196,14 +188,6 @@ const shortenHash = (value: string | undefined) => {
 
 const settlementTimeframes = ["24H", "1W", "1M", "3M", "6M", "1Y"] as const;
 
-/* Same icons AND names as the desktop sidebar (`tabs`) so merchant navigation reads
-   identically on both form factors. */
-const mobileBottomTabs: ReadonlyArray<{ id: TabId; label: string; icon: typeof Home }> = [
-    { id: "overview", label: "Overview", icon: SquaresFour },
-    { id: "analytics", label: "Analytics", icon: BarChart3 },
-    { id: "payment-links", label: "Payments", icon: Sliders },
-    { id: "apikeys", label: "API Keys", icon: Key },
-];
 
 const comingSoonMerchantSettings = new Set([
     "pushEnabled",
@@ -296,10 +280,6 @@ export default function DashboardPage() {
     const [embeddedWallet, setEmbeddedWallet] = useState<{ wallet: string; email: string } | null>(null);
     const [sessionWallet, setSessionWallet] = useState<string | null>(null);
     const [isAdmin, setIsAdmin] = useState(false);
-    const navTabs = useMemo(
-        () => (isAdmin ? [...tabs, ADMIN_TAB] : [...tabs]),
-        [isAdmin],
-    );
     const [otpEmail, setOtpEmail] = useState("");
     const [otpCode, setOtpCode] = useState("");
     const [otpSent, setOtpSent] = useState(false);
@@ -2572,8 +2552,6 @@ Please complete the following implementation tasks:
     const projected30DaySettlement = merchantAnalytics?.mrrUsdc ?? ledgers.reduce((acc, sub) => {
         const willRenew = sub.active
             && sub.billingStatus === "ACTIVE"
-            && Number(sub.downgradeFailures || 0) === 0
-            && !sub.cancelAtPeriodEnd;
         if (!willRenew) return acc;
         const amountNum = parseFloat(sub.rawAmount) || 0;
         const periodNum = parseFloat(sub.rawPeriod) || 2592000;
@@ -2581,25 +2559,24 @@ Please complete the following implementation tasks:
         return acc + monthlyEquivalent;
     }, 0);
 
-    const primaryColorText = "text-[#00d2b4]";
-    const primaryColorBg = "bg-[#00d2b4]";
+    const primaryColorText = "text-[#082824]";
+    const primaryColorBg = "bg-[#8AB4DB]";
 
     const renderPremiumLock = (tabLabel: string) => {
         return (
-            <div className="liquid-glass border border-[#d4a853]/20 rounded-3xl p-10 shadow-2xl bg-black/60 flex flex-col items-center justify-center text-center gap-6 min-h-[400px] relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-[#d4a853]/5 rounded-full blur-3xl -z-10" />
-                <div className="p-5 rounded-3xl bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853] animate-pulse">
-                    <Crown className="w-12 h-12" />
+            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-10 flex flex-col items-center justify-center text-center gap-6 min-h-[400px] text-black">
+                <div className="p-5 rounded-full bg-[#EFE2AC] text-[#082824]">
+                    <Crown className="w-10 h-10" />
                 </div>
                 <div className="space-y-3 max-w-md">
-                    <h2 className="text-xl font-extrabold text-white uppercase tracking-wider">Premium Pro Feature Locked</h2>
-                    <p className="text-xs text-white/60 leading-relaxed font-sans">
-                        Access to <span className="font-semibold text-white">{tabLabel}</span> requires an active SubScript Premium subscription. Upgrade to unlock keys, private checkout generation, and webhook event streaming.
+                    <h2 className="text-xl font-semibold text-black">Premium Pro Feature Locked</h2>
+                    <p className="text-xs text-black/60 leading-relaxed font-sans">
+                        Access to <span className="font-semibold text-black">{tabLabel}</span> requires an active SubScript Premium subscription. Upgrade to unlock keys, private checkout generation, and webhook event streaming.
                     </p>
                 </div>
                 <button
                     onClick={() => setActiveTab("premium")}
-                    className="px-8 py-3 bg-[#d4a853] hover:bg-[#d4a853]/80 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-[0_0_20px_rgba(212,168,83,0.2)]"
+                    className="px-8 py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-full text-xs font-semibold flex items-center gap-2 transition-all"
                 >
                     <Crown className="w-4 h-4" />
                     Upgrade to Premium Pro
@@ -2611,18 +2588,18 @@ Please complete the following implementation tasks:
     const renderPaymentLinksTab = () => {
         if (isConnected && address && !sessionWallet && !embeddedWallet) {
             return (
-                <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
-                    <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
-                    <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
-                    <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
+                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 text-black font-sans">
+                    <Shield className="w-10 h-10 mx-auto text-[#082824]" />
+                    <h2 className="text-lg font-semibold text-black">Verify Wallet Ownership</h2>
+                    <p className="text-xs text-black/60 leading-relaxed max-w-xs mx-auto">
                         To protect your payment configurations and links, please sign a secure message using your connected wallet.
                     </p>
                     <button
                         onClick={handleBackendLogin}
                         disabled={isLoggingIn}
-                        className="w-full py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                        className="w-full py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-full text-xs font-semibold flex items-center justify-center gap-2 transition-all"
                     >
-                        {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : <Shield className="w-4 h-4" />}
+                        {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-[#082824]" /> : <Shield className="w-4 h-4" />}
                         Authenticate Developer Portal
                     </button>
                 </div>
@@ -2646,19 +2623,19 @@ Please complete the following implementation tasks:
                     <form onSubmit={handleCreatePaymentLink} className="space-y-4 font-sans text-xs">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-1">
-                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Product Title *</label>
+                                <label className="text-black/60 font-semibold text-[10px] tracking-wide">Product Title *</label>
                                 <input
                                     type="text"
                                     placeholder="e.g. Pro Membership Key"
                                     value={linkTitle}
                                     onChange={(e) => setLinkTitle(e.target.value)}
                                     required
-                                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                    className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors"
                                 />
                             </div>
 
                             <div className="space-y-1">
-                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">USDC Amount *</label>
+                                <label className="text-black/60 font-semibold text-[10px] tracking-wide">USDC Amount *</label>
                                 <input
                                     type="number"
                                     step="0.01"
@@ -2667,19 +2644,19 @@ Please complete the following implementation tasks:
                                     value={linkAmountUsdc}
                                     onChange={(e) => setLinkAmountUsdc(e.target.value)}
                                     required
-                                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                    className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors"
                                 />
                             </div>
                         </div>
 
                         <div className="space-y-1">
-                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Description</label>
+                            <label className="text-black/60 font-semibold text-[10px] tracking-wide">Description</label>
                             <textarea
                                 placeholder="Describe what the customer gets with this payment link..."
                                 value={linkDescription}
                                 onChange={(e) => setLinkDescription(e.target.value)}
                                 rows={3}
-                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors"
                             />
                         </div>
 
@@ -2687,7 +2664,7 @@ Please complete the following implementation tasks:
                             <button
                                 type="button"
                                 onClick={() => setShowLinkAdvanced(!showLinkAdvanced)}
-                                className="text-[10px] text-white/40 hover:text-white flex items-center gap-1.5 uppercase font-bold tracking-wider transition-colors"
+                                className="text-[11px] text-black/60 hover:text-black flex items-center gap-1.5 font-medium transition-colors"
                             >
                                 <Sliders className="w-3.5 h-3.5" />
                                 {showLinkAdvanced ? "Hide Advanced Options" : "Show Advanced Options"}
@@ -2695,7 +2672,7 @@ Please complete the following implementation tasks:
                         </div>
 
                         {showLinkAdvanced && (
-                            <div className="grid grid-cols-2 gap-4 pt-3 border-t border-white/5">
+                            <div className="grid grid-cols-2 gap-4 pt-3 border-t border-black/10">
                                 <div className="col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
                                     <button
                                         type="button"
@@ -2703,7 +2680,7 @@ Please complete the following implementation tasks:
                                             setLinkDurationMinutes(1440);
                                             setLinkMaxUses("1");
                                         }}
-                                        className="px-3 py-2 rounded-xl border border-[#00d2b4]/20 bg-[#00d2b4]/10 text-[#00d2b4] text-[10px] font-bold uppercase tracking-wider hover:bg-[#00d2b4]/20 transition-colors"
+                                        className="px-3 py-2 rounded-xl border border-black/10 bg-[#D4E3E8] text-[#082824] text-[10px] font-semibold hover:bg-[#D4E3E8]/80 transition-colors"
                                     >
                                         One-Time 24H
                                     </button>
@@ -2713,7 +2690,7 @@ Please complete the following implementation tasks:
                                             setLinkDurationMinutes(7 * 24 * 60);
                                             setLinkMaxUses("");
                                         }}
-                                        className="px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white/70 text-[10px] font-bold uppercase tracking-wider hover:bg-white/10 hover:text-white transition-colors"
+                                        className="px-3 py-2 rounded-xl border border-black/10 bg-black/5 text-black/70 text-[10px] font-semibold hover:bg-black/10 hover:text-black transition-colors"
                                     >
                                         Reusable 7D
                                     </button>
@@ -2723,70 +2700,70 @@ Please complete the following implementation tasks:
                                             setLinkDurationMinutes(0);
                                             setLinkMaxUses("");
                                         }}
-                                        className="px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white/70 text-[10px] font-bold uppercase tracking-wider hover:bg-white/10 hover:text-white transition-colors"
+                                        className="px-3 py-2 rounded-xl border border-black/10 bg-black/5 text-black/70 text-[10px] font-semibold hover:bg-black/10 hover:text-black transition-colors"
                                     >
                                         No Expiry
                                     </button>
                                 </div>
                                 <div className="space-y-1 col-span-2">
-                                    <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Expiration Window</label>
+                                    <label className="text-black/60 font-semibold text-[10px] tracking-wide">Expiration Window</label>
                                     <DurationPicker
                                         value={linkDurationMinutes}
                                         onChange={(mins) => setLinkDurationMinutes(mins)}
                                     />
-                                    <p className="text-[10px] text-white/35">Set duration to 00:00 for a link that does not expire automatically.</p>
+                                    <p className="text-[10px] text-black/40">Set duration to 00:00 for a link that does not expire automatically.</p>
                                 </div>
 
                                 <div className="space-y-1 col-span-2">
-                                    <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">External Reference (Optional)</label>
+                                    <label className="text-black/60 font-semibold text-[10px] tracking-wide">External Reference (Optional)</label>
                                     <input
                                         type="text"
                                         placeholder="e.g. internal-sku-102"
                                         value={linkExternalReference}
                                         onChange={(e) => setLinkExternalReference(e.target.value)}
-                                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                        className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors"
                                     />
                                 </div>
 
-                                <div className="col-span-2 space-y-3 rounded-2xl border border-white/5 bg-white/[0.015] p-4">
-                                    <p className="text-[9px] font-bold uppercase tracking-wide text-white/40">
-                                        Invoice details <span className="normal-case text-white/25">(optional, turns this link into an invoice; shown on the checkout page)</span>
+                                <div className="col-span-2 space-y-3 rounded-2xl border border-black/10 bg-black/[0.02] p-4">
+                                    <p className="text-[10px] font-semibold text-black/60">
+                                        Invoice details <span className="normal-case text-black/40">(optional, turns this link into an invoice; shown on the checkout page)</span>
                                     </p>
                                     <div className="grid gap-3 sm:grid-cols-3">
                                         <div className="space-y-1">
-                                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Invoice Number</label>
+                                            <label className="text-black/60 font-semibold text-[10px] tracking-wide">Invoice Number</label>
                                             <input
                                                 type="text"
                                                 placeholder="INV-2026-001"
                                                 value={linkInvoiceNumber}
                                                 onChange={(e) => setLinkInvoiceNumber(e.target.value.slice(0, 64))}
-                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                                className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors"
                                             />
                                         </div>
                                         <div className="space-y-1">
-                                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Due Date</label>
+                                            <label className="text-black/60 font-semibold text-[10px] tracking-wide">Due Date</label>
                                             <input
                                                 type="date"
                                                 value={linkDueDate}
                                                 onChange={(e) => setLinkDueDate(e.target.value)}
-                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors [color-scheme:dark]"
+                                                className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors [color-scheme:light]"
                                             />
                                         </div>
                                         <div className="space-y-1">
-                                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Payer Email</label>
+                                            <label className="text-black/60 font-semibold text-[10px] tracking-wide">Payer Email</label>
                                             <input
                                                 type="email"
                                                 placeholder="billing@client.com"
                                                 value={linkPayerEmail}
                                                 onChange={(e) => setLinkPayerEmail(e.target.value)}
-                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                                className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors"
                                             />
                                         </div>
                                     </div>
                                 </div>
 
                                 <div className="space-y-1 col-span-2">
-                                    <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Maximum Uses</label>
+                                    <label className="text-black/60 font-semibold text-[10px] tracking-wide">Maximum Uses</label>
                                     <input
                                         type="number"
                                         min="1"
@@ -2794,24 +2771,24 @@ Please complete the following implementation tasks:
                                         placeholder="Unlimited"
                                         value={linkMaxUses}
                                         onChange={(e) => setLinkMaxUses(e.target.value)}
-                                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                        className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors"
                                     />
-                                    <p className="text-[10px] text-white/35">Use 1 for one-time checkout links. Leave blank for unlimited reusable links.</p>
+                                    <p className="text-[10px] text-black/40">Use 1 for one-time checkout links. Leave blank for unlimited reusable links.</p>
                                 </div>
                             </div>
                         )}
 
                         {linkError && (
-                            <p className="text-red-400 text-[10px] font-mono font-semibold">{linkError}</p>
+                            <p className="text-red-500 text-[10px] font-mono font-semibold">{linkError}</p>
                         )}
                         {linkSuccess && (
-                            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-5 space-y-4 font-sans text-left">
-                                <p className="text-emerald-400 text-xs font-bold uppercase tracking-wider">
+                            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-5 space-y-4 font-sans text-left text-black">
+                                <p className="text-emerald-700 text-xs font-semibold">
                                     Payment link created
                                 </p>
                                 {createdLinkInfo && (
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-black/40 border border-white/5 rounded-xl p-3">
-                                        <span className="text-[11px] font-mono text-white/70 truncate max-w-[190px] xs:max-w-[240px] sm:max-w-none flex-1">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-black/10 rounded-xl p-3">
+                                        <span className="text-[11px] font-mono text-black/80 truncate max-w-[190px] xs:max-w-[240px] sm:max-w-none flex-1">
                                             {createdLinkInfo.checkoutUrl}
                                         </span>
                                         <div className="flex items-center gap-2 flex-shrink-0">
@@ -2821,7 +2798,7 @@ Please complete the following implementation tasks:
                                                     setActiveQrCodeLink(createdLinkInfo.checkoutUrl);
                                                     setActiveQrCodeTitle(createdLinkInfo.title);
                                                 }}
-                                                className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white transition-all flex items-center justify-center"
+                                                className="p-2 rounded-lg bg-black/5 hover:bg-black/10 border border-black/10 text-black/80 hover:text-black transition-all flex items-center justify-center"
                                                 title="Show QR Code"
                                             >
                                                 <QrCode className="w-3.5 h-3.5" />
@@ -2829,7 +2806,7 @@ Please complete the following implementation tasks:
                                             <button
                                                 type="button"
                                                 onClick={() => handleCopyLink(createdLinkInfo.id, createdLinkInfo.checkoutUrl)}
-                                                className="px-3 py-1.5 rounded-lg bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/20 text-[#00d2b4] text-[10px] font-bold uppercase tracking-wider transition-all"
+                                                className="px-3 py-1.5 rounded-lg bg-[#D4E3E8] hover:bg-[#D4E3E8]/80 border border-black/10 text-[#082824] text-[10px] font-semibold transition-all"
                                             >
                                                 {linkCopyFeedback[createdLinkInfo.id] ? "Copied!" : "Copy Link"}
                                             </button>
@@ -2843,7 +2820,7 @@ Please complete the following implementation tasks:
                             <button
                                 type="submit"
                                 disabled={isCreatingLink || !linkTitle || !linkAmountUsdc}
-                                className="px-6 py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/80 disabled:opacity-50 text-black text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 font-sans"
+                                className="px-6 py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] disabled:opacity-50 text-[#082824] text-xs font-semibold rounded-full transition-all flex items-center gap-2 font-sans"
                             >
                                 <Link2 className="w-3.5 h-3.5" />
                                 {isCreatingLink ? "Creating..." : "Create Link"}
@@ -2927,22 +2904,22 @@ Please complete the following implementation tasks:
                                                                 </div>
                                                             )}
                                                         </td>
-                                                        <td className="py-4 px-4 font-mono font-semibold text-[#00d2b4]">
+                                                        <td className="py-4 px-4 font-mono font-semibold text-[#082824]">
                                                             ${(Number(link.amount_usdc) / 1000000).toFixed(2)} USDC
                                                         </td>
-                                                        <td className="py-4 px-4 text-white/60 font-mono hidden md:table-cell">
+                                                        <td className="py-4 px-4 text-black/60 font-mono hidden md:table-cell">
                                                             {link.external_reference || "-"}
                                                         </td>
-                                                        <td className="py-4 px-4 text-white/50 hidden sm:table-cell">
+                                                        <td className="py-4 px-4 text-black/50 hidden sm:table-cell">
                                                             {link.expires_at ? new Date(link.expires_at).toLocaleString() : "Never"}
                                                         </td>
                                                         <td className="py-4 px-4">
                                                             <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border ${
                                                                 status === "Active"
-                                                                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                                                                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700"
                                                                     : status === "Expired"
-                                                                        ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
-                                                                        : "bg-white/5 border-white/10 text-white/40"
+                                                                        ? "bg-amber-500/10 border-amber-500/20 text-amber-700"
+                                                                        : "bg-black/5 border-black/10 text-black/50"
                                                             }`}>
                                                                 {status}
                                                             </span>
@@ -2951,7 +2928,7 @@ Please complete the following implementation tasks:
                                                             <div className="flex gap-2 justify-end items-center font-sans">
                                                                 <button
                                                                     onClick={() => handleCopyLink(link.id, link.checkoutUrl)}
-                                                                    className="p-2 md:px-4 md:py-2 rounded-xl bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/20 text-[#00d2b4] text-[10px] font-bold uppercase transition-all shadow-sm shadow-[#00d2b4]/5 flex items-center gap-1.5"
+                                                                    className="p-2 md:px-4 md:py-2 rounded-xl bg-[#D4E3E8] hover:bg-[#D4E3E8]/80 border border-black/10 text-[#082824] text-[10px] font-semibold transition-all flex items-center gap-1.5"
                                                                     title={linkCopyFeedback[link.id] ? "Copied!" : "Copy Link"}
                                                                 >
                                                                     {linkCopyFeedback[link.id] ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
@@ -2963,7 +2940,7 @@ Please complete the following implementation tasks:
                                                                         setActiveQrCodeLink(url);
                                                                         setActiveQrCodeTitle(link.title);
                                                                     }}
-                                                                    className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white transition-all flex items-center justify-center"
+                                                                    className="p-2 rounded-xl bg-black/5 hover:bg-black/10 border border-black/10 text-black/80 hover:text-black transition-all flex items-center justify-center"
                                                                     title="Show QR Code"
                                                                 >
                                                                     <QrCode className="w-3.5 h-3.5" />
@@ -2974,8 +2951,8 @@ Please complete the following implementation tasks:
                                                                     }}
                                                                     className={`p-2 rounded-xl border transition-all flex items-center justify-center ${
                                                                         expandedLinkId === link.id
-                                                                            ? "bg-[#00d2b4]/20 border-[#00d2b4]/30 text-[#00d2b4]"
-                                                                            : "bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white"
+                                                                            ? "bg-[#D4E3E8] border-black/20 text-[#082824]"
+                                                                            : "bg-black/5 hover:bg-black/10 border border-black/10 text-black/80 hover:text-black"
                                                                     }`}
                                                                     title="Show Payments Stats"
                                                                 >
@@ -2983,20 +2960,20 @@ Please complete the following implementation tasks:
                                                                 </button>
                                                                 <button
                                                                     onClick={() => handleToggleLinkActive(link.id, link.active)}
-                                                                    className={`p-2 md:px-4 md:py-2 rounded-xl border text-[10px] font-bold uppercase transition-all flex items-center gap-1.5 ${
+                                                                    className={`p-2 md:px-4 md:py-2 rounded-xl border text-[10px] font-semibold transition-all flex items-center gap-1.5 ${
                                                                         link.active
-                                                                            ? "bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20 text-amber-400"
-                                                                            : "bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/20 text-[#00d2b4]"
+                                                                            ? "bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20 text-amber-700"
+                                                                            : "bg-[#D4E3E8] hover:bg-[#D4E3E8]/80 border border-black/10 text-[#082824]"
                                                                     }`}
                                                                     title={link.active ? "Deactivate" : "Activate"}
                                                                 >
                                                                     {link.active ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
                                                                     <span className="hidden md:inline">{link.active ? "Deactivate" : "Activate"}</span>
                                                                 </button>
-                                                                <div className="w-[1px] h-4 bg-white/10 mx-1" />
+                                                                <div className="w-[1px] h-4 bg-black/10 mx-1" />
                                                                 <button
                                                                     onClick={() => handleDeleteLink(link.id)}
-                                                                    className="p-2 md:px-4 md:py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-[10px] font-bold uppercase transition-all flex items-center gap-1.5"
+                                                                    className="p-2 md:px-4 md:py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-600 text-[10px] font-semibold transition-all flex items-center gap-1.5"
                                                                     title="Delete Link"
                                                                 >
                                                                     <Trash2 className="w-3.5 h-3.5" />
@@ -3006,17 +2983,17 @@ Please complete the following implementation tasks:
                                                         </td>
                                                     </tr>
                                                     {expandedLinkId === link.id && (
-                                                        <tr className="bg-white/[0.01]">
-                                                            <td colSpan={6} className="py-4 px-6 border-l-2 border-[#00d2b4] bg-white/[0.005] rounded-r-2xl">
+                                                        <tr className="bg-black/[0.01]">
+                                                            <td colSpan={6} className="py-4 px-6 border-l-2 border-[#8AB4DB] bg-white rounded-r-2xl">
                                                                 <div className="space-y-3 font-sans">
                                                                     <div className="flex justify-between items-center">
-                                                                        <span className="text-white font-bold text-xs uppercase tracking-wider">Link Stats & Payments</span>
-                                                                        <span className="text-[10px] text-white/40">Total Payments: {link.payments?.length || 0}</span>
+                                                                        <span className="text-black font-semibold text-xs">Link Stats & Payments</span>
+                                                                        <span className="text-[10px] text-black/50">Total Payments: {link.payments?.length || 0}</span>
                                                                     </div>
-                                                                    <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-start border border-white/5 rounded-xl bg-black/20 p-3">
+                                                                    <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-start border border-black/10 rounded-xl bg-black/[0.02] p-3">
                                                                         <div className="space-y-1">
-                                                                            <div className="text-[10px] text-white/45 uppercase tracking-wider font-bold">Link Rules</div>
-                                                                            <div className="text-[11px] text-white/65">
+                                                                            <div className="text-[10px] text-black/50 font-semibold">Link Rules</div>
+                                                                            <div className="text-[11px] text-black/70">
                                                                                 {link.max_uses != null ? `Uses ${link.use_count || 0}/${link.max_uses}` : "Unlimited uses"}
                                                                                 {" · "}
                                                                                 {link.expires_at ? `Expires ${new Date(link.expires_at).toLocaleString()}` : "No automatic expiry"}
@@ -3026,54 +3003,54 @@ Please complete the following implementation tasks:
                                                                             <button
                                                                                 type="button"
                                                                                 onClick={() => handleUpdateLinkRules(link.id, 1440, "1")}
-                                                                                className="px-3 py-2 rounded-lg border border-[#00d2b4]/20 bg-[#00d2b4]/10 text-[#00d2b4] text-[9px] font-bold uppercase tracking-wider hover:bg-[#00d2b4]/20 transition-colors"
+                                                                                className="px-3 py-2 rounded-lg border border-black/10 bg-[#D4E3E8] text-[#082824] text-[9px] font-semibold hover:bg-[#D4E3E8]/80 transition-colors"
                                                                             >
                                                                                 One-Time
                                                                             </button>
                                                                             <button
                                                                                 type="button"
                                                                                 onClick={() => handleUpdateLinkRules(link.id, 7 * 24 * 60, null)}
-                                                                                className="px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-white/70 text-[9px] font-bold uppercase tracking-wider hover:bg-white/10 hover:text-white transition-colors"
+                                                                                className="px-3 py-2 rounded-lg border border-black/10 bg-black/5 text-black/70 text-[9px] font-semibold hover:bg-black/10 hover:text-black transition-colors"
                                                                             >
                                                                                 7D Reuse
                                                                             </button>
                                                                             <button
                                                                                 type="button"
                                                                                 onClick={() => handleUpdateLinkRules(link.id, 0, null)}
-                                                                                className="px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-white/70 text-[9px] font-bold uppercase tracking-wider hover:bg-white/10 hover:text-white transition-colors"
+                                                                                className="px-3 py-2 rounded-lg border border-black/10 bg-black/5 text-black/70 text-[9px] font-semibold hover:bg-black/10 hover:text-black transition-colors"
                                                                             >
                                                                                 No Expiry
                                                                             </button>
                                                                         </div>
                                                                     </div>
                                                                     {!link.payments || link.payments.length === 0 ? (
-                                                                        <div className="py-4 text-center text-[11px] text-white/30 border border-dashed border-white/5 rounded-xl">
+                                                                        <div className="py-4 text-center text-[11px] text-black/40 border border-dashed border-black/10 rounded-xl">
                                                                             No payments recorded for this checkout link yet.
                                                                         </div>
                                                                     ) : (
-                                                                        <div className="overflow-x-auto border border-white/5 rounded-xl bg-black/20">
+                                                                        <div className="overflow-x-auto border border-black/10 rounded-xl bg-white">
                                                                             <table className="w-full text-left border-collapse text-[10px]">
                                                                                 <thead>
-                                                                                    <tr className="border-b border-white/5 bg-white/[0.02] text-[8px] uppercase tracking-wider text-white/30 font-bold">
+                                                                                    <tr className="border-b border-black/10 bg-black/[0.02] text-[9px] text-black/50 font-semibold">
                                                                                         <th className="py-2.5 px-3">Payer Address</th>
                                                                                         <th className="py-2.5 px-3">Tx Hash</th>
                                                                                         <th className="py-2.5 px-3">Date</th>
                                                                                         <th className="py-2.5 px-3 text-right">Amount</th>
                                                                                     </tr>
                                                                                 </thead>
-                                                                                <tbody className="divide-y divide-white/5 font-mono text-white/60">
+                                                                                <tbody className="divide-y divide-black/10 font-mono text-black/70">
                                                                                     {link.payments.map((p: any) => (
-                                                                                        <tr key={p.id} className="hover:bg-white/[0.02] transition-colors">
-                                                                                            <td className="py-2 px-3 text-[#00d2b4]" title={p.payer_address || ""}>
+                                                                                        <tr key={p.id} className="hover:bg-black/[0.02] transition-colors">
+                                                                                            <td className="py-2 px-3 text-[#082824]" title={p.payer_address || ""}>
                                                                                                 {p.payer_alias ? (
-                                                                                                    <span className="font-sans font-semibold text-white/80 bg-[#00d2b4]/10 border border-[#00d2b4]/25 px-2 py-0.5 rounded-md text-[9px] uppercase tracking-wider">
+                                                                                                    <span className="font-sans font-semibold text-black/80 bg-[#D4E3E8] border border-black/10 px-2 py-0.5 rounded-md text-[9px]">
                                                                                                         {p.payer_alias}
                                                                                                     </span>
                                                                                                 ) : (
                                                                                                     p.payer_address ? `${p.payer_address.slice(0, 10)}...${p.payer_address.slice(-8)}` : "-"
                                                                                                 )}
                                                                                             </td>
-                                                                                            <td className="py-2 px-3 text-white/40 hover:text-[#00d2b4] transition-colors">
+                                                                                            <td className="py-2 px-3 text-black/50 hover:text-[#082824] transition-colors">
                                                                                                 {p.tx_hash ? (
                                                                                                     <a 
                                                                                                         href={`${activeArcChain.blockExplorers.default.url}/tx/${p.tx_hash}`}
@@ -3084,10 +3061,10 @@ Please complete the following implementation tasks:
                                                                                                     </a>
                                                                                                 ) : "-"}
                                                                                             </td>
-                                                                                            <td className="py-2 px-3 text-white/40">
+                                                                                            <td className="py-2 px-3 text-black/50">
                                                                                                 {p.created_at ? new Date(p.created_at).toLocaleString() : "-"}
                                                                                             </td>
-                                                                                            <td className="py-2 px-3 text-right text-white font-sans font-semibold">
+                                                                                            <td className="py-2 px-3 text-right text-black font-sans font-semibold">
                                                                                                 ${(Number(p.amount_usdc) / 1000000).toFixed(2)} USDC
                                                                                             </td>
                                                                                         </tr>
@@ -3160,14 +3137,14 @@ Please complete the following implementation tasks:
 
         return (
             <div className="space-y-8">
-                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6">
                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                         <div>
-                            <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                                <Sliders className="w-4 h-4 text-[#00d2b4]" />
+                            <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
+                                <Sliders className="w-4 h-4 text-[#082824]" />
                                 Create Subscription Plan
                             </h2>
-                            <p className="text-[11px] text-white/40 font-sans">
+                            <p className="text-[11px] text-black/60 font-sans">
                                 Publish named recurring USDC plans. Share each plan's subscribe link with customers, with no website needed.
                                 The same plans power your API keys and webhooks later, so you scale without rebuilding.
                             </p>
@@ -3176,7 +3153,7 @@ Please complete the following implementation tasks:
                             type="button"
                             onClick={fetchMerchantPlans}
                             disabled={isPlansLoading}
-                            className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-white/55 transition hover:border-[#00d2b4]/30 hover:text-white disabled:opacity-50"
+                            className="rounded-xl border border-black/10 bg-black/5 px-4 py-2 text-[10px] font-semibold text-black/70 transition hover:border-black/20 hover:text-black disabled:opacity-50"
                         >
                             {isPlansLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Refresh"}
                         </button>
@@ -3185,17 +3162,17 @@ Please complete the following implementation tasks:
                     <form onSubmit={handleCreatePlan} className="space-y-4 font-sans text-xs">
                         <div className="grid gap-4 md:grid-cols-[1.3fr_0.8fr_0.8fr] md:items-end">
                             <div className="space-y-1">
-                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Plan Name</label>
+                                <label className="text-black/60 font-semibold text-[10px] tracking-wide">Plan Name</label>
                                 <input
                                     type="text"
                                     value={planName}
                                     onChange={(event) => setPlanName(event.target.value)}
                                     placeholder="Pro API Access"
-                                    className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white transition-colors focus:border-[#00d2b4] focus:outline-none"
+                                    className="w-full rounded-xl border border-black/15 bg-white px-4 py-3 text-black transition-colors focus:border-[#8AB4DB] focus:outline-none"
                                 />
                             </div>
                             <div className="space-y-1">
-                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">USDC Amount</label>
+                                <label className="text-black/60 font-semibold text-[10px] tracking-wide">USDC Amount</label>
                                 <input
                                     type="number"
                                     step="0.01"
@@ -3203,25 +3180,25 @@ Please complete the following implementation tasks:
                                     value={planAmountUsdc}
                                     onChange={(event) => setPlanAmountUsdc(event.target.value)}
                                     placeholder="29.00"
-                                    className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white transition-colors focus:border-[#00d2b4] focus:outline-none"
+                                    className="w-full rounded-xl border border-black/15 bg-white px-4 py-3 text-black transition-colors focus:border-[#8AB4DB] focus:outline-none"
                                 />
                             </div>
                             <div className="space-y-1">
-                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Period Days</label>
+                                <label className="text-black/60 font-semibold text-[10px] tracking-wide">Period Days</label>
                                 <input
                                     type="number"
                                     min="1"
                                     max="366"
                                     value={planPeriodDays}
                                     onChange={(event) => setPlanPeriodDays(event.target.value)}
-                                    className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white transition-colors focus:border-[#00d2b4] focus:outline-none"
+                                    className="w-full rounded-xl border border-black/15 bg-white px-4 py-3 text-black transition-colors focus:border-[#8AB4DB] focus:outline-none"
                                 />
                             </div>
                         </div>
 
                         <div className="space-y-1">
-                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">
-                                Minimum Commitment (days) <span className="normal-case text-white/25">(optional, disclosed to subscribers before they authorize; max one billing period, capped at 30 days)</span>
+                            <label className="text-black/60 font-semibold text-[10px] tracking-wide">
+                                Minimum Commitment (days) <span className="normal-case text-black/40">(optional, disclosed to subscribers before they authorize; max one billing period, capped at 30 days)</span>
                             </label>
                             <input
                                 type="number"
@@ -3230,16 +3207,16 @@ Please complete the following implementation tasks:
                                 value={planMinCommitmentDays}
                                 onChange={(event) => setPlanMinCommitmentDays(event.target.value)}
                                 placeholder="0 = no commitment"
-                                className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white transition-colors focus:border-[#00d2b4] focus:outline-none"
+                                className="w-full rounded-xl border border-black/15 bg-white px-4 py-3 text-black transition-colors focus:border-[#8AB4DB] focus:outline-none"
                             />
                         </div>
 
                         <div className="space-y-1">
                             <div className="flex items-center justify-between">
-                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">
-                                    Description <span className="normal-case text-white/25">(optional, shown to subscribers)</span>
+                                <label className="text-black/60 font-semibold text-[10px] tracking-wide">
+                                    Description <span className="normal-case text-black/40">(optional, shown to subscribers)</span>
                                 </label>
-                                <span className={`text-[9px] font-bold ${planDescription.length >= PLAN_DESCRIPTION_MAX ? "text-amber-400" : "text-white/30"}`}>
+                                <span className={`text-[9px] font-bold ${planDescription.length >= PLAN_DESCRIPTION_MAX ? "text-amber-500" : "text-black/40"}`}>
                                     {planDescription.length}/{PLAN_DESCRIPTION_MAX}
                                 </span>
                             </div>
@@ -3249,13 +3226,13 @@ Please complete the following implementation tasks:
                                 rows={3}
                                 maxLength={PLAN_DESCRIPTION_MAX}
                                 placeholder="What's included (features, usage limits, support level, billing terms…)"
-                                className="w-full resize-none rounded-xl border border-white/10 bg-black px-4 py-3 text-white transition-colors focus:border-[#00d2b4] focus:outline-none"
+                                className="w-full resize-none rounded-xl border border-black/15 bg-white px-4 py-3 text-black transition-colors focus:border-[#8AB4DB] focus:outline-none"
                             />
                         </div>
 
                         <div className="space-y-1">
-                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">
-                                Details Link <span className="normal-case text-white/25">(optional, &ldquo;view more&rdquo;)</span>
+                            <label className="text-black/60 font-semibold text-[10px] tracking-wide">
+                                Details Link <span className="normal-case text-black/40">(optional, &ldquo;view more&rdquo;)</span>
                             </label>
                             <input
                                 type="url"
@@ -3263,7 +3240,7 @@ Please complete the following implementation tasks:
                                 value={planDetailsUrl}
                                 onChange={(event) => setPlanDetailsUrl(event.target.value)}
                                 placeholder="https://yoursite.com/plans/pro"
-                                className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white transition-colors focus:border-[#00d2b4] focus:outline-none"
+                                className="w-full rounded-xl border border-black/15 bg-white px-4 py-3 text-black transition-colors focus:border-[#8AB4DB] focus:outline-none"
                             />
                         </div>
 
@@ -3271,25 +3248,25 @@ Please complete the following implementation tasks:
                             <button
                                 type="submit"
                                 disabled={isPlansLoading}
-                                className="rounded-xl bg-[#00d2b4] px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-black transition hover:bg-[#00d2b4]/85 disabled:opacity-50"
+                                className="rounded-full bg-[#8AB4DB] px-6 py-3 text-xs font-semibold text-[#082824] transition hover:bg-[#7aa7d0] disabled:opacity-50"
                             >
                                 {isPlansLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create"}
                             </button>
                         </div>
                     </form>
 
-                    {planError && <p className="text-[10px] font-bold text-red-400">{planError}</p>}
-                    {planSuccess && <p className="text-[10px] font-bold text-emerald-400">{planSuccess}</p>}
+                    {planError && <p className="text-[10px] font-bold text-red-500">{planError}</p>}
+                    {planSuccess && <p className="text-[10px] font-bold text-emerald-600">{planSuccess}</p>}
                 </div>
 
                 <div className="grid gap-5 md:grid-cols-2">
-                    <div className="liquid-glass min-w-0 overflow-hidden border border-white/5 rounded-3xl p-4 sm:p-6 shadow-2xl space-y-4">
+                    <div className="rounded-[34px] min-w-0 overflow-hidden border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black space-y-4">
                         <div className="flex items-center justify-between">
-                            <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Plans</h3>
-                            <span className="rounded-full border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-3 py-1 text-[10px] font-bold text-[#00d2b4]">{activePlans.length}</span>
+                            <h3 className="text-xs font-semibold text-black/80">Active Plans</h3>
+                            <span className="rounded-full border border-black/10 bg-[#D4E3E8] px-3 py-1 text-[10px] font-semibold text-[#082824]">{activePlans.length}</span>
                         </div>
                         {activePlans.length === 0 ? (
-                            <div className="rounded-2xl border border-dashed border-white/10 p-6 sm:p-8 text-center text-xs text-white/40">
+                            <div className="rounded-2xl border border-dashed border-black/10 p-6 sm:p-8 text-center text-xs text-black/40">
                                 No active plans yet. Create one above to get a shareable subscribe link.
                             </div>
                         ) : (
@@ -3301,10 +3278,10 @@ Please complete the following implementation tasks:
                         )}
                     </div>
 
-                    <div className="liquid-glass min-w-0 overflow-hidden border border-white/5 rounded-3xl p-4 sm:p-6 shadow-2xl space-y-4">
+                    <div className="rounded-[34px] min-w-0 overflow-hidden border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black space-y-4">
                         <div className="flex items-center justify-between">
-                            <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Inactive Plans</h3>
-                            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-bold text-white/45">{inactivePlans.length}</span>
+                            <h3 className="text-xs font-semibold text-black/80">Inactive Plans</h3>
+                            <span className="rounded-full border border-black/10 bg-black/5 px-3 py-1 text-[10px] font-semibold text-black/60">{inactivePlans.length}</span>
                         </div>
                         {inactivePlans.length === 0 ? (
                             <div className="rounded-2xl border border-dashed border-white/10 p-6 sm:p-8 text-center text-xs text-white/40">
@@ -3358,15 +3335,13 @@ Please complete the following implementation tasks:
                         <ChevronRight className="h-4 w-4 shrink-0 text-white/30" />
                     </Link>
                 )}
-
-                {/* Help & Support */}
-                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
+                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-4">
                     <div>
-                        <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                            <HelpCircle className="w-4 h-4 text-[#00d2b4]" />
+                        <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
+                            <HelpCircle className="w-4 h-4 text-[#082824]" />
                             Help &amp; Support
                         </h2>
-                        <p className="text-[11px] text-white/40 font-sans">
+                        <p className="text-[11px] text-black/60 font-sans">
                             Integration help, activation issues, billing questions, or security disclosures. Real
                             humans read every message.
                         </p>
@@ -3374,23 +3349,23 @@ Please complete the following implementation tasks:
                     <div className="grid gap-2 sm:grid-cols-3 font-sans text-xs">
                         <a
                             href="mailto:support@subscriptonarc.com"
-                            className="rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3 transition hover:border-[#00d2b4]/25 hover:bg-[#00d2b4]/5"
+                            className="rounded-2xl border border-black/10 bg-[#D4E3E8]/40 px-4 py-3 transition hover:bg-[#D4E3E8]"
                         >
-                            <span className="block text-[9px] font-black uppercase tracking-wider text-white/35">General support</span>
-                            <span className="mt-1 block break-all font-mono text-[10px] font-bold text-[#00d2b4]">support@subscriptonarc.com</span>
+                            <span className="block text-[9px] font-semibold uppercase tracking-wider text-black/50">General support</span>
+                            <span className="mt-1 block break-all font-mono text-[10px] font-bold text-[#082824]">support@subscriptonarc.com</span>
                         </a>
                         <a
                             href="mailto:compliance@subscriptonarc.com"
-                            className="rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3 transition hover:border-[#00d2b4]/25 hover:bg-[#00d2b4]/5"
+                            className="rounded-2xl border border-black/10 bg-[#D4E3E8]/40 px-4 py-3 transition hover:bg-[#D4E3E8]"
                         >
-                            <span className="block text-[9px] font-black uppercase tracking-wider text-white/35">Billing, legal &amp; security</span>
-                            <span className="mt-1 block break-all font-mono text-[10px] font-bold text-[#00d2b4]">compliance@subscriptonarc.com</span>
+                            <span className="block text-[9px] font-semibold uppercase tracking-wider text-black/50">Billing, legal &amp; security</span>
+                            <span className="mt-1 block break-all font-mono text-[10px] font-bold text-[#082824]">compliance@subscriptonarc.com</span>
                         </a>
                         <a
                             href="/support"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center justify-center rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/5 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-[#00d2b4] transition hover:bg-[#00d2b4]/10"
+                            className="flex items-center justify-center rounded-2xl border border-black/10 bg-[#D4E3E8] px-4 py-3 text-center text-[10px] font-semibold text-[#082824] transition hover:bg-[#D4E3E8]/80"
                         >
                             Open the Help Center
                         </a>
@@ -3398,13 +3373,13 @@ Please complete the following implementation tasks:
                 </div>
 
                 {/* Dunning / failed-renewal policy */}
-                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
+                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-4">
                     <div>
-                        <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                            <ArrowRightLeft className="w-4 h-4 text-[#00d2b4]" />
+                        <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
+                            <ArrowRightLeft className="w-4 h-4 text-[#082824]" />
                             Failed-Renewal Policy (Dunning)
                         </h2>
-                        <p className="text-[11px] text-white/40 font-sans">
+                        <p className="text-[11px] text-black/60 font-sans">
                             When a customer&apos;s renewal fails (insufficient balance), the keeper retries roughly
                             once a day. Choose how many attempts to make before the subscription is stopped and the
                             customer is notified. More attempts ≈ more days of grace.
@@ -3418,89 +3393,89 @@ Please complete the following implementation tasks:
                             step="1"
                             value={dunningMaxFailures}
                             onChange={(e) => setDunningMaxFailures(e.target.value)}
-                            className="w-full sm:w-32 bg-black border border-white/10 rounded-xl px-4 py-3 text-white text-xs focus:outline-none focus:border-[#00d2b4] transition-colors"
+                            className="w-full sm:w-32 bg-white border border-black/15 rounded-xl px-4 py-3 text-black text-xs focus:outline-none focus:border-[#8AB4DB] transition-colors"
                         />
                         <button
                             type="button"
                             onClick={handleSaveDunning}
                             disabled={dunningSaving}
-                            className="w-full sm:w-auto shrink-0 px-6 py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/80 disabled:opacity-50 text-black text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2"
+                            className="w-full sm:w-auto shrink-0 px-6 py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] disabled:opacity-50 text-[#082824] text-xs font-semibold rounded-full transition-all flex items-center justify-center gap-2"
                         >
                             {dunningSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                             Save
                         </button>
                         {dunningMessage && (
-                            <span className="text-[10px] text-white/50">{dunningMessage}</span>
+                            <span className="text-[10px] text-black/60">{dunningMessage}</span>
                         )}
                     </div>
                 </div>
 
                 {/* Profile & Identity Section */}
-                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6">
                     <div>
-                        <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                            <User className="w-4 h-4 text-[#00d2b4]" />
+                        <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
+                            <User className="w-4 h-4 text-[#082824]" />
                             Profile & Identity
                         </h2>
-                        <p className="text-[11px] text-white/40 font-sans">
+                        <p className="text-[11px] text-black/60 font-sans">
                             Manage your merchant identity, custom alias, and branding.
                         </p>
                     </div>
 
-                    <div className="flex flex-col md:flex-row items-start md:items-center gap-6 pb-6 border-b border-white/5">
+                    <div className="flex flex-col md:flex-row items-start md:items-center gap-6 pb-6 border-b border-black/10">
                         <div className="relative group shrink-0">
-                            <div className="w-20 h-20 rounded-full border-2 border-white/10 overflow-hidden bg-gradient-to-tr from-[#00d2b4]/20 to-purple-500/20 flex items-center justify-center text-[#00d2b4] shadow-lg relative">
+                            <div className="w-20 h-20 rounded-full border border-black/15 overflow-hidden bg-[#D4E3E8] flex items-center justify-center text-[#082824] relative">
                                 {userSettings.profilePic ? (
                                     <img src={userSettings.profilePic} alt="Merchant Avatar" className="w-full h-full object-cover" />
                                 ) : (
-                                    <User className="w-8 h-8 text-[#00d2b4]" />
+                                    <User className="w-8 h-8 text-[#082824]" />
                                 )}
                                 {uploadingPic && (
-                                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                                        <Loader2 className="w-5 h-5 animate-spin text-[#00d2b4]" />
+                                    <div className="absolute inset-0 bg-white/80 flex items-center justify-center">
+                                        <Loader2 className="w-5 h-5 animate-spin text-[#082824]" />
                                     </div>
                                 )}
                             </div>
-                            <label className="absolute -bottom-1 -right-1 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black p-1.5 rounded-full cursor-pointer shadow-md hover:scale-105 active:scale-95 transition-all">
+                            <label className="absolute -bottom-1 -right-1 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] p-1.5 rounded-full cursor-pointer shadow-sm hover:scale-105 active:scale-95 transition-all">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                                 <input type="file" accept="image/*" onChange={handleProfilePicUpload} disabled={uploadingPic} className="hidden" />
                             </label>
                         </div>
 
                         <div className="flex-1 space-y-1">
-                            <h3 className="text-sm font-bold text-white uppercase tracking-wider">Merchant Profile Photo</h3>
-                            <p className="text-[10px] text-white/40 leading-relaxed font-sans max-w-sm">
+                            <h3 className="text-sm font-semibold text-black">Merchant Profile Photo</h3>
+                            <p className="text-[10px] text-black/60 leading-relaxed font-sans max-w-sm">
                                 Upload a brand logo or profile picture. JPG/PNG, maximum 2MB size limit.
                             </p>
-                            {uploadError && <p className="text-[10px] text-red-400 mt-1 font-sans">{uploadError}</p>}
+                            {uploadError && <p className="text-[10px] text-red-500 mt-1 font-sans">{uploadError}</p>}
                         </div>
                     </div>
 
                     {/* SubScript DNS Registration */}
-                    <div className="space-y-4 pt-4 border-t border-white/5">
-                        <h3 className="text-xs font-bold text-white uppercase tracking-wider">SubScript DNS Registration (Business Name)</h3>
-                        <p className="text-[10px] leading-relaxed text-amber-300/80 rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 font-sans">
+                    <div className="space-y-4 pt-4 border-t border-black/10">
+                        <h3 className="text-xs font-semibold text-black">SubScript DNS Registration (Business Name)</h3>
+                        <p className="text-[10px] leading-relaxed text-amber-900 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 font-sans">
                             {merchantAliasNextChange
                                 ? <>Your DNS name is locked until <strong>{new Date(merchantAliasNextChange).toLocaleDateString()}</strong>. You can change it again then. Business names cannot be unregistered.</>
                                 : <>Heads up: a DNS name can only be changed <strong>once every 365 days</strong>. Choose carefully, because after a change you won't be able to switch again for a year.</>}
                         </p>
                         {userSettings.alias ? (
-                            <div className="p-4 rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/5 flex items-center justify-between">
+                            <div className="p-4 rounded-2xl border border-black/10 bg-[#D4E3E8] flex items-center justify-between">
                                 <div>
-                                    <p className="text-[9px] uppercase tracking-wider font-bold text-[#00d2b4]/70">Registered Alias</p>
-                                    <h4 className="font-mono text-lg font-bold text-[#00d2b4] mt-1">{userSettings.alias}</h4>
+                                    <p className="text-[9px] uppercase tracking-wider font-semibold text-black/60">Registered Alias</p>
+                                    <h4 className="font-mono text-lg font-bold text-[#082824] mt-1">{userSettings.alias}</h4>
                                 </div>
-                                <span className="px-3 py-1.5 border border-white/10 text-white/40 text-[10px] font-bold uppercase tracking-wider rounded-xl select-none">
+                                <span className="px-3 py-1.5 border border-black/15 bg-white text-black/70 text-[10px] font-semibold rounded-full select-none">
                                     Permanent
                                 </span>
                             </div>
                         ) : dnsConfirmPending ? (
-                            <div className="p-5 rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/[0.04] space-y-4">
+                            <div className="p-5 rounded-2xl border border-black/10 bg-[#EFE2AC] space-y-4">
                                 <div>
-                                    <p className="text-[9px] uppercase tracking-wider font-bold text-[#ccff00]/70">Confirm DNS name</p>
-                                    <h4 className="font-mono text-lg font-bold text-[#ccff00] mt-1">{dnsConfirmPending}</h4>
+                                    <p className="text-[9px] uppercase tracking-wider font-semibold text-black/60">Confirm DNS name</p>
+                                    <h4 className="font-mono text-lg font-bold text-[#082824] mt-1">{dnsConfirmPending}</h4>
                                 </div>
-                                <p className="text-[10px] leading-relaxed text-amber-300/80">
+                                <p className="text-[10px] leading-relaxed text-black/70">
                                     This is locked for <strong>365 days</strong> once registered. Make sure it's right.
                                 </p>
                                 <div className="flex gap-2">
@@ -3508,7 +3483,7 @@ Please complete the following implementation tasks:
                                         type="button"
                                         onClick={() => setDnsConfirmPending(null)}
                                         disabled={dnsLoading}
-                                        className="flex-1 py-2.5 border border-white/10 hover:bg-white/5 text-white/70 text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all"
+                                        className="flex-1 py-2.5 border border-black/15 bg-white hover:bg-black/5 text-black/70 text-[10px] font-semibold rounded-full transition-all"
                                     >
                                         Cancel
                                     </button>
@@ -3516,7 +3491,7 @@ Please complete the following implementation tasks:
                                         type="button"
                                         onClick={confirmDnsRegistration}
                                         disabled={dnsLoading}
-                                        className="flex-1 py-2.5 bg-[#ccff00] hover:bg-[#ccff00]/85 text-black text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2"
+                                        className="flex-1 py-2.5 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] text-[10px] font-semibold rounded-full transition-all flex items-center justify-center gap-2"
                                     >
                                         {dnsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirm & Register"}
                                     </button>
@@ -3525,7 +3500,7 @@ Please complete the following implementation tasks:
                         ) : (
                             <form onSubmit={handleRegisterDns} className="space-y-3 font-sans text-xs">
                                 <div className="space-y-1">
-                                    <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Domain Alias</label>
+                                    <label className="text-black/60 font-semibold text-[10px] tracking-wide">Domain Alias</label>
                                     <div className="flex gap-2">
                                         <div className="relative flex-1">
                                             <input
@@ -3533,92 +3508,87 @@ Please complete the following implementation tasks:
                                                 value={dnsDomain}
                                                 onChange={(e) => setDnsDomain(e.target.value)}
                                                 placeholder="my-company"
-                                                className="w-full bg-white/[0.02] border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-[#00d2b4]/40 font-mono"
+                                                className="w-full bg-white border border-black/15 rounded-xl px-4 py-2.5 text-black focus:outline-none focus:border-[#8AB4DB] font-mono"
                                                 required
                                             />
                                             <div className="absolute right-3 top-2.5 flex gap-1">
                                                 <select
                                                     value={dnsSuffix}
                                                     onChange={(e) => setDnsSuffix(e.target.value)}
-                                                    className="bg-transparent text-white/50 text-xs font-bold border-none focus:outline-none cursor-pointer"
+                                                    className="bg-transparent text-black/60 text-xs font-bold border-none focus:outline-none cursor-pointer"
                                                 >
-                                                    <option value=".hq" className="bg-[#111111] text-white">.hq</option>
-                                                    <option value=".biz" className="bg-[#111111] text-white">.biz</option>
+                                                    <option value=".hq" className="bg-white text-black">.hq</option>
+                                                    <option value=".biz" className="bg-white text-black">.biz</option>
                                                 </select>
                                             </div>
                                         </div>
                                         <button
                                             type="submit"
                                             disabled={dnsLoading}
-                                            className="px-6 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-bold uppercase tracking-wider rounded-xl transition-all"
+                                            className="px-6 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] font-semibold rounded-full transition-all"
                                         >
                                             {dnsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Register"}
                                         </button>
                                     </div>
-                                    <p className="text-[9px] text-white/35">
+                                    <p className="text-[10px] text-black/50">
                                         Enterprise custom namespaces allow customers to identify your business link securely.
                                     </p>
                                 </div>
                             </form>
                         )}
-                        {dnsError && <p className="text-[10px] text-red-400">{dnsError}</p>}
-                        {dnsSuccess && <p className="text-[10px] text-emerald-400">{dnsSuccess}</p>}
+                        {dnsError && <p className="text-[10px] text-red-500">{dnsError}</p>}
+                        {dnsSuccess && <p className="text-[10px] text-emerald-600">{dnsSuccess}</p>}
                     </div>
 
-                    {/* Verification tier and plan are independent tracks: KYC is a trust badge,
-                        the plan gates product features. Each card always reflects the real DB
-                        state, so a Premium-but-unverified merchant sees both facts correctly. */}
-                    <div className="space-y-4 pt-4 border-t border-white/5">
-                        <h3 className="text-xs font-bold text-white uppercase tracking-wider">Verification & Plan</h3>
-                        <p className="text-[10px] text-white/40 leading-relaxed font-sans max-w-sm">
+                    <div className="space-y-4 pt-4 border-t border-black/10">
+                        <h3 className="text-xs font-semibold text-black">Verification & Plan</h3>
+                        <p className="text-[10px] text-black/60 leading-relaxed font-sans max-w-sm">
                             Verification (KYC) adds a public trust badge. Your plan controls which product features are unlocked. They are independent, so you can hold either without the other.
                         </p>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {/* KYC track */}
-                            <div className={`p-4 rounded-2xl border ${userSettings.verified ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5'} space-y-2`}>
+                            <div className={`p-4 rounded-2xl border ${userSettings.verified ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'} space-y-2`}>
                                 <div className="flex items-center justify-between">
-                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">KYC Tier</h4>
-                                    <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold ${userSettings.verified ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-black">KYC Tier</h4>
+                                    <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${userSettings.verified ? 'bg-emerald-500/20 text-emerald-800' : 'bg-amber-500/20 text-amber-800'}`}>
                                         {userSettings.verified ? 'Verified' : 'Unverified'}
                                     </span>
                                 </div>
-                                <ul className="space-y-1 text-[9px] text-white/50 leading-relaxed font-sans">
+                                <ul className="space-y-1 text-[10px] text-black/70 leading-relaxed font-sans">
                                     {userSettings.verified ? (
                                         <>
-                                            <li className="flex items-center gap-1 text-emerald-400">✓ Verified badge on your public profile</li>
-                                            <li className="flex items-center gap-1 text-emerald-400">✓ Customers can commit without a risk warning</li>
-                                            <li className="flex items-center gap-1 text-emerald-400">✓ Ready for regulated rails as they launch</li>
+                                            <li className="flex items-center gap-1 text-emerald-700">✓ Verified badge on your public profile</li>
+                                            <li className="flex items-center gap-1 text-emerald-700">✓ Customers can commit without a risk warning</li>
+                                            <li className="flex items-center gap-1 text-emerald-700">✓ Ready for regulated rails as they launch</li>
                                         </>
                                     ) : (
                                         <>
-                                            <li className="flex items-center gap-1 text-white/60">• Public profile shows unverified</li>
-                                            <li className="flex items-center gap-1 text-white/60">• Customers see a warning before committing funds</li>
-                                            <li className="flex items-center gap-1 text-white/60">• Complete business verification below to upgrade</li>
+                                            <li className="flex items-center gap-1 text-black/60">• Public profile shows unverified</li>
+                                            <li className="flex items-center gap-1 text-black/60">• Customers see a warning before committing funds</li>
+                                            <li className="flex items-center gap-1 text-black/60">• Complete business verification below to upgrade</li>
                                         </>
                                     )}
                                 </ul>
                             </div>
 
-                            {/* Plan track */}
-                            <div className={`p-4 rounded-2xl border ${userSettings.tier === 'PREMIUM' ? 'border-purple-500/30 bg-purple-500/5' : 'border-white/5 bg-white/[0.02]'} space-y-2`}>
+                            <div className={`p-4 rounded-2xl border ${userSettings.tier === 'PREMIUM' ? 'border-[#8AB4DB]/40 bg-[#D4E3E8]' : 'border-black/10 bg-black/[0.02]'} space-y-2`}>
                                 <div className="flex items-center justify-between">
-                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">Plan</h4>
-                                    <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold ${userSettings.tier === 'PREMIUM' ? 'bg-purple-500/20 text-purple-300' : 'bg-white/10 text-white/60'}`}>
+                                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-black">Plan</h4>
+                                    <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${userSettings.tier === 'PREMIUM' ? 'bg-[#8AB4DB] text-[#082824]' : 'bg-black/10 text-black/70'}`}>
                                         {userSettings.tier === 'PREMIUM' ? 'Premium' : 'Free'}
                                     </span>
                                 </div>
-                                <ul className="space-y-1 text-[9px] text-white/50 leading-relaxed font-sans">
-                                    <li className="flex items-center gap-1 text-emerald-400">✓ Create unlimited payment links</li>
-                                    <li className={`flex items-center gap-1 ${userSettings.tier === 'PREMIUM' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                <ul className="space-y-1 text-[10px] text-black/70 leading-relaxed font-sans">
+                                    <li className="flex items-center gap-1 text-emerald-700">✓ Create unlimited payment links</li>
+                                    <li className={`flex items-center gap-1 ${userSettings.tier === 'PREMIUM' ? 'text-emerald-700' : 'text-red-500'}`}>
                                         {userSettings.tier === 'PREMIUM' ? '✓' : '✗'} API Keys &amp; Webhook endpoints
                                     </li>
-                                    <li className={`flex items-center gap-1 ${userSettings.tier === 'PREMIUM' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    <li className={`flex items-center gap-1 ${userSettings.tier === 'PREMIUM' ? 'text-emerald-700' : 'text-red-500'}`}>
                                         {userSettings.tier === 'PREMIUM' ? '✓' : '✗'} Customer commitment vaults
                                     </li>
                                 </ul>
                                 {userSettings.tier !== 'PREMIUM' && (
-                                    <p className="text-[8px] text-white/40 italic pt-1 font-sans">Upgrade plan under the "Premium" tab.</p>
+                                    <p className="text-[9px] text-black/50 italic pt-1 font-sans">Upgrade plan under the "Premium" tab.</p>
                                 )}
                             </div>
                         </div>
@@ -3630,37 +3600,37 @@ Please complete the following implementation tasks:
 
                 {/* Wallet Recovery & Backup */}
                 {userSettings.walletBackup?.available && (
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-5">
+                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-5">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div>
-                                <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                                    <Lock className="w-4 h-4 text-[#00d2b4]" />
+                                <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
+                                    <Lock className="w-4 h-4 text-[#082824]" />
                                     Wallet Recovery & Backup
                                 </h2>
-                                <p className="text-[11px] text-white/40 font-sans leading-relaxed max-w-xl">
+                                <p className="text-[11px] text-black/60 font-sans leading-relaxed max-w-xl">
                                     Export the private key for your email-created merchant wallet after email verification.
-                                    Importing this key into a wallet app lets you use <strong className="text-white/65">Sign in with Wallet</strong> and
+                                    Importing this key into a wallet app lets you use <strong className="text-black/80">Sign in with Wallet</strong> and
                                     opens this same merchant account.
                                 </p>
                             </div>
-                            <span className="self-start rounded-full border border-[#00d2b4]/25 bg-[#00d2b4]/10 px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-[#00d2b4]">
+                            <span className="self-start rounded-full border border-black/10 bg-[#D4E3E8] px-3 py-1 text-[9px] font-semibold text-[#082824]">
                                 Exportable
                             </span>
                         </div>
 
                         {merchantExportedPrivateKey && (
-                            <div className="space-y-3 rounded-2xl border border-amber-400/20 bg-amber-400/[0.04] p-4">
-                                <p className="text-[10px] font-bold text-amber-200">
+                            <div className="space-y-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
+                                <p className="text-[10px] font-bold text-amber-900">
                                     Keep this secret offline. SubScript will never ask you to paste it into the app.
                                 </p>
-                                <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/50 px-3 py-2.5">
-                                    <code className="min-w-0 flex-1 truncate text-[10px] text-white/75">
+                                <div className="flex items-center gap-2 rounded-xl border border-black/15 bg-white px-3 py-2.5">
+                                    <code className="min-w-0 flex-1 truncate text-[10px] text-black/80">
                                         {merchantPrivateKeyVisible ? merchantExportedPrivateKey : "••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"}
                                     </code>
                                     <button
                                         type="button"
                                         onClick={() => setMerchantPrivateKeyVisible((visible) => !visible)}
-                                        className="p-1.5 text-white/45 hover:text-white"
+                                        className="p-1.5 text-black/40 hover:text-black"
                                         aria-label={merchantPrivateKeyVisible ? "Hide private key" : "Show private key"}
                                     >
                                         {merchantPrivateKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -3668,17 +3638,17 @@ Please complete the following implementation tasks:
                                     <button
                                         type="button"
                                         onClick={() => handleCopy(merchantExportedPrivateKey, "Merchant Wallet Private Key")}
-                                        className="p-1.5 text-white/45 hover:text-white"
+                                        className="p-1.5 text-black/40 hover:text-black"
                                         aria-label="Copy private key"
                                     >
                                         {copiedText === "Merchant Wallet Private Key"
-                                            ? <Check className="h-4 w-4 text-[#00d2b4]" />
+                                            ? <Check className="h-4 w-4 text-[#082824]" />
                                             : <Copy className="h-4 w-4" />}
                                     </button>
                                     <button
                                         type="button"
                                         onClick={downloadMerchantWalletBackup}
-                                        className="p-1.5 text-white/45 hover:text-white"
+                                        className="p-1.5 text-black/40 hover:text-black"
                                         aria-label="Download private key backup"
                                     >
                                         <ArrowDownToLine className="h-4 w-4" />
@@ -3688,12 +3658,12 @@ Please complete the following implementation tasks:
                         )}
 
                         {merchantWalletBackupError && (
-                            <p className="text-[11px] text-red-300">{merchantWalletBackupError}</p>
+                            <p className="text-[11px] text-red-500">{merchantWalletBackupError}</p>
                         )}
 
                         {merchantExportOtpStage ? (
                             <div className="space-y-3">
-                                <p className="text-[10px] text-white/45">
+                                <p className="text-[10px] text-black/60">
                                     Enter the 6-digit code sent to {userSettings.walletBackup.email}.
                                 </p>
                                 <input
@@ -3704,14 +3674,14 @@ Please complete the following implementation tasks:
                                     value={merchantExportOtpCode}
                                     onChange={(event) => setMerchantExportOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
                                     placeholder="000000"
-                                    className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-3 text-center font-mono text-lg tracking-[0.4em] text-white placeholder:text-white/20 focus:border-[#00d2b4]/50 focus:outline-none"
+                                    className="w-full rounded-2xl border border-black/15 bg-white px-3 py-3 text-center font-mono text-lg tracking-[0.4em] text-black placeholder:text-black/30 focus:border-[#8AB4DB] focus:outline-none"
                                 />
                                 <div className="grid gap-2 sm:grid-cols-2">
                                     <button
                                         type="button"
                                         onClick={handleMerchantWalletExport}
                                         disabled={merchantWalletBackupLoading || merchantExportOtpCode.length !== 6}
-                                        className="w-full rounded-2xl border border-[#00d2b4]/30 bg-[#00d2b4]/10 py-3 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#00d2b4]/20 disabled:cursor-not-allowed disabled:opacity-50"
+                                        className="w-full rounded-full bg-[#8AB4DB] hover:bg-[#7aa7d0] py-3 text-xs font-semibold text-[#082824] transition disabled:cursor-not-allowed disabled:opacity-50"
                                     >
                                         {merchantWalletBackupLoading ? "Unlocking…" : "Confirm & Reveal"}
                                     </button>
@@ -3723,7 +3693,7 @@ Please complete the following implementation tasks:
                                             setMerchantWalletBackupError(null);
                                         }}
                                         disabled={merchantWalletBackupLoading}
-                                        className="w-full rounded-2xl border border-white/10 bg-white/5 py-3 text-xs font-black uppercase tracking-[0.14em] text-white/65 transition hover:bg-white/10 disabled:opacity-50"
+                                        className="w-full rounded-full border border-black/15 bg-white hover:bg-black/5 py-3 text-xs font-semibold text-black/70 transition disabled:opacity-50"
                                     >
                                         Cancel
                                     </button>
@@ -3734,7 +3704,7 @@ Please complete the following implementation tasks:
                                 type="button"
                                 onClick={requestMerchantExportOtp}
                                 disabled={merchantExportOtpSending}
-                                className="w-full rounded-2xl border border-[#00d2b4]/30 bg-[#00d2b4]/10 py-3.5 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#00d2b4]/20 disabled:cursor-not-allowed disabled:opacity-50"
+                                className="w-full rounded-full bg-[#8AB4DB] hover:bg-[#7aa7d0] py-3.5 text-xs font-semibold text-[#082824] transition disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 {merchantExportOtpSending ? "Sending verification code…" : "Verify email & export wallet"}
                             </button>
@@ -3743,34 +3713,34 @@ Please complete the following implementation tasks:
                 )}
 
                 {/* Payout & Settlement Wallet Section */}
-                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6">
                     <div>
-                        <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                            <Wallet className="w-4 h-4 text-[#00d2b4]" />
+                        <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
+                            <Wallet className="w-4 h-4 text-[#082824]" />
                             Payout Destination
                         </h2>
-                        <p className="text-[11px] text-white/40 font-sans">
+                        <p className="text-[11px] text-black/60 font-sans">
                             Save the default wallet offered during settlement withdrawals. Changing this setting does not move funds.
                         </p>
                     </div>
 
                     <div className="space-y-4 font-sans text-xs">
                         <div className="space-y-1">
-                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Payout Destination Address</label>
+                            <label className="text-black/60 font-semibold text-[10px] tracking-wide">Payout Destination Address</label>
                             <div className="flex gap-2">
                                 <input
                                     type="text"
                                     value={payoutDestinationDraft}
                                     placeholder="0x..."
                                     onChange={(e) => { setPayoutDestinationDraft(e.target.value); setPayoutDestinationError(null); }}
-                                    className="flex-1 bg-white/[0.02] border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-[#00d2b4]/40 font-mono"
+                                    className="flex-1 bg-white border border-black/15 rounded-xl px-4 py-2.5 text-black focus:outline-none focus:border-[#8AB4DB] font-mono"
                                 />
-                                <button type="button" onClick={() => handleUpdatePayoutDestination(payoutDestinationDraft)} disabled={savingSettingsField === "payoutDestination" || payoutDestinationDraft.trim() === (userSettings.payoutDestination || "")} className="rounded-xl bg-[#00d2b4] px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-black disabled:cursor-not-allowed disabled:opacity-40">{savingSettingsField === "payoutDestination" ? "Saving…" : "Review & save"}</button>
+                                <button type="button" onClick={() => handleUpdatePayoutDestination(payoutDestinationDraft)} disabled={savingSettingsField === "payoutDestination" || payoutDestinationDraft.trim() === (userSettings.payoutDestination || "")} className="rounded-full bg-[#8AB4DB] hover:bg-[#7aa7d0] px-5 py-2.5 text-xs font-semibold text-[#082824] disabled:cursor-not-allowed disabled:opacity-40">{savingSettingsField === "payoutDestination" ? "Saving…" : "Review & save"}</button>
                             </div>
-                            <p className="text-[9px] text-white/45">
+                            <p className="text-[10px] text-black/50">
                                 Enter a valid EVM address. You will still review the destination before each withdrawal.
                             </p>
-                            {payoutDestinationError && <p className="text-[10px] text-red-300" role="alert">{payoutDestinationError}</p>}
+                            {payoutDestinationError && <p className="text-[10px] text-red-500" role="alert">{payoutDestinationError}</p>}
                         </div>
                     </div>
                 </div>
@@ -3778,84 +3748,84 @@ Please complete the following implementation tasks:
                 {/* Preferences Section */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Notification Preferences */}
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6">
                         <div>
-                            <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                                <Sliders className="w-4 h-4 text-[#00d2b4]" />
+                            <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
+                                <Sliders className="w-4 h-4 text-[#082824]" />
                                 Notifications
                             </h2>
-                            <p className="text-[11px] text-white/40 font-sans">
+                            <p className="text-[11px] text-black/60 font-sans">
                                 Set up real-time alert preferences.
                             </p>
                         </div>
 
                         <div className="space-y-4 font-sans text-xs">
-                            <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
+                            <div className="flex items-center justify-between opacity-50 select-none cursor-not-allowed">
                                 <div className="space-y-0.5">
-                                    <p className="text-white font-bold flex items-center gap-1.5">Push Notifications <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
-                                    <p className="text-[9px] text-white/40">Merchant inbox alerts are not live yet</p>
+                                    <p className="text-black font-semibold flex items-center gap-1.5">Push Notifications <span className="text-[8px] bg-black/5 text-black/60 px-1.5 py-0.5 rounded font-bold uppercase">Soon</span></p>
+                                    <p className="text-[10px] text-black/50">Merchant inbox alerts are not live yet</p>
                                 </div>
                                 <button
                                     onClick={() => {}}
                                     disabled={true}
-                                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-white/5 opacity-50"
+                                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-black/10 opacity-50"
                                 >
-                                    <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white/20 shadow translate-x-0" />
+                                    <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black/30 shadow translate-x-0" />
                                 </button>
                             </div>
 
-                            <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
+                            <div className="flex items-center justify-between opacity-50 select-none cursor-not-allowed">
                                 <div className="space-y-0.5">
-                                    <p className="text-white font-bold flex items-center gap-1.5">Email Alerts <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
-                                    <p className="text-[9px] text-white/40">Get payout summaries by email</p>
+                                    <p className="text-black font-semibold flex items-center gap-1.5">Email Alerts <span className="text-[8px] bg-black/5 text-black/60 px-1.5 py-0.5 rounded font-bold uppercase">Soon</span></p>
+                                    <p className="text-[10px] text-black/50">Get payout summaries by email</p>
                                 </div>
                                 <button
                                     onClick={() => {}}
                                     disabled={true}
-                                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-white/5 opacity-50"
+                                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-black/10 opacity-50"
                                 >
-                                    <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white/20 shadow translate-x-0" />
+                                    <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black/30 shadow translate-x-0" />
                                 </button>
                             </div>
 
-                            <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
+                            <div className="flex items-center justify-between opacity-50 select-none cursor-not-allowed">
                                 <div className="space-y-0.5">
-                                    <p className="text-white font-bold flex items-center gap-1.5">Payout Alerts <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
-                                    <p className="text-[9px] text-white/40">You&apos;ll get payout alerts in your inbox once payments start coming in</p>
+                                    <p className="text-black font-semibold flex items-center gap-1.5">Payout Alerts <span className="text-[8px] bg-black/5 text-black/60 px-1.5 py-0.5 rounded font-bold uppercase">Soon</span></p>
+                                    <p className="text-[10px] text-black/50">You&apos;ll get payout alerts in your inbox once payments start coming in</p>
                                 </div>
                                 <button
                                     onClick={() => {}}
                                     disabled={true}
-                                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-white/5 opacity-50"
+                                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-black/10 opacity-50"
                                 >
-                                    <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white/20 shadow translate-x-0" />
+                                    <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black/30 shadow translate-x-0" />
                                 </button>
                             </div>
 
-                            <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
+                            <div className="flex items-center justify-between opacity-50 select-none cursor-not-allowed">
                                 <div className="space-y-0.5">
-                                    <p className="text-white font-bold flex items-center gap-1.5">Client Disputes <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
-                                    <p className="text-[9px] text-white/40">Receive immediate alerts on cancel or payment failure events</p>
+                                    <p className="text-black font-semibold flex items-center gap-1.5">Client Disputes <span className="text-[8px] bg-black/5 text-black/60 px-1.5 py-0.5 rounded font-bold uppercase">Soon</span></p>
+                                    <p className="text-[10px] text-black/50">Receive immediate alerts on cancel or payment failure events</p>
                                 </div>
                                 <button
                                     onClick={() => {}}
                                     disabled={true}
-                                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-white/5 opacity-50"
+                                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-black/10 opacity-50"
                                 >
-                                    <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white/20 shadow translate-x-0" />
+                                    <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black/30 shadow translate-x-0" />
                                 </button>
                             </div>
                         </div>
                     </div>
 
                     {/* Exit Survey — merchant-defined cancellation question (SUB-501) */}
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6">
                         <div>
-                            <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                                <MessageSquare className="w-4 h-4 text-[#00d2b4]" />
+                            <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
+                                <MessageSquare className="w-4 h-4 text-[#082824]" />
                                 Exit Survey
                             </h2>
-                            <p className="text-[11px] text-white/40 font-sans">
+                            <p className="text-[11px] text-black/60 font-sans">
                                 Ask cancelling customers your own question. Leave blank to use the default prompt.
                             </p>
                         </div>
@@ -3867,15 +3837,15 @@ Please complete the following implementation tasks:
                                 maxLength={280}
                                 rows={3}
                                 placeholder="e.g. What could we have done to keep you subscribed?"
-                                className="w-full resize-none rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-xs text-white placeholder:text-white/30 focus:border-[#00d2b4]/50 focus:outline-none"
+                                className="w-full resize-none rounded-2xl border border-black/15 bg-white px-4 py-3 text-xs text-black placeholder:text-black/30 focus:border-[#8AB4DB] focus:outline-none"
                             />
                             <div className="flex items-center justify-between">
-                                <span className="text-[9px] text-white/30 uppercase tracking-wider">{churnQuestionDraft.length}/280</span>
+                                <span className="text-[9px] text-black/40">{churnQuestionDraft.length}/280</span>
                                 <button
                                     type="button"
                                     onClick={() => handleUpdateChurnSurveyQuestion(churnQuestionDraft)}
                                     disabled={savingSettingsField === "churnSurveyQuestion" || (churnQuestionDraft.trim() === (userSettings?.churnSurveyQuestion || ""))}
-                                    className="px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-full bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white hover:bg-[#00d2b4]/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                    className="px-5 py-2 text-xs font-semibold rounded-full bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                                 >
                                     {savingSettingsField === "churnSurveyQuestion" ? "Saving..." : "Save question"}
                                 </button>
@@ -3884,29 +3854,29 @@ Please complete the following implementation tasks:
                     </div>
 
                     {/* Security Toggles */}
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6">
                         <div>
-                            <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                                <Lock className="w-4 h-4 text-[#00d2b4]" />
+                            <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
+                                <Lock className="w-4 h-4 text-[#082824]" />
                                 Security Settings
                             </h2>
-                            <p className="text-[11px] text-white/40 font-sans">
+                            <p className="text-[11px] text-black/60 font-sans">
                                 Configure merchant authorization preferences.
                             </p>
                         </div>
 
                         <div className="space-y-4 font-sans text-xs">
-                            <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
+                            <div className="flex items-center justify-between opacity-50 select-none cursor-not-allowed">
                                 <div className="space-y-0.5">
-                                    <p className="text-white font-bold flex items-center gap-1.5">Multi-Sig Payout Verification <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
-                                    <p className="text-[9px] text-white/40">Require secondary signature verification for payouts</p>
+                                    <p className="text-black font-semibold flex items-center gap-1.5">Multi-Sig Payout Verification <span className="text-[8px] bg-black/5 text-black/60 px-1.5 py-0.5 rounded font-bold uppercase">Soon</span></p>
+                                    <p className="text-[10px] text-black/50">Require secondary signature verification for payouts</p>
                                 </div>
                                 <button
                                     onClick={() => {}}
                                     disabled={true}
-                                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-white/5 opacity-50"
+                                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-black/10 opacity-50"
                                 >
-                                    <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white/20 shadow translate-x-0" />
+                                    <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black/30 shadow translate-x-0" />
                                 </button>
                             </div>
                         </div>
@@ -3987,39 +3957,39 @@ Please complete the following implementation tasks:
                     });
 
                     return (
-                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6">
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                 <div>
-                                    <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                                        <Activity className="w-4 h-4 text-[#00d2b4]" />
+                                    <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
+                                        <Activity className="w-4 h-4 text-[#082824]" />
                                         Transaction History Logs
                                     </h2>
-                                    <p className="text-[11px] text-white/40 font-sans">
+                                    <p className="text-[11px] text-black/60 font-sans">
                                         Review recent transactions and payments.
                                     </p>
                                 </div>
-                                <span className="text-[10px] font-mono font-semibold text-white/40">
+                                <span className="text-[10px] font-mono font-semibold text-black/50">
                                     Showing {filteredSettingsTx.length} of {settingsTransactions.length}
                                 </span>
                             </div>
 
                             {/* Customizable Filter Control Bar */}
-                            <div className="space-y-3 p-4 rounded-2xl bg-white/[0.02] border border-white/5 font-sans">
+                            <div className="space-y-3 p-4 rounded-2xl bg-[#D4E3E8]/40 border border-black/10 font-sans">
                                 <div className="flex flex-wrap items-center gap-3">
                                     {/* Search Input */}
                                     <div className="relative flex-1 min-w-[200px]">
-                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/40" />
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-black/40" />
                                         <input
                                             type="text"
                                             value={settingsTxSearch}
                                             onChange={(e) => setSettingsTxSearch(e.target.value)}
                                             placeholder="Search name, receipt ID, memo..."
-                                            className="w-full bg-white/[0.04] border border-white/10 rounded-xl pl-9 pr-8 py-1.5 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[#00d2b4]/50"
+                                            className="w-full bg-white border border-black/15 rounded-xl pl-9 pr-8 py-1.5 text-xs text-black placeholder-black/40 focus:outline-none focus:border-[#8AB4DB]"
                                         />
                                         {settingsTxSearch && (
                                             <button
                                                 onClick={() => setSettingsTxSearch("")}
-                                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white text-xs"
+                                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-black/40 hover:text-black text-xs"
                                             >
                                                 ✕
                                             </button>
@@ -4030,27 +4000,27 @@ Please complete the following implementation tasks:
                                     <select
                                         value={settingsTxCategory}
                                         onChange={(e) => setSettingsTxCategory(e.target.value)}
-                                        className="bg-white/[0.04] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white/90 focus:outline-none focus:border-[#00d2b4]/50"
+                                        className="bg-white border border-black/15 rounded-xl px-3 py-1.5 text-xs text-black focus:outline-none focus:border-[#8AB4DB]"
                                     >
-                                        <option value="all" className="bg-[#121212] text-white">All Categories</option>
-                                        <option value="subscriptions" className="bg-[#121212] text-white">Subscriptions</option>
-                                        <option value="one-time" className="bg-[#121212] text-white">One Time</option>
-                                        <option value="transfers" className="bg-[#121212] text-white">Transfers</option>
-                                        <option value="withdrawals" className="bg-[#121212] text-white">Withdrawals</option>
-                                        <option value="sent" className="bg-[#121212] text-white">Sent (Debit)</option>
-                                        <option value="received" className="bg-[#121212] text-white">Received (Credit)</option>
+                                        <option value="all">All Categories</option>
+                                        <option value="subscriptions">Subscriptions</option>
+                                        <option value="one-time">One Time</option>
+                                        <option value="transfers">Transfers</option>
+                                        <option value="withdrawals">Withdrawals</option>
+                                        <option value="sent">Sent (Debit)</option>
+                                        <option value="received">Received (Credit)</option>
                                     </select>
 
                                     {/* Status Selector */}
                                     <select
                                         value={settingsTxStatus}
                                         onChange={(e) => setSettingsTxStatus(e.target.value)}
-                                        className="bg-white/[0.04] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white/90 focus:outline-none focus:border-[#00d2b4]/50"
+                                        className="bg-white border border-black/15 rounded-xl px-3 py-1.5 text-xs text-black focus:outline-none focus:border-[#8AB4DB]"
                                     >
-                                        <option value="all" className="bg-[#121212] text-white">All Statuses</option>
-                                        <option value="CONFIRMED" className="bg-[#121212] text-white">Confirmed</option>
-                                        <option value="PENDING" className="bg-[#121212] text-white">Pending</option>
-                                        <option value="FAILED" className="bg-[#121212] text-white">Failed</option>
+                                        <option value="all">All Statuses</option>
+                                        <option value="CONFIRMED">Confirmed</option>
+                                        <option value="PENDING">Pending</option>
+                                        <option value="FAILED">Failed</option>
                                     </select>
 
                                     {/* Date Range Selector */}
@@ -4063,13 +4033,13 @@ Please complete the following implementation tasks:
                                                 setSettingsTxEndDate("");
                                             }
                                         }}
-                                        className="bg-white/[0.04] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white/90 focus:outline-none focus:border-[#00d2b4]/50"
+                                        className="bg-white border border-black/15 rounded-xl px-3 py-1.5 text-xs text-black focus:outline-none focus:border-[#8AB4DB]"
                                     >
-                                        <option value="all" className="bg-[#121212] text-white">All Time</option>
-                                        <option value="today" className="bg-[#121212] text-white">Today</option>
-                                        <option value="7days" className="bg-[#121212] text-white">Last 7 Days</option>
-                                        <option value="30days" className="bg-[#121212] text-white">Last 30 Days</option>
-                                        <option value="custom" className="bg-[#121212] text-white">Custom Date Range...</option>
+                                        <option value="all">All Time</option>
+                                        <option value="today">Today</option>
+                                        <option value="7days">Last 7 Days</option>
+                                        <option value="30days">Last 30 Days</option>
+                                        <option value="custom">Custom Date Range...</option>
                                     </select>
 
                                     {/* Reset Button */}
@@ -4083,7 +4053,7 @@ Please complete the following implementation tasks:
                                                 setSettingsTxStartDate("");
                                                 setSettingsTxEndDate("");
                                             }}
-                                            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-[11px] font-bold text-white/80 transition-all"
+                                            className="px-3 py-1.5 rounded-full bg-black/5 hover:bg-black/10 text-[11px] font-semibold text-black/80 transition-all"
                                         >
                                             Reset Filters
                                         </button>
@@ -4092,14 +4062,14 @@ Please complete the following implementation tasks:
 
                                 {/* Custom Date Inputs */}
                                 {settingsTxDatePreset === "custom" && (
-                                    <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-white/70">
+                                    <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-black/70">
                                         <div className="flex items-center gap-1.5">
                                             <span>From:</span>
                                             <input
                                                 type="date"
                                                 value={settingsTxStartDate}
                                                 onChange={(e) => setSettingsTxStartDate(e.target.value)}
-                                                className="bg-white/[0.04] border border-white/10 rounded-xl px-2.5 py-1 text-xs text-white focus:outline-none focus:border-[#00d2b4]/50"
+                                                className="bg-white border border-black/15 rounded-xl px-2.5 py-1 text-xs text-black focus:outline-none focus:border-[#8AB4DB]"
                                             />
                                         </div>
                                         <div className="flex items-center gap-1.5">
@@ -4108,7 +4078,7 @@ Please complete the following implementation tasks:
                                                 type="date"
                                                 value={settingsTxEndDate}
                                                 onChange={(e) => setSettingsTxEndDate(e.target.value)}
-                                                className="bg-white/[0.04] border border-white/10 rounded-xl px-2.5 py-1 text-xs text-white focus:outline-none focus:border-[#00d2b4]/50"
+                                                className="bg-white border border-black/15 rounded-xl px-2.5 py-1 text-xs text-black focus:outline-none focus:border-[#8AB4DB]"
                                             />
                                         </div>
                                     </div>
@@ -4118,7 +4088,7 @@ Please complete the following implementation tasks:
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left font-sans text-xs">
                                     <thead>
-                                        <tr className="border-b border-white/5 text-white/40 uppercase text-[9px] tracking-wider">
+                                        <tr className="border-b border-black/10 text-black/50 uppercase text-[9px] tracking-wider font-semibold">
                                             <th className="pb-3">Receipt ID</th>
                                             <th className="pb-3">Date &amp; Time</th>
                                             <th className="pb-3">Type</th>
@@ -4130,7 +4100,7 @@ Please complete the following implementation tasks:
                                     <tbody>
                                         {filteredSettingsTx.length === 0 ? (
                                             <tr>
-                                                <td colSpan={6} className="text-center py-6 text-white/30">
+                                                <td colSpan={6} className="text-center py-6 text-black/40">
                                                     No transaction logs match your active filters.
                                                 </td>
                                             </tr>
@@ -4138,15 +4108,15 @@ Please complete the following implementation tasks:
                                             filteredSettingsTx.map((tx) => {
                                                 const isOutgoing = tx.payerAddress.toLowerCase() === address.toLowerCase();
                                                 return (
-                                                    <tr key={tx.receiptId} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
-                                                        <td className="py-4 font-mono font-semibold text-white/80">{tx.receiptId.slice(0, 8)}...</td>
-                                                        <td className="py-4 text-white/50">{new Date(tx.createdAt).toLocaleString()}</td>
+                                                    <tr key={tx.receiptId} className="border-b border-black/10 hover:bg-black/[0.01] transition-all">
+                                                        <td className="py-4 font-mono font-semibold text-black/80">{tx.receiptId.slice(0, 8)}...</td>
+                                                        <td className="py-4 text-black/60">{new Date(tx.createdAt).toLocaleString()}</td>
                                                         <td className="py-4">
-                                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${isOutgoing ? "bg-red-500/10 text-red-400" : "bg-emerald-500/10 text-emerald-400"}`}>
+                                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wider ${isOutgoing ? "bg-red-500/10 text-red-700" : "bg-emerald-500/10 text-emerald-700"}`}>
                                                                 {isOutgoing ? "Debit" : "Credit"}
                                                             </span>
                                                         </td>
-                                                        <td className="py-4 font-mono font-bold text-white">
+                                                        <td className="py-4 font-mono font-bold text-[#082824]">
                                                             {(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
                                                         </td>
                                                         <td className="py-4">
@@ -4158,7 +4128,7 @@ Please complete the following implementation tasks:
                                                                     href={`/receipt/${tx.receiptId}?invite=1`}
                                                                     target="_blank"
                                                                     rel="noopener noreferrer"
-                                                                    className="text-white/50 hover:text-[#00d2b4] hover:underline inline-flex items-center gap-1"
+                                                                    className="text-black/60 hover:text-[#082824] hover:underline inline-flex items-center gap-1"
                                                                     title="Grant another address permission to view this private receipt"
                                                                 >
                                                                     Grant access
@@ -4167,7 +4137,7 @@ Please complete the following implementation tasks:
                                                                     href={`${activeArcChain.blockExplorers.default.url}/tx/${tx.txHash}`}
                                                                     target="_blank"
                                                                     rel="noopener noreferrer"
-                                                                    className="text-[#00d2b4] hover:underline inline-flex items-center gap-1"
+                                                                    className="text-[#082824] hover:underline inline-flex items-center gap-1 font-semibold"
                                                                 >
                                                                     Tx <ExternalLink className="w-3 h-3" />
                                                                 </a>
@@ -4190,18 +4160,18 @@ Please complete the following implementation tasks:
     const renderView = () => {
         if (isConnected && address && !sessionWallet && !embeddedWallet) {
             return (
-                <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans mt-12">
-                    <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
-                    <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
-                    <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
+                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-xl text-black font-sans mt-12">
+                    <Shield className="w-10 h-10 mx-auto text-[#082824]" />
+                    <h2 className="text-lg font-semibold text-black">Verify Wallet Ownership</h2>
+                    <p className="text-xs text-black/60 leading-relaxed max-w-xs mx-auto">
                         To protect your account configurations, stats, and settings, please sign a secure message using your connected wallet.
                     </p>
                     <button
                         onClick={handleBackendLogin}
                         disabled={isLoggingIn}
-                        className="w-full py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                        className="w-full py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-full text-xs font-semibold flex items-center justify-center gap-2 transition-all"
                     >
-                        {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : <Shield className="w-4 h-4" />}
+                        {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-[#082824]" /> : <Shield className="w-4 h-4" />}
                         Authenticate Developer Portal
                     </button>
                 </div>
@@ -4533,749 +4503,38 @@ Please complete the following implementation tasks:
 
             case "overview":
                 return (
-                    <>
-                        {/* Desktop Overview Layout */}
-                        <div className="hidden md:block space-y-8">
-                            {/* Stats Grid */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-                                {/* Wallet Balance */}
-                                <div className="liquid-glass border border-white/10 rounded-3xl p-6 shadow-xl relative overflow-hidden bg-white/[0.02] hover:border-white/20 transition-colors">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <div className="flex items-center gap-2">
-                                            <p className="text-[10px] text-white/50 uppercase font-bold tracking-wider">Wallet Balance</p>
-                                            <button 
-                                                onClick={() => setBalanceVisible(!balanceVisible)} 
-                                                className="text-white/40 hover:text-white transition-colors p-0.5"
-                                                aria-label={balanceVisible ? "Hide balance" : "Show balance"}
-                                            >
-                                                {balanceVisible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                                            </button>
-                                        </div>
-                                        <button 
-                                            onClick={handleManualRefreshBalances}
-                                            disabled={isRefreshingBalances}
-                                            className="text-white/40 hover:text-white disabled:opacity-50 transition-all p-0.5 flex items-center justify-center"
-                                            title="Refresh balance"
-                                        >
-                                            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingBalances ? "animate-spin text-[#00d2b4]" : ""}`} />
-                                        </button>
-                                    </div>
-                                    <p className="text-3xl font-extrabold text-white mb-2 tracking-tight">
-                                        {balanceVisible ? `$${walletBalance.toFixed(2)}` : '•••••'}
-                                    </p>
-                                    <div className="flex items-center justify-between pt-1">
-                                        <p className="text-[10px] text-white/45 flex items-center gap-1.5 font-medium">
-                                            <Wallet className="w-3 h-3 text-[#00d2b4]" /> USDC in wallet
-                                        </p>
-                                        <button
-                                            onClick={() => setIsSendWalletOpen(true)}
-                                            disabled={walletBalance <= 0 || isSendingWallet}
-                                            className={`text-[9px] font-bold uppercase tracking-wider px-3 py-1 rounded-full border transition-all flex items-center gap-1.5 ${
-                                                walletBalance > 0 
-                                                    ? "border-[#00d2b4]/40 text-[#00d2b4] bg-[#00d2b4]/5 hover:bg-[#00d2b4]/15 cursor-pointer" 
-                                                    : "border-white/5 text-white/20 cursor-not-allowed"
-                                            }`}
-                                        >
-                                            <Send className="w-2.5 h-2.5" />
-                                            Send Out
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Ready for Payout / Settled Vault */}
-                                <div className="liquid-glass border border-[#00d2b4]/30 rounded-3xl p-6 shadow-xl relative overflow-hidden bg-[#00d2b4]/[0.03] hover:border-[#00d2b4]/50 transition-colors">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <div className="flex items-center gap-2">
-                                            <p className="text-[10px] text-[#00d2b4] uppercase font-bold tracking-wider">Ready for Payout</p>
-                                            <button 
-                                                onClick={() => setBalanceVisible(!balanceVisible)} 
-                                                className="text-white/40 hover:text-white transition-colors p-0.5"
-                                                aria-label={balanceVisible ? "Hide balance" : "Show balance"}
-                                            >
-                                                {balanceVisible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <p className="text-3xl font-extrabold text-[#00d2b4] mb-2 tracking-tight">
-                                        {balanceVisible ? `$${vaultBalance.toFixed(2)}` : '•••••'}
-                                    </p>
-                                    <div className="flex items-center justify-between pt-1">
-                                        <p className="text-[10px] text-white/45">Earnings you can withdraw now</p>
-                                        <button
-                                            onClick={() => setIsWithdrawOpen(true)}
-                                            disabled={vaultBalance <= 0 || isWithdrawing}
-                                            className={`text-[9px] font-bold uppercase tracking-wider px-3 py-1 rounded-full border transition-all flex items-center gap-1.5 ${
-                                                vaultBalance > 0 
-                                                    ? "border-[#00d2b4] bg-[#00d2b4] text-black font-extrabold hover:brightness-110 shadow-[0_0_12px_rgba(0,210,180,0.25)]" 
-                                                    : "border-white/5 text-white/20 cursor-not-allowed"
-                                            }`}
-                                        >
-                                            <ArrowDown className="w-2.5 h-2.5" />
-                                            Withdraw
-                                        </button>
-                                    </div>
-                                    {withdrawSuccess && (
-                                        <p className="text-[10px] text-emerald-400 mt-2 font-semibold flex items-center gap-1">
-                                            <Check className="w-3 h-3" /> Withdrawal completed successfully
-                                        </p>
-                                    )}
-                                </div>
-
-                                {/* Active Subscriptions */}
-                                <div className="liquid-glass border border-white/10 rounded-3xl p-6 shadow-xl relative overflow-hidden bg-white/[0.02] hover:border-white/20 transition-colors">
-                                    <p className="text-[10px] text-white/50 uppercase font-bold tracking-wider mb-2">Active Subscriptions</p>
-                                    <div className="text-3xl font-extrabold text-white mb-2 tracking-tight flex items-center h-9">
-                                        {isLoadingContract ? (
-                                            <span className="inline-block h-8 w-14 rounded-lg bg-white/15 animate-pulse" />
-                                        ) : (
-                                            activeAllowances
-                                        )}
-                                    </div>
-                                    <p className="text-[10px] text-white/45 flex items-center gap-1.5 pt-1">
-                                        <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-                                        Recurring customer authorizations
-                                    </p>
-                                </div>
-
-                                {/* 30-Day Projection */}
-                                <div className="liquid-glass border border-white/10 rounded-3xl p-6 shadow-xl relative overflow-hidden bg-white/[0.02] hover:border-white/20 transition-colors">
-                                    <p className="text-[10px] text-white/50 uppercase font-bold tracking-wider mb-2">30-Day Projection</p>
-                                    <div className="text-3xl font-extrabold text-white mb-2 tracking-tight flex items-center h-9">
-                                        {isLoadingContract ? (
-                                            <span className="inline-block h-8 w-24 rounded-lg bg-white/15 animate-pulse" />
-                                        ) : (
-                                            `$${projected30DaySettlement.toFixed(2)}`
-                                        )}
-                                    </div>
-                                    <p className="text-[10px] text-white/45 pt-1">Estimated recurring monthly volume</p>
-                                </div>
-                            </div>
-
-                            {/* Quick Action Shortcuts */}
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-                                <button
-                                    onClick={() => {
-                                        setActiveTab("payment-links");
-                                        setSubTab("one-time");
-                                    }}
-                                    className="group liquid-glass border border-white/10 hover:border-[#00d2b4]/40 bg-white/[0.02] hover:bg-[#00d2b4]/[0.05] p-4 rounded-2xl flex items-center gap-3.5 transition-all duration-200 text-left shadow-lg"
-                                >
-                                    <div className="w-9 h-9 rounded-xl bg-[#00d2b4]/10 text-[#00d2b4] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                                        <Link2 className="w-4 h-4" />
-                                    </div>
-                                    <div className="min-w-0">
-                                        <p className="text-xs font-bold text-white uppercase tracking-wider truncate">Payment Link</p>
-                                        <p className="text-[10px] text-white/45 truncate">One-time checkout URL</p>
-                                    </div>
-                                </button>
-
-                                <button
-                                    onClick={() => {
-                                        setActiveTab("payment-links");
-                                        setSubTab("subscriptions");
-                                    }}
-                                    className="group liquid-glass border border-white/10 hover:border-[#00d2b4]/40 bg-white/[0.02] hover:bg-[#00d2b4]/[0.05] p-4 rounded-2xl flex items-center gap-3.5 transition-all duration-200 text-left shadow-lg"
-                                >
-                                    <div className="w-9 h-9 rounded-xl bg-[#00d2b4]/10 text-[#00d2b4] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                                        <Sliders className="w-4 h-4" />
-                                    </div>
-                                    <div className="min-w-0">
-                                        <p className="text-xs font-bold text-white uppercase tracking-wider truncate">Subscription Plan</p>
-                                        <p className="text-[10px] text-white/45 truncate">Recurring billing plan</p>
-                                    </div>
-                                </button>
-
-                                <button
-                                    onClick={() => setIsDepositOpen(true)}
-                                    className="group liquid-glass border border-white/10 hover:border-[#00d2b4]/40 bg-white/[0.02] hover:bg-[#00d2b4]/[0.05] p-4 rounded-2xl flex items-center gap-3.5 transition-all duration-200 text-left shadow-lg"
-                                >
-                                    <div className="w-9 h-9 rounded-xl bg-white/5 text-white/70 group-hover:text-white flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                                        <ArrowDownToLine className="w-4 h-4" />
-                                    </div>
-                                    <div className="min-w-0">
-                                        <p className="text-xs font-bold text-white uppercase tracking-wider truncate">Deposit Funds</p>
-                                        <p className="text-[10px] text-white/45 truncate">Add USDC to balance</p>
-                                    </div>
-                                </button>
-
-                                <button
-                                    onClick={() => setActiveTab("apikeys")}
-                                    className="group liquid-glass border border-white/10 hover:border-[#00d2b4]/40 bg-white/[0.02] hover:bg-[#00d2b4]/[0.05] p-4 rounded-2xl flex items-center gap-3.5 transition-all duration-200 text-left shadow-lg"
-                                >
-                                    <div className="w-9 h-9 rounded-xl bg-white/5 text-white/70 group-hover:text-white flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                                        <Key className="w-4 h-4" />
-                                    </div>
-                                    <div className="min-w-0">
-                                        <p className="text-xs font-bold text-white uppercase tracking-wider truncate">API Credentials</p>
-                                        <p className="text-[10px] text-white/45 truncate">Keys &amp; Webhooks</p>
-                                    </div>
-                                </button>
-                            </div>
-
-                            {/* Tier Badge Banner */}
-                            <div className="liquid-glass border border-white/10 rounded-3xl p-5 shadow-xl flex items-center justify-between bg-white/[0.015]">
-                                <div className="flex items-center gap-4">
-                                    <div className={`p-2.5 rounded-2xl ${isPremium ? "bg-[#d4a853]/15 border border-[#d4a853]/30 text-[#d4a853] shadow-[0_0_15px_rgba(212,168,83,0.15)]" : "bg-white/5 border border-white/10 text-white/50"}`}>
-                                        {isPremium ? <Crown className="w-5 h-5" /> : <Shield className="w-5 h-5" />}
-                                    </div>
-                                    <div>
-                                        <p className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
-                                            {isPremium ? "Premium Merchant Pro Active" : "Standard Merchant Tier"}
-                                            {isPremium && (
-                                                <span className="px-2 py-0.5 rounded-full bg-[#d4a853]/20 text-[#d4a853] text-[9px] font-bold">
-                                                    0% FEES
-                                                </span>
-                                            )}
-                                        </p>
-                                        <p className="text-[11px] text-white/50 mt-0.5">
-                                            {isPremium 
-                                                ? "0% protocol fees, custom webhook routing, real-time analytics, and automated dunning retries are active." 
-                                                : "Standard 1% protocol fee. Upgrade to Pro for 0% fees, real-time revenue analytics, and priority execution."}
-                                        </p>
-                                    </div>
-                                </div>
-                                {!isPremium && (
-                                    <button
-                                        onClick={() => setActiveTab("premium")}
-                                        className="px-5 py-2.5 bg-[#d4a853] text-black font-extrabold text-[10px] uppercase tracking-wider rounded-xl hover:brightness-110 shadow-[0_0_15px_rgba(212,168,83,0.2)] transition-all shrink-0"
-                                    >
-                                        Upgrade to Pro
-                                    </button>
-                                )}
-                            </div>
-
-                            {/* Customer Subscriptions Ledger */}
-                            <div className="liquid-glass border border-white/10 rounded-3xl p-6 sm:p-7 shadow-2xl bg-white/[0.01]">
-                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-                                    <div>
-                                        <h2 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
-                                            <Activity className={`w-4 h-4 ${primaryColorText}`} />
-                                            Active Subscriptions &amp; Customers
-                                        </h2>
-                                        <p className="text-[11px] text-white/45 mt-0.5">
-                                            Live recurring payment authorizations and customer billing cycles.
-                                        </p>
-                                    </div>
-                                </div>
-                                {(() => {
-                                    const activeLedgers = ledgers.filter((item) => item.active && !item.cancelAtPeriodEnd);
-                                    const churnedLedgers = ledgers.filter((item) => !item.active || item.cancelAtPeriodEnd);
-
-                                    return (
-                                        <div className="space-y-8">
-                                            {/* Active Subscriptions Section */}
-                                            <div className="space-y-3">
-                                                <div className="flex items-center justify-between">
-                                                    <span className="text-[11px] font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                                                        <span className="w-2 h-2 rounded-full bg-emerald-400" /> Active Subscriptions ({activeLedgers.length})
-                                                    </span>
-                                                </div>
-
-                                                {/* Desktop Table - Active */}
-                                                <div className="overflow-x-auto hidden md:block">
-                                                    <table className="w-full text-left border-collapse">
-                                                        <thead>
-                                                            <tr className="border-b border-white/5 text-white/40 text-[10px] uppercase font-bold tracking-wider">
-                                                                <th className="pb-3 font-semibold">Plan ID</th>
-                                                                <th className="pb-3 font-semibold">Customer</th>
-                                                                <th className="pb-3 font-semibold">Allowance / Rate</th>
-                                                                <th className="pb-3 font-semibold">Next Billing</th>
-                                                                <th className="pb-3 font-semibold">Status</th>
-                                                                <th className="pb-3 text-right font-semibold">Control</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="text-xs text-white/70 font-mono">
-                                                            {isLoadingContract ? (
-                                                                Array.from({ length: 3 }).map((_, i) => (
-                                                                    <tr key={i} className="border-b border-white/5 animate-pulse">
-                                                                        <td className="py-4"><div className="h-3.5 w-14 rounded bg-white/15" /></td>
-                                                                        <td className="py-4"><div className="h-3.5 w-28 rounded bg-white/10" /></td>
-                                                                        <td className="py-4"><div className="h-3.5 w-16 rounded bg-white/10" /></td>
-                                                                        <td className="py-4"><div className="h-3.5 w-24 rounded bg-white/10" /></td>
-                                                                        <td className="py-4"><div className="h-5 w-16 rounded-full bg-white/15" /></td>
-                                                                        <td className="py-4 text-right"><div className="h-3.5 w-20 rounded bg-white/10 ml-auto" /></td>
-                                                                    </tr>
-                                                                ))
-                                                            ) : activeLedgers.length === 0 ? (
-                                                                <tr>
-                                                                    <td colSpan={6} className="py-8 text-center text-white/35 font-sans">
-                                                                        <div className="max-w-sm mx-auto space-y-2 py-4">
-                                                                            <p className="text-xs font-semibold text-white/60">No active customer subscriptions yet</p>
-                                                                            <p className="text-[11px] text-white/40">When customers subscribe to your plans, their active status and billing cycles will show here.</p>
-                                                                            <button
-                                                                                onClick={() => {
-                                                                                    setActiveTab("payment-links");
-                                                                                    setSubTab("subscriptions");
-                                                                                }}
-                                                                                className="mt-3 px-4 py-2 bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/30 text-[#00d2b4] rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all inline-block"
-                                                                            >
-                                                                                Create a Plan
-                                                                            </button>
-                                                                        </div>
-                                                                    </td>
-                                                                </tr>
-                                                            ) : (
-                                                                activeLedgers.map((item) => (
-                                                                    <tr key={item.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
-                                                                        <td className="py-4 font-semibold text-white font-mono">{item.id}</td>
-                                                                        <td className="py-4 text-white/60 font-sans">
-                                                                            <span className="font-mono text-xs">{item.displayAddress || item.shortSubAddress}</span>
-                                                                        </td>
-                                                                        <td className="py-4 text-[#d4a853] font-bold">{item.limit}</td>
-                                                                        <td className="py-4 text-white/70 font-sans">{item.nextBilling}</td>
-                                                                        <td className="py-4">
-                                                                            <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 inline-flex items-center gap-1 font-sans">
-                                                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                                                                Active
-                                                                            </span>
-                                                                        </td>
-                                                                        <td className="py-4 text-right font-sans">
-                                                                            <span className="text-[9px] text-white/35 uppercase tracking-wider font-semibold">
-                                                                                Customer managed
-                                                                            </span>
-                                                                        </td>
-                                                                    </tr>
-                                                                ))
-                                                            )}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-
-                                                {/* Mobile View - Active */}
-                                                <div className="block md:hidden space-y-3">
-                                                    {isLoadingContract ? (
-                                                        <div className="space-y-3 animate-pulse">
-                                                            {Array.from({ length: 2 }).map((_, i) => (
-                                                                <div key={i} className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-3">
-                                                                    <div className="flex justify-between items-center">
-                                                                        <div className="h-3.5 w-20 rounded bg-white/15" />
-                                                                        <div className="h-4 w-14 rounded-full bg-white/10" />
-                                                                    </div>
-                                                                    <div className="h-3 w-32 rounded bg-white/10" />
-                                                                    <div className="flex justify-between pt-2 border-t border-white/5">
-                                                                        <div className="h-3 w-16 rounded bg-white/10" />
-                                                                        <div className="h-3 w-20 rounded bg-white/15" />
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    ) : activeLedgers.length === 0 ? (
-                                                        <div className="py-6 text-center text-white/35 font-sans text-xs">
-                                                            No active customer subscriptions yet.
-                                                        </div>
-                                                    ) : (
-                                                        activeLedgers.map((item) => (
-                                                            <div key={item.id} className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2 text-xs font-mono">
-                                                                <div className="flex items-center justify-between">
-                                                                    <span className="font-bold text-white">Plan #{item.id}</span>
-                                                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-sans">
-                                                                        Active
-                                                                    </span>
-                                                                </div>
-                                                                <div className="text-white/60 text-[11px] truncate font-mono">{item.displayAddress || item.shortSubAddress}</div>
-                                                                <div className="flex items-center justify-between text-[11px] pt-1 font-sans">
-                                                                    <span className="text-white/45">Allowance: <span className="text-[#d4a853] font-bold">{item.limit}</span></span>
-                                                                    <span className="text-white/45">Next: <span className="text-white/80">{item.nextBilling}</span></span>
-                                                                </div>
-                                                            </div>
-                                                        ))
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {/* Churned & Canceled Subscriptions Section */}
-                                            <div className="space-y-3 pt-6 border-t border-white/5">
-                                                <div className="flex items-center justify-between">
-                                                    <span className="text-[11px] font-bold text-white/70 uppercase tracking-wider flex items-center gap-2">
-                                                        <span className="w-2 h-2 rounded-full bg-red-400" /> Canceled &amp; Expired ({churnedLedgers.length})
-                                                    </span>
-                                                </div>
-
-                                                {/* Desktop Table - Churned */}
-                                                <div className="overflow-x-auto hidden md:block">
-                                                    <table className="w-full text-left border-collapse">
-                                                        <thead>
-                                                            <tr className="border-b border-white/5 text-white/40 text-[10px] uppercase font-bold tracking-wider">
-                                                                <th className="pb-3 font-semibold">Plan ID</th>
-                                                                <th className="pb-3 font-semibold">Customer</th>
-                                                                <th className="pb-3 font-semibold">Prior Rate</th>
-                                                                <th className="pb-3 font-semibold">Status</th>
-                                                                <th className="pb-3 text-right font-semibold">Details</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="text-xs text-white/70 font-mono">
-                                                            {churnedLedgers.length === 0 ? (
-                                                                <tr>
-                                                                    <td colSpan={5} className="py-6 text-center text-white/30 font-sans text-xs">
-                                                                        No canceled or expired subscriptions on record.
-                                                                    </td>
-                                                                </tr>
-                                                            ) : (
-                                                                churnedLedgers.map((item) => (
-                                                                    <tr key={item.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-colors">
-                                                                        <td className="py-4 font-semibold text-white/60">{item.id}</td>
-                                                                        <td className="py-4 text-white/40">{item.displayAddress || item.shortSubAddress}</td>
-                                                                        <td className="py-4 text-[#d4a853]/60">{item.limit}</td>
-                                                                        <td className="py-4">
-                                                                            <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/20 font-sans">
-                                                                                {item.cancelAtPeriodEnd ? "Pending Expiry" : "Canceled"}
-                                                                            </span>
-                                                                        </td>
-                                                                        <td className="py-4 text-right font-sans">
-                                                                            <span className="text-[9px] text-red-400/70 uppercase tracking-wider font-semibold">
-                                                                                {item.cancelAtPeriodEnd ? "Cancels at period end" : "Allowance revoked"}
-                                                                            </span>
-                                                                        </td>
-                                                                    </tr>
-                                                                ))
-                                                            )}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-
-                                                {/* Mobile View - Churned */}
-                                                <div className="block md:hidden space-y-3">
-                                                    {churnedLedgers.length === 0 ? (
-                                                        <div className="py-6 text-center text-white/30 font-sans text-xs">
-                                                            No canceled subscriptions.
-                                                        </div>
-                                                    ) : (
-                                                        churnedLedgers.map((item) => (
-                                                            <div key={item.id} className="p-4 rounded-2xl bg-white/[0.01] border border-white/5 space-y-2 text-xs font-mono opacity-80">
-                                                                <div className="flex items-center justify-between">
-                                                                    <span className="font-bold text-white/70">Plan #{item.id}</span>
-                                                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/20 font-sans">
-                                                                        {item.cancelAtPeriodEnd ? "Pending Expiry" : "Canceled"}
-                                                                    </span>
-                                                                </div>
-                                                                <div className="text-white/40 text-[10px] truncate">{item.displayAddress || item.shortSubAddress}</div>
-                                                                <div className="flex items-center justify-between text-[11px] pt-1 font-sans">
-                                                                    <span className="text-white/30">Rate: <span className="text-[#d4a853]/60 font-bold">{item.limit}</span></span>
-                                                                    <span className="text-red-400/70 text-[9px]">{item.cancelAtPeriodEnd ? "Expires at period end" : "Allowance revoked"}</span>
-                                                                </div>
-                                                            </div>
-                                                        ))
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })()}
-
-                                {(() => {
-                                    const totalPages = ledgerPagination.totalPages;
-                                    if (totalPages <= 1) return null;
-                                    return (
-                                        <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/5 font-sans">
-                                            <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider">
-                                                Page {ledgerPage + 1} of {totalPages}
-                                            </span>
-                                            <div className="flex gap-2">
-                                                <button
-                                                    type="button"
-                                                    disabled={ledgerPage === 0}
-                                                    onClick={() => setLedgerPage((p) => Math.max(0, p - 1))}
-                                                    className="px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all"
-                                                >
-                                                    Prev
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    disabled={ledgerPage >= totalPages - 1}
-                                                    onClick={() => setLedgerPage((p) => Math.min(totalPages - 1, p + 1))}
-                                                    className="px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all"
-                                                >
-                                                    Next
-                                                </button>
-                                            </div>
-                                        </div>
-                                    );
-                                })()}
-                            </div>
-                        </div>
-
-                        {/* Mobile Overview Layout (Strictly blueprint aligned) */}
-                        <div className="md:hidden space-y-6 pb-24 font-sans">
-                            {/* Wallet Balance Card */}
-                            <div className="liquid-glass border border-white/10 rounded-3xl p-6 shadow-xl flex justify-between items-center relative overflow-hidden bg-black/35 backdrop-blur-xl">
-                                <div className="space-y-1 relative z-10">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[10px] text-white/45 uppercase font-bold tracking-wider">Wallet Balance</span>
-                                        <button onClick={() => setBalanceVisible(!balanceVisible)} className="text-white/30 hover:text-white/60 transition-colors p-0.5">
-                                            {balanceVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-                                        </button>
-                                        <button 
-                                            onClick={handleManualRefreshBalances}
-                                            disabled={isRefreshingBalances}
-                                            className="text-white/30 hover:text-white/65 disabled:opacity-50 transition-all p-0.5 flex items-center justify-center"
-                                            title="Refresh Balance"
-                                        >
-                                            <RefreshCw className={`w-3 h-3 ${isRefreshingBalances ? "animate-spin" : ""}`} />
-                                        </button>
-                                    </div>
-                                    <p className="text-3xl font-extrabold text-white mt-1.5 tracking-tight leading-none">
-                                        {balanceVisible ? `$${walletBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '•••••'}
-                                    </p>
-                                    <span className="text-xs font-semibold text-white/40 font-mono">
-                                        {balanceVisible ? `${detectedCurrency.symbol}${(walletBalance * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '•••••'}
-                                    </span>
-                                </div>
-                                <div className="relative z-10 flex items-center gap-2">
-                                    <button
-                                        onClick={() => setIsSendWalletOpen(true)}
-                                        disabled={walletBalance <= 0 || isSendingWallet}
-                                        className="w-10 h-10 rounded-full border border-[#00d2b4]/30 bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 text-[#00d2b4] flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
-                                        title="Withdraw / Send Out wallet balance"
-                                    >
-                                        <Send className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                        onClick={() => setIsDepositOpen(true)}
-                                        className="w-10 h-10 rounded-full border border-white/20 bg-white/5 hover:bg-white/10 text-white flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
-                                        title="Deposit funds"
-                                    >
-                                        <ArrowDownToLine className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Claimable Settlement Card */}
-                            <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 shadow-xl relative overflow-hidden bg-black/35 backdrop-blur-xl">
-                                <div className="relative z-10 space-y-4">
-                                    <div className="flex items-center justify-between gap-3">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-[10px] text-white/45 uppercase font-bold tracking-wider">Ready to Withdraw</span>
-                                            <button
-                                                type="button"
-                                                onClick={() => setBalanceVisible(!balanceVisible)}
-                                                className="text-white/30 hover:text-white/60 transition-colors p-0.5"
-                                                aria-label={balanceVisible ? "Hide balances" : "Show balances"}
-                                            >
-                                            {balanceVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-                                            </button>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => setTimeframeOpen((open) => !open)}
-                                            className="flex items-center gap-1 rounded-full border border-[#00d2b4]/30 bg-[#00d2b4]/15 px-2.5 py-1 text-[8px] font-bold text-[#00d2b4] transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:bg-[#00d2b4]/25 active:scale-95"
-                                            aria-expanded={timeframeOpen}
-                                            aria-label="Select settlement timeframe"
-                                        >
-                                            <span>{settlementTimeframe}</span>
-                                            <ChevronDown className={`h-3 w-3 transition-transform duration-300 ${timeframeOpen ? "rotate-180" : "rotate-0"}`} />
-                                        </button>
-                                    </div>
-                                    <AnimatePresence initial={false}>
-                                        {timeframeOpen && (
-                                            <motion.div
-                                                initial={{ opacity: 0, height: 0, y: -4 }}
-                                                animate={{ opacity: 1, height: "auto", y: 0 }}
-                                                exit={{ opacity: 0, height: 0, y: -4 }}
-                                                transition={{ type: "spring", stiffness: 450, damping: 32 }}
-                                                className="overflow-hidden"
-                                            >
-                                                <div className="grid grid-cols-3 gap-1.5 rounded-2xl border border-white/10 bg-black/35 p-1.5 backdrop-blur-xl">
-                                                    {settlementTimeframes.map((tf) => (
-                                                        <button
-                                                            key={tf}
-                                                            type="button"
-                                                            onClick={() => { setSettlementTimeframe(tf); setTimeframeOpen(false); }}
-                                                            className={`rounded-full px-2 py-1.5 text-center text-[8px] font-bold transition-all duration-200 active:scale-95 ${
-                                                                settlementTimeframe === tf
-                                                                    ? "bg-[#00d2b4]/15 text-[#00d2b4] ring-1 ring-[#00d2b4]/30"
-                                                                    : "text-white/50 hover:bg-white/5 hover:text-white"
-                                                            }`}
-                                                        >
-                                                            {tf}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-                                    <div className="flex items-end justify-between gap-4">
-                                        <div className="space-y-1">
-                                            <p className="text-3xl font-extrabold text-[#00d2b4] tracking-tight leading-none">
-                                                {balanceVisible ? `$${vaultBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '•••••'}
-                                            </p>
-                                            <div className="flex items-center gap-2">
-                                                <span className={`text-[10px] font-bold tracking-wide ${vaultBalance > 0 ? 'text-emerald-400' : 'text-white/30'}`}>
-                                                    {vaultBalance > 0 ? "Available" : "-"}
-                                                </span>
-                                                <span className="text-xs font-semibold text-white/40 font-mono">
-                                                    {balanceVisible ? `${detectedCurrency.symbol}${(vaultBalance * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '•••••'}
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={() => setIsWithdrawOpen(true)}
-                                            className="w-12 h-12 shrink-0 rounded-full border border-[#00d2b4]/30 bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 text-[#00d2b4] flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] shadow-lg shadow-[#00d2b4]/5 hover:scale-105 active:scale-95"
-                                            title="Withdraw routed funds"
-                                        >
-                                            <ArrowDown className="w-5 h-5" />
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Quick Actions Grid (Circles) */}
-                            <div className="grid grid-cols-4 gap-3 py-2 text-center">
-                                {/* Quick-action icons mirror the desktop sidebar so the same
-                                    destination always carries the same icon on every screen. */}
-                                <div>
-                                    <button
-                                        onClick={() => setActiveTab("payment-links")}
-                                        className="mx-auto w-12 h-12 rounded-full border border-[#00d2b4]/20 bg-white/[0.02] hover:bg-white/[0.05] text-[#00d2b4] flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
-                                    >
-                                        <Sliders className="w-5 h-5" />
-                                    </button>
-                                    <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest block mt-2 leading-tight">Payments Link</span>
-                                </div>
-                                <div>
-                                    <button
-                                        onClick={() => setActiveTab("webhooks")}
-                                        className="mx-auto w-12 h-12 rounded-full border border-[#00d2b4]/20 bg-white/[0.02] hover:bg-white/[0.05] text-[#00d2b4] flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
-                                    >
-                                        <Webhook className="w-5 h-5" />
-                                    </button>
-                                    <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest block mt-2 leading-tight">Webhooks</span>
-                                </div>
-                                <div>
-                                    <Link
-                                        href="/merchant/payroll"
-                                        className="mx-auto w-12 h-12 rounded-full border border-[#00d2b4]/20 bg-white/[0.02] hover:bg-white/[0.05] text-[#00d2b4] flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
-                                    >
-                                        <Building2 className="w-5 h-5" />
-                                    </Link>
-                                    <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest block mt-2 leading-tight">Payroll</span>
-                                </div>
-                                <div>
-                                    <button
-                                        onClick={() => setActiveTab("premium")}
-                                        className={`mx-auto w-12 h-12 rounded-full border flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95 ${
-                                            isPremium 
-                                                ? "border-[#d4a853]/30 bg-[#d4a853]/10 text-[#d4a853]" 
-                                                : "border-white/10 bg-white/[0.02] text-white/40"
-                                        }`}
-                                    >
-                                        <Crown className="w-5 h-5" />
-                                    </button>
-                                    <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest block mt-2 leading-tight">Premium Tier</span>
-                                </div>
-                            </div>
-
-                            {/* Customer / Agent Ledger (Mobile list card) */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-5 shadow-xl space-y-4">
-                                <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                                    Customer / Agent Ledger
-                                </h3>
-                                <div className="space-y-3">
-                                    {isLoadingContract ? (
-                                        <div className="space-y-3 animate-pulse">
-                                            {Array.from({ length: 2 }).map((_, i) => (
-                                                <div key={i} className="p-4 bg-white/[0.01] border border-white/5 rounded-2xl space-y-2">
-                                                    <div className="flex justify-between items-center">
-                                                        <div className="h-3.5 w-24 rounded bg-white/15" />
-                                                        <div className="h-4 w-12 rounded-full bg-white/10" />
-                                                    </div>
-                                                    <div className="h-3 w-32 rounded bg-white/10" />
-                                                </div>
-                                            ))}
-                                        </div>
-                                    ) : ledgers.length === 0 ? (
-                                        <div className="py-8 text-center text-white/20 text-xs">
-                                            No active allowances detected.
-                                        </div>
-                                    ) : (
-                                        (() => {
-                                            return ledgers.map((item) => (
-                                                <div key={item.id} className="p-4 bg-white/[0.01] border border-white/5 rounded-2xl relative space-y-3">
-                                                    <div className="flex justify-between items-start pr-8">
-                                                        <div>
-                                                            <p className="text-[10px] font-bold text-white uppercase tracking-wide">{item.id}</p>
-                                                            <p className="text-[9px] font-mono text-white/40 mt-0.5">{item.displayAddress || item.shortSubAddress}</p>
-                                                        </div>
-                                                        <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider ${
-                                                            item.cancelAtPeriodEnd || !item.active
-                                                                ? "bg-red-500/10 text-red-400 border border-red-500/20"
-                                                                : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                                                        }`}>
-                                                            {item.cancelAtPeriodEnd || !item.active ? "Cancelled" : "Active"}
-                                                        </span>
-                                                    </div>
-                                                    <div className="grid grid-cols-2 gap-3 pt-2.5 border-t border-white/5 text-[9px] text-white/50 font-mono">
-                                                        <div>
-                                                            <span className="text-[8px] text-white/20 uppercase tracking-widest font-bold block">Allowance</span>
-                                                            <span className="text-white font-semibold block mt-0.5">{item.limit}</span>
-                                                        </div>
-                                                        <div>
-                                                            <span className="text-[8px] text-white/20 uppercase tracking-widest font-bold block">Next Billing</span>
-                                                            <span className="text-white/70 block mt-0.5">{item.nextBilling}</span>
-                                                        </div>
-                                                    </div>
-                                                    {item.cancelAtPeriodEnd ? (
-                                                        <span className="block text-[8px] font-bold uppercase tracking-widest text-amber-400/50">
-                                                            Expires at period end
-                                                        </span>
-                                                    ) : item.active ? (
-                                                        <span className="block text-[8px] font-bold uppercase tracking-widest text-white/20">
-                                                            Only the customer can cancel
-                                                        </span>
-                                                    ) : null}
-                                                </div>
-                                            ));
-                                        })()
-                                    )}
-                                </div>
-                                {(() => {
-                                    const totalPages = ledgerPagination.totalPages;
-                                    if (totalPages <= 1) return null;
-                                    return (
-                                        <div className="flex items-center justify-between pt-3 border-t border-white/5 font-sans">
-                                            <span className="text-[9px] text-white/30 uppercase font-bold">
-                                                {ledgerPage + 1} / {totalPages}
-                                            </span>
-                                            <div className="flex gap-2">
-                                                <button
-                                                    type="button"
-                                                    disabled={ledgerPage === 0}
-                                                    onClick={() => setLedgerPage((p) => Math.max(0, p - 1))}
-                                                    className="px-2.5 py-1 bg-white/5 border border-white/10 disabled:opacity-30 text-white rounded-lg text-[9px] font-bold uppercase"
-                                                >
-                                                    Prev
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    disabled={ledgerPage >= totalPages - 1}
-                                                    onClick={() => setLedgerPage((p) => Math.min(totalPages - 1, p + 1))}
-                                                    className="px-2.5 py-1 bg-white/5 border border-white/10 disabled:opacity-30 text-white rounded-lg text-[9px] font-bold uppercase"
-                                                >
-                                                    Next
-                                                </button>
-                                            </div>
-                                        </div>
-                                    );
-                                })()}
-                            </div>
-                        </div>
-                    </>
+                    <MerchantOverview
+                        walletBalance={walletBalance}
+                        vaultBalance={vaultBalance}
+                        projected30DaySettlement={projected30DaySettlement}
+                        ledgers={ledgers}
+                        balanceVisible={balanceVisible}
+                        isRefreshingBalances={isRefreshingBalances}
+                        isLoadingContract={isLoadingContract}
+                        onToggleBalance={() => setBalanceVisible((visible) => !visible)}
+                        onRefresh={handleManualRefreshBalances}
+                        onSend={() => setIsSendWalletOpen(true)}
+                        onReceive={() => setIsDepositOpen(true)}
+                        onWithdraw={() => setIsWithdrawOpen(true)}
+                        onViewPlans={() => { setActiveTab("payment-links"); setSubTab("subscriptions"); }}
+                    />
                 );
 
-            case "premium":
+            case "premium": {
                 if (isConnected && address && !sessionWallet && !embeddedWallet) {
                     return (
-                        <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
-                            <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
-                            <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
-                            <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-sm text-black font-sans">
+                            <Shield className="w-10 h-10 mx-auto text-[#082824]" />
+                            <h2 className="text-lg font-semibold text-black">Verify Wallet Ownership</h2>
+                            <p className="text-xs text-black/60 leading-relaxed max-w-xs mx-auto">
                                 To manage premium subscriptions and security configurations, please sign a secure message using your connected wallet.
                             </p>
                             <button
                                 onClick={handleBackendLogin}
                                 disabled={isLoggingIn}
-                                className="w-full py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                                className="w-full py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-full text-xs font-semibold flex items-center justify-center gap-2 transition-all"
                             >
-                                {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : <Shield className="w-4 h-4" />}
+                                {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-[#082824]" /> : <Shield className="w-4 h-4" />}
                                 Authenticate Developer Portal
                             </button>
                         </div>
@@ -5283,30 +4542,30 @@ Please complete the following implementation tasks:
                 }
 
                 return (
-                    <div className="space-y-8">
+                    <div className="space-y-8 text-black">
                         {/* Tier Status Card */}
-                        <div className={`liquid-glass border rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden ${isPremium ? "border-[#d4a853]/30 bg-gradient-to-b from-[#d4a853]/[0.03] to-transparent" : "border-white/5"}`}>
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 shadow-sm">
                             <div className="flex items-start gap-4">
-                                <div className={`p-3 rounded-2xl ${isPremium ? "bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853]" : "bg-white/5 border border-white/10 text-white/40"}`}>
+                                <div className="p-3 rounded-2xl bg-[#EFE2AC] text-[#082824] border border-black/10">
                                     <Crown className="w-8 h-8" />
                                 </div>
                                 <div className="flex-1">
                                     <div className="flex items-center gap-3 mb-1">
-                                        <h2 className="text-xl font-extrabold text-white uppercase tracking-tight">
+                                        <h2 className="text-xl font-bold text-black tracking-tight">
                                             {isPremium ? "Premium Active" : "Standard Tier"}
                                         </h2>
                                         <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
                                             isPremium 
-                                                ? "bg-[#d4a853]/10 text-[#d4a853] border border-[#d4a853]/20" 
-                                                : "bg-white/5 text-white/40 border border-white/10"
+                                                ? "bg-[#EFE2AC] text-[#082824] border border-black/15" 
+                                                : "bg-black/5 text-black/60 border border-black/10"
                                         }`}>
                                             Tier {merchantTier}
                                         </span>
                                     </div>
-                                    <p className="text-xs text-white/50 leading-relaxed">
+                                    <p className="text-xs text-black/60 leading-relaxed">
                                         {isPremium 
                                             ? "You have full access to payout rerouting, priority keeper execution, advanced analytics, and multi-wallet support." 
-                                    : "Upgrade to Premium Pro to unlock payout rerouting, priority execution, advanced analytics, and more."
+                                            : "Upgrade to Premium Pro to unlock payout rerouting, priority execution, advanced analytics, and more."
                                         }
                                     </p>
                                 </div>
@@ -5318,60 +4577,60 @@ Please complete the following implementation tasks:
                                 <div className="md:col-span-2 space-y-6">
                                     {/* PAST_DUE Warning Banner */}
                                     {dbSubscriptionStatus === "PAST_DUE" && (
-                                        <div className="liquid-glass border border-amber-500/20 rounded-3xl p-6 shadow-2xl space-y-4 bg-amber-500/[0.02]">
+                                        <div className="border border-amber-600/30 rounded-3xl p-6 shadow-sm space-y-4 bg-amber-50 text-amber-900">
                                             <div className="flex items-center gap-3">
-                                                <div className="p-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-xl">
+                                                <div className="p-2 bg-amber-100 border border-amber-300 text-amber-800 rounded-xl">
                                                     <AlertTriangle className="w-5 h-5" />
                                                 </div>
                                                 <div>
-                                                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Premium Grace Period</h3>
-                                                    <p className="text-xs text-white/50">Payment failed. Access temporarily preserved.</p>
+                                                    <h3 className="text-sm font-bold uppercase tracking-wider">Premium Grace Period</h3>
+                                                    <p className="text-xs text-amber-700">Payment failed. Access temporarily preserved.</p>
                                                 </div>
                                             </div>
-                                            <p className="text-xs text-white/70 leading-relaxed font-sans">
+                                            <p className="text-xs text-amber-800 leading-relaxed font-sans">
                                                 Your Premium renewal payment could not be processed. Premium access remains active during the grace period. Please restore wallet balance or allowance to avoid interruption.
                                             </p>
-                                            <div className="grid grid-cols-2 gap-4 bg-black/40 border border-white/5 rounded-2xl p-4">
+                                            <div className="grid grid-cols-2 gap-4 bg-white/80 border border-amber-200 rounded-2xl p-4">
                                                 <div>
-                                                    <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest leading-none mb-1">Billing Status</p>
-                                                    <p className="text-xs font-semibold text-amber-400">Attempt {downgradeFailures} of 3</p>
+                                                    <p className="text-[10px] text-amber-700 uppercase font-bold tracking-widest leading-none mb-1">Billing Status</p>
+                                                    <p className="text-xs font-semibold text-amber-900">Attempt {downgradeFailures} of 3</p>
                                                 </div>
                                                 <div>
-                                                    <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest leading-none mb-1">Grace Period</p>
-                                                    <p className="text-xs font-semibold text-white/80">{3 - downgradeFailures} {3 - downgradeFailures === 1 ? "day" : "days"} remaining</p>
+                                                    <p className="text-[10px] text-amber-700 uppercase font-bold tracking-widest leading-none mb-1">Grace Period</p>
+                                                    <p className="text-xs font-semibold text-amber-900">{3 - downgradeFailures} {3 - downgradeFailures === 1 ? "day" : "days"} remaining</p>
                                                 </div>
                                             </div>
                                         </div>
                                     )}
 
                                     {/* Payout Rerouting Controls */}
-                                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
-                                        <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                                            <ArrowRightLeft className="w-4 h-4 text-[#d4a853]" />
+                                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm space-y-6">
+                                        <h3 className="text-sm font-semibold text-black flex items-center gap-2">
+                                            <ArrowRightLeft className="w-4 h-4 text-[#082824]" />
                                             Fund Rerouting
                                         </h3>
 
                                         {/* Current Destination */}
-                                        <div className="bg-black/40 border border-white/5 rounded-2xl p-5">
-                                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-2">Current Payout Destination</p>
+                                        <div className="bg-[#D4E3E8]/40 border border-black/10 rounded-2xl p-5">
+                                            <p className="text-[10px] text-black/50 uppercase font-bold tracking-widest mb-2">Current Payout Destination</p>
                                             {payoutDestination ? (
                                                 <div className="flex items-center gap-3">
-                                                    <code className="text-sm font-mono text-[#d4a853] break-all">{payoutDestination}</code>
+                                                    <code className="text-sm font-mono text-[#082824] break-all font-semibold">{payoutDestination}</code>
                                                     <button
                                                         onClick={() => handleCopy(payoutDestination, "Payout Destination")}
-                                                        className="p-1.5 text-white/30 hover:text-white rounded-lg hover:bg-white/5 transition-all flex-shrink-0"
+                                                        className="p-1.5 text-black/40 hover:text-black rounded-lg hover:bg-black/5 transition-all flex-shrink-0"
                                                     >
-                                                        {copiedText === "Payout Destination" ? <Check className="w-3.5 h-3.5 text-[#00d2b4]" /> : <Copy className="w-3.5 h-3.5" />}
+                                                        {copiedText === "Payout Destination" ? <Check className="w-3.5 h-3.5 text-[#082824]" /> : <Copy className="w-3.5 h-3.5" />}
                                                     </button>
                                                 </div>
                                             ) : (
-                                                <p className="text-sm text-white/50">Default: funds route to your connected wallet ({address?.slice(0, 6)}...{address?.slice(-4)})</p>
+                                                <p className="text-sm text-black/60">Default: funds route to your connected wallet ({address?.slice(0, 6)}...{address?.slice(-4)})</p>
                                             )}
                                         </div>
 
                                         {/* Set New Destination */}
                                         <div>
-                                            <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">
+                                            <label className="text-[10px] text-black/60 font-semibold uppercase tracking-widest block mb-2">
                                                 New Destination Address
                                             </label>
                                             <div className="flex flex-col gap-3 sm:flex-row">
@@ -5380,52 +4639,52 @@ Please complete the following implementation tasks:
                                                     value={rerouteAddress}
                                                     onChange={(e) => setRerouteAddress(e.target.value)}
                                                     placeholder="0x... cold storage, multisig, or ledger address"
-                                                    className="min-w-0 w-full flex-1 bg-black border border-white/10 rounded-xl px-4 py-3 text-xs font-mono text-white focus:outline-none focus:border-[#d4a853]/50 transition-colors placeholder:text-white/20"
+                                                    className="min-w-0 w-full flex-1 bg-white border border-black/15 rounded-xl px-4 py-3 text-xs font-mono text-black focus:outline-none focus:border-[#8AB4DB] transition-colors placeholder:text-black/30"
                                                 />
                                                 <button
                                                     onClick={handleReroute}
                                                     disabled={isRerouting || !rerouteAddress}
-                                                    className="w-full sm:w-auto shrink-0 px-5 py-3 bg-[#d4a853] text-black font-bold rounded-xl text-xs uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                                    className="w-full sm:w-auto shrink-0 px-6 py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] font-semibold rounded-full text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                                 >
                                                     {isRerouting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5" />}
                                                     Reroute
                                                 </button>
                                             </div>
                                             {rerouteSuccess && (
-                                                <p className="text-emerald-400 text-xs mt-3 font-semibold">Payout destination updated on-chain</p>
+                                                <p className="text-emerald-700 text-xs mt-3 font-semibold">Payout destination updated on-chain</p>
                                             )}
                                             {premiumError && (
-                                                <p className="text-red-400 text-xs mt-3 font-mono break-all">{premiumError}</p>
+                                                <p className="text-red-600 text-xs mt-3 font-mono break-all">{premiumError}</p>
                                             )}
                                         </div>
                                     </div>
 
                                     {/* Arc Confidentiality & Governed Access settings card */}
-                                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
-                                        <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                                            <Shield className="w-4 h-4 text-[#d4a853]" />
+                                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm space-y-6">
+                                        <h3 className="text-sm font-semibold text-black flex items-center gap-2">
+                                            <Shield className="w-4 h-4 text-[#082824]" />
                                             Arc Confidentiality
                                         </h3>
 
                                         {/* Operational switch for Shielded Batch Payouts */}
-                                        <div className="flex items-center justify-between bg-black/40 border border-white/5 rounded-2xl p-5">
+                                        <div className="flex items-center justify-between bg-[#D4E3E8]/40 border border-black/10 rounded-2xl p-5">
                                             <div>
-                                                <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-1">Confidential Batch Payouts <span className="text-[#d4a853]/80">(Preview)</span></h4>
-                                                <p className="text-[10px] text-white/50 leading-normal max-w-md">
+                                                <h4 className="text-xs font-semibold text-black mb-1">Confidential Batch Payouts <span className="text-black/50">(Preview)</span></h4>
+                                                <p className="text-[10px] text-black/60 leading-normal max-w-md font-sans">
                                                     Masks recipient addresses and transfer amounts in SubScript&apos;s batch event log. Note: the underlying USDC transfers are still recorded on Arc&apos;s public ledger today &mdash; full on-chain shielding activates once Arc&apos;s Privacy Sector (APS) is live.
                                                 </p>
                                             </div>
                                             <div className="flex items-center gap-3">
-                                                {!isPremium && <Lock className="w-3.5 h-3.5 text-white/40" />}
+                                                {!isPremium && <Lock className="w-3.5 h-3.5 text-black/40" />}
                                                 <button
                                                     onClick={handleToggleShielded}
                                                     disabled={!isPremium}
                                                     className={`w-11 h-6 rounded-full p-1 transition-all duration-300 ${
-                                                        !isPremium ? "opacity-50 cursor-not-allowed bg-white/5" : (shieldedEnabled ? "bg-[#d4a853]" : "bg-white/10")
+                                                        !isPremium ? "opacity-50 cursor-not-allowed bg-black/10" : (shieldedEnabled ? "bg-[#8AB4DB]" : "bg-black/20")
                                                     }`}
                                                 >
                                                     <div
-                                                        className={`w-4 h-4 rounded-full bg-black transition-all duration-300 transform ${
+                                                        className={`w-4 h-4 rounded-full bg-white transition-all duration-300 transform ${
                                                             shieldedEnabled && isPremium ? "translate-x-5" : "translate-x-0"
                                                         }`}
                                                     />
@@ -5434,10 +4693,10 @@ Please complete the following implementation tasks:
                                         </div>
 
                                         {/* Governed Access panel containing a generation button for the View Key */}
-                                        <div className="bg-black/40 border border-white/5 rounded-2xl p-5 space-y-4">
+                                        <div className="bg-[#D4E3E8]/40 border border-black/10 rounded-2xl p-5 space-y-4">
                                             <div>
-                                                <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-1">Governed View Key</h4>
-                                                <p className="text-[10px] text-white/50 leading-normal">
+                                                <h4 className="text-xs font-semibold text-black mb-1">Governed View Key</h4>
+                                                <p className="text-[10px] text-black/60 leading-normal font-sans">
                                                     Generate and register a View Key. Its hash is stored on-chain and gates retrieval of your batch payout history. The key itself never leaves your browser; only its hash is registered.
                                                 </p>
                                             </div>
@@ -5450,7 +4709,7 @@ Please complete the following implementation tasks:
                                                         readOnly
                                                         disabled={!isPremium}
                                                         placeholder="Click generate to create a View Key"
-                                                        className={`w-full bg-black border border-white/10 rounded-xl pl-4 pr-10 py-3 text-xs font-mono text-white focus:outline-none placeholder:text-white/20 ${
+                                                        className={`w-full bg-white border border-black/15 rounded-xl pl-4 pr-10 py-3 text-xs font-mono text-black focus:outline-none placeholder:text-black/30 ${
                                                             !isPremium ? "opacity-50 cursor-not-allowed" : ""
                                                         }`}
                                                     />
@@ -5458,7 +4717,7 @@ Please complete the following implementation tasks:
                                                         <button
                                                             onClick={() => setShowViewKey(!showViewKey)}
                                                             disabled={!isPremium}
-                                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-black/40 hover:text-black transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                                         >
                                                             {showViewKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                                         </button>
@@ -5469,20 +4728,20 @@ Please complete the following implementation tasks:
                                                     <button
                                                         onClick={handleCopyViewKey}
                                                         disabled={!isPremium}
-                                                        className="px-4 bg-white/5 border border-white/10 text-white rounded-xl hover:bg-white/10 transition-all flex items-center justify-center animate-none disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        className="px-4 bg-white border border-black/15 text-black rounded-xl hover:bg-black/5 transition-all flex items-center justify-center animate-none disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
-                                                        {copiedViewKey ? <Check className="w-4 h-4 text-[#00d2b4]" /> : <Copy className="w-4 h-4" />}
+                                                        {copiedViewKey ? <Check className="w-4 h-4 text-[#082824]" /> : <Copy className="w-4 h-4" />}
                                                     </button>
                                                 ) : (
                                                     <div className="flex items-center gap-2">
-                                                        {!isPremium && <Lock className="w-3.5 h-3.5 text-white/45" />}
+                                                        {!isPremium && <Lock className="w-3.5 h-3.5 text-black/40" />}
                                                         <button
                                                             onClick={handleGenerateViewKey}
                                                             disabled={!isPremium}
-                                                            className={`px-5 py-3 border text-xs font-bold rounded-xl uppercase tracking-wider transition-all flex items-center gap-2 ${
+                                                            className={`px-5 py-3 border text-xs font-semibold rounded-full transition-all flex items-center gap-2 ${
                                                                 !isPremium 
-                                                                    ? "bg-white/5 border-white/10 text-white/40 cursor-not-allowed" 
-                                                                    : "bg-[#d4a853]/10 hover:bg-[#d4a853]/20 border-[#d4a853]/30 text-[#d4a853]"
+                                                                    ? "bg-black/5 border-black/10 text-black/40 cursor-not-allowed" 
+                                                                    : "bg-[#8AB4DB] text-[#082824] hover:bg-[#7aa7d0] border-transparent"
                                                             }`}
                                                         >
                                                             <Key className="w-3.5 h-3.5" />
@@ -5494,16 +4753,16 @@ Please complete the following implementation tasks:
 
                                             {viewKey && !isViewKeyRegistered && (
                                                 <div className="flex items-center justify-between pt-2">
-                                                    <span className="text-[10px] text-amber-400 font-semibold flex items-center gap-1">
+                                                    <span className="text-[10px] text-amber-800 font-semibold flex items-center gap-1">
                                                         <AlertTriangle className="w-3 h-3" /> Key generated but not registered on-chain
                                                     </span>
                                                     <button
                                                         onClick={handleSaveConfidentiality}
                                                         disabled={isSavingConfidentiality || !isPremium}
-                                                        className={`px-5 py-2.5 font-bold rounded-xl text-xs uppercase tracking-wider transition-all flex items-center gap-2 ${
+                                                        className={`px-5 py-2.5 font-semibold rounded-full text-xs transition-all flex items-center gap-2 ${
                                                             !isPremium 
-                                                                ? "bg-white/5 border border-white/10 text-white/40 cursor-not-allowed" 
-                                                                : "bg-[#d4a853] text-black hover:brightness-110"
+                                                                ? "bg-black/5 border border-black/10 text-black/40 cursor-not-allowed" 
+                                                                : "bg-[#8AB4DB] text-[#082824] hover:bg-[#7aa7d0]"
                                                         }`}
                                                     >
                                                         {isSavingConfidentiality ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
@@ -5514,16 +4773,16 @@ Please complete the following implementation tasks:
 
                                             {isViewKeyRegistered && (
                                                 <div className="flex items-center justify-between pt-2">
-                                                    <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
-                                                        <CheckCircle className="w-3.5 h-3.5" /> View Key is active and registered
+                                                    <span className="text-[10px] text-emerald-800 font-semibold flex items-center gap-1">
+                                                        <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> View Key is active and registered
                                                     </span>
                                                     <button
                                                         onClick={handleSaveConfidentiality}
                                                         disabled={isSavingConfidentiality || !isPremium}
-                                                        className={`px-4 py-2 font-bold rounded-xl text-xs uppercase tracking-wider transition-all flex items-center gap-2 ${
+                                                        className={`px-4 py-2 font-semibold rounded-full text-xs transition-all flex items-center gap-2 ${
                                                             !isPremium 
-                                                                ? "bg-white/5 border border-white/10 text-white/40 cursor-not-allowed" 
-                                                                : "bg-white/5 border border-white/10 hover:bg-white/10 text-white"
+                                                                ? "bg-black/5 border border-black/10 text-black/40 cursor-not-allowed" 
+                                                                : "bg-white border border-black/15 hover:bg-black/5 text-black"
                                                         }`}
                                                     >
                                                         {isSavingConfidentiality ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
@@ -5535,52 +4794,52 @@ Please complete the following implementation tasks:
                                     </div>
 
                                     {/* Manual Keeper Execution Control */}
-                                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
-                                        <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                                            <PlugZap className="w-4 h-4 text-[#d4a853]" />
+                                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm space-y-6">
+                                        <h3 className="text-sm font-semibold text-black flex items-center gap-2">
+                                            <PlugZap className="w-4 h-4 text-[#082824]" />
                                             Keeper Force Execution
                                         </h3>
-                                        <p className="text-xs text-white/50 leading-relaxed">
+                                        <p className="text-xs text-black/60 leading-relaxed font-sans">
                                             Force the SubScript protocol keepers to check and execute any due subscription payments for your wallet immediately on-chain, bypassing the standard scheduler loop.
                                         </p>
-                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-black/40 border border-white/5 rounded-2xl p-5">
+                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-[#D4E3E8]/40 border border-black/10 rounded-2xl p-5">
                                             <div>
-                                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest leading-none mb-1">Status</p>
-                                                <p className="text-xs font-semibold text-white/80">Schedule: Idle (60s cycles)</p>
+                                                <p className="text-[10px] text-black/50 uppercase font-bold tracking-widest leading-none mb-1">Status</p>
+                                                <p className="text-xs font-semibold text-black/80">Schedule: Idle (60s cycles)</p>
                                             </div>
                                             <button
                                                 onClick={handleTriggerKeeper}
                                                 disabled={isTriggeringKeeper}
-                                                className={`px-5 py-3 bg-[#d4a853] text-black font-bold rounded-xl text-xs uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 relative overflow-hidden ${isTriggeringKeeper ? "quick-action-loading" : ""}`}
+                                                className="px-6 py-3 bg-[#8AB4DB] text-[#082824] font-semibold rounded-full text-xs hover:bg-[#7aa7d0] transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                             >
                                                 {isTriggeringKeeper ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                                                 Run Keepers
                                             </button>
                                         </div>
                                         {keeperStatus && (
-                                            <p className="text-emerald-400 text-xs font-semibold">{keeperStatus}</p>
+                                            <p className="text-emerald-700 text-xs font-semibold">{keeperStatus}</p>
                                         )}
                                         {keeperError && (
-                                            <p className="text-red-400 text-xs font-mono break-all">{keeperError}</p>
+                                            <p className="text-red-600 text-xs font-mono break-all">{keeperError}</p>
                                         )}
                                     </div>
 
                                     {/* Subscription Cancellation Control */}
-                                    <div className="liquid-glass border border-red-500/20 rounded-3xl p-6 shadow-2xl space-y-6 bg-red-500/[0.01]">
-                                        <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                                            <ShieldAlert className="w-4 h-4 text-red-400" />
+                                    <div className="rounded-[34px] border border-red-500/20 bg-red-50/50 p-6 shadow-sm space-y-6">
+                                        <h3 className="text-sm font-semibold text-red-900 flex items-center gap-2">
+                                            <ShieldAlert className="w-4 h-4 text-red-600" />
                                             {cancelAtPeriodEnd ? "Subscription Scheduled to End" : "Cancel Subscription"}
                                         </h3>
-                                        <p className="text-xs text-white/50 leading-relaxed font-sans">
+                                        <p className="text-xs text-red-800/80 leading-relaxed font-sans">
                                             {cancelAtPeriodEnd 
                                                 ? `Your Premium subscription will remain active until ${currentPeriodEnd ? new Date(currentPeriodEnd).toLocaleDateString() : "the end of the current period"}. You can resume anytime before that date.`
                                                 : "Cancel your active SubScript Premium subscription. Your Premium benefits will remain active until the end of your current billing period."
                                             }
                                         </p>
-                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-black/40 border border-white/5 rounded-2xl p-5">
+                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-white/80 border border-red-200 rounded-2xl p-5">
                                             <div>
-                                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest leading-none mb-1">Billing Status</p>
-                                                <p className="text-xs font-semibold text-white/80">
+                                                <p className="text-[10px] text-red-700 uppercase font-bold tracking-widest leading-none mb-1">Billing Status</p>
+                                                <p className="text-xs font-semibold text-red-950">
                                                      {cancelAtPeriodEnd ? "Pending Cancellation" : "Active (Renews monthly)"}
                                                 </p>
                                             </div>
@@ -5588,7 +4847,7 @@ Please complete the following implementation tasks:
                                                 <button
                                                     onClick={handleResumePremium}
                                                     disabled={isResumingPremium || !isPremium}
-                                                    className={`px-5 py-3 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/30 rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 relative overflow-hidden ${isResumingPremium ? "quick-action-loading" : ""}`}
+                                                    className="px-6 py-3 bg-emerald-600 text-white font-semibold rounded-full text-xs hover:bg-emerald-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                                 >
                                                     {isResumingPremium ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                                                     Resume Premium
@@ -5597,7 +4856,7 @@ Please complete the following implementation tasks:
                                                 <button
                                                     onClick={handleCancelPremium}
                                                     disabled={isCancellingPremium || !isPremium}
-                                                    className={`px-5 py-3 bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold border border-red-500/30 rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 relative overflow-hidden ${isCancellingPremium ? "quick-action-loading" : ""}`}
+                                                    className="px-6 py-3 bg-red-600 text-white font-semibold rounded-full text-xs hover:bg-red-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                                 >
                                                     {isCancellingPremium ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5" />}
                                                     Cancel Premium Pro
@@ -5614,15 +4873,15 @@ Please complete the following implementation tasks:
                                             { icon: Webhook, title: "Advanced Webhooks", desc: "Full webhook event stream with payload inspection and replay capability.", active: true },
                                             { icon: Key, title: "Full API Access", desc: "Publishable and secret API keys for backend SDK integration.", active: true },
                                         ].map((feature, idx) => (
-                                            <div key={idx} className="liquid-glass border border-white/5 rounded-2xl p-5 flex items-start gap-3">
-                                                <div className="p-2 bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853] rounded-xl flex-shrink-0">
+                                            <div key={idx} className="rounded-2xl border border-black/10 bg-[#D4E3E8]/40 p-5 flex items-start gap-3">
+                                                <div className="p-2 bg-[#EFE2AC] border border-black/10 text-[#082824] rounded-xl flex-shrink-0">
                                                     <feature.icon className="w-4 h-4" />
                                                 </div>
                                                 <div>
-                                                    <p className="text-xs font-bold text-white uppercase tracking-wider mb-0.5">{feature.title}</p>
-                                                    <p className="text-[10px] text-white/40 leading-relaxed">{feature.desc}</p>
+                                                    <p className="text-xs font-semibold text-black mb-0.5">{feature.title}</p>
+                                                    <p className="text-[10px] text-black/60 leading-relaxed font-sans">{feature.desc}</p>
                                                 </div>
-                                                <span className="ml-auto text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex-shrink-0">Active</span>
+                                                <span className="ml-auto text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 flex-shrink-0">Active</span>
                                             </div>
                                         ))}
                                     </div>
@@ -5630,19 +4889,19 @@ Please complete the following implementation tasks:
 
                                 <div className="md:col-span-1 space-y-6">
                                     {/* Billing Summary Card */}
-                                    <div className="liquid-glass border border-[#d4a853]/20 rounded-3xl p-6 shadow-2xl space-y-4">
-                                        <h4 className="text-[10px] text-white/40 uppercase font-bold tracking-widest text-center">Subscription Billing</h4>
-                                        <div className="space-y-3 font-mono text-[10px] text-white/60">
-                                            <div className="flex justify-between border-b border-white/5 pb-2">
+                                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-4 shadow-sm">
+                                        <h4 className="text-[10px] text-black/50 uppercase font-semibold tracking-widest text-center">Subscription Billing</h4>
+                                        <div className="space-y-3 font-mono text-[10px] text-black/70">
+                                            <div className="flex justify-between border-b border-black/10 pb-2">
                                                 <span>Tier:</span>
-                                                <span className="text-[#d4a853] font-bold">PREMIUM PRO</span>
+                                                <span className="text-[#082824] font-bold">PREMIUM PRO</span>
                                             </div>
-                                            <div className="flex justify-between border-b border-white/5 pb-2">
+                                            <div className="flex justify-between border-b border-black/10 pb-2">
                                                 <span>Price:</span>
                                                 <span>10 USDC / mo</span>
                                             </div>
                                             {currentPeriodEnd && (
-                                                <div className="flex justify-between border-b border-white/5 pb-2">
+                                                <div className="flex justify-between border-b border-black/10 pb-2">
                                                     <span>{cancelAtPeriodEnd ? "Expires:" : "Next Renewal:"}</span>
                                                     <span>{new Date(currentPeriodEnd).toLocaleDateString()}</span>
                                                 </div>
@@ -5650,7 +4909,7 @@ Please complete the following implementation tasks:
                                         </div>
                                         <Link
                                             href="/merchant/upgrade"
-                                            className="w-full py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 text-center"
+                                            className="w-full py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] font-semibold rounded-full text-xs transition-all flex items-center justify-center gap-2 text-center"
                                         >
                                             Manage Subscription
                                         </Link>
@@ -5659,29 +4918,29 @@ Please complete the following implementation tasks:
                             </div>
                         ) : (
                             /* Upgrade CTA for Standard tier */
-                            <div className="liquid-glass border border-[#d4a853]/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-gradient-to-b from-[#d4a853]/[0.02] to-transparent">
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-black shadow-sm">
                                 <div className="max-w-lg mx-auto text-center space-y-6">
                                     <div className="space-y-2">
-                                        <h3 className="text-lg font-extrabold text-white uppercase tracking-tight">Upgrade to Premium Pro</h3>
-                                        <p className="text-xs text-white/50 leading-relaxed">
+                                        <h3 className="text-lg font-semibold text-black">Upgrade to Premium Pro</h3>
+                                        <p className="text-xs text-black/60 leading-relaxed font-sans">
                                             Unlock payout rerouting to cold storage and multisigs, priority keeper execution, real-time analytics, and full API/webhook access.
                                         </p>
                                     </div>
 
                                     <div className="flex items-center justify-center gap-2">
-                                        <span className="text-3xl font-extrabold text-[#d4a853]">10 USDC</span>
-                                        <span className="text-xs text-white/40">/ month</span>
+                                        <span className="text-3xl font-bold text-[#082824]">10 USDC</span>
+                                        <span className="text-xs text-black/50">/ month</span>
                                     </div>
 
                                     <Link
                                         href="/merchant/upgrade"
-                                        className="px-8 py-3.5 bg-gradient-to-r from-[#d4a853] to-[#c49240] text-[#111111] font-extrabold text-xs uppercase tracking-widest rounded-full shadow-[0_4px_25px_rgba(212,168,83,0.3)] hover:brightness-110 transition-all flex items-center gap-2 mx-auto w-fit"
+                                        className="px-8 py-3.5 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] font-semibold text-xs rounded-full transition-all flex items-center gap-2 mx-auto w-fit"
                                     >
                                         <Crown className="w-4 h-4" /> View Upgrade Options
                                     </Link>
 
                                     {/* Features list */}
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left pt-4 border-t border-white/5">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left pt-4 border-t border-black/10">
                                         {[
                                             "Opt-In Privacy Controls",
                                             "Priority keeper execution",
@@ -5690,8 +4949,8 @@ Please complete the following implementation tasks:
                                             "Multi-wallet support",
                                             "Premium Pro merchant badge"
                                         ].map((f, i) => (
-                                            <div key={i} className="flex items-center gap-2 text-xs text-white/60">
-                                                <Check className="w-3.5 h-3.5 text-[#d4a853] flex-shrink-0" /> {f}
+                                            <div key={i} className="flex items-center gap-2 text-xs text-black/70 font-sans">
+                                                <Check className="w-3.5 h-3.5 text-[#082824] flex-shrink-0" /> {f}
                                             </div>
                                         ))}
                                     </div>
@@ -5702,18 +4961,18 @@ Please complete the following implementation tasks:
                         {/* Quick Jump Developer Portal & Merchant Operations */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
                             {/* Merchant KYC / Verification Status */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm space-y-4">
                                 <div className="flex items-center justify-between">
-                                    <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                                        <Shield className="w-4 h-4 text-[#00d2b4]" /> Business Verification
+                                    <h4 className="text-xs font-semibold text-black flex items-center gap-2">
+                                        <Shield className="w-4 h-4 text-[#082824]" /> Business Verification
                                     </h4>
                                     {userSettings.verified ? (
-                                        <span className="px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Verified</span>
+                                        <span className="px-2.5 py-1 text-[9px] font-bold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">Verified</span>
                                     ) : (
-                                        <span className="px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">Unverified</span>
+                                        <span className="px-2.5 py-1 text-[9px] font-bold rounded-full bg-amber-100 text-amber-800 border border-amber-300">Unverified</span>
                                     )}
                                 </div>
-                                <p className="text-xs text-white/50 leading-relaxed">
+                                <p className="text-xs text-black/60 leading-relaxed font-sans">
                                     {userSettings.verified
                                         ? "Your merchant account is verified. Checkout links will display a verified trust badge to customers."
                                         : "Complete business verification to gain verified status and remove checkout warnings."}
@@ -5721,66 +4980,67 @@ Please complete the following implementation tasks:
                             </div>
 
                             {/* Developer Portal Quick Jump */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
-                                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                                    <Terminal className="w-4 h-4 text-[#00d2b4]" /> Developer Quick-Jump
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm space-y-4">
+                                <h4 className="text-xs font-semibold text-black flex items-center gap-2">
+                                    <Terminal className="w-4 h-4 text-[#082824]" /> Developer Quick-Jump
                                 </h4>
-                                <p className="text-xs text-white/50 leading-relaxed">Access backend API keys, webhooks outbox, and SDK documentation.</p>
+                                <p className="text-xs text-black/60 leading-relaxed font-sans">Access backend API keys, webhooks outbox, and SDK documentation.</p>
                                 <div className="flex items-center gap-2">
                                     <button
                                         onClick={() => setActiveTab("apikeys")}
-                                        className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition border border-white/10 flex items-center justify-center gap-1.5"
+                                        className="flex-1 py-2.5 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-full text-xs font-semibold transition flex items-center justify-center gap-1.5"
                                     >
-                                        <Key className="w-3.5 h-3.5 text-[#00d2b4]" /> API Keys
+                                        <Key className="w-3.5 h-3.5" /> API Keys
                                     </button>
                                     <button
                                         onClick={() => setActiveTab("webhooks")}
-                                        className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition border border-white/10 flex items-center justify-center gap-1.5"
+                                        className="flex-1 py-2.5 bg-white border border-black/15 hover:bg-black/5 text-black rounded-full text-xs font-semibold transition flex items-center justify-center gap-1.5"
                                     >
-                                        <Webhook className="w-3.5 h-3.5 text-[#00d2b4]" /> Webhooks
+                                        <Webhook className="w-3.5 h-3.5 text-[#082824]" /> Webhooks
                                     </button>
                                 </div>
                             </div>
 
                             {/* Notification Preferences */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
-                                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                                    <Bell className="w-4 h-4 text-[#00d2b4]" /> Notification Toggles
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm space-y-4">
+                                <h4 className="text-xs font-semibold text-black flex items-center gap-2">
+                                    <Bell className="w-4 h-4 text-[#082824]" /> Notification Toggles
                                 </h4>
-                                <div className="space-y-2 text-xs text-white/70">
-                                    <label className="flex items-center justify-between p-2 rounded-xl bg-white/[0.02] border border-white/5 cursor-pointer">
+                                <div className="space-y-2 text-xs text-black/70 font-sans">
+                                    <label className="flex items-center justify-between p-2 rounded-xl bg-[#D4E3E8]/40 border border-black/10 cursor-pointer">
                                         <span>New Subscriptions</span>
-                                        <input type="checkbox" defaultChecked className="accent-[#00d2b4] w-4 h-4" />
+                                        <input type="checkbox" defaultChecked className="accent-[#082824] w-4 h-4" />
                                     </label>
-                                    <label className="flex items-center justify-between p-2 rounded-xl bg-white/[0.02] border border-white/5 cursor-pointer">
+                                    <label className="flex items-center justify-between p-2 rounded-xl bg-[#D4E3E8]/40 border border-black/10 cursor-pointer">
                                         <span>Successful Payments</span>
-                                        <input type="checkbox" defaultChecked className="accent-[#00d2b4] w-4 h-4" />
+                                        <input type="checkbox" defaultChecked className="accent-[#082824] w-4 h-4" />
                                     </label>
-                                    <label className="flex items-center justify-between p-2 rounded-xl bg-white/[0.02] border border-white/5 cursor-pointer">
+                                    <label className="flex items-center justify-between p-2 rounded-xl bg-[#D4E3E8]/40 border border-black/10 cursor-pointer">
                                         <span>Failed Renewals</span>
-                                        <input type="checkbox" defaultChecked className="accent-[#00d2b4] w-4 h-4" />
+                                        <input type="checkbox" defaultChecked className="accent-[#082824] w-4 h-4" />
                                     </label>
                                 </div>
                             </div>
                         </div>
                     </div>
                 );
+            }
 
             case "apikeys": {
                 if (isConnected && address && !sessionWallet && !embeddedWallet) {
                     return (
-                        <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
-                            <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
-                            <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
-                            <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-sm text-black font-sans">
+                            <Shield className="w-10 h-10 mx-auto text-[#082824]" />
+                            <h2 className="text-lg font-semibold text-black">Verify Wallet Ownership</h2>
+                            <p className="text-xs text-black/60 leading-relaxed max-w-xs mx-auto">
                                 To protect your API credentials and webhook endpoints, please sign a secure message using your connected wallet.
                             </p>
                             <button
                                 onClick={handleBackendLogin}
                                 disabled={isLoggingIn}
-                                className="w-full py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                                className="w-full py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-full text-xs font-semibold flex items-center justify-center gap-2 transition-all"
                             >
-                                {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : <Shield className="w-4 h-4" />}
+                                {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-[#082824]" /> : <Shield className="w-4 h-4" />}
                                 Authenticate Developer Portal
                             </button>
                         </div>
@@ -5799,14 +5059,14 @@ Please complete the following implementation tasks:
                 const activeSecretAvailable = Boolean(activeKey?.secretKeyAvailable && activeSecretKey);
 
                 return (
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-8">
+                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-black space-y-8">
                         <div className="flex justify-between items-start">
                             <div>
-                                <h2 className="text-lg font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                                    <Key className={`w-5 h-5 ${primaryColorText}`} />
+                                <h2 className="text-lg font-semibold text-black mb-2 flex items-center gap-2">
+                                    <Key className="w-5 h-5 text-[#082824]" />
                                     API Credentials
                                 </h2>
-                                <p className="text-xs text-white/50 font-sans leading-relaxed">
+                                <p className="text-xs text-black/60 font-sans leading-relaxed">
                                     Use these keys to authenticate your backend with the SubScript SDK.
                                     API credentials are secure and persisted in the database.
                                 </p>
@@ -5814,7 +5074,7 @@ Please complete the following implementation tasks:
                             {sessionWallet && (
                                 <button
                                     onClick={handleLogout}
-                                    className="px-3 py-1.5 border border-white/10 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20 rounded-xl text-[10px] font-sans transition-all"
+                                    className="px-3.5 py-1.5 border border-black/15 hover:bg-red-500/10 hover:text-red-600 hover:border-red-500/20 rounded-full text-[10px] font-semibold font-sans transition-all"
                                 >
                                     Log Out Developer Portal
                                 </button>
@@ -5822,32 +5082,32 @@ Please complete the following implementation tasks:
                         </div>
 
                         {apiKeySetupStatus && (
-                            <p role="status" className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-[10px] leading-relaxed text-white/65">
+                            <p role="status" className="rounded-2xl border border-black/10 bg-black/[0.03] px-4 py-3 text-[10px] leading-relaxed text-black/70">
                                 {apiKeySetupStatus}
                             </p>
                         )}
 
                         {isKeysLoading ? (
-                            <div className="border border-white/5 rounded-2xl p-6 sm:p-8 bg-black/20 space-y-4 font-sans animate-pulse">
-                                <div className="w-8 h-8 rounded-full bg-white/15 mx-auto" />
+                            <div className="border border-black/10 rounded-2xl p-6 sm:p-8 bg-black/[0.02] space-y-4 font-sans animate-pulse">
+                                <div className="w-8 h-8 rounded-full bg-black/15 mx-auto" />
                                 <div className="space-y-2 max-w-sm mx-auto">
-                                    <div className="h-3.5 w-44 rounded bg-white/15 mx-auto" />
-                                    <div className="h-2.5 w-full rounded bg-white/10" />
+                                    <div className="h-3.5 w-44 rounded bg-black/15 mx-auto" />
+                                    <div className="h-2.5 w-full rounded bg-black/10" />
                                 </div>
-                                <div className="h-11 w-full max-w-xl mx-auto rounded-xl bg-white/[0.06]" />
+                                <div className="h-11 w-full max-w-xl mx-auto rounded-xl bg-black/[0.06]" />
                             </div>
                         ) : !activeKey ? (
-                            <div className="border border-white/5 rounded-2xl p-6 sm:p-8 text-center bg-black/20 space-y-4 font-sans">
-                                <Key className="w-8 h-8 mx-auto text-white/20" />
+                            <div className="border border-black/10 rounded-2xl p-6 sm:p-8 text-center bg-black/[0.02] space-y-4 font-sans">
+                                <Key className="w-8 h-8 mx-auto text-black/20" />
                                 <div className="space-y-1">
-                                    <p className="text-xs font-bold text-white uppercase tracking-wider">No Active API Credentials</p>
-                                    <p className="text-[10px] text-white/40 leading-relaxed">
+                                    <p className="text-xs font-semibold text-black">No Active API Credentials</p>
+                                    <p className="text-[10px] text-black/50 leading-relaxed">
                                         Generate credentials and optionally register the webhook receiver that belongs to this integration.
                                     </p>
                                 </div>
                                 <div className="mx-auto w-full max-w-xl space-y-2 text-left">
-                                    <label htmlFor="api-key-webhook-url" className="block text-[10px] font-bold uppercase tracking-wider text-white/55">
-                                        Webhook URL <span className="font-normal normal-case text-white/30">(recommended)</span>
+                                    <label htmlFor="api-key-webhook-url" className="block text-[10px] font-semibold text-black/60">
+                                        Webhook URL <span className="font-normal normal-case text-black/40">(recommended)</span>
                                     </label>
                                     <input
                                         id="api-key-webhook-url"
@@ -5855,16 +5115,16 @@ Please complete the following implementation tasks:
                                         value={apiKeyWebhookUrl}
                                         onChange={(event) => setApiKeyWebhookUrl(event.target.value)}
                                         placeholder="https://your-app.example/api/subscript/webhook"
-                                        className="w-full rounded-xl border border-white/10 bg-black/50 px-4 py-3 text-xs text-white outline-none transition-colors focus:border-[#00d2b4]"
+                                        className="w-full rounded-xl border border-black/15 bg-white px-4 py-3 text-xs text-black outline-none transition-colors focus:border-[#8AB4DB]"
                                     />
-                                    <p className="text-[9px] leading-relaxed text-white/30">
+                                    <p className="text-[10px] leading-relaxed text-black/50">
                                         SubScript creates the endpoint with your API key so payment and subscription events are observable immediately.
                                     </p>
                                 </div>
                                 <button
                                     onClick={handleRollKeys}
                                     disabled={isRolling}
-                                    className="px-6 py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/80 text-black rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 mx-auto transition-all"
+                                    className="px-6 py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-full text-xs font-semibold flex items-center gap-2 mx-auto transition-all"
                                 >
                                     {isRolling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
                                     Generate API Keys
@@ -5873,18 +5133,18 @@ Please complete the following implementation tasks:
                         ) : (
                             <div className="space-y-6">
                                 {/* Publishable Key */}
-                                <div className="bg-black/40 border border-white/5 rounded-2xl p-5 font-sans">
+                                <div className="bg-[#D4E3E8]/50 border border-black/10 rounded-2xl p-5 font-sans">
                                     <div className="flex items-center justify-between mb-2">
-                                        <span className="text-[10px] text-white/40 uppercase font-bold tracking-widest font-mono">Publishable Key</span>
+                                        <span className="text-[10px] text-black/60 font-semibold uppercase tracking-wider font-mono">Publishable Key</span>
                                         {copiedText === "Publishable Key" && (
-                                            <span className="text-[10px] text-[#00d2b4] font-bold">Copied</span>
+                                            <span className="text-[10px] text-[#082824] font-bold">Copied</span>
                                         )}
                                     </div>
-                                    <div className="flex items-center justify-between gap-4 bg-black/60 rounded-xl p-3 border border-white/5">
-                                        <code className="text-xs font-mono text-white/80 break-all select-all">{activePublishableKey}</code>
+                                    <div className="flex items-center justify-between gap-4 bg-white rounded-xl p-3 border border-black/10">
+                                        <code className="text-xs font-mono text-black/80 break-all select-all">{activePublishableKey}</code>
                                         <button 
                                             onClick={() => handleCopy(activePublishableKey, "Publishable Key")}
-                                            className="p-2 text-white/40 hover:text-white rounded-lg hover:bg-white/5 transition-all"
+                                            className="p-2 text-black/40 hover:text-black rounded-lg hover:bg-black/5 transition-all"
                                         >
                                             <Copy className="w-4 h-4" />
                                         </button>
@@ -5892,20 +5152,20 @@ Please complete the following implementation tasks:
                                 </div>
 
                                 {/* Secret Key */}
-                                <div className="bg-black/40 border border-white/5 rounded-2xl p-5 font-sans">
+                                <div className="bg-[#D4E3E8]/50 border border-black/10 rounded-2xl p-5 font-sans">
                                     <div className="flex items-center justify-between mb-2">
                                         <div className="flex items-center gap-2">
-                                            <span className="text-[10px] text-white/40 uppercase font-bold tracking-widest font-mono">Secret Key</span>
-                                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">Secret</span>
+                                            <span className="text-[10px] text-black/60 font-semibold uppercase tracking-wider font-mono">Secret Key</span>
+                                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-800 border border-yellow-500/30">Secret</span>
                                         </div>
                                         <div className="flex items-center gap-4">
                                             {copiedText === "Secret Key" && (
-                                                <span className="text-[10px] text-[#00d2b4] font-bold">Copied</span>
+                                                <span className="text-[10px] text-[#082824] font-bold">Copied</span>
                                             )}
                                             {activeSecretAvailable && (
                                                 <button
                                                     onClick={() => setRevealSecret(!revealSecret)}
-                                                    className="text-white/40 hover:text-white transition-colors"
+                                                    className="text-black/40 hover:text-black transition-colors"
                                                 >
                                                     {revealSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                                 </button>
@@ -5914,8 +5174,8 @@ Please complete the following implementation tasks:
                                     </div>
                                     {activeSecretAvailable ? (
                                         <>
-                                            <div className="flex items-center justify-between gap-4 bg-black/60 rounded-xl p-3 border border-white/5 font-mono">
-                                                <code className="text-xs text-white/80 break-all">
+                                            <div className="flex items-center justify-between gap-4 bg-white rounded-xl p-3 border border-black/10 font-mono">
+                                                <code className="text-xs text-black/80 break-all">
                                                     {revealSecret
                                                         ? activeSecretKey
                                                         : "••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
@@ -5924,22 +5184,22 @@ Please complete the following implementation tasks:
                                                 <button
                                                     onClick={() => handleCopy(activeSecretKey, "Secret Key")}
                                                     disabled={!revealSecret}
-                                                    className="p-2 text-white/40 hover:text-white hover:bg-white/5 rounded-lg disabled:opacity-30 disabled:pointer-events-none transition-all"
+                                                    className="p-2 text-black/40 hover:text-black hover:bg-black/5 rounded-lg disabled:opacity-30 disabled:pointer-events-none transition-all"
                                                 >
                                                     <Copy className="w-4 h-4" />
                                                 </button>
                                             </div>
-                                            <p className="mt-2 text-[10px] leading-relaxed text-yellow-400/80">
+                                            <p className="mt-2 text-[10px] leading-relaxed text-amber-900">
                                                 Copy this now. It is only readable while this page stays open; the key is stored
                                                 hashed, so it cannot be shown again.
                                             </p>
                                         </>
                                     ) : (
                                         <>
-                                            <div className="flex items-center gap-4 rounded-xl border border-white/5 bg-black/60 p-3 font-mono">
-                                                <code className="break-all text-xs text-white/45">{activeSecretKey}</code>
+                                            <div className="flex items-center gap-4 rounded-xl border border-black/10 bg-white p-3 font-mono">
+                                                <code className="break-all text-xs text-black/60">{activeSecretKey}</code>
                                             </div>
-                                            <p className="mt-2 text-[10px] leading-relaxed text-white/40">
+                                            <p className="mt-2 text-[10px] leading-relaxed text-black/60">
                                                 This is a fingerprint of the live key, not the key itself. It's enough to tell which one
                                                 your integration should be using. The secret is stored hashed and is shown only once,
                                                 when it is created. If you no longer have it, roll the key below to issue a new one.
@@ -5949,24 +5209,24 @@ Please complete the following implementation tasks:
                                 </div>
 
                                 {/* Roll Keys */}
-                                <div className="pt-4 border-t border-white/5 flex items-center justify-between font-sans">
+                                <div className="pt-4 border-t border-black/10 flex items-center justify-between font-sans">
                                     <div>
-                                        <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-1">Rotation / Roll Credentials</h3>
-                                        <p className="text-[10px] text-white/40 max-w-md">
+                                        <h3 className="text-xs font-semibold text-black mb-1">Rotation / Roll Credentials</h3>
+                                        <p className="text-[10px] text-black/60 max-w-md">
                                             Roll your API key pair instantly. Old keys are immediately invalidated for safety in this sandbox.
                                             {!activeSecretAvailable && " This is also how you get a readable secret if you no longer have the current one. The new key is revealed and copied once, here."}
                                         </p>
                                     </div>
                                     <div className="flex items-center gap-4">
                                         {copiedText === "API Secret Key Rolled" && (
-                                            <span className="text-[10px] text-[#00d2b4] font-bold animate-pulse">API Secret Key Rolled</span>
+                                            <span className="text-[10px] text-[#082824] font-bold">API Secret Key Rolled</span>
                                         )}
                                         <button
                                             onClick={handleRollKeys}
                                             disabled={isRolling}
-                                            className={`px-5 py-3 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-all flex items-center gap-2 ${isRolling ? "opacity-50" : ""}`}
+                                            className={`px-5 py-2.5 border border-black/15 rounded-full text-xs font-semibold hover:bg-black/5 transition-all flex items-center gap-2 ${isRolling ? "opacity-50" : ""}`}
                                         >
-                                            {isRolling ? <RefreshCw className="w-4 h-4 animate-spin text-white" /> : <RotateCw className="w-4 h-4 text-white" />}
+                                            {isRolling ? <RefreshCw className="w-4 h-4 animate-spin text-black" /> : <RotateCw className="w-4 h-4 text-black" />}
                                             Roll
                                         </button>
                                     </div>
@@ -5981,14 +5241,14 @@ Please complete the following implementation tasks:
                 return (
                     <div className="space-y-8">
                         {/* Fastest path: the CLI (no SDK, plain REST). */}
-                        <div className="liquid-glass border border-[#00d2b4]/25 rounded-3xl p-6 shadow-2xl bg-[#00d2b4]/[0.04]">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black shadow-sm">
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                                 <div>
-                                    <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                                        <Code2 className={`w-4 h-4 ${primaryColorText}`} />
+                                    <h2 className="text-sm font-semibold text-black flex items-center gap-2">
+                                        <Code2 className="w-4 h-4 text-[#082824]" />
                                         Fastest integration: the CLI
                                     </h2>
-                                    <p className="mt-2 text-[11px] text-white/55 leading-relaxed max-w-md">
+                                    <p className="mt-2 text-[11px] text-black/60 leading-relaxed max-w-md font-sans">
                                         One command scaffolds a checkout intent route, a signed webhook receiver, and a checkout button. SubScript is a plain REST API. There is no SDK to install.
                                     </p>
                                 </div>
@@ -5996,58 +5256,58 @@ Please complete the following implementation tasks:
                                     href="https://www.subscriptonarc.com/docs"
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-[#00d2b4] hover:underline"
+                                    className="shrink-0 text-xs font-semibold text-[#082824] hover:underline"
                                 >
                                     Read the docs →
                                 </a>
                             </div>
-                            <div className="mt-4 flex items-center gap-2 bg-black/50 border border-white/10 rounded-xl px-4 py-3">
-                                <code className="flex-1 text-xs font-mono text-white/90 break-all">npx @subscriptonarc/cli</code>
+                            <div className="mt-4 flex items-center gap-2 bg-[#D4E3E8]/50 border border-black/10 rounded-xl px-4 py-3">
+                                <code className="flex-1 text-xs font-mono text-[#082824] font-semibold break-all">npx @subscriptonarc/cli</code>
                                 <button
                                     onClick={() => handleCopy("npx @subscriptonarc/cli", "CLI Command")}
-                                    className="shrink-0 p-2 text-white/50 hover:text-[#00d2b4] rounded-lg hover:bg-white/5 transition-colors"
+                                    className="shrink-0 p-2 text-black/40 hover:text-black rounded-lg hover:bg-black/5 transition-colors"
                                     title="Copy command"
                                 >
-                                    {copiedText === "CLI Command" ? <Check className="w-4 h-4 text-[#00d2b4]" /> : <Copy className="w-4 h-4" />}
+                                    {copiedText === "CLI Command" ? <Check className="w-4 h-4 text-[#082824]" /> : <Copy className="w-4 h-4" />}
                                 </button>
                             </div>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
                             {/* Configurator Form */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl flex flex-col justify-between">
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black flex flex-col justify-between">
                                 <div>
-                                    <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-6 flex items-center gap-2">
-                                        <Sliders className={`w-4 h-4 ${primaryColorText}`} />
+                                    <h2 className="text-sm font-semibold text-black mb-6 flex items-center gap-2">
+                                        <Sliders className="w-4 h-4 text-[#082824]" />
                                         Checkout Configurator
                                     </h2>
                                     <div className="space-y-4 font-sans text-xs">
                                         <div>
-                                            <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Subscription/Plan Name</label>
+                                            <label className="text-[10px] text-black/60 font-semibold uppercase tracking-wider block mb-2">Subscription/Plan Name</label>
                                             <input 
                                                 type="text" 
                                                 aria-label="Subscription/Plan Name"
                                                 value={subName} 
                                                 onChange={(e) => setSubName(e.target.value)}
-                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                                className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors"
                                             />
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
-                                                <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Monthly cap (USDC)</label>
+                                                <label className="text-[10px] text-black/60 font-semibold uppercase tracking-wider block mb-2">Monthly cap (USDC)</label>
                                                 <input 
                                                     type="text" 
                                                     value={subCap} 
                                                     onChange={(e) => setSubCap(e.target.value)}
-                                                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                                    className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors"
                                                 />
                                             </div>
                                             <div>
-                                                <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Billing Interval</label>
+                                                <label className="text-[10px] text-black/60 font-semibold uppercase tracking-wider block mb-2">Billing Interval</label>
                                                 <select 
                                                     value={subInterval}
                                                     onChange={(e) => setSubInterval(e.target.value)}
-                                                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors appearance-none"
+                                                    className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors appearance-none"
                                                 >
                                                     <option value="weekly">Weekly</option>
                                                     <option value="monthly">Monthly</option>
@@ -6059,7 +5319,7 @@ Please complete the following implementation tasks:
                                             <button
                                                 type="button"
                                                 onClick={() => setShowCheckoutAdvanced(!showCheckoutAdvanced)}
-                                                className="text-[10px] text-white/40 hover:text-white flex items-center gap-1.5 uppercase font-bold tracking-wider transition-colors"
+                                                className="text-[10px] text-black/60 hover:text-black flex items-center gap-1.5 font-semibold uppercase tracking-wider transition-colors"
                                             >
                                                 <Sliders className="w-3.5 h-3.5" />
                                                 {showCheckoutAdvanced ? "Hide Advanced Options" : "Show Advanced Options"}
@@ -6067,23 +5327,23 @@ Please complete the following implementation tasks:
                                         </div>
 
                                         {showCheckoutAdvanced && (
-                                            <div className="pt-3 border-t border-white/5 space-y-4">
+                                            <div className="pt-3 border-t border-black/10 space-y-4">
                                                 <div>
-                                                    <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Settlement Rail</label>
+                                                    <label className="text-[10px] text-black/60 font-semibold uppercase tracking-wider block mb-2">Settlement Rail</label>
                                                     <select 
                                                         value={subChain}
                                                         onChange={(e) => setSubChain(e.target.value)}
-                                                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors font-sans text-xs"
+                                                        className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors font-sans text-xs"
                                                     >
                                                         <option value="arc">Arc Network (Hosted checkout live)</option>
                                                     </select>
                                                 </div>
                                                 <div>
-                                                    <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Wallet Connection Provider</label>
+                                                    <label className="text-[10px] text-black/60 font-semibold uppercase tracking-wider block mb-2">Wallet Connection Provider</label>
                                                     <select 
                                                         value={walletProvider}
                                                         onChange={(e) => setWalletProvider(e.target.value)}
-                                                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors font-sans text-xs"
+                                                        className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors font-sans text-xs"
                                                     >
                                                         <option value="none">Not Connected (Agent will configure RainbowKit/wagmi)</option>
                                                         <option value="privy">Privy Auth (Embedded Wallets + Social Login)</option>
@@ -6093,11 +5353,11 @@ Please complete the following implementation tasks:
                                                     </select>
                                                 </div>
                                                 <div>
-                                                    <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Backend & Database Provider</label>
+                                                    <label className="text-[10px] text-black/60 font-semibold uppercase tracking-wider block mb-2">Backend & Database Provider</label>
                                                     <select 
                                                         value={dbProvider}
                                                         onChange={(e) => setDbProvider(e.target.value)}
-                                                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors font-sans text-xs"
+                                                        className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors font-sans text-xs"
                                                     >
                                                         <option value="none">No Database (Agent will auto-detect or recommend Prisma)</option>
                                                         <option value="prisma">Prisma ORM (PostgreSQL/MySQL/SQLite)</option>
@@ -6107,11 +5367,11 @@ Please complete the following implementation tasks:
                                                     </select>
                                                 </div>
                                                 <div>
-                                                    <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Session Persistence</label>
+                                                    <label className="text-[10px] text-black/60 font-semibold uppercase tracking-wider block mb-2">Session Persistence</label>
                                                     <select 
                                                         value={sessionProvider}
                                                         onChange={(e) => setSessionProvider(e.target.value)}
-                                                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors font-sans text-xs"
+                                                        className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors font-sans text-xs"
                                                     >
                                                         <option value="none">No Session Engine (Agent will configure HTTP Cookies/JWT)</option>
                                                         <option value="cookies">HTTP-Only Secure Cookies (Stateful session)</option>
@@ -6123,27 +5383,23 @@ Please complete the following implementation tasks:
                                         )}
                                     </div>
                                 </div>
-                                <div className="mt-8 pt-4 border-t border-white/5 text-[10px] text-white/40">
+                                <div className="mt-8 pt-4 border-t border-black/10 text-[10px] text-black/50 font-sans">
                                     SubScript is fast, private, and reliable: Arc-native USDC gas, private burner activation, and a 1% protocol fee.
                                 </div>
                             </div>
 
                             {/* Code output Block */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40 p-6 flex flex-col justify-between space-y-4">
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black flex flex-col justify-between space-y-4">
                                 <div className="space-y-1">
-                                    <span className="text-xs font-bold text-white/40 uppercase tracking-widest">Checkout Snippet (REST · no SDK)</span>
-                                    <p className="text-[10px] text-white/30">A fetch-based checkout button + intent route. No SDK to install.</p>
+                                    <span className="text-xs font-semibold text-black uppercase tracking-wider">Checkout Snippet (REST · no SDK)</span>
+                                    <p className="text-[10px] text-black/50 font-sans">A fetch-based checkout button + intent route. No SDK to install.</p>
                                 </div>
-                                <pre className="bg-black/40 p-4 rounded-xl border border-white/5 overflow-x-auto text-[10px] font-mono text-emerald-400 text-left flex-1">
+                                <pre className="bg-[#D4E3E8]/40 p-4 rounded-2xl border border-black/10 overflow-x-auto text-[10px] font-mono text-[#082824] text-left flex-1">
                                     <code>{checkoutCode}</code>
                                 </pre>
                                 <button 
                                     onClick={() => handleCopy(checkoutCode, "Checkout Snippet")}
-                                    className={`w-full py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all duration-200 flex items-center justify-center gap-2 ${
-                                        copiedText === "Checkout Snippet"
-                                            ? "bg-[#00d2b4] text-[#111111] shadow-[0_0_20px_rgba(0,210,180,0.25)]"
-                                            : "bg-white/5 hover:bg-[#00d2b4]/10 border border-white/10 hover:border-[#00d2b4]/30 text-white hover:text-[#00d2b4]"
-                                    }`}
+                                    className="w-full py-3.5 rounded-full font-semibold text-xs transition-all duration-200 flex items-center justify-center gap-2 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824]"
                                 >
                                     {copiedText === "Checkout Snippet" ? (
                                         <>
@@ -6160,28 +5416,24 @@ Please complete the following implementation tasks:
 
 
                         {/* Agent Prompt Block */}
-                        <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40">
-                            <div className="border-b border-white/5 px-6 py-4 bg-white/[0.01]">
-                                <span className="text-xs font-bold text-white/40 uppercase tracking-widest">Agent Integration Prompt</span>
-                                <p className="text-[10px] text-white/30 mt-0.5">Set up your subscription options and grab the integration prompt for your AI agent.</p>
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] text-black overflow-hidden shadow-sm">
+                            <div className="border-b border-black/10 px-6 py-4 bg-black/[0.01]">
+                                <span className="text-xs font-semibold text-black uppercase tracking-wider">Agent Integration Prompt</span>
+                                <p className="text-[10px] text-black/50 font-sans mt-0.5">Set up your subscription options and grab the integration prompt for your AI agent.</p>
                             </div>
-                            <div className="p-6 space-y-4">
+                            <div className="p-6 space-y-4 font-sans">
 
 
                                 {/* Configuration Status Card */}
-                                <div className="bg-white/[0.02] border border-white/5 rounded-xl p-5 text-center">
-                                    <p className="text-xs text-white/60 leading-relaxed">
+                                <div className="bg-[#D4E3E8]/40 border border-black/10 rounded-2xl p-5 text-center">
+                                    <p className="text-xs text-black/70 leading-relaxed font-sans">
                                         Prompt configurations compiled successfully. Ready to copy for your AI coding assistant.
                                     </p>
                                 </div>
 
                                 <button
                                     onClick={() => handleCopy(agentIntegrationPrompt, "Agent Prompt")}
-                                    className={`w-full py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all duration-200 flex items-center justify-center gap-2 ${
-                                        copiedText === "Agent Prompt"
-                                            ? "bg-[#00d2b4] text-[#111111] shadow-[0_0_20px_rgba(0,210,180,0.25)]"
-                                            : "bg-white/5 hover:bg-[#00d2b4]/10 border border-white/10 hover:border-[#00d2b4]/30 text-white hover:text-[#00d2b4]"
-                                    }`}
+                                    className="w-full py-3.5 rounded-full font-semibold text-xs transition-all duration-200 flex items-center justify-center gap-2 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824]"
                                 >
                                     {copiedText === "Agent Prompt" ? (
                                         <>
@@ -6197,23 +5449,19 @@ Please complete the following implementation tasks:
                         </div>
 
                         {/* MCP Config */}
-                        <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40 p-6 space-y-4">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-4">
                             <div className="space-y-1">
-                                <span className="text-xs font-bold text-white/40 uppercase tracking-widest">cursor_mcp.json</span>
-                                <p className="text-[10px] text-white/30 mt-0.5">Drop-in MCP context for Cursor or compatible agents.</p>
+                                <span className="text-xs font-semibold text-black uppercase tracking-wider">cursor_mcp.json</span>
+                                <p className="text-[10px] text-black/50 font-sans mt-0.5">Drop-in MCP context for Cursor or compatible agents.</p>
                             </div>
-                            <div className="bg-white/[0.02] border border-white/5 rounded-xl p-5 text-center">
-                                <p className="text-xs text-white/60 leading-relaxed font-sans">
+                            <div className="bg-[#D4E3E8]/40 border border-black/10 rounded-2xl p-5 text-center">
+                                <p className="text-xs text-black/70 leading-relaxed font-sans">
                                     Cursor MCP Server configurations compiled successfully. Ready to deploy.
                                 </p>
                             </div>
                             <button
                                 onClick={() => handleCopy(cursorMcpConfig, "MCP Config")}
-                                className={`w-full py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all duration-200 flex items-center justify-center gap-2 ${
-                                    copiedText === "MCP Config"
-                                        ? "bg-[#00d2b4] text-[#111111] shadow-[0_0_20px_rgba(0,210,180,0.25)]"
-                                        : "bg-white/5 hover:bg-[#00d2b4]/10 border border-white/10 hover:border-[#00d2b4]/30 text-white hover:text-[#00d2b4]"
-                                }`}
+                                className="w-full py-3.5 rounded-full font-semibold text-xs transition-all duration-200 flex items-center justify-center gap-2 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824]"
                             >
                                 {copiedText === "MCP Config" ? (
                                     <>
@@ -6232,18 +5480,18 @@ Please complete the following implementation tasks:
             case "webhooks": {
                 if (isConnected && address && !sessionWallet && !embeddedWallet) {
                     return (
-                        <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
-                            <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
-                            <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
-                            <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-sm text-black font-sans">
+                            <Shield className="w-10 h-10 mx-auto text-[#082824]" />
+                            <h2 className="text-lg font-semibold text-black">Verify Wallet Ownership</h2>
+                            <p className="text-xs text-black/60 leading-relaxed max-w-xs mx-auto">
                                 To protect your API credentials and webhook endpoints, please sign a secure message using your connected wallet.
                             </p>
                             <button
                                 onClick={handleBackendLogin}
                                 disabled={isLoggingIn}
-                                className="w-full py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                                className="w-full py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-full text-xs font-semibold flex items-center justify-center gap-2 transition-all"
                             >
-                                {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : <Shield className="w-4 h-4" />}
+                                {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-[#082824]" /> : <Shield className="w-4 h-4" />}
                                 Authenticate Developer Portal
                             </button>
                         </div>
@@ -6257,143 +5505,133 @@ Please complete the following implementation tasks:
                     || "No active API key";
 
                 return (
-                    <div className="space-y-8">
+                    <div className="space-y-8 text-black">
                         {/* Webhook Endpoints Config */}
-                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm space-y-6">
                             <div>
-                                <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                                    <Sliders className={`w-4 h-4 ${primaryColorText}`} />
+                                <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
+                                    <Sliders className="w-4 h-4 text-[#082824]" />
                                     Webhook Endpoints
                                 </h2>
-                                <p className="text-[11px] text-white/40 font-sans">
-                                    Configure endpoints to receive subscription.created, payment.succeeded, and other lifecycle events.
+                                <p className="text-[11px] text-black/60 font-sans">
+                                    Register HTTPS URLs to receive real-time webhook events for your subscription lifecycle.
                                 </p>
                             </div>
 
-                            <div className="grid gap-3 rounded-2xl border border-white/5 bg-black/25 p-4 text-[10px] font-sans sm:grid-cols-3">
+                            <div className="grid gap-3 rounded-2xl border border-black/10 bg-[#D4E3E8]/40 p-4 text-[10px] font-sans sm:grid-cols-2">
                                 <div>
-                                    <p className="font-bold uppercase tracking-wider text-white/30">Merchant wallet</p>
-                                    <p className="mt-1 break-all font-mono text-white/70">{sessionWallet || "Not authenticated"}</p>
+                                    <p className="font-semibold text-black/50">Merchant wallet</p>
+                                    <p className="mt-1 break-all font-mono text-black">{sessionWallet || "Not authenticated"}</p>
                                 </div>
                                 <div>
-                                    <p className="font-bold uppercase tracking-wider text-white/30">API key</p>
-                                    <p className="mt-1 break-all font-mono text-white/70">{webhookKeyFingerprint}</p>
-                                </div>
-                                <div>
-                                    <p className="font-bold uppercase tracking-wider text-white/30">Webhook access</p>
-                                    <p className="mt-1 text-white/70">{isPremium ? "Premium enabled" : "Premium required"}</p>
+                                    <p className="font-semibold text-black/50">API key</p>
+                                    <p className="mt-1 break-all font-mono text-black">{webhookKeyFingerprint}</p>
                                 </div>
                             </div>
 
                             {/* Add endpoint form */}
-                            <form onSubmit={handleAddWebhook} className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center">
-                                <input
-                                    type="url"
-                                    placeholder="https://yourserver.com/api/webhooks"
-                                    value={webhookUrlInput}
-                                    onChange={(e) => setWebhookUrlInput(e.target.value)}
-                                    required
-                                    className="flex-1 w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-[#00d2b4] transition-colors font-sans"
-                                />
-                                <button
-                                    type="submit"
-                                    disabled={isAddingWebhook || !webhookUrlInput}
-                                    className={`px-6 py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/80 disabled:opacity-50 text-black text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 w-full sm:w-auto shrink-0 relative overflow-hidden ${isAddingWebhook ? "quick-action-loading" : ""}`}
-                                >
-                                    {isAddingWebhook ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlugZap className="w-3.5 h-3.5" />}
-                                    Add Endpoint
-                                </button>
+                            <form onSubmit={handleAddWebhook} className="space-y-3 font-sans">
+                                <div className="flex flex-col sm:flex-row gap-3">
+                                    <input
+                                        type="url"
+                                        value={webhookUrlInput}
+                                        onChange={(e) => setWebhookUrlInput(e.target.value)}
+                                        placeholder="https://your-api.com/webhooks/subscript"
+                                        required
+                                        className="flex-1 rounded-xl border border-black/15 bg-white px-4 py-3 text-xs text-black outline-none transition-colors focus:border-[#8AB4DB]"
+                                    />
+                                    <button
+                                        type="submit"
+                                        disabled={isAddingWebhook || !webhookUrlInput}
+                                        className="px-6 py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-full text-xs font-semibold flex items-center justify-center gap-2 transition-all disabled:opacity-40"
+                                    >
+                                        {isAddingWebhook ? <Loader2 className="w-4 h-4 animate-spin text-[#082824]" /> : <PlugZap className="w-4 h-4" />}
+                                        Add Endpoint
+                                    </button>
+                                </div>
                             </form>
 
-                            {/* List endpoints */}
-                            {isWebhooksLoading ? (
-                                <div className="space-y-3 font-sans animate-pulse">
-                                    {Array.from({ length: 2 }).map((_, i) => (
-                                        <div key={i} className="bg-black/30 border border-white/5 rounded-2xl p-4 flex justify-between items-center">
-                                            <div className="space-y-2">
-                                                <div className="h-3.5 w-48 rounded bg-white/15" />
-                                                <div className="h-2.5 w-32 rounded bg-white/10" />
-                                            </div>
-                                            <div className="h-5 w-16 rounded-full bg-white/10" />
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : webhookEndpoints.length === 0 ? (
-                                <p className="text-[11px] text-white/30 font-sans text-center py-4 bg-black/20 rounded-xl border border-white/5">
-                                    No webhook endpoints configured.
-                                </p>
-                            ) : (
-                                <div className="space-y-3 font-sans text-xs">
-                                    {webhookEndpoints.map((ep) => (
-                                        <div key={ep.id} className="bg-black/30 border border-white/5 rounded-2xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                                            <div className="min-w-0 space-y-2">
-                                                <div className="flex flex-wrap items-center gap-2">
-                                                    <p className="font-mono text-xs font-bold text-white break-all">{ep.url}</p>
-                                                    <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase ${
-                                                        ep.active
-                                                            ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
-                                                            : "border-red-500/20 bg-red-500/10 text-red-400"
-                                                    }`}>
-                                                        {ep.active ? "Active" : "Inactive"}
-                                                    </span>
-                                                </div>
-                                                <div className="flex items-center gap-3 text-[10px] text-white/40">
-                                                    <span>Secret: </span>
-                                                    <code className="font-mono bg-black/40 px-2 py-0.5 rounded border border-white/5">
-                                                        {ep.secretAvailable && revealWebhookSecret === ep.id
-                                                            ? ep.secret
-                                                            : "whsec_••••••••"}
-                                                    </code>
-                                                    {ep.secretAvailable && (
-                                                        <>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => setRevealWebhookSecret(prev => prev === ep.id ? null : ep.id)}
-                                                                className="text-[#00d2b4] hover:underline"
-                                                            >
-                                                                {revealWebhookSecret === ep.id ? "Hide" : "Reveal"}
-                                                            </button>
-                                                            {revealWebhookSecret === ep.id && (
+                            {/* Registered Endpoints List */}
+                            <div className="space-y-3 pt-2">
+                                <span className="text-[10px] font-semibold text-black/50 uppercase tracking-wider font-mono">Registered Endpoints</span>
+                                {isWebhooksLoading ? (
+                                    <div className="space-y-2 animate-pulse">
+                                        <div className="h-14 rounded-2xl bg-black/[0.04]" />
+                                        <div className="h-14 rounded-2xl bg-black/[0.04]" />
+                                    </div>
+                                ) : webhookEndpoints.length === 0 ? (
+                                    <div className="rounded-2xl border border-black/10 bg-black/[0.02] p-6 text-center text-xs text-black/50">
+                                        No webhook endpoints registered yet. Add one above to begin receiving events.
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {webhookEndpoints.map((ep) => (
+                                            <div key={ep.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-black/10 bg-[#D4E3E8]/40 p-4">
+                                                <div className="space-y-1 min-w-0 flex-1 font-sans">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-mono text-xs font-semibold text-black truncate">{ep.url}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-3 text-[10px] text-black/60">
+                                                        <span>Secret: </span>
+                                                        <code className="font-mono bg-white px-2 py-0.5 rounded border border-black/10">
+                                                            {ep.secretAvailable && revealWebhookSecret === ep.id
+                                                                ? ep.secret
+                                                                : "whsec_••••••••"}
+                                                        </code>
+                                                        {ep.secretAvailable && (
+                                                            <>
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => handleCopy(ep.secret, `Webhook Secret ${ep.id}`)}
-                                                                    className="inline-flex items-center gap-1 text-[#00d2b4] hover:underline font-semibold"
+                                                                    onClick={() => setRevealWebhookSecret(prev => prev === ep.id ? null : ep.id)}
+                                                                    className="text-[#082824] font-semibold hover:underline"
                                                                 >
-                                                                    {copiedText === `Webhook Secret ${ep.id}` ? (
-                                                                        <span className="text-emerald-400 font-bold flex items-center gap-1"><Check className="w-3 h-3" /> Copied to clipboard!</span>
-                                                                    ) : (
-                                                                        <>
-                                                                            <Copy className="w-3 h-3" /> Copy secret
-                                                                        </>
-                                                                    )}
+                                                                    {revealWebhookSecret === ep.id ? "Hide" : "Reveal"}
                                                                 </button>
-                                                            )}
-                                                        </>
-                                                    )}
+                                                                {revealWebhookSecret === ep.id && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleCopy(ep.secret, `Webhook Secret ${ep.id}`)}
+                                                                        className="inline-flex items-center gap-1 text-[#082824] hover:underline font-semibold"
+                                                                    >
+                                                                        {copiedText === `Webhook Secret ${ep.id}` ? (
+                                                                            <span className="text-emerald-700 font-bold flex items-center gap-1"><Check className="w-3 h-3" /> Copied!</span>
+                                                                        ) : (
+                                                                            <>
+                                                                                <Copy className="w-3 h-3" /> Copy secret
+                                                                            </>
+                                                                        )}
+                                                                    </button>
+                                                                )}
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-[10px] text-black/50 font-mono">
+                                                        {ep.latestDelivery
+                                                            ? <>Last delivery: <span className="font-mono text-black">{ep.latestDelivery.event}</span> · HTTP {ep.latestDelivery.status ?? "pending"} · {ep.latestDelivery.lastAttemptAt ? new Date(ep.latestDelivery.lastAttemptAt).toLocaleString() : "time unavailable"}</>
+                                                            : (ep.deliveriesCount ? `${ep.deliveriesCount} deliveries` : "No deliveries recorded for this endpoint yet.")}
+                                                    </p>
                                                 </div>
-                                                <p className="text-[10px] text-white/35">
-                                                    {ep.latestDelivery
-                                                        ? <>Last delivery: <span className="font-mono text-white/60">{ep.latestDelivery.event}</span> · HTTP {ep.latestDelivery.status ?? "pending"} · {ep.latestDelivery.lastAttemptAt ? new Date(ep.latestDelivery.lastAttemptAt).toLocaleString() : "time unavailable"}</>
-                                                        : "No deliveries recorded for this endpoint yet."}
-                                                </p>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDeleteWebhook(ep.id)}
+                                                        className="px-3 py-1.5 rounded-full border border-red-200 bg-red-50 text-[10px] font-semibold text-red-700 hover:bg-red-100 transition"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </div>
                                             </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => handleDeleteWebhook(ep.id)}
-                                                className="px-3 py-1.5 border border-red-500/10 hover:bg-red-500/10 text-red-400 hover:border-red-500/20 rounded-xl text-[10px] font-bold uppercase transition-all"
-                                            >
-                                                Delete
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
-                        <div className="liquid-glass space-y-4 rounded-3xl border border-[#00d2b4]/20 bg-[#00d2b4]/[0.03] p-6 shadow-2xl">
+                        {/* Webhook health checks */}
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm space-y-4">
                             <div>
-                                <h2 className="text-sm font-bold uppercase tracking-wider text-white">Webhook health checks</h2>
-                                <p className="mt-1 text-[11px] text-white/40">
+                                <h2 className="text-sm font-semibold text-black">Webhook health checks</h2>
+                                <p className="mt-1 text-[11px] text-black/60 font-sans">
                                     Send signed sample events to every active endpoint, or resend the newest real delivery.
                                 </p>
                             </div>
@@ -6408,7 +5646,7 @@ Please complete the following implementation tasks:
                                         type="button"
                                         onClick={() => handleSendWebhookTest(eventType)}
                                         disabled={Boolean(isTestingWebhook) || webhookEndpoints.every((endpoint) => !endpoint.active)}
-                                        className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-white transition-colors hover:border-[#00d2b4]/30 hover:bg-[#00d2b4]/10 disabled:opacity-40"
+                                        className="rounded-full border border-black/15 bg-white px-4 py-2 text-[10px] font-semibold text-black hover:bg-black/5 transition disabled:opacity-40"
                                     >
                                         {isTestingWebhook === eventType ? "Sending…" : label}
                                     </button>
@@ -6417,43 +5655,43 @@ Please complete the following implementation tasks:
                                     type="button"
                                     onClick={() => handleReplayWebhook()}
                                     disabled={isReplaying || webhookEvents.length === 0}
-                                    className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-white transition-colors hover:border-[#00d2b4]/30 hover:bg-[#00d2b4]/10 disabled:opacity-40"
+                                    className="rounded-full border border-black/15 bg-white px-4 py-2 text-[10px] font-semibold text-black hover:bg-black/5 transition disabled:opacity-40"
                                 >
                                     {isReplaying ? "Resending…" : "Resend latest event"}
                                 </button>
                             </div>
                             {replayStatus && (
-                                <p className="rounded-xl border border-white/5 bg-black/30 px-3 py-2 text-[10px] text-white/60">{replayStatus}</p>
+                                <p className="rounded-xl border border-black/10 bg-black/[0.03] px-3 py-2 text-[10px] text-black/70 font-sans">{replayStatus}</p>
                             )}
                         </div>
 
                         {/* Event Feed and Inspector */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
                             {/* Event Feed */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl flex flex-col justify-between">
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm flex flex-col justify-between">
                                 <div>
-                                    <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-5 flex items-center gap-2">
-                                        <Webhook className={`w-4 h-4 ${primaryColorText}`} />
+                                    <h2 className="text-sm font-semibold text-black mb-5 flex items-center gap-2">
+                                        <Webhook className="w-4 h-4 text-[#082824]" />
                                         Live Webhook Deliveries
                                     </h2>
                                     <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
                                         {isEventsLoading ? (
                                             <div className="space-y-2.5 animate-pulse">
                                                 {Array.from({ length: 4 }).map((_, i) => (
-                                                    <div key={i} className="p-4 rounded-2xl border border-white/5 bg-white/[0.01] flex justify-between items-center">
+                                                    <div key={i} className="p-4 rounded-2xl border border-black/10 bg-black/[0.02] flex justify-between items-center">
                                                         <div className="space-y-1.5">
-                                                            <div className="h-3.5 w-36 rounded bg-white/15" />
-                                                            <div className="h-2.5 w-24 rounded bg-white/10" />
+                                                            <div className="h-3.5 w-36 rounded bg-black/15" />
+                                                            <div className="h-2.5 w-24 rounded bg-black/10" />
                                                         </div>
-                                                        <div className="h-5 w-14 rounded-full bg-white/10" />
+                                                        <div className="h-5 w-14 rounded-full bg-black/10" />
                                                     </div>
                                                 ))}
                                             </div>
                                         ) : webhookEvents.length === 0 ? (
-                                            <div className="py-12 text-center text-white/30 font-sans text-xs space-y-3">
-                                                <Webhook className="w-8 h-8 mx-auto text-white/10" />
+                                            <div className="py-12 text-center text-black/40 font-sans text-xs space-y-3">
+                                                <Webhook className="w-8 h-8 mx-auto text-black/20" />
                                                 <p>No webhook deliveries logged yet.</p>
-                                                <p className="text-[10px] text-white/20">Trigger events on-chain (like creating subscriptions) to see delivery reports here.</p>
+                                                <p className="text-[10px] text-black/30">Trigger events on-chain (like creating subscriptions) to see delivery reports here.</p>
                                             </div>
                                         ) : (
                                             (() => {
@@ -6465,19 +5703,19 @@ Please complete the following implementation tasks:
                                                         onClick={() => setSelectedWebhook(item.id)}
                                                         className={`w-full p-4 rounded-2xl border text-left flex justify-between items-center transition-all ${
                                                             selectedWebhook === item.id 
-                                                                ? "bg-[#00d2b4]/10 border-[#00d2b4]/30 shadow-inner"
-                                                                : "bg-white/[0.01] border-white/5 hover:bg-white/[0.02]"
+                                                                ? "bg-[#D4E3E8] border-[#8AB4DB] shadow-sm"
+                                                                : "bg-black/[0.02] border-black/10 hover:bg-black/[0.04]"
                                                         }`}
                                                     >
                                                         <div className="font-mono text-[11px] space-y-1 max-w-[70%]">
-                                                            <p className="font-bold text-white uppercase tracking-wider">{item.event}</p>
-                                                            <p className="text-white/40 text-[9px] truncate">{item.endpointUrl}</p>
-                                                            <p className="text-white/30 text-[9px]">{item.time}</p>
+                                                            <p className="font-semibold text-black">{item.event}</p>
+                                                            <p className="text-black/50 text-[9px] truncate">{item.endpointUrl}</p>
+                                                            <p className="text-black/40 text-[9px]">{item.time}</p>
                                                         </div>
                                                         <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold ${
                                                             item.status >= 200 && item.status < 300
-                                                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
-                                                                : "bg-red-500/10 text-red-400 border border-red-500/20"
+                                                                ? "bg-emerald-100 text-emerald-800 border border-emerald-300" 
+                                                                : "bg-red-100 text-red-800 border border-red-300"
                                                         }`}>
                                                             HTTP {item.status}
                                                         </span>
@@ -6492,8 +5730,8 @@ Please complete the following implementation tasks:
                                         const totalPages = Math.ceil(webhookEvents.length / webhookPageSize);
                                         if (totalPages <= 1) return null;
                                         return (
-                                            <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/5 font-sans">
-                                                <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider">
+                                            <div className="flex items-center justify-between pt-4 mt-2 border-t border-black/10 font-sans">
+                                                <span className="text-[10px] text-black/50 font-semibold uppercase tracking-wider">
                                                     Page {webhooksPage + 1} of {totalPages}
                                                 </span>
                                                 <div className="flex gap-2">
@@ -6501,7 +5739,7 @@ Please complete the following implementation tasks:
                                                         type="button"
                                                         disabled={webhooksPage === 0}
                                                         onClick={() => setWebhooksPage((p) => Math.max(0, p - 1))}
-                                                        className="px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all"
+                                                        className="px-3 py-1.5 bg-white hover:bg-black/5 disabled:opacity-30 border border-black/15 text-black rounded-full text-[10px] font-semibold transition-all"
                                                     >
                                                         Prev
                                                     </button>
@@ -6509,7 +5747,7 @@ Please complete the following implementation tasks:
                                                         type="button"
                                                         disabled={webhooksPage >= totalPages - 1}
                                                         onClick={() => setWebhooksPage((p) => Math.min(totalPages - 1, p + 1))}
-                                                        className="px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all"
+                                                        className="px-3 py-1.5 bg-white hover:bg-black/5 disabled:opacity-30 border border-black/15 text-black rounded-full text-[10px] font-semibold transition-all"
                                                     >
                                                         Next
                                                     </button>
@@ -6519,14 +5757,14 @@ Please complete the following implementation tasks:
                                     })()}
                                 </div>
                                 
-                                <div className="mt-6 pt-4 border-t border-white/5 text-[10px] text-white/40 flex items-center justify-between">
+                                <div className="mt-6 pt-4 border-t border-black/10 text-[10px] text-black/50 flex items-center justify-between font-sans">
                                     <div className="flex items-center gap-2">
-                                        <span className="w-1.5 h-1.5 bg-[#00d2b4] rounded-full animate-ping" />
+                                        <span className="w-2 h-2 bg-[#8AB4DB] rounded-full" />
                                         <span>Logged: {webhookEvents.length} events</span>
                                     </div>
                                     <button
                                         onClick={fetchWebhookEvents}
-                                        className="text-[#00d2b4] hover:underline flex items-center gap-1"
+                                        className="text-[#082824] font-semibold hover:underline flex items-center gap-1"
                                     >
                                         <RefreshCw className="w-3 h-3" /> Refresh logs
                                     </button>
@@ -6534,50 +5772,50 @@ Please complete the following implementation tasks:
                             </div>
 
                             {/* Payload Inspector */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden flex flex-col justify-between shadow-2xl bg-black/40">
-                                <div className="flex items-center justify-between border-b border-white/5 px-6 py-4 bg-white/[0.01]">
-                                    <span className="text-xs font-bold text-white/40 uppercase tracking-widest font-mono">Payload Inspector</span>
+                            <div className="rounded-[34px] border border-black/10 overflow-hidden flex flex-col justify-between shadow-sm bg-[#FFFFF0]">
+                                <div className="flex items-center justify-between border-b border-black/10 px-6 py-4 bg-[#D4E3E8]/30">
+                                    <span className="text-xs font-semibold text-black uppercase tracking-wider font-mono">Payload Inspector</span>
                                     <button
                                         onClick={() => handleReplayWebhook(selectedWebhook)}
                                         disabled={isReplaying || !selectedWebhook}
-                                        className={`px-3 py-1.5 border border-white/10 rounded-xl text-[9px] font-bold uppercase tracking-wider hover:bg-white/5 flex items-center gap-1.5 ${isReplaying || !selectedWebhook ? "opacity-50" : ""}`}
+                                        className={`px-3 py-1.5 border border-black/15 bg-white rounded-full text-[10px] font-semibold text-black hover:bg-black/5 flex items-center gap-1.5 ${isReplaying || !selectedWebhook ? "opacity-50" : ""}`}
                                     >
-                                        {isReplaying ? <Loader2 className="w-3 h-3 animate-spin text-white" /> : <RotateCw className="w-3 h-3 text-white" />}
+                                        {isReplaying ? <Loader2 className="w-3 h-3 animate-spin text-black" /> : <RotateCw className="w-3 h-3 text-black" />}
                                         Replay
                                     </button>
                                 </div>
                                 
-                                <div className="flex-1 p-6 font-mono text-[11px] text-emerald-400/90 overflow-y-auto min-h-[300px] leading-relaxed select-all">
+                                <div className="flex-1 p-6 font-mono text-[11px] text-black/80 overflow-y-auto min-h-[300px] leading-relaxed select-all">
                                     {replayStatus && (
                                         <p className={`p-3 border rounded-xl mb-4 font-sans text-xs ${
                                             replayStatus.includes("successfully") 
-                                                ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20" 
-                                                : "bg-red-500/10 text-red-300 border-red-500/20"
+                                                ? "bg-emerald-50 text-emerald-800 border-emerald-200" 
+                                                : "bg-red-50 text-red-800 border-red-200"
                                         }`}>{replayStatus}</p>
                                     )}
                                     {selectedPayload ? (
                                         <div className="space-y-4">
                                             <div>
-                                                <p className="text-white/30 text-[9px] uppercase tracking-wider mb-1 font-bold">JSON Payload</p>
-                                                <pre className="bg-black/40 p-3 rounded-xl border border-white/5 overflow-x-auto text-[#00d2b4]">
+                                                <p className="text-black/50 text-[9px] uppercase tracking-wider mb-1 font-semibold">JSON Payload</p>
+                                                <pre className="bg-white p-3 rounded-xl border border-black/10 overflow-x-auto text-[#082824]">
                                                     <code>{JSON.stringify(selectedPayload.payload, null, 2)}</code>
                                                 </pre>
                                             </div>
                                             {selectedPayload.responseBody && (
                                                 <div>
-                                                    <p className="text-white/30 text-[9px] uppercase tracking-wider mb-1 font-bold">Response Body</p>
-                                                    <pre className="bg-black/50 p-3 rounded-xl border border-white/5 overflow-x-auto text-white/70 max-h-[150px]">
+                                                    <p className="text-black/50 text-[9px] uppercase tracking-wider mb-1 font-semibold">Response Body</p>
+                                                    <pre className="bg-white p-3 rounded-xl border border-black/10 overflow-x-auto text-black/70 max-h-[150px]">
                                                         <code>{selectedPayload.responseBody}</code>
                                                     </pre>
                                                 </div>
                                             )}
                                         </div>
                                     ) : (
-                                        <span className="text-white/30">Select a webhook event to inspect</span>
+                                        <span className="text-black/40">Select a webhook event to inspect</span>
                                     )}
                                 </div>
                                 
-                                <div className="border-t border-white/5 px-6 py-4 bg-white/[0.01] text-[10px] text-white/30 flex justify-between font-mono">
+                                <div className="border-t border-black/10 px-6 py-4 bg-[#D4E3E8]/30 text-[10px] text-black/60 flex justify-between font-mono">
                                     <span>Event ID: {selectedPayload?.id || "N/A"}</span>
                                     <span>HTTP Status: {selectedPayload?.status || "N/A"}</span>
                                 </div>
@@ -6589,69 +5827,22 @@ Please complete the following implementation tasks:
         }
     };
 
-    /* Sidebar model. Settings is lifted out of the tab list and pinned to the footer, matching the
-       user dashboard, where account settings sit below the nav rather than inside it.
-
-       Plain consts, deliberately not useMemo: these read state defined throughout this component,
-       and a hook added down here would sit below every existing one — any early return introduced
-       above it later would then change the hook count between renders. The arrays are ten items. */
-    const sidebarItems: DashboardSidebarItem[] = navTabs
-        .filter((tab) => tab.id !== "settings")
-        .map((tab) => ({
-            id: tab.id,
-            label: tab.label,
-            icon: tab.icon,
-            href: "href" in tab ? tab.href : undefined,
-            /* Premium keeps the gold it already uses across the merchant dashboard, so the upgrade
-               row stays legible as an offer rather than reading as ordinary navigation. */
-            accent: tab.id === "premium" ? "#d4a853" : undefined,
-            tag: tab.id === "premium" && isPremium ? "PRO" : undefined,
-        }));
-
-    const sidebarFooterItems: DashboardSidebarItem[] = [
-        { id: "settings", label: "Settings", icon: Sliders },
-        { id: "support", label: "Help center", icon: HelpCircle, href: "/support", newTab: true },
-    ];
-
     const sidebarIdentityLabel =
         merchantAlias || (address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Your account");
 
     return (
-        <div data-mounted={isMounted} className="relative overflow-x-hidden bg-[#060608] text-white font-sans selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4] md:h-[100dvh] md:overflow-hidden">
-            <AnimatedGradientBg variant="dashboard" />
-            {/* Depth wash beneath the panel, matching the user dashboard's shell. */}
-            <div className="fixed inset-0 pointer-events-none z-0 bg-gradient-to-b from-black/35 via-black/15 to-black/45" />
-            {/* Full-height flex shell: a fixed rail plus a content panel the active tab bleeds into.
-                Height is 100dvh less the 4px brand border above, so the panel's bottom edge lands on
-                the viewport edge rather than overflowing it. */}
-            <div className="relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0">
-                <DashboardSidebar
-                    items={sidebarItems}
-                    footerItems={sidebarFooterItems}
+        <div data-mounted={isMounted} className="merchant-dashboard-root relative min-h-[100dvh] overflow-x-hidden bg-[#FFFFF0] font-sans text-black selection:bg-[#8AB4DB]/45 md:h-[100dvh] md:overflow-hidden">
+            <div className="relative md:flex md:h-[100dvh] md:min-h-0">
+                <MerchantDashboardNav
                     activeId={activeTab}
                     onSelect={(id) => setActiveTab(id as TabId)}
-                    isLoading={Boolean(isLoading)}
-                    identity={{
-                        label: sidebarIdentityLabel,
-                        avatarUrl: userSettings?.profilePic || null,
-                        fallback: (merchantAlias || "M").slice(0, 1).toUpperCase(),
-                        onClick: () => setActiveTab("settings"),
-                        title: merchantAlias || "Your merchant account",
-                    }}
-                    promo={{
-                        badge: isPremium ? "PRO ACTIVE" : "QUICKSTART",
-                        title: isPremium ? "Analytics Active" : "One-Command Setup",
-                        body: isPremium
-                            ? "Real-time metrics, automated retries, and custom webhook routes."
-                            : "Generate checkout routes, buttons, and webhook receivers in 60s with our CLI.",
-                        ctaLabel: isPremium ? "Open Analytics" : "View Setup",
-                        onCta: () => setActiveTab(isPremium ? "analytics" : "checkout"),
-                    }}
-                    accent="#00d2b4"
-                    panelColor="#131522"
-                    ariaLabel="Merchant dashboard navigation"
+                    identityLabel={sidebarIdentityLabel}
+                    avatarUrl={userSettings?.profilePic || null}
+                    verified={Boolean(userSettings?.verified)}
+                    isAdmin={isAdmin}
+                    mobileEnabled={isConnected}
                 />
-                <div className="relative z-10 min-w-0 flex-1 overflow-y-auto border-l border-t border-white/10 bg-[#131522]/90 shadow-[-8px_0_24px_rgba(0,0,0,0.36)] backdrop-blur-xl md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[28px]">
+                <div className="merchant-dashboard-workspace relative min-w-0 flex-1 overflow-y-auto bg-[#D4E3E8] md:h-[100dvh] md:rounded-tl-[70px]">
             {/* Session Consent Alerts Overlay */}
             {sessionAlert && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
@@ -6692,64 +5883,8 @@ Please complete the following implementation tasks:
                     </div>
                 </div>
             )}
-            <div className="md:hidden">
-                <DashboardHeader
-                    embeddedWallet={embeddedWallet}
-                    onDisconnect={handleLogout}
-                    onDepositSuccess={handleDepositSuccess}
-                    isPremium={isPremium}
-                    promptFlowMode={promptFlowMode}
-                    onDeposit={() => setIsDepositOpen(true)}
-                    merchantAlias={merchantAlias}
-                    onDnsClick={handleDnsClick}
-                    activeTab={activeTab}
-                    onBackToOverview={() => setActiveTab('overview')}
-                    onProfileClick={() => setActiveTab('settings')}
-                    profilePic={userSettings?.profilePic || null}
-                    walletBalance={walletBalance}
-                />
-            </div>
-
             {/* Dashboard Content */}
-            <main className="max-w-7xl mx-auto px-4 sm:px-6 pt-24 md:pt-8 pb-12">
-                {/* Header Row */}
-                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10 pb-6 border-b border-white/5">
-                    <div className="flex items-center gap-3">
-                        {!["overview", "analytics", "apikeys", "checkout"].includes(activeTab) && (
-                            <button
-                                onClick={() => setActiveTab("overview")}
-                                className="md:hidden p-2.5 text-white/60 hover:text-white bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 rounded-full transition-all"
-                                title="Back to Overview"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-                            </button>
-                        )}
-                        <div>
-                            <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight flex flex-wrap items-center gap-3">
-                                Merchant <span className="font-serif italic lowercase font-normal text-[#00d2b4]">dashboard</span>
-                                {isConnected && userSettings && (
-                                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                                        !userSettings.verified
-                                            ? "bg-amber-500/10 text-amber-300 border border-amber-500/25"
-                                            : userSettings.tier === "PREMIUM"
-                                            ? "bg-purple-500/10 text-purple-300 border border-purple-500/25"
-                                            : "bg-emerald-500/10 text-emerald-300 border border-emerald-500/25"
-                                    }`}>
-                                        {!userSettings.verified
-                                            ? "Unverified"
-                                            : userSettings.tier === "PREMIUM"
-                                            ? "Premium"
-                                            : "Verified"}
-                                    </span>
-                                )}
-                            </h1>
-                        </div>
-                        {/* Beside the title on desktop, matching the user dashboard. Hidden on mobile,
-                            where the header bar carries the bell instead. */}
-                        <NotificationBell audience="MERCHANT" accent="#00d2b4" className="hidden md:block" />
-                    </div>
-                </div>
-
+            <main className="mx-auto max-w-[1600px] px-4 pb-12 pt-20 sm:px-7 md:pt-24">
                 {isLoading ? (
                     <DashboardSkeleton activeTab={activeTab} isConnected={isConnected} />
                 ) : (
@@ -6927,43 +6062,6 @@ Please complete the following implementation tasks:
                                         {toastMessage}
                                     </span>
                                 </div>
-                            )}
-
-                            {/* Floating Mobile Bottom Navigation Bar (Blueprint aligned) */}
-                            {isConnected && (mobileBottomTabs.some((tab) => tab.id === activeTab) || activeTab === "checkout") && (
-                            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex w-[calc(100%-0.75rem)] max-w-sm items-center justify-between gap-2 md:hidden">
-                                {/* Capsule Navigation Menu */}
-                                <div className="flex min-w-0 flex-1 items-center justify-around liquid-glass rounded-full border border-white/5 bg-black/60 px-2 py-3.5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-xl">
-                                    <LiquidGlassEffect />
-                                    {mobileBottomTabs.map((tab) => (
-                                        <AnimatedBottomNavButton
-                                            key={tab.id}
-                                            label={tab.label}
-                                            icon={tab.icon}
-                                            active={activeTab === tab.id}
-                                            onClick={() => setActiveTab(tab.id)}
-                                        />
-                                    ))}
-                                </div>
-
-                                {/* Checkout Icon Outside Bottom Bar Capsule */}
-                                <button
-                                    onClick={() => setActiveTab("checkout")}
-                                    className={`flex h-11 shrink-0 items-center justify-center overflow-hidden rounded-full border px-2 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-xl transition-all duration-300 gap-2 ${
-                                        activeTab === "checkout"
-                                            ? "w-[104px] scale-105 border-[#00d2b4]/30 bg-[#00d2b4] text-[#111111] shadow-[0_0_15px_rgba(0,210,180,0.3)] min-[360px]:w-[124px]"
-                                            : "w-11 border-white/5 bg-black/60 text-white/50 hover:text-white"
-                                    }`}
-                                    title="Checkout Setup"
-                                >
-                                    <Code2 className="w-5 h-5 shrink-0" />
-                                    {activeTab === "checkout" && (
-                                            <span className="shrink-0 text-[9px] font-bold uppercase tracking-wide transition-opacity duration-300 min-[360px]:text-[10px] min-[360px]:tracking-wider">
-                                            Checkout
-                                        </span>
-                                    )}
-                                </button>
-                            </div>
                             )}
                         </div>
                     );

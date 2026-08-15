@@ -3,6 +3,8 @@ import { assertProviderRateLimit } from "@/lib/providerRateLimit";
 import { validateWebhookUrl } from "@/lib/webhookUrls";
 import { arcReconciliation } from "@/lib/arc/reconciliation";
 import { paymentIdentityMetadata } from "@/lib/paymentLinks/beneficiary";
+import { activeArcChain } from "@/lib/wagmi";
+import { ARC_TESTNET_CHAIN_ID } from "@/lib/contracts/constants";
 
 const agentPool = new Map<string, any>();
 
@@ -113,11 +115,17 @@ export function subscriptionWebhookData(args: {
             nextPaymentAmountUsdc: formatUsdc(args.pricing.nextPaymentAmountUsdcMicros),
         }
         : null;
+    const effectiveChainId = args.chainId || (settlement ? settlement.chainId : activeArcChain.id);
+    const isLive = effectiveChainId !== ARC_TESTNET_CHAIN_ID && (effectiveChainId === 5042001 || process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet");
+    const environment: "TEST" | "LIVE" = isLive ? "LIVE" : "TEST";
+
     return {
         ...(pricing ? { pricing } : {}),
         subscription_id: `sub_${args.subscriptionId}`,
         subscriptionId: `sub_${args.subscriptionId}`,
         status: args.status,
+        environment,
+        livemode: isLive,
         amount_usdc_micros: micros,
         amountUsdcMicros: micros,
         amount: micros != null ? formatUsdc(micros) : null,

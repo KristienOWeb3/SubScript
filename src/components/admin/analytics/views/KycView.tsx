@@ -71,7 +71,7 @@ export function KycView({ analytics, onNavigateToKycTab }: KycViewProps) {
 
         <StatCardWithSparkline
           label="Pass / Approval Rate"
-          value={`${kyc?.approvalRate ?? 100}%`}
+          value={`${kyc?.approvalRate ?? 0}%`}
           badgeText={`From ${totalDecided} decided cases`}
           icon={CheckCircle2}
           color="#10b981"
@@ -118,11 +118,7 @@ export function KycView({ analytics, onNavigateToKycTab }: KycViewProps) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Status Donut */}
         <DonutMetricChart
-          segments={
-            kycSegments.length > 0
-              ? kycSegments
-              : [{ label: "Approved", value: kyc?.approved || 1, color: "#10b981" }]
-          }
+          segments={kycSegments}
           title="Verification Status Breakdown"
           subtitle="All applicant and admin-asserted KYC records"
           centerLabel="Total KYC"

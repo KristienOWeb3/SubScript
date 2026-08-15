@@ -80,6 +80,15 @@ async function retrySubscriptionReconciliation(context: Record<string, unknown>)
     const expectedAmount = requiredPositiveBigInt(context, "amountUsdc");
     const expectedPeriod = requiredPositiveBigInt(context, "periodSeconds");
     const minCommitmentSeconds = optionalNonNegativeBigInt(context, "minCommitmentSeconds");
+    const planId = typeof context.planId === "string" && UUID_PATTERN.test(context.planId)
+        ? context.planId
+        : null;
+    const sourceCheckoutId = typeof context.sourceCheckoutId === "string" && UUID_PATTERN.test(context.sourceCheckoutId)
+        ? context.sourceCheckoutId
+        : null;
+    const externalReference = typeof context.externalReference === "string"
+        ? context.externalReference
+        : null;
     const beneficiaryValue = context.beneficiaryAddress;
     const beneficiaryAddress = beneficiaryValue === null || beneficiaryValue === undefined || beneficiaryValue === ""
         ? null
@@ -111,6 +120,9 @@ async function retrySubscriptionReconciliation(context: Record<string, unknown>)
         periodSeconds: onChain.period,
         beneficiaryAddress,
         minCommitmentSeconds,
+        externalReference,
+        sourceCheckoutId,
+        planId,
     });
 
     const checkoutSessionId = context.checkoutSessionId;
@@ -280,6 +292,7 @@ async function retrySubscriptionPlanChangeReconciliation(context: Record<string,
         subscriptionId: parsed.subscriptionId,
         amountUsdc: parsed.newAmount,
         periodSeconds: parsed.newPeriod,
+        planId: parsed.planId,
     });
 
     /* The merchant webhook is the piece plan-change previously had no recovery for. The

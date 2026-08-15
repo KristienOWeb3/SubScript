@@ -312,6 +312,7 @@ export async function POST(request: Request) {
             subscriptionId: fromSubscriptionId,
             amountUsdc: plan.amountUsdc,
             periodSeconds: plan.periodSeconds,
+            planId: plan.id,
             ...(effectiveAccountReference && !currentAccountReference
                 ? { externalReference: effectiveAccountReference }
                 : {}),

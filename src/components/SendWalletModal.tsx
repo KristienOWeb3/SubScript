@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Wallet, Send, Loader2, ShieldCheck, CheckCircle2, QrCode } from "@/components/icons";
 import { ethers } from "ethers";
+import QrScannerModal from "@/components/QrScannerModal";
 
 interface SendWalletModalProps {
     isOpen: boolean;
@@ -27,54 +28,6 @@ export default function SendWalletModal({
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [successTx, setSuccessTx] = useState(false);
     const [isScanning, setIsScanning] = useState(false);
-    const videoRef = useRef<HTMLVideoElement | null>(null);
-    const streamRef = useRef<MediaStream | null>(null);
-
-    const stopCamera = () => {
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
-        }
-        setIsScanning(false);
-    };
-
-    const startCameraScan = async () => {
-        setErrorMsg(null);
-        setIsScanning(true);
-
-        try {
-            if (!navigator.mediaDevices?.getUserMedia) {
-                /* Clipboard fallback for mobile */
-                const text = await navigator.clipboard.readText();
-                if (text && text.startsWith("0x") && text.length === 42) {
-                    setRecipientAddress(text);
-                    setIsScanning(false);
-                    return;
-                }
-                throw new Error("Camera scanning not supported on this browser.");
-            }
-
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment" }
-            });
-            streamRef.current = stream;
-
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                await videoRef.current.play();
-            }
-        } catch (err: any) {
-            console.error("Camera scan error:", err);
-            setErrorMsg(err.message || "Could not access camera for QR scanning.");
-            setIsScanning(false);
-        }
-    };
-
-    useEffect(() => {
-        return () => {
-            stopCamera();
-        };
-    }, []);
 
     if (!isOpen) return null;
 
@@ -143,10 +96,7 @@ export default function SendWalletModal({
                             </div>
                         </div>
                         <button
-                            onClick={() => {
-                                stopCamera();
-                                onClose();
-                            }}
+                            onClick={onClose}
                             disabled={isSending}
                             className="p-1.5 rounded-full hover:bg-white/10 text-white/40 hover:text-white transition-colors"
                         >
@@ -154,22 +104,15 @@ export default function SendWalletModal({
                         </button>
                     </div>
 
-                    {/* Mobile Camera Scanner Overlay */}
-                    {isScanning && (
-                        <div className="my-4 relative rounded-2xl overflow-hidden border border-[#00d2b4]/30 bg-black flex flex-col items-center justify-center min-h-[220px]">
-                            <video ref={videoRef} className="w-full h-48 object-cover" playsInline muted />
-                            <div className="absolute inset-0 border-2 border-[#00d2b4]/50 pointer-events-none rounded-2xl" />
-                            <div className="absolute bottom-3 flex items-center gap-2">
-                                <button
-                                    type="button"
-                                    onClick={stopCamera}
-                                    className="px-3 py-1.5 rounded-xl bg-black/80 border border-white/20 text-[10px] font-bold uppercase tracking-wider text-white hover:bg-white/10 transition-colors"
-                                >
-                                    Cancel Scan
-                                </button>
-                            </div>
-                        </div>
-                    )}
+                    <QrScannerModal
+                        isOpen={isScanning}
+                        onClose={() => setIsScanning(false)}
+                        onScan={(scanned) => {
+                            setRecipientAddress(scanned);
+                            setIsScanning(false);
+                        }}
+                        title="Scan Recipient QR Code"
+                    />
 
                     {successTx ? (
                         <div className="py-12 flex flex-col items-center justify-center text-center space-y-3">
@@ -196,11 +139,10 @@ export default function SendWalletModal({
                                     <label className="block text-xs font-semibold text-white/70">
                                         Recipient Wallet Address
                                     </label>
-                                    {/* Mobile-Native Only Scan QR Button */}
                                     <button
                                         type="button"
-                                        onClick={startCameraScan}
-                                        className="md:hidden flex items-center gap-1 text-[10px] font-bold text-[#00d2b4] hover:text-[#00d2b4]/80 uppercase tracking-wider transition-colors"
+                                        onClick={() => setIsScanning(true)}
+                                        className="flex items-center gap-1 text-[10px] font-bold text-[#00d2b4] hover:text-[#00d2b4]/80 uppercase tracking-wider transition-colors"
                                     >
                                         <QrCode className="w-3 h-3" />
                                         Scan QR
@@ -272,10 +214,7 @@ export default function SendWalletModal({
                             <div className="pt-2 flex items-center justify-end gap-3">
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        stopCamera();
-                                        onClose();
-                                    }}
+                                    onClick={onClose}
                                     disabled={isSending}
                                     className="px-4 py-2.5 rounded-xl border border-white/10 text-xs font-semibold text-white/70 hover:bg-white/5 transition-colors"
                                 >

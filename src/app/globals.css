@@ -425,6 +425,21 @@ body {
     transform: translateX(100%);
   }
 }
+.admin-skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.admin-skeleton-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.72) 50%, transparent 100%);
+  animation: subscript-shimmer 1.7s infinite ease-in-out;
+  pointer-events: none;
+  z-index: 10;
+}
 
 @media (prefers-reduced-motion: reduce) {
   html {
@@ -772,4 +787,199 @@ body {
   background-color: rgb(255 255 240 / 96%) !important;
   backdrop-filter: blur(34px) saturate(145%);
   -webkit-backdrop-filter: blur(34px) saturate(145%);
+}
+
+/* Merchant dashboard wireframe palette. Scoped so user/admin dashboards retain their themes. */
+.merchant-dashboard-root {
+  --merchant-cream: #fffff0;
+  --merchant-blue: #d4e3e8;
+  --merchant-gold: #efe2ac;
+  --merchant-action: #8ab4db;
+  --merchant-gray: #d9d9d9;
+  --merchant-ink: #082824;
+  color-scheme: light;
+}
+
+.merchant-dashboard-root,
+.merchant-dashboard-root * {
+  letter-spacing: 0;
+}
+
+.merchant-dashboard-workspace .liquid-glass {
+  background: var(--merchant-cream);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+
+.merchant-dashboard-root .liquid-glass::before {
+  display: none;
+}
+
+.merchant-dashboard-workspace [class~="text-white"],
+.merchant-dashboard-workspace [class~="text-white/90"],
+.merchant-dashboard-workspace [class~="text-white/80"],
+.merchant-dashboard-workspace [class~="text-white/70"] {
+  color: #000000;
+}
+
+.merchant-dashboard-workspace [class~="text-white/60"],
+.merchant-dashboard-workspace [class~="text-white/55"],
+.merchant-dashboard-workspace [class~="text-white/50"] {
+  color: rgba(0, 0, 0, 0.62);
+}
+
+.merchant-dashboard-workspace [class~="text-white/45"],
+.merchant-dashboard-workspace [class~="text-white/40"],
+.merchant-dashboard-workspace [class~="text-white/35"],
+.merchant-dashboard-workspace [class~="text-white/30"] {
+  color: rgba(0, 0, 0, 0.46);
+}
+
+.merchant-dashboard-workspace [class~="border-white/15"],
+.merchant-dashboard-workspace [class~="border-white/10"],
+.merchant-dashboard-workspace [class~="border-white/5"] {
+  border-color: rgba(8, 40, 36, 0.12);
+}
+
+.merchant-dashboard-workspace [class~="bg-black/60"],
+.merchant-dashboard-workspace [class~="bg-black/50"],
+.merchant-dashboard-workspace [class~="bg-black/40"],
+.merchant-dashboard-workspace [class~="bg-black/35"],
+.merchant-dashboard-workspace [class~="bg-black/30"],
+.merchant-dashboard-workspace [class~="bg-white/10"],
+.merchant-dashboard-workspace [class~="bg-white/5"],
+.merchant-dashboard-workspace [class~="bg-white/[0.03]"],
+.merchant-dashboard-workspace [class~="bg-white/[0.02]"],
+.merchant-dashboard-workspace [class~="bg-white/[0.01]"] {
+  background-color: rgba(255, 255, 240, 0.82);
+}
+
+.merchant-dashboard-workspace input,
+.merchant-dashboard-workspace textarea,
+.merchant-dashboard-workspace select {
+  color: #000000;
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(8, 40, 36, 0.16);
+  color-scheme: light;
+}
+
+.merchant-dashboard-workspace input::placeholder,
+.merchant-dashboard-workspace textarea::placeholder {
+  color: rgba(0, 0, 0, 0.35);
+}
+
+.merchant-dashboard-workspace pre {
+  background: var(--merchant-ink) !important;
+  color: var(--merchant-cream) !important;
+}
+
+.merchant-dashboard-workspace pre code,
+.merchant-dashboard-workspace pre [class*="text-"] {
+  color: var(--merchant-cream) !important;
+}
+
+.merchant-dashboard-workspace [class*="text-[#00d2b4]"],
+.merchant-dashboard-workspace [class*="text-[#ccff00]"],
+.merchant-dashboard-workspace [class*="text-[#d4a853]"] {
+  color: var(--merchant-ink);
+}
+
+.merchant-dashboard-workspace [class*="bg-[#00d2b4]"]:not([class*="bg-[#00d2b4]/"]),
+.merchant-dashboard-workspace [class*="bg-[#ccff00]"]:not([class*="bg-[#ccff00]/"]),
+.merchant-dashboard-workspace [class*="bg-[#d4a853]"]:not([class*="bg-[#d4a853]/"]) {
+  background-color: var(--merchant-action) !important;
+  color: var(--merchant-ink) !important;
+}
+
+.merchant-dashboard-workspace [class*="bg-[#00d2b4]/"],
+.merchant-dashboard-workspace [class*="bg-[#ccff00]/"],
+.merchant-dashboard-workspace [class*="bg-[#d4a853]/"] {
+  background-color: var(--merchant-soft) !important;
+  color: var(--merchant-ink) !important;
+}
+
+.merchant-dashboard-workspace [class*="border-[#00d2b4]"],
+.merchant-dashboard-workspace [class*="border-[#ccff00]"],
+.merchant-dashboard-workspace [class*="border-[#d4a853]"] {
+  border-color: rgba(8, 40, 36, 0.14) !important;
+}
+
+.merchant-dashboard-workspace [class*="bg-gradient-to-"] {
+  background-image: none !important;
+  background-color: var(--merchant-cream) !important;
+}
+
+.merchant-dashboard-workspace button[class*="bg-gradient-to-"],
+.merchant-dashboard-workspace a[class*="bg-gradient-to-"] {
+  background-image: none !important;
+  background-color: var(--merchant-action) !important;
+  color: var(--merchant-ink) !important;
+}
+
+.merchant-dashboard-workspace .shadow-2xl,
+.merchant-dashboard-workspace .shadow-xl,
+.merchant-dashboard-workspace [class*="shadow-[0_0_"] {
+  box-shadow: 0 4px 20px rgba(8, 40, 36, 0.06) !important;
+}
+
+.merchant-dashboard-root [role="dialog"],
+.merchant-dashboard-root [role="alertdialog"] {
+  color: #000000;
+  background: var(--merchant-cream) !important;
+  border-color: rgba(8, 40, 36, 0.14) !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.merchant-dashboard-root [role="dialog"] [class~="text-white"],
+.merchant-dashboard-root [role="dialog"] [class^="text-white/"],
+.merchant-dashboard-root [role="dialog"] [class*=" text-white/"],
+.merchant-dashboard-root [role="alertdialog"] [class~="text-white"] {
+  color: #000000;
+}
+
+.merchant-dashboard-root [role="dialog"] input,
+.merchant-dashboard-root [role="dialog"] textarea,
+.merchant-dashboard-root [role="dialog"] select {
+  color: #000000;
+  background: #ffffff !important;
+  border-color: rgba(8, 40, 36, 0.16) !important;
+  color-scheme: light;
+}
+
+.merchant-dashboard-root footer {
+  color: rgba(0, 0, 0, 0.48);
+  border-color: rgba(8, 40, 36, 0.12);
+}
+
+.merchant-dashboard-root footer a:hover {
+  color: #000000;
+}
+
+.merchant-light-bell button {
+  color: var(--merchant-ink);
+  background: rgba(255, 255, 240, 0.74);
+  border-color: rgba(8, 40, 36, 0.12);
+}
+
+@media (max-width: 767px) {
+  .merchant-dashboard-workspace {
+    min-height: 100dvh;
+    border-radius: 0;
+  }
+}
+
+@keyframes scannerSweep {
+  0% {
+    top: 8%;
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    top: 92%;
+    opacity: 0.2;
+  }
 }
