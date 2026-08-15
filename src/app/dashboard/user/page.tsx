@@ -9375,10 +9375,14 @@ function MeteredVaultRow({
             <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />
           </button>
         </div>
-        <div className="flex flex-col justify-between rounded-2xl border border-black/15 bg-[#FFFFF0]/80 p-3.5 text-xs text-black/65 shadow-sm space-y-2">
-          <div className="space-y-1 text-[10px]">
-            <p className="flex justify-between items-center"><span className="text-black/50 uppercase font-bold">Reported Usage</span> <span className="font-bold text-black">{balanceVisible ? formatUsdc(vault.accruedUsageUsdc) : "•••"} USDC</span></p>
-            <p className="flex justify-between items-center"><span className="text-black/50 uppercase font-bold">Reclaimable From</span> <span className="font-mono font-bold text-black">{textDate(reclaimDate)}</span></p>
+        <div className="space-y-2 rounded-2xl border border-black/15 bg-[#FFFFF0]/80 p-3.5 text-xs text-black/65 shadow-sm">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
+            <p>Cycle started <span className="font-mono font-bold text-black">{numericDate(cycleStartDate)}</span></p>
+            <p>Cycle matures <span className="font-mono font-bold text-black">{numericDate(lockedUntilDate)}</span></p>
+            <p>Reported usage <span className="font-bold text-black">{balanceVisible ? formatUsdc(vault.accruedUsageUsdc) : "•••"} USDC</span></p>
+            <p>Max drawable <span className="font-bold text-black">{balanceVisible ? formatUsdc(String(drawableExposure)) : "•••"} USDC</span></p>
+            <p>Settlement due by <span className="font-mono font-bold text-black">{numericDate(reclaimDate)}</span></p>
+            <p>Reclaimable from <span className="font-mono font-bold text-black">{numericDate(reclaimDate)}</span></p>
           </div>
           <p className="border-t border-black/10 pt-1.5 text-[10px] leading-relaxed text-black/60">
             The keeper settles usage after <span className="font-semibold text-black">{textDate(lockedUntilDate)}</span> and unused escrow returns to you automatically.
