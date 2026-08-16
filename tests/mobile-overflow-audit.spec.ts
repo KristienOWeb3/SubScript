@@ -508,7 +508,7 @@ test.describe("mobile overflow audit", () => {
 
     const sidebar = desktopPage.getByRole("complementary");
     const walletLabel = desktopPage.getByText("Wallet Balance", { exact: true });
-    const spendingLabel = desktopPage.getByText("Spending past (USDC)", { exact: true });
+    const spendingLabel = desktopPage.getByText("30D spending", { exact: true });
     const commitLabel = desktopPage.getByText("Total Commit", { exact: true });
     const commitLockedLabel = desktopPage.getByText("Locked", { exact: true });
     const commitUsedLabel = desktopPage.getByText("Used", { exact: true });
@@ -550,7 +550,7 @@ test.describe("mobile overflow audit", () => {
     await mobilePage.goto(`${baseURL}/dashboard/user`, { waitUntil: "domcontentloaded" });
 
     const mobileWalletLabel = mobilePage.getByText("Wallet Balance", { exact: true });
-    const mobileSpendingLabel = mobilePage.getByText("Spending past (USDC)", { exact: true });
+    const mobileSpendingLabel = mobilePage.getByText("30D spending", { exact: true });
     const mobileCommitLabel = mobilePage.getByText("Total Commit", { exact: true });
     const mobileSubscriptionsTitle = mobilePage.getByText("Active Subscriptions", { exact: true });
     const mobileLedgerTitle = mobilePage.getByText("Transaction History", { exact: true });
