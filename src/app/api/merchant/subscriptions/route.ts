@@ -19,19 +19,20 @@ type AggregateRow = {
 
 type RecentRow = {
     subscriptionId: string;
-    subscriber: string | null;
     activityAt: Date;
 };
 
 type RevenueRow = {
     subscriptionId: string;
-    subscriber: string | null;
     monthlyMicros: string;
 };
 
+/* Deliberately no `subscriber`. A merchant is entitled to the money and the schedule, not to
+   who is behind a subscription, so the wallet never leaves the database on this route. Their own
+   `externalReference` is still returned — that is the merchant's label, not the customer's
+   identity. Admin routes have their own selects and are unaffected. */
 const detailSelect = {
     subscriptionId: true,
-    subscriber: true,
     status: true,
     cancelAtPeriodEnd: true,
     nextBillingDate: true,
@@ -44,37 +45,11 @@ const detailSelect = {
     sourceCheckoutId: true,
 } satisfies Prisma.SubscriptionSelect;
 
-async function loadAliases(addresses: Array<string | null | undefined>) {
-    const normalized = Array.from(new Set(
-        addresses.map((address) => address?.toLowerCase()).filter((address): address is string => Boolean(address)),
-    ));
-    if (normalized.length === 0) return new Map<string, { alias: string; isAnonymous: boolean }>();
-
-    const aliases = await prisma.addressAlias.findMany({
-        where: { address: { in: normalized } },
-        select: { address: true, alias: true, isAnonymous: true },
-    });
-    return new Map(aliases.map((entry) => [entry.address.toLowerCase(), entry]));
-}
-
-function publicSubscriberName(
-    subscriber: string | null,
-    aliases: Map<string, { alias: string; isAnonymous: boolean }>,
-) {
-    if (!subscriber) return null;
-    const alias = aliases.get(subscriber.toLowerCase());
-    return alias ? (alias.isAnonymous ? "Anonymous" : alias.alias) : null;
-}
-
 function formatDetail(
     subscription: Prisma.SubscriptionGetPayload<{ select: typeof detailSelect }>,
-    aliases: Map<string, { alias: string; isAnonymous: boolean }>,
 ): MerchantSubscriptionDetail {
-    const subscriber = subscription.subscriber?.toLowerCase() || null;
     return {
         subscriptionId: subscription.subscriptionId.toString(),
-        subscriber,
-        subscriberName: publicSubscriberName(subscriber, aliases),
         externalReference: subscription.externalReference,
         sourceCheckoutId: subscription.sourceCheckoutId,
         status: subscription.status,
@@ -140,7 +115,6 @@ export async function GET(request: Request) {
         const nextCursor = hasNext
             ? subscriptions[subscriptions.length - 1]?.subscriptionId.toString() || null
             : null;
-        const detailAliases = await loadAliases(subscriptions.map((subscription) => subscription.subscriber));
         const pagination = {
             pageSize,
             total,
@@ -152,7 +126,7 @@ export async function GET(request: Request) {
         if (scope === "attention") {
             return NextResponse.json({
                 success: true,
-                subscriptions: subscriptions.map((subscription) => formatDetail(subscription, detailAliases)),
+                subscriptions: subscriptions.map((subscription) => formatDetail(subscription)),
                 pagination,
             });
         }
@@ -180,7 +154,6 @@ export async function GET(request: Request) {
             prisma.$queryRaw<RecentRow[]>(Prisma.sql`
                 SELECT
                     subscription_id::text AS "subscriptionId",
-                    subscriber,
                     COALESCE(last_settlement_timestamp, created_at) AS "activityAt"
                 FROM subscriptions
                 WHERE merchant_address = ${merchantAddress}
@@ -192,7 +165,6 @@ export async function GET(request: Request) {
             prisma.$queryRaw<RevenueRow[]>(Prisma.sql`
                 SELECT
                     subscription_id::text AS "subscriptionId",
-                    subscriber,
                     (amount_cap_usdc::numeric * 2592000 / NULLIF(billing_interval_seconds::numeric, 0))::text AS "monthlyMicros"
                 FROM subscriptions
                 WHERE merchant_address = ${merchantAddress}
@@ -209,14 +181,9 @@ export async function GET(request: Request) {
             renewingCount: BigInt(0),
             mrrMicros: "0",
         };
-        const analyticsAliases = await loadAliases([
-            ...recentRows.map((row) => row.subscriber),
-            ...revenueRows.map((row) => row.subscriber),
-        ]);
-
         return NextResponse.json({
             success: true,
-            subscriptions: subscriptions.map((subscription) => formatDetail(subscription, detailAliases)),
+            subscriptions: subscriptions.map((subscription) => formatDetail(subscription)),
             pagination,
             analytics: {
                 totalSubscriptions: Number(aggregate.totalCount),
@@ -225,14 +192,10 @@ export async function GET(request: Request) {
                 mrrUsdc: microsToUsdcNumber(aggregate.mrrMicros),
                 recentSubscribers: recentRows.map((row) => ({
                     subscriptionId: row.subscriptionId,
-                    subscriber: row.subscriber?.toLowerCase() || null,
-                    subscriberName: publicSubscriberName(row.subscriber, analyticsAliases),
                     activityAt: row.activityAt.toISOString(),
                 })),
                 topRevenue: revenueRows.map((row) => ({
                     subscriptionId: row.subscriptionId,
-                    subscriber: row.subscriber?.toLowerCase() || null,
-                    subscriberName: publicSubscriberName(row.subscriber, analyticsAliases),
                     monthlyUsdc: microsToUsdcNumber(row.monthlyMicros),
                 })),
             },

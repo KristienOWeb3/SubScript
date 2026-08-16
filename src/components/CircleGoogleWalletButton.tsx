@@ -96,6 +96,69 @@ function getAuthIntent() {
 
 const LOGIN_WATCHDOG_MS = 90_000;
 
+/* Appended to every failure message. A stale bootstrap is the usual cause of an intermittent
+   failure here, and reloading is the one action that reliably clears it. */
+const RETRY_HINT = "Refresh and try again.";
+
+function withRetryHint(message: string) {
+    const trimmed = message.trim();
+    if (!trimmed) return RETRY_HINT;
+    if (trimmed.includes(RETRY_HINT)) return trimmed;
+    const punctuated = /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+    return `${punctuated} ${RETRY_HINT}`;
+}
+
+type CircleBootstrap = {
+    config: CircleGoogleConfig;
+    deviceToken: string;
+    deviceEncryptionKey: string;
+    fetchedAt: number;
+};
+
+/* A Circle device token is short-lived. This used to be fetched once on mount and then reused on
+   click no matter how old it was, so anyone who sat on the sign-in page for a while clicked with an
+   expired token and the login failed — and reloading appeared to "fix" it because the reload
+   fetched a fresh one. Bootstrapping is shared between the preload and the click path so the two
+   can never drift, and the click path re-runs it whenever the cached copy is past its window. */
+const PRELOAD_TTL_MS = 5 * 60_000;
+
+async function loadCircleBootstrap(): Promise<CircleBootstrap> {
+    const configRes = await fetch("/api/auth/circle/google/config", { cache: "no-store" });
+    const config: CircleGoogleConfig & { error?: string } = await configRes.json();
+    if (!configRes.ok) {
+        throw new Error(config.error || "Circle Google login is not configured.");
+    }
+
+    const googleConfig = {
+        clientId: config.googleClientId,
+        redirectUri: config.redirectUri,
+        selectAccountPrompt: true,
+    };
+    const tempSdk = new W3SSdk({
+        appSettings: { appId: config.appId },
+        loginConfigs: { deviceToken: "", deviceEncryptionKey: "", google: googleConfig },
+    }, () => {});
+
+    const deviceId = await tempSdk.getDeviceId();
+    const dtRes = await fetch("/api/auth/circle/google/device-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deviceId }),
+    });
+    const dt = await dtRes.json().catch(() => ({}));
+    if (!dtRes.ok || !dt.deviceToken || !dt.deviceEncryptionKey) {
+        throw new Error(dt.error || "Could not initialize Google login.");
+    }
+    persistCircleDevice(dt.deviceToken, dt.deviceEncryptionKey);
+
+    return {
+        config,
+        deviceToken: dt.deviceToken,
+        deviceEncryptionKey: dt.deviceEncryptionKey,
+        fetchedAt: Date.now(),
+    };
+}
+
 export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWalletButtonProps) {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -113,9 +176,10 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
     const armWatchdog = () => {
         clearWatchdog();
         watchdogRef.current = setTimeout(() => {
+            preloadedDataRef.current = null;
             clearCircleSession();
             setIsLoading(false);
-            setError("Google sign-in didn't finish. Close the Google window if it's still open and try again.");
+            setError(withRetryHint("Google sign-in didn't finish. Close the Google window if it's still open."));
         }, LOGIN_WATCHDOG_MS);
     };
 
@@ -124,49 +188,32 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
         setIsLoading(false);
     };
 
-    const preloadedDataRef = useRef<{
-        config: CircleGoogleConfig;
-        deviceToken: string;
-        deviceEncryptionKey: string;
-    } | null>(null);
+    const preloadedDataRef = useRef<CircleBootstrap | null>(null);
+
+    const preloadIsFresh = () => {
+        const preloaded = preloadedDataRef.current;
+        return Boolean(preloaded) && Date.now() - preloaded!.fetchedAt < PRELOAD_TTL_MS;
+    };
+
+    /* Any failure invalidates the cached bootstrap, so pressing the button again re-initialises
+        from scratch. Without this an in-page retry reused the same bad token and failed the same
+        way, which is why a full page refresh looked like the only cure. */
+    const failWith = (message: string) => {
+        preloadedDataRef.current = null;
+        clearCircleSession();
+        stopLoading();
+        setError(withRetryHint(message));
+    };
 
     useEffect(() => {
         let isMounted = true;
-        async function preloadToken() {
-            try {
-                const configRes = await fetch("/api/auth/circle/google/config", { cache: "no-store" });
-                const config: CircleGoogleConfig & { error?: string } = await configRes.json();
-                if (!configRes.ok || !isMounted) return;
-
-                const googleConfig = {
-                    clientId: config.googleClientId,
-                    redirectUri: config.redirectUri,
-                    selectAccountPrompt: true,
-                };
-                const tempSdk = new W3SSdk({
-                    appSettings: { appId: config.appId },
-                    loginConfigs: { deviceToken: "", deviceEncryptionKey: "", google: googleConfig },
-                }, () => {});
-                const deviceId = await tempSdk.getDeviceId();
-                const dtRes = await fetch("/api/auth/circle/google/device-token", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ deviceId }),
-                });
-                const dt = await dtRes.json().catch(() => ({}));
-                if (!dtRes.ok || !dt.deviceToken || !dt.deviceEncryptionKey || !isMounted) return;
-                persistCircleDevice(dt.deviceToken, dt.deviceEncryptionKey);
-
-                preloadedDataRef.current = {
-                    config,
-                    deviceToken: dt.deviceToken,
-                    deviceEncryptionKey: dt.deviceEncryptionKey,
-                };
-            } catch (e) {
+        loadCircleBootstrap()
+            .then((bootstrap) => {
+                if (isMounted) preloadedDataRef.current = bootstrap;
+            })
+            .catch((e) => {
                 console.warn("[CircleGoogleWalletButton] Preload error:", e);
-            }
-        }
-        preloadToken();
+            });
         return () => {
             isMounted = false;
             clearWatchdog();
@@ -213,9 +260,7 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
             const onLoginComplete: LoginCompleteCallback = async (loginError, result) => {
                 try {
                     if (loginError || !result) {
-                        clearCircleSession();
-                        stopLoading();
-                        setError(loginError?.message || "Google login did not complete.");
+                        failWith(loginError?.message || "Google login did not complete.");
                         return;
                     }
 
@@ -230,63 +275,25 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
 
                     await completeCircleLogin(session);
                 } catch (err: any) {
-                    stopLoading();
-                    setError(err.message || "Continue with Google failed.");
+                    failWith(err.message || "Continue with Google failed.");
                 }
             };
 
-            let config: CircleGoogleConfig;
-            let deviceToken: string;
-            let deviceEncryptionKey: string;
-
-            if (preloadedDataRef.current) {
-                config = preloadedDataRef.current.config;
-                deviceToken = preloadedDataRef.current.deviceToken;
-                deviceEncryptionKey = preloadedDataRef.current.deviceEncryptionKey;
-            } else {
-                const configRes = await fetch("/api/auth/circle/google/config", { cache: "no-store" });
-                const fetchedConfig: CircleGoogleConfig & { error?: string } = await configRes.json();
-                if (!configRes.ok) {
-                    throw new Error(fetchedConfig.error || "Circle Google login is not configured.");
-                }
-                config = fetchedConfig;
-
-                const tempSdk = new W3SSdk({
-                    appSettings: { appId: config.appId },
-                    loginConfigs: {
-                        deviceToken: "",
-                        deviceEncryptionKey: "",
-                        google: {
-                            clientId: config.googleClientId,
-                            redirectUri: config.redirectUri,
-                            selectAccountPrompt: true,
-                        },
-                    },
-                }, () => {});
-
-                const deviceId = await tempSdk.getDeviceId();
-                const dtRes = await fetch("/api/auth/circle/google/device-token", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ deviceId }),
-                });
-                const dt = await dtRes.json().catch(() => ({}));
-                if (!dtRes.ok || !dt.deviceToken || !dt.deviceEncryptionKey) {
-                    throw new Error(dt.error || "Could not initialize Google login. Please try again.");
-                }
-                persistCircleDevice(dt.deviceToken, dt.deviceEncryptionKey);
-                deviceToken = dt.deviceToken;
-                deviceEncryptionKey = dt.deviceEncryptionKey;
-            }
+            /* Re-bootstrap when the preloaded copy is past its window rather than clicking with a
+               token that has already expired. */
+            const bootstrap = preloadIsFresh()
+                ? preloadedDataRef.current!
+                : await loadCircleBootstrap();
+            preloadedDataRef.current = bootstrap;
 
             const sdk = new W3SSdk({
-                appSettings: { appId: config.appId },
+                appSettings: { appId: bootstrap.config.appId },
                 loginConfigs: {
-                    deviceToken,
-                    deviceEncryptionKey,
+                    deviceToken: bootstrap.deviceToken,
+                    deviceEncryptionKey: bootstrap.deviceEncryptionKey,
                     google: {
-                        clientId: config.googleClientId,
-                        redirectUri: config.redirectUri,
+                        clientId: bootstrap.config.googleClientId,
+                        redirectUri: bootstrap.config.redirectUri,
                         selectAccountPrompt: true,
                     },
                 },
@@ -294,8 +301,7 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
 
             await sdk.performLogin(SocialLoginProvider.GOOGLE);
         } catch (err: any) {
-            setError(err.message || "Continue with Google failed.");
-            stopLoading();
+            failWith(err.message || "Continue with Google failed.");
         }
     };
 

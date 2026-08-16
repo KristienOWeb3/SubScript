@@ -270,6 +270,19 @@ export default async function RootLayout({
                 <meta name="theme-color" content="#000000" />
                 <meta name="background-color" content="#000000" />
                 <meta name="color-scheme" content="dark" />
+                {/* Resolve the saved theme before first paint.
+                 *
+                 * useTheme() stamps data-theme from an effect, which only runs after hydration —
+                 * so without this a reader who chose dark got a flash of the light dashboard on
+                 * every navigation. Kept inline and blocking for that reason, and deliberately
+                 * mirrors useTheme's storage key and its "light" default so the two can never
+                 * disagree about the initial value. */}
+                <script
+                    nonce={nonce}
+                    dangerouslySetInnerHTML={{
+                        __html: `(function(){try{var t=localStorage.getItem('subscript_theme')||'light';var d=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);var r=document.documentElement;r.classList.remove('light','dark');r.classList.add(d?'dark':'light');r.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();`,
+                    }}
+                />
                 <style
                     nonce={nonce}
                     dangerouslySetInnerHTML={{

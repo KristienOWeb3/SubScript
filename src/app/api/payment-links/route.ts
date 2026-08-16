@@ -104,51 +104,18 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: fetchError.message }, { status: 500 });
         }
 
-        /* Resolve payer aliases */
-        const payerAddresses = new Set<string>();
+        /* Payer identity is deliberately not resolved or returned. A merchant is entitled to the
+           amount, the time and their own settlement tx, not to who paid — so the payer address is
+           stripped from every payment row here rather than being aliased and shipped to the
+           dashboard. `payer_email` is untouched: that one is supplied by the merchant when they
+           raise the invoice, so it is their own record and not something captured from a customer. */
         if (links) {
             for (const link of links) {
-                if (link.payments) {
-                    for (const p of link.payments) {
-                        if (p.payer_address) {
-                            payerAddresses.add(p.payer_address.toLowerCase());
-                        }
-                    }
-                }
-            }
-        }
-
-        const aliasMap: Record<string, { alias: string; is_anonymous: boolean }> = {};
-        if (payerAddresses.size > 0) {
-            const { data: aliases } = await supabase
-                .from("address_aliases")
-                .select("address, alias, is_anonymous")
-                .in("address", Array.from(payerAddresses));
-
-            if (aliases) {
-                for (const row of aliases) {
-                    aliasMap[row.address.toLowerCase()] = {
-                        alias: row.alias,
-                        is_anonymous: row.is_anonymous
-                    };
-                }
-            }
-        }
-
-        if (links) {
-            for (const link of links) {
-                if (link.payments) {
-                    for (const p of link.payments) {
-                        if (p.payer_address) {
-                            const match = aliasMap[p.payer_address.toLowerCase()];
-                            if (match) {
-                                p.payer_alias = match.is_anonymous ? "Anonymous" : match.alias;
-                                p.is_payer_anonymous = match.is_anonymous;
-                            } else {
-                                p.payer_alias = null;
-                                p.is_payer_anonymous = false;
-                            }
-                        }
+                if (Array.isArray(link.payments)) {
+                    for (const payment of link.payments) {
+                        delete payment.payer_address;
+                        delete payment.payer_alias;
+                        delete payment.is_payer_anonymous;
                     }
                 }
             }

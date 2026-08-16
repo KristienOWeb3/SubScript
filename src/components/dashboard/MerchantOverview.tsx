@@ -328,70 +328,116 @@ export default function MerchantOverview({
                             </div>
                         ) : (
                             <div className="relative mt-4 pt-2">
-                                {/* Horizontal Grid lines & Y-Axis labels */}
-                                <div className="absolute inset-x-0 top-0 bottom-6 flex flex-col justify-between pointer-events-none text-[10px] text-black/35 font-mono">
-                                    {yAxisTicks.map((tick, i) => (
-                                        <div key={i} className="flex items-center gap-2 w-full">
-                                            <span className="w-10 text-right shrink-0">
-                                                {tick >= 1000 ? `${(tick / 1000).toFixed(0)}k` : `$${tick}`}
-                                            </span>
-                                            <div className="flex-1 border-b border-black/[0.06] border-dashed" />
-                                        </div>
-                                    ))}
+                                {/* Gridlines and bars are absolutely positioned into the *same* box, so
+                                    the zero line and the foot of every bar are the same pixel. Before
+                                    this the overlay stopped at bottom-6 while the bars were laid out in
+                                    an h-44 that also had to fit the month label, so the baseline and the
+                                    axis disagreed and the bars read as floating off the scale.
+
+                                    The tick rows are h-0 on purpose: with justify-between that puts each
+                                    dashed line exactly at 0/25/50/75/100% of the plot height, which is
+                                    the same percentage basis the bar heights use. */}
+                                <div className="relative h-44">
+                                    <div className="pointer-events-none absolute inset-0 flex flex-col justify-between font-mono text-[10px] text-black/35">
+                                        {yAxisTicks.map((tick, i) => (
+                                            <div key={i} className="flex h-0 w-full items-center gap-2">
+                                                <span className="w-10 shrink-0 text-right leading-none">
+                                                    {tick >= 1000 ? `${(tick / 1000).toFixed(0)}k` : `$${tick}`}
+                                                </span>
+                                                <div className="flex-1 border-b border-dashed border-black/[0.06]" />
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <div className="absolute inset-y-0 left-12 right-2 z-10 grid grid-cols-12 items-end gap-1.5 sm:gap-2.5">
+                                        {monthsData.map((m, index) => {
+                                            const grossMicros = Number(m.grossUsdcMicros || 0);
+                                            const netMicros = Number(m.netUsdcMicros || 0);
+                                            /* A month with no activity draws nothing. It used to get a 3%
+                                               stub, which made empty months look like small real ones. */
+                                            const grossPercent = grossMicros > 0
+                                                ? Math.min(100, Math.max(2, (grossMicros / maxTickValue) * 100))
+                                                : 0;
+                                            const netPercent = netMicros > 0
+                                                ? Math.min(100, Math.max(1.5, (netMicros / maxTickValue) * 100))
+                                                : 0;
+                                            const isHovered = hoveredMonthIndex === index;
+                                            /* Keep the readout inside the card: tall bars would push a
+                                               bottom-full tooltip up over the header, and the first and
+                                               last columns would push a centred one out through the side. */
+                                            const tallBar = Math.max(grossPercent, netPercent) > 68;
+                                            const nearLeft = index <= 1;
+                                            const nearRight = index >= monthsData.length - 2;
+
+                                            return (
+                                                <div
+                                                    key={m.month}
+                                                    className="group relative flex h-full flex-col justify-end"
+                                                    onMouseEnter={() => setHoveredMonthIndex(index)}
+                                                    onMouseLeave={() => setHoveredMonthIndex(null)}
+                                                >
+                                                    {isHovered && (
+                                                        <div
+                                                            data-merchant-dark="true"
+                                                            className="pointer-events-none absolute z-30 whitespace-nowrap rounded-xl bg-[#082824] px-3 py-2 text-[11px] text-white shadow-xl"
+                                                            style={{
+                                                                bottom: tallBar
+                                                                    ? undefined
+                                                                    : `calc(${Math.max(grossPercent, netPercent)}% + 10px)`,
+                                                                top: tallBar ? 4 : undefined,
+                                                                left: nearLeft ? 0 : nearRight ? undefined : "50%",
+                                                                right: nearRight ? 0 : undefined,
+                                                                transform: nearLeft || nearRight ? undefined : "translateX(-50%)",
+                                                            }}
+                                                        >
+                                                            <p className="mb-1 border-b border-white/10 pb-1 font-bold text-white/90">
+                                                                {m.label} {selectedYear}
+                                                            </p>
+                                                            <div className="space-y-0.5 text-[10px]">
+                                                                <p className="font-semibold text-[#8AB4DB]">
+                                                                    Gross: ${formatMicros(m.grossUsdcMicros)} USDC
+                                                                </p>
+                                                                <p className="font-semibold text-emerald-300">
+                                                                    Net: ${formatMicros(m.netUsdcMicros)} USDC
+                                                                </p>
+                                                                <p className="text-white/60">
+                                                                    {m.transactionCount} txn{m.transactionCount === 1 ? "" : "s"}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    <div className="flex h-full w-full items-end justify-center gap-0.5 transition-transform duration-200 group-hover:-translate-y-0.5 sm:gap-1">
+                                                        <div
+                                                            className="w-1/2 max-w-[14px] rounded-t-sm bg-[#8AB4DB] transition-all duration-300 group-hover:brightness-110"
+                                                            style={{ height: `${grossPercent}%` }}
+                                                        />
+                                                        <div
+                                                            className="w-1/2 max-w-[14px] rounded-t-sm bg-[#082824] transition-all duration-300 group-hover:brightness-125"
+                                                            style={{ height: `${netPercent}%` }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
 
-                                {/* Bars Area */}
-                                <div className="relative z-10 h-44 pl-12 pr-2 grid grid-cols-12 items-end gap-1.5 sm:gap-2.5 pb-1">
-                                    {monthsData.map((m, index) => {
-                                        const grossMicros = Number(m.grossUsdcMicros || 0);
-                                        const netMicros = Number(m.netUsdcMicros || 0);
-                                        const grossPercent = Math.min(100, Math.max(3, (grossMicros / maxTickValue) * 100));
-                                        const netPercent = Math.min(100, Math.max(2, (netMicros / maxTickValue) * 100));
-                                        const isHovered = hoveredMonthIndex === index;
-
-                                        return (
-                                            <div
-                                                key={m.month}
-                                                className="group relative flex h-full flex-col items-center justify-end cursor-pointer"
-                                                onMouseEnter={() => setHoveredMonthIndex(index)}
-                                                onMouseLeave={() => setHoveredMonthIndex(null)}
-                                            >
-                                                {/* Floating Live Tooltip */}
-                                                {isHovered && (
-                                                    <div className="absolute bottom-full mb-2 z-30 rounded-xl bg-[#082824] px-3 py-2 text-white shadow-xl text-[11px] whitespace-nowrap pointer-events-none transform -translate-x-1/2 left-1/2">
-                                                        <p className="font-bold text-white/90 border-b border-white/10 pb-1 mb-1">
-                                                            {m.label} {selectedYear}
-                                                        </p>
-                                                        <div className="space-y-0.5 text-[10px]">
-                                                            <p className="text-[#8AB4DB] font-semibold">
-                                                                Gross: ${formatMicros(m.grossUsdcMicros)} USDC
-                                                            </p>
-                                                            <p className="text-emerald-300 font-semibold">
-                                                                Net: ${formatMicros(m.netUsdcMicros)} USDC
-                                                            </p>
-                                                            <p className="text-white/60">
-                                                                {m.transactionCount} txn{m.transactionCount === 1 ? "" : "s"}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                <div className="flex h-full w-full items-end justify-center gap-0.5 sm:gap-1 transition-transform group-hover:scale-105">
-                                                    <div
-                                                        className="w-1/2 max-w-[14px] rounded-t-sm bg-[#8AB4DB] transition-all duration-300 group-hover:brightness-110"
-                                                        style={{ height: `${grossPercent}%` }}
-                                                    />
-                                                    <div
-                                                        className="w-1/2 max-w-[14px] rounded-t-sm bg-[#082824] transition-all duration-300 group-hover:brightness-125"
-                                                        style={{ height: `${netPercent}%` }}
-                                                    />
-                                                </div>
-                                                <span className={`mt-1.5 text-[10px] font-medium transition ${isHovered ? "text-[#082824] font-bold" : "text-black/50"}`}>
-                                                    {m.label}
-                                                </span>
-                                            </div>
-                                        );
-                                    })}
+                                {/* Month labels ride in their own row on the same 12-column grid, so they
+                                    stay under their bars without eating into the plotted height. */}
+                                <div className="mt-1.5 grid grid-cols-12 gap-1.5 pl-12 pr-2 sm:gap-2.5">
+                                    {monthsData.map((m, index) => (
+                                        <span
+                                            key={m.month}
+                                            className={`text-center text-[10px] transition ${
+                                                hoveredMonthIndex === index
+                                                    ? "font-bold text-[#082824]"
+                                                    : "font-medium text-black/50"
+                                            }`}
+                                        >
+                                            {m.label}
+                                        </span>
+                                    ))}
                                 </div>
                             </div>
                         )}
@@ -465,10 +511,11 @@ export default function MerchantOverview({
                     <div className="flex items-center justify-between pb-3 border-b border-black/5">
                         <div>
                             <h2 className="text-lg font-semibold sm:text-xl text-[#082824]">
-                                Active Subscriptions &amp; Customers
+                                Active Subscriptions
                             </h2>
                             <p className="text-xs text-black/50 mt-0.5">
-                                Subscriptions renewing automatically via SubScript Vault on Arc Mainnet
+                                Renewing automatically via SubScript Vault on Arc Mainnet. Rows are
+                                identified by your own reference — subscriber identities stay private.
                             </p>
                         </div>
                         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#D4E3E8] text-[#082824]">
@@ -488,7 +535,7 @@ export default function MerchantOverview({
                                 <table className="w-full min-w-[680px] text-left text-xs">
                                     <thead className="border-b border-black/10 text-black/50">
                                         <tr>
-                                            <th className="pb-2.5 font-bold uppercase tracking-wider text-[10px]">Customer</th>
+                                            <th className="pb-2.5 font-bold uppercase tracking-wider text-[10px]">Reference</th>
                                             <th className="pb-2.5 font-bold uppercase tracking-wider text-[10px]">Plan Rate</th>
                                             <th className="pb-2.5 font-bold uppercase tracking-wider text-[10px]">Next Billing</th>
                                             <th className="pb-2.5 font-bold uppercase tracking-wider text-[10px]">Status</th>
@@ -534,7 +581,7 @@ export default function MerchantOverview({
                         </>
                     ) : (
                         <div className="py-12 text-center text-xs text-black/45">
-                            No active customer subscriptions yet. Share a payment link to start onboarding subscribers!
+                            No active subscriptions yet. Share a payment link to start onboarding subscribers.
                         </div>
                     )}
                 </OverviewCard>
