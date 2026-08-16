@@ -79,6 +79,69 @@ export async function POST(request: Request) {
             request,
         });
 
+        /* Notify all platform admins via email about the toggled switch */
+        try {
+            const { sendPlatformFlagChangeEmail } = await import("@/lib/email/transactional");
+            const adminWallets = new Set<string>();
+            if (auth.admin.wallet) adminWallets.add(auth.admin.wallet.toLowerCase());
+            
+            const dbAdmins = await prisma.adminWallet.findMany({ select: { wallet: true } });
+            dbAdmins.forEach(a => adminWallets.add(a.wallet.toLowerCase()));
+            
+            const envRoot = process.env.ADMIN_ROOT_WALLET?.toLowerCase();
+            if (envRoot) adminWallets.add(envRoot);
+
+            const allWallets = Array.from(adminWallets);
+            
+            // Find all emails linked to these wallets
+            const [identities, aliases] = await Promise.all([
+                prisma.authIdentity.findMany({
+                    where: { walletAddress: { in: allWallets } },
+                    select: { currentEmail: true, walletAddress: true },
+                }),
+                prisma.addressAlias.findMany({
+                    where: { address: { in: allWallets } },
+                    select: { alias: true, address: true },
+                }),
+            ]);
+
+            const actorAlias = aliases.find(a => a.address.toLowerCase() === auth.admin.wallet.toLowerCase())?.alias || null;
+            const adminEmails = new Set<string>();
+            identities.forEach(i => {
+                if (i.currentEmail) adminEmails.add(i.currentEmail.toLowerCase());
+            });
+
+            // Detect which flags actually changed
+            const changes: Array<{ flagName: string; prev: unknown; next: unknown }> = [];
+            if (before.googleSigninEnabled !== after.googleSigninEnabled) {
+                changes.push({ flagName: "Continue with Google", prev: before.googleSigninEnabled ? "Enabled" : "Disabled", next: after.googleSigninEnabled ? "Enabled" : "Disabled" });
+            }
+            if (before.externalWalletEnabled !== after.externalWalletEnabled) {
+                changes.push({ flagName: "External Wallet Connection", prev: before.externalWalletEnabled ? "Enabled" : "Disabled", next: after.externalWalletEnabled ? "Enabled" : "Disabled" });
+            }
+            if (before.maintenanceEnabled !== after.maintenanceEnabled) {
+                changes.push({ flagName: "Maintenance Mode", prev: before.maintenanceEnabled ? "Enabled" : "Disabled", next: after.maintenanceEnabled ? "Enabled" : "Disabled" });
+            }
+
+            // Send notification emails in background
+            if (changes.length > 0 && adminEmails.size > 0) {
+                for (const change of changes) {
+                    for (const email of adminEmails) {
+                        sendPlatformFlagChangeEmail({
+                            adminEmail: email,
+                            actorWallet: auth.admin.wallet,
+                            actorAlias,
+                            flagName: change.flagName,
+                            previousValue: change.prev,
+                            newValue: change.next,
+                        }).catch(err => console.error("[admin/flags] alert email failed:", err));
+                    }
+                }
+            }
+        } catch (emailErr) {
+            console.error("[admin/flags] failed to dispatch admin notification emails:", emailErr);
+        }
+
         return NextResponse.json({
             success: true,
             flags: after,

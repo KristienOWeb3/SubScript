@@ -25,6 +25,7 @@ import {
   Home,
   BarChart3,
   Sliders,
+  MessageSquare,
 } from "@/components/icons";
 import {
   SkeletonCard,
@@ -33,6 +34,7 @@ import {
   SkeletonToggleRows,
 } from "@/components/ui/skeletons";
 import { AdminOverviewDashboard } from "@/components/admin/overview/AdminOverviewDashboard";
+import { AdminSupportTicketsView } from "@/components/admin/AdminSupportTicketsView";
 import {
   AnalyticsSubSidebar,
   type AnalyticsSectionId,
@@ -225,6 +227,7 @@ const KYC_FORCE_CONFIRMATION = "FORCE APPROVE";
 type TabId =
   | "overview"
   | "analytics"
+  | "tickets"
   | "merchants"
   | "kyc"
   | "moderation"
@@ -236,6 +239,7 @@ type TabId =
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "analytics", label: "Analytics" },
+  { id: "tickets", label: "Support Tickets" },
   { id: "merchants", label: "Merchants" },
   { id: "kyc", label: "KYC" },
   { id: "moderation", label: "Moderation" },
@@ -264,6 +268,7 @@ export default function AdminDashboardPage() {
   const [bannedIps, setBannedIps] = useState<BannedIp[]>([]);
   const [totalUsers, setTotalUsers] = useState<number | null>(null);
   const [viewerIsRoot, setViewerIsRoot] = useState(false);
+  const [viewerWallet, setViewerWallet] = useState<string | null>(null);
 
   const [copied, setCopied] = useState(false);
   const [copiedMerchant, setCopiedMerchant] = useState<string | null>(null);
@@ -360,6 +365,7 @@ export default function AdminDashboardPage() {
       setBannedIps(json.bannedIps || []);
       setTotalUsers(json.totalUsers ?? null);
       setViewerIsRoot(Boolean(json.viewerIsRoot));
+      if (json.viewerWallet) setViewerWallet(json.viewerWallet);
     } catch (err: any) {
       setError(err.message || "Failed to load admin dashboard");
     } finally {
@@ -982,6 +988,7 @@ export default function AdminDashboardPage() {
   const adminSidebarItems: DashboardSidebarItem[] = [
     { id: "overview", label: "Overview", icon: Home },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
+    { id: "tickets", label: "Support Tickets", icon: MessageSquare },
     { id: "merchants", label: "Merchants", icon: Building2 },
     { id: "kyc", label: "KYC Compliance", icon: ShieldCheck },
     { id: "moderation", label: "Moderation & Bans", icon: ShieldAlert },
@@ -992,8 +999,6 @@ export default function AdminDashboardPage() {
   ];
 
   const adminSidebarFooterItems: DashboardSidebarItem[] = [
-    { id: "merchant", label: "Merchant Dashboard", icon: Building2, href: "/merchant" },
-    { id: "user", label: "User Dashboard", icon: Users, href: "/user" },
     { id: "docs", label: "Documentation", icon: FileText, href: "/support", newTab: true },
   ];
 
@@ -1104,6 +1109,15 @@ export default function AdminDashboardPage() {
               verifyBusy={verifyBusy}
             />
           )
+        )}
+
+        {tab === "tickets" && (
+          <div className={`${CARD} space-y-4`}>
+            <AdminSupportTicketsView
+              viewerWallet={viewerWallet}
+              viewerIsRoot={viewerIsRoot}
+            />
+          </div>
         )}
 
         {tab === "merchants" && (
@@ -2363,7 +2377,7 @@ export default function AdminDashboardPage() {
                           {b.failedCount > 0 && ` · ${b.failedCount} failed`}
                         </p>
                       </div>
-                      {viewerIsRoot && (
+                      {Boolean(b.id) && (
                         <button
                           type="button"
                           onClick={() => deleteBroadcast(b.id)}

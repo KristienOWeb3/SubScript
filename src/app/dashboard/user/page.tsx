@@ -37,6 +37,7 @@ import KycVerificationPanel from "@/components/KycVerificationPanel";
 import ConfirmModal from "@/components/ConfirmModal";
 import QrScannerModal from "@/components/QrScannerModal";
 import SendSingleModal from "@/components/SendSingleModal";
+import SupportChatModal from "@/components/support/SupportChatModal";
 
 import DmRequestsModal from "@/components/dashboard/DmRequestsModal";
 import DmInviteManagerModal from "@/components/dashboard/DmInviteManagerModal";
@@ -721,6 +722,7 @@ export default function UserDashboard() {
   const [topupVaultOpen, setTopupVaultOpen] = useState(false);
   const [editingVault, setEditingVault] = useState<any | null>(null);
   const vaultCarouselRef = useRef<HTMLDivElement | null>(null);
+  const [activeVaultIndex, setActiveVaultIndex] = useState(0);
 
   // Referrals States
   const [referrals, setReferrals] = useState<any[]>([]);
@@ -733,6 +735,7 @@ export default function UserDashboard() {
   const [referralCopySuccess, setReferralCopySuccess] = useState<boolean>(false);
 
   const { theme, setTheme } = useTheme();
+  const [supportChatOpen, setSupportChatOpen] = useState(false);
   const [accountSubView, setAccountSubView] = useState<AccountSubView>("menu");
   const [spendSearchQuery, setSpendSearchQuery] = useState("");
   const [spendCategory, setSpendCategory] = useState("all");
@@ -1016,16 +1019,23 @@ export default function UserDashboard() {
   const walletBalance = usdcBalance !== undefined ? Number(formatUnits(usdcBalance, 6)) : 0;
 
   const handleManualRefreshBalances = async () => {
+    if (isRefreshingBalances) return;
     setIsRefreshingBalances(true);
+    const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 3000));
     try {
-      await Promise.all([
-        refetchUsdc().catch(console.error),
-        refetchSepolia().catch(console.error),
-        refetchMainnet().catch(console.error),
-        loadVaults().catch(console.error),
+      await Promise.race([
+        Promise.all([
+          refetchUsdc().catch(console.error),
+          refetchSepolia().catch(console.error),
+          refetchMainnet().catch(console.error),
+          loadVaults().catch(console.error),
+        ]),
+        timeoutPromise,
       ]);
+      triggerToast("Balance Refreshed");
     } catch (err) {
       console.error("Failed to refresh balances manually:", err);
+      triggerToast("Balance Refreshed");
     } finally {
       setIsRefreshingBalances(false);
     }
@@ -3438,7 +3448,7 @@ export default function UserDashboard() {
                     <div data-testid="home-summary-cards" className="grid grid-cols-[42fr_58fr] gap-3.5">
                       <div className="dashboard-blue-panel flex min-h-[140px] flex-col justify-between rounded-[18px] border border-black/35 p-[18px] text-black">
                         <div>
-                          <p className="font-mono text-[10px] font-black uppercase tracking-[0.06em] text-white/50">Spending past (USDC)</p>
+                          <p className="font-mono text-[10px] font-black uppercase tracking-[0.06em] text-white/50">30D spending</p>
                           <p className="mt-2 text-[11px] font-black text-white/40">30D</p>
                           <p className="mt-0.5 text-xl font-extrabold tracking-tight text-white">
                             {balanceVisible ? `$${formatHeadlineAmount(monthlySpendUsdc)}` : "••••"}
@@ -3447,9 +3457,9 @@ export default function UserDashboard() {
                         <button
                           type="button"
                           onClick={() => goToAccountSubView("dns", "spend-analysis")}
-                          className="mt-2 flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[#ccff00] hover:opacity-70 transition-opacity"
+                          className="mt-2 inline-flex items-center text-[10px] font-black uppercase tracking-wider text-[#ccff00] hover:opacity-70 transition-opacity"
                         >
-                          Manage Spending <ArrowUpRight className="h-3 w-3" />
+                          Manage Spending
                         </button>
                       </div>
                       <div className="dashboard-blue-panel flex min-h-[140px] flex-col justify-between rounded-[18px] border border-black/35 p-[18px] text-black">
@@ -3473,9 +3483,9 @@ export default function UserDashboard() {
                         <button
                           type="button"
                           onClick={() => setActiveTab("commit")}
-                          className="mt-2 flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[#2775CA] hover:opacity-70 transition-opacity"
+                          className="mt-2 inline-flex items-center text-[10px] font-black uppercase tracking-wider text-[#2775CA] hover:opacity-70 transition-opacity"
                         >
-                          Manage Commits <ArrowUpRight className="h-3 w-3" />
+                          Manage Commits
                         </button>
                       </div>
                     </div>
@@ -3521,9 +3531,9 @@ export default function UserDashboard() {
                       <button
                         type="button"
                         onClick={() => goToAccountSubView("dns", "spend-analysis")}
-                        className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-black/70 hover:text-black transition-colors"
+                        className="inline-flex items-center text-[10px] font-black uppercase tracking-wider text-black/70 hover:text-black transition-colors"
                       >
-                        View All <ArrowUpRight className="h-3 w-3" />
+                        View All
                       </button>
                     </div>
                   </div>
@@ -3699,32 +3709,73 @@ export default function UserDashboard() {
                       </button>
                     </div>
                   ) : (
-                    <div ref={vaultCarouselRef} data-testid="vault-carousel" className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-3 scroll-smooth [scroll-snap-type:x_mandatory] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                      {vaults.map((vault) => (
-                        <div key={vault.id} className="w-full min-w-full shrink-0 snap-center [scroll-snap-stop:always]">
-                          <MeteredVaultRow
-                            vault={vault}
-                            onCommit={(v) => openVaultCommit(v.merchantAddress)}
-                            onWithdraw={(v) => openVaultWithdraw(v.merchantAddress)}
-                            onReclaim={handleVaultReclaim}
-                            onCancelService={handleCancelService}
-                            onResumeService={(v) => handleResumeService(v.merchantAddress)}
-                            onConfigureAutoTopUp={(v) => {
-                              setEditingVault(v);
-                              setConfigVaultOpen(true);
-                            }}
-                            cancelBusy={vaultCancelBusyId === String(vault.id || vault.merchantAddress)}
-                            resumeBusy={vaultResumeBusyId === String(vault.id || vault.merchantAddress)}
-                            reclaimBusy={vaultReclaimBusyId === String(vault.id || vault.merchantAddress)}
-                            balanceVisible={balanceVisible}
-                          />
-                        </div>
-                      ))}
-                      <button type="button" onClick={() => openVaultCommit()} data-testid="add-vault-card" className="relative flex min-h-[360px] w-full min-w-full shrink-0 snap-center [scroll-snap-stop:always] items-center justify-center overflow-hidden rounded-3xl border border-black/20 bg-[#2775CA]/20 backdrop-blur-2xl" aria-label="Commit to another vault">
-                        <div className="absolute inset-0 bg-[#FFFFF0]/35 blur-2xl" aria-hidden="true" />
-                        <Plus className="relative z-10 h-12 w-12 text-black" />
-                      </button>
-                    </div>
+                    <>
+                      <div
+                        ref={vaultCarouselRef}
+                        data-testid="vault-carousel"
+                        onScroll={(e) => {
+                          const el = e.currentTarget;
+                          if (el.clientWidth > 0) {
+                            const idx = Math.round(el.scrollLeft / el.clientWidth);
+                            setActiveVaultIndex(idx);
+                          }
+                        }}
+                        className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-3 scroll-smooth [scroll-snap-type:x_mandatory] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                      >
+                        {vaults.map((vault) => (
+                          <div key={vault.id} className="w-full min-w-full shrink-0 snap-center [scroll-snap-stop:always]">
+                            <MeteredVaultRow
+                              vault={vault}
+                              onCommit={(v) => openVaultCommit(v.merchantAddress)}
+                              onWithdraw={(v) => openVaultWithdraw(v.merchantAddress)}
+                              onReclaim={handleVaultReclaim}
+                              onCancelService={handleCancelService}
+                              onResumeService={(v) => handleResumeService(v.merchantAddress)}
+                              onConfigureAutoTopUp={(v) => {
+                                setEditingVault(v);
+                                setConfigVaultOpen(true);
+                              }}
+                              cancelBusy={vaultCancelBusyId === String(vault.id || vault.merchantAddress)}
+                              resumeBusy={vaultResumeBusyId === String(vault.id || vault.merchantAddress)}
+                              reclaimBusy={vaultReclaimBusyId === String(vault.id || vault.merchantAddress)}
+                              balanceVisible={balanceVisible}
+                            />
+                          </div>
+                        ))}
+                        <button type="button" onClick={() => openVaultCommit()} data-testid="add-vault-card" className="relative flex min-h-[360px] w-full min-w-full shrink-0 snap-center [scroll-snap-stop:always] items-center justify-center overflow-hidden rounded-3xl border border-black/20 bg-[#2775CA]/20 backdrop-blur-2xl" aria-label="Commit to another vault">
+                          <div className="absolute inset-0 bg-[#FFFFF0]/35 blur-2xl" aria-hidden="true" />
+                          <Plus className="relative z-10 h-12 w-12 text-black" />
+                        </button>
+                      </div>
+
+                      {/* Mobile Pagination Indicator Dots */}
+                      <div className="mt-3 flex items-center justify-center gap-1.5 md:hidden">
+                        {Array.from({ length: vaults.length + 1 }).map((_, idx) => {
+                          const isActive = activeVaultIndex === idx;
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              aria-label={`Go to vault card ${idx + 1}`}
+                              onClick={() => {
+                                if (vaultCarouselRef.current) {
+                                  vaultCarouselRef.current.scrollTo({
+                                    left: idx * vaultCarouselRef.current.clientWidth,
+                                    behavior: "smooth",
+                                  });
+                                }
+                                setActiveVaultIndex(idx);
+                              }}
+                              className={`transition-all duration-300 rounded-full ${
+                                isActive
+                                  ? "h-2 w-5 bg-[#111827]"
+                                  : "h-2 w-2 bg-black/20 hover:bg-black/40"
+                              }`}
+                            />
+                          );
+                        })}
+                      </div>
+                    </>
                   )}
                 </section>
 
@@ -3954,7 +4005,7 @@ export default function UserDashboard() {
                                           setSendFundsRecipient(activeThreadLabel || selectedDmPeer);
                                           setSendFundsOpen(true);
                                         }}
-                                        className="px-3.5 py-1.5 bg-[#ccff00]/10 border border-[#ccff00]/30 text-white font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] active:scale-95 shrink-0"
+                                        className="px-3.5 py-1.5 bg-[#ccff00] text-black border border-black/20 font-black uppercase tracking-wider text-[10px] rounded-full hover:bg-[#b8e600] transition shadow-sm active:scale-95 shrink-0"
                                       >
                                         Send Funds
                                       </button>
@@ -4604,23 +4655,20 @@ export default function UserDashboard() {
                         {[
                           {
                             id: "light" as const,
-                            title: "Light Theme",
-                            desc: "Cream (#FFFFF0) & soft slate panel",
-                            accent: "bg-[#FFFFF0] border-black/20 text-[#082824]",
+                            title: "Light Mode",
+                            previewBg: "bg-[#FFFFF0] border-black/20 text-[#082824]",
                             badge: "bg-[#D4E3E8] text-[#082824]",
                           },
                           {
                             id: "dark" as const,
-                            title: "Dark Theme",
-                            desc: "Deep emerald (#082824) & dark cards",
-                            accent: "bg-[#082824] border-white/20 text-white",
+                            title: "Dark Mode",
+                            previewBg: "bg-[#082824] border-white/20 text-white",
                             badge: "bg-[#8AB4DB] text-[#082824]",
                           },
                           {
                             id: "system" as const,
                             title: "System Default",
-                            desc: "Syncs with your OS dark/light mode",
-                            accent: "bg-slate-100 border-slate-300 text-slate-900",
+                            previewBg: "bg-slate-100 border-slate-300 text-slate-900",
                             badge: "bg-slate-200 text-slate-800",
                           },
                         ].map((t) => {
@@ -4637,18 +4685,17 @@ export default function UserDashboard() {
                               }`}
                             >
                               <div className="space-y-2">
-                                <div className={`h-16 w-full rounded-xl border p-2 flex flex-col justify-between ${t.accent}`}>
+                                <div className={`h-16 w-full rounded-xl border p-2.5 flex flex-col justify-between ${t.previewBg}`}>
                                   <div className="flex items-center justify-between">
                                     <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${t.badge}`}>
                                       {t.title}
                                     </span>
                                     {isSelected && <Check className="h-4 w-4 text-emerald-600" />}
                                   </div>
-                                  <div className="h-2 w-12 rounded-full bg-current opacity-30" />
+                                  <div className="h-2 w-16 rounded-full bg-current opacity-30" />
                                 </div>
-                                <div>
+                                <div className="pt-1">
                                   <p className="font-bold text-xs text-black">{t.title}</p>
-                                  <p className="text-[10px] text-black/55 mt-0.5 leading-snug">{t.desc}</p>
                                 </div>
                               </div>
                             </button>
@@ -4895,9 +4942,17 @@ export default function UserDashboard() {
                     const d = new Date(ms);
                     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
                   };
-                  const availableMonths = Array.from(
-                    new Set(recentTransactions.map((tx) => monthKey(tx.time))),
-                  ).sort((a, b) => b.localeCompare(a));
+                  const availableMonths = (() => {
+                    const months = new Set<string>();
+                    const currentYear = new Date().getFullYear();
+                    for (let m = 0; m < 12; m++) {
+                      months.add(`${currentYear}-${String(m + 1).padStart(2, "0")}`);
+                    }
+                    recentTransactions.forEach((tx) => {
+                      months.add(monthKey(tx.time));
+                    });
+                    return Array.from(months).sort((a, b) => b.localeCompare(a));
+                  })();
                   const monthLabel = (key: string) => {
                     const [year, month] = key.split("-");
                     return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString("en-US", {
@@ -5221,10 +5276,10 @@ export default function UserDashboard() {
                               onChange={(e) => setSpendMonth(e.target.value)}
                               className="rounded-xl border border-black/15 bg-white px-3.5 py-2 text-base font-extrabold text-black focus:border-[#2775CA] focus:outline-none cursor-pointer shadow-sm"
                             >
-                              <option value="">All months ∨</option>
+                              <option value="">All months</option>
                               {availableMonths.map((key) => (
                                 <option key={key} value={key}>
-                                  {monthLabel(key)} ∨
+                                  {monthLabel(key)}
                                 </option>
                               ))}
                             </select>
@@ -5913,6 +5968,17 @@ export default function UserDashboard() {
                       </div>
 
                       <div className="w-full space-y-3 pt-4">
+                        <button
+                          type="button"
+                          onClick={() => setSupportChatOpen(true)}
+                          className="w-full p-4 rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] text-white flex items-center justify-between transition-all group font-bold text-xs uppercase tracking-wider shadow-md"
+                        >
+                          <span className="flex items-center gap-2">
+                            <MessageSquare className="h-4 w-4" /> Open In-App Support Chat
+                          </span>
+                          <ChevronRight className="h-4 w-4 text-white/70 group-hover:text-white transition" />
+                        </button>
+
                         <a
                           href="https://t.me/subscriptsupport"
                           target="_blank"
@@ -5956,16 +6022,16 @@ export default function UserDashboard() {
                 ) : (
                   <>
                 {/* Referral Link Card */}
-                <div className="border border-black/10 bg-white/80 rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm text-black">
-                  <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/60 flex items-center gap-2">
+                <div className="border border-black/15 bg-white rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm text-black">
+                  <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/70 flex items-center gap-2">
                     <Gift className="h-4 w-4 text-[#2775CA]" /> Your Referral Link
                   </h3>
-                  <p className="text-[10px] text-black/60 leading-relaxed">
+                  <p className="text-[10px] text-black/70 leading-relaxed font-medium">
                     Share your invite link with others. When they create an account and register a role, their signup is logged in your referral registry.
                   </p>
 
                   <div className="flex flex-col sm:flex-row gap-3">
-                    <div className="flex-1 rounded-2xl border border-black/15 bg-black/5 px-4 py-3 font-mono text-xs text-black/80 overflow-x-auto whitespace-nowrap select-all flex items-center">
+                    <div className="flex-1 rounded-2xl border border-black/15 bg-[#f8fafc] px-4 py-3 font-mono text-xs text-black font-semibold overflow-x-auto whitespace-nowrap select-all flex items-center">
                       {referralLink}
                     </div>
                     <button
@@ -5987,19 +6053,19 @@ export default function UserDashboard() {
 
                 {/* Referral Statistics Card */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="border border-black/10 bg-white/80 rounded-3xl p-5 shadow-sm flex flex-col justify-between text-black">
-                    <span className="text-[9px] font-black uppercase tracking-[0.14em] text-black/50">Total Signups</span>
+                  <div className="border border-black/15 bg-white rounded-3xl p-5 shadow-sm flex flex-col justify-between text-black">
+                    <span className="text-[9px] font-black uppercase tracking-[0.14em] text-black/60">Total Signups</span>
                     <span className="mt-2 font-mono text-3xl font-black text-[#2775CA]">{referralsCount}</span>
                   </div>
-                  <div className="border border-black/10 bg-white/80 rounded-3xl p-5 shadow-sm flex flex-col justify-between text-black">
-                    <span className="text-[9px] font-black uppercase tracking-[0.14em] text-black/50">Program Status</span>
+                  <div className="border border-black/15 bg-white rounded-3xl p-5 shadow-sm flex flex-col justify-between text-black">
+                    <span className="text-[9px] font-black uppercase tracking-[0.14em] text-black/60">Program Status</span>
                     <span className="mt-2 font-mono text-base font-black text-emerald-700">Active</span>
                   </div>
                 </div>
 
                 {/* Referrals Registry List */}
-                <div className="border border-black/10 bg-white/80 rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm text-black">
-                  <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/60 flex items-center gap-2">
+                <div className="border border-black/15 bg-white rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm text-black">
+                  <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/70 flex items-center gap-2">
                     <Users className="h-4 w-4 text-[#2775CA]" /> Referred Signups
                   </h3>
 
@@ -6645,6 +6711,13 @@ export default function UserDashboard() {
         />
       )}
 
+      <SupportChatModal
+        open={supportChatOpen}
+        onClose={() => setSupportChatOpen(false)}
+        currentWallet={userWallet || accountAddress || undefined}
+        userRole="USER"
+      />
+
       <QrScannerModal
         isOpen={qrScannerOpen}
         onClose={() => setQrScannerOpen(false)}
@@ -6951,7 +7024,7 @@ function ChatHeader({
                   <button
                     type="button"
                     onClick={onSendFunds}
-                    className="px-3 py-1 bg-[#ccff00]/10 border border-[#ccff00]/30 text-white font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 transition shadow-[0_0_12px_rgba(204,255,0,0.15)] active:scale-95 shrink-0"
+                    className="px-3.5 py-1.5 bg-[#ccff00] text-black border border-black/20 font-black uppercase tracking-wider text-[10px] rounded-full hover:bg-[#b8e600] transition shadow-sm active:scale-95 shrink-0"
                   >
                     Send Funds
                   </button>
@@ -7351,6 +7424,8 @@ function DmBubble({
         {incoming && <Avatar profilePic={dm.senderProfilePic} />}
         <div className={`flex flex-col gap-1 ${incoming ? "items-start" : "items-end"}`}>
           <div
+            data-dm-bubble={incoming ? "dark" : undefined}
+            data-dm-dark="true"
             className={`select-none rounded-full px-4 py-2 text-xs font-bold shadow-md ${
               incoming
                 ? "border border-white/10 bg-[#262629]/95 text-white"
@@ -8811,9 +8886,9 @@ function SendFundsModal({
                 <button
                   type="button"
                   onClick={onGoToBatch}
-                  className="text-[#2775CA] hover:underline font-bold flex items-center gap-1"
+                  className="text-[#2775CA] hover:underline font-bold"
                 >
-                  Batch Distribution <ArrowUpRight className="h-3 w-3" />
+                  Batch Send
                 </button>
               </div>
             )}
@@ -9018,7 +9093,7 @@ function VaultCardSkeleton() {
 function ReferralsSkeleton() {
   return (
     <>
-      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
+      <div className="border border-black/15 bg-white rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm">
         <div className="h-3.5 w-40 rounded-md subscript-skeleton" />
         <div className="space-y-2">
           <div className="h-2.5 w-full rounded-md subscript-skeleton subscript-skeleton--faint" />
@@ -9026,8 +9101,8 @@ function ReferralsSkeleton() {
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3">
-          <div className="h-[46px] flex-1 rounded-2xl border border-white/10 subscript-skeleton" />
-          <div className="h-[46px] w-full sm:w-[132px] rounded-2xl border border-[#ccff00]/20 subscript-skeleton shrink-0" />
+          <div className="h-[46px] flex-1 rounded-2xl border border-black/10 subscript-skeleton" />
+          <div className="h-[46px] w-full sm:w-[132px] rounded-2xl border border-black/10 subscript-skeleton shrink-0" />
         </div>
       </div>
 
@@ -9035,7 +9110,7 @@ function ReferralsSkeleton() {
         {[0, 1].map((i) => (
           <div
             key={i}
-            className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 shadow-2xl flex flex-col justify-between min-h-[104px]"
+            className="border border-black/15 bg-white rounded-3xl p-5 shadow-sm flex flex-col justify-between min-h-[104px]"
           >
             <div className="h-2.5 w-24 rounded-md subscript-skeleton subscript-skeleton--faint" />
             <div className="mt-2 h-8 w-20 rounded-lg subscript-skeleton" />
@@ -9043,7 +9118,7 @@ function ReferralsSkeleton() {
         ))}
       </div>
 
-      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
+      <div className="border border-black/15 bg-white rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm">
         <div className="h-3.5 w-44 rounded-md subscript-skeleton" />
 
         <div className="space-y-4">
@@ -9120,10 +9195,10 @@ function MeteredVaultRow({
     : "-";
 
   const isPaused = blocked || cancelled;
-  /* Server-authoritative (see remainingMicros in src/lib/vault/autoTopUp.ts). The local
-     subtraction is only a fallback for a cached payload from before the field existed. */
-  const remainingBalanceUsdc = vault.remainingUsdc
-    ?? String(Math.max(0, Number(vault.balanceUsdc || 0) - Number(vault.accruedUsageUsdc || 0)));
+  /* Vault balance available = amount committed - amount used */
+  const committedUsdc = Number(vault.balanceUsdc || 0);
+  const accruedUsdc = Number(vault.accruedUsageUsdc || 0);
+  const remainingBalanceUsdc = String(Math.max(0, committedUsdc - accruedUsdc));
 
   const autoTopUpOn = vault.autoTopUpEnabled === true;
   const autoTopUpFailure: string | null = vault.autoTopUpFailureCode || null;
@@ -9229,10 +9304,18 @@ function MeteredVaultRow({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1.2fr_0.8fr]">
         <div className="rounded-2xl border border-black/15 bg-white/80 p-4 shadow-sm flex flex-col justify-between">
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-black/65">Vault Balance</span>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-black/65">Vault Balance (Available)</span>
+              <span className="text-[9px] font-bold text-black/45">Committed: {formatUsdc(vault.balanceUsdc)} USDC</span>
+            </div>
             <p className="mt-1 text-2xl sm:text-3xl font-black tracking-tight text-black">
               {balanceVisible ? formatUsdc(remainingBalanceUsdc) + " USDC" : "•••• USDC"}
             </p>
+            <div className="mt-1 flex items-center gap-2 text-[10px] font-semibold text-black/65">
+              <span>Used: <strong className="text-black">{formatUsdc(vault.accruedUsageUsdc)} USDC</strong></span>
+              <span>•</span>
+              <span>Available: <strong className="text-emerald-700">{formatUsdc(remainingBalanceUsdc)} USDC</strong></span>
+            </div>
           </div>
           <button
             type="button"

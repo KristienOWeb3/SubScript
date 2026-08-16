@@ -145,6 +145,7 @@ export async function GET(request: Request) {
       bannedIps,
       totalUsers,
       viewerIsRoot: auth.admin.isRoot,
+      viewerWallet: auth.admin.wallet,
       metrics: {
         totalVolumeUsdc: formatUsdc(toBigInt(confirmedReceipts._sum.amountUsdc)),
         totalVolumeCount: confirmedReceipts._count,

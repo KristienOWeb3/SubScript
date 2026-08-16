@@ -72,7 +72,7 @@ export default function MerchantDashboardNav({
 
     return (
         <>
-            <aside className="hidden h-full w-[clamp(280px,17vw,340px)] shrink-0 flex-col bg-[#FFFFF0] px-6 pb-8 pt-9 text-black md:flex">
+            <aside className="hidden h-full w-[clamp(280px,17vw,340px)] shrink-0 flex-col overflow-y-auto overscroll-contain bg-[#FFFFF0] px-6 pb-8 pt-9 text-black md:flex [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 <div className="flex items-center justify-between">
                     <span className="text-[28px] font-bold tracking-tight text-[#082824]">MERCHANT</span>
                     <div className="relative">
@@ -102,7 +102,11 @@ export default function MerchantDashboardNav({
                             {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : identityLabel.slice(0, 1).toUpperCase()}
                         </span>
                         <span className="min-w-0 flex-1 truncate text-lg font-semibold text-[#082824]">{identityLabel}</span>
-                        {verified && <span title="Verified" className="flex h-5 w-5 items-center justify-center rounded-full border border-black/30 text-[#082824]"><Check className="h-3 w-3" /></span>}
+                        {verified && (
+                            <span title="Verified Merchant" className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm shrink-0">
+                                <Check className="h-3 w-3 stroke-[3]" />
+                            </span>
+                        )}
                         <ChevronDown className={`h-4 w-4 text-black/50 transition ${accountMenuOpen ? "rotate-180" : ""}`} />
                     </button>
 

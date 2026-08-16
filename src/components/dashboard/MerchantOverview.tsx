@@ -240,9 +240,10 @@ export default function MerchantOverview({
                     <button
                         onClick={onWithdraw}
                         disabled={vaultBalance <= 0}
-                        className="mt-6 inline-flex w-fit items-center gap-2 rounded-full bg-[#082824] px-5 py-2.5 text-xs font-bold text-white transition hover:bg-[#0c3933] disabled:opacity-40 shadow-sm"
+                        data-merchant-dark="true"
+                        className="mt-6 inline-flex w-fit items-center gap-2 rounded-full bg-[#082824] px-5 py-2.5 text-xs font-bold !text-white transition hover:bg-[#0c3933] disabled:opacity-40 shadow-sm"
                     >
-                        <ArrowDown className="h-3.5 w-3.5" /> Withdraw
+                        <ArrowDown className="h-3.5 w-3.5 !text-white" /> <span className="!text-white">Withdraw</span>
                     </button>
                 </OverviewCard>
 

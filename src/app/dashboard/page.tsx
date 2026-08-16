@@ -19,6 +19,7 @@ import ConfirmModal from "@/components/ConfirmModal";
 import DurationPicker from "@/components/DurationPicker";
 import SharePlanModal from "@/components/SharePlanModal";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
+import SupportChatModal from "@/components/support/SupportChatModal";
 import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useReadContract, useSignMessage } from "wagmi";
 import { injected } from "wagmi/connectors";
 import {
@@ -507,6 +508,7 @@ export default function DashboardPage() {
     const [walletBalance, setWalletBalance] = useState(0);
     const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
     const [isPremium, setIsPremium] = useState(false);
+    const [supportChatOpen, setSupportChatOpen] = useState(false);
     const [promptFlowMode, setPromptFlowMode] = useState<"standard" | "private">("standard");
     const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
     const [isSendWalletOpen, setIsSendWalletOpen] = useState(false);
@@ -3553,23 +3555,20 @@ Please complete the following implementation tasks:
                                 {[
                                     {
                                         id: "light" as const,
-                                        title: "Light Theme",
-                                        desc: "Cream (#FFFFF0) & soft slate panel",
-                                        accent: "bg-[#FFFFF0] border-black/20 text-[#082824]",
+                                        title: "Light Mode",
+                                        previewBg: "bg-[#FFFFF0] border-black/20 text-[#082824]",
                                         badge: "bg-[#D4E3E8] text-[#082824]",
                                     },
                                     {
                                         id: "dark" as const,
-                                        title: "Dark Theme",
-                                        desc: "Deep emerald (#082824) & dark cards",
-                                        accent: "bg-[#082824] border-white/20 text-white",
+                                        title: "Dark Mode",
+                                        previewBg: "bg-[#082824] border-white/20 text-white",
                                         badge: "bg-[#8AB4DB] text-[#082824]",
                                     },
                                     {
                                         id: "system" as const,
                                         title: "System Default",
-                                        desc: "Syncs with your OS setting",
-                                        accent: "bg-slate-100 border-slate-300 text-slate-900",
+                                        previewBg: "bg-slate-100 border-slate-300 text-slate-900",
                                         badge: "bg-slate-200 text-slate-800",
                                     },
                                 ].map((t) => {
@@ -3586,18 +3585,17 @@ Please complete the following implementation tasks:
                                             }`}
                                         >
                                             <div className="space-y-2">
-                                                <div className={`h-16 w-full rounded-xl border p-2 flex flex-col justify-between ${t.accent}`}>
+                                                <div className={`h-16 w-full rounded-xl border p-2.5 flex flex-col justify-between ${t.previewBg}`}>
                                                     <div className="flex items-center justify-between">
                                                         <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${t.badge}`}>
                                                             {t.title}
                                                         </span>
                                                         {isSelected && <Check className="h-4 w-4 text-emerald-600" />}
                                                     </div>
-                                                    <div className="h-2 w-12 rounded-full bg-current opacity-30" />
+                                                    <div className="h-2 w-16 rounded-full bg-current opacity-30" />
                                                 </div>
-                                                <div>
+                                                <div className="pt-1">
                                                     <p className="font-bold text-xs text-black">{t.title}</p>
-                                                    <p className="text-[10px] text-black/55 mt-0.5 leading-snug">{t.desc}</p>
                                                 </div>
                                             </div>
                                         </button>
@@ -4356,7 +4354,15 @@ Please complete the following implementation tasks:
                                     humans read every message.
                                 </p>
                             </div>
-                            <div className="grid gap-3 sm:grid-cols-3 font-sans text-xs">
+                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 font-sans text-xs">
+                                <button
+                                    type="button"
+                                    onClick={() => setSupportChatOpen(true)}
+                                    className="flex flex-col justify-between rounded-2xl border border-[#082824] bg-[#082824] px-4 py-3 text-left transition hover:bg-[#0c3933] shadow-sm text-white group"
+                                >
+                                    <span className="block text-[9px] font-bold uppercase tracking-wider text-emerald-300">Live Support</span>
+                                    <span className="mt-1 block font-bold text-xs text-white">Start Support Chat &rarr;</span>
+                                </button>
                                 <a
                                     href="mailto:support@subscriptonarc.com"
                                     className="rounded-2xl border border-black/10 bg-[#D4E3E8]/40 px-4 py-3 transition hover:bg-[#D4E3E8]"
@@ -4375,7 +4381,7 @@ Please complete the following implementation tasks:
                                     href="/support"
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex items-center justify-center rounded-2xl border border-black/10 bg-[#082824] px-4 py-3 text-center text-[11px] font-semibold text-white transition hover:bg-[#0c3933]"
+                                    className="flex items-center justify-center rounded-2xl border border-black/10 bg-white px-4 py-3 text-center text-[11px] font-semibold text-black transition hover:bg-black/5"
                                 >
                                     Open Help Center
                                 </a>
@@ -4500,41 +4506,22 @@ Please complete the following implementation tasks:
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            {/* Required Commit form */}
-                            <form onSubmit={handleSaveCommitConfig} className="rounded-2xl border border-white/5 bg-black/20 p-5 space-y-4">
+                            {/* Required Commit Info Card (Read-only protocol minimum) */}
+                            <div className="rounded-2xl border border-white/5 bg-black/20 p-5 space-y-4 flex flex-col justify-between">
                                 <div>
                                     <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Minimum Deposit</p>
                                     <p className="text-[9px] text-white/35 mt-1">
-                                        The minimum balance a customer must maintain to keep using the service.
+                                        The standard minimum balance a customer maintains for metered vault services on Arc network.
                                     </p>
                                 </div>
-                                <div className="flex flex-col gap-3">
-                                    <label className="space-y-1.5">
-                                        <span className="text-[9px] font-bold uppercase tracking-wider text-white/40">USDC</span>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            step="0.000001"
-                                            value={commitInput}
-                                            onChange={(e) => setCommitInput(e.target.value)}
-                                            disabled={isSavingCommit}
-                                            className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-[#00d2b4] transition text-xs font-mono disabled:opacity-50"
-                                            placeholder="0"
-                                        />
-                                    </label>
-                                    <button
-                                        type="submit"
-                                        disabled={isSavingCommit}
-                                        className="w-full py-2 bg-[#00d2b4] text-[#111111] hover:brightness-110 disabled:opacity-50 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
-                                    >
-                                        {isSavingCommit ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                                        Save Setting
-                                    </button>
+                                <div className="rounded-xl border border-white/10 bg-black/40 p-3">
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Network Protocol Standard</span>
+                                    <p className="text-2xl font-mono font-bold text-[#00d2b4] mt-1">$2.00 USDC</p>
                                 </div>
                                 <p className="text-[9px] text-white/35 uppercase tracking-wider">
-                                    Current requirement: <span className="font-mono text-[#ccff00]">${formatUsdcMicros(requiredCommit)} USDC</span>
+                                    Enforced on-chain: <span className="font-mono text-[#00d2b4]">$2.00 USDC</span>
                                 </p>
-                            </form>
+                            </div>
 
                             {/* Claim Settled Funds card */}
                             <div className="rounded-2xl border border-white/5 bg-black/20 p-5 flex flex-col justify-between gap-4">
@@ -6073,7 +6060,23 @@ Please complete the following implementation tasks:
                     mobileEnabled={isConnected}
                     isPremium={isPremium}
                 />
-                <div className="merchant-dashboard-workspace relative min-w-0 flex-1 overflow-y-auto bg-[#D4E3E8] md:h-[100dvh] md:rounded-tl-[70px]">
+                {/* Mobile Top Profile Icon */}
+                <div className="fixed left-4 top-4 z-40 md:hidden">
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab("settings")}
+                        className="flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-[#FFFFF0] text-black shadow-md overflow-hidden"
+                        aria-label="Account Settings"
+                        title="Account Settings"
+                    >
+                        {userSettings?.profilePic ? (
+                            <img src={userSettings.profilePic} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                            <span className="font-mono text-xs font-bold text-[#082824]">{sidebarIdentityLabel.slice(0, 1).toUpperCase()}</span>
+                        )}
+                    </button>
+                </div>
+                <div className="merchant-dashboard-workspace relative min-w-0 flex-1 overflow-y-auto bg-[#D4E3E8] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[70px]">
             {/* Session Consent Alerts Overlay */}
             {sessionAlert && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
@@ -6149,6 +6152,12 @@ Please complete the following implementation tasks:
             </main>
             </div>
             </div>
+            <SupportChatModal
+                open={supportChatOpen}
+                onClose={() => setSupportChatOpen(false)}
+                currentWallet={address}
+                userRole="MERCHANT"
+            />
             <WithdrawModal
                 isOpen={isWithdrawOpen}
                 onClose={() => setIsWithdrawOpen(false)}

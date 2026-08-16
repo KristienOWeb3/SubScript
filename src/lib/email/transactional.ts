@@ -322,3 +322,89 @@ export async function sendSubscriptionCancellationReasonEmail(input: {
         idempotencyKey: `cancellation-reason:${input.merchantAddress.toLowerCase()}:${input.customerAddress.toLowerCase()}:${input.subscriptionId || "na"}:${input.reasonCode}`,
     }));
 }
+
+/**
+ * Notify all platform admins whenever a global system switch is toggled.
+ */
+export async function sendPlatformFlagChangeEmail(input: {
+    adminEmail: string;
+    actorWallet: string;
+    actorAlias?: string | null;
+    flagName: string;
+    previousValue: unknown;
+    newValue: unknown;
+    timestamp?: Date;
+}) {
+    const when = (input.timestamp || new Date()).toUTCString();
+    const actorLabel = input.actorAlias
+        ? `${input.actorAlias} (${input.actorWallet.slice(0, 6)}...${input.actorWallet.slice(-4)})`
+        : `${input.actorWallet.slice(0, 6)}...${input.actorWallet.slice(-4)}`;
+
+    const flagNameSafe = htmlEscape(input.flagName);
+    const actorSafe = htmlEscape(actorLabel);
+    const prevSafe = htmlEscape(String(input.previousValue));
+    const newSafe = htmlEscape(String(input.newValue));
+
+    await safelySendEmail("platform flag change alert", () => sendTransactionalEmail({
+        to: input.adminEmail,
+        subject: `[SubScript Security Alert] Global Switch Toggled: ${input.flagName}`,
+        text: `SubScript Security Alert\n\nGlobal Switch: ${input.flagName}\nToggled by: ${actorLabel}\nPrevious Value: ${input.previousValue}\nNew Value: ${input.newValue}\nTimestamp: ${when}\n\nThis notification is sent to all registered platform administrators.`,
+        html: renderEmailLayout({
+            previewText: `Global switch ${input.flagName} was toggled by ${actorLabel}`,
+            heading: "Platform Configuration Changed",
+            bodyHtml: `
+                <p style="margin:0 0 16px;font-size:14px;color:#08090a">A global system switch has been toggled in the Admin Console.</p>
+                <div style="margin:0 0 16px;padding:16px;background:#f4f6f8;border-radius:12px;font-size:13px;line-height:1.6">
+                    <p style="margin:0 0 8px"><strong>Switch:</strong> <span style="font-family:'SFMono-Regular',Consolas,monospace;color:#2775ca">${flagNameSafe}</span></p>
+                    <p style="margin:0 0 8px"><strong>Toggled By:</strong> <span style="font-family:'SFMono-Regular',Consolas,monospace">${actorSafe}</span></p>
+                    <p style="margin:0 0 8px"><strong>Previous State:</strong> <span style="color:#6b7280">${prevSafe}</span></p>
+                    <p style="margin:0 0 8px"><strong>New State:</strong> <strong style="color:#08090a">${newSafe}</strong></p>
+                    <p style="margin:0"><strong>UTC Timestamp:</strong> ${htmlEscape(when)}</p>
+                </div>
+                <p style="margin:0;color:#6b7280;font-size:12px">This is an automated operational notice delivered to all authorized platform administrators.</p>
+            `,
+            cta: { label: "Open Admin Console", url: "https://www.subscriptonarc.com/admin" },
+        }),
+        idempotencyKey: `flag-toggle:${input.flagName}:${Date.now()}:${input.adminEmail}`,
+    }));
+}
+
+/**
+ * Notify admins when a new support ticket is opened.
+ */
+export async function sendSupportTicketAlertEmail(input: {
+    adminEmail: string;
+    ticketId: string;
+    subject: string;
+    creatorWallet: string;
+    creatorRole: string;
+    messagePreview: string;
+}) {
+    const shortWallet = `${input.creatorWallet.slice(0, 6)}...${input.creatorWallet.slice(-4)}`;
+    const subjectSafe = htmlEscape(input.subject);
+    const roleSafe = htmlEscape(input.creatorRole);
+    const previewSafe = htmlEscape(input.messagePreview);
+
+    await safelySendEmail("support ticket admin alert", () => sendTransactionalEmail({
+        to: input.adminEmail,
+        subject: `[SubScript Support] New Ticket #${input.ticketId.slice(0, 8)}: ${input.subject}`,
+        text: `New Support Ticket Received\n\nTicket #${input.ticketId}\nFrom: ${shortWallet} (${input.creatorRole})\nSubject: ${input.subject}\n\nMessage:\n${input.messagePreview}\n\nRespond in the Admin Console: https://www.subscriptonarc.com/admin`,
+        html: renderEmailLayout({
+            previewText: `New support ticket from ${shortWallet}: ${input.subject}`,
+            heading: "New Support Ticket",
+            bodyHtml: `
+                <p style="margin:0 0 16px;font-size:14px;color:#08090a">A new in-app support ticket has been submitted and requires admin attention.</p>
+                <div style="margin:0 0 16px;padding:16px;background:#f4f6f8;border-radius:12px;font-size:13px;line-height:1.6">
+                    <p style="margin:0 0 8px"><strong>Subject:</strong> ${subjectSafe}</p>
+                    <p style="margin:0 0 8px"><strong>Requester:</strong> <span style="font-family:'SFMono-Regular',Consolas,monospace">${htmlEscape(shortWallet)}</span> (${roleSafe})</p>
+                    <p style="margin:0 0 4px;color:#6b7280;font-size:12px">Initial Inquiry</p>
+                    <div style="padding:12px;background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;color:#1e293b">${previewSafe}</div>
+                </div>
+                <p style="margin:0;color:#6b7280;font-size:12px">The first admin to reply will automatically claim this ticket.</p>
+            `,
+            cta: { label: "View Ticket in Admin Console", url: "https://www.subscriptonarc.com/admin" },
+        }),
+        idempotencyKey: `ticket-alert:${input.ticketId}:${input.adminEmail}`,
+    }));
+}
+
