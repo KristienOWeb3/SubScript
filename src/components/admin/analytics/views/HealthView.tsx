@@ -84,7 +84,7 @@ export function HealthView({ analytics, sponsor }: HealthViewProps) {
         />
 
         {/* Operational Incident Summary */}
-        <div className="rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)] flex flex-col justify-between">
+        <div className="min-w-0 rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)] flex flex-col justify-between">
           <div>
             <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">
               Protocol Health Vitals
@@ -141,7 +141,7 @@ export function HealthView({ analytics, sponsor }: HealthViewProps) {
 
       {/* Recent Broadcast Campaigns Delivery */}
       {broadcasts.length > 0 && (
-        <div className="rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+        <div className="min-w-0 rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
           <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a] mb-3">
             Recent Admin Broadcasts
           </h3>

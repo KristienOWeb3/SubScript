@@ -228,7 +228,7 @@ export function AdminOverviewDashboard({
       </div>
 
       {/* Gas Sponsor Address Card */}
-      <div className="rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="min-w-0 rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <span className="text-[10px] font-black uppercase tracking-wider text-[#64748b]">
             Gas Sponsorship Wallet
@@ -260,7 +260,7 @@ export function AdminOverviewDashboard({
       </div>
 
       {/* Recent Merchants Quick Table with Copy & Verify */}
-      <div className="rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+      <div className="min-w-0 rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
             <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">

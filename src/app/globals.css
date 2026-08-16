@@ -1081,3 +1081,457 @@ body {
     opacity: 0.2;
   }
 }
+
+/* =============================================================================
+   DARK THEME
+   =============================================================================
+   Both dashboards were originally built dark — that is why their component trees
+   are full of text-white, bg-black/40 and border-white/10. The large blocks above
+   are light-conversion layers that repaint that dark tree cream-and-white, and the
+   shells then add explicitly light chrome inline: bg-[#FFFFF0], bg-[#D4E3E8],
+   text-black, text-[#082824].
+
+   So dark mode is two moves rather than a rewrite:
+     1. let the dark-native utilities render as they were designed to again, and
+     2. repaint the light chrome the shells add on top.
+
+   This layer is additive and sits last on purpose. Nearly every declaration in the
+   light-conversion layers is written without !important, so an !important dark rule
+   beats it on the cascade without having to out-specify its :not() chains. Where a
+   light rule does use !important, the dark selector below mirrors its shape so it
+   also wins on specificity. Nothing above is edited, so light mode keeps behaving
+   exactly as it does today.
+
+   One rule is followed throughout: never move a background without moving its
+   foreground. Every light accent fill that keeps its colour in dark mode gets an
+   explicit dark-text guard, because those are precisely the surfaces where an
+   inherited light text colour would vanish into the fill. */
+
+:root[data-theme="dark"] {
+  /* Charcoal-and-teal rather than an invented palette: these track the dark tokens the
+     product already ships in :root (--background-start #111111, --card-bg #27272a,
+     --accent-teal #00d2b4), which is the look the merchant dashboard already has on
+     desktop. Dark mode should read as that surface, not as a new one. */
+  --dk-shell: #111111;
+  --dk-canvas: #17181a;
+  --dk-card: #1f2023;
+  --dk-raised: #27272a;
+  --dk-selected: #2b2d31;
+  --dk-ink: #f4f4f5;
+  --dk-ink-2: rgba(244, 244, 245, 0.74);
+  --dk-ink-3: rgba(244, 244, 245, 0.56);
+  --dk-ink-4: rgba(244, 244, 245, 0.42);
+  --dk-line: rgba(255, 255, 255, 0.1);
+  --dk-line-2: rgba(255, 255, 255, 0.18);
+  --dk-field: #1a1b1e;
+}
+
+/* ------------------------------------------------------------------- shells */
+[data-theme="dark"] .merchant-dashboard-root,
+[data-theme="dark"] .user-dashboard-redesign {
+  background-color: var(--dk-shell) !important;
+  color: var(--dk-ink) !important;
+  color-scheme: dark !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-workspace,
+[data-theme="dark"] .user-dashboard-content {
+  background-color: var(--dk-canvas) !important;
+  color: var(--dk-ink) !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#FFFFF0]"],
+[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#fffff0]"],
+[data-theme="dark"] .user-dashboard-redesign [class*="bg-[#FFFFF0]"],
+[data-theme="dark"] .user-dashboard-redesign [class*="bg-[#fffff0]"] {
+  background-color: var(--dk-shell) !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#D4E3E8]"] {
+  background-color: var(--dk-canvas) !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#C6D8DE]"] {
+  background-color: var(--dk-raised) !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-white"],
+[data-theme="dark"] .merchant-dashboard-root [class*="bg-white/"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-white"],
+[data-theme="dark"] .user-dashboard-redesign [class*="bg-white/"] {
+  background-color: var(--dk-card) !important;
+}
+
+/* The selected nav row reads as selected by sitting lighter than the sidebar here,
+   rather than darker as it does in light mode. Its text is already white. */
+[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#082824]"] {
+  background-color: var(--dk-selected) !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#0C3933]"] {
+  background-color: var(--dk-raised) !important;
+}
+
+/* --------------------------------------------------------------- foreground */
+[data-theme="dark"] .merchant-dashboard-root [class~="text-black"],
+[data-theme="dark"] .merchant-dashboard-root [class*="text-[#082824]"],
+[data-theme="dark"] .user-dashboard-redesign [class~="text-black"] {
+  color: var(--dk-ink) !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-root [class*="text-black/8"],
+[data-theme="dark"] .merchant-dashboard-root [class*="text-black/7"],
+[data-theme="dark"] .user-dashboard-redesign [class*="text-black/8"],
+[data-theme="dark"] .user-dashboard-redesign [class*="text-black/7"] {
+  color: var(--dk-ink-2) !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-root [class*="text-black/6"],
+[data-theme="dark"] .merchant-dashboard-root [class*="text-black/5"],
+[data-theme="dark"] .user-dashboard-redesign [class*="text-black/6"],
+[data-theme="dark"] .user-dashboard-redesign [class*="text-black/5"] {
+  color: var(--dk-ink-3) !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-root [class*="text-black/4"],
+[data-theme="dark"] .merchant-dashboard-root [class*="text-black/3"],
+[data-theme="dark"] .merchant-dashboard-root [class*="text-black/2"],
+[data-theme="dark"] .user-dashboard-redesign [class*="text-black/4"],
+[data-theme="dark"] .user-dashboard-redesign [class*="text-black/3"],
+[data-theme="dark"] .user-dashboard-redesign [class*="text-black/2"] {
+  color: var(--dk-ink-4) !important;
+}
+
+/* Let the dark-native white text render as designed again. */
+[data-theme="dark"] .merchant-dashboard-workspace [class~="text-white"],
+[data-theme="dark"] .merchant-dashboard-root [class~="text-white"] {
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-white/9"],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-white/8"],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-white/7"] {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-white/6"],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-white/5"] {
+  color: rgba(255, 255, 255, 0.62) !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-white/4"],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-white/3"] {
+  color: rgba(255, 255, 255, 0.46) !important;
+}
+
+/* The user dashboard's blanket "every text-white goes black" rule carries four
+   :not() chains, so this mirrors that selector exactly and adds the theme gate to
+   land one step above it. */
+[data-theme="dark"] .user-dashboard-content .text-white:not([data-dm-bubble="dark"] *):not([data-dm-dark="true"] *):not([data-dm-bubble="dark"]):not([data-dm-dark="true"]),
+[data-theme="dark"] .user-dashboard-content [class*="text-white/"]:not([data-dm-bubble="dark"] *):not([data-dm-dark="true"] *):not([data-dm-bubble="dark"]):not([data-dm-dark="true"]),
+[data-theme="dark"] .user-dashboard-redesign [role="dialog"] .text-white,
+[data-theme="dark"] .user-dashboard-redesign [role="dialog"] [class*="text-white/"] {
+  color: rgba(255, 255, 255, 0.88) !important;
+}
+
+[data-theme="dark"] .user-dashboard-content [class*="text-[#ccff00]"]:not([data-dm-bubble="dark"] *),
+[data-theme="dark"] .user-dashboard-redesign [role="dialog"] [class*="text-[#ccff00]"] {
+  color: #ccff00 !important;
+}
+
+[data-theme="dark"] .user-dashboard-content [class*="text-emerald"]:not([data-dm-bubble="dark"] *) {
+  color: #6ee7b7 !important;
+}
+
+[data-theme="dark"] .user-dashboard-content [class*="text-sky"]:not([data-dm-bubble="dark"] *) {
+  color: #7dd3fc !important;
+}
+
+/* ------------------------------------------------------ surfaces and borders */
+/* Only the low-alpha tints invert. Those are the light chrome — a faint darkening on a cream or
+   white card — so on a dark canvas the equivalent is a faint lightening.
+
+   The high-alpha blacks are a different thing entirely: bg-black/80 and bg-black/85 are modal
+   scrims, and /20../60 are surfaces from the original dark design. Inverting those would leave
+   overlays undimmed with the page showing straight through, so they are listed separately below
+   and kept dark. Exact-token ~= matching rather than *= is what keeps bg-black/5 from also
+   catching bg-black/50. */
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/5"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/10"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/15"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/[0.01]"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/[0.02]"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/[0.03]"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/[0.04]"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/[0.05]"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/[0.06]"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/[0.08]"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-black/5"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-black/10"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-black/15"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-black/[0.01]"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-black/[0.02]"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-black/[0.03]"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-black/[0.04]"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-black/[0.06]"] {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Scrims and dark-design surfaces stay dark. The user dashboard's light layer repaints every
+   bg-black/* as a blue tint, which would leave a modal overlay barely tinted in dark mode. */
+[data-theme="dark"] .user-dashboard-content [class~="bg-black/20"],
+[data-theme="dark"] .user-dashboard-content [class~="bg-black/25"],
+[data-theme="dark"] .user-dashboard-content [class~="bg-black/30"],
+[data-theme="dark"] .user-dashboard-content [class~="bg-black/35"],
+[data-theme="dark"] .user-dashboard-content [class~="bg-black/40"],
+[data-theme="dark"] .user-dashboard-content [class~="bg-black/45"],
+[data-theme="dark"] .user-dashboard-content [class~="bg-black/60"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-black/80"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-black/85"] {
+  background-color: rgba(0, 0, 0, 0.72) !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-root [class*="border-black/"],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="border-white/"],
+[data-theme="dark"] .user-dashboard-redesign [class*="border-black/"],
+[data-theme="dark"] .user-dashboard-content [class*="border-white/"],
+[data-theme="dark"] .user-dashboard-redesign [role="dialog"] [class*="border-white/"] {
+  border-color: var(--dk-line) !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-root [class*="border-[#082824]"] {
+  border-color: var(--dk-line-2) !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-root [class*="divide-black/"],
+[data-theme="dark"] .user-dashboard-redesign [class*="divide-black/"] {
+  border-color: var(--dk-line) !important;
+}
+
+[data-theme="dark"] .user-dashboard-redesign .dashboard-blue-panel,
+[data-theme="dark"] .user-dashboard-redesign .commit-vault-shell {
+  background-color: rgba(39, 117, 202, 0.16) !important;
+}
+
+[data-theme="dark"] .user-dashboard-content [class*="bg-emerald"],
+[data-theme="dark"] .user-dashboard-content [class*="bg-sky"] {
+  background-color: rgba(39, 117, 202, 0.18) !important;
+}
+
+/* ---------------------------------------------------------- light accent fills
+   These keep their colour in dark mode because they are brand accents, which means the text on
+   them has to stay dark. Without this guard the foreground rules above would lighten that text
+   into the fill and it would disappear.
+
+   Every selector excludes the translucent variants. `[class*="bg-[#8AB4DB]"]` is a substring
+   match, so it also catches bg-[#8AB4DB]/45 — and a 45% light blue over a dark canvas is a *dark*
+   surface, so forcing dark text onto it would recreate the very black-on-black problem this block
+   exists to prevent. Translucent fills fall through to the light-ink rules above, which is right. */
+[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#8AB4DB]"]:not([class*="bg-[#8AB4DB]/"]),
+[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#8AB4DB]"]:not([class*="bg-[#8AB4DB]/"]) [class~="text-black"],
+[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#8AB4DB]"]:not([class*="bg-[#8AB4DB]/"]) [class*="text-black/"],
+[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#8AB4DB]"]:not([class*="bg-[#8AB4DB]/"]) [class*="text-[#082824]"],
+[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#7AA7D0]"]:not([class*="bg-[#7AA7D0]/"]),
+[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#7AA7D0]"]:not([class*="bg-[#7AA7D0]/"]) [class~="text-black"],
+[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#7AA7D0]"]:not([class*="bg-[#7AA7D0]/"]) [class*="text-black/"],
+[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#7AA7D0]"]:not([class*="bg-[#7AA7D0]/"]) [class*="text-[#082824]"],
+[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#EFE2AC]"]:not([class*="bg-[#EFE2AC]/"]),
+[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#EFE2AC]"]:not([class*="bg-[#EFE2AC]/"]) [class~="text-black"],
+[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#EFE2AC]"]:not([class*="bg-[#EFE2AC]/"]) [class*="text-[#082824]"],
+[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#00d2b4]"]:not([class*="bg-[#00d2b4]/"]),
+[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#00d2b4]"]:not([class*="bg-[#00d2b4]/"]) [class~="text-black"],
+[data-theme="dark"] .user-dashboard-redesign [class*="bg-[#ccff00]"]:not([class*="bg-[#ccff00]/"]),
+[data-theme="dark"] .user-dashboard-redesign [class*="bg-[#ccff00]"]:not([class*="bg-[#ccff00]/"]) [class~="text-black"] {
+  color: #111111 !important;
+}
+
+/* Restore the lime fill that the light layer repaints charcoal, now that dark text
+   on it is guaranteed by the guard above. */
+[data-theme="dark"] .user-dashboard-content [class*="bg-[#ccff00]"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+[data-theme="dark"] .user-dashboard-redesign [role="dialog"] [class*="bg-[#ccff00]"] {
+  background-color: #ccff00 !important;
+}
+
+/* --------------------------------------------------------------- form fields */
+[data-theme="dark"] .merchant-dashboard-workspace input,
+[data-theme="dark"] .merchant-dashboard-workspace textarea,
+[data-theme="dark"] .merchant-dashboard-workspace select,
+[data-theme="dark"] .user-dashboard-redesign .subscript-input,
+[data-theme="dark"] .user-dashboard-redesign input,
+[data-theme="dark"] .user-dashboard-redesign textarea,
+[data-theme="dark"] .user-dashboard-redesign select {
+  color: var(--dk-ink) !important;
+  background-color: var(--dk-field) !important;
+  border-color: var(--dk-line-2) !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-workspace input::placeholder,
+[data-theme="dark"] .merchant-dashboard-workspace textarea::placeholder,
+[data-theme="dark"] .user-dashboard-redesign .subscript-input::placeholder,
+[data-theme="dark"] .user-dashboard-redesign input::placeholder,
+[data-theme="dark"] .user-dashboard-redesign textarea::placeholder {
+  color: var(--dk-ink-4) !important;
+}
+
+[data-theme="dark"] .user-dashboard-redesign .subscript-input:focus,
+[data-theme="dark"] .user-dashboard-redesign input:focus,
+[data-theme="dark"] .user-dashboard-redesign textarea:focus,
+[data-theme="dark"] .user-dashboard-redesign select:focus {
+  border-color: #2775ca !important;
+  background-color: var(--dk-field) !important;
+}
+
+/* -------------------------------------------------------------- DM action bar */
+[data-theme="dark"] .user-dashboard-redesign .dm-quick-button,
+[data-theme="dark"] .user-dashboard-redesign .dm-action-menu-button,
+[data-theme="dark"] .user-dashboard-redesign .dm-action-menu-trigger,
+[data-theme="dark"] .user-dashboard-redesign [data-testid="mobile-dm-action-footer"] button,
+[data-theme="dark"] .user-dashboard-redesign [data-testid="desktop-dm-action-footer"] button,
+[data-theme="dark"] .user-dashboard-redesign .dm-quick-button *,
+[data-theme="dark"] .user-dashboard-redesign .dm-action-menu-button *,
+[data-theme="dark"] .user-dashboard-redesign .dm-action-menu-trigger *,
+[data-theme="dark"] .user-dashboard-content .dm-quick-button,
+[data-theme="dark"] .user-dashboard-content .dm-action-menu-button,
+[data-theme="dark"] .user-dashboard-content .dm-action-menu-trigger,
+[data-theme="dark"] .user-dashboard-content [data-testid="mobile-dm-action-footer"] button,
+[data-theme="dark"] .user-dashboard-content [data-testid="desktop-dm-action-footer"] button {
+  color: var(--dk-ink) !important;
+  background-color: var(--dk-raised) !important;
+  border-color: var(--dk-line-2) !important;
+  box-shadow: none !important;
+}
+
+[data-theme="dark"] .user-dashboard-redesign .dm-quick-button:hover,
+[data-theme="dark"] .user-dashboard-redesign .dm-action-menu-button:hover,
+[data-theme="dark"] .user-dashboard-redesign .dm-action-menu-trigger:hover,
+[data-theme="dark"] .user-dashboard-content .dm-quick-button:hover,
+[data-theme="dark"] .user-dashboard-content .dm-action-menu-button:hover,
+[data-theme="dark"] .user-dashboard-content .dm-action-menu-trigger:hover {
+  background-color: var(--dk-selected) !important;
+  color: #ffffff !important;
+  border-color: #2775ca !important;
+}
+
+/* ------------------------------------------------------------------ overlays */
+[data-theme="dark"] .merchant-dashboard-root [role="dialog"],
+[data-theme="dark"] .merchant-dashboard-root [role="alertdialog"],
+[data-theme="dark"] .user-dashboard-redesign [role="dialog"] {
+  background-color: var(--dk-card) !important;
+  color: var(--dk-ink) !important;
+  border-color: var(--dk-line-2) !important;
+  color-scheme: dark !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-root [role="dialog"] input,
+[data-theme="dark"] .merchant-dashboard-root [role="dialog"] textarea,
+[data-theme="dark"] .merchant-dashboard-root [role="dialog"] select {
+  background: var(--dk-field) !important;
+  color: var(--dk-ink) !important;
+  border-color: var(--dk-line-2) !important;
+  color-scheme: dark !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-workspace .liquid-glass {
+  background: var(--dk-card) !important;
+}
+
+/* -------------------------------------------------------------- chrome pieces */
+[data-theme="dark"] .user-dashboard-redesign nav[aria-label="Primary navigation"] {
+  border-color: var(--dk-line-2) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="dark"] .user-dashboard-redesign nav[aria-label="Primary navigation"] button[aria-current="page"] {
+  border-color: var(--dk-selected) !important;
+  background: var(--dk-selected) !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .user-dashboard-redesign .wallet-actions button[aria-label="Deposit"] {
+  background: var(--dk-raised);
+  color: var(--dk-ink);
+}
+
+[data-theme="dark"] .user-dashboard-redesign .wallet-actions button[aria-label="Send Out"] {
+  background: #2775ca;
+  color: #ffffff;
+}
+
+[data-theme="dark"] .merchant-light-bell button {
+  color: var(--dk-ink);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--dk-line);
+}
+
+[data-theme="dark"] .merchant-dashboard-root footer {
+  color: var(--dk-ink-3);
+  border-color: var(--dk-line);
+}
+
+[data-theme="dark"] .merchant-dashboard-root footer a:hover {
+  color: var(--dk-ink);
+}
+
+/* Skeletons: the light layers tune these for cream surfaces. */
+[data-theme="dark"] .merchant-dashboard-workspace .subscript-skeleton,
+[data-theme="dark"] .user-dashboard-redesign .subscript-skeleton,
+[data-theme="dark"] .user-dashboard-loading .subscript-skeleton,
+[data-theme="dark"] .user-dashboard-loading .subscript-skeleton--faint {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  border-color: var(--dk-line) !important;
+}
+
+[data-theme="dark"] .user-dashboard-loading [class*="bg-black/"] {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ------------------------------------------------------------ theme previews
+   The swatches in the Appearance picker are pictures *of* the themes, so they have
+   to keep their literal colours — otherwise the "Light Mode" preview gets repainted
+   by dark mode and shows a dark card, which is exactly backwards. Same specificity
+   as the mapping rules above and placed after them, so these win on source order.
+   Scoped to the swatch itself, so the caption underneath still themes normally. */
+[data-theme="dark"] [data-theme-preview] {
+  color: unset;
+}
+
+[data-theme="dark"] [data-theme-preview][class*="bg-[#FFFFF0]"],
+[data-theme="dark"] [data-theme-preview] [class*="bg-[#FFFFF0]"] {
+  background-color: #fffff0 !important;
+}
+
+[data-theme="dark"] [data-theme-preview][class*="bg-[#082824]"],
+[data-theme="dark"] [data-theme-preview] [class*="bg-[#082824]"] {
+  background-color: #082824 !important;
+}
+
+[data-theme="dark"] [data-theme-preview][class*="bg-[#D4E3E8]"],
+[data-theme="dark"] [data-theme-preview] [class*="bg-[#D4E3E8]"] {
+  background-color: #d4e3e8 !important;
+}
+
+[data-theme="dark"] [data-theme-preview][class*="bg-[#8AB4DB]"],
+[data-theme="dark"] [data-theme-preview] [class*="bg-[#8AB4DB]"] {
+  background-color: #8ab4db !important;
+}
+
+[data-theme="dark"] [data-theme-preview][class*="text-[#082824]"],
+[data-theme="dark"] [data-theme-preview] [class*="text-[#082824]"] {
+  color: #082824 !important;
+}
+
+[data-theme="dark"] [data-theme-preview][class~="text-white"],
+[data-theme="dark"] [data-theme-preview] [class~="text-white"] {
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] [data-theme-preview][class*="border-black/"],
+[data-theme="dark"] [data-theme-preview] [class*="border-black/"] {
+  border-color: rgba(0, 0, 0, 0.2) !important;
+}
+
+[data-theme="dark"] [data-theme-preview][class*="border-white/"],
+[data-theme="dark"] [data-theme-preview] [class*="border-white/"] {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+

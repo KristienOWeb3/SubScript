@@ -4745,7 +4745,7 @@ export default function UserDashboard() {
                               }`}
                             >
                               <div className="space-y-2">
-                                <div className={`h-16 w-full rounded-xl border p-2.5 flex flex-col justify-between ${t.previewBg}`}>
+                                <div data-theme-preview="true" className={`h-16 w-full rounded-xl border p-2.5 flex flex-col justify-between ${t.previewBg}`}>
                                   <div className="flex items-center justify-between">
                                     <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${t.badge}`}>
                                       {t.title}

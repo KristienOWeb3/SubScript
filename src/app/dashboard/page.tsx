@@ -1897,19 +1897,19 @@ export default function DashboardPage() {
                 /* The server owns merchant scoping, complete aggregates, and page-bounded detail.
                    This keeps browser work constant and removes every protocol-wide RPC scan. */
                 const fetchedLedgers = (mirrorPayload.subscriptions || []).map((subscription: MerchantSubscriptionDetail) => {
-                    const subscriber = subscription.subscriber || "";
-                    const shortAddress = subscriber
-                        ? `${subscriber.slice(0, 6)}...${subscriber.slice(-4)}`
-                        : "Unknown subscriber";
+                    /* The API no longer sends who the subscriber is, so a row is identified by the
+                       merchant's own reference when they set one and otherwise by an opaque
+                       subscription number. That is enough to match a row against a webhook or an
+                       API call without naming the customer. */
+                    const reference = subscription.externalReference || `Subscription #${subscription.subscriptionId}`;
                     const nextBillingTs = subscription.nextBillingDate
                         ? Math.floor(new Date(subscription.nextBillingDate).getTime() / 1000)
                         : 0;
                     return {
                         id: `agent-run-${subscription.subscriptionId}`,
                         rawId: subscription.subscriptionId,
-                        address: subscriber,
-                        displayAddress: subscription.externalReference || subscription.subscriberName || shortAddress,
-                        shortSubAddress: subscription.externalReference || subscription.subscriberName || shortAddress,
+                        displayAddress: reference,
+                        shortSubAddress: reference,
                         limit: `${formatUnits(BigInt(subscription.amountUsdcMicros), 6)} USDC / ${formatPlanPeriod(subscription.periodSeconds)}`,
                         rawAmount: formatUnits(BigInt(subscription.amountUsdcMicros), 6),
                         rawPeriod: subscription.periodSeconds,
@@ -2988,7 +2988,7 @@ Please complete the following implementation tasks:
                                                                             <table className="w-full text-left border-collapse text-[10px]">
                                                                                 <thead>
                                                                                     <tr className="border-b border-black/10 bg-black/[0.02] text-[9px] text-black/50 font-semibold">
-                                                                                        <th className="py-2.5 px-3">Payer Address</th>
+                                                                                        <th className="py-2.5 px-3">Payment</th>
                                                                                         <th className="py-2.5 px-3">Tx Hash</th>
                                                                                         <th className="py-2.5 px-3">Date</th>
                                                                                         <th className="py-2.5 px-3 text-right">Amount</th>
@@ -2997,14 +2997,10 @@ Please complete the following implementation tasks:
                                                                                 <tbody className="divide-y divide-black/10 font-mono text-black/70">
                                                                                     {link.payments.map((p: any) => (
                                                                                         <tr key={p.id} className="hover:bg-black/[0.02] transition-colors">
-                                                                                            <td className="py-2 px-3 text-[#082824]" title={p.payer_address || ""}>
-                                                                                                {p.payer_alias ? (
-                                                                                                    <span className="font-sans font-semibold text-black/80 bg-[#D4E3E8] border border-black/10 px-2 py-0.5 rounded-md text-[9px]">
-                                                                                                        {p.payer_alias}
-                                                                                                    </span>
-                                                                                                ) : (
-                                                                                                    p.payer_address ? `${p.payer_address.slice(0, 10)}...${p.payer_address.slice(-8)}` : "-"
-                                                                                                )}
+                                                                                            {/* Was the payer's alias or wallet. The API no longer sends either — a
+                                                                                                merchant gets the amount and their own settlement, not who paid. */}
+                                                                                            <td className="py-2 px-3 text-[#082824]">
+                                                                                                {p.id ? `#${String(p.id).slice(0, 8)}` : "-"}
                                                                                             </td>
                                                                                             <td className="py-2 px-3 text-black/50 hover:text-[#082824] transition-colors">
                                                                                                 {p.tx_hash ? (
@@ -3524,7 +3520,7 @@ Please complete the following implementation tasks:
                                             }`}
                                         >
                                             <div className="space-y-2">
-                                                <div className={`h-16 w-full rounded-xl border p-2.5 flex flex-col justify-between ${t.previewBg}`}>
+                                                <div data-theme-preview="true" className={`h-16 w-full rounded-xl border p-2.5 flex flex-col justify-between ${t.previewBg}`}>
                                                     <div className="flex items-center justify-between">
                                                         <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${t.badge}`}>
                                                             {t.title}
@@ -3843,11 +3839,12 @@ Please complete the following implementation tasks:
                                     const q = settingsTxSearch.trim().toLowerCase();
                                     const matchId = (tx.receiptId || "").toLowerCase().includes(q);
                                     const matchHash = (tx.txHash || "").toLowerCase().includes(q);
-                                    const matchName = (tx.counterpartyName || "").toLowerCase().includes(q);
                                     const matchMemo = (tx.memoNote || "").toLowerCase().includes(q);
-                                    const matchPayer = (tx.payerAddress || "").toLowerCase().includes(q);
-                                    const matchMerchant = (tx.merchantAddress || "").toLowerCase().includes(q);
-                                    if (!matchId && !matchHash && !matchName && !matchMemo && !matchPayer && !matchMerchant) {
+                                    /* Counterparty name and payer address are intentionally not
+                                       searchable here. The table never displays them, and matching
+                                       on them would let a merchant confirm whether a specific
+                                       address or alias had paid them. */
+                                    if (!matchId && !matchHash && !matchMemo) {
                                         return false;
                                     }
                                 }

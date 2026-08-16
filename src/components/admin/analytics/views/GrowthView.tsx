@@ -108,7 +108,7 @@ export function GrowthView({ analytics }: GrowthViewProps) {
         />
 
         {/* Merchant Onboarding Funnel */}
-        <div className="rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)] flex flex-col justify-between">
+        <div className="min-w-0 rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)] flex flex-col justify-between">
           <div>
             <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">
               Merchant Verification Funnel

@@ -169,7 +169,7 @@ export function AreaTrendChart({
   const activePoint = hoverIndex !== null ? points[hoverIndex] : null;
 
   return (
-    <div className="relative w-full rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]" ref={containerRef}>
+    <div className="relative min-w-0 w-full rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]" ref={containerRef}>
       {/* Header with Title & Optional Range Selector */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
         <div>
@@ -220,7 +220,11 @@ export function AreaTrendChart({
           {emptyMessage}
         </div>
       ) : (
-        <div className="relative w-full overflow-hidden select-none">
+        <div className="relative w-full select-none">
+          {/* Deliberately not overflow-hidden: this is the tooltip's positioning parent, and
+              clipping here is what made the hover readout vanish on a spike instead of merely
+              sitting off-centre. The tooltip clamps itself to stay inside the card, so there is
+              nothing that needs cutting off. */}
           <svg
             viewBox={`0 0 640 ${height}`}
             className="w-full overflow-visible"
@@ -349,47 +353,63 @@ export function AreaTrendChart({
             })}
           </svg>
 
-          {/* Floating Hover Tooltip */}
-          {activePoint && (
-            <div
-              className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-full transform rounded-xl border border-[#cbd5e1] bg-[#0f172a] px-3.5 py-2 text-white shadow-xl backdrop-blur-md"
-              style={{
-                left: `${(activePoint.x / 640) * 100}%`,
-                top: `${(activePoint.y / height) * 100 - 12}%`,
-              }}
-            >
-              <p className="text-[10px] font-semibold text-[#94a3b8] mb-0.5">{activePoint.d.label}</p>
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
-                <p className="text-xs font-black text-white">
-                  {primaryLabel}: {valuePrefix}
-                  {activePoint.d.value.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                  {valueSuffix}
-                </p>
-              </div>
-              {activePoint.d.secondaryValue !== undefined && secondaryLabel && (
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: secondaryColor }} />
-                  <p className="text-[11px] font-bold text-[#cbd5e1]">
-                    {secondaryLabel}: {valuePrefix}
-                    {activePoint.d.secondaryValue.toLocaleString(undefined, {
+          {/* Floating Hover Tooltip.
+            *
+            * Anchored above the point normally and flipped below it when the point sits high
+            * in the plot — which is exactly what a spike does, and what used to push the box
+            * out through the top of the card where it was clipped and unreadable. Horizontally
+            * it stops centring near the edges and aligns to the inside instead, so the box is
+            * always fully within the chart no matter which point is hovered. */}
+          {activePoint && (() => {
+            const xRatio = activePoint.x / 640;
+            const yRatio = activePoint.y / height;
+            const flipBelow = yRatio < 0.34;
+            const xShift = xRatio < 0.18 ? "0%" : xRatio > 0.82 ? "-100%" : "-50%";
+            const yShift = flipBelow ? "14px" : "calc(-100% - 14px)";
+            return (
+              <div
+                data-admin-dark="true"
+                className="pointer-events-none absolute z-20 rounded-xl border border-white/15 bg-[#0f172a] px-3.5 py-2 shadow-xl"
+                style={{
+                  left: `${Math.min(Math.max(xRatio * 100, 1), 99)}%`,
+                  top: `${yRatio * 100}%`,
+                  transform: `translate(${xShift}, ${yShift})`,
+                  maxWidth: "min(260px, 90%)",
+                }}
+              >
+                <p className="text-[10px] font-semibold text-[#94a3b8] mb-0.5">{activePoint.d.label}</p>
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+                  <p className="text-xs font-black text-[#f8fafc]">
+                    {primaryLabel}: {valuePrefix}
+                    {activePoint.d.value.toLocaleString(undefined, {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}
                     {valueSuffix}
                   </p>
                 </div>
-              )}
-              {activePoint.d.meta?.paymentCount !== undefined && (
-                <p className="text-[9px] text-[#94a3b8] mt-1 border-t border-white/10 pt-1">
-                  {activePoint.d.meta.paymentCount} payments recorded
-                </p>
-              )}
-            </div>
-          )}
+                {activePoint.d.secondaryValue !== undefined && secondaryLabel && (
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: secondaryColor }} />
+                    <p className="text-[11px] font-bold text-[#cbd5e1]">
+                      {secondaryLabel}: {valuePrefix}
+                      {activePoint.d.secondaryValue.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                      {valueSuffix}
+                    </p>
+                  </div>
+                )}
+                {activePoint.d.meta?.paymentCount !== undefined && (
+                  <p className="text-[9px] text-[#94a3b8] mt-1 border-t border-white/10 pt-1">
+                    {activePoint.d.meta.paymentCount} payments recorded
+                  </p>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>
@@ -422,7 +442,7 @@ export function BarMetricChart({
   }, [data]);
 
   return (
-    <div className="rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+    <div className="min-w-0 rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
       {(title || subtitle) && (
         <div className="mb-4">
           {title && <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">{title}</h3>}
@@ -441,9 +461,14 @@ export function BarMetricChart({
               onMouseEnter={() => setHoverIdx(idx)}
               onMouseLeave={() => setHoverIdx(null)}
             >
-              {/* Tooltip */}
+              {/* Tooltip. Sits just above the bar top and is clamped so a full-height bar
+                  cannot push it up out of the card, which -top-10 did. */}
               {isHovered && (
-                <div className="absolute -top-10 z-20 whitespace-nowrap rounded-lg bg-[#0f172a] px-2.5 py-1 text-[10px] font-bold text-white shadow-lg">
+                <div
+                  data-admin-dark="true"
+                  className="pointer-events-none absolute left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-lg bg-[#0f172a] px-2.5 py-1 text-[10px] font-bold text-[#f8fafc] shadow-lg"
+                  style={{ bottom: `min(calc(${barHeightPct}% + 26px), calc(100% - 24px))` }}
+                >
                   {valuePrefix}
                   {item.value.toLocaleString()} {item.sublabel ? `(${item.sublabel})` : ""}
                 </div>
@@ -522,7 +547,7 @@ export function DonutMetricChart({
   const activeSegment = hoveredIdx !== null ? arcs[hoveredIdx] : null;
 
   return (
-    <div className="rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+    <div className="min-w-0 rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
       {(title || subtitle) && (
         <div className="mb-4">
           {title && <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">{title}</h3>}
@@ -649,7 +674,7 @@ export function RunwayGaugeChart({
     : "text-emerald-600 bg-emerald-500/10 border-emerald-500/30";
 
   return (
-    <div className="rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)] flex flex-col justify-between">
+    <div className="min-w-0 rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)] flex flex-col justify-between">
       <div className="flex items-center justify-between mb-2">
         <div>
           <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">{title}</h3>
@@ -741,7 +766,7 @@ export function MetricSparkline({
   const pathD = `M ${pts.join(" L ")}`;
 
   return (
-    <svg width={width} height={height} className="overflow-visible">
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="max-w-full overflow-visible">
       <path
         d={pathD}
         fill="none"
@@ -777,21 +802,27 @@ export function StatCardWithSparkline({
   badgeText?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)] flex flex-col justify-between transition hover:shadow-md">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] font-black uppercase tracking-wider text-[#64748b]">{label}</span>
+    /* min-w-0 matters here: as a grid item this card defaults to min-width:auto, so a long
+       figure like $12,345,678.90 widens the track instead of wrapping and the whole grid
+       spills past its container — which is what happened when the admin sidebar expanded and
+       took width away from the content column. */
+    <div className="min-w-0 rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)] flex flex-col justify-between transition hover:shadow-md">
+      <div className="flex items-center justify-between gap-2">
+        <span className="min-w-0 text-[10px] font-black uppercase tracking-wider text-[#64748b]">{label}</span>
         {Icon && (
-          <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-[#f1f5f9] text-[#2775ca]">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-[#f1f5f9] text-[#2775ca]">
             <Icon className="h-4 w-4" />
           </div>
         )}
       </div>
 
       <div className="my-3 flex items-baseline justify-between gap-2">
-        <div>
-          <p className="text-2xl font-black text-[#0f172a] tracking-tight">{value}</p>
+        <div className="min-w-0 flex-1">
+          {/* Wraps rather than overflows. A money figure has no spaces to break at, so
+              overflow-wrap:anywhere is what actually lets it fold onto a second line. */}
+          <p className="text-2xl font-black text-[#0f172a] tracking-tight break-words [overflow-wrap:anywhere]">{value}</p>
           {changePercent !== undefined && (
-            <div className="mt-1 flex items-center gap-1 text-[10px] font-bold">
+            <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] font-bold">
               {isPositive ? (
                 <span className="flex items-center gap-0.5 text-emerald-600">
                   <TrendingUp className="h-3 w-3" /> +{changePercent}%
@@ -805,14 +836,14 @@ export function StatCardWithSparkline({
             </div>
           )}
           {badgeText && (
-            <span className="mt-1 inline-block rounded-full bg-[#f1f5f9] px-2 py-0.5 text-[9px] font-bold text-[#64748b]">
+            <span className="mt-1 inline-block max-w-full truncate rounded-full bg-[#f1f5f9] px-2 py-0.5 text-[9px] font-bold text-[#64748b]">
               {badgeText}
             </span>
           )}
         </div>
 
         {sparklineData && sparklineData.length > 1 && (
-          <div className="shrink-0">
+          <div className="hidden shrink-0 sm:block">
             <MetricSparkline data={sparklineData} color={color} />
           </div>
         )}

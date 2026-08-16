@@ -1,10 +1,11 @@
 export const MERCHANT_SUBSCRIPTION_PAGE_SIZE = 5;
 export const MAX_MERCHANT_SUBSCRIPTION_PAGE_SIZE = 100;
 
+/* No subscriber fields by design. Merchants get amounts and schedules; who is behind a
+   subscription is not theirs to see, so the identity never crosses this boundary. Admin surfaces
+   use their own types. `externalReference` is the merchant's own label and stays. */
 export type MerchantSubscriptionDetail = {
     subscriptionId: string;
-    subscriber: string | null;
-    subscriberName: string | null;
     externalReference: string | null;
     sourceCheckoutId: string | null;
     status: string;
@@ -25,14 +26,10 @@ export type MerchantAnalyticsSummary = {
     mrrUsdc: number;
     recentSubscribers: Array<{
         subscriptionId: string;
-        subscriber: string | null;
-        subscriberName: string | null;
         activityAt: string;
     }>;
     topRevenue: Array<{
         subscriptionId: string;
-        subscriber: string | null;
-        subscriberName: string | null;
         monthlyUsdc: number;
     }>;
 };

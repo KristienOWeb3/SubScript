@@ -388,16 +388,14 @@ export default function AnalyticsDashboard({
         const top = analytics
             ? analytics.topRevenue.map((subscription) => ({
                 monthly: subscription.monthlyUsdc,
-                label: subscription.subscriberName
-                    || (subscription.subscriber
-                        ? `${subscription.subscriber.slice(0, 6)}...${subscription.subscriber.slice(-4)}`
-                        : "Subscriber"),
+                /* Labelled by subscription, never by subscriber. */
+                label: `#${subscription.subscriptionId}`,
             }))
             : ledgers
                 .filter(isPaying)
                 .map((s: any) => ({
                     monthly: monthlyOf(s),
-                    label: s.shortSubAddress || s.displayAddress || "Subscriber",
+                    label: s.rawId ? `#${s.rawId}` : "Subscription",
                 }))
                 .sort((a, b) => b.monthly - a.monthly)
                 .slice(0, 6);
@@ -416,10 +414,7 @@ export default function AnalyticsDashboard({
     const displayList = useMemo(() => {
         if (analytics) {
             return analytics.recentSubscribers.map((subscription) => ({
-                address: subscription.subscriberName
-                    || (subscription.subscriber
-                        ? `${subscription.subscriber.slice(0, 6)}...${subscription.subscriber.slice(-4)}`
-                        : "Unknown subscriber"),
+                address: `Subscription #${subscription.subscriptionId}`,
                 tier: 1, /* Active subscribers of standard subscription represent tier 1 setup */
                 timestamp: new Date(subscription.activityAt).toLocaleDateString(),
             }));
@@ -430,7 +425,7 @@ export default function AnalyticsDashboard({
             .sort((a: any, b: any) => new Date(b.activityAt || 0).getTime() - new Date(a.activityAt || 0).getTime())
             .slice(0, 5)
             .map((sub: any) => ({
-                address: sub.shortSubAddress || "0x0000...0000",
+                address: sub.displayAddress || (sub.rawId ? `Subscription #${sub.rawId}` : "Subscription"),
                 tier: 1,
                 timestamp: sub.activityAt ? new Date(sub.activityAt).toLocaleDateString() : "Unknown",
             }));
@@ -468,12 +463,9 @@ export default function AnalyticsDashboard({
                         && subscription.downgradeFailures > 0
                         && !subscription.cancelAtPeriodEnd;
                     const attempts = Number(subscription.downgradeFailures || 0);
-                    const fallbackAddress = subscription.subscriber
-                        ? `${subscription.subscriber.slice(0, 6)}...${subscription.subscriber.slice(-4)}`
-                        : "Unknown subscriber";
                     return {
                         id: subscription.subscriptionId,
-                        address: subscription.subscriberName || fallbackAddress,
+                        address: subscription.externalReference || `Subscription #${subscription.subscriptionId}`,
                         timestamp: subscription.nextBillingDate
                             ? new Date(subscription.nextBillingDate).toLocaleDateString()
                             : "Not scheduled",

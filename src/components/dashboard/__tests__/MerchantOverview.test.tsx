@@ -35,13 +35,14 @@ test("merchant overview renders the wireframe sections and actions", () => {
     for (const label of [
         "Earnings",
         "Ready to Withdraw",
-        "30 Days Projection",
+        "30D Projection",
         "Transactions Overview",
-        "Plans Overview",
-        "Active Subscriptions and Customers",
+        "Plans Ranking",
+        "Active Subscriptions",
         "Send",
         "Receive",
         "Withdraw",
     ]) assert.match(html, new RegExp(label));
-    assert.match(html, /customer\.sub/);
+    /* The merchant must not see who is behind a subscription. */
+    assert.doesNotMatch(html, /customer\.sub/);
 });

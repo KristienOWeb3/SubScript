@@ -1024,7 +1024,12 @@ export default function AdminDashboardPage() {
           isLoading={loading && merchants.length === 0}
         />
 
-        <div className="relative z-10 min-w-0 flex-1 md:mt-[14px] md:h-[calc(100vh-14px)] bg-white shadow-[-8px_0_24px_rgba(0,0,0,0.12)] md:rounded-tl-[32px] border-t border-l border-white/10 overflow-y-auto overscroll-contain admin-topography text-[#0f172a]">
+        {/* h-[100dvh] on mobile is what makes this scroll at all. html/body both carry
+            overflow-x:hidden, which per spec computes overflow-y to auto and turns body
+            into its own scroll container — so an unconstrained child with overflow-y-auto
+            just grows instead of scrolling, and touch drags went nowhere. The user
+            dashboard already owns its mobile scroller this way; this matches it. */}
+        <div className="relative z-10 min-w-0 flex-1 h-[100dvh] md:mt-[14px] md:h-[calc(100vh-14px)] bg-white shadow-[-8px_0_24px_rgba(0,0,0,0.12)] md:rounded-tl-[32px] border-t border-l border-white/10 overflow-y-auto overscroll-y-contain admin-topography text-[#0f172a]">
           <main className="min-h-screen pt-4 sm:pt-6 pb-16">
             <div className="admin-workspace mx-auto max-w-6xl space-y-6 px-4 py-2 sm:px-8">
               <section className="topo-admin-blue flex flex-col justify-between gap-5 rounded-2xl border border-white/20 px-5 py-5 text-white shadow-[0_12px_30px_rgba(39,117,202,0.18)] sm:flex-row sm:items-end sm:px-6">
