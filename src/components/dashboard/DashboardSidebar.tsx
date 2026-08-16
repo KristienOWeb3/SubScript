@@ -171,6 +171,7 @@ export default function DashboardSidebar({
 
     return (
         <aside
+            aria-busy={isLoading}
             style={{ "--sb-accent": accent, "--sb-panel": panelColor } as AccentStyle}
             className={`hidden md:flex h-full max-h-screen shrink-0 flex-col justify-between overflow-y-auto overscroll-contain bg-[#353935] p-3 lg:p-4 text-white/90 transition-all duration-300 ease-in-out [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${className} ${
                 isCollapsed ? "w-[72px]" : "w-20 lg:w-64"
@@ -179,28 +180,38 @@ export default function DashboardSidebar({
             <div className="space-y-5">
                 {/* Header: Identity pill + Retract/Expand Toggle */}
                 <div className={`flex items-center gap-2 ${isCollapsed ? "flex-col justify-center" : "justify-between"}`}>
-                    <button
-                        type="button"
-                        onClick={identity.onClick}
-                        className={`inline-flex max-w-full items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.08] text-white p-1.5 text-left shadow-sm transition hover:border-white/25 hover:bg-white/[0.14] ${
-                            isCollapsed ? "justify-center" : "px-2.5 py-1.5"
-                        }`}
-                        title={identity.title || identity.label}
-                    >
-                        <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/20 text-white text-[11px] font-bold">
-                            {identity.avatarUrl ? (
-                                /* eslint-disable-next-line @next/next/no-img-element */
-                                <img src={identity.avatarUrl} alt="" className="h-full w-full object-cover" />
-                            ) : (
-                                identity.fallback
-                            )}
+                    {isLoading ? (
+                        <div
+                            className={`inline-flex max-w-full items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.08] p-1.5 ${isCollapsed ? "justify-center" : "px-2.5 py-1.5"}`}
+                            aria-hidden="true"
+                        >
+                            <div className="h-6 w-6 shrink-0 rounded-full subscript-skeleton" />
+                            {!isCollapsed && <div className="hidden h-2.5 w-24 rounded-full subscript-skeleton lg:block" />}
                         </div>
-                        {!isCollapsed && (
-                            <span className="hidden truncate font-mono text-[11px] font-bold text-white lg:inline max-w-[120px]">
-                                {identity.label}
-                            </span>
-                        )}
-                    </button>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={identity.onClick}
+                            className={`inline-flex max-w-full items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.08] text-white p-1.5 text-left shadow-sm transition hover:border-white/25 hover:bg-white/[0.14] ${
+                                isCollapsed ? "justify-center" : "px-2.5 py-1.5"
+                            }`}
+                            title={identity.title || identity.label}
+                        >
+                            <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/20 text-white text-[11px] font-bold">
+                                {identity.avatarUrl ? (
+                                    /* eslint-disable-next-line @next/next/no-img-element */
+                                    <img src={identity.avatarUrl} alt="" className="h-full w-full object-cover" />
+                                ) : (
+                                    identity.fallback
+                                )}
+                            </div>
+                            {!isCollapsed && (
+                                <span className="hidden truncate font-mono text-[11px] font-bold text-white lg:inline max-w-[120px]">
+                                    {identity.label}
+                                </span>
+                            )}
+                        </button>
+                    )}
 
                     {/* Retract / Expand Sidebar Button */}
                     <button
@@ -219,7 +230,20 @@ export default function DashboardSidebar({
                 </div>
 
                 <nav className="space-y-1.5" aria-label={ariaLabel}>
-                    {items.map((item) => renderRow(item, false))}
+                    {isLoading
+                        ? Array.from({ length: Math.max(5, Math.min(items.length, 8)) }).map((_, index) => (
+                            <div
+                                key={index}
+                                className={`flex items-center ${isCollapsed ? "justify-center px-2" : "gap-3 px-3.5 lg:px-4"} py-3`}
+                                aria-hidden="true"
+                            >
+                                <div className="h-4.5 w-4.5 shrink-0 rounded-md subscript-skeleton subscript-skeleton--faint" />
+                                {!isCollapsed && (
+                                    <div className={`hidden h-2.5 rounded-full subscript-skeleton lg:block ${index % 3 === 0 ? "w-32" : index % 2 === 0 ? "w-24" : "w-28"}`} />
+                                )}
+                            </div>
+                        ))
+                        : items.map((item) => renderRow(item, false))}
                 </nav>
             </div>
 

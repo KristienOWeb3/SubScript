@@ -7,6 +7,14 @@ module.exports = {
     ],
     theme: {
         extend: {
+            /* Tailwind's default scale jumps from 4 (1rem) to 5 (1.25rem) with no 4.5, so the
+               `h-4.5 w-4.5` icon sizing used across the sidebars, the withdraw modal, and the
+               premium diamond button compiled to nothing and those icons fell back to their
+               intrinsic size. 1.125rem keeps the step consistent with the 0.5 increments Tailwind
+               already ships lower down the scale. */
+            spacing: {
+                '4.5': '1.125rem',
+            },
             colors: {
                 'dark-charcoal': '#1e1e1e',
                 'dark-slate': '#262626',

@@ -389,6 +389,41 @@ body {
   }
 }
 
+/* Cycling ellipsis for busy labels (see components/ui/LoadingDots.tsx).
+ *
+ * All three dots stay in the layout and only opacity animates, so "Working" never changes width
+ * while it spins — animating the text content itself makes the button jitter on every tick. Each
+ * dot is held visible for the rest of the cycle after it appears, which reads as a count going
+ * 1 → 2 → 3 and then resetting to none. */
+.subscript-loading-dots {
+  display: inline;
+  white-space: nowrap;
+}
+
+.subscript-loading-dot {
+  opacity: 0;
+  animation: subscript-loading-dot 1.4s steps(1, end) infinite;
+}
+
+.subscript-loading-dot:nth-child(2) {
+  animation-delay: 0.35s;
+}
+
+.subscript-loading-dot:nth-child(3) {
+  animation-delay: 0.7s;
+}
+
+@keyframes subscript-loading-dot {
+  0% {
+    opacity: 0;
+  }
+  /* Visible from its own slot until the cycle restarts. */
+  25%,
+  100% {
+    opacity: 1;
+  }
+}
+
 /* Skeleton loading placeholder. Adaptive background and high-contrast shimmer sweep across light/dark surfaces. */
 .subscript-skeleton {
   position: relative;
@@ -546,6 +581,14 @@ body {
      blanket rule exists to prevent. */
   .subscript-skeleton {
     animation: pulse 2s ease-in-out infinite !important;
+  }
+
+  /* The blanket rule ends the dot animation after one 0.01ms pass, which drops each dot back to
+     its base opacity: 0 and leaves a bare "Working" with no indication it is still busy. Pin them
+     visible so the label reads as a normal static "Working...". */
+  .subscript-loading-dot {
+    animation: none !important;
+    opacity: 1;
   }
 }
 /* User dashboard redesign palette. Kept scoped so merchant/admin surfaces retain their themes. */

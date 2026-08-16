@@ -52,7 +52,22 @@ let tablesInitialized = false;
 
 export async function ensureSupportTables() {
     if (tablesInitialized) return;
+
     try {
+        const [existing] = await pgQuery<{ tickets: string | null; messages: string | null }>(
+            `SELECT
+                to_regclass('public.support_tickets') AS tickets,
+                to_regclass('public.support_ticket_messages') AS messages`
+        );
+
+        if (existing?.tickets && existing?.messages) {
+            tablesInitialized = true;
+            return;
+        }
+
+        /* The migration is the source of truth. This only keeps a deployment from hard-failing
+           if it reaches the route before migrations have been applied. */
+        console.warn("[support/tickets] Support ticket tables are missing; applying runtime schema fallback.");
         await pgQuery(`
             CREATE TABLE IF NOT EXISTS support_tickets (
                 id VARCHAR(64) PRIMARY KEY,
@@ -88,6 +103,7 @@ export async function ensureSupportTables() {
         tablesInitialized = true;
     } catch (error) {
         console.error("[support/tickets] Failed to initialize DB tables:", error);
+        throw error;
     }
 }
 

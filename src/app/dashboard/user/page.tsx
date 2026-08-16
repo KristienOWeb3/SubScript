@@ -28,6 +28,7 @@ import { QRCode } from "react-qrcode-logo";
 import jsQR from "jsqr";
 import { motion, AnimatePresence } from "framer-motion";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
+import LoadingDots from "@/components/ui/LoadingDots";
 import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 
 import NotificationBell from "@/components/dashboard/NotificationBell";
@@ -107,7 +108,7 @@ import {
 import type { LucideIcon } from "@/components/icons";
 import { USDC_NATIVE_GAS_ADDRESS, SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
 import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
-import { humanStatus, humanSubscriptionStatus } from "@/lib/transactionLabels";
+import { humanStatus, humanSubscriptionStatus, normalizeReceiptStatus } from "@/lib/transactionLabels";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 import { usePlatformFlags } from "@/hooks/usePlatformFlags";
 import { accountDisplayName, merchantDisplayName } from "@/lib/identityDisplay";
@@ -246,6 +247,9 @@ function dmTxStatus(raw: unknown): TxStatus {
   if (["FAILED", "DECLINED", "REJECTED", "EXPIRED", "DISMISSED"].includes(value)) return "FAILED";
   return "COMPLETED";
 }
+
+/* How many rows the "All transactions" page reveals per scroll page. */
+const SETTINGS_TX_PAGE_SIZE = 30;
 
 const formatAddress = (addr: string | null) => {
   if (!addr) return "";
@@ -704,6 +708,47 @@ export default function UserDashboard() {
   const [settingsTxStartDate, setSettingsTxStartDate] = useState<string>("");
   const [settingsTxEndDate, setSettingsTxEndDate] = useState<string>("");
   const [settingsTxSearch, setSettingsTxSearch] = useState<string>("");
+  /* "All transactions" used to render every row it had in one pass, which is a long DOM and a
+     visible jank spike on a busy account. It now reveals a page at a time; the sentinel under the
+     last row pulls the next page in as it scrolls into view. */
+  const [settingsTxVisible, setSettingsTxVisible] = useState(SETTINGS_TX_PAGE_SIZE);
+  const [settingsTxLoadingMore, setSettingsTxLoadingMore] = useState(false);
+  const settingsTxFetchingRef = useRef(false);
+  const settingsTxObserverRef = useRef<IntersectionObserver | null>(null);
+
+  /* Reset the window whenever the filters change, so a narrowed result set starts from the top
+     instead of inheriting a page count from the previous query. */
+  useEffect(() => {
+    setSettingsTxVisible(SETTINGS_TX_PAGE_SIZE);
+  }, [settingsTxSearch, settingsTxCategory, settingsTxStatus, settingsTxDatePreset, settingsTxStartDate, settingsTxEndDate]);
+
+  /* A callback ref rather than an effect: the sentinel mounts and unmounts with the transactions
+     view, and this re-attaches the observer on every mount without needing to enumerate the view
+     state in a dependency array. */
+  const attachSettingsTxSentinel = useCallback((node: HTMLDivElement | null) => {
+    settingsTxObserverRef.current?.disconnect();
+    settingsTxObserverRef.current = null;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0]?.isIntersecting || settingsTxFetchingRef.current) return;
+        settingsTxFetchingRef.current = true;
+        setSettingsTxLoadingMore(true);
+        /* Short hold so the skeleton rows register as loading rather than flashing past. */
+        window.setTimeout(() => {
+          setSettingsTxVisible((previous) => previous + SETTINGS_TX_PAGE_SIZE);
+          setSettingsTxLoadingMore(false);
+          settingsTxFetchingRef.current = false;
+        }, 400);
+      },
+      { rootMargin: "160px" },
+    );
+    observer.observe(node);
+    settingsTxObserverRef.current = observer;
+  }, []);
+
+  useEffect(() => () => settingsTxObserverRef.current?.disconnect(), []);
   const [isSettingsLoading, setIsSettingsLoading] = useState(false);
   const [savingSettingsField, setSavingSettingsField] = useState<string | null>(null);
   const [walletBackupLoading, setWalletBackupLoading] = useState(false);
@@ -1029,6 +1074,11 @@ export default function UserDashboard() {
           refetchSepolia().catch(console.error),
           refetchMainnet().catch(console.error),
           loadVaults().catch(console.error),
+          /* The 30D spending figure is derived from subscriptions and paid DMs, so a refresh that
+             only touched wallet and vault balances left it showing a stale number underneath two
+             fresh ones. */
+          loadSubscriptions().catch(console.error),
+          loadDms().catch(console.error),
         ]),
         timeoutPromise,
       ]);
@@ -3417,10 +3467,14 @@ export default function UserDashboard() {
                           </button>
                         </div>
                         <div className="mt-1.5 max-w-full text-[42px] font-extrabold leading-none text-black select-all sm:text-[38px]">
-                          {balanceVisible ? `$${formatHeadlineAmount(walletBalance)}` : "••••••"}
+                          {isRefreshingBalances
+                            ? <span className="block h-[42px] w-[190px] rounded-2xl subscript-skeleton sm:h-[38px]" />
+                            : balanceVisible ? `$${formatHeadlineAmount(walletBalance)}` : "••••••"}
                         </div>
                         <p className="mt-1.5 w-full text-center font-mono text-sm font-bold text-black/65 sm:text-xs md:text-left">
-                          {balanceVisible ? `${detectedCurrency.symbol}${formatHeadlineAmount(localBalance)}` : "••••"}
+                          {isRefreshingBalances
+                            ? <span className="mx-auto block h-4 w-24 rounded-full subscript-skeleton md:mx-0" />
+                            : balanceVisible ? `${detectedCurrency.symbol}${formatHeadlineAmount(localBalance)}` : "••••"}
                         </p>
                       </div>
 
@@ -3451,7 +3505,9 @@ export default function UserDashboard() {
                           <p className="font-mono text-[10px] font-black uppercase tracking-[0.06em] text-white/50">30D spending</p>
                           <p className="mt-2 text-[11px] font-black text-white/40">30D</p>
                           <p className="mt-0.5 text-xl font-extrabold tracking-tight text-white">
-                            {balanceVisible ? `$${formatHeadlineAmount(monthlySpendUsdc)}` : "••••"}
+                            {isRefreshingBalances
+                              ? <span className="block h-6 w-20 rounded-lg subscript-skeleton" />
+                              : balanceVisible ? `$${formatHeadlineAmount(monthlySpendUsdc)}` : "••••"}
                           </p>
                         </div>
                         <button
@@ -3468,13 +3524,17 @@ export default function UserDashboard() {
                           <div className="mt-2 flex items-baseline gap-3">
                             <div className="min-w-0">
                               <p className="text-xl font-extrabold tracking-tight text-white">
-                                {balanceVisible ? `$${formatHeadlineAmount(totalCommitLockedUsdc)}` : "••••"}
+                                {isRefreshingBalances
+                                  ? <span className="block h-6 w-16 rounded-lg subscript-skeleton" />
+                                  : balanceVisible ? `$${formatHeadlineAmount(totalCommitLockedUsdc)}` : "••••"}
                               </p>
                               <p className="mt-0.5 font-mono text-[9px] font-black uppercase tracking-[0.06em] text-white/40">Locked</p>
                             </div>
                             <div className="min-w-0 border-l border-white/10 pl-3">
                               <p className="text-xl font-extrabold tracking-tight text-[#ccff00]">
-                                {balanceVisible ? `$${formatHeadlineAmount(totalCommitUsedUsdc)}` : "••••"}
+                                {isRefreshingBalances
+                                  ? <span className="block h-6 w-16 rounded-lg subscript-skeleton" />
+                                  : balanceVisible ? `$${formatHeadlineAmount(totalCommitUsedUsdc)}` : "••••"}
                               </p>
                               <p className="mt-0.5 font-mono text-[9px] font-black uppercase tracking-[0.06em] text-white/40">Used</p>
                             </div>
@@ -3671,7 +3731,7 @@ export default function UserDashboard() {
                         title="Refresh vault usage for committed apps"
                       >
                         <RefreshCw className={`h-3.5 w-3.5 ${isVaultsLoading ? "animate-spin text-[#2775CA]" : ""}`} />
-                        {expandedCommitAction === "refresh" && <span className="whitespace-nowrap text-[10px] font-bold">{isVaultsLoading ? "Refreshing..." : "Refresh Usage"}</span>}
+                        {expandedCommitAction === "refresh" && <span className="whitespace-nowrap text-[10px] font-bold">{isVaultsLoading ? <>Refreshing<LoadingDots /></> : "Refresh Usage"}</span>}
                       </button>
                       <button
                         type="button"
@@ -5398,7 +5458,7 @@ export default function UserDashboard() {
                     }
 
                     if (settingsTxStatus !== "all") {
-                      if (String(tx.status || "").toUpperCase() !== settingsTxStatus.toUpperCase()) {
+                      if (normalizeReceiptStatus(tx.status) !== settingsTxStatus.toUpperCase()) {
                         return false;
                       }
                     }
@@ -5430,6 +5490,11 @@ export default function UserDashboard() {
                     return true;
                   });
 
+                  /* Only the current page is rendered; the sentinel at the end of the list grows
+                     the window as the reader scrolls. */
+                  const visibleSettingsTx = filteredSettingsTx.slice(0, settingsTxVisible);
+                  const settingsTxHasMore = filteredSettingsTx.length > visibleSettingsTx.length;
+
                   return (
                     <div className="space-y-6">
                       <div className="flex items-center gap-4">
@@ -5448,7 +5513,7 @@ export default function UserDashboard() {
                             <Activity className="h-4 w-4 text-[#2775CA]" /> Recent Transactions History
                           </h3>
                           <span className="text-[10px] font-mono font-semibold text-black/50">
-                            Showing {filteredSettingsTx.length} of {settingsTransactions.length}
+                            Showing {visibleSettingsTx.length} of {filteredSettingsTx.length}
                           </span>
                         </div>
 
@@ -5584,9 +5649,10 @@ export default function UserDashboard() {
                                   </td>
                                 </tr>
                               ) : (
-                                filteredSettingsTx.map((tx) => {
+                                visibleSettingsTx.map((tx) => {
                                   const counterparty = tx.counterpartyName
                                     || formatAddress(tx.direction === "sent" ? tx.merchantAddress : tx.payerAddress);
+                                  const txStatus = normalizeReceiptStatus(tx.status);
                                   return (
                                   <tr key={tx.receiptId} className="border-b border-black/5 hover:bg-black/[0.02] transition-all">
                                     <td className="py-4 font-semibold text-black/90">
@@ -5597,8 +5663,8 @@ export default function UserDashboard() {
                                       ${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
                                     </td>
                                     <td className="py-4">
-                                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-700" : "bg-amber-500/15 text-amber-700"}`}>
-                                        {humanStatus(tx.status)}
+                                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${txStatus === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-700" : txStatus === "FAILED" ? "bg-red-500/15 text-red-700" : "bg-amber-500/15 text-amber-700"}`}>
+                                        {humanStatus(txStatus)}
                                       </span>
                                     </td>
                                     <td className="py-4 text-right">
@@ -5638,17 +5704,18 @@ export default function UserDashboard() {
                               No payments match your active filters.
                             </div>
                           ) : (
-                            filteredSettingsTx.map((tx) => {
+                            visibleSettingsTx.map((tx) => {
                               const counterparty = tx.counterpartyName
                                 || formatAddress(tx.direction === "sent" ? tx.merchantAddress : tx.payerAddress);
+                              const txStatus = normalizeReceiptStatus(tx.status);
                               return (
                                 <div key={tx.receiptId} className="p-4 rounded-2xl bg-black/[0.02] border border-black/10 space-y-2 text-xs font-mono">
                                   <div className="flex items-center justify-between">
                                     <span className="font-bold text-black/90">
                                       {tx.direction === "sent" ? `Paid ${counterparty}` : `Received ${counterparty}`}
                                     </span>
-                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-700" : "bg-amber-500/15 text-amber-700"}`}>
-                                      {humanStatus(tx.status)}
+                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${txStatus === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-700" : txStatus === "FAILED" ? "bg-red-500/15 text-red-700" : "bg-amber-500/15 text-amber-700"}`}>
+                                      {humanStatus(txStatus)}
                                     </span>
                                   </div>
                                   <div className="flex items-center justify-between text-[11px] pt-1">
@@ -5664,6 +5731,39 @@ export default function UserDashboard() {
                             })
                           )}
                         </div>
+
+                        {/* Next-page loader, shared by the table and the card stack. */}
+                        {settingsTxLoadingMore && (
+                          <div className="space-y-3" aria-hidden="true">
+                            {Array.from({ length: 4 }).map((_, index) => (
+                              <div
+                                key={index}
+                                className="flex items-center gap-3 rounded-2xl border border-black/10 bg-black/[0.02] p-4"
+                              >
+                                <div className="h-4 flex-1 rounded-full subscript-skeleton" />
+                                <div className="h-4 w-20 rounded-full subscript-skeleton subscript-skeleton--faint" />
+                                <div className="h-4 w-16 rounded-full subscript-skeleton" />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Zero-height tripwire: crossing it pulls in the next page. Keyed on the
+                            page count so it remounts after each growth — an observer only reports
+                            threshold crossings, so a sentinel that stayed in view after a short
+                            page would never fire again and pagination would stall. */}
+                        {settingsTxHasMore && (
+                          <div
+                            key={settingsTxVisible}
+                            ref={attachSettingsTxSentinel}
+                            className="h-px w-full"
+                            aria-hidden="true"
+                          />
+                        )}
+
+                        <p aria-live="polite" className="sr-only">
+                          {settingsTxLoadingMore ? "Loading more transactions" : ""}
+                        </p>
                       </div>
                     </div>
                   );
@@ -5736,7 +5836,7 @@ export default function UserDashboard() {
                                 disabled={browserPushTestBusy}
                                 className="rounded-xl border border-[#2775CA]/30 bg-[#2775CA]/10 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-[#2775CA] transition hover:bg-[#2775CA]/20 disabled:cursor-not-allowed disabled:opacity-50"
                               >
-                                {browserPushTestBusy ? "Sending…" : "Send test"}
+                                {browserPushTestBusy ? <>Sending<LoadingDots /></> : "Send test"}
                               </button>
                             </div>
                           )}
@@ -5923,7 +6023,7 @@ export default function UserDashboard() {
                               disabled={exportOtpSending}
                               className="w-full text-center text-[10px] uppercase tracking-[0.14em] text-[#2775CA] hover:underline transition disabled:opacity-50"
                             >
-                              {exportOtpSending ? "Resending…" : "Resend code"}
+                              {exportOtpSending ? <>Resending<LoadingDots /></> : "Resend code"}
                             </button>
                           </div>
                         ) : (
@@ -6569,7 +6669,7 @@ export default function UserDashboard() {
                       disabled={giftRequestBusyPlanId !== null}
                       className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white ${giftRequestBusyPlanId !== null ? "quick-action-loading" : ""}`}
                     >
-                      {giftRequestBusyPlanId !== null ? "Creating..." : "Create Link"}
+                      {giftRequestBusyPlanId !== null ? <>Creating<LoadingDots /></> : "Create Link"}
                     </button>
                   </div>
                 </form>
@@ -6681,7 +6781,7 @@ export default function UserDashboard() {
                   disabled={vaultActionBusy}
                   className={`rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] text-white py-2.5 text-xs font-bold transition shadow-sm ${vaultActionBusy ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
-                  {vaultActionBusy ? "Working..." : vaultActionMode === "commit" ? "Commit" : "Withdraw"}
+                  {vaultActionBusy ? <>Working<LoadingDots /></> : vaultActionMode === "commit" ? "Commit" : "Withdraw"}
                 </button>
               </div>
               )}
@@ -6835,7 +6935,7 @@ export default function UserDashboard() {
               className={`subscript-primary-button ${emailPromptSaving ? "opacity-60" : ""}`}
             >
               {emailPromptSaving
-                ? (emailPromptStep === "email" ? "Sending..." : "Verifying...")
+                ? (emailPromptStep === "email" ? <>Sending<LoadingDots /></> : <>Verifying<LoadingDots /></>)
                 : (emailPromptStep === "email" ? "Send code" : "Verify & save")}
             </button>
             {emailPromptStep === "code" && (
@@ -7105,7 +7205,7 @@ function SubscriptionRow({
               className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-[#ccff00]/30 bg-[#ccff00]/10 px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition hover:border-[#ccff00]/50 hover:bg-[#ccff00]/20 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {resuming ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-              {resuming ? "Resuming..." : "Resume Subscription"}
+              {resuming ? <>Resuming<LoadingDots /></> : "Resume Subscription"}
             </motion.button>
           )}
         </div>
@@ -7474,7 +7574,7 @@ function DmBubble({
                   disabled={resumeBusy}
                   className={`relative overflow-hidden rounded-xl border px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${resumeBusy ? "quick-action-loading cursor-not-allowed border-emerald-300/20 bg-emerald-400/10 text-emerald-200/60" : "border-emerald-300/30 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20"}`}
                 >
-                  {resumeBusy ? "Resuming…" : "Resume"}
+                  {resumeBusy ? <>Resuming<LoadingDots /></> : "Resume"}
                 </button>
               )}
               {onTopUpCommit && (
@@ -9295,7 +9395,7 @@ function MeteredVaultRow({
               disabled={reclaimBusy}
               className={`rounded-2xl border px-3 py-2 text-[10px] font-black uppercase tracking-wider transition shadow-sm ${reclaimBusy ? "cursor-not-allowed border-black/10 bg-black/10 text-black/30" : "bg-amber-400/20 border-amber-400/40 text-amber-800 hover:bg-amber-400/30"}`}
             >
-              {reclaimBusy ? "Reclaiming…" : "Reclaim escrow"}
+              {reclaimBusy ? <>Reclaiming<LoadingDots /></> : "Reclaim escrow"}
             </button>
           )}
         </div>
@@ -9304,17 +9404,17 @@ function MeteredVaultRow({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1.2fr_0.8fr]">
         <div className="rounded-2xl border border-black/15 bg-white/80 p-4 shadow-sm flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-black/65">Vault Balance (Available)</span>
-              <span className="text-[9px] font-bold text-black/45">Committed: {formatUsdc(vault.balanceUsdc)} USDC</span>
-            </div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-black/65">Vault Balance (Available)</span>
             <p className="mt-1 text-2xl sm:text-3xl font-black tracking-tight text-black">
               {balanceVisible ? formatUsdc(remainingBalanceUsdc) + " USDC" : "•••• USDC"}
             </p>
-            <div className="mt-1 flex items-center gap-2 text-[10px] font-semibold text-black/65">
-              <span>Used: <strong className="text-black">{formatUsdc(vault.accruedUsageUsdc)} USDC</strong></span>
-              <span>•</span>
-              <span>Available: <strong className="text-emerald-700">{formatUsdc(remainingBalanceUsdc)} USDC</strong></span>
+            {/* The headline is committed minus used, so the two figures it came from sit directly
+                beneath it. Both honour the balance-visibility toggle — leaving them readable while
+                the headline is masked would defeat the point of hiding it. */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-semibold text-black/65">
+              <span>Total committed: <strong className="text-black">{balanceVisible ? formatUsdc(vault.balanceUsdc) : "••••"} USDC</strong></span>
+              <span aria-hidden="true">•</span>
+              <span>Used: <strong className="text-black">{balanceVisible ? formatUsdc(vault.accruedUsageUsdc) : "••••"} USDC</strong></span>
             </div>
           </div>
           <button
