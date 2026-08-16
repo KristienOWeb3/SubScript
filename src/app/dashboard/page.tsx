@@ -175,19 +175,6 @@ const formatUsdcMicros = (value: any) => {
     }
 };
 
-const formatUsdcInput = (value: any) => {
-    try {
-        const micros = BigInt(String(value ?? "0"));
-        const unit = BigInt(1_000_000);
-        const sign = micros < BigInt(0) ? "-" : "";
-        const absolute = micros < BigInt(0) ? -micros : micros;
-        const whole = absolute / unit;
-        const fraction = (absolute % unit).toString().padStart(6, "0").replace(/0+$/, "");
-        return `${sign}${whole.toString()}${fraction ? `.${fraction}` : ""}`;
-    } catch {
-        return "0";
-    }
-};
 
 const microsToNumber = (value: any) => {
     const parsed = Number(value ?? 0);
@@ -666,7 +653,7 @@ export default function DashboardPage() {
     };
 
 
-    const { theme, setTheme } = useTheme();
+    const { theme, setTheme, resolvedTheme } = useTheme();
     const [merchantSubView, setMerchantSubView] = useState<MerchantSubView>("menu");
     const [activeTab, setActiveTab] = useState<TabId>("overview");
 
@@ -730,11 +717,8 @@ export default function DashboardPage() {
     const subTabDirection = subTabIndex >= prevSubTabIndex ? 1 : -1;
     const [vaults, setVaults] = useState<any[]>([]);
     const [isVaultsLoading, setIsVaultsLoading] = useState(false);
-    const [requiredCommit, setRequiredCommit] = useState("0");
-    const [commitInput, setCommitInput] = useState("0");
     const [claimableAmount, setClaimableAmount] = useState("0");
     const [isVaultOpsLoading, setIsVaultOpsLoading] = useState(false);
-    const [isSavingCommit, setIsSavingCommit] = useState(false);
     const [isClaimingVault, setIsClaimingVault] = useState(false);
     const [vaultOpsStatus, setVaultOpsStatus] = useState<{ text: string; type: "success" | "error" } | null>(null);
     const [usageSecretKey, setUsageSecretKey] = useState("");
@@ -765,25 +749,15 @@ export default function DashboardPage() {
     const fetchVaultOps = useCallback(async () => {
         setIsVaultOpsLoading(true);
         try {
-            const [commitRes, claimRes] = await Promise.all([
-                fetch("/api/merchant/vault/commit-config"),
-                fetch("/api/merchant/vault/claim")
-            ]);
-
-            const commitData = await commitRes.json().catch(() => null);
+            const claimRes = await fetch("/api/merchant/vault/claim");
             const claimData = await claimRes.json().catch(() => null);
 
-            if (commitRes.ok && commitData?.success) {
-                const nextCommit = commitData.commitUsdc || "0";
-                setRequiredCommit(nextCommit);
-                setCommitInput(formatUsdcInput(nextCommit));
-            }
             if (claimRes.ok && claimData?.success) {
                 setClaimableAmount(claimData.claimableUsdc || "0");
             }
-            if (!commitRes.ok || !claimRes.ok) {
+            if (!claimRes.ok) {
                 setVaultOpsStatus({
-                    text: commitData?.error || claimData?.error || "Vault controls could not be loaded.",
+                    text: claimData?.error || "Vault controls could not be loaded.",
                     type: "error"
                 });
             }
@@ -819,41 +793,6 @@ export default function DashboardPage() {
             fetchVaultApiKeys();
         }
     }, [activeTab, subTab, isPremium, address, fetchVaults, fetchVaultOps, fetchVaultApiKeys]);
-
-    const handleSaveCommitConfig = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (commitInput === "" || isNaN(Number(commitInput)) || Number(commitInput) < 0) {
-            setVaultOpsStatus({ text: "Required commit must be zero or greater.", type: "error" });
-            return;
-        }
-
-        setIsSavingCommit(true);
-        setVaultOpsStatus(null);
-        try {
-            const res = await fetch("/api/merchant/vault/commit-config", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ amountUsdc: commitInput })
-            });
-            const data = await res.json().catch(() => null);
-            if (res.ok && data?.success) {
-                const nextCommit = data.commitUsdc || "0";
-                setRequiredCommit(nextCommit);
-                setCommitInput(formatUsdcInput(nextCommit));
-                setVaultOpsStatus({
-                    text: `Required commit saved. Tx ${shortenHash(data.txHash)}.`,
-                    type: "success"
-                });
-                fetchVaults();
-            } else {
-                setVaultOpsStatus({ text: data?.error || "Failed to save required commit.", type: "error" });
-            }
-        } catch (err: any) {
-            setVaultOpsStatus({ text: err.message || "Failed to save required commit.", type: "error" });
-        } finally {
-            setIsSavingCommit(false);
-        }
-    };
 
     const handleClaimVaultFunds = async () => {
         setIsClaimingVault(true);
@@ -4505,24 +4444,7 @@ Please complete the following implementation tasks:
                             </button>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            {/* Required Commit Info Card (Read-only protocol minimum) */}
-                            <div className="rounded-2xl border border-white/5 bg-black/20 p-5 space-y-4 flex flex-col justify-between">
-                                <div>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Minimum Deposit</p>
-                                    <p className="text-[9px] text-white/35 mt-1">
-                                        The standard minimum balance a customer maintains for metered vault services on Arc network.
-                                    </p>
-                                </div>
-                                <div className="rounded-xl border border-white/10 bg-black/40 p-3">
-                                    <span className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Network Protocol Standard</span>
-                                    <p className="text-2xl font-mono font-bold text-[#00d2b4] mt-1">$2.00 USDC</p>
-                                </div>
-                                <p className="text-[9px] text-white/35 uppercase tracking-wider">
-                                    Enforced on-chain: <span className="font-mono text-[#00d2b4]">$2.00 USDC</span>
-                                </p>
-                            </div>
-
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             {/* Claim Settled Funds card */}
                             <div className="rounded-2xl border border-white/5 bg-black/20 p-5 flex flex-col justify-between gap-4">
                                 <div>
@@ -6048,7 +5970,7 @@ Please complete the following implementation tasks:
         merchantAlias || (address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Your account");
 
     return (
-        <div data-mounted={isMounted} className="merchant-dashboard-root relative min-h-[100dvh] overflow-x-hidden bg-[#FFFFF0] font-sans text-black selection:bg-[#8AB4DB]/45 md:h-[100dvh] md:overflow-hidden">
+        <div data-mounted={isMounted} data-merchant-theme={resolvedTheme} className="merchant-dashboard-root relative min-h-[100dvh] overflow-x-hidden bg-[#FFFFF0] font-sans text-black selection:bg-[#8AB4DB]/45 md:h-[100dvh] md:overflow-hidden">
             <div className="relative md:flex md:h-[100dvh] md:min-h-0">
                 <MerchantDashboardNav
                     activeId={activeTab}
@@ -6059,6 +5981,7 @@ Please complete the following implementation tasks:
                     isAdmin={isAdmin}
                     mobileEnabled={isConnected}
                     isPremium={isPremium}
+                    isLoading={Boolean(isLoading)}
                 />
                 {/* Mobile Top Profile Icon */}
                 <div className="fixed left-4 top-4 z-40 md:hidden">
