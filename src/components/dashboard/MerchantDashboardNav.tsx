@@ -44,6 +44,7 @@ export default function MerchantDashboardNav({
     isAdmin,
     mobileEnabled,
     isPremium,
+    isLoading = false,
 }: {
     activeId: string;
     onSelect: (id: string) => void;
@@ -53,6 +54,7 @@ export default function MerchantDashboardNav({
     isAdmin?: boolean;
     mobileEnabled?: boolean;
     isPremium?: boolean;
+    isLoading?: boolean;
 }) {
     const [paymentsOpen, setPaymentsOpen] = useState(true);
     const [developerOpen, setDeveloperOpen] = useState(true);
@@ -72,7 +74,32 @@ export default function MerchantDashboardNav({
 
     return (
         <>
-            <aside className="hidden h-full w-[clamp(280px,17vw,340px)] shrink-0 flex-col bg-[#FFFFF0] px-6 pb-8 pt-9 text-black md:flex">
+            <aside
+                aria-busy={isLoading}
+                className="relative hidden h-full w-[clamp(280px,17vw,340px)] shrink-0 flex-col overflow-y-auto overscroll-contain bg-[#FFFFF0] px-6 pb-8 pt-9 text-black md:flex [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
+                {isLoading && (
+                    <div className="absolute inset-0 z-20 bg-[#FFFFF0] px-6 pb-8 pt-9" aria-hidden="true">
+                        <div className="flex items-center justify-between">
+                            <div className="h-8 w-40 rounded-lg subscript-skeleton" />
+                            <div className="h-9 w-9 rounded-full subscript-skeleton subscript-skeleton--faint" />
+                        </div>
+                        <div className="mt-5 flex items-center gap-3 rounded-full bg-[#D4E3E8]/70 p-3">
+                            <div className="h-11 w-11 shrink-0 rounded-full subscript-skeleton" />
+                            <div className="h-4 flex-1 rounded-full subscript-skeleton" />
+                            <div className="h-5 w-5 rounded-full subscript-skeleton subscript-skeleton--faint" />
+                        </div>
+                        <div className="mt-10 space-y-3">
+                            {Array.from({ length: 8 }).map((_, index) => (
+                                <div key={index} className="flex items-center gap-3 rounded-full px-5 py-3.5">
+                                    <div className="h-5 w-5 shrink-0 rounded-md subscript-skeleton subscript-skeleton--faint" />
+                                    <div className={`h-3 rounded-full subscript-skeleton ${index % 3 === 0 ? "w-36" : index % 2 === 0 ? "w-28" : "w-32"}`} />
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+                <div className={`flex min-h-full flex-col ${isLoading ? "invisible" : ""}`}>
                 <div className="flex items-center justify-between">
                     <span className="text-[28px] font-bold tracking-tight text-[#082824]">MERCHANT</span>
                     <div className="relative">
@@ -102,7 +129,11 @@ export default function MerchantDashboardNav({
                             {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : identityLabel.slice(0, 1).toUpperCase()}
                         </span>
                         <span className="min-w-0 flex-1 truncate text-lg font-semibold text-[#082824]">{identityLabel}</span>
-                        {verified && <span title="Verified" className="flex h-5 w-5 items-center justify-center rounded-full border border-black/30 text-[#082824]"><Check className="h-3 w-3" /></span>}
+                        {verified && (
+                            <span title="Verified Merchant" className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm shrink-0">
+                                <Check className="h-3 w-3 stroke-[3]" />
+                            </span>
+                        )}
                         <ChevronDown className={`h-4 w-4 text-black/50 transition ${accountMenuOpen ? "rotate-180" : ""}`} />
                     </button>
 
@@ -163,6 +194,7 @@ export default function MerchantDashboardNav({
                 <div className="mt-auto space-y-2 pt-8">
                     <button onClick={() => onSelect("settings")} className={rowClass(activeId === "settings")}><Sliders className="h-5 w-5 shrink-0" /> Settings</button>
                     <Link href="/support" target="_blank" className={rowClass(false)}><HelpCircle className="h-5 w-5 shrink-0" /> Help Center</Link>
+                </div>
                 </div>
             </aside>
 

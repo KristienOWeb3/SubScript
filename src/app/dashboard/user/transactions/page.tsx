@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -76,6 +76,11 @@ export default function UserTransactionsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
   const [userWallet, setUserWallet] = useState<string | null>(null);
+
+  // Pagination with progressive scroll loading
+  const [displayLimit, setDisplayLimit] = useState(30);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const observerTargetRef = useRef<HTMLDivElement>(null);
 
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [detectedCurrency, setDetectedCurrency] = useState({ code: "USD", symbol: "$" });
@@ -242,7 +247,7 @@ export default function UserTransactionsPage() {
       localAmountLabel: `≈ -${getLocalValueLabel(s.amountCapUsdc)}`,
       time: s.lastSettlementTimestamp ? new Date(s.lastSettlementTimestamp).getTime() : new Date(s.createdAt).getTime(),
       incoming: false,
-      status: s.status,
+      status: s.status === "ACTIVE" ? "ACTIVE" : s.status,
       txHash: null as string | null,
     })),
     ...dms
@@ -259,6 +264,9 @@ export default function UserTransactionsPage() {
         let kind: "one-time" | "transfers" | "withdrawals" = "one-time";
         if (isWithdrawal) kind = "withdrawals";
         else if (isPeerTransfer) kind = "transfers";
+
+        const isConfirmed = Boolean(m.txHash) || m.status === "PAID" || m.status === "CONFIRMED" || m.messageType === "PAYMENT_SUCCESS" || m.messageType === "DEBIT_SUCCESS";
+        const computedStatus = isConfirmed ? "CONFIRMED" : (m.status || "PENDING");
 
         return {
           id: `dm-${m.id}`,
@@ -277,7 +285,7 @@ export default function UserTransactionsPage() {
           localAmountLabel: `${sign}${getLocalValueLabel(m.amountUsdc)}`,
           time: new Date(m.createdAt).getTime(),
           incoming,
-          status: m.status,
+          status: computedStatus,
           txHash: m.txHash,
         };
       })
@@ -333,6 +341,35 @@ export default function UserTransactionsPage() {
     }
     return true;
   });
+
+  // Reset pagination when search/filters change
+  useEffect(() => {
+    setDisplayLimit(30);
+  }, [filter, dateRange, customFrom, customTo, statusFilter, searchQuery]);
+
+  // Infinite scroll observer for 30-item progressive skeleton loading
+  useEffect(() => {
+    const target = observerTargetRef.current;
+    if (!target) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && displayLimit < filteredTransactions.length && !loadingMore) {
+          setLoadingMore(true);
+          setTimeout(() => {
+            setDisplayLimit((prev) => prev + 30);
+            setLoadingMore(false);
+          }, 350);
+        }
+      },
+      { threshold: 0.1, rootMargin: "150px" }
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [displayLimit, filteredTransactions.length, loadingMore]);
+
+  const visibleTransactions = filteredTransactions.slice(0, displayLimit);
 
   return (
     <div className="relative min-h-screen bg-[#060608] text-white selection:bg-[#ccff00]/30 selection:text-white border-t-4 border-[#ccff00] font-sans">
@@ -567,45 +604,85 @@ export default function UserTransactionsPage() {
               )}
             </div>
           ) : (
-            <div className="divide-y divide-white/[0.06]">
-              {filteredTransactions.map((tx) => (
-                <div
-                  key={tx.id}
-                  className={`flex items-center justify-between py-4 first:pt-0 last:pb-0 ${
-                    isOptimisticTxId(tx.id) ? "animate-pulse opacity-80" : ""
-                  }`}
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="h-10 w-10 shrink-0 rounded-xl bg-white/[0.04] border border-white/5 flex items-center justify-center overflow-hidden">
-                      {tx.pic ? (
-                        <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
-                      ) : tx.kind === "recurring" ? (
-                        <Shield className="h-5 w-5 text-[#ccff00]/70" />
-                      ) : tx.kind === "withdrawals" ? (
-                        <ArrowDownToLine className="h-5 w-5 text-amber-400" />
-                      ) : tx.kind === "transfers" ? (
-                        <User className="h-5 w-5 text-sky-400" />
-                      ) : (
-                        <CreditCard className="h-5 w-5 text-purple-400/70" />
-                      )}
+            <div>
+              <div className="divide-y divide-white/[0.06]">
+                {visibleTransactions.map((tx) => (
+                  <div
+                    key={tx.id}
+                    className={`flex items-center justify-between py-4 first:pt-0 last:pb-0 ${
+                      isOptimisticTxId(tx.id) ? "animate-pulse opacity-80" : ""
+                    }`}
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="h-10 w-10 shrink-0 rounded-xl bg-white/[0.04] border border-white/5 flex items-center justify-center overflow-hidden">
+                        {tx.pic ? (
+                          <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
+                        ) : tx.kind === "recurring" ? (
+                          <Shield className="h-5 w-5 text-[#ccff00]/70" />
+                        ) : tx.kind === "withdrawals" ? (
+                          <ArrowDownToLine className="h-5 w-5 text-amber-400" />
+                        ) : tx.kind === "transfers" ? (
+                          <User className="h-5 w-5 text-sky-400" />
+                        ) : (
+                          <CreditCard className="h-5 w-5 text-purple-400/70" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-xs font-black uppercase tracking-[0.1em] text-white">{tx.name}</p>
+                          {tx.status === "CONFIRMED" && (
+                            <span className="rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-emerald-400 border border-emerald-500/20">
+                              Confirmed
+                            </span>
+                          )}
+                          {tx.status === "PENDING" && (
+                            <span className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-amber-400 border border-amber-500/20">
+                              Pending
+                            </span>
+                          )}
+                        </div>
+                        <p className="truncate text-[10px] font-medium text-white/40 mt-0.5">
+                          {tx.detail} • {new Date(tx.time).toLocaleString()}
+                        </p>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <p className="truncate text-xs font-black uppercase tracking-[0.1em] text-white">{tx.name}</p>
-                      <p className="truncate text-[10px] font-medium text-white/40 mt-0.5">
-                        {tx.detail} • {new Date(tx.time).toLocaleString()}
-                      </p>
+                    <div className="text-right shrink-0">
+                      <span className={`block text-xs font-black ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>
+                        {balanceVisible ? tx.amountLabel : "••••"}
+                      </span>
+                      <span className="block text-[9px] font-bold text-white/40 mt-0.5">
+                        {balanceVisible ? tx.localAmountLabel : "••••"}
+                      </span>
                     </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <span className={`block text-xs font-black ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>
-                      {balanceVisible ? tx.amountLabel : "••••"}
-                    </span>
-                    <span className="block text-[9px] font-bold text-white/40 mt-0.5">
-                      {balanceVisible ? tx.localAmountLabel : "••••"}
-                    </span>
-                  </div>
+                ))}
+              </div>
+
+              {/* Progressive loading skeleton & sentinel */}
+              {displayLimit < filteredTransactions.length && (
+                <div className="pt-4 space-y-3">
+                  {loadingMore && (
+                    <div className="space-y-3">
+                      {[1, 2, 3].map((i) => (
+                        <div key={i} className="flex items-center justify-between py-3 border-t border-white/5 animate-pulse">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-xl bg-white/10" />
+                            <div className="space-y-1.5">
+                              <div className="h-3 w-32 rounded bg-white/10" />
+                              <div className="h-2 w-48 rounded bg-white/5" />
+                            </div>
+                          </div>
+                          <div className="space-y-1 text-right">
+                            <div className="h-3 w-16 rounded bg-white/10 ml-auto" />
+                            <div className="h-2 w-12 rounded bg-white/5 ml-auto" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div ref={observerTargetRef} className="h-4 w-full" />
                 </div>
-              ))}
+              )}
             </div>
           )}
         </div>

@@ -101,6 +101,26 @@
   background-color: rgba(255, 255, 255, 0.1);
 }
 
+/* Ensure chart tooltips, dark pills, and dark containers in admin retain crisp white text */
+.admin-workspace [data-admin-dark="true"] [class*="text-white"],
+.admin-workspace [data-admin-dark="true"] .text-white,
+.admin-workspace [class*="bg-[#0f172a]"] [class*="text-white"],
+.admin-workspace [class*="bg-[#0f172a]"] .text-white,
+.admin-workspace [class*="bg-black"] [class*="text-white"],
+.admin-workspace [class*="bg-black"] .text-white,
+.admin-workspace [class*="bg-slate-900"] [class*="text-white"],
+.admin-workspace [class*="bg-slate-900"] .text-white,
+.admin-workspace [class*="bg-[#082824]"] [class*="text-white"],
+.admin-workspace [class*="bg-[#082824]"] .text-white {
+  color: #ffffff !important;
+}
+
+.admin-workspace [class*="bg-[#0f172a]"] [class*="text-white/"],
+.admin-workspace [class*="bg-[#0f172a]"] [class*="text-[#94a3b8]"],
+.admin-workspace [class*="bg-[#0f172a]"] [class*="text-[#cbd5e1]"] {
+  color: #cbd5e1 !important;
+}
+
 :root {
   color-scheme: dark;
   --background-start: #111111;
@@ -354,7 +374,9 @@ body {
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.55) 48%,
+    rgba(39, 117, 202, 0.45) 45%,
+    rgba(39, 117, 202, 0.8) 50%,
+    rgba(39, 117, 202, 0.45) 55%,
     transparent 100%
   );
   animation: subscript-action-shimmer 1.1s ease-in-out infinite;
@@ -367,56 +389,97 @@ body {
   }
 }
 
-/* Skeleton loading placeholder. Has a background pulse and a premium shimmer sweep. */
+/* Cycling ellipsis for busy labels (see components/ui/LoadingDots.tsx).
+ *
+ * All three dots stay in the layout and only opacity animates, so "Working" never changes width
+ * while it spins — animating the text content itself makes the button jitter on every tick. Each
+ * dot is held visible for the rest of the cycle after it appears, which reads as a count going
+ * 1 → 2 → 3 and then resetting to none. */
+.subscript-loading-dots {
+  display: inline;
+  white-space: nowrap;
+}
+
+.subscript-loading-dot {
+  opacity: 0;
+  animation: subscript-loading-dot 1.4s steps(1, end) infinite;
+}
+
+.subscript-loading-dot:nth-child(2) {
+  animation-delay: 0.35s;
+}
+
+.subscript-loading-dot:nth-child(3) {
+  animation-delay: 0.7s;
+}
+
+@keyframes subscript-loading-dot {
+  0% {
+    opacity: 0;
+  }
+  /* Visible from its own slot until the cycle restarts. */
+  25%,
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Skeleton loading placeholder. Adaptive background and high-contrast shimmer sweep across light/dark surfaces. */
 .subscript-skeleton {
   position: relative;
   overflow: hidden;
-  background-color: rgba(255, 255, 255, 0.06);
-  animation: liquid-pulse 3s infinite ease-in-out;
+  background-color: rgba(0, 0, 0, 0.08);
+  animation: liquid-pulse 2.4s infinite ease-in-out;
+}
+
+.dark .subscript-skeleton,
+[data-theme="dark"] .subscript-skeleton,
+.merchant-dashboard-workspace .subscript-skeleton {
+  background-color: rgba(8, 40, 36, 0.09);
 }
 
 .subscript-skeleton::after,
 .liquid-glass-skeleton::after {
   content: "";
   position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
+  inset: 0;
   transform: translateX(-100%);
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.02) 20%,
-    rgba(255, 255, 255, 0.08) 60%,
-    rgba(255, 255, 255, 0) 100%
+    transparent 0%,
+    rgba(255, 255, 255, 0.4) 30%,
+    rgba(255, 255, 255, 0.85) 50%,
+    rgba(255, 255, 255, 0.4) 70%,
+    transparent 100%
   );
-  animation: subscript-shimmer 2s infinite ease-in-out;
+  animation: subscript-shimmer 1.6s infinite ease-in-out;
   pointer-events: none;
 }
 
 .liquid-glass-skeleton::after {
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.03) 20%,
-    rgba(255, 255, 255, 0.12) 60%,
-    rgba(255, 255, 255, 0) 100%
+    transparent 0%,
+    rgba(255, 255, 255, 0.25) 30%,
+    rgba(255, 255, 255, 0.7) 50%,
+    rgba(255, 255, 255, 0.25) 70%,
+    transparent 100%
   );
 }
 
-/* Secondary/sub-label bars sit a touch dimmer than primary ones. */
+/* Secondary/sub-label bars */
 .subscript-skeleton--faint {
-  background-color: rgba(255, 255, 255, 0.03);
+  background-color: rgba(0, 0, 0, 0.05);
 }
 
 .subscript-skeleton--faint::after {
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.01) 20%,
-    rgba(255, 255, 255, 0.05) 60%,
-    rgba(255, 255, 255, 0) 100%
+    transparent 0%,
+    rgba(255, 255, 255, 0.3) 30%,
+    rgba(255, 255, 255, 0.6) 50%,
+    rgba(255, 255, 255, 0.3) 70%,
+    transparent 100%
   );
 }
 
@@ -424,6 +487,30 @@ body {
   100% {
     transform: translateX(100%);
   }
+}
+
+/* Animated Ellipsis Dots */
+@keyframes animated-dots-cycle {
+  0%, 20% {
+    content: "";
+  }
+  40% {
+    content: ".";
+  }
+  60% {
+    content: "..";
+  }
+  80%, 100% {
+    content: "...";
+  }
+}
+
+.animated-dots::after {
+  display: inline-block;
+  content: "";
+  animation: animated-dots-cycle 1.6s infinite steps(1);
+  min-width: 1.2em;
+  text-align: left;
 }
 .admin-skeleton-shimmer {
   position: relative;
@@ -494,6 +581,14 @@ body {
      blanket rule exists to prevent. */
   .subscript-skeleton {
     animation: pulse 2s ease-in-out infinite !important;
+  }
+
+  /* The blanket rule ends the dot animation after one 0.01ms pass, which drops each dot back to
+     its base opacity: 0 and leaves a bare "Working" with no indication it is still busy. Pin them
+     visible so the label reads as a normal static "Working...". */
+  .subscript-loading-dot {
+    animation: none !important;
+    opacity: 1;
   }
 }
 /* User dashboard redesign palette. Kept scoped so merchant/admin surfaces retain their themes. */
@@ -807,11 +902,23 @@ body {
   display: none;
 }
 
-.merchant-dashboard-workspace [class~="text-white"],
-.merchant-dashboard-workspace [class~="text-white/90"],
-.merchant-dashboard-workspace [class~="text-white/80"],
-.merchant-dashboard-workspace [class~="text-white/70"] {
+.merchant-dashboard-workspace .text-white:not([data-merchant-dark="true"] *):not([data-merchant-dark="true"]):not([class*="bg-[#082824]"] *):not([class*="bg-[#082824]"]):not([class*="bg-black"] *):not([class*="bg-black"]):not([class*="bg-[#111111]"] *):not([class*="bg-[#111111]"]),
+.merchant-dashboard-workspace [class~="text-white"]:not([data-merchant-dark="true"] *):not([data-merchant-dark="true"]):not([class*="bg-[#082824]"] *):not([class*="bg-[#082824]"]):not([class*="bg-black"] *):not([class*="bg-black"]):not([class*="bg-[#111111]"] *):not([class*="bg-[#111111]"]),
+.merchant-dashboard-workspace [class~="text-white/90"]:not([data-merchant-dark="true"] *):not([data-merchant-dark="true"]):not([class*="bg-[#082824]"] *):not([class*="bg-[#082824]"]):not([class*="bg-black"] *):not([class*="bg-black"]),
+.merchant-dashboard-workspace [class~="text-white/80"]:not([data-merchant-dark="true"] *):not([data-merchant-dark="true"]):not([class*="bg-[#082824]"] *):not([class*="bg-[#082824]"]):not([class*="bg-black"] *):not([class*="bg-black"]),
+.merchant-dashboard-workspace [class~="text-white/70"]:not([data-merchant-dark="true"] *):not([data-merchant-dark="true"]):not([class*="bg-[#082824]"] *):not([class*="bg-[#082824]"]):not([class*="bg-black"] *):not([class*="bg-black"]) {
   color: #000000;
+}
+
+.merchant-dashboard-workspace [class~="bg-[#082824]"],
+.merchant-dashboard-workspace [class~="bg-[#082824]"] *,
+.merchant-dashboard-workspace [class*="bg-[#082824]"],
+.merchant-dashboard-workspace [class*="bg-[#082824]"] *,
+.merchant-dashboard-workspace [data-merchant-dark="true"],
+.merchant-dashboard-workspace [data-merchant-dark="true"] *,
+.merchant-dashboard-workspace [class*="bg-[#111111]"] *,
+.merchant-dashboard-workspace [class*="bg-black/80"] * {
+  color: #ffffff !important;
 }
 
 .merchant-dashboard-workspace [class~="text-white/60"],

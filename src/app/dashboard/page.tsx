@@ -19,6 +19,7 @@ import ConfirmModal from "@/components/ConfirmModal";
 import DurationPicker from "@/components/DurationPicker";
 import SharePlanModal from "@/components/SharePlanModal";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
+import SupportChatModal from "@/components/support/SupportChatModal";
 import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useReadContract, useSignMessage } from "wagmi";
 import { injected } from "wagmi/connectors";
 import {
@@ -174,19 +175,6 @@ const formatUsdcMicros = (value: any) => {
     }
 };
 
-const formatUsdcInput = (value: any) => {
-    try {
-        const micros = BigInt(String(value ?? "0"));
-        const unit = BigInt(1_000_000);
-        const sign = micros < BigInt(0) ? "-" : "";
-        const absolute = micros < BigInt(0) ? -micros : micros;
-        const whole = absolute / unit;
-        const fraction = (absolute % unit).toString().padStart(6, "0").replace(/0+$/, "");
-        return `${sign}${whole.toString()}${fraction ? `.${fraction}` : ""}`;
-    } catch {
-        return "0";
-    }
-};
 
 const microsToNumber = (value: any) => {
     const parsed = Number(value ?? 0);
@@ -507,6 +495,7 @@ export default function DashboardPage() {
     const [walletBalance, setWalletBalance] = useState(0);
     const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
     const [isPremium, setIsPremium] = useState(false);
+    const [supportChatOpen, setSupportChatOpen] = useState(false);
     const [promptFlowMode, setPromptFlowMode] = useState<"standard" | "private">("standard");
     const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
     const [isSendWalletOpen, setIsSendWalletOpen] = useState(false);
@@ -664,7 +653,7 @@ export default function DashboardPage() {
     };
 
 
-    const { theme, setTheme } = useTheme();
+    const { theme, setTheme, resolvedTheme } = useTheme();
     const [merchantSubView, setMerchantSubView] = useState<MerchantSubView>("menu");
     const [activeTab, setActiveTab] = useState<TabId>("overview");
 
@@ -728,11 +717,8 @@ export default function DashboardPage() {
     const subTabDirection = subTabIndex >= prevSubTabIndex ? 1 : -1;
     const [vaults, setVaults] = useState<any[]>([]);
     const [isVaultsLoading, setIsVaultsLoading] = useState(false);
-    const [requiredCommit, setRequiredCommit] = useState("0");
-    const [commitInput, setCommitInput] = useState("0");
     const [claimableAmount, setClaimableAmount] = useState("0");
     const [isVaultOpsLoading, setIsVaultOpsLoading] = useState(false);
-    const [isSavingCommit, setIsSavingCommit] = useState(false);
     const [isClaimingVault, setIsClaimingVault] = useState(false);
     const [vaultOpsStatus, setVaultOpsStatus] = useState<{ text: string; type: "success" | "error" } | null>(null);
     const [usageSecretKey, setUsageSecretKey] = useState("");
@@ -763,25 +749,15 @@ export default function DashboardPage() {
     const fetchVaultOps = useCallback(async () => {
         setIsVaultOpsLoading(true);
         try {
-            const [commitRes, claimRes] = await Promise.all([
-                fetch("/api/merchant/vault/commit-config"),
-                fetch("/api/merchant/vault/claim")
-            ]);
-
-            const commitData = await commitRes.json().catch(() => null);
+            const claimRes = await fetch("/api/merchant/vault/claim");
             const claimData = await claimRes.json().catch(() => null);
 
-            if (commitRes.ok && commitData?.success) {
-                const nextCommit = commitData.commitUsdc || "0";
-                setRequiredCommit(nextCommit);
-                setCommitInput(formatUsdcInput(nextCommit));
-            }
             if (claimRes.ok && claimData?.success) {
                 setClaimableAmount(claimData.claimableUsdc || "0");
             }
-            if (!commitRes.ok || !claimRes.ok) {
+            if (!claimRes.ok) {
                 setVaultOpsStatus({
-                    text: commitData?.error || claimData?.error || "Vault controls could not be loaded.",
+                    text: claimData?.error || "Vault controls could not be loaded.",
                     type: "error"
                 });
             }
@@ -817,41 +793,6 @@ export default function DashboardPage() {
             fetchVaultApiKeys();
         }
     }, [activeTab, subTab, isPremium, address, fetchVaults, fetchVaultOps, fetchVaultApiKeys]);
-
-    const handleSaveCommitConfig = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (commitInput === "" || isNaN(Number(commitInput)) || Number(commitInput) < 0) {
-            setVaultOpsStatus({ text: "Required commit must be zero or greater.", type: "error" });
-            return;
-        }
-
-        setIsSavingCommit(true);
-        setVaultOpsStatus(null);
-        try {
-            const res = await fetch("/api/merchant/vault/commit-config", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ amountUsdc: commitInput })
-            });
-            const data = await res.json().catch(() => null);
-            if (res.ok && data?.success) {
-                const nextCommit = data.commitUsdc || "0";
-                setRequiredCommit(nextCommit);
-                setCommitInput(formatUsdcInput(nextCommit));
-                setVaultOpsStatus({
-                    text: `Required commit saved. Tx ${shortenHash(data.txHash)}.`,
-                    type: "success"
-                });
-                fetchVaults();
-            } else {
-                setVaultOpsStatus({ text: data?.error || "Failed to save required commit.", type: "error" });
-            }
-        } catch (err: any) {
-            setVaultOpsStatus({ text: err.message || "Failed to save required commit.", type: "error" });
-        } finally {
-            setIsSavingCommit(false);
-        }
-    };
 
     const handleClaimVaultFunds = async () => {
         setIsClaimingVault(true);
@@ -3553,23 +3494,20 @@ Please complete the following implementation tasks:
                                 {[
                                     {
                                         id: "light" as const,
-                                        title: "Light Theme",
-                                        desc: "Cream (#FFFFF0) & soft slate panel",
-                                        accent: "bg-[#FFFFF0] border-black/20 text-[#082824]",
+                                        title: "Light Mode",
+                                        previewBg: "bg-[#FFFFF0] border-black/20 text-[#082824]",
                                         badge: "bg-[#D4E3E8] text-[#082824]",
                                     },
                                     {
                                         id: "dark" as const,
-                                        title: "Dark Theme",
-                                        desc: "Deep emerald (#082824) & dark cards",
-                                        accent: "bg-[#082824] border-white/20 text-white",
+                                        title: "Dark Mode",
+                                        previewBg: "bg-[#082824] border-white/20 text-white",
                                         badge: "bg-[#8AB4DB] text-[#082824]",
                                     },
                                     {
                                         id: "system" as const,
                                         title: "System Default",
-                                        desc: "Syncs with your OS setting",
-                                        accent: "bg-slate-100 border-slate-300 text-slate-900",
+                                        previewBg: "bg-slate-100 border-slate-300 text-slate-900",
                                         badge: "bg-slate-200 text-slate-800",
                                     },
                                 ].map((t) => {
@@ -3586,18 +3524,17 @@ Please complete the following implementation tasks:
                                             }`}
                                         >
                                             <div className="space-y-2">
-                                                <div className={`h-16 w-full rounded-xl border p-2 flex flex-col justify-between ${t.accent}`}>
+                                                <div className={`h-16 w-full rounded-xl border p-2.5 flex flex-col justify-between ${t.previewBg}`}>
                                                     <div className="flex items-center justify-between">
                                                         <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${t.badge}`}>
                                                             {t.title}
                                                         </span>
                                                         {isSelected && <Check className="h-4 w-4 text-emerald-600" />}
                                                     </div>
-                                                    <div className="h-2 w-12 rounded-full bg-current opacity-30" />
+                                                    <div className="h-2 w-16 rounded-full bg-current opacity-30" />
                                                 </div>
-                                                <div>
+                                                <div className="pt-1">
                                                     <p className="font-bold text-xs text-black">{t.title}</p>
-                                                    <p className="text-[10px] text-black/55 mt-0.5 leading-snug">{t.desc}</p>
                                                 </div>
                                             </div>
                                         </button>
@@ -4356,7 +4293,15 @@ Please complete the following implementation tasks:
                                     humans read every message.
                                 </p>
                             </div>
-                            <div className="grid gap-3 sm:grid-cols-3 font-sans text-xs">
+                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 font-sans text-xs">
+                                <button
+                                    type="button"
+                                    onClick={() => setSupportChatOpen(true)}
+                                    className="flex flex-col justify-between rounded-2xl border border-[#082824] bg-[#082824] px-4 py-3 text-left transition hover:bg-[#0c3933] shadow-sm text-white group"
+                                >
+                                    <span className="block text-[9px] font-bold uppercase tracking-wider text-emerald-300">Live Support</span>
+                                    <span className="mt-1 block font-bold text-xs text-white">Start Support Chat &rarr;</span>
+                                </button>
                                 <a
                                     href="mailto:support@subscriptonarc.com"
                                     className="rounded-2xl border border-black/10 bg-[#D4E3E8]/40 px-4 py-3 transition hover:bg-[#D4E3E8]"
@@ -4375,7 +4320,7 @@ Please complete the following implementation tasks:
                                     href="/support"
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex items-center justify-center rounded-2xl border border-black/10 bg-[#082824] px-4 py-3 text-center text-[11px] font-semibold text-white transition hover:bg-[#0c3933]"
+                                    className="flex items-center justify-center rounded-2xl border border-black/10 bg-white px-4 py-3 text-center text-[11px] font-semibold text-black transition hover:bg-black/5"
                                 >
                                     Open Help Center
                                 </a>
@@ -4499,43 +4444,7 @@ Please complete the following implementation tasks:
                             </button>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            {/* Required Commit form */}
-                            <form onSubmit={handleSaveCommitConfig} className="rounded-2xl border border-white/5 bg-black/20 p-5 space-y-4">
-                                <div>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Minimum Deposit</p>
-                                    <p className="text-[9px] text-white/35 mt-1">
-                                        The minimum balance a customer must maintain to keep using the service.
-                                    </p>
-                                </div>
-                                <div className="flex flex-col gap-3">
-                                    <label className="space-y-1.5">
-                                        <span className="text-[9px] font-bold uppercase tracking-wider text-white/40">USDC</span>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            step="0.000001"
-                                            value={commitInput}
-                                            onChange={(e) => setCommitInput(e.target.value)}
-                                            disabled={isSavingCommit}
-                                            className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-[#00d2b4] transition text-xs font-mono disabled:opacity-50"
-                                            placeholder="0"
-                                        />
-                                    </label>
-                                    <button
-                                        type="submit"
-                                        disabled={isSavingCommit}
-                                        className="w-full py-2 bg-[#00d2b4] text-[#111111] hover:brightness-110 disabled:opacity-50 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
-                                    >
-                                        {isSavingCommit ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                                        Save Setting
-                                    </button>
-                                </div>
-                                <p className="text-[9px] text-white/35 uppercase tracking-wider">
-                                    Current requirement: <span className="font-mono text-[#ccff00]">${formatUsdcMicros(requiredCommit)} USDC</span>
-                                </p>
-                            </form>
-
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             {/* Claim Settled Funds card */}
                             <div className="rounded-2xl border border-white/5 bg-black/20 p-5 flex flex-col justify-between gap-4">
                                 <div>
@@ -6061,7 +5970,7 @@ Please complete the following implementation tasks:
         merchantAlias || (address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Your account");
 
     return (
-        <div data-mounted={isMounted} className="merchant-dashboard-root relative min-h-[100dvh] overflow-x-hidden bg-[#FFFFF0] font-sans text-black selection:bg-[#8AB4DB]/45 md:h-[100dvh] md:overflow-hidden">
+        <div data-mounted={isMounted} data-merchant-theme={resolvedTheme} className="merchant-dashboard-root relative min-h-[100dvh] overflow-x-hidden bg-[#FFFFF0] font-sans text-black selection:bg-[#8AB4DB]/45 md:h-[100dvh] md:overflow-hidden">
             <div className="relative md:flex md:h-[100dvh] md:min-h-0">
                 <MerchantDashboardNav
                     activeId={activeTab}
@@ -6072,8 +5981,25 @@ Please complete the following implementation tasks:
                     isAdmin={isAdmin}
                     mobileEnabled={isConnected}
                     isPremium={isPremium}
+                    isLoading={Boolean(isLoading)}
                 />
-                <div className="merchant-dashboard-workspace relative min-w-0 flex-1 overflow-y-auto bg-[#D4E3E8] md:h-[100dvh] md:rounded-tl-[70px]">
+                {/* Mobile Top Profile Icon */}
+                <div className="fixed left-4 top-4 z-40 md:hidden">
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab("settings")}
+                        className="flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-[#FFFFF0] text-black shadow-md overflow-hidden"
+                        aria-label="Account Settings"
+                        title="Account Settings"
+                    >
+                        {userSettings?.profilePic ? (
+                            <img src={userSettings.profilePic} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                            <span className="font-mono text-xs font-bold text-[#082824]">{sidebarIdentityLabel.slice(0, 1).toUpperCase()}</span>
+                        )}
+                    </button>
+                </div>
+                <div className="merchant-dashboard-workspace relative min-w-0 flex-1 overflow-y-auto bg-[#D4E3E8] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[70px]">
             {/* Session Consent Alerts Overlay */}
             {sessionAlert && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
@@ -6149,6 +6075,12 @@ Please complete the following implementation tasks:
             </main>
             </div>
             </div>
+            <SupportChatModal
+                open={supportChatOpen}
+                onClose={() => setSupportChatOpen(false)}
+                currentWallet={address}
+                userRole="MERCHANT"
+            />
             <WithdrawModal
                 isOpen={isWithdrawOpen}
                 onClose={() => setIsWithdrawOpen(false)}

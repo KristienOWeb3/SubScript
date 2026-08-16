@@ -530,8 +530,8 @@ export default function DashboardSkeleton({ activeTab, isConnected = false }: Da
                     {renderContentSkeleton()}
                 </div>
 
-                {/* Bottom Nav Bar — suppressed once the live nav is on screen (see isConnected above). */}
-                {!isConnected && (
+                {/* Bottom Nav Bar — suppressed once the live nav is on screen (see isConnected above) or for payroll. */}
+                {!isConnected && activeTab !== "payroll" && (
                     <div className="fixed bottom-6 left-1/2 z-40 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-around rounded-full border border-white/5 bg-black/60 px-3 py-3.5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-xl">
                         {[1, 2, 3, 4, 5].map((item) => (
                             <Skeleton key={item} circle className="h-10 w-10" />

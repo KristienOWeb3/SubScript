@@ -1,11 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, HelpCircle } from "@/components/icons";
+import { useState } from "react";
+import { ArrowLeft, HelpCircle, MessageSquare } from "@/components/icons";
 import Navbar from "@/components/Navbar";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+import SupportChatModal from "@/components/support/SupportChatModal";
 
 const channels = [
+  {
+    title: "In-app support chat",
+    isChat: true,
+    body: "Chat in real-time directly with SubScript admins and technical engineers inside the web dashboard.",
+    sla: "Live administrative response",
+  },
   {
     title: "Telegram support group",
     link: { label: "t.me/subscriptsupport", href: "https://t.me/subscriptsupport" },
@@ -64,9 +72,12 @@ const faqs = [
 ];
 
 export default function SupportPage() {
+  const [supportChatOpen, setSupportChatOpen] = useState(false);
+
   return (
     <main className="relative min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white">
       <AnimatedGradientBg />
+      <SupportChatModal open={supportChatOpen} onClose={() => setSupportChatOpen(false)} />
       <div className="relative z-10">
         <Navbar />
 
@@ -88,17 +99,35 @@ export default function SupportPage() {
               plus a receipt ID or transaction hash if it&apos;s about a payment — and we can usually
               resolve things in one reply.
             </p>
-            <p className="mt-3 rounded-xl border border-[#00d2b4]/20 bg-[#00d2b4]/5 px-4 py-3 text-xs leading-relaxed text-[#00d2b4]">
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setSupportChatOpen(true)}
+                className="inline-flex items-center gap-2 rounded-2xl bg-[#00d2b4] px-6 py-3.5 text-xs font-black uppercase tracking-wider text-[#082824] shadow-lg shadow-[#00d2b4]/20 transition hover:bg-[#00d2b4]/90"
+              >
+                <MessageSquare className="h-4 w-4" />
+                Start In-App Support Chat
+              </button>
+            </div>
+            <p className="mt-4 rounded-xl border border-[#00d2b4]/20 bg-[#00d2b4]/5 px-4 py-3 text-xs leading-relaxed text-[#00d2b4]">
               Public beta notice: SubScript currently runs on the Arc testnet. Beta payments settle in
               testnet USDC, which has no monetary value.
             </p>
           </div>
 
-          <div className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {channels.map((ch) => (
               <section key={ch.title} className="liquid-glass flex flex-col gap-3 rounded-3xl border border-white/5 p-6">
                 <h2 className="text-sm font-bold uppercase tracking-wider text-white">{ch.title}</h2>
-                {"link" in ch && ch.link ? (
+                {ch.isChat ? (
+                  <button
+                    type="button"
+                    onClick={() => setSupportChatOpen(true)}
+                    className="inline-flex items-center gap-1 text-left font-mono text-xs font-bold text-[#00d2b4] hover:underline"
+                  >
+                    Open Live Ticket Chat &rarr;
+                  </button>
+                ) : "link" in ch && ch.link ? (
                   <a href={ch.link.href} target="_blank" rel="noopener noreferrer" className="break-all font-mono text-xs font-bold text-[#00d2b4] hover:underline">
                     {ch.link.label}
                   </a>
