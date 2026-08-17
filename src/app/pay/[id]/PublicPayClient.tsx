@@ -1627,7 +1627,7 @@ export default function PublicPayClient({
             {isPaymentSettled ? <CheckCircle className="w-8 h-8 text-emerald-600" /> : <Loader2 className="w-8 h-8 animate-spin text-amber-600" />}
             <p className={`text-xs font-semibold leading-relaxed ${isPaymentSettled ? "text-emerald-900" : "text-amber-900"}`}>{verificationStatus}</p>
             {shareableReceiptUrl && (
-                <a href={shareableReceiptUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] font-mono font-bold text-[#2775CA] hover:underline flex items-center gap-1">
+                <a href={shareableReceiptUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] font-mono font-bold text-[#1f62ab] hover:underline flex items-center gap-1">
                     Share receipt <ExternalLink className="w-3 h-3" />
                 </a>
             )}
@@ -1706,7 +1706,7 @@ export default function PublicPayClient({
 
     const embeddedEmailVerificationPanel = embeddedPaySession && payerNeedsEmail ? (
         <div className="rounded-2xl border border-[#2775CA]/25 bg-[#2775CA]/[0.06] p-4 space-y-3 text-left">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-[#2775CA]">Verify your email before payment</p>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-[#1f62ab]">Verify your email before payment</p>
             <p className="text-[10px] leading-relaxed text-black/60">We will email a one-time code. Payment stays locked until the code is confirmed.</p>
             {payerEmailStep === "email" ? <>
                 <input type="email" value={payerEmailInput} onChange={(event) => { setPayerEmailInput(event.target.value); setPayerEmailError(null); }} placeholder="you@example.com" className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-xs text-[#111827] placeholder:text-black/40 focus:border-[#2775CA]/60 focus:outline-none" />
@@ -1731,7 +1731,7 @@ export default function PublicPayClient({
                     <h1 className="text-2xl font-extrabold text-[#111827] uppercase tracking-wider">
                         SubScript <span className="font-serif italic lowercase font-normal text-[#2775CA]">checkout</span>
                     </h1>
-                    <p className="text-xs text-[#2775CA] font-bold uppercase tracking-widest mt-1">
+                    <p className="text-xs text-[#1f62ab] font-bold uppercase tracking-widest mt-1">
                         {linkData?.billing_type === "RECURRING" || linkData?.recurring || linkData?.interval ? "Recurring" : "One-time"}
                     </p>
                 </div>
@@ -1795,7 +1795,7 @@ export default function PublicPayClient({
                                     <p className="text-xs font-bold uppercase tracking-wider">Checkout unavailable</p>
                                     <p className="text-[10px] text-black/60">{unpayableReason}</p>
                                 </div>}
-                                <div className={`flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[10px] font-bold ${remoteStatusError ? "border-amber-200 bg-amber-50 text-amber-900" : "border-[#2775CA]/25 bg-[#2775CA]/[0.06] text-[#2775CA]"}`} aria-live="polite">
+                                <div className={`flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[10px] font-bold ${remoteStatusError ? "border-amber-200 bg-amber-50 text-amber-900" : "border-[#2775CA]/25 bg-[#2775CA]/[0.06] text-[#1f62ab]"}`} aria-live="polite">
                                     {cannotPayLink ? <AlertTriangle className="h-3.5 w-3.5" /> : remoteStatusError ? <AlertCircle className="h-3.5 w-3.5" /> : <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#2775CA] opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-[#2775CA]" /></span>}
                                     {cannotPayLink ? "Payment unavailable" : remoteStatusError || `Waiting for payment${lastRemoteStatusCheck ? ` · checked ${lastRemoteStatusCheck.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}`}
                                 </div>
@@ -1822,7 +1822,7 @@ export default function PublicPayClient({
                                     type="button"
                                     onClick={handlePayInBrowser}
                                     disabled={pendingVerification ? isVerifying : cannotPayLink}
-                                    className="w-full rounded-2xl border border-[#2775CA]/30 bg-[#2775CA]/10 px-4 py-3 text-xs font-bold uppercase tracking-wider text-[#2775CA] transition hover:bg-[#2775CA]/20 disabled:cursor-not-allowed disabled:opacity-40"
+                                    className="w-full rounded-2xl border border-[#2775CA]/30 bg-[#2775CA]/10 px-4 py-3 text-xs font-bold uppercase tracking-wider text-[#1f62ab] transition hover:bg-[#2775CA]/20 disabled:cursor-not-allowed disabled:opacity-40"
                                 >
                                     {pendingVerification
                                         ? (isVerifying ? "Confirming payment…" : "Continue verification")
@@ -1858,10 +1858,10 @@ export default function PublicPayClient({
                                             settledStep
                                                 ? "text-emerald-800"
                                                 : step.current
-                                                    ? "text-[#2775CA]"
+                                                    ? "text-[#1f62ab]"
                                                     : step.done
                                                         ? "text-black/70"
-                                                        : "text-black/50"
+                                                        : "text-black/60"
                                         }`}
                                     >
                                         {step.done ? (
@@ -1925,7 +1925,7 @@ export default function PublicPayClient({
                             <div className="bg-red-50 border border-red-200 rounded-2xl p-5 flex flex-col items-center justify-center text-center gap-3">
                                 <AlertTriangle className="w-8 h-8 text-red-700" />
                                 <p className="text-xs font-bold text-red-800 uppercase tracking-wide">{unpayableTitle}</p>
-                                <p className="text-[10px] text-black/50 leading-relaxed">{unpayableReason}</p>
+                                <p className="text-[10px] text-black/60 leading-relaxed">{unpayableReason}</p>
                             </div>
                         )}
                         {isTestnetLink && !isSimulationOnly && (
@@ -1939,7 +1939,7 @@ export default function PublicPayClient({
 
                         {linkData.expires_at && (
                             <div className="flex justify-end">
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#f8fafc] border border-black/15 text-black/50">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#f8fafc] border border-black/15 text-black/60">
                                     Expires: {new Date(linkData.expires_at).toLocaleDateString()}
                                 </span>
                             </div>
@@ -1947,7 +1947,7 @@ export default function PublicPayClient({
 
 
                         <div className="space-y-2">
-                            <span className="text-[10px] font-bold text-black/50 uppercase tracking-widest">You are paying for</span>
+                            <span className="text-[10px] font-bold text-black/60 uppercase tracking-widest">You are paying for</span>
                             <h2 className="text-2xl font-extrabold text-[#111827] tracking-tight">{linkData.title}</h2>
                             {linkData.description && (
                                 <p className="text-xs text-black/60 leading-relaxed font-sans">{linkData.description}</p>
@@ -1955,7 +1955,7 @@ export default function PublicPayClient({
                             {(linkData.invoice_number || linkData.due_date) && (
                                 <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1">
                                     {linkData.invoice_number && (
-                                        <span className="text-[10px] font-mono text-black/50 uppercase tracking-wider">
+                                        <span className="text-[10px] font-mono text-black/60 uppercase tracking-wider">
                                             Invoice {linkData.invoice_number}
                                         </span>
                                     )}
@@ -1986,12 +1986,12 @@ export default function PublicPayClient({
                         )}
 
                         <div className="rounded-2xl border border-black/10 bg-[#f8fafc] p-5 flex justify-between items-center">
-                            <span className="text-[10px] text-black/50 uppercase font-bold tracking-wider">Amount Due</span>
+                            <span className="text-[10px] text-black/60 uppercase font-bold tracking-wider">Amount Due</span>
                             <div className="text-right">
                                 <p className="text-2xl font-extrabold text-[#2775CA] tracking-tight">
                                     {`${(Number(linkData.amount_usdc) / 1000000).toFixed(2)} USDC`}
                                 </p>
-                                <p className="text-[10px] text-black/50 uppercase font-bold tracking-widest font-mono">
+                                <p className="text-[10px] text-black/60 uppercase font-bold tracking-widest font-mono">
                                     {displayCurrency && displayCurrency !== "USD" && displayAmount !== undefined
                                         ? `≈ ${fiatSymbol}${displayAmount.toFixed(2)} ${displayCurrency} · Arc Network`
                                         : "Arc Network"}
@@ -2063,7 +2063,7 @@ export default function PublicPayClient({
                                         {dmError && <p className="text-[10px] font-mono text-red-700">{dmError}</p>}
                                         <div className="flex items-center gap-3 pt-1">
                                             <span className="h-px flex-1 bg-black/15" />
-                                            <span className="text-[10px] font-bold uppercase tracking-wider text-black/50">or pay with a wallet</span>
+                                            <span className="text-[10px] font-bold uppercase tracking-wider text-black/60">or pay with a wallet</span>
                                             <span className="h-px flex-1 bg-black/15" />
                                         </div>
                                     </div>
@@ -2072,7 +2072,7 @@ export default function PublicPayClient({
                                 {embeddedPaySession && !isConnected && !cannotPayLink && externalWalletEnabled && (
                                     <div className="flex items-center gap-3 pt-1">
                                         <span className="h-px flex-1 bg-black/15" />
-                                        <span className="text-[10px] font-bold uppercase tracking-wider text-black/50">or pay with a browser wallet</span>
+                                        <span className="text-[10px] font-bold uppercase tracking-wider text-black/60">or pay with a browser wallet</span>
                                         <span className="h-px flex-1 bg-black/15" />
                                     </div>
                                 )}
@@ -2088,7 +2088,7 @@ export default function PublicPayClient({
                                     so a payer is never left without a way to pay. */}
                                 {!isConnected && !cannotPayLink && externalWalletEnabled && (walletConnectors.length > 1 ? (
                                     <div className="space-y-2">
-                                        <p className="text-[10px] font-bold uppercase tracking-wider text-black/50 text-center">
+                                        <p className="text-[10px] font-bold uppercase tracking-wider text-black/60 text-center">
                                             Multiple wallets found — choose one
                                         </p>
                                         {walletConnectors.map((connector) => (
@@ -2114,7 +2114,7 @@ export default function PublicPayClient({
                                     </div>
                                 ) : (
                                     <>
-                                        <p className="text-[10px] text-black/50 text-center leading-relaxed font-sans">
+                                        <p className="text-[10px] text-black/60 text-center leading-relaxed font-sans">
                                             Connect your browser wallet (e.g. MetaMask, Rabby) on {expectedChainName} to complete the payment.
                                         </p>
                                         <button
@@ -2135,9 +2135,9 @@ export default function PublicPayClient({
                                     <p className="text-[10px] font-mono text-red-700 text-center leading-relaxed" role="alert">{verificationError}</p>
                                 )}
                                 {!embeddedPaySession && !cannotPayLink && (
-                                    <p className="text-[10px] text-black/50 text-center leading-relaxed font-sans">
+                                    <p className="text-[10px] text-black/60 text-center leading-relaxed font-sans">
                                         {externalWalletEnabled ? "Have a SubScript account? " : "Browser-wallet payments are paused right now. "}
-                                        <a href="/login" target="_blank" rel="noopener noreferrer" className="text-[#2775CA] hover:underline font-bold">
+                                        <a href="/login" target="_blank" rel="noopener noreferrer" className="text-[#1f62ab] hover:underline font-bold">
                                             Sign in
                                         </a>
                                         , then reload this page to pay from your email wallet — no extension needed.
@@ -2149,20 +2149,20 @@ export default function PublicPayClient({
                         ) : (
                             <div className="space-y-6">
 
-                                <div className="flex flex-col gap-1.5 border-t border-b border-black/10 py-3 text-[10px] font-mono text-black/50">
+                                <div className="flex flex-col gap-1.5 border-t border-b border-black/10 py-3 text-[10px] font-mono text-black/60">
                                     <div className="flex items-center justify-between">
                                         <span>Payer: {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : ""}</span>
                                         <button type="button" onClick={() => disconnect()} className="hover:text-black transition-colors uppercase font-bold">Disconnect</button>
                                     </div>
                                     <div className="flex items-center justify-between mt-1 text-black/60">
                                         <span>Network:</span>
-                                        <span className={`font-bold ${isWrongChain ? "text-amber-700" : "text-[#2775CA]"}`}>
+                                        <span className={`font-bold ${isWrongChain ? "text-amber-700" : "text-[#1f62ab]"}`}>
                                             {isWrongChain ? `Switch to ${requiredChainName}` : `${requiredChainName} ✓`}
                                         </span>
                                     </div>
                                     <div className="flex items-center justify-between mt-1 text-black/60">
                                         <span>Arc Network USDC Balance:</span>
-                                        <span className="font-bold text-[#2775CA]">
+                                        <span className="font-bold text-[#1f62ab]">
                                             {parseFloat(formatUnits(arcUsdcBalance, 6)).toFixed(2)} USDC
                                         </span>
                                     </div>
@@ -2182,17 +2182,17 @@ export default function PublicPayClient({
                                     <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-left">
                                         <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">Ready to pay</p>
                                         <p className="mt-1 text-[11px] text-black/70">Signed in as <span className="font-bold text-[#111827]">{sessionInfo.email}</span></p>
-                                        <p className="mt-1 text-[10px] text-black/50">Wallet ownership and email OTP are verified.</p>
+                                        <p className="mt-1 text-[10px] text-black/60">Wallet ownership and email OTP are verified.</p>
                                     </div>
                                 ) : !hasMatchingWalletSession ? (
                                     <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left">
                                         <div>
                                             <p className="text-[10px] font-bold uppercase tracking-wider text-amber-900">Verify this wallet</p>
                                             <p className="mt-1 text-[10px] leading-relaxed text-black/60">A wallet signature confirms ownership. After that, a verified email OTP is mandatory before payment.</p>
-                                            {sessionInfo?.loggedIn && sessionInfo.wallet && <p className="mt-2 text-[10px] text-black/50">This browser is currently signed in to another SubScript account.</p>}
+                                            {sessionInfo?.loggedIn && sessionInfo.wallet && <p className="mt-2 text-[10px] text-black/60">This browser is currently signed in to another SubScript account.</p>}
                                         </div>
                                         <button type="button" onClick={handleAuthenticateConnectedWallet} disabled={isWalletAuthenticating} className="w-full rounded-xl bg-[#2775CA] px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider text-[#FFFFF0] disabled:opacity-50">{isWalletAuthenticating ? "Waiting for signature…" : "Verify connected wallet"}</button>
-                                        {walletAuthenticationError && <div className="space-y-2"><p className="text-[10px] leading-relaxed text-red-800" role="alert">{walletAuthenticationError}</p>{walletAuthenticationError.includes("does not have") && <a href={`/signup?next=${encodeURIComponent(`/pay/${id}`)}`} className="inline-block text-[10px] font-bold text-[#2775CA] underline">Create a user account</a>}</div>}
+                                        {walletAuthenticationError && <div className="space-y-2"><p className="text-[10px] leading-relaxed text-red-800" role="alert">{walletAuthenticationError}</p>{walletAuthenticationError.includes("does not have") && <a href={`/signup?next=${encodeURIComponent(`/pay/${id}`)}`} className="inline-block text-[10px] font-bold text-[#1f62ab] underline">Create a user account</a>}</div>}
                                     </div>
                                 ) : null}
 
@@ -2226,7 +2226,7 @@ export default function PublicPayClient({
                                                 {merchantCancelUrl && (
                                                     <a
                                                         href={merchantCancelUrl}
-                                                        className="text-[10px] font-mono text-black/50 hover:text-black/70 underline inline-flex items-center gap-1"
+                                                        className="text-[10px] font-mono text-black/60 hover:text-black/70 underline inline-flex items-center gap-1"
                                                     >
                                                         Back to {hostOf(merchantCancelUrl) || "merchant site"} <ExternalLink className="w-3 h-3" />
                                                     </a>
@@ -2236,7 +2236,7 @@ export default function PublicPayClient({
 
                                         {payerNeedsEmail && (
                                             <div className="rounded-2xl border border-[#2775CA]/25 bg-[#2775CA]/[0.06] p-4 space-y-3 text-left">
-                                                <p className="text-[10px] font-bold uppercase tracking-wide text-[#2775CA]">Verify your email</p>
+                                                <p className="text-[10px] font-bold uppercase tracking-wide text-[#1f62ab]">Verify your email</p>
                                                 <p className="text-[10px] leading-relaxed text-black/60">
                                                     External wallets must verify an email for receipts and security notices before paying.
                                                 </p>
@@ -2267,7 +2267,7 @@ export default function PublicPayClient({
                                                         <p className="text-[10px] text-black/60 leading-relaxed font-sans">
                                                             Your Arc Network balance ({parseFloat(formatUnits(arcUsdcBalance, 6)).toFixed(2)} USDC) is insufficient for this ${(Number(linkData.amount_usdc) / 1000000).toFixed(2)} USDC payment.
                                                         </p>
-                                                        <p className="text-[10px] text-black/50 leading-relaxed font-sans">
+                                                        <p className="text-[10px] text-black/60 leading-relaxed font-sans">
                                                             Cross-chain CCTP checkout is disabled until Arc-side memo settlement is live. Bridge or fund USDC on Arc, then complete this payment.
                                                         </p>
                                                     </div>
@@ -2361,7 +2361,7 @@ export default function PublicPayClient({
                                     onClick={() => setShowQrCode(!showQrCode)}
                                     className="w-full py-2.5 bg-white hover:bg-black/5 border border-black/15 text-[#111827] font-bold rounded-xl text-[10px] uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
                                 >
-                                    <QrCode className="w-3.5 h-3.5 text-[#2775CA]" />
+                                    <QrCode className="w-3.5 h-3.5 text-[#1f62ab]" />
                                     {showQrCode ? "Hide QR Code" : "Pay on Mobile (Scan QR)"}
                                 </button>
 
@@ -2412,7 +2412,7 @@ export default function PublicPayClient({
                             </div>
                         )}
 
-                        <div className="pt-2 flex items-center justify-center gap-1.5 text-[10px] text-black/50 font-sans">
+                        <div className="pt-2 flex items-center justify-center gap-1.5 text-[10px] text-black/60 font-sans">
                             <Lock className="w-3 h-3" /> Protected by SubScript
                         </div>
                         {!isPaymentSettled && !(pendingVerification || txHash || successTxHash || verificationStatus || isPaying || isEmbeddedPaying || isVerifying) && (
@@ -2439,13 +2439,13 @@ export default function PublicPayClient({
                     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
                         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} role="dialog" aria-modal="true" aria-labelledby="checkout-review-title" className="max-h-[calc(100dvh-2rem)] w-full max-w-md space-y-5 overflow-y-auto overscroll-contain rounded-3xl border border-black/15 bg-white p-6 text-left shadow-xl">
                             <div>
-                                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#2775CA]">Final review</p>
+                                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#1f62ab]">Final review</p>
                                 <h3 id="checkout-review-title" className="mt-1 text-xl font-black text-[#111827]">Pay {displayMerchantName}?</h3>
                             </div>
                             <div className="space-y-3 rounded-2xl border border-black/15 bg-[#f8fafc] p-4 text-xs">
-                                <div className="flex justify-between gap-4"><span className="text-black/50">Merchant</span><span className="text-right font-bold text-[#111827]">{displayMerchantName}</span></div>
-                                <div className="flex justify-between gap-4"><span className="text-black/50">You pay</span><span className="font-bold text-[#111827]">{(Number(linkData?.amount_usdc || 0) / 1_000_000).toFixed(2)} USDC</span></div>
-                                {displayCurrency && displayCurrency !== "USD" && displayAmount !== undefined && <div className="flex justify-between gap-4"><span className="text-black/50">Estimated value</span><span className="font-bold text-[#111827]">≈ {fiatSymbol}{displayAmount.toFixed(2)} {displayCurrency}</span></div>}
+                                <div className="flex justify-between gap-4"><span className="text-black/60">Merchant</span><span className="text-right font-bold text-[#111827]">{displayMerchantName}</span></div>
+                                <div className="flex justify-between gap-4"><span className="text-black/60">You pay</span><span className="font-bold text-[#111827]">{(Number(linkData?.amount_usdc || 0) / 1_000_000).toFixed(2)} USDC</span></div>
+                                {displayCurrency && displayCurrency !== "USD" && displayAmount !== undefined && <div className="flex justify-between gap-4"><span className="text-black/60">Estimated value</span><span className="font-bold text-[#111827]">≈ {fiatSymbol}{displayAmount.toFixed(2)} {displayCurrency}</span></div>}
                             </div>
                             <p className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-[10px] leading-relaxed text-amber-900/80">Only continue if you recognize {displayMerchantName} and the amount is correct.</p>
                             <div className="grid grid-cols-2 gap-3">
@@ -2476,7 +2476,7 @@ export default function PublicPayClient({
                                 </div>
                                 <div>
                                     <h3 id="unverified-merchant-title" className="text-base font-bold text-[#111827] uppercase tracking-wider">Unverified Merchant</h3>
-                                    <p className="text-[10px] text-black/50 uppercase tracking-widest font-mono">Security Advisory</p>
+                                    <p className="text-[10px] text-black/60 uppercase tracking-widest font-mono">Security Advisory</p>
                                 </div>
                             </div>
 

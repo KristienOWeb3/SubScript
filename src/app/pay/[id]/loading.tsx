@@ -18,7 +18,7 @@ export default function PayLoading() {
                     <h1 className="text-2xl font-extrabold text-[#111827] uppercase tracking-wider">
                         SubScript <span className="font-serif italic lowercase font-normal text-[#2775CA]">checkout</span>
                     </h1>
-                    <p className="mt-1 text-xs font-bold uppercase tracking-widest text-[#2775CA]/50">Loading</p>
+                    <p className="mt-1 text-xs font-bold uppercase tracking-widest text-[#1f62ab]/70">Loading</p>
                 </div>
                 <CheckoutSkeleton />
             </div>
