@@ -267,10 +267,19 @@ const looksLikeWalletAddress = (value: string | null | undefined) => {
   return typeof value === "string" && /^0x[a-fA-F0-9]{40}$/.test(value.trim());
 };
 
-const formatPeerDisplayName = (name: string | null | undefined, _address: string | null) => {
+/* An alias-less peer used to fall through to accountDisplayName(null), which is the constant
+   "SubScript account" — so three contacts without a registered DNS name all rendered as the same
+   string in the inbox and could not be told apart. The shortened address is the only identifier
+   that is definitely present and definitely distinct, and it is already how the sidebar and the
+   send flow label an alias-less account. The generic label is kept for the case where there is no
+   address either. */
+const formatPeerDisplayName = (name: string | null | undefined, address: string | null) => {
   const cleanedName = name?.trim();
-  if (!cleanedName || looksLikeWalletAddress(cleanedName)) return accountDisplayName(null);
-  return accountDisplayName(cleanedName);
+  if (cleanedName && !looksLikeWalletAddress(cleanedName)) {
+    const display = accountDisplayName(cleanedName, "");
+    if (display) return display;
+  }
+  return formatAddress(address) || accountDisplayName(null);
 };
 
 const txHashPattern = /0x[a-fA-F0-9]{64}/g;
@@ -2787,15 +2796,21 @@ export default function UserDashboard() {
     ? dmThreads.find((t) => t.peerAddress.toLowerCase() === selectedDmPeer)
     : null;
   const activeThreadLabel = selectedDmPeer ? formatPeerDisplayName(activeThread?.peerName, selectedDmPeer) : "";
+  /* The third clause here used to test activeThreadLabel for a .hq/.biz suffix, which could never
+     match: peerName arrives from /api/user/dms already run through accountDisplayName, and
+     titleCaseAlias strips /\.(?:sub|hq|biz)$/ — so the suffix is gone server-side and the raw
+     alias never reaches the client at all. A business peer with no ENTERPRISE role row and no
+     subscription therefore fell through as a personal contact and got offered Block and Send
+     Funds, which is exactly what the note below says must not happen. peerRole is the real signal
+     and is already first in the chain. */
   const isActiveDmMerchant = selectedDmPeer
     ? activeThread?.peerRole === "ENTERPRISE" ||
-      subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) ||
-      (activeThreadLabel.endsWith(".hq") || activeThreadLabel.endsWith(".biz"))
+      subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase())
     : false;
   /* Kept strictly separate from isActiveDmMerchant above. That flag answers "is this
      counterparty a business?" and correctly drives whether Send Funds appears — you pay a
      business through its payment link, not by pushing USDC at it. It is NOT a trust signal: it
-     fires on an alias suffix or on merely having a subscription. The verification tick reads
+     fires on an account role or on merely having a subscription. The verification tick reads
      merchants.verified, server-reported, and nothing else. */
   const isActiveDmMerchantVerified = activeThread?.peerVerified === true;
   const activeThreadSubscription = selectedDmPeer ? getActiveSubscriptionForMerchant(selectedDmPeer) : null;
@@ -4322,10 +4337,17 @@ export default function UserDashboard() {
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                   <SectionTitle title="Batch Payouts" subtitle="Pay many recipients in one run, or send to just one." />
 
+                  {/* Blue rather than the charcoal this used to be. #353935 sits within a couple of
+                      shades of the dark canvas (#17181a), so the button read as a label instead of a
+                      control. #2775CA with cream is the page's own primary-action pairing — the same
+                      one Copy Link uses — and neither token is rewritten by the light or the dark
+                      layer, so it holds its contrast in both themes without new CSS. Lime was the
+                      other candidate and is wrong here: the light layer repaints bg-[#ccff00]
+                      charcoal, which would have put dark text on a dark fill in light mode. */}
                   <button
                     type="button"
                     onClick={() => setSendSingleModalOpen(true)}
-                    className="flex w-full sm:w-auto shrink-0 items-center justify-center gap-2 rounded-2xl border border-[#353935] bg-[#353935] px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-[#FFFFF0] transition hover:bg-black shadow-sm"
+                    className="flex w-full sm:w-auto shrink-0 items-center justify-center gap-2 rounded-2xl border border-[#2775CA] bg-[#2775CA] px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-[#FFFFF0] shadow-sm transition hover:bg-[#1f62ab] active:scale-[0.98]"
                   >
                     <Send className="h-3.5 w-3.5" /> Single Send
                   </button>

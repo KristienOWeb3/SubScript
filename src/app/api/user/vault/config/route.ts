@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
-import { accountDisplayName, merchantDisplayName } from "@/lib/identityDisplay";
+import { merchantDisplayName } from "@/lib/identityDisplay";
 import { remainingMicros } from "@/lib/vault/autoTopUp";
 
 export async function GET(request: Request) {
@@ -83,17 +83,50 @@ export async function GET(request: Request) {
                 orderBy: { updatedAt: "desc" }
             });
 
-            // Resolve aliases for customer addresses
+            /* Merchant view: amounts, not identities.
+             *
+             * This branch used to return the customer's wallet address and their registered alias,
+             * and the dashboard printed the address in full. That is the same leak already closed
+             * for /api/merchant/subscriptions and /api/payment-links, and it is closed the same way
+             * — here at the boundary, because stripping it client-side would still have shipped the
+             * address to the merchant's browser.
+             *
+             * What replaces it: an opaque per-deposit reference, plus the email the customer typed
+             * into THIS merchant's own checkout when raising an invoice. That email is the
+             * merchant's own record rather than something captured from the customer, which is why
+             * payer_email survived the earlier pass. Deposits from a customer who never volunteered
+             * one stay anonymous — there is deliberately no fallback to the account email. */
             const uniqueUserAddresses = Array.from(new Set(vaults.map(v => v.userAddress.toLowerCase())));
-            const aliases = await prisma.addressAlias.findMany({
-                where: { address: { in: uniqueUserAddresses } }
-            });
-            const aliasMap = new Map(aliases.map(a => [a.address.toLowerCase(), a.alias]));
+            const volunteeredEmails = uniqueUserAddresses.length
+                ? await prisma.paymentLinkPayment.findMany({
+                    where: {
+                        merchantAddress: normalizedUser,
+                        payerAddress: { in: uniqueUserAddresses },
+                        paymentLink: { payerEmail: { not: null } },
+                    },
+                    orderBy: { createdAt: "desc" },
+                    select: {
+                        payerAddress: true,
+                        paymentLink: { select: { payerEmail: true } },
+                    },
+                })
+                : [];
+
+            /* Rows arrive newest-first, so the first hit per payer is the most recent email
+               the customer gave this merchant. */
+            const emailByPayer = new Map<string, string>();
+            for (const payment of volunteeredEmails) {
+                const payer = payment.payerAddress.toLowerCase();
+                const email = payment.paymentLink?.payerEmail;
+                if (email && !emailByPayer.has(payer)) emailByPayer.set(payer, email);
+            }
 
             const formattedVaults = vaults.map(v => ({
                 id: v.id,
-                userAddress: v.userAddress,
-                userName: accountDisplayName(aliasMap.get(v.userAddress.toLowerCase())),
+                /* Enough to match a row against a vault.usage_recorded webhook without naming
+                   anyone. Stable, because it is derived from the vault's own id. */
+                reference: `Deposit #${v.id.slice(0, 8)}`,
+                payerEmail: emailByPayer.get(v.userAddress.toLowerCase()) || null,
                 merchantAddress: v.merchantAddress,
                 balanceUsdc: v.balanceUsdc.toString(),
                 commitUsdc: v.commitUsdc.toString(),
