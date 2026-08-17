@@ -24,7 +24,14 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
         .eq("event_id", eventId)
         .neq("status", "SUCCESS");
     if (error) throw new Error(`Failed to load webhook outbox: ${error.message}`);
-    if (!deliveries?.length) return { delivered: 0 };
+    /* A miss is normal for a merchant with no endpoints, but it is also what a wrong event id looks
+       like — and that silence is exactly how an inline flush naming `evt_payment_<uuid>` while the
+       recorder wrote `evt_<sha256>` went unnoticed while every affected webhook waited for the
+       15-minute reconcile pass. Debug level so a no-endpoint merchant does not spam the log. */
+    if (!deliveries?.length) {
+        console.debug(`[webhook-outbox] no pending deliveries for event ${eventId}`);
+        return { delivered: 0 };
+    }
 
     let delivered = 0;
     for (const delivery of deliveries) {
