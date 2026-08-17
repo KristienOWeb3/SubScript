@@ -258,8 +258,25 @@ export default function UserTransactionsPage() {
       .map((m) => {
         const isWithdrawal = m.messageType === "WITHDRAWAL" || m.messageType === "WITHDRAW";
         const isPeerTransfer = m.messageType === "PEER_TRANSFER" || m.messageType === "PEER_PAYMENT";
-        const incoming = m.receiverAddress.toLowerCase() === userWallet?.toLowerCase() && !isWithdrawal;
+        /* A receipt is not a payment TO you.
+         *
+         * DEBIT_SUCCESS / PAYMENT_SUCCESS are receipts the MERCHANT sends the payer after a
+         * checkout settles (see paymentLinkVerificationWorker: sender_address = merchant,
+         * receiver_address = payer). Reading direction off the DM envelope therefore made the
+         * viewer the receiver and rendered a payment they had just MADE as an incoming +$1.00
+         * credit, with the counterparty resolved to the wrong side of the row.
+         *
+         * These types are always money leaving the viewer, and the counterparty is always the DM
+         * sender — the merchant. Peer transfers keep envelope-based direction, because there the
+         * envelope genuinely encodes who paid whom. */
+        const isSettlementReceipt = m.messageType === "DEBIT_SUCCESS" || m.messageType === "PAYMENT_SUCCESS";
+        const incoming = isSettlementReceipt
+          ? false
+          : m.receiverAddress.toLowerCase() === userWallet?.toLowerCase() && !isWithdrawal;
         const sign = incoming ? "+" : "-";
+        /* Whose name belongs on the row: the other party. For a receipt that is the sender even
+           though the viewer is also the receiver, which the incoming flag alone can't express. */
+        const counterpartyIsSender = isSettlementReceipt || incoming;
 
         let kind: "one-time" | "transfers" | "withdrawals" = "one-time";
         if (isWithdrawal) kind = "withdrawals";
@@ -273,10 +290,10 @@ export default function UserTransactionsPage() {
           kind,
           name: isWithdrawal
             ? "Sent from balance to wallet"
-            : incoming
-            ? (m.senderName || "Sender")
+            : counterpartyIsSender
+            ? (m.senderName || "Merchant")
             : (m.receiverName || "Recipient"),
-          pic: incoming ? m.senderProfilePic : m.receiverProfilePic,
+          pic: counterpartyIsSender ? m.senderProfilePic : m.receiverProfilePic,
           detail: isWithdrawal
             ? "SubScript Balance Withdrawal"
             : m.title || m.description || humanStatus(m.messageType),

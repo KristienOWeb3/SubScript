@@ -1174,6 +1174,31 @@ body {
   background-color: var(--dk-shell) !important;
 }
 
+/* Translucent creams. Unlike the brand accents, a partly-transparent cream over a dark canvas is
+   still a light panel, so these have to move too — the vault's "Cycle started" block is
+   bg-[#FFFFF0]/80 and sat white under light ink, which is the white-on-white it produced. Listed
+   as exact tokens (rather than a bg-[#FFFFF0]/ substring) so a future hover: variant cannot claim
+   the resting state; verified none exists today. */
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#FFFFF0]/90" i],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#FFFFF0]/80" i],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#FFFFF0]/55" i],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#FFFFF0]/45" i],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#FFFFF0]/35" i],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#FFFFF0]/90" i],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#FFFFF0]/80" i],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#FFFFF0]/55" i],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#FFFFF0]/45" i],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#FFFFF0]/35" i] {
+  background-color: var(--dk-card) !important;
+}
+
+/* The sticky blur strip behind the mobile header. Its light rule pins a 96% cream with
+   !important and no theme gate, so in dark mode a bright band sat across the top of the
+   dashboard over dark content. Mirrors that selector's shape to win on specificity. */
+[data-theme="dark"] .user-dashboard-content > [aria-hidden="true"][class*="top-0"] {
+  background-color: rgb(17 17 17 / 92%) !important;
+}
+
 [data-theme="dark"] .merchant-dashboard-root [class~="bg-[#D4E3E8]" i] {
   background-color: var(--dk-canvas) !important;
 }
