@@ -42,8 +42,21 @@ type UsageResult =
        friend "your allowance is used up" rather than "the account is out of funds". */
     | { kind: "share_blocked"; reason: string; remainingUsdc: bigint | null }
     | { kind: "cancelled" }
+    /* vaultId and userAddress were both sent and point at different accounts. Decided against the
+       locked row rather than with a second read, so it cannot go stale between check and charge. */
+    | { kind: "selector_mismatch" }
     | { kind: "exhausted"; vault: VaultUsageRow; remaining: bigint; notification: DmPushInput | null }
-    | { kind: "accrued"; vault: VaultUsageRow; exhausted: boolean; notification: DmPushInput | null; thresholdNotification: DmPushInput | null };
+    /* userAddress is read off the locked row rather than echoed from the request, because the
+       vaultId path never receives one. The webhook payload still carries it — a merchant's own
+       server is the one channel where identifying the customer is the documented contract. */
+    | {
+        kind: "accrued";
+        vault: VaultUsageRow;
+        userAddress: string;
+        exhausted: boolean;
+        notification: DmPushInput | null;
+        thresholdNotification: DmPushInput | null;
+    };
 
 /* Balance-usage thresholds (bps) that trigger a heads-up DM once each per cycle. 100% is covered
    separately by COMMIT_EXHAUSTED, so it's intentionally not listed here. */
@@ -120,7 +133,7 @@ async function insertThresholdNotification(
 }
 
 async function accrueUsageAtomically(
-    userAddress: string,
+    userAddress: string | null,
     merchantAddress: string,
     amountMicros: bigint,
     note: string | null,
@@ -128,24 +141,56 @@ async function accrueUsageAtomically(
     /* Set when the merchant reported against a shared Commit ID. The friend's cap is debited in
        the same transaction as the accrual, so a cap can't be overshot by concurrent reports. */
     shareCommitId: string | null,
+    /* Set when the caller selected the vault by its own id instead of by customer address — the
+       path the merchant dashboard uses, so that it can bill a deposit without ever being told
+       whose it is. Always scoped to merchantAddress below, so an id belonging to another merchant
+       simply finds no row. */
+    vaultId: string | null,
 ): Promise<UsageResult> {
     return withPgClient(async (client) => {
         await client.query("begin");
         try {
-            const selected = await client.query(
-                `select id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active, usage_notified_bps,
-                        environment, settlement_chain_id, cancel_requested_at
-                   from metered_vaults
-                  where user_address = $1
-                    and merchant_address = $2
-                    and environment = $3
-                    and settlement_chain_id = $4
-                  for update`,
-                [userAddress, merchantAddress, "TEST", ARC_TESTNET_CHAIN_ID],
-            );
+            /* Two selectors, one lock. Both filter on merchant_address, environment and chain, so
+               the vaultId path is no less scoped than the address path — it just identifies the row
+               by something opaque. */
+            const selected = vaultId
+                ? await client.query(
+                    `select id, user_address, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active, usage_notified_bps,
+                            environment, settlement_chain_id, cancel_requested_at
+                       from metered_vaults
+                      where id = $1
+                        and merchant_address = $2
+                        and environment = $3
+                        and settlement_chain_id = $4
+                      for update`,
+                    [vaultId, merchantAddress, "TEST", ARC_TESTNET_CHAIN_ID],
+                )
+                : await client.query(
+                    `select id, user_address, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active, usage_notified_bps,
+                            environment, settlement_chain_id, cancel_requested_at
+                       from metered_vaults
+                      where user_address = $1
+                        and merchant_address = $2
+                        and environment = $3
+                        and settlement_chain_id = $4
+                      for update`,
+                    [userAddress, merchantAddress, "TEST", ARC_TESTNET_CHAIN_ID],
+                );
             if (selected.rowCount === 0) {
                 await client.query("commit");
                 return { kind: "missing" } as const;
+            }
+
+            /* Downstream needs the customer address for the usage-report ledger row and for the
+               DM notifications, so read it off the locked row rather than requiring the caller to
+               supply it. On the address path this is the same value that was passed in. */
+            const resolvedUserAddress = String(selected.rows[0].user_address);
+
+            /* Caller sent both selectors and they disagree. Refuse rather than pick one — billing
+               the wrong customer is the failure this whole check exists to prevent. */
+            if (vaultId && userAddress && userAddress.toLowerCase() !== resolvedUserAddress.toLowerCase()) {
+                await client.query("commit");
+                return { kind: "selector_mismatch" } as const;
             }
 
             /* A TEST key may only mutate a TEST vault settling on Arc testnet. A future
@@ -167,12 +212,12 @@ async function accrueUsageAtomically(
                    from metered_usage_reports
                   where request_id = $1 and merchant_address = $2 and user_address = $3
                   limit 1`,
-                [requestId, merchantAddress, userAddress],
+                [requestId, merchantAddress, resolvedUserAddress],
             );
             if (existingReport.rowCount > 0) {
                 await client.query("commit");
                 if (BigInt(existingReport.rows[0].amount_usdc) !== amountMicros) return { kind: "idempotency_conflict" } as const;
-                return { kind: "accrued", vault, exhausted: accrued >= balance, notification: null, thresholdNotification: null } as const;
+                return { kind: "accrued", vault, userAddress: resolvedUserAddress, exhausted: accrued >= balance, notification: null, thresholdNotification: null } as const;
             }
 
             /* The user cancelled this service: freeze accrual so the keeper's end-of-cycle draw
@@ -276,7 +321,7 @@ async function accrueUsageAtomically(
                     const notification = await insertExhaustionNotification(
                         client,
                         merchantAddress,
-                        userAddress,
+                        resolvedUserAddress,
                         commit,
                     );
                     await client.query("commit");
@@ -314,10 +359,10 @@ async function accrueUsageAtomically(
                     `insert into metered_usage_reports
                          (vault_id, user_address, merchant_address, amount_usdc, accrued_after_usdc, balance_usdc, note, request_id, environment, commit_id)
                      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-                    [vault.id, userAddress, merchantAddress, accruableAmount.toString(), actualNextAccrued.toString(), balance.toString(), note, requestId, vaultEnvironment, shareCommitId],
+                    [vault.id, resolvedUserAddress, merchantAddress, accruableAmount.toString(), actualNextAccrued.toString(), balance.toString(), note, requestId, vaultEnvironment, shareCommitId],
                 );
 
-                const notification = await insertExhaustionNotification(client, merchantAddress, userAddress, commit);
+                const notification = await insertExhaustionNotification(client, merchantAddress, resolvedUserAddress, commit);
 
                 await client.query("commit");
                 return {
@@ -354,12 +399,12 @@ async function accrueUsageAtomically(
                 `insert into metered_usage_reports
                      (vault_id, user_address, merchant_address, amount_usdc, accrued_after_usdc, balance_usdc, note, request_id, environment, commit_id)
                  values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-                [vault.id, userAddress, merchantAddress, amountMicros.toString(), nextAccrued.toString(), balance.toString(), note, requestId, vaultEnvironment, shareCommitId],
+                [vault.id, resolvedUserAddress, merchantAddress, amountMicros.toString(), nextAccrued.toString(), balance.toString(), note, requestId, vaultEnvironment, shareCommitId],
             );
 
             const exhausted = nextAccrued === balance;
             const notification = exhausted
-                ? await insertExhaustionNotification(client, merchantAddress, userAddress, commit)
+                ? await insertExhaustionNotification(client, merchantAddress, resolvedUserAddress, commit)
                 : null;
 
             /* Fire a one-time heads-up when a 50%/80% band is first crossed this cycle. Skip when the
@@ -372,7 +417,7 @@ async function accrueUsageAtomically(
                 const band = [...USAGE_THRESHOLD_BANDS].reverse().find((b) => b <= newBps && b > alreadyNotified);
                 if (band) {
                     await client.query(`update metered_vaults set usage_notified_bps = $1 where id = $2`, [band, vault.id]);
-                    thresholdNotification = await insertThresholdNotification(client, merchantAddress, userAddress, band, nextAccrued, balance);
+                    thresholdNotification = await insertThresholdNotification(client, merchantAddress, resolvedUserAddress, band, nextAccrued, balance);
                 }
             }
 
@@ -380,6 +425,7 @@ async function accrueUsageAtomically(
             return {
                 kind: "accrued",
                 vault: updated.rows[0] as VaultUsageRow,
+                userAddress: resolvedUserAddress,
                 exhausted,
                 notification,
                 thresholdNotification,
@@ -447,7 +493,7 @@ export async function POST(request: Request) {
         }
 
         const sanitizedBody = sanitizeInput(body);
-        const { userAddress, amountUsdc, amountUsdcMicros, note, commitId } = sanitizedBody;
+        const { userAddress, amountUsdc, amountUsdcMicros, note, commitId, vaultId } = sanitizedBody;
 
         /* A shared Commit ID is the friend's whole credential: they have no wallet and no account,
            so it stands in for `userAddress` and resolves to the primary's escrow. Scoped to this
@@ -466,7 +512,27 @@ export async function POST(request: Request) {
             }
         }
 
-        if (!resolvedShare && (typeof userAddress !== "string" || !/^0x[a-fA-F0-9]{40}$/.test(userAddress))) {
+        /* Third selector, additive: bill a deposit by the vault's own id. This is what the merchant
+           dashboard uses, because its Active Customer Deposits list is no longer told whose deposit
+           each row is — see /api/user/vault/config. It carries no new authority: the lookup is
+           filtered on the authenticated merchant, so an id belonging to someone else's vault finds
+           no row and comes back as the same NO_VAULT 404 a wrong address would.
+           userAddress and commitId are unchanged for server-side integrators. */
+        let normalizedVaultId: string | null = null;
+        if (vaultId !== undefined && vaultId !== null && vaultId !== "") {
+            if (typeof vaultId !== "string" || !/^[0-9a-fA-F-]{36}$/.test(vaultId)) {
+                return NextResponse.json({ error: "Invalid vaultId" }, { status: 400 });
+            }
+            normalizedVaultId = vaultId.toLowerCase();
+        }
+
+        /* A vaultId or a commitId each stand in for the address, so only demand one when neither
+           is present. */
+        if (
+            !resolvedShare
+            && !normalizedVaultId
+            && (typeof userAddress !== "string" || !/^0x[a-fA-F0-9]{40}$/.test(userAddress))
+        ) {
             return NextResponse.json({ error: "Invalid user address" }, { status: 400 });
         }
         /* If the merchant sends both, they must agree — otherwise the request is ambiguous about
@@ -481,6 +547,15 @@ export async function POST(request: Request) {
                 error: "userAddress does not match the account that owns this commit ID.",
                 code: "COMMIT_ID_MISMATCH",
             }, { status: 409 });
+        }
+        /* Same rule for vaultId. Two selectors that disagree is an ambiguous request, and the vault
+           row is the arbiter — so it is checked inside the transaction, against the locked row,
+           rather than with a second read here that could go stale. */
+        if (normalizedVaultId && resolvedShare) {
+            return NextResponse.json({
+                error: "Send either vaultId or commitId, not both.",
+                code: "AMBIGUOUS_VAULT_SELECTOR",
+            }, { status: 400 });
         }
 
         /* Optional merchant-supplied line-item label for the user's ledger (e.g. "1.2M API calls"). */
@@ -508,9 +583,13 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid consumption amount" }, { status: 400 });
         }
 
+        /* Null only on the vaultId path, where the caller is not expected to know the address —
+           accrueUsageAtomically reads it off the locked row and hands it back. */
         const normalizedUser = resolvedShare
             ? resolvedShare.userAddress.toLowerCase()
-            : (userAddress as string).toLowerCase();
+            : typeof userAddress === "string" && userAddress
+                ? userAddress.toLowerCase()
+                : null;
         const requestIdHeader = request.headers.get("x-request-id")?.trim();
         if (requestIdHeader && !/^[A-Za-z0-9._:-]{8,128}$/.test(requestIdHeader)) {
             return NextResponse.json({ error: "Invalid x-request-id" }, { status: 400 });
@@ -526,7 +605,15 @@ export async function POST(request: Request) {
             /* Root commits carry no cap of their own — the primary spending their own escrow is
                gated by the escrow balance alone, exactly as before this feature. */
             resolvedShare?.commitId ?? null,
+            normalizedVaultId,
         );
+
+        if (result.kind === "selector_mismatch") {
+            return NextResponse.json({
+                error: "userAddress does not match the account that owns this vaultId.",
+                code: "VAULT_ID_MISMATCH",
+            }, { status: 409 });
+        }
 
         if (result.kind === "share_blocked") {
             return NextResponse.json({
@@ -593,7 +680,7 @@ export async function POST(request: Request) {
             resourceId: result.vault.id,
             resourceVersion: 1,
             data: {
-                user_address: normalizedUser,
+                user_address: result.userAddress,
                 merchant_address: merchantAddress,
                 amount_usdc_micros: amountMicros.toString(),
                 accrued_usage_usdc_micros: result.vault.accrued_usage_usdc,
@@ -613,7 +700,7 @@ export async function POST(request: Request) {
                 resourceId: result.vault.id,
                 resourceVersion: 1,
                 data: {
-                    user_address: normalizedUser,
+                    user_address: result.userAddress,
                     merchant_address: merchantAddress,
                     accrued_usage_usdc_micros: result.vault.accrued_usage_usdc,
                     balance_usdc_micros: result.vault.balance_usdc,

@@ -432,10 +432,24 @@ body {
   animation: liquid-pulse 2.4s infinite ease-in-out;
 }
 
-.dark .subscript-skeleton,
-[data-theme="dark"] .subscript-skeleton,
+/* The merchant workspace is a cream surface, so its placeholders darken. */
 .merchant-dashboard-workspace .subscript-skeleton {
   background-color: rgba(8, 40, 36, 0.09);
+}
+
+/* Dark mode lightens instead. These two selectors used to be grouped with the merchant rule
+   above and share its near-black tint — which is a 9% black bar on a dark canvas, i.e. nothing
+   at all. The DARK THEME layer at the foot of this file re-tints skeletons inside the three
+   dashboard shells, so the bug only showed up outside them; this makes the base value correct
+   everywhere so the layer is a refinement rather than the only thing holding it up. */
+.dark .subscript-skeleton,
+[data-theme="dark"] .subscript-skeleton {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark .subscript-skeleton--faint,
+[data-theme="dark"] .subscript-skeleton--faint {
+  background-color: rgba(255, 255, 255, 0.06);
 }
 
 .subscript-skeleton::after,
@@ -1126,9 +1140,23 @@ body {
   --dk-field: #1a1b1e;
 }
 
-/* ------------------------------------------------------------------- shells */
+/* ------------------------------------------------------------------- shells
+   Two things about the selectors in this section.
+ *
+   The `i` flag: attribute matching is case-sensitive by default, so `bg-[#0C3933]` silently missed
+   the `bg-[#0c3933]` the source actually writes. Colour hexes get written both ways across this
+   codebase and the cascade should not depend on which.
+ *
+   `~=` rather than `*=`: `~=` matches a whole space-separated class, `*=` matches any substring of
+   the class attribute — and `bg-[#D4E3E8]` is a substring of `hover:bg-[#D4E3E8]`. With `*=` a
+   button whose *hover* colour happened to be mapped here got that mapping painted onto its resting
+   state, and hovering then did nothing because the base rule carried !important. There are 127
+   hover-variant uses of tokens in this layer, so that was not a corner case. Verified first that no
+   mapped token is ever written with a responsive prefix, which is the one thing `~=` would miss.
+   Hover states are handled explicitly further down instead. */
 [data-theme="dark"] .merchant-dashboard-root,
-[data-theme="dark"] .user-dashboard-redesign {
+[data-theme="dark"] .user-dashboard-redesign,
+[data-theme="dark"] .user-dashboard-loading {
   background-color: var(--dk-shell) !important;
   color: var(--dk-ink) !important;
   color-scheme: dark !important;
@@ -1140,42 +1168,149 @@ body {
   color: var(--dk-ink) !important;
 }
 
-[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#FFFFF0]"],
-[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#fffff0]"],
-[data-theme="dark"] .user-dashboard-redesign [class*="bg-[#FFFFF0]"],
-[data-theme="dark"] .user-dashboard-redesign [class*="bg-[#fffff0]"] {
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#FFFFF0]" i],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#FFFFF0]" i],
+[data-theme="dark"] .user-dashboard-loading [class~="bg-[#FFFFF0]" i] {
   background-color: var(--dk-shell) !important;
 }
 
-[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#D4E3E8]"] {
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#D4E3E8]" i] {
   background-color: var(--dk-canvas) !important;
 }
 
-[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#C6D8DE]"] {
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#C6D8DE]" i] {
   background-color: var(--dk-raised) !important;
 }
 
+/* The light-blue action fills in the user tree: the vault carousel's Refresh Usage and
+   Commit to a service buttons, and the "The Rest" chip. They are light chrome, not brand
+   accents, so they move to a raised dark surface and let their text lighten with the
+   foreground rules below. Left in place they were a light fill under light ink. */
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#D5E3EE]" i],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#c2d7e6]" i] {
+  background-color: var(--dk-raised) !important;
+  border-color: var(--dk-line-2) !important;
+}
+
+/* The referral link readout is a div rather than an input, so the form-field rules further
+   down never reached it — a near-white box under light ink. Same treatment as a field,
+   because that is what it is. */
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#f8fafc]" i] {
+  background-color: var(--dk-field) !important;
+  border-color: var(--dk-line-2) !important;
+}
+
+/* bg-white splits in two here, and lumping them together was wrong in both directions.
+ *
+   The near-opaque values are light panels the redesign added — those become the dark card. The low
+   alphas are dark-native tints from the original design: a faint white lift on a dark surface is
+   already exactly right, and painting them as an opaque card flattened the whole card hierarchy
+   into one tone. They still need a rule, because the light layer above repaints them cream and
+   would otherwise win on specificity over Tailwind's own utility.
+ *
+   Token-exact for the same reason as the fills above: there are 25 `hover:bg-white/10` uses, and a
+   substring match gave every one of them a permanent base panel. */
 [data-theme="dark"] .merchant-dashboard-root [class~="bg-white"],
-[data-theme="dark"] .merchant-dashboard-root [class*="bg-white/"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/95"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/90"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/80"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/70"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/60"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/40"],
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-white"],
-[data-theme="dark"] .user-dashboard-redesign [class*="bg-white/"] {
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/95"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/90"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/80"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/70"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/60"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/40"] {
   background-color: var(--dk-card) !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/20"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/15"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/10"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/5"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/[0.08]"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/[0.06]"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/[0.05]"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/[0.04]"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/[0.03]"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/[0.02]"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/[0.01]"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/20"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/15"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/10"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/5"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/[0.08]"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/[0.06]"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/[0.05]"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/[0.04]"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/[0.03]"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/[0.02]"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/[0.01]"] {
+  background-color: rgba(255, 255, 255, 0.06) !important;
 }
 
 /* The selected nav row reads as selected by sitting lighter than the sidebar here,
    rather than darker as it does in light mode. Its text is already white. */
-[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#082824]"] {
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#082824]" i] {
   background-color: var(--dk-selected) !important;
 }
 
-[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#0C3933]"] {
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#0C3933]" i] {
   background-color: var(--dk-raised) !important;
 }
 
+/* -------------------------------------------------------------- hover states
+   Now that the base fills match whole tokens only, a mapped hover colour falls through to its
+   literal Tailwind value. For the brand accents that is right — #00d2b4, #ccff00, #2775CA and the
+   blue ramp are all still legible over a dark surface, and the accent guard below keeps dark text
+   on the light ones.
+ *
+   These are the ones where it is not right: light chrome (#D4E3E8, #f8fafc …) would flash a pale
+   panel over a dark canvas, and the dark chrome (#082824, #353935) is so close to the canvas that
+   the hover reads as no feedback at all. Both become the same subtle lift. */
+[data-theme="dark"] .merchant-dashboard-root [class*="hover:bg-[#D4E3E8]" i]:hover,
+[data-theme="dark"] .merchant-dashboard-root [class*="hover:bg-[#C6D8DE]" i]:hover,
+[data-theme="dark"] .merchant-dashboard-root [class*="hover:bg-[#082824]" i]:hover,
+[data-theme="dark"] .merchant-dashboard-root [class*="hover:bg-[#0C3933]" i]:hover,
+[data-theme="dark"] .merchant-dashboard-root [class*="hover:bg-[#FFFFF0]" i]:hover,
+[data-theme="dark"] .user-dashboard-redesign [class*="hover:bg-[#D4E3E8]" i]:hover,
+[data-theme="dark"] .user-dashboard-redesign [class*="hover:bg-[#f8fafc]" i]:hover,
+[data-theme="dark"] .user-dashboard-redesign [class*="hover:bg-[#f1f5f9]" i]:hover,
+[data-theme="dark"] .user-dashboard-redesign [class*="hover:bg-[#c2d7e6]" i]:hover,
+[data-theme="dark"] .user-dashboard-redesign [class*="hover:bg-[#353935]" i]:hover,
+[data-theme="dark"] .user-dashboard-redesign [class*="hover:bg-[#FFFFF0]" i]:hover {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+/* The alpha tints get the same treatment. A hover:bg-black/5 is a darkening designed for a cream
+   card; over a dark canvas the equivalent is a lightening, and the literal value would be no
+   visible feedback at all. */
+[data-theme="dark"] .merchant-dashboard-root [class*="hover:bg-black/" i]:hover,
+[data-theme="dark"] .merchant-dashboard-root [class*="hover:bg-white/" i]:hover,
+[data-theme="dark"] .user-dashboard-redesign [class*="hover:bg-black/" i]:hover,
+[data-theme="dark"] .user-dashboard-redesign [class*="hover:bg-white/" i]:hover {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+/* Selected rows keep their own hover so the group-hover fill does not lift a row that is
+   already the selected one. */
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#082824]" i]:hover {
+  background-color: var(--dk-selected) !important;
+}
+
 /* --------------------------------------------------------------- foreground */
+/* text-[#111827] is the user dashboard's hardcoded near-black ink — 40 uses, including
+   every SectionTitle heading, which is why "Manage Commit" and its siblings rendered
+   dark-on-dark. It is the same intent as text-black, so it joins that group. Excluded
+   inside the Appearance swatches, which are pictures of the themes and keep their literal
+   colours (see the theme-previews block at the foot of this layer). */
 [data-theme="dark"] .merchant-dashboard-root [class~="text-black"],
-[data-theme="dark"] .merchant-dashboard-root [class*="text-[#082824]"],
-[data-theme="dark"] .user-dashboard-redesign [class~="text-black"] {
+[data-theme="dark"] .merchant-dashboard-root [class*="text-[#082824]" i],
+[data-theme="dark"] .user-dashboard-redesign [class~="text-black"],
+[data-theme="dark"] .user-dashboard-redesign [class*="text-[#111827]" i] {
   color: var(--dk-ink) !important;
 }
 
@@ -1291,6 +1426,37 @@ body {
   background-color: rgba(0, 0, 0, 0.72) !important;
 }
 
+/* The merchant tree needs the opposite treatment for the same tokens, because its light layer
+   repaints bg-black/30../60 *cream* (see the .merchant-dashboard-workspace group above) rather
+   than tinting them blue. Left unmapped, a bg-black/60 came out as a cream surface on a dark
+   canvas — which is why the mobile loading skeleton's bottom nav pill was the one light thing on
+   screen, and why the API-keys, offramp and checkout bg-black/40 panels stayed light too.
+
+   Two exclusions, both cases where the token is not a surface:
+
+   `inset-0` is how every scrim in this tree is written — the session-alert overlay (bg-black/85,
+   already out of range), the plan-QR modal (bg-black/60), the card busy-overlay (bg-black/40) and
+   the mobile More sheet (bg-black/25). Lightening those to 6% white would leave the page showing
+   straight through an overlay that exists to dim it.
+
+   The toggle knobs are a bg-black/30 dot sitting on a bg-black/10 track, and bg-black/10 is
+   already in the low-alpha group above — so sweeping the knob to the same 6% white would make the
+   switch a featureless pill. They get a solid knob below instead. */
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/20"]:not([class*="inset-0"]),
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/25"]:not([class*="inset-0"]),
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/30"]:not([class*="inset-0"]):not([class~="pointer-events-none"]),
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/35"]:not([class*="inset-0"]),
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/40"]:not([class*="inset-0"]),
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/50"]:not([class*="inset-0"]),
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/60"]:not([class*="inset-0"]) {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Switch knobs. Solid rather than translucent so the knob still reads against its track. */
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/30"][class~="pointer-events-none"][class~="rounded-full"] {
+  background-color: var(--dk-ink-3) !important;
+}
+
 [data-theme="dark"] .merchant-dashboard-root [class*="border-black/"],
 [data-theme="dark"] .merchant-dashboard-workspace [class*="border-white/"],
 [data-theme="dark"] .user-dashboard-redesign [class*="border-black/"],
@@ -1299,7 +1465,7 @@ body {
   border-color: var(--dk-line) !important;
 }
 
-[data-theme="dark"] .merchant-dashboard-root [class*="border-[#082824]"] {
+[data-theme="dark"] .merchant-dashboard-root [class*="border-[#082824]" i] {
   border-color: var(--dk-line-2) !important;
 }
 
@@ -1323,32 +1489,34 @@ body {
    them has to stay dark. Without this guard the foreground rules above would lighten that text
    into the fill and it would disappear.
 
-   Every selector excludes the translucent variants. `[class*="bg-[#8AB4DB]"]` is a substring
-   match, so it also catches bg-[#8AB4DB]/45 — and a 45% light blue over a dark canvas is a *dark*
-   surface, so forcing dark text onto it would recreate the very black-on-black problem this block
-   exists to prevent. Translucent fills fall through to the light-ink rules above, which is right. */
-[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#8AB4DB]"]:not([class*="bg-[#8AB4DB]/"]),
-[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#8AB4DB]"]:not([class*="bg-[#8AB4DB]/"]) [class~="text-black"],
-[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#8AB4DB]"]:not([class*="bg-[#8AB4DB]/"]) [class*="text-black/"],
-[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#8AB4DB]"]:not([class*="bg-[#8AB4DB]/"]) [class*="text-[#082824]"],
-[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#7AA7D0]"]:not([class*="bg-[#7AA7D0]/"]),
-[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#7AA7D0]"]:not([class*="bg-[#7AA7D0]/"]) [class~="text-black"],
-[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#7AA7D0]"]:not([class*="bg-[#7AA7D0]/"]) [class*="text-black/"],
-[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#7AA7D0]"]:not([class*="bg-[#7AA7D0]/"]) [class*="text-[#082824]"],
-[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#EFE2AC]"]:not([class*="bg-[#EFE2AC]/"]),
-[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#EFE2AC]"]:not([class*="bg-[#EFE2AC]/"]) [class~="text-black"],
-[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#EFE2AC]"]:not([class*="bg-[#EFE2AC]/"]) [class*="text-[#082824]"],
-[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#00d2b4]"]:not([class*="bg-[#00d2b4]/"]),
-[data-theme="dark"] .merchant-dashboard-root [class*="bg-[#00d2b4]"]:not([class*="bg-[#00d2b4]/"]) [class~="text-black"],
-[data-theme="dark"] .user-dashboard-redesign [class*="bg-[#ccff00]"]:not([class*="bg-[#ccff00]/"]),
-[data-theme="dark"] .user-dashboard-redesign [class*="bg-[#ccff00]"]:not([class*="bg-[#ccff00]/"]) [class~="text-black"] {
+   `~=` is what excludes the translucent variants, and it does it more cleanly than the
+   `:not([class*="bg-[#8AB4DB]/"])` chain this used to carry: a 45% light blue over a dark canvas is
+   a *dark* surface, so forcing dark text onto it would recreate the very black-on-black problem
+   this block exists to prevent. Matching whole tokens only means bg-[#8AB4DB]/45 never matches in
+   the first place, and it keeps hover variants from claiming the resting state. */
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#8AB4DB]" i],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#8AB4DB]" i] [class~="text-black"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#8AB4DB]" i] [class*="text-black/"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#8AB4DB]" i] [class~="text-[#082824]" i],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#7AA7D0]" i],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#7AA7D0]" i] [class~="text-black"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#7AA7D0]" i] [class*="text-black/"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#7AA7D0]" i] [class~="text-[#082824]" i],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#EFE2AC]" i],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#EFE2AC]" i] [class~="text-black"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#EFE2AC]" i] [class~="text-[#082824]" i],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#00d2b4]" i],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#00d2b4]" i] [class~="text-black"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#ccff00]" i],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#ccff00]" i] [class~="text-black"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#ccff00]" i] [class~="text-[#111827]" i] {
   color: #111111 !important;
 }
 
 /* Restore the lime fill that the light layer repaints charcoal, now that dark text
    on it is guaranteed by the guard above. */
-[data-theme="dark"] .user-dashboard-content [class*="bg-[#ccff00]"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-[data-theme="dark"] .user-dashboard-redesign [role="dialog"] [class*="bg-[#ccff00]"] {
+[data-theme="dark"] .user-dashboard-content [class~="bg-[#ccff00]" i]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+[data-theme="dark"] .user-dashboard-redesign [role="dialog"] [class~="bg-[#ccff00]" i] {
   background-color: #ccff00 !important;
 }
 
@@ -1472,17 +1640,157 @@ body {
   color: var(--dk-ink);
 }
 
-/* Skeletons: the light layers tune these for cream surfaces. */
+/* Skeletons: the light layers tune these for cream surfaces. The `color` is reset alongside the
+   background because the light rule pins it to #000000 !important — harmless for an empty bar, but
+   it would swallow anything a skeleton ever wrapped. */
 [data-theme="dark"] .merchant-dashboard-workspace .subscript-skeleton,
 [data-theme="dark"] .user-dashboard-redesign .subscript-skeleton,
 [data-theme="dark"] .user-dashboard-loading .subscript-skeleton,
 [data-theme="dark"] .user-dashboard-loading .subscript-skeleton--faint {
   background-color: rgba(255, 255, 255, 0.1) !important;
   border-color: var(--dk-line) !important;
+  color: var(--dk-ink) !important;
+}
+
+[data-theme="dark"] .user-dashboard-redesign .subscript-skeleton--faint,
+[data-theme="dark"] .merchant-dashboard-workspace .subscript-skeleton--faint {
+  background-color: rgba(255, 255, 255, 0.06) !important;
 }
 
 [data-theme="dark"] .user-dashboard-loading [class*="bg-black/"] {
   background-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* -------------------------------------------------- user dashboard loading shell
+   The user dashboard's first paint is a separate tree from the loaded one: it returns early
+   from `loading` into `.user-dashboard-loading` rather than `.user-dashboard-redesign`
+   (src/app/dashboard/user/page.tsx). Every rule in this layer was scoped to the four loaded-shell
+   classes, so the entire loading screen — cream page, cream content pane, charcoal rail, white
+   cards, black hairlines — rendered in light mode no matter what the theme said. That is the
+   "dark mode has no skeleton loader" report: the placeholders themselves were already handled
+   above, but everything they sat on was not.
+
+   The skeleton's own chrome is separate from the shell background because the shell rule at the
+   top of this layer only paints the root element. */
+[data-theme="dark"] .user-dashboard-loading [class~="bg-[#353935]" i] {
+  background-color: var(--dk-card) !important;
+}
+
+[data-theme="dark"] .user-dashboard-loading [class~="bg-white"],
+[data-theme="dark"] .user-dashboard-loading [class*="bg-white/"] {
+  background-color: var(--dk-card) !important;
+}
+
+/* Mirrors the shape of the !important light rules for this shell so it wins on specificity
+   rather than only on source order. */
+[data-theme="dark"] .user-dashboard-loading .liquid-glass,
+[data-theme="dark"] .user-dashboard-loading .dashboard-loading-wallet,
+[data-theme="dark"] .user-dashboard-loading .dashboard-blue-panel {
+  background-color: var(--dk-card) !important;
+}
+
+[data-theme="dark"] .user-dashboard-loading [class*="border-white/"],
+[data-theme="dark"] .user-dashboard-loading [class*="border-black/"] {
+  border-color: var(--dk-line) !important;
+}
+
+[data-theme="dark"] .user-dashboard-loading [class*="divide-white/"] > :not([hidden]) ~ :not([hidden]),
+[data-theme="dark"] .user-dashboard-loading [class*="divide-black/"] > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--dk-line) !important;
+}
+
+/* ------------------------------------------------------- notification popover
+   NotificationBell renders its panel through createPortal into document.body, so it is a
+   sibling of the dashboard shells rather than a descendant — no `.merchant-dashboard-root` or
+   `.user-dashboard-redesign` selector in this layer can reach it, which is why the popup stayed
+   in light mode while everything behind it went dark. data-theme lives on <html>, so these rules
+   are written at the top level instead of being shell-scoped.
+
+   Both dashboards mount the same component, so this is one place rather than two. The accent dot
+   and the unread pill keep their inline colours; the component now derives a readable foreground
+   for the pill and a darkened ink for the "Mark all read" action, because the user accent
+   (#ccff00) is too light to sit on either surface as text. */
+[data-theme="dark"] .notification-panel,
+[data-theme="dark"] .notification-panel-shell {
+  background-color: var(--dk-card) !important;
+  color: var(--dk-ink) !important;
+  border-color: var(--dk-line-2) !important;
+  color-scheme: dark;
+}
+
+[data-theme="dark"] .notification-panel .notification-panel-header {
+  background-color: var(--dk-raised) !important;
+}
+
+[data-theme="dark"] .notification-panel [class*="text-[#111827]" i] {
+  color: var(--dk-ink) !important;
+}
+
+[data-theme="dark"] .notification-panel [class~="text-black"],
+[data-theme="dark"] .notification-panel [class*="text-black/9"],
+[data-theme="dark"] .notification-panel [class*="text-black/8"],
+[data-theme="dark"] .notification-panel [class*="text-black/7"] {
+  color: var(--dk-ink-2) !important;
+}
+
+[data-theme="dark"] .notification-panel [class*="text-black/6"],
+[data-theme="dark"] .notification-panel [class*="text-black/5"] {
+  color: var(--dk-ink-3) !important;
+}
+
+[data-theme="dark"] .notification-panel [class*="text-black/4"],
+[data-theme="dark"] .notification-panel [class*="text-black/3"] {
+  color: var(--dk-ink-4) !important;
+}
+
+[data-theme="dark"] .notification-panel [class*="border-black/"] {
+  border-color: var(--dk-line) !important;
+}
+
+[data-theme="dark"] .notification-panel [class*="divide-black/"] > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--dk-line) !important;
+}
+
+/* Row tints, hover states and the loading bars. All are faint darkenings of a cream surface in
+   light mode, so on the dark card they become faint lightenings.
+
+   These key off explicit hooks on the component rather than matching its Tailwind classes.
+   `[class*="bg-black/"]` looked tidier but it also matches `hover:bg-black/[0.03]`, which would
+   have given every already-read row a permanent tint and erased the only thing distinguishing it
+   from an unread one. */
+[data-theme="dark"] .notification-panel-row[data-unread="true"] {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+[data-theme="dark"] .notification-panel-row[data-unread="false"] {
+  background-color: transparent !important;
+}
+
+[data-theme="dark"] .notification-panel-row:hover {
+  background-color: rgba(255, 255, 255, 0.09) !important;
+}
+
+[data-theme="dark"] .notification-panel-tile {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  border-color: var(--dk-line) !important;
+}
+
+[data-theme="dark"] .notification-panel-tile:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-theme="dark"] .notification-panel-icon-button:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: var(--dk-ink) !important;
+}
+
+[data-theme="dark"] .notification-panel-skeleton {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+  border-color: var(--dk-line) !important;
+}
+
+[data-theme="dark"] .notification-panel-skeleton div {
+  background-color: rgba(255, 255, 255, 0.12) !important;
 }
 
 /* ------------------------------------------------------------ theme previews
@@ -1495,29 +1803,34 @@ body {
   color: unset;
 }
 
-[data-theme="dark"] [data-theme-preview][class*="bg-[#FFFFF0]"],
-[data-theme="dark"] [data-theme-preview] [class*="bg-[#FFFFF0]"] {
+[data-theme="dark"] [data-theme-preview][class*="bg-[#FFFFF0]" i],
+[data-theme="dark"] [data-theme-preview] [class*="bg-[#FFFFF0]" i] {
   background-color: #fffff0 !important;
 }
 
-[data-theme="dark"] [data-theme-preview][class*="bg-[#082824]"],
-[data-theme="dark"] [data-theme-preview] [class*="bg-[#082824]"] {
+[data-theme="dark"] [data-theme-preview][class*="bg-[#082824]" i],
+[data-theme="dark"] [data-theme-preview] [class*="bg-[#082824]" i] {
   background-color: #082824 !important;
 }
 
-[data-theme="dark"] [data-theme-preview][class*="bg-[#D4E3E8]"],
-[data-theme="dark"] [data-theme-preview] [class*="bg-[#D4E3E8]"] {
+[data-theme="dark"] [data-theme-preview][class*="bg-[#D4E3E8]" i],
+[data-theme="dark"] [data-theme-preview] [class*="bg-[#D4E3E8]" i] {
   background-color: #d4e3e8 !important;
 }
 
-[data-theme="dark"] [data-theme-preview][class*="bg-[#8AB4DB]"],
-[data-theme="dark"] [data-theme-preview] [class*="bg-[#8AB4DB]"] {
+[data-theme="dark"] [data-theme-preview][class*="bg-[#8AB4DB]" i],
+[data-theme="dark"] [data-theme-preview] [class*="bg-[#8AB4DB]" i] {
   background-color: #8ab4db !important;
 }
 
-[data-theme="dark"] [data-theme-preview][class*="text-[#082824]"],
-[data-theme="dark"] [data-theme-preview] [class*="text-[#082824]"] {
+[data-theme="dark"] [data-theme-preview][class*="text-[#082824]" i],
+[data-theme="dark"] [data-theme-preview] [class*="text-[#082824]" i] {
   color: #082824 !important;
+}
+
+[data-theme="dark"] [data-theme-preview][class*="text-[#111827]" i],
+[data-theme="dark"] [data-theme-preview] [class*="text-[#111827]" i] {
+  color: #111827 !important;
 }
 
 [data-theme="dark"] [data-theme-preview][class~="text-white"],

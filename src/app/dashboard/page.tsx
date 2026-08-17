@@ -4500,7 +4500,11 @@ Please complete the following implementation tasks:
                     <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
                         <div>
                             <h3 className="text-xs font-bold uppercase tracking-wider text-white">Active Customer Deposits</h3>
-                            <p className="text-[10px] text-white/40">Live view of customer deposits and current usage.</p>
+                            <p className="text-[10px] text-white/40">
+                                Live view of customer deposits and current usage. Rows are identified by
+                                reference, or by the email a customer gave you at checkout — their wallet
+                                stays private.
+                            </p>
                         </div>
 
                         {isVaultsLoading ? (
@@ -4647,6 +4651,7 @@ Please complete the following implementation tasks:
                         balanceVisible={balanceVisible}
                         isRefreshingBalances={isRefreshingBalances}
                         isLoadingContract={isLoadingContract}
+                        theme={resolvedTheme}
                         onToggleBalance={() => setBalanceVisible((visible) => !visible)}
                         onRefresh={handleManualRefreshBalances}
                         onSend={() => setIsSendWalletOpen(true)}
@@ -5981,21 +5986,15 @@ Please complete the following implementation tasks:
                     isLoading={Boolean(isLoading)}
                 />
                 {/* Mobile Top Profile Icon */}
-                <div className="fixed left-4 top-4 z-40 md:hidden">
-                    <button
-                        type="button"
-                        onClick={() => setActiveTab("settings")}
-                        className="flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-[#FFFFF0] text-black shadow-md overflow-hidden"
-                        aria-label="Account Settings"
-                        title="Account Settings"
-                    >
-                        {userSettings?.profilePic ? (
-                            <img src={userSettings.profilePic} alt="" className="h-full w-full object-cover" />
-                        ) : (
-                            <span className="font-mono text-xs font-bold text-[#082824]">{sidebarIdentityLabel.slice(0, 1).toUpperCase()}</span>
-                        )}
-                    </button>
-                </div>
+                <MobileProfileButton
+                    identityLabel={sidebarIdentityLabel}
+                    avatarUrl={userSettings?.profilePic || null}
+                    isLoading={Boolean(isLoading)}
+                    onOpenSettings={() => {
+                        setMerchantSubView("menu");
+                        setActiveTab("settings");
+                    }}
+                />
                 <div className="merchant-dashboard-workspace relative min-w-0 flex-1 overflow-y-auto bg-[#D4E3E8] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[70px]">
             {/* Session Consent Alerts Overlay */}
             {sessionAlert && (
@@ -6551,6 +6550,84 @@ function PlanPromotionPanel({
     );
 }
 
+/* Mobile-only account entry point, mirroring the user dashboard's HomeHeader: the first tap
+   expands the pill to name the account, the second opens settings. A single-tap version had no
+   way to tell you what account you were about to open, and a 40px unlabelled circle in the corner
+   did not read as a control at all.
+ *
+ * The skeleton branch matters because this button is fixed-positioned outside the workspace, so
+ * it used to paint an initial or a stale avatar over a page that was otherwise still loading. */
+function MobileProfileButton({
+    identityLabel,
+    avatarUrl,
+    isLoading,
+    onOpenSettings,
+}: {
+    identityLabel: string;
+    avatarUrl: string | null;
+    isLoading: boolean;
+    onOpenSettings: () => void;
+}) {
+    const [expanded, setExpanded] = useState(false);
+
+    /* Collapse when the tap lands anywhere else, so an expanded pill cannot be left sitting over
+       the content it is covering. */
+    useEffect(() => {
+        if (!expanded) return;
+        const collapse = () => setExpanded(false);
+        const timer = window.setTimeout(() => {
+            document.addEventListener("pointerdown", collapse, { once: true });
+        }, 0);
+        return () => {
+            window.clearTimeout(timer);
+            document.removeEventListener("pointerdown", collapse);
+        };
+    }, [expanded]);
+
+    if (isLoading) {
+        return (
+            <div className="fixed left-4 top-4 z-40 md:hidden" aria-hidden="true">
+                <div className="subscript-skeleton h-10 w-10 rounded-full" />
+            </div>
+        );
+    }
+
+    return (
+        <div className="fixed left-4 top-4 z-40 md:hidden">
+            <button
+                type="button"
+                onClick={() => {
+                    if (!expanded) {
+                        setExpanded(true);
+                        return;
+                    }
+                    setExpanded(false);
+                    onOpenSettings();
+                }}
+                className={`flex h-10 items-center gap-2 overflow-hidden rounded-full border border-black/10 bg-[#FFFFF0] text-black shadow-md transition-all duration-300 ${
+                    expanded ? "max-w-[calc(100vw-8rem)] pl-0 pr-3" : "w-10 justify-center"
+                }`}
+                aria-label={expanded ? "Open account settings" : "Show account"}
+                aria-expanded={expanded}
+                title={expanded ? "Open account settings" : identityLabel}
+            >
+                <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full">
+                    {avatarUrl ? (
+                        <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                        <span className="font-mono text-xs font-bold text-[#082824]">
+                            {identityLabel.slice(0, 1).toUpperCase()}
+                        </span>
+                    )}
+                </span>
+                {expanded && (
+                    <span className="truncate text-[11px] font-semibold text-[#082824]">{identityLabel}</span>
+                )}
+            </button>
+        </div>
+    );
+}
+
 function LocalCustomerVaultRow({
     vault,
     apiKey,
@@ -6600,7 +6677,9 @@ function LocalCustomerVaultRow({
                     "x-request-id": usageRequestKey.current,
                 },
                 body: JSON.stringify({
-                    userAddress: vault.userAddress,
+                    /* The vault's own id, not the customer's address — this list is no longer told
+                       whose deposit each row is. Scoped to the authenticated merchant server-side. */
+                    vaultId: vault.id,
                     amountUsdc: chargeAmount
                 })
             });
@@ -6634,7 +6713,11 @@ function LocalCustomerVaultRow({
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                     <div className="flex items-center gap-2">
-                        <p className="font-mono text-xs font-bold text-white break-all">{vault.userAddress}</p>
+                        {/* Email when the customer volunteered one at this merchant's own checkout,
+                            otherwise the opaque deposit reference. Never the wallet address. */}
+                        <p className={`text-xs font-bold text-white ${vault.payerEmail ? "break-words" : "font-mono break-all"}`}>
+                            {vault.payerEmail || vault.reference || "Deposit"}
+                        </p>
                         <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider ${
                             isActive ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"
                         }`}>

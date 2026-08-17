@@ -13,9 +13,17 @@ import {
     BarChart3,
     Sparkles,
 } from "@/components/icons";
-import type { MerchantOverviewSummary } from "@/lib/analytics/merchantOverview";
+import type { MerchantOverviewSummary, MerchantOverviewRange } from "@/lib/analytics/merchantOverview";
+import MerchantTrendChart from "@/components/dashboard/MerchantTrendChart";
 import { activeArcChain } from "@/lib/wagmi";
 import { ARC_TESTNET_CHAIN_ID } from "@/lib/contracts/constants";
+
+const RANGE_OPTIONS: Array<{ id: MerchantOverviewRange; label: string; caption: string }> = [
+    { id: "7d", label: "7D", caption: "7D Settled" },
+    { id: "30d", label: "30D", caption: "30D Settled" },
+    { id: "90d", label: "90D", caption: "90D Settled" },
+    { id: "12m", label: "12M", caption: "12M Settled" },
+];
 
 type LedgerRow = {
     id: string;
@@ -55,6 +63,7 @@ export default function MerchantOverview({
     isRefreshingBalances,
     isLoadingContract,
     environment,
+    theme = "light",
     onToggleBalance,
     onRefresh,
     onSend,
@@ -70,6 +79,9 @@ export default function MerchantOverview({
     isRefreshingBalances: boolean;
     isLoadingContract: boolean;
     environment?: "TEST" | "LIVE";
+    /* The chart's strokes and gridlines are SVG attributes, so the dark-theme CSS layer cannot
+       reach them — the resolved theme has to be passed in. */
+    theme?: "light" | "dark";
     onToggleBalance: () => void;
     onRefresh: () => void;
     onSend: () => void;
@@ -77,18 +89,17 @@ export default function MerchantOverview({
     onWithdraw: () => void;
     onViewPlans: () => void;
 }) {
-    const currentYear = new Date().getUTCFullYear();
-    const [selectedYear, setSelectedYear] = useState<number>(currentYear);
+    const isDark = theme === "dark";
+    const [range, setRange] = useState<MerchantOverviewRange>("30d");
     const [overview, setOverview] = useState<MerchantOverviewSummary | null>(null);
     const [loading, setLoading] = useState(true);
-    const [hoveredMonthIndex, setHoveredMonthIndex] = useState<number | null>(null);
 
     const fetchOverview = useCallback(async () => {
         setLoading(true);
         try {
             const defaultEnv = activeArcChain.id === ARC_TESTNET_CHAIN_ID || process.env.NEXT_PUBLIC_ENVIRONMENT !== "mainnet" ? "TEST" : "LIVE";
             const targetEnv = environment || defaultEnv;
-            const response = await fetch(`/api/merchant/overview?year=${selectedYear}&environment=${targetEnv}`);
+            const response = await fetch(`/api/merchant/overview?range=${range}&environment=${targetEnv}`);
             const payload = await response.json().catch(() => null);
             if (response.ok && payload?.overview) {
                 setOverview(payload.overview);
@@ -98,7 +109,7 @@ export default function MerchantOverview({
         } finally {
             setLoading(false);
         }
-    }, [selectedYear, environment]);
+    }, [range, environment]);
 
     useEffect(() => {
         fetchOverview();
@@ -113,42 +124,12 @@ export default function MerchantOverview({
         [ledgers],
     );
 
-    const maxMonthlyMicros = useMemo(() => {
-        const values = overview?.monthly.flatMap((month) => [Number(month.grossUsdcMicros), Number(month.netUsdcMicros)]) || [];
-        return Math.max(1_000_000, ...values);
-    }, [overview]);
-
-    const yAxisTicks = useMemo(() => {
-        const maxUsdc = maxMonthlyMicros / 1_000_000;
-        let step = 1000;
-        if (maxUsdc > 50000) step = 20000;
-        else if (maxUsdc > 20000) step = 10000;
-        else if (maxUsdc > 10000) step = 5000;
-        else if (maxUsdc > 2000) step = 1000;
-        else step = Math.max(100, Math.ceil(maxUsdc / 4 / 50) * 50);
-
-        const topTick = Math.max(step * 4, Math.ceil(maxUsdc / step) * step);
-        return [
-            topTick,
-            Math.round(topTick * 0.75),
-            Math.round(topTick * 0.5),
-            Math.round(topTick * 0.25),
-            0,
-        ];
-    }, [maxMonthlyMicros]);
-
-    const maxTickValue = yAxisTicks[0] * 1_000_000 || maxMonthlyMicros;
-
-    const earnings = overview ? formatMicros(overview.earnings30dUsdcMicros) : "0.00";
-    const gross30d = overview ? formatMicros(overview.gross30dUsdcMicros) : "0.00";
-
-    const monthsData = overview?.monthly || Array.from({ length: 12 }, (_, index) => ({
-        month: index + 1,
-        label: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][index],
-        grossUsdcMicros: "0",
-        netUsdcMicros: "0",
-        transactionCount: 0,
-    }));
+    const rangeCaption = RANGE_OPTIONS.find((option) => option.id === range)?.caption ?? "Settled";
+    /* Falls back to the legacy field names so a cached response from before the range parameter
+       existed still renders a figure rather than $0.00. */
+    const earnings = formatMicros(overview?.earningsUsdcMicros ?? overview?.earnings30dUsdcMicros);
+    const grossTotal = formatMicros(overview?.grossUsdcMicros ?? overview?.gross30dUsdcMicros);
+    const series = overview?.series ?? [];
 
     return (
         <div className="max-w-[1340px] mx-auto space-y-4 sm:space-y-5 pb-20 text-black md:pb-6 text-sm">
@@ -160,7 +141,7 @@ export default function MerchantOverview({
                         <div className="flex items-center justify-between gap-3">
                             <div className="flex items-center gap-2">
                                 <h2 className="text-lg font-semibold sm:text-xl text-[#082824]">
-                                    Earnings <span className="text-xs text-black/50 font-normal">· 30D Settled</span>
+                                    Earnings <span className="text-xs text-black/50 font-normal">· {rangeCaption}</span>
                                 </h2>
                                 <button
                                     onClick={onToggleBalance}
@@ -178,6 +159,30 @@ export default function MerchantOverview({
                             >
                                 <RefreshCw className={`h-4 w-4 ${(isRefreshingBalances || loading) ? "animate-spin" : ""}`} />
                             </button>
+                        </div>
+
+                        {/* One control for the figure and the chart below, so the two can never
+                            disagree about which window they are describing. */}
+                        <div
+                            role="group"
+                            aria-label="Earnings timeframe"
+                            className="mt-3 inline-flex items-center gap-0.5 rounded-full border border-black/10 bg-black/[0.03] p-0.5"
+                        >
+                            {RANGE_OPTIONS.map((option) => (
+                                <button
+                                    key={option.id}
+                                    type="button"
+                                    onClick={() => setRange(option.id)}
+                                    aria-pressed={range === option.id}
+                                    className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition ${
+                                        range === option.id
+                                            ? "bg-[#8AB4DB] text-[#082824] shadow-sm"
+                                            : "text-black/55 hover:text-[#082824]"
+                                    }`}
+                                >
+                                    {option.label}
+                                </button>
+                            ))}
                         </div>
 
                         {loading ? (
@@ -286,160 +291,26 @@ export default function MerchantOverview({
                                     </span>
                                 </div>
                                 <p className="mt-0.5 text-xs text-black/55">
-                                    30-Day Gross: <strong className="text-[#082824]">${gross30d} USDC</strong>
+                                    {rangeCaption} gross: <strong className="text-[#082824]">${grossTotal} USDC</strong>
                                 </p>
                             </div>
 
-                            {/* Year / Timeframe Selector */}
-                            <div className="flex items-center gap-2">
-                                <div className="flex items-center gap-3 text-xs text-black/60 mr-2">
-                                    <span className="flex items-center gap-1.5 font-medium">
-                                        <span className="h-2.5 w-2.5 rounded-full bg-[#8AB4DB]" /> Gross
-                                    </span>
-                                    <span className="flex items-center gap-1.5 font-medium">
-                                        <span className="h-2.5 w-2.5 rounded-full bg-[#082824]" /> Net
-                                    </span>
-                                </div>
-                                <select
-                                    value={selectedYear}
-                                    onChange={(e) => setSelectedYear(Number(e.target.value))}
-                                    aria-label="Select transaction chart timeframe"
-                                    className="rounded-xl border border-black/10 bg-white px-3 py-1.5 text-xs font-bold text-[#082824] shadow-sm focus:outline-none focus:ring-1 focus:ring-[#8AB4DB] cursor-pointer"
-                                >
-                                    <option value={currentYear}>This Year ({currentYear})</option>
-                                    <option value={currentYear - 1}>{currentYear - 1}</option>
-                                    <option value={currentYear - 2}>{currentYear - 2}</option>
-                                </select>
+                            {/* Legend only — the timeframe lives on the Earnings card and drives both. */}
+                            <div className="flex items-center gap-3 text-xs text-black/60">
+                                <span className="flex items-center gap-1.5 font-medium">
+                                    <span className="h-2.5 w-2.5 rounded-full bg-[#8AB4DB]" /> Gross
+                                </span>
+                                <span className="flex items-center gap-1.5 font-medium">
+                                    <span className={`h-2.5 w-2.5 rounded-full ${isDark ? "bg-[#7fd8c9]" : "bg-[#082824]"}`} /> Net
+                                </span>
                             </div>
                         </div>
 
-                        {/* Interactive Chart Visualizer */}
                         {loading ? (
-                            <div className="h-48 mt-6 flex items-end justify-between gap-2 pt-4 px-2">
-                                {Array.from({ length: 12 }).map((_, i) => (
-                                    <div key={i} className="flex-1 flex flex-col items-center gap-2">
-                                        <div
-                                            className="w-full rounded-t-md bg-black/[0.06] animate-pulse"
-                                            style={{ height: `${20 + (i * 7) % 65}%` }}
-                                        />
-                                        <div className="h-3 w-6 rounded bg-black/[0.05]" />
-                                    </div>
-                                ))}
-                            </div>
+                            /* Same footprint as the chart so switching ranges does not shift the card. */
+                            <div className="mt-4 h-[240px] animate-pulse rounded-2xl bg-black/[0.04]" />
                         ) : (
-                            <div className="relative mt-4 pt-2">
-                                {/* Gridlines and bars are absolutely positioned into the *same* box, so
-                                    the zero line and the foot of every bar are the same pixel. Before
-                                    this the overlay stopped at bottom-6 while the bars were laid out in
-                                    an h-44 that also had to fit the month label, so the baseline and the
-                                    axis disagreed and the bars read as floating off the scale.
-
-                                    The tick rows are h-0 on purpose: with justify-between that puts each
-                                    dashed line exactly at 0/25/50/75/100% of the plot height, which is
-                                    the same percentage basis the bar heights use. */}
-                                <div className="relative h-44">
-                                    <div className="pointer-events-none absolute inset-0 flex flex-col justify-between font-mono text-[10px] text-black/35">
-                                        {yAxisTicks.map((tick, i) => (
-                                            <div key={i} className="flex h-0 w-full items-center gap-2">
-                                                <span className="w-10 shrink-0 text-right leading-none">
-                                                    {tick >= 1000 ? `${(tick / 1000).toFixed(0)}k` : `$${tick}`}
-                                                </span>
-                                                <div className="flex-1 border-b border-dashed border-black/[0.06]" />
-                                            </div>
-                                        ))}
-                                    </div>
-
-                                    <div className="absolute inset-y-0 left-12 right-2 z-10 grid grid-cols-12 items-end gap-1.5 sm:gap-2.5">
-                                        {monthsData.map((m, index) => {
-                                            const grossMicros = Number(m.grossUsdcMicros || 0);
-                                            const netMicros = Number(m.netUsdcMicros || 0);
-                                            /* A month with no activity draws nothing. It used to get a 3%
-                                               stub, which made empty months look like small real ones. */
-                                            const grossPercent = grossMicros > 0
-                                                ? Math.min(100, Math.max(2, (grossMicros / maxTickValue) * 100))
-                                                : 0;
-                                            const netPercent = netMicros > 0
-                                                ? Math.min(100, Math.max(1.5, (netMicros / maxTickValue) * 100))
-                                                : 0;
-                                            const isHovered = hoveredMonthIndex === index;
-                                            /* Keep the readout inside the card: tall bars would push a
-                                               bottom-full tooltip up over the header, and the first and
-                                               last columns would push a centred one out through the side. */
-                                            const tallBar = Math.max(grossPercent, netPercent) > 68;
-                                            const nearLeft = index <= 1;
-                                            const nearRight = index >= monthsData.length - 2;
-
-                                            return (
-                                                <div
-                                                    key={m.month}
-                                                    className="group relative flex h-full flex-col justify-end"
-                                                    onMouseEnter={() => setHoveredMonthIndex(index)}
-                                                    onMouseLeave={() => setHoveredMonthIndex(null)}
-                                                >
-                                                    {isHovered && (
-                                                        <div
-                                                            data-merchant-dark="true"
-                                                            className="pointer-events-none absolute z-30 whitespace-nowrap rounded-xl bg-[#082824] px-3 py-2 text-[11px] text-white shadow-xl"
-                                                            style={{
-                                                                bottom: tallBar
-                                                                    ? undefined
-                                                                    : `calc(${Math.max(grossPercent, netPercent)}% + 10px)`,
-                                                                top: tallBar ? 4 : undefined,
-                                                                left: nearLeft ? 0 : nearRight ? undefined : "50%",
-                                                                right: nearRight ? 0 : undefined,
-                                                                transform: nearLeft || nearRight ? undefined : "translateX(-50%)",
-                                                            }}
-                                                        >
-                                                            <p className="mb-1 border-b border-white/10 pb-1 font-bold text-white/90">
-                                                                {m.label} {selectedYear}
-                                                            </p>
-                                                            <div className="space-y-0.5 text-[10px]">
-                                                                <p className="font-semibold text-[#8AB4DB]">
-                                                                    Gross: ${formatMicros(m.grossUsdcMicros)} USDC
-                                                                </p>
-                                                                <p className="font-semibold text-emerald-300">
-                                                                    Net: ${formatMicros(m.netUsdcMicros)} USDC
-                                                                </p>
-                                                                <p className="text-white/60">
-                                                                    {m.transactionCount} txn{m.transactionCount === 1 ? "" : "s"}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-                                                    )}
-
-                                                    <div className="flex h-full w-full items-end justify-center gap-0.5 transition-transform duration-200 group-hover:-translate-y-0.5 sm:gap-1">
-                                                        <div
-                                                            className="w-1/2 max-w-[14px] rounded-t-sm bg-[#8AB4DB] transition-all duration-300 group-hover:brightness-110"
-                                                            style={{ height: `${grossPercent}%` }}
-                                                        />
-                                                        <div
-                                                            className="w-1/2 max-w-[14px] rounded-t-sm bg-[#082824] transition-all duration-300 group-hover:brightness-125"
-                                                            style={{ height: `${netPercent}%` }}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-
-                                {/* Month labels ride in their own row on the same 12-column grid, so they
-                                    stay under their bars without eating into the plotted height. */}
-                                <div className="mt-1.5 grid grid-cols-12 gap-1.5 pl-12 pr-2 sm:gap-2.5">
-                                    {monthsData.map((m, index) => (
-                                        <span
-                                            key={m.month}
-                                            className={`text-center text-[10px] transition ${
-                                                hoveredMonthIndex === index
-                                                    ? "font-bold text-[#082824]"
-                                                    : "font-medium text-black/50"
-                                            }`}
-                                        >
-                                            {m.label}
-                                        </span>
-                                    ))}
-                                </div>
-                            </div>
+                            <MerchantTrendChart points={series} isDark={isDark} />
                         )}
                     </div>
                 </OverviewCard>

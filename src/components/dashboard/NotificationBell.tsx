@@ -42,6 +42,20 @@ function getSourceIcon(source: string) {
     }
 }
 
+/* Relative luminance, sRGB, per WCAG. The two accents this panel is handed sit at opposite ends
+   — merchant #082824 is near-black, user #ccff00 is near-yellow — so nothing hardcoded works for
+   both: white on the lime pill is unreadable, and dark on the teal pill is unreadable. */
+function luminance(hex: string): number {
+    const clean = hex.replace("#", "");
+    const full = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean;
+    if (full.length !== 6) return 0;
+    const channel = (offset: number) => {
+        const value = parseInt(full.slice(offset, offset + 2), 16) / 255;
+        return value <= 0.03928 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+}
+
 export default function NotificationBell({
     audience,
     accent,
@@ -61,6 +75,14 @@ export default function NotificationBell({
 
     const buttonRef = useRef<HTMLButtonElement | null>(null);
     const panelRef = useRef<HTMLDivElement | null>(null);
+
+    /* A light accent needs dark text on top of it, and cannot be used as text on the panel's own
+       light surface. `accentInk` is what the "Mark all read" action uses instead — lime on cream
+       was illegible in light mode, and lime on the dark card is fine, so the swap only bites where
+       it has to. */
+    const accentIsLight = luminance(accent) > 0.4;
+    const accentForeground = accentIsLight ? "#111111" : "#ffffff";
+    const accentInk = accentIsLight ? "#5c7a00" : accent;
 
     useEffect(() => {
         setMounted(true);
@@ -157,7 +179,7 @@ export default function NotificationBell({
     const skeletonContent = (
         <div className="p-4 space-y-3">
             {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="flex items-start gap-3 p-3 rounded-2xl bg-black/[0.03] border border-black/5 animate-pulse">
+                <div key={i} className="notification-panel-skeleton flex items-start gap-3 p-3 rounded-2xl bg-black/[0.03] border border-black/5 animate-pulse">
                     <div className="w-8 h-8 rounded-xl bg-black/10 shrink-0" />
                     <div className="flex-1 space-y-2">
                         <div className="h-3.5 bg-black/10 rounded w-3/4" />
@@ -170,9 +192,9 @@ export default function NotificationBell({
     );
 
     const panelContent = (
-        <div ref={panelRef} className="flex flex-col h-full w-full bg-[#FFFFF0] text-black">
+        <div ref={panelRef} className="notification-panel flex flex-col h-full w-full bg-[#FFFFF0] text-black">
             {/* Header */}
-            <div className="flex items-center justify-between gap-3 border-b border-black/10 px-5 py-4 shrink-0 bg-white/70 backdrop-blur-xl">
+            <div className="notification-panel-header flex items-center justify-between gap-3 border-b border-black/10 px-5 py-4 shrink-0 bg-white/70 backdrop-blur-xl">
                 <div className="flex items-center gap-2.5">
                     <div
                         className="w-2 h-2 rounded-full shadow-[0_0_10px_var(--nb-accent)]"
@@ -183,8 +205,8 @@ export default function NotificationBell({
                     </h3>
                     {unread > 0 && (
                         <span
-                            className="rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white shadow-sm"
-                            style={{ backgroundColor: accent }}
+                            className="rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider shadow-sm"
+                            style={{ backgroundColor: accent, color: accentForeground }}
                         >
                             {unread} new
                         </span>
@@ -196,7 +218,7 @@ export default function NotificationBell({
                             type="button"
                             onClick={markAllRead}
                             className="text-[10px] font-bold uppercase tracking-wider transition hover:opacity-80 flex items-center gap-1.5"
-                            style={{ color: accent }}
+                            style={{ color: accentInk }}
                         >
                             <CheckCircle className="w-3 h-3" /> Mark all read
                         </button>
@@ -205,7 +227,7 @@ export default function NotificationBell({
                         type="button"
                         onClick={() => setOpen(false)}
                         aria-label="Close notifications"
-                        className="rounded-full p-1 text-black/40 transition hover:bg-black/10 hover:text-black"
+                        className="notification-panel-icon-button rounded-full p-1 text-black/40 transition hover:bg-black/10 hover:text-black"
                     >
                         <X className="h-4 w-4" />
                     </button>
@@ -222,14 +244,14 @@ export default function NotificationBell({
                         <button
                             type="button"
                             onClick={() => void load()}
-                            className="px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-black/5 border border-black/10 text-black hover:bg-black/10 transition flex items-center gap-2 mx-auto"
+                            className="notification-panel-tile px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-black/5 border border-black/10 text-black hover:bg-black/10 transition flex items-center gap-2 mx-auto"
                         >
                             <RefreshCw className="w-3.5 h-3.5" /> Try again
                         </button>
                     </div>
                 ) : items.length === 0 ? (
                     <div className="px-5 py-14 text-center space-y-3">
-                        <div className="mx-auto w-12 h-12 rounded-2xl bg-black/[0.03] border border-black/5 flex items-center justify-center shadow-inner">
+                        <div className="notification-panel-tile mx-auto w-12 h-12 rounded-2xl bg-black/[0.03] border border-black/5 flex items-center justify-center shadow-inner">
                             <Bell className="h-5 w-5 text-black/30" />
                         </div>
                         <p className="text-xs font-bold text-black/75 uppercase tracking-wider">All caught up</p>
@@ -243,7 +265,7 @@ export default function NotificationBell({
                             const isUnread = !item.readAt;
                             const itemContent = (
                                 <div className="flex items-start gap-3.5 group">
-                                    <div className="p-2 rounded-xl bg-black/[0.04] border border-black/5 shrink-0 group-hover:border-black/10 transition-colors">
+                                    <div className="notification-panel-tile p-2 rounded-xl bg-black/[0.04] border border-black/5 shrink-0 group-hover:border-black/10 transition-colors">
                                         {getSourceIcon(item.source)}
                                     </div>
                                     <div className="min-w-0 flex-1 space-y-1">
@@ -267,7 +289,11 @@ export default function NotificationBell({
                             );
 
                             return (
-                                <li key={item.id} className={`px-5 py-3.5 transition-all ${isUnread ? "bg-black/[0.02] hover:bg-black/[0.05]" : "hover:bg-black/[0.03]"}`}>
+                                <li
+                                    key={item.id}
+                                    data-unread={isUnread ? "true" : "false"}
+                                    className={`notification-panel-row px-5 py-3.5 transition-all ${isUnread ? "bg-black/[0.02] hover:bg-black/[0.05]" : "hover:bg-black/[0.03]"}`}
+                                >
                                     {item.url ? (
                                         <a href={item.url} className="block" onClick={() => setOpen(false)}>
                                             {itemContent}
@@ -345,7 +371,7 @@ export default function NotificationBell({
                                     animate={{ opacity: 1, y: 0, scale: 1 }}
                                     exit={{ opacity: 0, y: -20, scale: 0.96 }}
                                     transition={{ type: "spring", stiffness: 350, damping: 28 }}
-                                    className="fixed left-3 right-3 top-[76px] bottom-20 z-[99999] sm:hidden flex flex-col overflow-hidden rounded-3xl border border-black/15 bg-[#FFFFF0] backdrop-blur-2xl shadow-[0_30px_70px_rgba(0,0,0,0.35)]"
+                                    className="notification-panel-shell fixed left-3 right-3 top-[76px] bottom-20 z-[99999] sm:hidden flex flex-col overflow-hidden rounded-3xl border border-black/15 bg-[#FFFFF0] backdrop-blur-2xl shadow-[0_30px_70px_rgba(0,0,0,0.35)]"
                                     style={{ "--nb-accent": accent } as React.CSSProperties}
                                 >
                                     {panelContent}
@@ -360,7 +386,7 @@ export default function NotificationBell({
                                     animate={{ opacity: 1, y: 0, scale: 1 }}
                                     exit={{ opacity: 0, y: -10, scale: 0.95 }}
                                     transition={{ duration: 0.18, ease: "easeOut" }}
-                                    className="fixed z-[99999] w-[390px] max-w-[calc(100vw-2rem)] max-h-[32rem] hidden sm:flex flex-col overflow-hidden rounded-3xl border border-black/15 bg-[#FFFFF0] backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.25)]"
+                                    className="notification-panel-shell fixed z-[99999] w-[390px] max-w-[calc(100vw-2rem)] max-h-[32rem] hidden sm:flex flex-col overflow-hidden rounded-3xl border border-black/15 bg-[#FFFFF0] backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.25)]"
                                     style={{
                                         top: `${desktopPos.top}px`,
                                         right: `${desktopPos.right}px`,

@@ -1238,7 +1238,9 @@ function CustomerVaultRow({
                     "Authorization": `Bearer ${apiKey}`
                 },
                 body: JSON.stringify({
-                    userAddress: vault.userAddress,
+                    /* Bill by the vault's own id. /api/user/vault/config no longer tells a merchant
+                       whose deposit a row is, so there is no address to send. */
+                    vaultId: vault.id,
                     amountUsdc: chargeAmount
                 })
             });
@@ -1269,7 +1271,12 @@ function CustomerVaultRow({
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-xs font-mono text-white/90 truncate max-w-xs">{vault.userName || vault.userAddress}</p>
+                        {/* Email if the customer volunteered one at this merchant's checkout, else the
+                            opaque deposit reference. The wallet address used to print here and again
+                            underneath; neither is sent to the client any more. */}
+                        <p className="text-xs font-mono text-white/90 truncate max-w-xs">
+                            {vault.payerEmail || vault.reference || "Deposit"}
+                        </p>
                         <span className={`px-2 py-0.5 rounded-full border text-[8px] font-bold uppercase tracking-wider ${
                             isActive
                                 ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
@@ -1278,7 +1285,6 @@ function CustomerVaultRow({
                             {isActive ? "Active" : "Blocked"}
                         </span>
                     </div>
-                    <p className="text-[9px] text-white/30 mt-1 font-mono">{vault.userAddress}</p>
                 </div>
 
                 <form onSubmit={handleReportUsage} className="flex flex-col gap-2 shrink-0 lg:items-end">
