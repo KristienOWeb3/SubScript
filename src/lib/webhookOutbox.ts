@@ -43,14 +43,26 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
 
         const { data: endpoint, error: endpointError } = await supabase
             .from("webhook_endpoints")
-            .select("id, url, secret, active, wallet_address, ciphertext, nonce, authentication_tag, environment")
+            .select("id, url, active, wallet_address, ciphertext, nonce, authentication_tag, environment")
             .eq("id", delivery.webhook_endpoint_id)
             .maybeSingle();
-        /* A transient lookup error may recover — leave the row for the next scan. But a MISSING
-           or INACTIVE endpoint will never deliver, so park the row in DEAD_LETTER; otherwise the
-           oldest-first batch drainer re-selects these undeliverable rows every run and starves
-           newer, valid webhooks. */
-        if (endpointError) continue;
+        /* A transient lookup error may recover — leave the row PENDING for the next scan. But it
+           has to be VISIBLE while it does: this branch used to be a bare `continue`, so when the
+           select above referenced a dropped column every delivery in the system skipped here
+           forever, at attempts=0, with no last_error and nothing in the logs. 261 rows had queued
+           up behind it. Recording the reason keeps the retry semantics identical and makes the
+           same class of failure self-announcing next time. */
+        if (endpointError) {
+            console.error(`[webhook-outbox] Endpoint lookup failed for delivery ${delivery.id}:`, endpointError.message);
+            await supabase.from("webhook_deliveries").update({
+                last_error: `ENDPOINT_LOOKUP_FAILED: ${endpointError.message}`,
+                updated_at: new Date().toISOString(),
+            }).eq("id", delivery.id);
+            continue;
+        }
+        /* A MISSING or INACTIVE endpoint will never deliver, so park the row in DEAD_LETTER;
+           otherwise the oldest-first batch drainer re-selects these undeliverable rows every run
+           and starves newer, valid webhooks. */
         if (!endpoint || endpoint.active !== true) {
             await supabase.from("webhook_deliveries").update({
                 status: "DEAD_LETTER",
@@ -74,7 +86,13 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
             continue;
         }
 
-        let secret = endpoint.secret;
+        /* Signing secrets live encrypted (ciphertext/nonce/authentication_tag). There is no
+           plaintext column to fall back to — `secret` was dropped from webhook_endpoints, and
+           selecting it above was what silently killed every delivery: PostgREST returned
+           42703 "column secret does not exist", the lookup error path skipped the row, and it sat
+           PENDING at attempts=0 with nothing recorded. An endpoint with no ciphertext cannot be
+           signed for, so that is an explicit failure rather than an unsigned send. */
+        let secret: string | null = null;
         let decryptionFailed = false;
         if (endpoint.ciphertext && endpoint.nonce && endpoint.authentication_tag) {
             try {
@@ -89,8 +107,14 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
                 console.error(`[webhook-outbox] Failed to decrypt webhook secret for endpoint ${endpoint.id}:`, decryptionError);
                 decryptionFailed = true;
             }
+        } else {
+            console.error(`[webhook-outbox] Endpoint ${endpoint.id} has no encrypted secret — cannot sign a delivery.`);
+            decryptionFailed = true;
         }
-        if (decryptionFailed) {
+        /* `!secret` is part of the condition rather than just `decryptionFailed` so the compiler
+           narrows secret to string past this point — and so a decrypt that somehow returns empty
+           cannot proceed to sign with nothing. */
+        if (decryptionFailed || !secret) {
             await supabase.from("webhook_deliveries").update({
                 status: "FAILED",
                 last_error: "ENDPOINT_SECRET_DECRYPTION_FAILED",
