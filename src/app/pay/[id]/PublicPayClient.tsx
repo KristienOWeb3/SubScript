@@ -6,7 +6,7 @@ import { useAccount, useConnect, useDisconnect, useWriteContract, useBalance, us
 import { formatUnits } from "viem";
 import { 
     Loader2, CheckCircle, AlertTriangle, AlertCircle,
-    Wallet, ExternalLink, ArrowRight, Lock, QrCode, Shield, ShieldAlert, Gift
+    Wallet, ExternalLink, ArrowRight, Lock, QrCode, Shield, ShieldAlert, Gift, Users
 } from "@/components/icons";
 import { QRCode } from "react-qrcode-logo";
 import { motion, AnimatePresence } from "framer-motion";
@@ -24,6 +24,7 @@ import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 import { usePlatformFlags } from "@/hooks/usePlatformFlags";
 import { merchantDisplayName } from "@/lib/identityDisplay";
 import { shouldAutoReturnToMerchant, type CheckoutArrival } from "@/lib/paymentLinks/arrival";
+import { getDashboardUrl } from "@/utils/navigation";
 import CheckoutSkeleton from "./CheckoutSkeleton";
 
 export interface PublicPayClientProps {
@@ -207,6 +208,50 @@ export default function PublicPayClient({
     };
     const merchantSuccessHost = hostOf(merchantSuccessUrl);
 
+    /* Absolute, cross-host, and a full navigation — not router.push.
+     *
+     * Checkout is served from pay.subscriptonarc.com while the dashboard lives on
+     * dashboard.subscriptonarc.com. A client-side router.push("/user/transactions") stays on the
+     * checkout host, where middleware treats any non-/pay path as a checkout rewrite and sends it
+     * to /pay/user/transactions — so "Go to my dashboard" went nowhere. getDashboardUrl resolves
+     * the dashboard origin (and no-ops to a relative path in local dev), and it wants the
+     * /dashboard/... form or it doubles the /user segment. */
+    const dashboardReturnUrl = isUserRequest
+        ? `${getDashboardUrl("USER", "/dashboard/user")}?tab=inbox`
+        : getDashboardUrl("USER", "/dashboard/user/transactions");
+
+    const [shareOpen, setShareOpen] = useState(false);
+    const [shareNotice, setShareNotice] = useState<string | null>(null);
+
+    const shareLink = checkoutUrl || (typeof window !== "undefined" ? window.location.href : "");
+
+    const handleCopyCheckoutLink = async () => {
+        try {
+            await navigator.clipboard.writeText(shareLink);
+            setShareNotice("Link copied. Paste it wherever you like.");
+        } catch {
+            /* Clipboard is blocked without a user gesture in some in-app browsers, and on http
+               origins. Say so rather than silently doing nothing. */
+            setShareNotice("Couldn't copy automatically — long-press the address bar to copy the link.");
+        }
+    };
+
+    /* Native share sheet where the platform has one (every mobile browser), which is what a payer
+       actually wants for "send this to a friend". Falls back to copy on desktop. */
+    const handleNativeShare = async () => {
+        const title = linkData?.title ? `Pay for ${linkData.title}` : "SubScript payment";
+        if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+            try {
+                await navigator.share({ title, url: shareLink });
+                setShareOpen(false);
+                return;
+            } catch {
+                /* User dismissed the sheet, or the platform refused — fall through to copy. */
+            }
+        }
+        await handleCopyCheckoutLink();
+    };
+
     const [isPaying, setIsPaying] = useState(false);
     const [isVerifying, setIsVerifying] = useState(false);
     const [paymentStep, setPaymentStep] = useState<"approving" | "sending" | "confirming" | "verifying" | null>(null);
@@ -264,6 +309,17 @@ export default function PublicPayClient({
     /* Detect an existing SubScript session so we can offer "go to DMs" instead of
        forcing a fresh wallet connection. */
     const [sessionInfo, setSessionInfo] = useState<{ loggedIn: boolean; wallet?: string; email?: string | null; role?: string | null; isEmbedded?: boolean; provider?: string | null } | null>(null);
+
+    /* Share-with-a-friend, for personal accounts only.
+     *
+     * A merchant viewing their own checkout must not get this: sharing is a payer-to-payer action
+     * ("cover this for me", "here's the split"), and a business surfacing it would be inviting the
+     * merchant to redistribute their own payment request through a personal DM thread. Gated on a
+     * signed-in non-ENTERPRISE session, so anonymous visitors do not see it either — the DM half
+     * needs an account to send from. */
+    const canShareCheckout = Boolean(
+        sessionInfo?.loggedIn && sessionInfo.role !== "ENTERPRISE" && !isRoleMismatch,
+    );
     const [isSessionLoading, setIsSessionLoading] = useState(true);
     const [isWalletAuthenticating, setIsWalletAuthenticating] = useState(false);
     const [walletAuthenticationError, setWalletAuthenticationError] = useState<string | null>(null);
@@ -515,7 +571,12 @@ export default function PublicPayClient({
             if (!dmRes.ok) {
                 throw new Error(dmData.error || "Could not create SubScript DM");
             }
-            router.push(dmData.dashboardUrl || `/user?tab=inbox&intent=${linkData.id}`);
+            /* Full navigation to an absolute dashboard URL for the same reason as
+               dashboardReturnUrl above: a router.push from the checkout host never leaves it. */
+            window.location.assign(
+                dmData.dashboardUrl
+                || `${getDashboardUrl("USER", "/dashboard/user")}?tab=inbox&intent=${linkData.id}`,
+            );
         } catch (err: any) {
             setDmError(err.message || "Failed to initiate DM session. Please try again.");
             setIsCreatingDm(false);
@@ -1661,7 +1722,7 @@ export default function PublicPayClient({
                         <>
                             <button
                                 type="button"
-                                onClick={() => router.push(isUserRequest ? "/user?tab=inbox" : "/user/transactions")}
+                                onClick={() => window.location.assign(dashboardReturnUrl)}
                                 className="w-full py-4 bg-[#2775CA] hover:bg-[#1f62ab] text-[#FFFFF0] font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-sm"
                             >
                                 {isUserRequest ? "Go to my inbox" : "Go to my dashboard"} <ArrowRight className="w-4 h-4" />
@@ -2408,6 +2469,46 @@ export default function PublicPayClient({
                                             <p className="text-center text-[10px] leading-relaxed text-amber-900/80" aria-live="polite">{manualCheckMessage}</p>
                                         )}
                                     </motion.div>
+                                )}
+                            </div>
+                        )}
+
+                        {canShareCheckout && !isPaymentSettled && (
+                            <div className="border-t border-black/10 pt-4">
+                                <button
+                                    type="button"
+                                    onClick={() => { setShareOpen((open) => !open); setShareNotice(null); }}
+                                    aria-expanded={shareOpen}
+                                    className="w-full rounded-2xl border border-black/15 bg-white py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#111827] transition hover:bg-black/[0.03] flex items-center justify-center gap-2"
+                                >
+                                    <Users className="h-3.5 w-3.5 text-[#2775CA]" />
+                                    {shareOpen ? "Close sharing" : "Share with a friend"}
+                                </button>
+
+                                {shareOpen && (
+                                    <div className="mt-3 space-y-2 rounded-2xl border border-black/10 bg-[#f8fafc] p-3">
+                                        <p className="text-[10px] leading-relaxed text-black/60">
+                                            Send this checkout to someone who can pay it. They&apos;ll see the same
+                                            amount and merchant you do.
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={handleNativeShare}
+                                            className="w-full rounded-xl bg-[#2775CA] px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#FFFFF0] transition hover:bg-[#1f62ab]"
+                                        >
+                                            Copy or share link
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => window.location.assign(`${getDashboardUrl("USER", "/dashboard/user")}?tab=inbox`)}
+                                            className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#111827] transition hover:bg-black/[0.03]"
+                                        >
+                                            Send in SubScript DMs
+                                        </button>
+                                        {shareNotice && (
+                                            <p className="text-[10px] leading-relaxed text-[#2775CA]" aria-live="polite">{shareNotice}</p>
+                                        )}
+                                    </div>
                                 )}
                             </div>
                         )}
