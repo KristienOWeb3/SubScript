@@ -18,6 +18,7 @@ import {
 } from "viem";
 import { sepolia } from "viem/chains";
 import { activeArcChain } from "@/lib/wagmi";
+import { MAX_BATCH_RECIPIENTS } from "@/lib/payments/batchLimits";
 import { arcHttp } from "@/lib/arc/transport";
 import { 
   ARC_CCTP_DOMAIN_ID,
@@ -3170,8 +3171,13 @@ export default function UserDashboard() {
       .map((d) => {
         const isWithdrawal = d.messageType === "WITHDRAWAL" || d.messageType === "WITHDRAW";
         const isPeerTransfer = d.messageType === "PEER_TRANSFER" || d.messageType === "PEER_PAYMENT";
-        const isDebitSuccess = d.messageType === "DEBIT_SUCCESS";
-        const incoming = d.receiverAddress.toLowerCase() === userWallet?.toLowerCase() && !isDebitSuccess && !isWithdrawal;
+        /* A settlement receipt is sent BY the merchant TO the payer, so the viewer is the receiver
+           even though the money left them. The sign already accounted for that; the counterparty
+           did not — `incoming ? senderName : receiverName` resolved to the receiver, i.e. the
+           viewer's own name, so a checkout row showed the payer instead of who they paid. */
+        const isSettlementReceipt = d.messageType === "DEBIT_SUCCESS" || d.messageType === "PAYMENT_SUCCESS";
+        const incoming = d.receiverAddress.toLowerCase() === userWallet?.toLowerCase() && !isSettlementReceipt && !isWithdrawal;
+        const counterpartyIsSender = isSettlementReceipt || incoming;
         const usdVal = Number(d.amountUsdc) / 1_000_000;
         const localVal = usdVal * exchangeRate;
         const localLabel = `${detectedCurrency.symbol}${formatHeadlineAmount(localVal)}`;
@@ -3185,8 +3191,8 @@ export default function UserDashboard() {
           kind,
           name: isWithdrawal
             ? "Sent from balance to wallet"
-            : (incoming ? d.senderName : d.receiverName) || "Payment",
-          pic: incoming ? d.senderProfilePic : d.receiverProfilePic,
+            : (counterpartyIsSender ? d.senderName : d.receiverName) || "Payment",
+          pic: counterpartyIsSender ? d.senderProfilePic : d.receiverProfilePic,
           detail: isWithdrawal
             ? "SubScript Balance Withdrawal"
             : d.title || d.description || (incoming ? "Received payment" : "Sent payment"),
@@ -4486,13 +4492,24 @@ export default function UserDashboard() {
                       </p>
                     )}
 
+                    {/* Capped client-side against the same constant the send route enforces. Without
+                        this the button appended without limit and the only feedback for overshooting
+                        was a 400 after every row had been filled in. */}
                     <button
                       type="button"
-                      onClick={() => setBatchRows((rows) => [...rows, { address: "", amount: "" }])}
-                      className="w-full rounded-2xl border border-black/15 bg-white hover:bg-black/5 text-black py-3.5 text-xs font-black uppercase tracking-[0.16em] transition shadow-sm"
+                      onClick={() => setBatchRows((rows) => (
+                        rows.length >= MAX_BATCH_RECIPIENTS ? rows : [...rows, { address: "", amount: "" }]
+                      ))}
+                      disabled={batchRows.length >= MAX_BATCH_RECIPIENTS}
+                      className="w-full rounded-2xl border border-black/15 bg-white hover:bg-black/5 text-black py-3.5 text-xs font-black uppercase tracking-[0.16em] transition shadow-sm disabled:cursor-not-allowed disabled:opacity-45"
                     >
-                      Add Recipient
+                      {batchRows.length >= MAX_BATCH_RECIPIENTS
+                        ? `Limit reached — ${MAX_BATCH_RECIPIENTS} recipients max`
+                        : "Add Recipient"}
                     </button>
+                    <p className="text-center text-[10px] font-medium text-black/50">
+                      {batchRows.length} of {MAX_BATCH_RECIPIENTS} recipients
+                    </p>
 
                     <button
                       type="button"
@@ -6984,7 +7001,7 @@ function VaultInfoModal({ open, onClose }: { open: boolean; onClose: () => void 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-5 backdrop-blur-md"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-5 backdrop-blur-sm"
           onClick={onClose}
         >
           <motion.div
@@ -6993,29 +7010,32 @@ function VaultInfoModal({ open, onClose }: { open: boolean; onClose: () => void 
             exit={{ scale: 0.96, opacity: 0 }}
             transition={{ type: "spring", stiffness: 450, damping: 32 }}
             onClick={(event) => event.stopPropagation()}
-            className="w-full max-w-md space-y-4 rounded-3xl border border-white/10 bg-[#0c0c10] p-6 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="vault-info-title"
+            className="w-full max-w-md space-y-4 rounded-3xl border border-black/15 bg-white p-6 shadow-xl"
           >
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00]">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-black/10 bg-[#f8fafc] text-[#2775CA]">
                 <Shield className="h-5 w-5" />
               </div>
-              <h2 className="text-sm font-black uppercase tracking-[0.14em] text-white">What is a prepaid vault?</h2>
+              <h2 id="vault-info-title" className="text-sm font-black uppercase tracking-[0.14em] text-[#111827]">What is a prepaid vault?</h2>
             </div>
-            <p className="text-xs leading-relaxed text-white/55">
+            <p className="text-xs leading-relaxed text-black/70">
               A vault is a small prepaid balance you commit to a single service. Instead of paying per
               call, you fund the vault once and the service draws from it as you use it, so usage-based
               products keep working without you approving every charge.
             </p>
             <div className="space-y-2">
-              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Typically used for</p>
-              <ul className="space-y-1.5 text-xs text-white/60">
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-black/50">Typically used for</p>
+              <ul className="space-y-1.5 text-xs text-black/70">
                 <li>• API access billed per request</li>
                 <li>• AI / LLM token usage</li>
                 <li>• Storage, bandwidth, and media delivery</li>
                 <li>• Any pay-per-use metered service</li>
               </ul>
             </div>
-            <p className="text-[11px] leading-relaxed text-white/40">
+            <p className="rounded-2xl border border-black/10 bg-[#f8fafc] p-3 text-[11px] leading-relaxed text-black/60">
               SubScript fixes the commitment at 2 USDC for each user–merchant relationship per cycle.
               At cycle end the keeper settles reported usage and closes the vault; commit again to start the next cycle.
             </p>

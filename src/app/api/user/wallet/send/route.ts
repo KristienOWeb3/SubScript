@@ -17,6 +17,7 @@ import {
 import { sanitizeInput } from "@/utils/security";
 import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
 import { assertNotBlocked } from "@/lib/dms/blocks";
+import { MAX_BATCH_RECIPIENTS } from "@/lib/payments/batchLimits";
 
 export const maxDuration = 120;
 
@@ -81,8 +82,11 @@ export async function POST(request: Request) {
 
         const normalizedSender = wallet.toLowerCase();
         const recipients = normalizeRecipients(body);
-        if (recipients.length === 0 || recipients.length > 25) {
-            return NextResponse.json({ error: "Provide between 1 and 25 recipients" }, { status: 400 });
+        if (recipients.length === 0 || recipients.length > MAX_BATCH_RECIPIENTS) {
+            return NextResponse.json(
+                { error: `Provide between 1 and ${MAX_BATCH_RECIPIENTS} recipients` },
+                { status: 400 },
+            );
         }
 
         /* A delegated (sub-user) caller spends the *parent's* USDC, because the parent is the one
