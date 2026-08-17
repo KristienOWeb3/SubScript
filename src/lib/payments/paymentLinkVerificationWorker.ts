@@ -544,7 +544,35 @@ async function verifyAndFinalize(supabase: any, job: PaymentLinkVerificationJob)
             await runDurablePostSettlementEffects(supabase, job, paymentId, shareUrl);
 
             const settlementChainId = Number(job.chain_id);
-            await recordMerchantEvent({
+            /* Two outbox writers land on this payment, and only one of them used to be flushed.
+             *
+             * finalize_payment_link_settlement enqueues `payment.succeeded` inside the settlement
+             * transaction under the id `evt_payment_<paymentId>`, and runDurablePostSettlementEffects
+             * pushes that one out immediately — so that event has always been near-instant.
+             *
+             * recordMerchantEvent below is a different writer: it derives ids as
+             * deterministicEventId() = `evt_<sha256>`, which no inline flush ever named. Those rows
+             * sat PENDING until the 15-minute reconcile pass picked them up, so an integration
+             * waiting on `checkout.completed` — the event that ONLY exists on this path — hung for
+             * up to a quarter of an hour on every payment.
+             *
+             * Flushing the returned id closes that gap. Best-effort on purpose: the reconcile pass
+             * is still the durable owner, so a transient delivery failure here is a latency
+             * regression rather than a lost webhook. */
+            const flushInline = async (
+                label: string,
+                recorded: Promise<{ eventId: string; queued: number }>,
+            ) => {
+                try {
+                    const { eventId, queued } = await recorded;
+                    if (queued === 0) return;
+                    await deliverWebhookOutboxEvent(supabase, eventId);
+                } catch (err: unknown) {
+                    console.error(`[payment-verification] ${label} inline webhook flush failed:`, err);
+                }
+            };
+
+            await flushInline("checkout.completed", recordMerchantEvent({
                 merchantAddress: job.merchant_address.toLowerCase(),
                 eventType: "checkout.completed",
                 environment: settlementChainId === ARC_TESTNET_CHAIN_ID ? "TEST" : "LIVE",
@@ -562,9 +590,9 @@ async function verifyAndFinalize(supabase: any, job: PaymentLinkVerificationJob)
                     amount_usdc_micros: job.amount_usdc.toString(),
                     payer_address: job.payer_address,
                 },
-            }).catch((err: unknown) => console.error("[payment-verification] checkout.completed webhook error:", err));
+            }));
 
-            await recordMerchantEvent({
+            await flushInline("payment.succeeded", recordMerchantEvent({
                 merchantAddress: job.merchant_address.toLowerCase(),
                 eventType: "payment.succeeded",
                 environment: settlementChainId === ARC_TESTNET_CHAIN_ID ? "TEST" : "LIVE",
@@ -582,7 +610,7 @@ async function verifyAndFinalize(supabase: any, job: PaymentLinkVerificationJob)
                     merchant_address: job.merchant_address.toLowerCase(),
                     tx_hash: job.tx_hash,
                 },
-            }).catch((err: unknown) => console.error("[payment-verification] payment.succeeded webhook error:", err));
+            }));
 
             await completeJob(supabase, job);
             return;

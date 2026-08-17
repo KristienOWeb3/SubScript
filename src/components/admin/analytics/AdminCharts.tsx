@@ -802,11 +802,18 @@ export function StatCardWithSparkline({
   badgeText?: string;
 }) {
   return (
-    /* min-w-0 matters here: as a grid item this card defaults to min-width:auto, so a long
-       figure like $12,345,678.90 widens the track instead of wrapping and the whole grid
-       spills past its container — which is what happened when the admin sidebar expanded and
-       took width away from the content column. */
-    <div className="min-w-0 rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)] flex flex-col justify-between transition hover:shadow-md">
+    /* Two things are load-bearing on this root.
+     *
+     * min-w-0: as a grid item the card defaults to min-width:auto, so a long figure like
+     * $12,345,678.90 widens the track instead of fitting and the whole grid spills past its
+     * container — which is what happened when the admin sidebar expanded and took width away.
+     *
+     * container-type:inline-size: makes the card a query container, so the figure below can size
+     * itself against THIS CARD's width rather than the viewport's. The sidebar changes the card's
+     * width without changing the viewport, so vw-based scaling cannot see the thing that actually
+     * moved. It also stops the card's width depending on its contents, which is the overflow this
+     * originally had. */
+    <div className="min-w-0 [container-type:inline-size] rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)] flex flex-col justify-between transition hover:shadow-md">
       <div className="flex items-center justify-between gap-2">
         <span className="min-w-0 text-[10px] font-black uppercase tracking-wider text-[#64748b]">{label}</span>
         {Icon && (
@@ -817,10 +824,14 @@ export function StatCardWithSparkline({
       </div>
 
       <div className="my-3 flex items-baseline justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          {/* Wraps rather than overflows. A money figure has no spaces to break at, so
-              overflow-wrap:anywhere is what actually lets it fold onto a second line. */}
-          <p className="text-2xl font-black text-[#0f172a] tracking-tight break-words [overflow-wrap:anywhere]">{value}</p>
+        <div className="min-w-0 flex-1 overflow-hidden">
+          {/* Never wrap a money figure. This used to carry overflow-wrap:anywhere so a long value
+              would fold to a second line, but a number has no legal break point: $83.00 came out
+              as "$83." / "00", and in a narrower card as "$8" / "3.0" / "0" — unreadable, and on a
+              financial dashboard actively misleading about the amount.
+              It scales instead: clamped to the card's inline size so it shrinks to fit down to
+              18px and never exceeds the 24px it was designed at. */}
+          <p className="text-[clamp(1.125rem,7cqi,1.5rem)] font-black leading-tight text-[#0f172a] tracking-tight whitespace-nowrap">{value}</p>
           {changePercent !== undefined && (
             <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] font-bold">
               {isPositive ? (
@@ -836,14 +847,22 @@ export function StatCardWithSparkline({
             </div>
           )}
           {badgeText && (
-            <span className="mt-1 inline-block max-w-full truncate rounded-full bg-[#f1f5f9] px-2 py-0.5 text-[9px] font-bold text-[#64748b]">
+            /* Wraps rather than truncates. These are already short ("44 confirmed receipts",
+               "Arc Mainnet"), and truncating left "44 con…" / "Arc …" / "Act…" — which conveys
+               nothing at all. Unlike the figure above, this is prose and has spaces to break at. */
+            <span className="mt-1 inline-block max-w-full rounded-full bg-[#f1f5f9] px-2 py-0.5 text-[9px] font-bold leading-snug text-[#64748b]">
               {badgeText}
             </span>
           )}
         </div>
 
         {sparklineData && sparklineData.length > 1 && (
-          <div className="hidden shrink-0 sm:block">
+          /* The sparkline yields before the number does: it is decoration, the figure is the point
+             of the card. These grids run to five columns, so at lg a card is only ~200px wide and
+             there is not room for both — the sparkline waits for xl rather than squeezing the value,
+             which is what produced "$8 / 3.0 / 0". Also allowed to shrink rather than hold its
+             full 90px. */
+          <div className="hidden min-w-0 max-w-[40%] shrink justify-end xl:flex">
             <MetricSparkline data={sparklineData} color={color} />
           </div>
         )}
