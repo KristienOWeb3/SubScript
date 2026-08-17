@@ -6,6 +6,7 @@ import { getCurrencyForCountry } from "@/lib/currencyMap";
 import { fetchExchangeRate } from "@/lib/fx";
 import { paymentLinkSettlementVersion } from "@/lib/paymentLinks/settlementVersion";
 import { isValidPaymentLinkId } from "@/lib/paymentLinks/validation";
+import { classifyCheckoutArrival } from "@/lib/paymentLinks/arrival";
 import PublicPayClient from "./PublicPayClient";
 
 /* Define parameters type according to Next.js App Router specs */
@@ -187,7 +188,18 @@ export default async function PublicPayPage({ params }: PageProps) {
     const country = headersList.get("x-user-country") || "US";
     const displayCurrency = getCurrencyForCountry(country);
     const exchangeRate = await fetchExchangeRate(displayCurrency);
-    
+
+    /* Decides where the payer goes after settlement. A merchant that redirected a buyer here gets
+       that buyer back; someone who scanned a QR or opened a shared link does not get sent to a site
+       they have no relationship with. Read server-side because Sec-Fetch-Site only exists on the
+       navigation request — by the time the client mounts it is gone. */
+    const arrival = classifyCheckoutArrival({
+        secFetchSite: headersList.get("sec-fetch-site"),
+        referer: headersList.get("referer"),
+        successUrl,
+        cancelUrl,
+    });
+
     /* amount_usdc is stored in micro-USDC (6 decimals) */
     const amountUsdcNum = link ? (Number(link.amount_usdc) / 1000000) : 0;
     const displayAmount = amountUsdcNum * exchangeRate;
@@ -201,6 +213,7 @@ export default async function PublicPayPage({ params }: PageProps) {
             exchangeRate={exchangeRate}
             successUrl={successUrl}
             cancelUrl={cancelUrl}
+            arrival={arrival}
             initialSettlementVersion={initialSettlementVersion}
         />
     );

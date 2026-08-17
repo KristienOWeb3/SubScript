@@ -10,8 +10,7 @@ import {
 } from "@/components/icons";
 import { QRCode } from "react-qrcode-logo";
 import { motion, AnimatePresence } from "framer-motion";
-import AnimatedGradientBg from "@/components/AnimatedGradientBg";
-import { 
+import {
     SUBSCRIPT_ROUTER_ADDRESS, 
     USDC_NATIVE_GAS_ADDRESS,
     ARC_TESTNET_CHAIN_ID,
@@ -24,6 +23,8 @@ import { ROUTER_DEPOSIT_ABI, isReceiptId, receiptUrl } from "@/lib/arc/memo";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 import { usePlatformFlags } from "@/hooks/usePlatformFlags";
 import { merchantDisplayName } from "@/lib/identityDisplay";
+import { shouldAutoReturnToMerchant, type CheckoutArrival } from "@/lib/paymentLinks/arrival";
+import CheckoutSkeleton from "./CheckoutSkeleton";
 
 export interface PublicPayClientProps {
     id: string;
@@ -35,6 +36,10 @@ export interface PublicPayClientProps {
        same-origin/https only, no javascript:/data: — the redirect-safety boundary. */
     successUrl?: string | null;
     cancelUrl?: string | null;
+    /* How the payer reached this page, classified server-side from Sec-Fetch-Site + Referer (see
+       @/lib/paymentLinks/arrival). Only a "merchant" arrival auto-returns them to the merchant's
+       site after settlement — a QR scan or a shared link keeps them inside SubScript. */
+    arrival?: CheckoutArrival;
     initialSettlementVersion?: string | null;
 }
 
@@ -70,6 +75,10 @@ function formatCheckoutAddress(address: string) {
         : address;
 }
 
+/* The settled status line. Named because it used to double as the settlement *predicate* — see
+   isSettled below. Edit the wording here freely now; nothing branches on its value. */
+const SETTLED_STATUS = "Payment confirmed and settled successfully!";
+
 export default function PublicPayClient({
     id,
     initialLinkData,
@@ -78,6 +87,7 @@ export default function PublicPayClient({
     exchangeRate = 1.0,
     successUrl = null,
     cancelUrl = null,
+    arrival = "direct",
     initialSettlementVersion = null,
 }: PublicPayClientProps) {
     const router = useRouter();
@@ -201,8 +211,14 @@ export default function PublicPayClient({
     const [isVerifying, setIsVerifying] = useState(false);
     const [paymentStep, setPaymentStep] = useState<"approving" | "sending" | "confirming" | "verifying" | null>(null);
     const [verificationStatus, setVerificationStatus] = useState<string | null>(
-        hasInitialSingleUseSettlement ? "Payment confirmed and settled successfully!" : null
+        hasInitialSingleUseSettlement ? SETTLED_STATUS : null
     );
+    /* Settlement is tracked as its own flag rather than inferred by comparing verificationStatus
+       against the sentence above. That comparison gated the entire success screen — receipt link,
+       merchant return, step 3 of the indicator, and now the arrival-aware redirect — on an exact
+       match with user-facing copy assigned in five different places, so any wording tweak silently
+       broke all of it. markSettled below is the only writer, so the copy and the flag cannot drift. */
+    const [isSettled, setIsSettled] = useState(hasInitialSingleUseSettlement);
     const [verificationError, setVerificationError] = useState<string | null>(null);
     const [successTxHash, setSuccessTxHash] = useState<string | null>(null);
     const [receiptId, setReceiptId] = useState<string | null>(
@@ -506,7 +522,14 @@ export default function PublicPayClient({
         }
     };
 
-    const isPaymentSettled = verificationStatus === "Payment confirmed and settled successfully!";
+    const isPaymentSettled = isSettled;
+
+    /* The one place that marks a payment settled: sets the flag and the status line together, so
+       the four call sites below cannot set one without the other. */
+    const markSettled = useCallback(() => {
+        setIsSettled(true);
+        setVerificationStatus(SETTLED_STATUS);
+    }, []);
 
     useEffect(() => {
         if (!mounted || !isPaymentSettled || !receiptId || shareableReceiptUrl) return;
@@ -529,14 +552,22 @@ export default function PublicPayClient({
         }
     };
 
+    /* Auto-return is the merchant round trip: a merchant that redirected a buyer here expects that
+       buyer back on its order-confirmation page. It fires ONLY for a merchant-initiated arrival.
+       The same link also circulates as a printed QR code and gets pasted into chats, and those
+       payers have no relationship with the merchant's site — navigating them there landed them on a
+       stranger's page with no session, which is the whole reason this gate exists. They keep a
+       manual "Return to <merchant>" link in the success panel instead. */
+    const autoReturnsToMerchant = shouldAutoReturnToMerchant(arrival, merchantSuccessUrl);
+
     useEffect(() => {
-        if (!isPaymentSettled || !merchantSuccessUrl) return;
+        if (!isPaymentSettled || !autoReturnsToMerchant || !merchantSuccessUrl) return;
         const target = buildMerchantReturnUrl(merchantSuccessUrl);
         if (!target) return;
         const timer = setTimeout(() => { window.location.assign(target); }, 3500);
         return () => clearTimeout(timer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isPaymentSettled, merchantSuccessUrl, receiptId, successTxHash]);
+    }, [isPaymentSettled, autoReturnsToMerchant, merchantSuccessUrl, receiptId, successTxHash]);
 
     /* Wake a same-origin dashboard tab as soon as settlement is final. The storage event fires in
        other tabs; focus/visibility refresh remains the fallback when browsers throttle it. */
@@ -602,7 +633,7 @@ export default function PublicPayClient({
                     clearPendingVerification();
                     paymentSubmissionGuardRef.current = false;
                     setVerificationError(null);
-                    setVerificationStatus("Payment confirmed and settled successfully!");
+                    markSettled();
                     setPaymentStep(null);
                     setIsPaying(false);
                     setIsEmbeddedPaying(false);
@@ -625,7 +656,7 @@ export default function PublicPayClient({
             cancelled = true;
             if (interval) clearInterval(interval);
         };
-    }, [clearPendingVerification, clientIntentId, isPaymentSettled, linkData?.id, linkData?.max_uses]);
+    }, [clearPendingVerification, clientIntentId, isPaymentSettled, linkData?.id, linkData?.max_uses, markSettled]);
 
     const defaultArcChainId = isProd ? 5042001 : 5042002;
     const expectedChainId = linkData?.settlement_chain_id
@@ -1004,7 +1035,7 @@ export default function PublicPayClient({
         if (reservation.kind === "settled") {
             setIsPaying(false);
             if (reservation.receiptId) setReceiptId(reservation.receiptId);
-            setVerificationStatus("Payment confirmed and settled successfully!");
+            markSettled();
             return;
         }
         const activeAttemptId = reservation.attemptId;
@@ -1236,7 +1267,7 @@ export default function PublicPayClient({
                             clearPendingVerification();
                             paymentSubmissionGuardRef.current = false;
                             verificationInFlightRef.current = null;
-                            setVerificationStatus("Payment confirmed and settled successfully!");
+                            markSettled();
                             setIsVerifying(false);
                             setIsPaying(false);
                             setIsEmbeddedPaying(false);
@@ -1309,7 +1340,7 @@ export default function PublicPayClient({
             }
         };
         run();
-    }, [clearPendingVerification, friendlyError, linkData]);
+    }, [clearPendingVerification, friendlyError, linkData, markSettled]);
 
     useEffect(() => {
         if (isConfirmed && txReceipt && txHash && linkData && verifiedHash !== txHash) {
@@ -1452,7 +1483,7 @@ export default function PublicPayClient({
                 clearPendingVerification();
                 paymentSubmissionGuardRef.current = false;
                 setVerificationError(null);
-                setVerificationStatus("Payment confirmed and settled successfully!");
+                markSettled();
                 setPaymentStep(null);
                 setIsPaying(false);
                 setIsEmbeddedPaying(false);
@@ -1562,51 +1593,54 @@ export default function PublicPayClient({
     };
 
     const pendingVerificationPanel = pendingVerification && !isPaymentSettled ? (
-        <div className="rounded-2xl border border-amber-400/20 bg-amber-400/[0.05] p-5 text-center space-y-4" aria-live="polite">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-center space-y-4" aria-live="polite">
             <div className="flex justify-center">
                 {isVerifying || pendingVerification.phase === "broadcast"
-                    ? <Loader2 className="h-8 w-8 animate-spin text-amber-300" />
-                    : <AlertTriangle className="h-8 w-8 text-amber-300" />}
+                    ? <Loader2 className="h-8 w-8 animate-spin text-amber-600" />
+                    : <AlertTriangle className="h-8 w-8 text-amber-600" />}
             </div>
             <div className="space-y-1">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-amber-200">Payment already submitted</p>
-                <p className="text-xs leading-relaxed text-amber-100/80">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-amber-900">Payment already submitted</p>
+                <p className="text-xs leading-relaxed text-amber-900">
                     {verificationStatus || "Payment confirmation was interrupted. Continue with the same payment — do not pay again."}
                 </p>
                 {verificationError && (
-                    <p className="text-[10px] font-mono leading-relaxed text-amber-200/70">{verificationError}</p>
+                    <p className="text-[10px] font-mono leading-relaxed text-amber-900/80">{verificationError}</p>
                 )}
             </div>
             <button
                 type="button"
                 onClick={retryPendingVerification}
                 disabled={isVerifying}
-                className="w-full rounded-xl border border-amber-300/30 bg-amber-300/10 px-3 py-3 text-[10px] font-bold uppercase tracking-wider text-amber-100 transition hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-50"
+                className="w-full rounded-xl border border-amber-300 bg-amber-100 px-3 py-3 text-[10px] font-bold uppercase tracking-wider text-amber-900 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
                 {isVerifying ? "Verifying submitted payment…" : "Continue verification"}
             </button>
-            <p className="text-[9px] leading-relaxed text-white/40">We will reuse this payment until confirmation completes.</p>
+            <p className="text-[10px] leading-relaxed text-black/55">We will reuse this payment until confirmation completes.</p>
         </div>
     ) : null;
 
-    /* The verifying/settled panel is identical for browser and embedded wallets (it keys off
-       verificationStatus, not the wallet), so it's shared by both branches below. */
+    /* The verifying/settled panel is identical for browser and embedded wallets (it keys off the
+       settlement flag, not the wallet), so it's shared by both branches below. */
     const verificationPanel = (
-        <div className={`${isPaymentSettled ? "border-emerald-500/15 bg-emerald-500/5" : "border-amber-400/15 bg-amber-400/[0.04]"} border rounded-2xl p-5 text-center space-y-4 flex flex-col items-center`} aria-live="polite">
-            {isPaymentSettled ? <CheckCircle className="w-8 h-8 text-emerald-400" /> : <Loader2 className="w-8 h-8 animate-spin text-amber-300" />}
-            <p className={`text-xs font-semibold leading-relaxed ${isPaymentSettled ? "text-emerald-100/80" : "text-amber-100/80"}`}>{verificationStatus}</p>
+        <div className={`${isPaymentSettled ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"} border rounded-2xl p-5 text-center space-y-4 flex flex-col items-center`} aria-live="polite">
+            {isPaymentSettled ? <CheckCircle className="w-8 h-8 text-emerald-600" /> : <Loader2 className="w-8 h-8 animate-spin text-amber-600" />}
+            <p className={`text-xs font-semibold leading-relaxed ${isPaymentSettled ? "text-emerald-900" : "text-amber-900"}`}>{verificationStatus}</p>
             {shareableReceiptUrl && (
-                <a href={shareableReceiptUrl} target="_blank" rel="noopener noreferrer" className="text-[9px] font-mono text-[#00d2b4] hover:underline flex items-center gap-1">
+                <a href={shareableReceiptUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] font-mono font-bold text-[#2775CA] hover:underline flex items-center gap-1">
                     Share receipt <ExternalLink className="w-3 h-3" />
                 </a>
             )}
             {isPaymentSettled && (
-                <div className="w-full pt-4 border-t border-white/5 space-y-3">
-                    {merchantSuccessUrl ? (
-                        /* Merchant checkout intent: route the payer back to the merchant's site. */
+                <div className="w-full pt-4 border-t border-black/10 space-y-3">
+                    {/* Order matters. The merchant round trip comes first, but only when the merchant
+                        actually sent this payer here — see autoReturnsToMerchant. Otherwise the payer
+                        keeps their own destination as the primary action and the merchant link is
+                        demoted to something they can choose, never an automatic navigation. */}
+                    {autoReturnsToMerchant && merchantSuccessUrl ? (
                         <>
-                            <p className="text-[10px] text-white/50 leading-relaxed text-center">
-                                Returning you to {merchantSuccessHost || "the merchant site"} in a few seconds...
+                            <p className="text-[10px] text-black/60 leading-relaxed text-center">
+                                Taking you back to {merchantSuccessHost || "the merchant site"} in a few seconds…
                             </p>
                             <button
                                 type="button"
@@ -1614,36 +1648,54 @@ export default function PublicPayClient({
                                     const target = buildMerchantReturnUrl(merchantSuccessUrl);
                                     if (target) window.location.assign(target);
                                 }}
-                                className="w-full py-4 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]"
+                                className="w-full py-4 bg-[#2775CA] hover:bg-[#1f62ab] text-[#FFFFF0] font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-sm"
                             >
                                 Return to {merchantSuccessHost || "merchant site"} now <ArrowRight className="w-4 h-4" />
                             </button>
                         </>
-                    ) : isUserRequest && sessionInfo?.loggedIn ? (
-                        /* Peer request paid by a signed-in user: the request DM was marked approved at
-                           settlement — go to the inbox (no DM creation; that would re-request payment). */
-                        <button
-                            type="button"
-                            onClick={() => router.push("/user?tab=inbox")}
-                            className="w-full py-4 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]"
-                        >
-                            Go to Inbox <ArrowRight className="w-4 h-4" />
-                        </button>
                     ) : sessionInfo?.loggedIn ? (
-                        /* One-time merchant payment (e.g. scanned QR) by a signed-in user with no merchant
-                           return URL: send them to their dashboard, where this payment now appears in
-                           transaction history. */
+                        /* Signed-in payer who arrived by QR, shared link, or from inside SubScript.
+                           A peer request goes to the inbox (the request DM was marked approved at
+                           settlement — creating a DM here would re-request payment); anything else
+                           goes to transaction history, where this payment now appears. */
+                        <>
+                            <button
+                                type="button"
+                                onClick={() => router.push(isUserRequest ? "/user?tab=inbox" : "/user/transactions")}
+                                className="w-full py-4 bg-[#2775CA] hover:bg-[#1f62ab] text-[#FFFFF0] font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-sm"
+                            >
+                                {isUserRequest ? "Go to my inbox" : "Go to my dashboard"} <ArrowRight className="w-4 h-4" />
+                            </button>
+                            {merchantSuccessUrl && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const target = buildMerchantReturnUrl(merchantSuccessUrl);
+                                        if (target) window.location.assign(target);
+                                    }}
+                                    className="mx-auto flex items-center justify-center gap-1.5 text-[10px] font-bold text-black/55 underline hover:text-black"
+                                >
+                                    Or continue to {merchantSuccessHost || "the merchant site"} <ExternalLink className="h-3 w-3" />
+                                </button>
+                            )}
+                        </>
+                    ) : merchantSuccessUrl ? (
+                        /* Anonymous payer: no SubScript surface to send them to, so the merchant's
+                           page is the only onward destination worth offering. Still their choice. */
                         <button
                             type="button"
-                            onClick={() => router.push("/user/transactions")}
-                            className="w-full py-4 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]"
+                            onClick={() => {
+                                const target = buildMerchantReturnUrl(merchantSuccessUrl);
+                                if (target) window.location.assign(target);
+                            }}
+                            className="w-full py-4 bg-[#2775CA] hover:bg-[#1f62ab] text-[#FFFFF0] font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-sm"
                         >
-                            Go to Dashboard <ArrowRight className="w-4 h-4" />
+                            Continue to {merchantSuccessHost || "merchant site"} <ArrowRight className="w-4 h-4" />
                         </button>
                     ) : (
-                        /* Anonymous external-wallet payer: the receipt links above are the record. */
-                        <p className="text-[10px] text-white/40 leading-relaxed text-center">
-                            You're all set — save the receipt link above for your records.
+                        /* Anonymous payer, no return URL: the receipt link above is the record. */
+                        <p className="text-[10px] text-black/55 leading-relaxed text-center">
+                            You&apos;re all set — save the receipt link above for your records.
                             You can safely close this page.
                         </p>
                     )}
@@ -1653,52 +1705,50 @@ export default function PublicPayClient({
     );
 
     const embeddedEmailVerificationPanel = embeddedPaySession && payerNeedsEmail ? (
-        <div className="rounded-2xl border border-[#00d2b4]/20 bg-black/25 p-4 space-y-3 text-left">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-[#00d2b4]">Verify your email before payment</p>
-            <p className="text-[10px] leading-relaxed text-white/55">We will email a one-time code. Payment stays locked until the code is confirmed.</p>
+        <div className="rounded-2xl border border-[#2775CA]/25 bg-[#2775CA]/[0.06] p-4 space-y-3 text-left">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-[#2775CA]">Verify your email before payment</p>
+            <p className="text-[10px] leading-relaxed text-black/60">We will email a one-time code. Payment stays locked until the code is confirmed.</p>
             {payerEmailStep === "email" ? <>
-                <input type="email" value={payerEmailInput} onChange={(event) => { setPayerEmailInput(event.target.value); setPayerEmailError(null); }} placeholder="you@example.com" className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-xs text-white placeholder:text-white/30 focus:border-[#00d2b4]/50 focus:outline-none" />
-                <button type="button" onClick={handleSendPayerEmailCode} disabled={isSendingPayerEmailCode || !canBindPayerEmail} className="w-full rounded-xl bg-[#00d2b4] px-3 py-2.5 text-[10px] font-bold uppercase tracking-wide text-black disabled:opacity-40">
+                <input type="email" value={payerEmailInput} onChange={(event) => { setPayerEmailInput(event.target.value); setPayerEmailError(null); }} placeholder="you@example.com" className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-xs text-[#111827] placeholder:text-black/40 focus:border-[#2775CA]/60 focus:outline-none" />
+                <button type="button" onClick={handleSendPayerEmailCode} disabled={isSendingPayerEmailCode || !canBindPayerEmail} className="w-full rounded-xl bg-[#2775CA] hover:bg-[#1f62ab] px-3 py-2.5 text-[10px] font-bold uppercase tracking-wide text-[#FFFFF0] disabled:opacity-40">
                     {isSendingPayerEmailCode ? "Sending code…" : "Send verification code"}
                 </button>
             </> : <>
-                <input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={payerEmailCode} onChange={(event) => { setPayerEmailCode(event.target.value.replace(/\D/g, "")); setPayerEmailError(null); }} placeholder="6-digit code" className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-center text-xs tracking-[0.3em] text-white placeholder:tracking-normal placeholder:text-white/30 focus:border-[#00d2b4]/50 focus:outline-none" />
-                <button type="button" onClick={handleVerifyPayerEmail} disabled={isVerifyingPayerEmail} className="w-full rounded-xl bg-[#00d2b4] px-3 py-2.5 text-[10px] font-bold uppercase tracking-wide text-black disabled:opacity-40">
+                <input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={payerEmailCode} onChange={(event) => { setPayerEmailCode(event.target.value.replace(/\D/g, "")); setPayerEmailError(null); }} placeholder="6-digit code" className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-center text-xs tracking-[0.3em] text-[#111827] placeholder:tracking-normal placeholder:text-black/40 focus:border-[#2775CA]/60 focus:outline-none" />
+                <button type="button" onClick={handleVerifyPayerEmail} disabled={isVerifyingPayerEmail} className="w-full rounded-xl bg-[#2775CA] hover:bg-[#1f62ab] px-3 py-2.5 text-[10px] font-bold uppercase tracking-wide text-[#FFFFF0] disabled:opacity-40">
                     {isVerifyingPayerEmail ? "Verifying…" : "Verify email"}
                 </button>
             </>}
-            {payerEmailError && <p className="text-[10px] font-mono text-red-400" role="alert">{payerEmailError}</p>}
+            {payerEmailError && <p className="text-[10px] font-mono text-red-700" role="alert">{payerEmailError}</p>}
         </div>
     ) : null;
 
     return (
-        <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4] flex items-center justify-center p-4 sm:p-6 relative font-sans">
-            <AnimatedGradientBg />
-            
+        <div className="subscript-checkout min-h-screen bg-[#FFFFF0] text-black selection:bg-[#2775CA]/20 selection:text-black flex items-center justify-center p-4 sm:p-6 relative font-sans">
             <div className="relative z-10 w-full max-w-md lg:max-w-4xl">
 
                 <div className="text-center mb-8">
-                    <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
-                        SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">checkout</span>
+                    <h1 className="text-2xl font-extrabold text-[#111827] uppercase tracking-wider">
+                        SubScript <span className="font-serif italic lowercase font-normal text-[#2775CA]">checkout</span>
                     </h1>
-                    <p className="text-xs text-[#00d2b4] font-bold uppercase tracking-widest mt-1">
+                    <p className="text-xs text-[#2775CA] font-bold uppercase tracking-widest mt-1">
                         {linkData?.billing_type === "RECURRING" || linkData?.recurring || linkData?.interval ? "Recurring" : "One-time"}
                     </p>
                 </div>
 
                 {isLoading ? (
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl flex flex-col items-center justify-center py-20 lg:max-w-md lg:mx-auto">
-                        <Loader2 className="w-8 h-8 animate-spin text-[#00d2b4]" />
-                        <p className="text-xs text-white/40 uppercase tracking-wider mt-4">Loading purchase details...</p>
-                    </div>
+                    /* Same component the route's loading.tsx renders, so the Suspense fallback and
+                       this in-component fetch state are pixel-identical and the payer sees one
+                       skeleton rather than two slightly different ones swapping. */
+                    <CheckoutSkeleton />
                 ) : error ? (
-                    <div className="liquid-glass border border-red-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-red-500/[0.02] flex flex-col items-center justify-center text-center gap-6 py-12 lg:max-w-md lg:mx-auto">
-                        <div className="p-4 rounded-3xl bg-red-500/10 border border-red-500/20 text-red-400">
+                    <div className="rounded-3xl border border-red-200 bg-red-50 p-6 sm:p-8 shadow-sm flex flex-col items-center justify-center text-center gap-6 py-12 lg:max-w-md lg:mx-auto" role="alert">
+                        <div className="p-4 rounded-3xl bg-red-100 border border-red-200 text-red-700">
                             <AlertTriangle className="w-10 h-10" />
                         </div>
                         <div className="space-y-2">
-                            <h2 className="text-base font-bold text-white uppercase tracking-wider">Checkout Error</h2>
-                            <p className="text-xs text-white/50 leading-relaxed max-w-xs">
+                            <h2 className="text-base font-bold text-red-900 uppercase tracking-wider">Checkout error</h2>
+                            <p className="text-xs text-red-900/80 leading-relaxed max-w-xs">
                                 {error}
                             </p>
                         </div>
@@ -1710,12 +1760,12 @@ export default function PublicPayClient({
                             Mobile keeps the inline "Pay on Mobile (Scan QR)" toggle further down — this
                             panel is hidden below lg so mobile is unchanged. */}
                         {checkoutUrl && (
-                            <aside className="hidden lg:flex lg:w-[420px] lg:shrink-0 liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl bg-black/40 flex-col items-center justify-center text-center gap-5">
+                            <aside className="hidden lg:flex lg:w-[420px] lg:shrink-0 rounded-3xl border border-black/15 bg-white p-6 shadow-sm flex-col items-center justify-center text-center gap-5">
                                 <div className="space-y-1">
-                                    <p className="text-xs font-bold text-white uppercase tracking-wider">
+                                    <p className="text-xs font-bold text-[#111827] uppercase tracking-wider">
                                         {cannotPayLink ? "Checkout status" : "Pay on mobile"}
                                     </p>
-                                    <p className="text-[10px] text-white/50 leading-relaxed max-w-[280px]">
+                                    <p className="text-[10px] text-black/60 leading-relaxed max-w-[280px]">
                                         {cannotPayLink
                                             ? "Payment controls are hidden because this link cannot submit a settlement."
                                             : "Scan with your phone's wallet browser to complete this payment on mobile."}
@@ -1740,13 +1790,13 @@ export default function PublicPayClient({
                                         removeQrCodeBehindLogo={true}
                                         logoPadding={2}
                                     />
-                                </div> : <div className="flex min-h-[352px] w-full flex-col items-center justify-center gap-3 rounded-2xl border border-red-500/20 bg-red-500/[0.04] p-8 text-red-200">
+                                </div> : <div className="flex min-h-[352px] w-full flex-col items-center justify-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-8 text-red-800">
                                     <AlertTriangle className="h-10 w-10" />
                                     <p className="text-xs font-bold uppercase tracking-wider">Checkout unavailable</p>
-                                    <p className="text-[10px] text-white/50">{unpayableReason}</p>
+                                    <p className="text-[10px] text-black/60">{unpayableReason}</p>
                                 </div>}
-                                <div className={`flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[10px] font-bold ${remoteStatusError ? "border-amber-400/20 bg-amber-400/[0.05] text-amber-200" : "border-[#00d2b4]/20 bg-[#00d2b4]/[0.05] text-[#00d2b4]"}`} aria-live="polite">
-                                    {cannotPayLink ? <AlertTriangle className="h-3.5 w-3.5" /> : remoteStatusError ? <AlertCircle className="h-3.5 w-3.5" /> : <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#00d2b4] opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-[#00d2b4]" /></span>}
+                                <div className={`flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[10px] font-bold ${remoteStatusError ? "border-amber-200 bg-amber-50 text-amber-900" : "border-[#2775CA]/25 bg-[#2775CA]/[0.06] text-[#2775CA]"}`} aria-live="polite">
+                                    {cannotPayLink ? <AlertTriangle className="h-3.5 w-3.5" /> : remoteStatusError ? <AlertCircle className="h-3.5 w-3.5" /> : <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#2775CA] opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-[#2775CA]" /></span>}
                                     {cannotPayLink ? "Payment unavailable" : remoteStatusError || `Waiting for payment${lastRemoteStatusCheck ? ` · checked ${lastRemoteStatusCheck.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}`}
                                 </div>
                                 {!cannotPayLink && !isPaymentSettled && (
@@ -1755,7 +1805,7 @@ export default function PublicPayClient({
                                             type="button"
                                             onClick={handleManualPaymentCheck}
                                             disabled={isManualChecking}
-                                            className="w-full rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-xs font-bold uppercase tracking-wider text-emerald-300 transition hover:bg-emerald-400/20 disabled:opacity-50"
+                                            className="w-full rounded-2xl border border-emerald-300 bg-emerald-100 px-4 py-3 text-xs font-bold uppercase tracking-wider text-emerald-800 transition hover:bg-emerald-200 disabled:opacity-50"
                                         >
                                             {isManualChecking ? (
                                                 <><Loader2 className="mr-1.5 inline h-3.5 w-3.5 animate-spin" /> Checking…</>
@@ -1764,7 +1814,7 @@ export default function PublicPayClient({
                                             )}
                                         </button>
                                         {manualCheckMessage && (
-                                            <p className="px-2 text-center text-[10px] leading-relaxed text-amber-200/70" aria-live="polite">{manualCheckMessage}</p>
+                                            <p className="px-2 text-center text-[10px] leading-relaxed text-amber-900/80" aria-live="polite">{manualCheckMessage}</p>
                                         )}
                                     </div>
                                 )}
@@ -1772,7 +1822,7 @@ export default function PublicPayClient({
                                     type="button"
                                     onClick={handlePayInBrowser}
                                     disabled={pendingVerification ? isVerifying : cannotPayLink}
-                                    className="w-full rounded-2xl border border-[#00d2b4]/30 bg-[#00d2b4]/10 px-4 py-3 text-xs font-bold uppercase tracking-wider text-[#00d2b4] transition hover:bg-[#00d2b4]/20 disabled:cursor-not-allowed disabled:opacity-40"
+                                    className="w-full rounded-2xl border border-[#2775CA]/30 bg-[#2775CA]/10 px-4 py-3 text-xs font-bold uppercase tracking-wider text-[#2775CA] transition hover:bg-[#2775CA]/20 disabled:cursor-not-allowed disabled:opacity-40"
                                 >
                                     {pendingVerification
                                         ? (isVerifying ? "Confirming payment…" : "Continue verification")
@@ -1781,22 +1831,60 @@ export default function PublicPayClient({
                             </aside>
                         )}
 
-                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 lg:flex-1 lg:min-w-0">
+                        <div className="rounded-3xl border border-black/15 bg-white p-6 sm:p-8 shadow-sm space-y-6 relative overflow-hidden lg:flex-1 lg:min-w-0">
 
-                        <div className="grid grid-cols-3 gap-2 rounded-2xl border border-white/5 bg-black/25 p-2 text-center text-[9px] font-bold uppercase tracking-wider">
-                            <span className={isPaymentSettled ? "text-white/40" : "text-[#00d2b4]"}>1 · Account</span>
-                            <span className={reviewPaymentMode ? "text-[#00d2b4]" : "text-white/40"}>2 · Review</span>
-                            <span className={isPaymentSettled ? "text-emerald-300" : "text-white/40"}>3 · Confirmed</span>
-                        </div>
+                        {/* Progress. State was previously carried by colour alone — a blue label for
+                            the current step against grey for the others — which WCAG 1.4.1 rules out
+                            and which a screen reader could not report at all. Now a completed step
+                            carries a check, the current one is marked aria-current, and the whole row
+                            is a live region so moving between steps is announced. */}
+                        <ol
+                            role="status"
+                            aria-live="polite"
+                            aria-label="Checkout progress"
+                            className="grid grid-cols-3 gap-2 rounded-2xl border border-black/10 bg-[#f8fafc] p-2 text-center text-[10px] font-bold uppercase tracking-wider"
+                        >
+                            {([
+                                { label: "Account", done: isPaymentSettled || Boolean(reviewPaymentMode), current: !isPaymentSettled && !reviewPaymentMode },
+                                { label: "Review", done: isPaymentSettled, current: Boolean(reviewPaymentMode) && !isPaymentSettled },
+                                { label: "Confirmed", done: isPaymentSettled, current: false },
+                            ] as const).map((step, index) => {
+                                const settledStep = step.label === "Confirmed" && isPaymentSettled;
+                                return (
+                                    <li
+                                        key={step.label}
+                                        aria-current={step.current ? "step" : undefined}
+                                        className={`flex items-center justify-center gap-1 ${
+                                            settledStep
+                                                ? "text-emerald-800"
+                                                : step.current
+                                                    ? "text-[#2775CA]"
+                                                    : step.done
+                                                        ? "text-black/70"
+                                                        : "text-black/50"
+                                        }`}
+                                    >
+                                        {step.done ? (
+                                            <CheckCircle className="h-3 w-3 shrink-0" aria-hidden="true" />
+                                        ) : (
+                                            <span aria-hidden="true">{index + 1} ·</span>
+                                        )}
+                                        <span>{step.label}</span>
+                                        {step.done && <span className="sr-only">(done)</span>}
+                                        {step.current && <span className="sr-only">(current step)</span>}
+                                    </li>
+                                );
+                            })}
+                        </ol>
 
                         {/* Role Mismatch Warning Banner */}
                         {isRoleMismatch && (
-                            <div className="bg-red-500/[0.06] border border-red-500/25 rounded-2xl p-4 space-y-3">
+                            <div className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-3">
                                 <div className="flex items-start gap-3">
-                                    <ShieldAlert className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                                    <ShieldAlert className="w-5 h-5 text-red-700 shrink-0 mt-0.5" />
                                     <div className="space-y-1">
-                                        <p className="text-xs font-bold text-red-300 uppercase tracking-wide">Role Mismatch</p>
-                                        <p className="text-[10px] text-white/50 leading-relaxed">
+                                        <p className="text-xs font-bold text-red-800 uppercase tracking-wide">Role Mismatch</p>
+                                        <p className="text-[10px] text-black/60 leading-relaxed">
                                             This wallet is registered as a Merchant (Enterprise) account. Only standard User accounts can use this payment link to pay and start a DM. Please switch to a user wallet to proceed.
                                         </p>
                                     </div>
@@ -1806,19 +1894,19 @@ export default function PublicPayClient({
 
                         {/* Unverified Merchant Warning Banner */}
                         {merchantVerified === false && !unverifiedAccepted && !isUserRequest && (
-                            <div className="bg-amber-500/[0.06] border border-amber-500/25 rounded-2xl p-4 space-y-3">
+                            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
                                 <div className="flex items-start gap-3">
-                                    <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                                    <ShieldAlert className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
                                     <div className="space-y-1">
-                                        <p className="text-xs font-bold text-amber-300 uppercase tracking-wide">Unverified Merchant</p>
-                                        <p className="text-[10px] text-white/50 leading-relaxed">
+                                        <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Unverified Merchant</p>
+                                        <p className="text-[10px] text-black/60 leading-relaxed">
                                             This merchant has not been verified by SubScript. Proceed with caution and ensure you trust the payment recipient.
                                         </p>
                                     </div>
                                 </div>
                                 <button
                                     onClick={() => setUnverifiedAccepted(true)}
-                                    className="w-full py-2.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/25 text-amber-300 text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2"
+                                    className="w-full py-2.5 bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-800 text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2"
                                 >
                                     I understand the risk, continue
                                 </button>
@@ -1827,23 +1915,23 @@ export default function PublicPayClient({
 
                         {/* Verified Merchant Badge */}
                         {merchantVerified === true && (
-                            <div className="flex items-center gap-2 bg-emerald-500/[0.06] border border-emerald-500/20 rounded-xl px-3 py-2">
-                                <Shield className="w-4 h-4 text-emerald-400" />
-                                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">SubScript Verified Merchant</span>
+                            <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
+                                <Shield className="w-4 h-4 text-emerald-700" />
+                                <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">SubScript Verified Merchant</span>
                             </div>
                         )}
 
                         {cannotPayLink && (
-                            <div className="bg-red-500/[0.06] border border-red-500/25 rounded-2xl p-5 flex flex-col items-center justify-center text-center gap-3">
-                                <AlertTriangle className="w-8 h-8 text-red-400" />
-                                <p className="text-xs font-bold text-red-300 uppercase tracking-wide">{unpayableTitle}</p>
-                                <p className="text-[10px] text-white/40 leading-relaxed">{unpayableReason}</p>
+                            <div className="bg-red-50 border border-red-200 rounded-2xl p-5 flex flex-col items-center justify-center text-center gap-3">
+                                <AlertTriangle className="w-8 h-8 text-red-700" />
+                                <p className="text-xs font-bold text-red-800 uppercase tracking-wide">{unpayableTitle}</p>
+                                <p className="text-[10px] text-black/50 leading-relaxed">{unpayableReason}</p>
                             </div>
                         )}
                         {isTestnetLink && !isSimulationOnly && (
-                            <div className="rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-center">
-                                <p className="text-xs font-bold uppercase tracking-wide text-amber-200">Arc Testnet Payment</p>
-                                <p className="mt-2 text-[10px] leading-relaxed text-white/50">
+                            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-center">
+                                <p className="text-xs font-bold uppercase tracking-wide text-amber-900">Arc Testnet Payment</p>
+                                <p className="mt-2 text-[10px] leading-relaxed text-black/60">
                                     This payment moves test USDC on Arc Testnet. Test USDC has no monetary value.
                                 </p>
                             </div>
@@ -1851,7 +1939,7 @@ export default function PublicPayClient({
 
                         {linkData.expires_at && (
                             <div className="flex justify-end">
-                                <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/40">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#f8fafc] border border-black/15 text-black/50">
                                     Expires: {new Date(linkData.expires_at).toLocaleDateString()}
                                 </span>
                             </div>
@@ -1859,15 +1947,15 @@ export default function PublicPayClient({
 
 
                         <div className="space-y-2">
-                            <span className="text-[9px] font-bold text-white/30 uppercase tracking-widest">You are paying for</span>
-                            <h2 className="text-2xl font-extrabold text-white tracking-tight">{linkData.title}</h2>
+                            <span className="text-[10px] font-bold text-black/50 uppercase tracking-widest">You are paying for</span>
+                            <h2 className="text-2xl font-extrabold text-[#111827] tracking-tight">{linkData.title}</h2>
                             {linkData.description && (
-                                <p className="text-xs text-white/50 leading-relaxed font-sans">{linkData.description}</p>
+                                <p className="text-xs text-black/60 leading-relaxed font-sans">{linkData.description}</p>
                             )}
                             {(linkData.invoice_number || linkData.due_date) && (
                                 <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1">
                                     {linkData.invoice_number && (
-                                        <span className="text-[10px] font-mono text-white/40 uppercase tracking-wider">
+                                        <span className="text-[10px] font-mono text-black/50 uppercase tracking-wider">
                                             Invoice {linkData.invoice_number}
                                         </span>
                                     )}
@@ -1881,29 +1969,29 @@ export default function PublicPayClient({
                         </div>
 
                         {giftBeneficiaryLabel && (
-                            <div className="rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/10 p-4">
+                            <div className="rounded-2xl border border-[#a8cc00]/40 bg-[#f4ffd6] p-4">
                                 <div className="flex items-start gap-3">
-                                    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl border border-[#ccff00]/20 bg-black/30 text-[#ccff00]">
+                                    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl border border-[#a8cc00]/40 bg-white text-[#5c7a00]">
                                         <Gift className="h-4 w-4" />
                                     </div>
                                     <div>
-                                        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#ccff00]">Gift payment</p>
-                                        <p className="mt-1 text-xs leading-relaxed text-white/70">
+                                        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#5c7a00]">Gift payment</p>
+                                        <p className="mt-1 text-xs leading-relaxed text-black/70">
                                             This payment is a gift. Access will be granted to{" "}
-                                            <span className="font-mono font-bold text-white">{giftBeneficiaryLabel}</span>.
+                                            <span className="font-mono font-bold text-[#111827]">{giftBeneficiaryLabel}</span>.
                                         </p>
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                        <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-5 flex justify-between items-center">
-                            <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Amount Due</span>
+                        <div className="rounded-2xl border border-black/10 bg-[#f8fafc] p-5 flex justify-between items-center">
+                            <span className="text-[10px] text-black/50 uppercase font-bold tracking-wider">Amount Due</span>
                             <div className="text-right">
-                                <p className="text-2xl font-extrabold text-[#00d2b4] tracking-tight">
+                                <p className="text-2xl font-extrabold text-[#2775CA] tracking-tight">
                                     {`${(Number(linkData.amount_usdc) / 1000000).toFixed(2)} USDC`}
                                 </p>
-                                <p className="text-[9px] text-white/30 uppercase font-bold tracking-widest font-mono">
+                                <p className="text-[10px] text-black/50 uppercase font-bold tracking-widest font-mono">
                                     {displayCurrency && displayCurrency !== "USD" && displayAmount !== undefined
                                         ? `≈ ${fiatSymbol}${displayAmount.toFixed(2)} ${displayCurrency} · Arc Network`
                                         : "Arc Network"}
@@ -1927,15 +2015,15 @@ export default function PublicPayClient({
                                     balance — no browser wallet to connect, and no DM detour for one-time
                                     merchant payments. */}
                                 {embeddedPaySession && !cannotPayLink && (
-                                    <div className="rounded-2xl border border-[#00d2b4]/25 bg-[#00d2b4]/[0.06] p-4 space-y-3">
-                                        <p className="text-[11px] leading-relaxed text-white/75">
+                                    <div className="rounded-2xl border border-[#2775CA]/25 bg-[#2775CA]/[0.06] p-4 space-y-3">
+                                        <p className="text-[11px] leading-relaxed text-black/70">
                                             Signed in{sessionInfo?.email ? ` as ${sessionInfo.email}` : ""}. Pay directly from your SubScript wallet — no browser wallet needed.
                                         </p>
                                         {embeddedEmailVerificationPanel}
                                          <button
                                              onClick={() => beginPaymentReview("embedded")}
                                              disabled={!pendingVerificationHydrated || Boolean(pendingVerification) || isEmbeddedPaying || !clientIntentId || cannotPayLink || payerNeedsEmail}
-                                            className="w-full py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 disabled:opacity-50 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(0,210,180,0.2)]"
+                                            className="w-full py-4 bg-[#2775CA] hover:bg-[#1f62ab] disabled:opacity-50 text-[#FFFFF0] font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-sm"
                                         >
                                             {isEmbeddedPaying ? (
                                                 <><Loader2 className="w-4 h-4 animate-spin" /> {
@@ -1947,7 +2035,7 @@ export default function PublicPayClient({
                                                 <>Pay {(Number(linkData.amount_usdc) / 1_000_000).toFixed(2)} USDC <ArrowRight className="w-4 h-4" /></>
                                             )}
                                         </button>
-                                        {verificationError && <p className="text-[10px] font-mono text-red-400">{verificationError}</p>}
+                                        {verificationError && <p className="text-[10px] font-mono text-red-700">{verificationError}</p>}
                                     </div>
                                 )}
 
@@ -1955,8 +2043,8 @@ export default function PublicPayClient({
                                     open them in DMs. One-time MERCHANT payments never route to DMs — they are
                                     paid on this page. */}
                                 {isUserRequest && !cannotPayLink && sessionInfo?.loggedIn && sessionInfo.role !== "ENTERPRISE" && (
-                                    <div className="rounded-2xl border border-[#00d2b4]/25 bg-[#00d2b4]/[0.06] p-4 space-y-3">
-                                        <p className="text-[11px] leading-relaxed text-white/75">
+                                    <div className="rounded-2xl border border-[#2775CA]/25 bg-[#2775CA]/[0.06] p-4 space-y-3">
+                                        <p className="text-[11px] leading-relaxed text-black/70">
                                             You're already signed in to SubScript
                                             {sessionInfo.email ? ` as ${sessionInfo.email}` : sessionInfo.wallet ? ` (${sessionInfo.wallet.slice(0, 6)}...${sessionInfo.wallet.slice(-4)})` : ""}.
                                             Open this request in your DMs, or connect a wallet below to pay directly.
@@ -1964,7 +2052,7 @@ export default function PublicPayClient({
                                         <button
                                             onClick={handleGoToDms}
                                             disabled={isCreatingDm}
-                                            className="w-full py-3 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 disabled:opacity-40 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                                            className="w-full py-3 bg-[#2775CA] hover:bg-[#1f62ab] disabled:opacity-40 text-[#FFFFF0] font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
                                         >
                                             {isCreatingDm ? (
                                                 <><Loader2 className="w-4 h-4 animate-spin text-black" /> Opening DMs...</>
@@ -1972,20 +2060,20 @@ export default function PublicPayClient({
                                                 <>Go to my SubScript DMs <ArrowRight className="w-4 h-4" /></>
                                             )}
                                         </button>
-                                        {dmError && <p className="text-[10px] font-mono text-red-400">{dmError}</p>}
+                                        {dmError && <p className="text-[10px] font-mono text-red-700">{dmError}</p>}
                                         <div className="flex items-center gap-3 pt-1">
-                                            <span className="h-px flex-1 bg-white/10" />
-                                            <span className="text-[9px] font-bold uppercase tracking-wider text-white/30">or pay with a wallet</span>
-                                            <span className="h-px flex-1 bg-white/10" />
+                                            <span className="h-px flex-1 bg-black/15" />
+                                            <span className="text-[10px] font-bold uppercase tracking-wider text-black/50">or pay with a wallet</span>
+                                            <span className="h-px flex-1 bg-black/15" />
                                         </div>
                                     </div>
                                 )}
 
                                 {embeddedPaySession && !isConnected && !cannotPayLink && externalWalletEnabled && (
                                     <div className="flex items-center gap-3 pt-1">
-                                        <span className="h-px flex-1 bg-white/10" />
-                                        <span className="text-[9px] font-bold uppercase tracking-wider text-white/30">or pay with a browser wallet</span>
-                                        <span className="h-px flex-1 bg-white/10" />
+                                        <span className="h-px flex-1 bg-black/15" />
+                                        <span className="text-[10px] font-bold uppercase tracking-wider text-black/50">or pay with a browser wallet</span>
+                                        <span className="h-px flex-1 bg-black/15" />
                                     </div>
                                 )}
 
@@ -2000,7 +2088,7 @@ export default function PublicPayClient({
                                     so a payer is never left without a way to pay. */}
                                 {!isConnected && !cannotPayLink && externalWalletEnabled && (walletConnectors.length > 1 ? (
                                     <div className="space-y-2">
-                                        <p className="text-[9px] font-bold uppercase tracking-wider text-white/40 text-center">
+                                        <p className="text-[10px] font-bold uppercase tracking-wider text-black/50 text-center">
                                             Multiple wallets found — choose one
                                         </p>
                                         {walletConnectors.map((connector) => (
@@ -2013,7 +2101,7 @@ export default function PublicPayClient({
                                                     });
                                                 }}
                                                 disabled={isConnecting}
-                                                className="w-full py-3.5 bg-white/[0.06] hover:bg-white/[0.1] border border-white/10 text-white font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                                                className="w-full py-3.5 bg-white hover:bg-black/5 border border-black/15 text-[#111827] font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all disabled:opacity-50"
                                             >
                                                 {connector.icon ? (
                                                     <img src={connector.icon} alt="" className="h-4 w-4 rounded" />
@@ -2026,13 +2114,13 @@ export default function PublicPayClient({
                                     </div>
                                 ) : (
                                     <>
-                                        <p className="text-[10px] text-white/40 text-center leading-relaxed font-sans">
+                                        <p className="text-[10px] text-black/50 text-center leading-relaxed font-sans">
                                             Connect your browser wallet (e.g. MetaMask, Rabby) on {expectedChainName} to complete the payment.
                                         </p>
                                         <button
                                             onClick={handleConnect}
                                             disabled={isConnecting}
-                                            className="w-full py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 disabled:opacity-50 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(0,210,180,0.2)]"
+                                            className="w-full py-4 bg-[#2775CA] hover:bg-[#1f62ab] disabled:opacity-50 text-[#FFFFF0] font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-sm"
                                         >
                                             {isConnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wallet className="w-4 h-4" />}
                                             {isConnecting ? "Connecting..." : "Connect Wallet"}
@@ -2044,12 +2132,12 @@ export default function PublicPayClient({
                                     embedded block — so "Pay in this browser" looked dead on desktops
                                     without a wallet extension. */}
                                 {!embeddedPaySession && verificationError && (
-                                    <p className="text-[10px] font-mono text-red-400 text-center leading-relaxed" role="alert">{verificationError}</p>
+                                    <p className="text-[10px] font-mono text-red-700 text-center leading-relaxed" role="alert">{verificationError}</p>
                                 )}
                                 {!embeddedPaySession && !cannotPayLink && (
-                                    <p className="text-[10px] text-white/35 text-center leading-relaxed font-sans">
+                                    <p className="text-[10px] text-black/50 text-center leading-relaxed font-sans">
                                         {externalWalletEnabled ? "Have a SubScript account? " : "Browser-wallet payments are paused right now. "}
-                                        <a href="/login" target="_blank" rel="noopener noreferrer" className="text-[#00d2b4] hover:underline font-bold">
+                                        <a href="/login" target="_blank" rel="noopener noreferrer" className="text-[#2775CA] hover:underline font-bold">
                                             Sign in
                                         </a>
                                         , then reload this page to pay from your email wallet — no extension needed.
@@ -2061,27 +2149,27 @@ export default function PublicPayClient({
                         ) : (
                             <div className="space-y-6">
 
-                                <div className="flex flex-col gap-1.5 border-t border-b border-white/5 py-3 text-[10px] font-mono text-white/40">
+                                <div className="flex flex-col gap-1.5 border-t border-b border-black/10 py-3 text-[10px] font-mono text-black/50">
                                     <div className="flex items-center justify-between">
                                         <span>Payer: {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : ""}</span>
-                                        <button type="button" onClick={() => disconnect()} className="hover:text-white transition-colors uppercase font-bold">Disconnect</button>
+                                        <button type="button" onClick={() => disconnect()} className="hover:text-black transition-colors uppercase font-bold">Disconnect</button>
                                     </div>
-                                    <div className="flex items-center justify-between mt-1 text-white/60">
+                                    <div className="flex items-center justify-between mt-1 text-black/60">
                                         <span>Network:</span>
-                                        <span className={`font-bold ${isWrongChain ? "text-amber-400" : "text-[#00d2b4]"}`}>
+                                        <span className={`font-bold ${isWrongChain ? "text-amber-700" : "text-[#2775CA]"}`}>
                                             {isWrongChain ? `Switch to ${requiredChainName}` : `${requiredChainName} ✓`}
                                         </span>
                                     </div>
-                                    <div className="flex items-center justify-between mt-1 text-white/60">
+                                    <div className="flex items-center justify-between mt-1 text-black/60">
                                         <span>Arc Network USDC Balance:</span>
-                                        <span className="font-bold text-[#00d2b4]">
+                                        <span className="font-bold text-[#2775CA]">
                                             {parseFloat(formatUnits(arcUsdcBalance, 6)).toFixed(2)} USDC
                                         </span>
                                     </div>
                                     {isCctpMode && (
-                                        <div className="flex items-center justify-between mt-1 text-white/60">
+                                        <div className="flex items-center justify-between mt-1 text-black/60">
                                             <span>{cctpOriginChainName} USDC Balance:</span>
-                                            <span className="font-bold text-blue-400">
+                                            <span className="font-bold text-blue-700">
                                                 {balanceData ? `${parseFloat(balanceData.formatted).toFixed(2)} USDC` : "0.00 USDC"}
                                             </span>
                                         </div>
@@ -2089,40 +2177,40 @@ export default function PublicPayClient({
                                 </div>
 
                                 {isSessionLoading ? (
-                                    <div className="flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-[10px] text-white/55"><Loader2 className="h-4 w-4 animate-spin" /> Checking SubScript account…</div>
+                                    <div className="flex items-center justify-center gap-2 rounded-2xl border border-black/15 bg-[#f8fafc] p-4 text-[10px] text-black/60"><Loader2 className="h-4 w-4 animate-spin" /> Checking SubScript account…</div>
                                 ) : hasMatchingWalletSession && sessionInfo?.email ? (
-                                    <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.05] p-4 text-left">
-                                        <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">Ready to pay</p>
-                                        <p className="mt-1 text-[11px] text-white/70">Signed in as <span className="font-bold text-white">{sessionInfo.email}</span></p>
-                                        <p className="mt-1 text-[9px] text-white/40">Wallet ownership and email OTP are verified.</p>
+                                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-left">
+                                        <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">Ready to pay</p>
+                                        <p className="mt-1 text-[11px] text-black/70">Signed in as <span className="font-bold text-[#111827]">{sessionInfo.email}</span></p>
+                                        <p className="mt-1 text-[10px] text-black/50">Wallet ownership and email OTP are verified.</p>
                                     </div>
                                 ) : !hasMatchingWalletSession ? (
-                                    <div className="space-y-3 rounded-2xl border border-amber-400/20 bg-amber-400/[0.05] p-4 text-left">
+                                    <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left">
                                         <div>
-                                            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-200">Verify this wallet</p>
-                                            <p className="mt-1 text-[10px] leading-relaxed text-white/55">A wallet signature confirms ownership. After that, a verified email OTP is mandatory before payment.</p>
-                                            {sessionInfo?.loggedIn && sessionInfo.wallet && <p className="mt-2 text-[9px] text-white/40">This browser is currently signed in to another SubScript account.</p>}
+                                            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-900">Verify this wallet</p>
+                                            <p className="mt-1 text-[10px] leading-relaxed text-black/60">A wallet signature confirms ownership. After that, a verified email OTP is mandatory before payment.</p>
+                                            {sessionInfo?.loggedIn && sessionInfo.wallet && <p className="mt-2 text-[10px] text-black/50">This browser is currently signed in to another SubScript account.</p>}
                                         </div>
-                                        <button type="button" onClick={handleAuthenticateConnectedWallet} disabled={isWalletAuthenticating} className="w-full rounded-xl bg-white px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider text-black disabled:opacity-50">{isWalletAuthenticating ? "Waiting for signature…" : "Verify connected wallet"}</button>
-                                        {walletAuthenticationError && <div className="space-y-2"><p className="text-[10px] leading-relaxed text-red-300" role="alert">{walletAuthenticationError}</p>{walletAuthenticationError.includes("does not have") && <a href={`/signup?next=${encodeURIComponent(`/pay/${id}`)}`} className="inline-block text-[10px] font-bold text-[#00d2b4] underline">Create a user account</a>}</div>}
+                                        <button type="button" onClick={handleAuthenticateConnectedWallet} disabled={isWalletAuthenticating} className="w-full rounded-xl bg-[#2775CA] px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider text-[#FFFFF0] disabled:opacity-50">{isWalletAuthenticating ? "Waiting for signature…" : "Verify connected wallet"}</button>
+                                        {walletAuthenticationError && <div className="space-y-2"><p className="text-[10px] leading-relaxed text-red-800" role="alert">{walletAuthenticationError}</p>{walletAuthenticationError.includes("does not have") && <a href={`/signup?next=${encodeURIComponent(`/pay/${id}`)}`} className="inline-block text-[10px] font-bold text-[#2775CA] underline">Create a user account</a>}</div>}
                                     </div>
                                 ) : null}
 
                                 {pendingVerificationPanel ? pendingVerificationPanel : isWrongChain ? (
-                                    <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-5 space-y-4">
+                                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 space-y-4">
                                         <div className="flex items-center gap-3">
-                                            <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+                                            <AlertCircle className="w-5 h-5 text-amber-700 shrink-0" />
                                             <div>
-                                                <p className="text-xs font-bold text-amber-300 uppercase tracking-wide">Wrong Network</p>
-                                                <p className="text-[10px] text-white/50 mt-0.5 leading-relaxed">
-                                                    Your wallet is connected to a different chain. Switch to <span className="font-bold text-white/70">{requiredChainName}</span> to continue.
+                                                <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Wrong Network</p>
+                                                <p className="text-[10px] text-black/60 mt-0.5 leading-relaxed">
+                                                    Your wallet is connected to a different chain. Switch to <span className="font-bold text-black/70">{requiredChainName}</span> to continue.
                                                 </p>
                                             </div>
                                         </div>
                                         <button
                                             type="button"
                                             onClick={handleSwitchChain}
-                                            className="w-full py-3 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                                            className="w-full py-3 bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-800 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
                                         >
                                             Switch to {requiredChainName}
                                         </button>
@@ -2132,13 +2220,13 @@ export default function PublicPayClient({
                                 ) : (
                                     <div className="space-y-4">
                                         {verificationError && (
-                                            <div className="p-4 bg-red-500/5 border border-red-500/10 rounded-2xl text-left space-y-2">
-                                                <span className="text-red-400 text-[9px] font-bold uppercase tracking-wide block">Payment Failed</span>
-                                                <p className="text-red-200/70 text-[10px] font-mono mt-1 leading-normal break-words">{verificationError}</p>
+                                            <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-left space-y-2">
+                                                <span className="text-red-700 text-[10px] font-bold uppercase tracking-wide block">Payment Failed</span>
+                                                <p className="text-red-900/80 text-[10px] font-mono mt-1 leading-normal break-words">{verificationError}</p>
                                                 {merchantCancelUrl && (
                                                     <a
                                                         href={merchantCancelUrl}
-                                                        className="text-[9px] font-mono text-white/40 hover:text-white/70 underline inline-flex items-center gap-1"
+                                                        className="text-[10px] font-mono text-black/50 hover:text-black/70 underline inline-flex items-center gap-1"
                                                     >
                                                         Back to {hostOf(merchantCancelUrl) || "merchant site"} <ExternalLink className="w-3 h-3" />
                                                     </a>
@@ -2147,39 +2235,39 @@ export default function PublicPayClient({
                                         )}
 
                                         {payerNeedsEmail && (
-                                            <div className="rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/[0.04] p-4 space-y-3 text-left">
-                                                <p className="text-[10px] font-bold uppercase tracking-wide text-[#00d2b4]">Verify your email</p>
-                                                <p className="text-[10px] leading-relaxed text-white/55">
+                                            <div className="rounded-2xl border border-[#2775CA]/25 bg-[#2775CA]/[0.06] p-4 space-y-3 text-left">
+                                                <p className="text-[10px] font-bold uppercase tracking-wide text-[#2775CA]">Verify your email</p>
+                                                <p className="text-[10px] leading-relaxed text-black/60">
                                                     External wallets must verify an email for receipts and security notices before paying.
                                                 </p>
                                                 {!hasMatchingWalletSession && (
-                                                    <p className="text-[10px] leading-relaxed text-amber-200/80">Sign in with this same wallet first, then return here to verify your email.</p>
+                                                    <p className="text-[10px] leading-relaxed text-amber-900/80">Sign in with this same wallet first, then return here to verify your email.</p>
                                                 )}
                                                 {payerEmailStep === "email" ? <>
-                                                    <input type="email" value={payerEmailInput} onChange={(event) => { setPayerEmailInput(event.target.value); setPayerEmailError(null); }} placeholder="you@example.com" className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-xs text-white placeholder:text-white/30 focus:border-[#00d2b4]/50 focus:outline-none" />
-                                                    <button type="button" onClick={handleSendPayerEmailCode} disabled={isSendingPayerEmailCode || !hasMatchingWalletSession} className="w-full rounded-xl bg-[#00d2b4] px-3 py-2.5 text-[10px] font-bold uppercase tracking-wide text-black disabled:opacity-40">
+                                                    <input type="email" value={payerEmailInput} onChange={(event) => { setPayerEmailInput(event.target.value); setPayerEmailError(null); }} placeholder="you@example.com" className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-xs text-[#111827] placeholder:text-black/40 focus:border-[#2775CA]/60 focus:outline-none" />
+                                                    <button type="button" onClick={handleSendPayerEmailCode} disabled={isSendingPayerEmailCode || !hasMatchingWalletSession} className="w-full rounded-xl bg-[#2775CA] px-3 py-2.5 text-[10px] font-bold uppercase tracking-wide text-[#FFFFF0] disabled:opacity-40">
                                                         {isSendingPayerEmailCode ? "Sending code…" : "Send verification code"}
                                                     </button>
                                                 </> : <>
-                                                    <input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={payerEmailCode} onChange={(event) => { setPayerEmailCode(event.target.value.replace(/\D/g, "")); setPayerEmailError(null); }} placeholder="6-digit code" className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-center text-xs tracking-[0.3em] text-white placeholder:tracking-normal placeholder:text-white/30 focus:border-[#00d2b4]/50 focus:outline-none" />
-                                                    <button type="button" onClick={handleVerifyPayerEmail} disabled={isVerifyingPayerEmail} className="w-full rounded-xl bg-[#00d2b4] px-3 py-2.5 text-[10px] font-bold uppercase tracking-wide text-black disabled:opacity-40">
+                                                    <input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={payerEmailCode} onChange={(event) => { setPayerEmailCode(event.target.value.replace(/\D/g, "")); setPayerEmailError(null); }} placeholder="6-digit code" className="w-full rounded-xl border border-black/15 bg-white px-3 py-2.5 text-center text-xs tracking-[0.3em] text-[#111827] placeholder:tracking-normal placeholder:text-black/40 focus:border-[#2775CA]/60 focus:outline-none" />
+                                                    <button type="button" onClick={handleVerifyPayerEmail} disabled={isVerifyingPayerEmail} className="w-full rounded-xl bg-[#2775CA] px-3 py-2.5 text-[10px] font-bold uppercase tracking-wide text-[#FFFFF0] disabled:opacity-40">
                                                         {isVerifyingPayerEmail ? "Verifying…" : "Verify email"}
                                                     </button>
                                                 </>}
-                                                {payerEmailError && <p className="text-[10px] font-mono text-red-400">{payerEmailError}</p>}
+                                                {payerEmailError && <p className="text-[10px] font-mono text-red-700">{payerEmailError}</p>}
                                             </div>
                                         )}
 
                                         {!hasSufficientArcBalance && (
-                                            <div className="liquid-glass border border-amber-500/20 bg-amber-500/[0.03] rounded-2xl p-5 space-y-3 shadow-lg">
+                                            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 space-y-3 shadow-sm">
                                                 <div className="flex items-start gap-3">
-                                                    <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                                                    <AlertTriangle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
                                                     <div className="space-y-1">
-                                                        <h3 className="text-xs font-bold text-white uppercase tracking-wide">Arc USDC Required</h3>
-                                                        <p className="text-[10px] text-white/60 leading-relaxed font-sans">
+                                                        <h3 className="text-xs font-bold text-[#111827] uppercase tracking-wide">Arc USDC Required</h3>
+                                                        <p className="text-[10px] text-black/60 leading-relaxed font-sans">
                                                             Your Arc Network balance ({parseFloat(formatUnits(arcUsdcBalance, 6)).toFixed(2)} USDC) is insufficient for this ${(Number(linkData.amount_usdc) / 1000000).toFixed(2)} USDC payment.
                                                         </p>
-                                                        <p className="text-[10px] text-white/40 leading-relaxed font-sans">
+                                                        <p className="text-[10px] text-black/50 leading-relaxed font-sans">
                                                             Cross-chain CCTP checkout is disabled until Arc-side memo settlement is live. Bridge or fund USDC on Arc, then complete this payment.
                                                         </p>
                                                     </div>
@@ -2188,16 +2276,16 @@ export default function PublicPayClient({
                                         )}
 
                                         {!hasMatchingWalletSession ? (
-                                            <button type="button" onClick={handleAuthenticateConnectedWallet} disabled={isWalletAuthenticating} className="w-full py-4 border border-amber-400/25 bg-amber-400/[0.06] text-amber-200 font-bold rounded-2xl text-xs uppercase tracking-wider disabled:opacity-50">
+                                            <button type="button" onClick={handleAuthenticateConnectedWallet} disabled={isWalletAuthenticating} className="w-full py-4 border border-amber-200 bg-amber-50 text-amber-900 font-bold rounded-2xl text-xs uppercase tracking-wider disabled:opacity-50">
                                                 {isWalletAuthenticating ? "Verifying wallet…" : "Verify wallet to continue"}
                                             </button>
                                         ) : payerNeedsEmail ? (
-                                            <button type="button" disabled className="w-full py-4 border border-amber-400/25 bg-amber-400/[0.06] text-amber-200 font-bold rounded-2xl text-xs uppercase tracking-wider cursor-not-allowed">Verify email OTP to continue</button>
+                                            <button type="button" disabled className="w-full py-4 border border-amber-200 bg-amber-50 text-amber-900 font-bold rounded-2xl text-xs uppercase tracking-wider cursor-not-allowed">Verify email OTP to continue</button>
                                         ) : isRoleMismatch ? (
                                              <button
                                                  type="button"
                                                  disabled={true}
-                                                 className="w-full py-4 border border-red-500/20 bg-red-500/[0.02] text-red-400 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-not-allowed"
+                                                 className="w-full py-4 border border-red-200 bg-red-50 text-red-700 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-not-allowed"
                                              >
                                                  Use a Personal Account
                                              </button>
@@ -2205,7 +2293,7 @@ export default function PublicPayClient({
                                             <button
                                                 type="button"
                                                 disabled={true}
-                                                className="w-full py-4 border border-red-500/20 bg-red-500/[0.02] text-red-400 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-not-allowed"
+                                                className="w-full py-4 border border-red-200 bg-red-50 text-red-700 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-not-allowed"
                                             >
                                                 {unpayableTitle}
                                             </button>
@@ -2219,7 +2307,7 @@ export default function PublicPayClient({
                                                     setPendingPaymentMode("wallet");
                                                     setShowUnverifiedWarning(true);
                                                 }}
-                                                className="w-full py-4 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                                                className="w-full py-4 bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-800 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
                                             >
                                                 <ShieldAlert className="w-4 h-4" /> Review Unverified Merchant Warning
                                             </button>
@@ -2227,7 +2315,7 @@ export default function PublicPayClient({
                                             <button
                                                 type="button"
                                                 disabled={true}
-                                                className="w-full py-4 border border-red-500/20 bg-red-500/[0.02] text-red-400 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-not-allowed"
+                                                className="w-full py-4 border border-red-200 bg-red-50 text-red-700 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-not-allowed"
                                             >
                                                 Insufficient USDC Balance
                                             </button>
@@ -2236,7 +2324,7 @@ export default function PublicPayClient({
                                                 type="button"
                                                 onClick={() => beginPaymentReview("wallet")}
                                                 disabled={!pendingVerificationHydrated || Boolean(pendingVerification) || isPaying || isConfirming || isEmbeddedPaying}
-                                                className="w-full py-4 bg-gradient-to-r from-[#00d2b4] to-blue-500 hover:brightness-110 disabled:opacity-40 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(0,210,180,0.2)]"
+                                                className="w-full py-4 bg-[#2775CA] hover:bg-[#1f62ab] disabled:opacity-40 text-[#FFFFF0] font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-sm"
                                             >
                                                 {(isPaying || isConfirming || isEmbeddedPaying) ? (
                                                     <><Loader2 className="w-4 h-4 animate-spin" /> {
@@ -2267,13 +2355,13 @@ export default function PublicPayClient({
                         {/* Inline QR toggle for mobile/tablet. On desktop (lg+) the large QR shows in the
                             left panel beside the checkout, so this redundant toggle is hidden there. */}
                         {checkoutUrl && !cannotPayLink && (
-                            <div className="border-t border-white/5 pt-4 space-y-3 lg:hidden">
+                            <div className="border-t border-black/10 pt-4 space-y-3 lg:hidden">
                                 <button
                                     type="button"
                                     onClick={() => setShowQrCode(!showQrCode)}
-                                    className="w-full py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold rounded-xl text-[10px] uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                                    className="w-full py-2.5 bg-white hover:bg-black/5 border border-black/15 text-[#111827] font-bold rounded-xl text-[10px] uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
                                 >
-                                    <QrCode className="w-3.5 h-3.5 text-[#00d2b4]" />
+                                    <QrCode className="w-3.5 h-3.5 text-[#2775CA]" />
                                     {showQrCode ? "Hide QR Code" : "Pay on Mobile (Scan QR)"}
                                 </button>
 
@@ -2281,9 +2369,9 @@ export default function PublicPayClient({
                                     <motion.div
                                         initial={{ opacity: 0, scale: 0.95 }}
                                         animate={{ opacity: 1, scale: 1 }}
-                                        className="flex flex-col items-center justify-center space-y-3 bg-black/40 border border-white/5 rounded-2xl p-4 font-sans text-center overflow-hidden"
+                                        className="flex flex-col items-center justify-center space-y-3 bg-[#f8fafc] border border-black/10 rounded-2xl p-4 font-sans text-center overflow-hidden"
                                     >
-                                        <p className="text-[10px] text-white/50 max-w-[200px] leading-relaxed">
+                                        <p className="text-[10px] text-black/60 max-w-[200px] leading-relaxed">
                                             Scan this QR code with your mobile wallet's browser to complete the payment on your phone.
                                         </p>
                                         <div className="flex justify-center p-3 bg-white rounded-xl">
@@ -2311,35 +2399,35 @@ export default function PublicPayClient({
                                                 type="button"
                                                 onClick={handleManualPaymentCheck}
                                                 disabled={isManualChecking}
-                                                className="w-full rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300 transition hover:bg-emerald-400/20 disabled:opacity-50"
+                                                className="w-full rounded-xl border border-emerald-300 bg-emerald-100 px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider text-emerald-800 transition hover:bg-emerald-200 disabled:opacity-50"
                                             >
                                                 {isManualChecking ? "Checking…" : "I've made my payment"}
                                             </button>
                                         )}
                                         {manualCheckMessage && (
-                                            <p className="text-center text-[10px] leading-relaxed text-amber-200/70" aria-live="polite">{manualCheckMessage}</p>
+                                            <p className="text-center text-[10px] leading-relaxed text-amber-900/80" aria-live="polite">{manualCheckMessage}</p>
                                         )}
                                     </motion.div>
                                 )}
                             </div>
                         )}
 
-                        <div className="pt-2 flex items-center justify-center gap-1.5 text-[9px] text-white/30 font-sans">
+                        <div className="pt-2 flex items-center justify-center gap-1.5 text-[10px] text-black/50 font-sans">
                             <Lock className="w-3 h-3" /> Protected by SubScript
                         </div>
                         {!isPaymentSettled && !(pendingVerification || txHash || successTxHash || verificationStatus || isPaying || isEmbeddedPaying || isVerifying) && (
                             merchantCancelUrl ? (
-                                <a href={merchantCancelUrl} className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-white/50 underline hover:text-white">
+                                <a href={merchantCancelUrl} className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-black/60 underline hover:text-black">
                                     Cancel and return to {hostOf(merchantCancelUrl) || "merchant site"} <ExternalLink className="h-3 w-3" />
                                 </a>
                             ) : (
-                                <button type="button" onClick={() => window.history.length > 1 ? window.history.back() : router.push("/")} className="mx-auto block text-[10px] font-bold text-white/50 underline hover:text-white">
+                                <button type="button" onClick={() => window.history.length > 1 ? window.history.back() : router.push("/")} className="mx-auto block text-[10px] font-bold text-black/60 underline hover:text-black">
                                     Exit checkout
                                 </button>
                             )
                         )}
                         {!isPaymentSettled && (pendingVerification || txHash || successTxHash || verificationStatus || isPaying || isEmbeddedPaying || isVerifying) && (
-                            <p className="text-center text-[10px] font-medium leading-relaxed text-amber-200/70">Payment submitted — keep this page open while settlement is confirmed.</p>
+                            <p className="text-center text-[10px] font-medium leading-relaxed text-amber-900/80">Payment submitted — keep this page open while settlement is confirmed.</p>
                         )}
                         </div>
                     </div>
@@ -2348,21 +2436,21 @@ export default function PublicPayClient({
 
             <AnimatePresence>
                 {reviewPaymentMode && (
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
-                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} role="dialog" aria-modal="true" aria-labelledby="checkout-review-title" className="max-h-[calc(100dvh-2rem)] w-full max-w-md space-y-5 overflow-y-auto overscroll-contain rounded-3xl border border-white/10 bg-[#09090b] p-6 text-left shadow-2xl">
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} role="dialog" aria-modal="true" aria-labelledby="checkout-review-title" className="max-h-[calc(100dvh-2rem)] w-full max-w-md space-y-5 overflow-y-auto overscroll-contain rounded-3xl border border-black/15 bg-white p-6 text-left shadow-xl">
                             <div>
-                                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#00d2b4]">Final review</p>
-                                <h3 id="checkout-review-title" className="mt-1 text-xl font-black text-white">Pay {displayMerchantName}?</h3>
+                                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#2775CA]">Final review</p>
+                                <h3 id="checkout-review-title" className="mt-1 text-xl font-black text-[#111827]">Pay {displayMerchantName}?</h3>
                             </div>
-                            <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-xs">
-                                <div className="flex justify-between gap-4"><span className="text-white/45">Merchant</span><span className="text-right font-bold text-white">{displayMerchantName}</span></div>
-                                <div className="flex justify-between gap-4"><span className="text-white/45">You pay</span><span className="font-bold text-white">{(Number(linkData?.amount_usdc || 0) / 1_000_000).toFixed(2)} USDC</span></div>
-                                {displayCurrency && displayCurrency !== "USD" && displayAmount !== undefined && <div className="flex justify-between gap-4"><span className="text-white/45">Estimated value</span><span className="font-bold text-white">≈ {fiatSymbol}{displayAmount.toFixed(2)} {displayCurrency}</span></div>}
+                            <div className="space-y-3 rounded-2xl border border-black/15 bg-[#f8fafc] p-4 text-xs">
+                                <div className="flex justify-between gap-4"><span className="text-black/50">Merchant</span><span className="text-right font-bold text-[#111827]">{displayMerchantName}</span></div>
+                                <div className="flex justify-between gap-4"><span className="text-black/50">You pay</span><span className="font-bold text-[#111827]">{(Number(linkData?.amount_usdc || 0) / 1_000_000).toFixed(2)} USDC</span></div>
+                                {displayCurrency && displayCurrency !== "USD" && displayAmount !== undefined && <div className="flex justify-between gap-4"><span className="text-black/50">Estimated value</span><span className="font-bold text-[#111827]">≈ {fiatSymbol}{displayAmount.toFixed(2)} {displayCurrency}</span></div>}
                             </div>
-                            <p className="rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] p-3 text-[10px] leading-relaxed text-amber-200/80">Only continue if you recognize {displayMerchantName} and the amount is correct.</p>
+                            <p className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-[10px] leading-relaxed text-amber-900/80">Only continue if you recognize {displayMerchantName} and the amount is correct.</p>
                             <div className="grid grid-cols-2 gap-3">
-                                <button type="button" onClick={() => setReviewPaymentMode(null)} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs font-bold text-white">Back</button>
-                                <button type="button" disabled={isPaying || isEmbeddedPaying} onClick={() => { const mode = reviewPaymentMode; setReviewPaymentMode(null); if (mode === "embedded") void handleEmbeddedPay(); else void handlePay(); }} className="rounded-2xl bg-[#00d2b4] px-4 py-3 text-xs font-bold text-black disabled:cursor-not-allowed disabled:opacity-50">Confirm payment</button>
+                                <button type="button" onClick={() => setReviewPaymentMode(null)} className="rounded-2xl border border-black/15 bg-white px-4 py-3 text-xs font-bold text-[#111827] hover:bg-black/5">Back</button>
+                                <button type="button" disabled={isPaying || isEmbeddedPaying} onClick={() => { const mode = reviewPaymentMode; setReviewPaymentMode(null); if (mode === "embedded") void handleEmbeddedPay(); else void handlePay(); }} className="rounded-2xl bg-[#2775CA] px-4 py-3 text-xs font-bold text-[#FFFFF0] hover:bg-[#1f62ab] disabled:cursor-not-allowed disabled:opacity-50">Confirm payment</button>
                             </div>
                         </motion.div>
                     </div>
@@ -2371,7 +2459,7 @@ export default function PublicPayClient({
 
             <AnimatePresence>
                 {showUnverifiedWarning && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
                         <motion.div
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
@@ -2379,30 +2467,30 @@ export default function PublicPayClient({
                             role="dialog"
                             aria-modal="true"
                             aria-labelledby="unverified-merchant-title"
-                            className="w-full max-w-md liquid-glass border border-amber-500/30 rounded-3xl p-6 shadow-2xl space-y-6 bg-black/90 text-left relative overflow-hidden"
+                            className="w-full max-w-md rounded-3xl border border-amber-300 bg-white p-6 shadow-xl space-y-6 text-left relative overflow-hidden"
                         >
-                            <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl -z-10" />
-                            <div className="flex items-center gap-3 pb-2 border-b border-white/5">
-                                <div className="p-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-amber-100/60 rounded-full blur-3xl -z-10" />
+                            <div className="flex items-center gap-3 pb-2 border-b border-black/10">
+                                <div className="p-2.5 rounded-2xl bg-amber-100 border border-amber-200 text-amber-700">
                                     <ShieldAlert className="w-6 h-6" />
                                 </div>
                                 <div>
-                                    <h3 id="unverified-merchant-title" className="text-base font-bold text-white uppercase tracking-wider">Unverified Merchant</h3>
-                                    <p className="text-[10px] text-white/40 uppercase tracking-widest font-mono">Security Advisory</p>
+                                    <h3 id="unverified-merchant-title" className="text-base font-bold text-[#111827] uppercase tracking-wider">Unverified Merchant</h3>
+                                    <p className="text-[10px] text-black/50 uppercase tracking-widest font-mono">Security Advisory</p>
                                 </div>
                             </div>
 
-                            <div className="space-y-4 font-sans text-xs text-white/70 leading-relaxed">
+                            <div className="space-y-4 font-sans text-xs text-black/70 leading-relaxed">
                                 <p>
                                     You are about to make a payment to an unverified merchant:
                                 </p>
-                                <div className="p-3 bg-white/5 border border-white/10 rounded-xl text-sm font-bold text-white/90">
+                                <div className="p-3 bg-[#f8fafc] border border-black/15 rounded-xl text-sm font-bold text-[#111827]">
                                     {displayMerchantName}
                                 </div>
                                 <p>
                                     This merchant has not completed SubScript verification. Confirm that you recognize the name before proceeding.
                                 </p>
-                                <p className="text-amber-300/80 font-medium">
+                                <p className="text-amber-800 font-medium">
                                     Payments to unverified merchants may be harder to recover.
                                 </p>
                             </div>
@@ -2414,7 +2502,7 @@ export default function PublicPayClient({
                                         setPendingPaymentMode(null);
                                         setShowUnverifiedWarning(false);
                                     }}
-                                    className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold rounded-2xl text-xs uppercase tracking-wider transition-all"
+                                    className="flex-1 py-3 bg-white hover:bg-black/5 border border-black/15 text-[#111827] font-bold rounded-2xl text-xs uppercase tracking-wider transition-all"
                                 >
                                     Cancel
                                 </button>
@@ -2431,7 +2519,7 @@ export default function PublicPayClient({
                                             beginPaymentReview(mode, { unverifiedAcknowledged: true });
                                         }
                                     }}
-                                    className="flex-1 py-3 bg-amber-500 text-black font-bold rounded-2xl text-xs uppercase tracking-wider hover:brightness-110 transition-all shadow-[0_0_20px_rgba(245,158,11,0.2)]"
+                                    className="flex-1 py-3 bg-amber-500 text-black font-bold rounded-2xl text-xs uppercase tracking-wider hover:brightness-110 transition-all shadow-sm"
                                 >
                                     Accept & Continue
                                 </button>

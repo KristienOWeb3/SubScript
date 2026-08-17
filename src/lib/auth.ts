@@ -15,6 +15,33 @@ function sessionTokenHash(token: string) {
     return crypto.createHash("sha256").update(token).digest("hex");
 }
 
+/* Session lifecycle logging.
+ *
+ * A user reported being signed out on one device after paying on another. Nothing in the session
+ * layer explains that — tokens are per-login rows, `sessions.wallet` is not unique, and revocation
+ * only ever deletes the hashes present in the caller's own cookie — but the reason it could not be
+ * confirmed either way is that a rejected session used to return null from three separate branches
+ * without recording anything. There was no evidence to look at after the fact.
+ *
+ * Logs the hash PREFIX, never the token: enough to correlate one session across create → verify →
+ * reject in a log search, useless to anyone who reads the logs. The wallet address is already
+ * present throughout these logs.
+ */
+type SessionEvent = "created" | "revoked" | "rejected";
+type SessionRejectReason = "no-cookie" | "jwt-invalid" | "no-live-row" | "db-error";
+
+function logSessionEvent(
+    event: SessionEvent,
+    detail: { wallet?: string | null; tokenHash?: string | null; reason?: SessionRejectReason; count?: number },
+) {
+    const parts = [`[auth] session ${event}`];
+    if (detail.wallet) parts.push(`wallet=${detail.wallet}`);
+    if (detail.tokenHash) parts.push(`token=${detail.tokenHash.slice(0, 12)}`);
+    if (detail.reason) parts.push(`reason=${detail.reason}`);
+    if (typeof detail.count === "number") parts.push(`count=${detail.count}`);
+    console.info(parts.join(" "));
+}
+
 export async function createSessionToken(address: string, durationMs: number) {
     const normalizedAddress = address.toLowerCase();
     const now = Date.now();
@@ -35,16 +62,24 @@ export async function createSessionToken(address: string, durationMs: number) {
         [normalizedAddress, sessionTokenHash(token), expiresAt]
     ));
 
+    logSessionEvent("created", { wallet: normalizedAddress, tokenHash: sessionTokenHash(token) });
+
     return { token, expiresAt };
 }
 
 export async function revokeSessionToken(headers: Headers) {
     const tokens = getCookieValues(headers.get("cookie") || "", "subscript_session_token");
     if (tokens.length === 0) return;
+    const hashes = tokens.map(sessionTokenHash);
     await withPgClient((client) => client.query(
         "delete from sessions where token = any($1::text[])",
-        [tokens.map(sessionTokenHash)]
+        [hashes]
     ));
+    /* Every hash logged individually: a browser can hold both the legacy host-only cookie and the
+       domain-wide one, and knowing which were revoked together is the point. */
+    for (const hash of hashes) {
+        logSessionEvent("revoked", { tokenHash: hash, count: hashes.length });
+    }
 }
 
 /**
@@ -97,7 +132,12 @@ export async function getVerifiedSessionToken(headers: Headers): Promise<Verifie
     const cookieStore = headers.get("cookie") || "";
     const tokens = getCookieValues(cookieStore, "subscript_session_token");
 
-    if (tokens.length === 0) return null;
+    if (tokens.length === 0) {
+        /* Not logged in is the overwhelmingly common case, so this stays at debug — it is only here
+           so a "logged out" report can be told apart from a token that was present and rejected. */
+        console.debug("[auth] session rejected reason=no-cookie");
+        return null;
+    }
 
     type Candidate = VerifiedSessionToken & { issuedAt: number; hash: string };
     const candidates: Candidate[] = [];
@@ -119,7 +159,14 @@ export async function getVerifiedSessionToken(headers: Headers): Promise<Verifie
                 });
             }
         } catch (e: any) {
-            console.debug(`Session token verification failed: ${e.message}`);
+            /* A cookie that exists but will not verify is the interesting case: expired, signed with
+               a rotated JWT_SECRET, or minted for another issuer. Logged at info, with the hash
+               prefix, because a whole fleet of these at once is what a secret rotation looks like. */
+            logSessionEvent("rejected", {
+                tokenHash: sessionTokenHash(token),
+                reason: "jwt-invalid",
+            });
+            console.debug(`[auth] jwt verification detail: ${e.message}`);
         }
     }
 
@@ -159,14 +206,33 @@ export async function getVerifiedSessionToken(headers: Headers): Promise<Verifie
             }
         }
 
-        if (!newestSession) return null;
+        if (!newestSession) {
+            /* The signature was good but no live row backs it: revoked by a logout, expired past its
+               DB expiry, or the account is banned. This is the branch a "signed out unexpectedly"
+               report lands in, so it logs the wallet and every hash that failed to match. */
+            for (const candidate of candidates) {
+                logSessionEvent("rejected", {
+                    wallet: candidate.wallet,
+                    tokenHash: candidate.hash,
+                    reason: "no-live-row",
+                });
+            }
+            return null;
+        }
         return {
             token: newestSession.token,
             wallet: newestSession.wallet,
             expiresAt: newestSession.expiresAt,
         };
     } catch (e: any) {
+        /* Fail closed, but say so loudly — a database blip here logs every user out at once, and
+           that is indistinguishable from a real revocation without this line. */
         console.error(`[auth] Session database verification failed: ${e.message}`);
+        logSessionEvent("rejected", {
+            wallet: candidates[0]?.wallet,
+            tokenHash: candidates[0]?.hash,
+            reason: "db-error",
+        });
         return null;
     }
 }
