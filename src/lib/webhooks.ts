@@ -16,6 +16,19 @@ function formatUsdc(value: bigint | string | number) {
     return fraction ? `${whole}.${fraction}` : whole.toString();
 }
 
+/**
+ * Derives the TEST/LIVE environment for an event from its settlement chain, falling back to the
+ * configured active chain. Every outbound event must carry this: the outbox refuses to deliver an
+ * event to an endpoint registered for the other environment, and an event that omits the field is
+ * indistinguishable from a genuine LIVE one.
+ */
+export function deriveEventEnvironment(chainId?: number | null): { environment: "TEST" | "LIVE"; livemode: boolean } {
+    const effectiveChainId = chainId || activeArcChain.id;
+    const isLive = effectiveChainId !== ARC_TESTNET_CHAIN_ID
+        && (effectiveChainId === 5042001 || process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet");
+    return { environment: isLive ? "LIVE" : "TEST", livemode: isLive };
+}
+
 export function createPaymentSucceededWebhook(args: {
     paymentId: string;
     checkoutSessionId: string;
@@ -31,6 +44,13 @@ export function createPaymentSucceededWebhook(args: {
     const amountPaid = formatUsdc(args.amountUsdc);
     const amountUsdcMicros = (typeof args.amountUsdc === "bigint" ? args.amountUsdc : BigInt(args.amountUsdc)).toString();
     const settlement = arcReconciliation(args.txHash, args.chainId);
+    /* Stamped because the outbox gates delivery on it and reads an absent value as "LIVE": every
+       payment.succeeded built here was dead-lettered against a TEST endpoint at attempts=0, before a
+       single send was attempted, with ENVIRONMENT_MISMATCH as the only trace. DEAD_LETTER rows are
+       excluded from the drain, so those never recovered — the one event a checkout waits on was the
+       one event that could never arrive. Sibling events (payment.pending, checkout.completed) go
+       through lib/events/builders and always carried it; this older builder did not. */
+    const { environment, livemode } = deriveEventEnvironment(args.chainId ?? settlement.chainId);
     return {
         id: `evt_payment_${args.paymentId}`,
         /* Canonical event name is `type: "payment.succeeded"`; `event` is a back-compat alias.
@@ -38,6 +58,8 @@ export function createPaymentSucceededWebhook(args: {
         event: "payment.success",
         type: "payment.succeeded",
         created: Math.floor(Date.now() / 1000),
+        environment,
+        livemode,
         data: {
             intent_id: args.checkoutSessionId,
             checkout_session_id: args.checkoutSessionId,
@@ -116,8 +138,7 @@ export function subscriptionWebhookData(args: {
         }
         : null;
     const effectiveChainId = args.chainId || (settlement ? settlement.chainId : activeArcChain.id);
-    const isLive = effectiveChainId !== ARC_TESTNET_CHAIN_ID && (effectiveChainId === 5042001 || process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet");
-    const environment: "TEST" | "LIVE" = isLive ? "LIVE" : "TEST";
+    const { environment, livemode: isLive } = deriveEventEnvironment(effectiveChainId);
 
     return {
         ...(pricing ? { pricing } : {}),

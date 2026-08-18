@@ -75,9 +75,22 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
             continue;
         }
 
-        const eventEnv = delivery.payload?.environment || "LIVE";
+        /* Gate cross-environment delivery, but only on two KNOWN values. Reading an absent
+           payload.environment as "LIVE" is what silently destroyed every payment.succeeded on a TEST
+           endpoint: the older createPaymentSucceededWebhook builder omitted the field, the default
+           made it "LIVE", the endpoint was "TEST", and the row was dead-lettered at attempts=0 before
+           any send. DEAD_LETTER is excluded from the drain, so it never recovered — the one event a
+           checkout waits on could never arrive. An unstamped event is now delivered to the endpoint
+           that was registered for it, and says so loudly: both endpoints belong to the same merchant
+           wallet, so the blast radius of guessing wrong is that merchant's own test handler, whereas
+           the blast radius of dropping it is a real payment nobody is ever told about. */
+        const eventEnv: string | null = delivery.payload?.environment ?? null;
         const endpointEnv = endpoint.environment || "LIVE";
-        if (eventEnv !== endpointEnv) {
+        if (eventEnv === null) {
+            console.warn(
+                `[webhook-outbox] Delivery ${delivery.id} (${delivery.event}) carries no environment — delivering to the ${endpointEnv} endpoint it was queued for. The event builder should stamp it.`,
+            );
+        } else if (eventEnv !== endpointEnv) {
             await supabase.from("webhook_deliveries").update({
                 status: "DEAD_LETTER",
                 last_error: `ENVIRONMENT_MISMATCH: event (${eventEnv}) does not match endpoint environment (${endpointEnv})`,
