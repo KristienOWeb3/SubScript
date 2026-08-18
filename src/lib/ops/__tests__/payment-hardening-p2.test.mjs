@@ -53,8 +53,17 @@ test("webhook dispatch pins the vetted IP — DNS cannot rebind between validati
     assert.match(urls, /cannot target localhost or private network addresses/);
     assert.match(urls, /cannot resolve to a private or reserved network address/);
     assert.match(urls, /addresses: addresses\.map\(\(\{ address, family \}\) => \(\{ address, family \}\)\)/);
-    /* Dispatch dials the pinned address; TLS still verifies the URL hostname. */
-    assert.match(webhooks, /const pinned = urlValidation\.addresses\[0\]/);
+    /* Dispatch dials only addresses vetted above — never a fresh resolution. */
+    assert.match(webhooks, /const vetted = urlValidation\.addresses\.filter\(/);
+    assert.match(webhooks, /const pinned = vetted\[0\]/);
+    /* Node calls a custom lookup with `{ all: true }` whenever Happy Eyeballs is active — the
+       default from Node 20 on — and then expects an ARRAY of { address, family }. This test used to
+       assert the single-address form was the ONLY one, which is precisely the shape that broke every
+       delivery: Node read `addresses[0].address` off a bare string, got undefined, and each
+       connection died with ERR_INVALID_IP_ADDRESS before a byte left the process. Both shapes must
+       be served, so assert both. */
+    assert.match(webhooks, /options\?\.all/);
+    assert.match(webhooks, /callback\(null, vetted\.map\(\(\{ address, family \}\) => \(\{ address, family \}\)\)\)/);
     assert.match(webhooks, /callback\(null, pinned\.address, pinned\.family\)/);
     assert.match(webhooks, /dispatcher: pinnedDispatcher/);
     assert.match(webhooks, /redirect: "manual"/);
