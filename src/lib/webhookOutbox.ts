@@ -281,9 +281,24 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
  * the row-level claim in `deliverWebhookOutboxEvent` keeps overlapping cron
  * runs safe.
  */
+/* Wall-clock budget for one drain pass, comfortably inside the 300s maxDuration of the cron route
+   that calls this. The point is to stop BEFORE the platform kills the function: each row is claimed
+   (status PROCESSING, attempts spent) before its send, so a row still in flight when the runtime is
+   torn down is orphaned with no result written and no error recorded. try/catch cannot help — the
+   process is gone.
+   That is not hypothetical: with limit=100 and a 10s per-send timeout, one pass can want 1000s
+   against a 300s ceiling, and a batch containing unreachable endpoints burns the full timeout on
+   each. Production accumulated 20 rows stuck in PROCESSING that way, attempts climbing on every
+   stale-reclaim and never resolving. */
+const DRAIN_BUDGET_MS = 210_000;
+/* Worst case for one event: its endpoint fan-out, each send bounded by AbortSignal.timeout(10s).
+   Reserve enough that we do not start an event we cannot finish. */
+const PER_EVENT_RESERVE_MS = 25_000;
+
 export async function deliverPendingWebhookOutboxEvents(
     supabase: SupabaseLike,
     limit: number = 50,
+    budgetMs: number = DRAIN_BUDGET_MS,
 ) {
     const boundedLimit = Math.max(1, Math.min(Math.trunc(limit), 200));
     const staleCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
@@ -301,11 +316,24 @@ export async function deliverPendingWebhookOutboxEvents(
             .map((row: { event_id?: unknown }) => row.event_id)
             .filter((eventId: unknown): eventId is string => typeof eventId === "string" && eventId.length > 0),
     )];
+    const deadline = Date.now() + budgetMs;
     let delivered = 0;
+    let attemptedEvents = 0;
+    let deferredEvents = 0;
     for (const eventId of eventIds) {
+        /* Leaving a row untouched is safe — it is still PENDING and the next pass takes it, oldest
+           first, so nothing starves. Claiming one we cannot finish is what loses it. */
+        if (Date.now() + PER_EVENT_RESERVE_MS > deadline) {
+            deferredEvents = eventIds.length - attemptedEvents;
+            console.warn(
+                `[webhook-outbox] drain budget reached — deferring ${deferredEvents} event(s) to the next pass`,
+            );
+            break;
+        }
+        attemptedEvents += 1;
         const result = await deliverWebhookOutboxEvent(supabase, eventId);
         delivered += result.delivered;
     }
 
-    return { attemptedEvents: eventIds.length, delivered };
+    return { attemptedEvents, delivered, deferredEvents };
 }
