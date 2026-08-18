@@ -209,7 +209,11 @@ export async function sendWebhookRequest(
        This prevents Time-of-Check to Time-of-Use DNS rebinding, because Node
        cannot swap in a private address for the actual connection, because the connection
        never resolves again. */
-    const pinned = urlValidation.addresses[0];
+    /* Every address validateWebhookUrl returned was vetted as public — it rejects the host outright
+       if any of them is private — so pinning the whole set preserves that guarantee while letting
+       Node fail over between a host's A records instead of hanging on a single dead one. */
+    const vetted = urlValidation.addresses.filter((entry) => !!entry?.address);
+    const pinned = vetted[0];
     /* Guarded because everything from here to the signing try/catch below used to be able to throw
        out of this function entirely. `addresses` is normally non-empty — validation resolves the host
        before returning — but an empty list made `pinned.address` a TypeError, and the caller had
@@ -217,13 +221,29 @@ export async function sendWebhookRequest(
     if (!pinned?.address) {
         return { status: 504, responseText: "Delivery failed: destination host resolved to no address" };
     }
-    const poolKey = `${pinned.address}:${pinned.family}`;
+    const poolKey = vetted.map(({ address, family }) => `${address}:${family}`).join(",");
     let pinnedDispatcher = agentPool.get(poolKey);
     if (!pinnedDispatcher) {
         const { Agent: UndiciAgent } = await import("undici");
         pinnedDispatcher = new UndiciAgent({
             connect: {
-                lookup: (_hostname: string, _options: unknown, callback: (err: Error | null, address: string, family: number) => void) => {
+                /* Node invokes this with `{ all: true }` whenever Happy Eyeballs is active — which is
+                   the default from Node 20 on — and then expects an ARRAY of { address, family }.
+                   Answering with the single-address `(err, address, family)` form made Node read
+                   `addresses[0].address` off a bare string and get `undefined`, so every connection
+                   died with ERR_INVALID_IP_ADDRESS before a byte left the process. Deliveries stopped
+                   dead the day this pinning shipped and every attempt recorded a bare transport 504,
+                   which read like an unreachable merchant rather than a bug on our side. Answer both
+                   shapes, and key off `options.all` rather than assuming either one. */
+                lookup: (
+                    _hostname: string,
+                    options: { all?: boolean } | undefined,
+                    callback: (err: Error | null, addressOrAddresses: any, family?: number) => void,
+                ) => {
+                    if (options?.all) {
+                        callback(null, vetted.map(({ address, family }) => ({ address, family })));
+                        return;
+                    }
                     callback(null, pinned.address, pinned.family);
                 },
             },
