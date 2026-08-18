@@ -179,16 +179,20 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
         const success = result.status >= 200 && result.status < 300;
 
         // Log the physical attempt in webhook_delivery_attempts
-        await supabase.from("webhook_delivery_attempts").insert({
+        /* `.catch()` was doing nothing here: a PostgREST failure resolves with `{ error }` instead of
+           rejecting, so a schema mismatch on this table would have been swallowed in silence — the
+           same trap that hid the dropped `secret` column. Read the error and log it. */
+        const { error: attemptLogError } = await supabase.from("webhook_delivery_attempts").insert({
             webhook_delivery_id: delivery.id,
             attempt_number: attempts,
             http_status: result.status > 0 ? result.status : null,
             response_body: result.responseText || null,
             error_message: success ? null : result.responseText || "Delivery failed",
             duration_ms: durationMs,
-        }).catch((err: any) => {
-            console.error("[webhook-outbox] Failed to log webhook delivery attempt:", err);
         });
+        if (attemptLogError) {
+            console.error("[webhook-outbox] Failed to log webhook delivery attempt:", attemptLogError.message);
+        }
 
         let retryAfterSeconds: number | null = null;
         if (result.headers && result.headers["retry-after"]) {
@@ -245,15 +249,24 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
         if (updateError) throw new Error(`Failed to update webhook outbox: ${updateError.message}`);
         if (!finalized) continue;
 
-        await supabase.from("webhook_events").insert({
+        /* No `environment` column here: webhook_events has never had one — not in the init migration,
+           not in the Prisma model — and PostgREST turns 42703 into a resolved `{ error }` rather than
+           a rejection, so passing it made this insert fail silently on every delivery. That is the
+           merchant-visible delivery log, and the endpoints dashboard reads it through a CROSS JOIN
+           LATERAL, so an endpoint with no rows here reports no delivery history at all. Surface the
+           error instead of dropping it: logging stays best-effort, because the delivery itself has
+           already been finalized above and must not be undone by a failure to record it. */
+        const { error: eventLogError } = await supabase.from("webhook_events").insert({
             webhook_endpoint_id: delivery.webhook_endpoint_id,
             event: delivery.event,
             event_type: delivery.event,
             status: result.status,
             payload: delivery.payload,
             response_body: result.responseText,
-            environment: delivery.payload?.environment || "LIVE",
         });
+        if (eventLogError) {
+            console.error(`[webhook-outbox] Failed to log webhook event for delivery ${delivery.id}:`, eventLogError.message);
+        }
         if (success) delivered++;
     }
 
