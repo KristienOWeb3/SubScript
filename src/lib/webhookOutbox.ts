@@ -142,20 +142,39 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
         if (!claimed) continue;
 
         const startTime = Date.now();
-        const result = await sendWebhookRequest(
-            endpoint.url,
-            delivery.payload,
-            secret,
-            {
-                eventId: delivery.payload?.id || eventId,
-                deliveryId: delivery.id,
-                attempt: attempts,
-                eventType: delivery.event,
-                apiVersion: delivery.payload?.api_version,
-                environment: endpoint.environment || delivery.payload?.environment,
-                requestId: delivery.payload?.correlation_id,
-            }
-        );
+        /* The row is CLAIMED by this point — status PROCESSING, attempts already incremented — so
+           every exit from here must write a result back. sendWebhookRequest guards its own fetch and
+           returns 504 on a network error, but it does real work before that guard opens: it indexes
+           urlValidation.addresses[0] and builds a pinned Undici dispatcher, and an empty address
+           list makes that a TypeError. Thrown there, the exception unwound past this loop and out of
+           the function, leaving the row PROCESSING with no result and no error — recoverable only by
+           the 15-minute stale-reclaim, which needs the keeper to be running.
+           That is exactly how four checkout.completed/payment.succeeded rows sat orphaned for 70
+           minutes while the merchant waited on a confirmation that was never coming again. */
+        let result: Awaited<ReturnType<typeof sendWebhookRequest>>;
+        try {
+            result = await sendWebhookRequest(
+                endpoint.url,
+                delivery.payload,
+                secret,
+                {
+                    eventId: delivery.payload?.id || eventId,
+                    deliveryId: delivery.id,
+                    attempt: attempts,
+                    eventType: delivery.event,
+                    apiVersion: delivery.payload?.api_version,
+                    environment: endpoint.environment || delivery.payload?.environment,
+                    requestId: delivery.payload?.correlation_id,
+                }
+            );
+        } catch (sendError: unknown) {
+            /* Treated as a transient 504 rather than dead-lettered: the causes are environmental
+               (DNS returning nothing, dispatcher construction) and a later attempt may well work.
+               Recording it means the row re-enters the retry ladder instead of stalling. */
+            const message = sendError instanceof Error ? sendError.message : String(sendError);
+            console.error(`[webhook-outbox] Delivery ${delivery.id} threw before dispatch:`, sendError);
+            result = { status: 504, responseText: `Dispatch threw: ${message}` };
+        }
         const durationMs = Date.now() - startTime;
         const success = result.status >= 200 && result.status < 300;
 
