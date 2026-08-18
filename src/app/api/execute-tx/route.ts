@@ -13,6 +13,7 @@ import {
 } from "@/lib/contracts/constants";
 import { PREMIUM_PRICE } from "@/lib/payments/constants";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
+import { assertProviderRateLimit, ProviderRateLimitError } from "@/lib/providerRateLimit";
 import { createDmAndNotify } from "@/lib/dms/notifications";
 import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
 
@@ -21,6 +22,12 @@ import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdr
 export const maxDuration = 120;
 
 const isProdEnv = process.env.NODE_ENV === "production";
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+/* Ceiling on sponsored USDC sends per wallet per hour. SubScript pays the gas for each one, so this
+   bounds our exposure by transaction count — the thing that actually costs us — while leaving the
+   amount uncapped, since the funds belong to the merchant. Comfortably above any real payout
+   cadence, and it covers the Premium payment that shares this action. */
+const SPONSORED_TRANSFERS_PER_HOUR = 10;
 const USER_SPONSORED_ACTIONS = new Set(["approveUsdc", "transferUsdc"]);
 const MERCHANT_SPONSORED_ACTIONS = new Set([
     "approveUsdc",
@@ -311,18 +318,60 @@ export async function POST(request: Request) {
             }
             case "transferUsdc": {
                 const { to, amount } = args;
-                if (!to || typeof to !== "string") {
+                if (!to || typeof to !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(to)) {
                     return NextResponse.json({ error: "Invalid recipient address" }, { status: 400 });
                 }
-                
-                if (to.toLowerCase() !== PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
-                    return NextResponse.json({ error: "Unauthorized transfer recipient. Transfer only to SubScript premium payout account." }, { status: 400 });
+                const normalizedTo = to.toLowerCase();
+
+                /* This action used to accept PREMIUM_PAYMENT_RECIPIENT_ADDRESS and nothing else,
+                   because it was written for one job: paying SubScript for Premium with sponsored
+                   gas. The dashboard's Send dialog routes through here too, so every merchant send
+                   to a real destination was refused with "Transfer only to SubScript premium payout
+                   account" — the feature only ever worked for external wallets, which skip this
+                   route and pay their own gas.
+                   The recipient allow-list is gone, but the reason it existed is not: SubScript pays
+                   the gas for every call here, so the cost scales with the NUMBER of transfers, not
+                   their value. An unbounded sponsored send is a drain on the sponsor wallet, and a
+                   dry sponsor breaks every sponsored action, not just sends. So the bound moved from
+                   "who you may pay" to "how often we will pay for it", which is the quantity that
+                   actually costs us. Value is deliberately uncapped: it is the merchant's money. */
+                if (normalizedTo === ZERO_ADDRESS) {
+                    return NextResponse.json({ error: "Recipient cannot be the zero address." }, { status: 400 });
+                }
+                if (normalizedTo === wallet.toLowerCase()) {
+                    return NextResponse.json({ error: "Recipient cannot be your own wallet address." }, { status: 400 });
+                }
+
+                let transferAmount: bigint;
+                try {
+                    transferAmount = BigInt(amount);
+                } catch {
+                    return NextResponse.json({ error: "Invalid transfer amount" }, { status: 400 });
+                }
+                if (transferAmount <= 0n) {
+                    return NextResponse.json({ error: "Transfer amount must be greater than zero." }, { status: 400 });
+                }
+
+                try {
+                    assertProviderRateLimit({
+                        provider: "sponsored-usdc-transfer",
+                        key: wallet.toLowerCase(),
+                        limit: SPONSORED_TRANSFERS_PER_HOUR,
+                        windowMs: 60 * 60 * 1000,
+                    });
+                } catch (limitError: any) {
+                    const retryAfter = limitError instanceof ProviderRateLimitError ? limitError.retryAfterSeconds : 3600;
+                    console.warn(`[execute-tx] Sponsored transfer rate limit hit by ${wallet.toLowerCase()}. requestId: ${requestId}`);
+                    return NextResponse.json(
+                        { error: `Too many sponsored transfers. Try again in ${Math.ceil(retryAfter / 60)} minute(s).` },
+                        { status: 429, headers: { "Retry-After": String(retryAfter) } },
+                    );
                 }
 
                 contractAddress = USDC_NATIVE_GAS_ADDRESS;
                 contractAbi = ERC20_ABI;
                 functionName = "transfer";
-                finalArgs = [to, BigInt(amount)];
+                finalArgs = [to, transferAmount];
                 break;
             }
             case "createPremiumSubscription": {
