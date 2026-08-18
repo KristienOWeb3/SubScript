@@ -210,6 +210,13 @@ export async function sendWebhookRequest(
        cannot swap in a private address for the actual connection, because the connection
        never resolves again. */
     const pinned = urlValidation.addresses[0];
+    /* Guarded because everything from here to the signing try/catch below used to be able to throw
+       out of this function entirely. `addresses` is normally non-empty — validation resolves the host
+       before returning — but an empty list made `pinned.address` a TypeError, and the caller had
+       already marked its outbox row PROCESSING, so the row was orphaned with no recorded error. */
+    if (!pinned?.address) {
+        return { status: 504, responseText: "Delivery failed: destination host resolved to no address" };
+    }
     const poolKey = `${pinned.address}:${pinned.family}`;
     let pinnedDispatcher = agentPool.get(poolKey);
     if (!pinnedDispatcher) {
