@@ -205,6 +205,63 @@ When `subscriber` is supplied, the plan/offer is limited to that wallet. The res
 }
 ```
 
+An unaccepted subscription checkout expires 24 hours after creation. It then reports
+`status: "expired"`, and a customer who follows the link receives `410` with
+`code: "CHECKOUT_EXPIRED"` rather than being billed against a stale offer.
+
+### Read a subscription back
+
+* **Endpoints**: `GET /api/v1/subscriptions/{id}` for one, `GET /api/v1/subscriptions` for the list
+* **Id forms**: `{id}` accepts `sub_<uuid>` (the checkout session id the list returns) or
+  `sub_<number>` (the on-chain PSA id). Both resolve, so an id copied out of the list always reads back.
+* **Filters on the list**: `?status=active,past_due` (comma-separated; an unknown value is rejected
+  rather than ignored) and `?externalReference=customer_1042` (exact match, `merchantCustomerId`
+  accepted as an alias). Both apply within the 100 most recent subscriptions.
+
+Do not treat the webhook as the only copy of the mapping. Every subscription read returns:
+
+| Field | Meaning |
+|---|---|
+| `externalReference` | The value sent as `merchantCustomerId`. Key entitlements on this; a missed webhook delivery stays recoverable. |
+| `currentPeriodEnd` | When access lapses without a renewal (ISO). `currentPeriodEndTimestamp` is Unix seconds and `nextPaymentDate` is an alias. Do not recompute from `createdAt + intervalSeconds` — that ignores renewals. |
+| `subscriptionId` | On-chain PSA id, `null` until the authorization settles. Required to cancel an active subscription. |
+| `subscriber` | The wallet that authorized the payment. `null` only while the checkout is unaccepted. |
+| `status` | `incomplete`, `active`, `past_due`, `canceled`, or `expired`, derived from the billing record — a subscription canceled after activation stops reporting `active`. |
+| `expiresAt` | When an unaccepted checkout stops being payable. |
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "sub_7f9c5f1e-4a1f-4b4f-bbc1-761b34c0eebb",
+      "object": "subscription",
+      "status": "active",
+      "subscriptionId": "42",
+      "subscriber": "0xCustomerWallet",
+      "amountUsdcMicros": "7000000",
+      "amountUsdc": "7",
+      "intervalSeconds": 604800,
+      "intervalCount": 1,
+      "interval": "weekly",
+      "currentPeriodEnd": "2026-08-26T09:14:00.000Z",
+      "cancelAtPeriodEnd": false,
+      "merchantCustomerId": "customer_1042",
+      "externalReference": "customer_1042",
+      "expiresAt": "2026-08-20T09:14:00.000Z"
+    }
+  ]
+}
+```
+
+### Cancel a subscription
+
+* **Endpoint**: `DELETE /api/v1/subscriptions/{id}` (or `DELETE /api/v1/subscriptions?id=<id>`)
+
+`sub_<uuid>` withdraws a not-yet-accepted checkout and deactivates its published plan.
+`sub_<number>` schedules cancel-at-period-end on an active subscription — use the
+`subscriptionId` from a read, since the checkout uuid cannot cancel an active authorization.
+
 ### Retrieve Checkout Intent Status
 Pollable status endpoint for dashboards, support tools, and AI test loops. Webhooks remain the fulfillment source of truth.
 

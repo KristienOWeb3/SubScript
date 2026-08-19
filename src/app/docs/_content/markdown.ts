@@ -8,6 +8,7 @@ import {
   planCatalogCode,
   quickstartCurl,
   subscriptionCode,
+  subscriptionReconcileCode,
   subscriptionResponseCode,
   intentResponseCode,
   vibePrompt,
@@ -418,11 +419,43 @@ ${fence("json", subscriptionResponseCode)}
 
 - \`incomplete\` — created but not authorized yet. Redirect the customer to \`checkoutUrl\`.
 - \`active\` — the customer authorized the recurring payment on-chain. Fulfill from the signed webhook.
+- \`past_due\` — a renewal charge failed. The authorization is still live, so a retry can recover it.
 - \`canceled\` — unaccepted checkout sessions can be withdrawn by the merchant; active authorizations
   are customer-controlled.
+- \`expired\` — nobody accepted the checkout within 24 hours. Create a fresh one; accepting an expired
+  checkout returns \`410 CHECKOUT_EXPIRED\`.
+
+\`status\` reflects the billing record, not the checkout, so a subscription canceled after activation
+reports \`canceled\` rather than staying \`active\` forever. Filter with \`?status=active,past_due\`;
+an unknown value is rejected rather than silently returning everything.
 
 \`incomplete\` is not a failure. Do not grant access on creation, and do not treat a long-lived
 incomplete as an error — it usually means checkout is unfinished.
+
+## Reading subscriptions back
+
+\`GET /api/v1/subscriptions/{id}\`
+
+The webhook is a notification, not the only copy of the mapping. Every subscription read returns your
+own \`externalReference\`, so a missed delivery is recoverable instead of leaving a paying customer
+with no plan.
+
+| Field | Meaning |
+| --- | --- |
+| \`externalReference\` | The value you sent as \`merchantCustomerId\`. Key entitlements on this. |
+| \`currentPeriodEnd\` | When access lapses without a renewal. Do not recompute from \`createdAt + intervalSeconds\` — this accounts for renewals and matches the dashboard. |
+| \`subscriptionId\` | On-chain id, null until the authorization settles. Required to cancel an active subscription. |
+| \`subscriber\` | The wallet that authorized the payment. Null only while the checkout is unaccepted. |
+| \`expiresAt\` | When an unaccepted checkout stops being payable. |
+
+A subscription has two ids over its life: the checkout session (\`sub_<uuid>\`) and, once authorized
+on-chain, a PSA id (\`sub_<number>\`). \`GET /api/v1/subscriptions/{id}\` accepts either, so an id
+copied straight out of the list always reads back.
+
+Filters: \`?status=\` (comma-separated) and \`?externalReference=\` (exact match). Both apply within
+the 100 most recent subscriptions.
+
+${fence("javascript", subscriptionReconcileCode)}
 
 ## Lifecycle webhooks
 

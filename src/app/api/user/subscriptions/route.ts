@@ -107,6 +107,11 @@ export async function GET(request: Request) {
                 amountCapUsdc: sub.amountCapUsdc.toString(),
                 billingIntervalSeconds: sub.billingIntervalSeconds.toString(),
                 lastSettlementTimestamp: sub.lastSettlementTimestamp,
+                /* The paid-through date, trigger-derived in the database. Returned rather than left
+                   for the client to recompute from lastSettlement + interval: the resume dialog has
+                   to state exactly when billing restarts, and a client-side derivation drifts from
+                   the value the keeper actually bills on. */
+                nextBillingDate: sub.nextBillingDate,
                 cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
                 createdAt: sub.createdAt
             };

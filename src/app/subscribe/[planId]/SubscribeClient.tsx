@@ -102,6 +102,17 @@ function friendlyError(raw: string): string {
     return raw;
 }
 
+/* Responses that mean "you already have this", not "something broke". The subscribe route returns
+   these as 409s whose body describes a live subscription with time remaining — rendering them under
+   a red "Subscription Failed" heading told the customer the opposite of what the text said. */
+const ALREADY_SUBSCRIBED_CODES = new Set([
+    "RESUBSCRIPTION_TOO_EARLY",
+    "ALREADY_SUBSCRIBED",
+    "ACTIVE_MERCHANT_SUBSCRIPTION",
+]);
+
+type SubscribeFailure = { message: string; code: string | null };
+
 export default function SubscribeClient({
     planId,
     initialPlanData,
@@ -119,7 +130,7 @@ export default function SubscribeClient({
     const [sessionLoaded, setSessionLoaded] = useState(false);
 
     const [isSubscribing, setIsSubscribing] = useState(false);
-    const [subscribeError, setSubscribeError] = useState<string | null>(null);
+    const [subscribeError, setSubscribeError] = useState<SubscribeFailure | null>(null);
     const [result, setResult] = useState<SubscriptionResult | null>(null);
 
     /* Interstitial before following the merchant-supplied "view more" link off-platform. */
@@ -275,12 +286,21 @@ export default function SubscribeClient({
                     : { planId: plan.id }),
             });
             const data = await res.json().catch(() => ({}));
-            if (!res.ok || !data.success) throw new Error(data.error || "Failed to subscribe.");
+            if (!res.ok || !data.success) {
+                /* Carry the response code, not just the message. It is what separates "you already
+                   have this plan" from a real failure, and the two need different treatments. */
+                const failure = new Error(data.error || "Failed to subscribe.") as Error & { code?: string };
+                if (typeof data.code === "string") failure.code = data.code;
+                throw failure;
+            }
             subscribeRequestKey.current = null;
             localStorage.removeItem(requestStorageKey);
             setResult({ txHash: data.txHash, subscriptionId: data.subscriptionId, planName: data.planName });
         } catch (err: any) {
-            setSubscribeError(friendlyError(err.message || "Failed to subscribe."));
+            setSubscribeError({
+                message: friendlyError(err?.message || "Failed to subscribe."),
+                code: typeof err?.code === "string" ? err.code : null,
+            });
         } finally {
             subscribeInFlight.current = false;
             setIsSubscribing(false);
@@ -481,10 +501,27 @@ export default function SubscribeClient({
                         ) : (
                             <div className="space-y-4">
                                 {subscribeError && (
-                                    <div className="p-4 bg-red-500/5 border border-red-500/10 rounded-2xl text-left">
-                                        <span className="text-red-400 text-[9px] font-bold uppercase tracking-wide block">Subscription Failed</span>
-                                        <p className="text-red-200/70 text-[10px] font-mono mt-1 leading-normal break-words">{subscribeError}</p>
-                                    </div>
+                                    subscribeError.code && ALREADY_SUBSCRIBED_CODES.has(subscribeError.code) ? (
+                                        <div className="space-y-3 rounded-2xl border border-[#00d2b4]/25 bg-[#00d2b4]/[0.06] p-4 text-left">
+                                            <div className="flex items-center gap-2">
+                                                <CheckCircle className="w-4 h-4 text-[#00d2b4] shrink-0" />
+                                                <p className="text-[10px] font-bold uppercase tracking-wider text-[#00d2b4]">You&apos;re already subscribed</p>
+                                            </div>
+                                            <p className="text-[10px] leading-relaxed text-white/60">{subscribeError.message}</p>
+                                            <button
+                                                type="button"
+                                                onClick={() => router.push(`/user?tab=inbox&peer=${encodeURIComponent(plan.merchantAddress)}`)}
+                                                className="w-full rounded-xl bg-white px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider text-black flex items-center justify-center gap-2"
+                                            >
+                                                Manage this subscription <ArrowRight className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="p-4 bg-red-500/5 border border-red-500/10 rounded-2xl text-left">
+                                            <span className="text-red-400 text-[9px] font-bold uppercase tracking-wide block">Subscription Failed</span>
+                                            <p className="text-red-200/70 text-[10px] font-mono mt-1 leading-normal break-words">{subscribeError.message}</p>
+                                        </div>
+                                    )
                                 )}
 
                                 {session?.loggedIn && !session.email ? (

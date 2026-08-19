@@ -1,6 +1,6 @@
 {
   "name": "@subscriptonarc/sdk",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Typed SubScript API client — payment intents, subscriptions, usage reporting, and webhook verification for Arc USDC payments.",
   "license": "MIT",
   "type": "module",

@@ -341,6 +341,15 @@ export async function sendReactivatedDm(params: {
     nextBillingDate: Date;
     churnKind: "voluntary" | "involuntary";
     promotionApplied?: { name: string; amountUsdcMicros: bigint; cycles: number } | null;
+    /**
+     * True when the subscriber resumed inside a period they had already paid for, so the
+     * reactivation moved no funds.
+     *
+     * Worth its own line rather than leaving it implied. Every other reactivation in the product
+     * charges on the spot, so a subscriber reading this DM has every reason to assume they were
+     * billed again — which is precisely the fear that made the old resume flow feel broken.
+     */
+    nothingChargedToday?: boolean;
 }): Promise<LifecycleDmResult> {
     const merchantName = await resolveMerchantName(params.merchantAddress);
     const amount = formatUsdcFromMicros(params.amountUsdcMicros);
@@ -362,6 +371,9 @@ export async function sendReactivatedDm(params: {
                 : `Amount: ${amount} USDC / ${cadence}`,
             params.promotionApplied
                 ? `Then: ${amount} USDC / ${cadence}`
+                : null,
+            params.nothingChargedToday
+                ? "Charged today: nothing — you had already paid for this period."
                 : null,
             `Next billing date: ${formatDate(params.nextBillingDate)}`,
             params.churnKind === "involuntary"

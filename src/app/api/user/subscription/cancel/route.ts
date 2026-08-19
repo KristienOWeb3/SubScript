@@ -129,6 +129,21 @@ export async function POST(request: Request) {
             await triggerExitSurvey(sub.merchant, wallet.toLowerCase(), subscriptionId).catch((err) =>
                 console.error("[subscription/cancel] survey trigger failed:", err)
             );
+
+            /* The thread was silent on the ordinary cancellation. Only the lapsed branch below wrote a
+               DM, so a subscriber cancelling mid-period saw nothing in the conversation and neither
+               did the merchant — the webhook was the only trace. This is also where the paid-through
+               date gets stated somewhere durable rather than in a response body nobody keeps. */
+            await createDmAndNotify({
+                senderAddress: wallet.toLowerCase(),
+                receiverAddress: sub.merchant,
+                messageType: "SUBSCRIPTION_CANCELED",
+                status: "APPROVED",
+                title: "Subscription Canceled",
+                description: `Subscription sub_${subscriptionId} was canceled by the subscriber. Access continues through the paid period, until ${accessUntil.slice(0, 10)}. No further payments will be taken.`,
+                dedupeKey: `subscription-cancel-scheduled:${subscriptionId}`,
+            }).catch((err) => console.error("[subscription/cancel] DM notification failed:", err));
+
             return NextResponse.json({
                 success: true,
                 cancelAtPeriodEnd: true,

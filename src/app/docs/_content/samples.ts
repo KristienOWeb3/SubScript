@@ -124,15 +124,53 @@ export const subscriptionResponseCode = `{
     "object": "subscription",
     "status": "incomplete",
     "merchantAddress": "0xMerchant...",
+    "subscriptionId": null,
     "subscriber": "0xCustomerWallet...",
     "amountUsdcMicros": "7000000",
     "amountUsdc": "7",
     "intervalSeconds": 604800,
     "intervalCount": 1,
     "interval": "weekly",
-    "checkoutUrl": "https://www.subscriptonarc.com/pay/7f9c5f1e-4a1f-4b4f-bbc1-761b34c0eebb"
+    "currentPeriodEnd": null,
+    "currentPeriodEndTimestamp": null,
+    "nextPaymentDate": null,
+    "cancelAtPeriodEnd": false,
+    "planId": "b21c8e40-13a7-4a55-9d2c-0f2a9c6f5d18",
+    "merchantCustomerId": "user_123",
+    "externalReference": "user_123",
+    "checkoutUrl": "https://www.subscriptonarc.com/subscribe/7f9c5f1e-4a1f-4b4f-bbc1-761b34c0eebb",
+    "expiresAt": "2026-08-20T09:14:00.000Z",
+    "createdAt": "2026-08-19T09:14:00.000Z"
   }
 }`;
+
+export const subscriptionReconcileCode = `// Reconcile without depending on the webhook. Every read returns your own
+// externalReference, the period end, and the on-chain id cancellation needs.
+const res = await fetch(
+  "https://www.subscriptonarc.com/api/v1/subscriptions?status=active",
+  { headers: { Authorization: \`Bearer \${process.env.SUBSCRIPT_SECRET_KEY}\` } },
+);
+const { data } = await res.json();
+
+for (const sub of data) {
+  // externalReference is the value you sent as merchantCustomerId.
+  // currentPeriodEnd is when access lapses without a renewal — use it
+  // rather than deriving createdAt + intervalSeconds.
+  await grantAccess(sub.externalReference, { until: sub.currentPeriodEnd });
+}
+
+// Retrieve one subscription by the id the list returned. Both id forms work:
+// sub_<uuid> for the checkout session, sub_<number> once it is on-chain.
+const one = await fetch(
+  \`https://www.subscriptonarc.com/api/v1/subscriptions/\${data[0].id}\`,
+  { headers: { Authorization: \`Bearer \${process.env.SUBSCRIPT_SECRET_KEY}\` } },
+).then((r) => r.json());
+
+// Find every subscription for one of your customers.
+const forCustomer = await fetch(
+  "https://www.subscriptonarc.com/api/v1/subscriptions?externalReference=user_123",
+  { headers: { Authorization: \`Bearer \${process.env.SUBSCRIPT_SECRET_KEY}\` } },
+).then((r) => r.json());`;
 
 export const planCatalogCode = `// Create the reusable tier once. It appears in the merchant dashboard
 // and in the plan controls of every existing user DM with this merchant.

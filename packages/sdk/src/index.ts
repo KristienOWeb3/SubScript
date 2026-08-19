@@ -158,18 +158,36 @@ export interface UpdatePlanParams {
 export interface Subscription {
     id: string;
     object: "subscription";
-    status: "incomplete" | "active" | "inactive" | "past_due" | "canceled";
+    /**
+     * Derived from the billing record rather than the checkout, so a subscription canceled after
+     * activation reports `canceled`. `expired` marks a checkout abandoned for 24h; `inactive` only
+     * appears on on-chain reads whose authorization is revoked.
+     */
+    status: "incomplete" | "active" | "inactive" | "past_due" | "canceled" | "expired";
     merchantAddress?: string;
+    /** On-chain id, null until the authorization settles. `cancel()` needs this for an active sub. */
+    subscriptionId?: string | null;
     subscriber?: string | null;
     amountUsdcMicros: string;
     amountUsdc: string;
     intervalSeconds?: number;
     intervalCount?: number;
     interval?: string | null;
+    /**
+     * End of the paid period — when access lapses without a renewal. Null while incomplete or
+     * expired. Use this instead of deriving createdAt + intervalSeconds; it is the same value the
+     * merchant dashboard renders.
+     */
+    currentPeriodEnd?: string | null;
+    currentPeriodEndTimestamp?: number | null;
+    /** Alias of `currentPeriodEnd`. */
+    nextPaymentDate?: string | null;
     planId?: string | null;
     merchantCustomerId?: string | null;
     externalReference?: string | null;
     checkoutUrl?: string;
+    /** When an unaccepted checkout stops being payable. */
+    expiresAt?: string | null;
     cancelAtPeriodEnd?: boolean;
     [key: string]: unknown;
 }
@@ -330,15 +348,30 @@ export class SubScript {
     readonly subscriptions = {
         create: (params: CreateSubscriptionParams): Promise<Subscription> =>
             this.request<{ subscription: Subscription }>("POST", "/api/v1/subscriptions", stringifyMicros(params)).then((r) => r.subscription),
+        /** Accepts either id form the API returns — a `sub_<uuid>` straight from `list()` works. */
         retrieve: (id: string): Promise<Subscription> =>
-            this.request<Subscription>("GET", `/api/v1/subscriptions?id=${encodeURIComponent(id)}`),
-        list: (params?: { subscriber?: string }): Promise<Subscription[]> =>
-            this.request<{ data: Subscription[] }>(
+            this.request<Subscription>("GET", `/api/v1/subscriptions/${encodeURIComponent(id)}`),
+        list: (params?: {
+            subscriber?: string;
+            /** One or more of: incomplete, active, past_due, canceled, expired. */
+            status?: Subscription["status"] | Array<Subscription["status"]>;
+            /** Exact match on your own customer/account binding. */
+            externalReference?: string;
+        }): Promise<Subscription[]> => {
+            const query = new URLSearchParams();
+            if (params?.subscriber) query.set("subscriber", params.subscriber);
+            if (params?.status) {
+                query.set("status", Array.isArray(params.status) ? params.status.join(",") : params.status);
+            }
+            if (params?.externalReference) query.set("externalReference", params.externalReference);
+            const search = query.toString();
+            return this.request<{ data: Subscription[] }>(
                 "GET",
-                `/api/v1/subscriptions${params?.subscriber ? `?subscriber=${encodeURIComponent(params.subscriber)}` : ""}`
-            ).then((r) => r.data),
+                `/api/v1/subscriptions${search ? `?${search}` : ""}`,
+            ).then((r) => r.data);
+        },
         cancel: (id: string): Promise<Subscription> =>
-            this.request<Subscription>("DELETE", `/api/v1/subscriptions?id=${encodeURIComponent(id)}`),
+            this.request<Subscription>("DELETE", `/api/v1/subscriptions/${encodeURIComponent(id)}`),
     };
 
     /** Metered usage reporting. */

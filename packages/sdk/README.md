@@ -78,7 +78,7 @@ switch (event.type) {
 
 - `subscript.intents.create(params)` / `.retrieve(id)`
 - `subscript.plans.create(params)` / `.list()` / `.update({ planId, active?, description?, detailsUrl? })`
-- `subscript.subscriptions.create(params)` / `.retrieve(id)` / `.list({ subscriber })` / `.cancel(id)`
+- `subscript.subscriptions.create(params)` / `.retrieve(id)` / `.list({ subscriber?, status?, externalReference? })` / `.cancel(id)`
 - `subscript.commits.create({ amountUsdc, successUrl?, cancelUrl? })`
 - `subscript.usage.report({ userAddress, amountUsdcMicros })`
 - `subscript.webhooks.verify(rawBody, sigHeader, secret)` / `.constructEvent(...)`
@@ -107,5 +107,25 @@ Use `publishToDm: false` to keep a checkout private. A `subscriber`-assigned pla
 a pending offer in that user's DM. `merchantCustomerId` (or `externalReference`) requires an
 assigned subscriber and remains attached through upgrade, renewal, cancellation, and webhook
 events. Customer plan changes are upgrade-only.
+
+### Reconciling subscriptions
+
+Every subscription read returns `externalReference`, `currentPeriodEnd` and `subscriptionId`, so
+the webhook is a notification rather than the only way to map a subscription to your user:
+
+```ts
+const subs = await subscript.subscriptions.list({ status: "active" });
+for (const sub of subs) {
+  grantAccess(sub.externalReference, { until: sub.currentPeriodEnd });
+}
+
+// Either id form works, including one taken straight from list().
+const one = await subscript.subscriptions.retrieve(subs[0].id);
+```
+
+Use `currentPeriodEnd` rather than deriving `createdAt + intervalSeconds` — it accounts for
+renewals and is the same value the merchant dashboard shows. An unaccepted checkout expires after
+24 hours and reports `status: "expired"`; `subscriptionId` is what `cancel()` needs for a
+subscription that is already active.
 
 Non-2xx responses throw `SubScriptError` (`.status`, `.body`).

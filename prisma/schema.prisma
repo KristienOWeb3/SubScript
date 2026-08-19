@@ -1176,10 +1176,60 @@ model PlatformFlag {
   maintenanceEnabled    Boolean  @default(false) @map("maintenance_enabled")
   maintenanceMessage    String?  @map("maintenance_message")
   externalWalletEnabled Boolean  @default(true) @map("external_wallet_enabled")
+  /// Invite-only merchant signup. The one flag here whose reader fails CLOSED — see
+  /// isMerchantInviteOnlyEnforced. Off until mainnet.
+  merchantInviteOnlyEnabled Boolean @default(false) @map("merchant_invite_only_enabled")
   updatedAt             DateTime @default(now()) @map("updated_at")
   updatedBy             String   @default("system") @map("updated_by")
 
   @@map("platform_flags")
+}
+
+/// A business asking for merchant access. Intake only — approving one writes a MerchantAccessGrant,
+/// which is the thing signup actually checks.
+model MerchantAccessRequest {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email         String    @unique
+  companyName   String?   @map("company_name")
+  website       String?
+  contactName   String?   @map("contact_name")
+  useCase       String?   @map("use_case")
+  monthlyVolume String?   @map("monthly_volume")
+  status        String    @default("PENDING")
+  decidedBy     String?   @map("decided_by")
+  decidedAt     DateTime? @map("decided_at")
+  decisionNote  String?   @map("decision_note")
+  ip            String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  grant MerchantAccessGrant?
+
+  @@index([status, createdAt(sort: Desc)])
+  @@map("merchant_access_requests")
+}
+
+/// The authority on who may open a merchant account. Keyed by email because that is what
+/// register-role verifies; inviteToken is delivery convenience, not a credential.
+model MerchantAccessGrant {
+  email         String    @id
+  grantedBy     String    @map("granted_by")
+  requestId     String?   @unique @map("request_id") @db.Uuid
+  inviteToken   String    @unique @map("invite_token")
+  inviteSentAt  DateTime? @map("invite_sent_at")
+  claimedAt     DateTime? @map("claimed_at")
+  claimedWallet String?   @map("claimed_wallet")
+  revokedAt     DateTime? @map("revoked_at")
+  revokedBy     String?   @map("revoked_by")
+  revokeReason  String?   @map("revoke_reason")
+  note          String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  request MerchantAccessRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt(sort: Desc)])
+  @@map("merchant_access_grants")
 }
 
 model AdminBroadcast {

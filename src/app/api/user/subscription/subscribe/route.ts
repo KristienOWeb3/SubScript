@@ -33,6 +33,7 @@ import { createSubscriptionStartedDm } from "@/lib/dms/system";
 import { withPgClient } from "@/lib/serverPg";
 import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 import { readSubscriptionCheckoutMeta, subscriptionCheckoutPeriod } from "@/lib/subscriptionCheckout";
+import { checkoutExpiresAt, isCheckoutExpired } from "@/lib/subscriptions/apiSubscriptionView";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
@@ -162,6 +163,18 @@ export async function POST(request: Request) {
         const sourceCheckout = checkout || (sourceCheckoutId
             ? await prisma.paymentLink.findUnique({ where: { id: sourceCheckoutId } })
             : null);
+        /* An abandoned API checkout reports `expired` on /api/v1/subscriptions once its window has
+           passed. Refusing it here is what makes that status true rather than cosmetic — otherwise a
+           merchant sees `expired` on an offer that can still be accepted and billed. Checked against
+           the source checkout so it covers both arrival paths: the checkout link directly, and the
+           catalog plan published from it. */
+        if (sourceCheckout && isCheckoutExpired(sourceCheckout)) {
+            return NextResponse.json({
+                error: "This subscription offer has expired. Ask the merchant for a new checkout link.",
+                code: "CHECKOUT_EXPIRED",
+                expiresAt: checkoutExpiresAt(sourceCheckout).toISOString(),
+            }, { status: 410 });
+        }
         const linkedPlan = !merchantPlan && sourceCheckoutId
             ? await prisma.merchantPlan.findUnique({ where: { sourceCheckoutId }, select: { id: true } })
             : null;
@@ -210,61 +223,40 @@ export async function POST(request: Request) {
                 orderBy: { createdAt: "desc" }
             });
             if (existing) {
-                if (existing.nextBillingDate) {
-                    const remainingMs = existing.nextBillingDate.getTime() - Date.now();
-                    const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
-                    if (remainingMs > SIX_HOURS_MS) {
-                        return { status: "RESUBSCRIPTION_TOO_EARLY", existing, attempt: null, appliedPromo: null };
+                const remainingMs = existing.nextBillingDate
+                    ? existing.nextBillingDate.getTime() - Date.now()
+                    : 0;
+                if (existing.cancelAtPeriodEnd) {
+                    /* Canceled, and its on-chain authorization was revoked at cancellation time. If
+                       paid time remains this is a resume, not a subscribe: /api/user/subscription/
+                       resume restores access without charging. Only once the period has lapsed is a
+                       fresh subscription (and a fresh charge) the right answer, so that case falls
+                       through.
+
+                       Previously the guard below fired for these rows too, telling a canceled
+                       subscriber their subscription was "active with ~N hours remaining" and would
+                       "automatically renew". It will not renew, and the message blocked the only way
+                       back — resuming happens precisely while paid time remains. */
+                    if (remainingMs > 0) {
+                        return { status: "RESUME_INSTEAD", existing, attempt: null, appliedPromo: null };
                     }
-                }
-                if (!existing.cancelAtPeriodEnd) {
+                } else {
+                    if (existing.nextBillingDate) {
+                        const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+                        if (remainingMs > SIX_HOURS_MS) {
+                            return { status: "RESUBSCRIPTION_TOO_EARLY", existing, attempt: null, appliedPromo: null };
+                        }
+                    }
                     return { status: "ALREADY_SUBSCRIBED", existing, attempt: null, appliedPromo: null };
                 }
             }
 
-            /* Resubscribing to the SAME PLAN when remaining duration is > 1 day:
-               re-activate existing subscription without charging initial payment again. */
-            const existingCanceledSamePlan = await tx.subscription.findFirst({
-                where: {
-                    subscriber,
-                    merchantAddress: merchant,
-                    kind: "CUSTOMER",
-                    cancelAtPeriodEnd: true,
-                    amountCapUsdc: plan.amountUsdc.toString(),
-                    billingIntervalSeconds: plan.periodSeconds,
-                },
-                orderBy: { createdAt: "desc" }
-            });
-
-            if (existingCanceledSamePlan && existingCanceledSamePlan.nextBillingDate) {
-                const remainingMs = existingCanceledSamePlan.nextBillingDate.getTime() - Date.now();
-                const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-                if (remainingMs > ONE_DAY_MS) {
-                    await tx.subscription.update({
-                        /* Keyed on (contract, id) via the shared helper, not the bare id: the PSA
-                           is immutable, so a redeploy re-mints ids that already exist and a
-                           bare-id update could reactivate a stranded row from an abandoned
-                           deployment. The row was just read, so its own contractAddress — not
-                           the currently configured one — is the authoritative half of the key. */
-                        where: subscriptionKey(
-                            existingCanceledSamePlan.subscriptionId,
-                            existingCanceledSamePlan.contractAddress,
-                        ),
-                        data: {
-                            cancelAtPeriodEnd: false,
-                            status: "ACTIVE",
-                            revocationPending: false,
-                            updatedAt: new Date(),
-                        }
-                    });
-                    return {
-                        status: "RESUMED_SAME_PLAN",
-                        existing: existingCanceledSamePlan,
-                        attempt: null,
-                        appliedPromo: null
-                    };
-                }
-            }
+            /* No resume branch here by design. Reactivating a canceled subscription is
+               /api/user/subscription/resume, because cancellation revokes the on-chain
+               authorization: the branch that used to live here flipped the mirror row back to
+               ACTIVE while the chain still said inactive, producing a subscription that could never
+               be billed and that the keeper reads as "canceled directly on-chain". It was also
+               unreachable — the guard above returned first for every row it could have matched. */
 
             const generationResult = await tx.$queryRaw<Array<{ generation: bigint }>>`
                 SELECT count(*)::bigint AS generation
@@ -356,67 +348,18 @@ export async function POST(request: Request) {
             }, { status: 409 });
         }
 
-        if (result.status === "RESUMED_SAME_PLAN" && result.existing) {
-            const resumedSub = result.existing;
-            /* Re-ensure USDC allowance for custodial wallets so automated keepers can bill future renewals */
-            const walletCustody = await getWalletCustody(subscriber);
-            if (isCustodialWallet(walletCustody)) {
-                try {
-                    const custody = await getCustodyForAllowance(subscriber);
-                    await ensureUsdcAllowance(custody, STANDARD_CONTRACT_ADDRESS, horizonAllowance(plan.amountUsdc, plan.periodSeconds));
-                } catch (allowanceErr) {
-                    console.warn("[subscription/subscribe] USDC allowance re-authorization failed:", allowanceErr);
-                }
-            }
-
-            if (checkoutSessionId) {
-                await prisma.paymentLink.update({
-                    where: { id: checkoutSessionId },
-                    data: { active: false, status: "PAID", paidAt: new Date() },
-                }).catch(() => {});
-            }
-            await deactivateConsumedApiPlan({ sourceCheckoutId, subscriber }).catch(() => {});
-
-            await createSubscriptionStartedDm({
-                merchantAddress: merchant,
-                subscriberAddress: subscriber,
-                planName: plan.name,
-                amountUsdc: plan.amountUsdc,
-                periodSeconds: plan.periodSeconds,
-                isResubscription: true,
-                resubscriptionAccessUntil: resumedSub.nextBillingDate,
-            }).catch((err: unknown) => console.error("[subscription/subscribe] resumed DM creation failed:", err));
-
-            if (merchant === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
-                await prisma.merchant.update({
-                    where: { walletAddress: subscriber },
-                    data: { tier: "PREMIUM" },
-                }).catch(() => {});
-            }
-
-            await markSubscriptionOfferAccepted(checkoutSessionId, subscriber);
-
-            await dispatchDurableSubscriptionWebhook(merchant, "subscription.activated", subscriptionWebhookData({
-                subscriptionId: String(resumedSub.subscriptionId),
-                status: "active",
-                amountUsdcMicros: plan.amountUsdc,
-                subscriber,
-                merchantAddress: merchant,
-                beneficiary: beneficiaryAddress,
-                externalReference,
-                sourceCheckoutId,
-                txHash: null,
-            }), `resumed-same-plan:${resumedSub.subscriptionId}:${Date.now()}`).catch(() => {});
-
+        if (result.status === "RESUME_INSTEAD" && result.existing) {
+            /* Canceled with paid time still on the clock. Subscribing again here would mint a second
+               authorization and charge for a period the subscriber already owns, so point them at the
+               endpoint that restores it for free instead of doing it silently. */
+            const canceled = result.existing;
             return NextResponse.json({
-                success: true,
-                resumed: true,
-                chargeSkipped: true,
-                subscriptionId: String(resumedSub.subscriptionId),
-                planName: plan.name,
-                accessUntil: resumedSub.nextBillingDate ? resumedSub.nextBillingDate.toISOString() : null,
-                message: "Your subscription to this plan has been resumed without additional charges since your active period still has more than 1 day remaining.",
-            }, { status: 200 });
+                error: "This subscription is canceled but still active until the end of the period you paid for. Resume it to keep it — you won't be charged until the next billing date.",
+                code: "RESUME_INSTEAD",
+                subscriptionId: String(canceled.subscriptionId),
+                resumeEndpoint: "/api/user/subscription/resume",
+                accessUntil: canceled.nextBillingDate ? canceled.nextBillingDate.toISOString() : null,
+            }, { status: 409 });
         }
 
         if (result.status === "CHECKOUT_RECOVERY") {

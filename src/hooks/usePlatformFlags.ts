@@ -17,11 +17,16 @@ import { useEffect, useState } from "react";
 export type PublicPlatformFlags = {
     googleSigninEnabled: boolean;
     externalWalletEnabled: boolean;
+    merchantInviteOnlyEnabled: boolean;
 };
 
 const DEFAULTS: PublicPlatformFlags = {
     googleSigninEnabled: true,
     externalWalletEnabled: false,
+    /* Presentation default only. Showing the invite-only copy before the flag lands would tell
+       every visitor merchant signup is closed when it is open, so this starts off and the server
+       stays the boundary either way. */
+    merchantInviteOnlyEnabled: false,
 };
 
 export function usePlatformFlags(): PublicPlatformFlags & { loaded: boolean } {
@@ -39,6 +44,7 @@ export function usePlatformFlags(): PublicPlatformFlags & { loaded: boolean } {
                     setFlags({
                         googleSigninEnabled: json.googleSigninEnabled !== false,
                         externalWalletEnabled: json.externalWalletEnabled === true,
+                        merchantInviteOnlyEnabled: json.merchantInviteOnlyEnabled === true,
                     });
                 })
                 .catch(() => {

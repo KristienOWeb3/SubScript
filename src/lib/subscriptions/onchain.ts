@@ -145,11 +145,22 @@ export async function subscribeFromEmbedded(
        `introAmountUsdc` (0 = free trial) applies for `introCycles` billing sequences,
        then `amount` applies forever — both enforced by the contract per sequence. */
     introTerms?: { introAmountUsdc: bigint; introCycles: number } | null,
+    options?: {
+        /* Period to size the USDC allowance against, when it differs from the authorization's own
+           period. A resume bridge's period is only the time left on an already-paid period, so
+           sizing off it would scale cycles-per-year up and approve a far larger ceiling than the
+           subscription will ever draw. Pass the plan's period instead. */
+        allowancePeriodSeconds?: bigint;
+    },
 ) {
     const custody = await getWalletCustody(walletAddress);
     /* Allowance is sized on the REGULAR amount: intro charges are strictly lower, and the
        keeper needs headroom for full-price renewals after the promotion ends. */
-    await ensureUsdcAllowance(custody, STANDARD_CONTRACT_ADDRESS, horizonAllowance(amount, period));
+    await ensureUsdcAllowance(
+        custody,
+        STANDARD_CONTRACT_ADDRESS,
+        horizonAllowance(amount, options?.allowancePeriodSeconds ?? period),
+    );
     const { txHash } = await custody.executeContract({
         contractAddress: STANDARD_CONTRACT_ADDRESS,
         abi: SUB_ABI,

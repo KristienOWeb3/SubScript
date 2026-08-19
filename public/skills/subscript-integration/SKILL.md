@@ -123,9 +123,20 @@ secret stays valid until it expires. The events API supports cursor pagination a
   `publishToDm: false` only when the checkout must stay private. For account-bound offers, send
   both `subscriber` and `merchantCustomerId`; DM upgrades then update that same merchant account.
 - Plan changes are upgrade-only. Do not implement downgrade controls.
-- Cancel: `DELETE /api/v1/subscriptions?id=…`. Users can always cancel from their dashboard;
-  cancellation revokes the on-chain authorization itself. Billing is sequence-idempotent: a
-  period can never be charged twice and lapsed periods are never back-charged.
+- Read back with `GET /api/v1/subscriptions/{id}` (accepts the `sub_<uuid>` the list returns or the
+  on-chain `sub_<number>`) or `GET /api/v1/subscriptions`, optionally filtered with
+  `?status=active,past_due` and `?externalReference=<your customer id>`. Every read returns
+  `externalReference`, `currentPeriodEnd`, `subscriptionId`, and `subscriber` — so entitlement state
+  is reconcilable from the API and a missed webhook is recoverable. Use `currentPeriodEnd` for access
+  windows rather than deriving `createdAt + intervalSeconds`, which ignores renewals.
+- `status` is `incomplete | active | past_due | canceled | expired` and follows the billing record,
+  so a subscription canceled after activation stops reporting `active`. Unaccepted checkouts expire
+  24h after creation and then return `410 CHECKOUT_EXPIRED`; create a fresh checkout instead.
+- Cancel: `DELETE /api/v1/subscriptions/{id}` (or `?id=…`). Cancelling an active subscription needs
+  the numeric `subscriptionId` from a read, not the checkout uuid. Users can always cancel from
+  their dashboard; cancellation revokes the on-chain authorization itself. Billing is
+  sequence-idempotent: a period can never be charged twice and lapsed periods are never
+  back-charged.
 - Plans can carry a minimum commitment (≤ one billing period, ≤ 30 days), disclosed to the
   subscriber before authorization.
 
