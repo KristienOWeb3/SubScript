@@ -121,6 +121,25 @@
   color: #cbd5e1 !important;
 }
 
+/* The block above only rescues text-white on a *descendant* of a dark surface. A filled button
+   carries both classes itself — `bg-slate-800 text-white` — so nothing matched it and the blanket
+   `.admin-workspace [class~="text-white"] { color: #0f172a }` above won the label back to near-black.
+   That is the console's "Reopen" button rendering black-on-black, and "Resolve" on emerald was the
+   same bug one shade luckier.
+   Paired attribute selectors so the fill and the foreground must sit on the same element, and
+   whole-token `~=` so a `hover:` fill never claims the resting label. */
+.admin-workspace [class~="bg-slate-800"][class~="text-white"],
+.admin-workspace [class~="bg-slate-900"][class~="text-white"],
+.admin-workspace [class~="bg-emerald-600"][class~="text-white"],
+.admin-workspace [class~="bg-emerald-700"][class~="text-white"],
+.admin-workspace [class~="bg-red-600"][class~="text-white"],
+.admin-workspace [class~="bg-red-700"][class~="text-white"],
+.admin-workspace [class~="bg-[#2775ca]" i][class~="text-white"],
+.admin-workspace [class~="bg-[#2064b0]" i][class~="text-white"],
+.admin-workspace [class~="bg-[#1d61a8]" i][class~="text-white"] {
+  color: #ffffff !important;
+}
+
 :root {
   color-scheme: dark;
   --background-start: #111111;
@@ -718,14 +737,77 @@ body {
   color: #000000 !important;
 }
 
-.user-dashboard-content [class*="bg-black/"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-redesign [role="dialog"] [class*="bg-black/"] {
+/* Token-exact, for the same reason the dark layer further down is: `[class*=]` matches
+   `hover:bg-black/[0.02]` just as readily as `bg-black/[0.02]`, so any element whose only black
+   tint was a hover state had that tint painted on permanently. The Referred Signups table is the
+   visible case — `hover:bg-black/[0.02]` on each `<tr>` gave every row a resting 20% blue fill, so
+   the table read as a blue block and the text it was supposed to lift on hover sat on top of it.
+   `~=` matches whole space-separated tokens only, so a hover variant can no longer claim the
+   resting state. Enumerated rather than excluding `hover:` wholesale because 11 elements here
+   legitimately carry both a resting tint and a hover tint. */
+.user-dashboard-content [class~="bg-black/[0.02]"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class~="bg-black/[0.03]"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class~="bg-black/[0.04]"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class~="bg-black/[0.05]"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class~="bg-black/[0.08]"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class~="bg-black/5"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class~="bg-black/10"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class~="bg-black/15"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class~="bg-black/20"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class~="bg-black/25"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class~="bg-black/30"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class~="bg-black/40"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class~="bg-black/45"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class~="bg-black/50"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class~="bg-black/60"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class~="bg-black/70"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class~="bg-black/75"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class~="bg-black/80"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class~="bg-black/85"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class~="bg-black/95"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.02]"],
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.03]"],
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.04]"],
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.05]"],
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.08]"],
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/5"],
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/10"],
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/15"],
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/20"],
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/25"],
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/30"],
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/40"],
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/45"],
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/50"],
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/60"],
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/70"],
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/75"],
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/80"],
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/85"],
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/95"] {
   background-color: rgb(39 117 202 / 20%) !important;
 }
 
-.user-dashboard-content [class*="bg-[#ccff00]"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-redesign [role="dialog"] [class*="bg-[#ccff00]"] {
+/* Lime is unreadable on the cream canvas, so the light layer repaints the fill charcoal. Only the
+   bare token is a resting fill — `hover:bg-[#ccff00]/10` and friends were being matched by the old
+   substring selector and given a permanent charcoal panel. */
+.user-dashboard-content [class~="bg-[#ccff00]" i]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-redesign [role="dialog"] [class~="bg-[#ccff00]" i] {
   background-color: #353935 !important;
+}
+
+/* The fill above turns a lime button into a dark one, so its foreground has to move with it.
+   Without this, `bg-[#ccff00] text-black` — the DM "Send Funds" button, among others — kept its
+   black label on the new charcoal fill and rendered black-on-black. The dark layer already carries
+   the mirror image of this rule (dark text guaranteed on the restored lime); this is the light half
+   that was missing. Descendants are included because the label is often a nested span. */
+.user-dashboard-content [class~="bg-[#ccff00]" i]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
+.user-dashboard-content [class~="bg-[#ccff00]" i]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *) [class~="text-black"],
+.user-dashboard-content [class~="bg-[#ccff00]" i]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *) [class~="text-[#111827]" i],
+.user-dashboard-redesign [role="dialog"] [class~="bg-[#ccff00]" i],
+.user-dashboard-redesign [role="dialog"] [class~="bg-[#ccff00]" i] [class~="text-black"],
+.user-dashboard-redesign [role="dialog"] [class~="bg-[#ccff00]" i] [class~="text-[#111827]" i] {
+  color: #ffffff !important;
 }
 
 .user-dashboard-content [class*="border-white/"],
