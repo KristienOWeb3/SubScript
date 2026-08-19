@@ -122,9 +122,20 @@ export default function SendWalletModal({
                         onClose={() => setIsScanning(false)}
                         onScan={(scanned) => {
                             /* This field wants an address, so ask for one explicitly — the scanner
-                               now reports what it saw rather than guessing what the caller wanted. */
-                            setRecipientAddress(parseScannedAddress(scanned));
+                               now reports what it saw rather than guessing what the caller wanted.
+                               Rejected here rather than silently filled: parseScannedAddress returns
+                               the raw text when there is no address in it, so a payment link or an
+                               alias would land in an address-only box and fail later with a generic
+                               "enter a valid 0x address", pointing at the field rather than at the
+                               code that was scanned. */
+                            const address = parseScannedAddress(scanned);
                             setIsScanning(false);
+                            if (!ethers.isAddress(address)) {
+                                setErrorMsg("That QR code doesn't contain a wallet address.");
+                                return;
+                            }
+                            setRecipientAddress(address);
+                            setErrorMsg(null);
                         }}
                         title="Scan Recipient QR Code"
                     />

@@ -25,6 +25,11 @@ interface PeerAvatarProps {
  * The `onError` fallback is the other half. Without it a dead or hotlink-protected URL leaves the
  * browser's broken-image glyph in a 40px circle, which looks like our bug rather than a missing
  * picture. `src` is tracked in state so a changed prop retries instead of staying failed.
+ *
+ * `referrerPolicy="no-referrer"` withholds the page the viewer looked from, which is the part we
+ * control here. It does not hide the viewer's IP from the profile owner — only serving avatars from
+ * our own storage would, and that is an ingestion pipeline rather than a prop. Worth doing, and note
+ * the rest of the dashboard already renders remote avatars exactly this way.
  */
 export function PeerAvatar({ src, name, className = "h-10 w-10", fallbackClassName = "bg-black/5 border-black/10 text-black/60" }: PeerAvatarProps) {
     const [failed, setFailed] = useState(false);
@@ -52,6 +57,7 @@ export function PeerAvatar({ src, name, className = "h-10 w-10", fallbackClassNa
                 className="h-full w-full object-cover"
                 onError={() => setFailed(true)}
                 loading="lazy"
+                referrerPolicy="no-referrer"
             />
         </div>
     );

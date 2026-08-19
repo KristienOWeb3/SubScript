@@ -80,3 +80,50 @@ test("parseScannedAddress unwraps the wallet-app formats", () => {
 test("parseScannedAddress hands back a handle untouched so aliases still resolve", () => {
     assert.equal(parseScannedAddress("kristien.arc"), "kristien.arc");
 });
+
+test("a longer hex run is refused rather than truncated to a wrong address", () => {
+    /* An unanchored 40-digit match returned the first 40 digits of a 41-digit run — a 42-character
+       string that ethers.isAddress accepts, and not the address in the code. It reached the Send
+       dialog as a prefilled recipient, so this had to fail closed rather than guess. */
+    const tooLong = `${ADDRESS}0`;
+    assert.deepEqual(resolveScannedTarget(tooLong), { kind: "text", value: tooLong });
+    assert.equal(parseScannedAddress(tooLong), tooLong, "returns input unchanged, not a prefix");
+
+    assert.equal(resolveScannedTarget(`0x${"a".repeat(41)}`).kind, "text");
+    assert.equal(resolveScannedTarget(`ethereum:${ADDRESS}0`).kind, "text");
+    assert.equal(resolveScannedTarget(`text ${ADDRESS}0 more`).kind, "text");
+});
+
+test("a complete address still matches when surrounded by other text", () => {
+    assert.deepEqual(resolveScannedTarget(`pay ${ADDRESS} now`), { kind: "address", address: ADDRESS });
+    assert.deepEqual(resolveScannedTarget(`${ADDRESS}!`), { kind: "address", address: ADDRESS });
+});
+
+test("the link allow-list cannot be walked out of", () => {
+    /* Each of these is either not a link at all, or reduced to a path this app serves. None may
+       come back as something that would navigate off-origin or above the matched route. */
+    const mustNotBeLinks = [
+        "//evil.example/pay/abc",
+        "javascript:alert(1)//pay/x",
+        "/pay/abc/../../admin",
+        "https://www.subscriptonarc.com/docs/webhooks",
+    ];
+    for (const input of mustNotBeLinks) {
+        assert.notEqual(resolveScannedTarget(input).kind, "link", `${input} must not resolve to a link`);
+    }
+
+    /* Credentials, fragments and foreign hosts are all discarded down to the path. */
+    assert.deepEqual(resolveScannedTarget("https://user:pass@evil.example/pay/abc"), {
+        kind: "link",
+        path: "/pay/abc",
+    });
+    assert.deepEqual(resolveScannedTarget("https://x.com/pay/abc#@evil.example"), {
+        kind: "link",
+        path: "/pay/abc",
+    });
+
+    /* Encoded separators stay encoded, so they address a route parameter rather than a new segment. */
+    const encoded = resolveScannedTarget("https://x.com/pay/..%2F..%2Fadmin");
+    assert.equal(encoded.kind, "link");
+    assert.ok(encoded.path.startsWith("/pay/"), "stays under the matched route");
+});

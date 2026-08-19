@@ -476,10 +476,23 @@ export async function addSupportTicketMessage(input: {
     const messageId = `msg_${crypto.randomBytes(12).toString("hex")}`;
     const now = new Date().toISOString();
 
-    await pgQuery(
-        `INSERT INTO support_ticket_messages 
+    /* The status read above is a check against state that another request can change before this
+       insert lands — an admin resolving the ticket in the gap would let this message through into a
+       settled thread. Re-asserting the writable statuses inside the INSERT closes that window in one
+       statement: the row appears only if the ticket is still writable at write time, and RETURNING
+       tells us whether it did. A transaction with SELECT ... FOR UPDATE would also work, but this
+       needs no transaction plumbing around a single insert.
+       The check above is kept because it is what distinguishes "resolved" from "closed" for the
+       caller's error message; this is the guarantee, that is the diagnosis. */
+    const inserted = await pgQuery<{ id: string }>(
+        `INSERT INTO support_ticket_messages
         (id, ticket_id, sender_wallet, sender_role, sender_alias, sender_profile_pic, content, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        SELECT $1, $2, $3, $4, $5, $6, $7, $8
+        WHERE EXISTS (
+            SELECT 1 FROM support_tickets
+            WHERE id = $2 AND status IN ('OPEN', 'CLAIMED')
+        )
+        RETURNING id`,
         [
             messageId,
             input.ticketId,
@@ -491,6 +504,13 @@ export async function addSupportTicketMessage(input: {
             now,
         ]
     );
+    if (!inserted.length) {
+        return {
+            ok: false,
+            error: "This ticket was settled before your message was sent. Reopen it to continue the conversation.",
+            status: 409,
+        };
+    }
 
     // If an admin sends the first reply to an OPEN ticket, claim it exclusively!
     let updateSql = `UPDATE support_tickets SET last_message_at = $1, updated_at = $1`;

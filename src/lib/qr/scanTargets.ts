@@ -20,7 +20,22 @@ const SUBSCRIPT_LINK_PATHS = [
     /^\/subscribe\/[^/]+\/?$/i,
 ];
 
-const ADDRESS_PATTERN = /0x[a-fA-F0-9]{40}/;
+/**
+ * A complete 40-hex-digit address, bounded on both sides.
+ *
+ * The boundaries are the point. An unanchored `/0x[a-fA-F0-9]{40}/` happily matches the first 40
+ * digits of a longer hex run, so a QR encoding `0x<41 hex digits>` produced a 42-character string
+ * that `ethers.isAddress` accepts — a valid-looking address that is not the one in the code. That
+ * value reached the Send dialog as a prefilled recipient, so a malformed or hostile QR could aim a
+ * transfer somewhere the payer never saw. Refusing to match at all is the safe outcome: the raw text
+ * falls through to alias resolution, which fails visibly.
+ */
+const ADDRESS_PATTERN = /(?:^|[^a-fA-F0-9])(0x[a-fA-F0-9]{40})(?![a-fA-F0-9])/;
+
+/** The one complete address in `value`, or null. Never a truncation of a longer run. */
+function findAddress(value: string): string | null {
+    return value.match(ADDRESS_PATTERN)?.[1] ?? null;
+}
 
 /**
  * Pulls a wallet address out of a scan, for a field that wants one.
@@ -47,8 +62,8 @@ export function parseScannedAddress(raw: string): string {
         }
     }
 
-    const match = result.match(ADDRESS_PATTERN);
-    return match ? match[0] : result;
+    const match = findAddress(result);
+    return match ?? result;
 }
 
 export type ScannedTarget =
@@ -94,12 +109,12 @@ export function resolveScannedTarget(raw: string): ScannedTarget {
         return { kind: "link", path: trimmed };
     }
 
-    const address = trimmed.match(ADDRESS_PATTERN);
-    if (address) return { kind: "address", address: address[0] };
+    const address = findAddress(trimmed);
+    if (address) return { kind: "address", address };
 
     if (trimmed.toLowerCase().startsWith("ethereum:")) {
-        const parsed = parseScannedAddress(trimmed);
-        if (ADDRESS_PATTERN.test(parsed)) return { kind: "address", address: parsed };
+        const parsed = findAddress(parseScannedAddress(trimmed));
+        if (parsed) return { kind: "address", address: parsed };
     }
 
     return { kind: "text", value: trimmed };

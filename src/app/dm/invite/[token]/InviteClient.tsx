@@ -109,11 +109,12 @@ export default function InviteClient({
 
     const currentPath = typeof window !== "undefined" ? window.location.pathname : `/dm/invite/${token}`;
 
+    /* The shell below matches /pay/[id], the other public page a stranger lands on from a link. This
+       page was still on the retired dark-glass design — #080808 with a lime accent — so following an
+       invite dropped the user from the cream DM surfaces onto something that looked like a different
+       product. Kept out of the return block: the repo requires JSX-block comments to be wrapped as
+       {...} expressions, which is not valid in the expression position before the root element. */
     return (
-        /* Matches the shell of /pay/[id], the other public page a stranger lands on from a link.
-           This page was still on the retired dark-glass design — #080808 with a lime accent — so
-           following an invite dropped the user from the cream DM surfaces onto something that
-           looked like a different product. */
         <div className="relative flex min-h-screen flex-col items-center justify-center bg-[#FFFFF0] p-4 font-sans text-black selection:bg-[#2775CA]/20 selection:text-black sm:p-6">
             <div className="relative z-10 w-full max-w-md">
                 {/* Brand Header */}
@@ -125,7 +126,6 @@ export default function InviteClient({
                 </div>
 
                 {!isValid || !recipient ? (
-                    /* Invalid / Expired Link Card */
                     <motion.div
                         initial={{ opacity: 0, y: 15 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -153,7 +153,6 @@ export default function InviteClient({
                         </button>
                     </motion.div>
                 ) : requestSuccess ? (
-                    /* Success State Card */
                     <motion.div
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
@@ -179,7 +178,6 @@ export default function InviteClient({
                         </div>
                     </motion.div>
                 ) : (
-                    /* Active Invite Connection Card */
                     <motion.div
                         initial={{ opacity: 0, y: 15 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -217,7 +215,6 @@ export default function InviteClient({
                                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#2775CA] border-t-transparent" />
                             </div>
                         ) : isSelf ? (
-                            /* Self Invite Link Notice */
                             <div className="space-y-3 rounded-2xl border border-black/10 bg-black/[0.02] p-4 text-center">
                                 <p className="text-xs text-black/60">This is your own invite link — share it to get requests.</p>
                                 <button
@@ -229,7 +226,6 @@ export default function InviteClient({
                                 </button>
                             </div>
                         ) : !userWallet ? (
-                            /* Guest / Logged-Out CTA */
                             <div className="space-y-4 pt-2">
                                 <div className="space-y-2 rounded-2xl border border-black/10 bg-black/[0.02] p-4 text-center">
                                     <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-xl border border-black/10 bg-white text-black/60">
@@ -249,7 +245,6 @@ export default function InviteClient({
                                 </button>
                             </div>
                         ) : (
-                            /* Authenticated Connection Form */
                             <form onSubmit={handleSendRequest} className="space-y-4 pt-2">
                                 <div className="space-y-1.5">
                                     <div className="flex items-center justify-between text-[11px]">

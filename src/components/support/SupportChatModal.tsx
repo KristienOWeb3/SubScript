@@ -261,11 +261,12 @@ export default function SupportChatModal({
                     {/* Content Body */}
                     <div className="flex-1 overflow-y-auto p-4 sm:p-5 flex flex-col justify-between min-h-0 bg-[#0d0d0e]">
                         {loading ? (
-                            /* Shaped like the thread it is about to become — an incoming bubble with
-                               an avatar, an outgoing one, then the banner — so the panel does not
-                               jump when the real messages land. A centred spinner told the user
-                               nothing about what was arriving and moved everything when it left. */
                             <div className="flex h-full flex-col justify-between" aria-busy="true" aria-live="polite">
+                                {/* Shaped like the thread it is about to become — an incoming bubble
+                                    with an avatar, an outgoing one, then the banner — so the panel
+                                    does not jump when the real messages land. A centred spinner told
+                                    the user nothing about what was arriving and moved everything
+                                    when it left. */}
                                 <span className="sr-only">Loading your support conversation</span>
                                 <div className="mb-3 h-[52px] shrink-0 animate-pulse rounded-2xl border border-white/5 bg-[#18181b]" />
 

@@ -30,8 +30,12 @@ export async function GET(
         const cleanWallet = wallet.toLowerCase();
         const isOwner = ticket.creatorWallet.toLowerCase() === cleanWallet;
 
+        /* One answer for "no such ticket" and "not yours", because two answers is an oracle: a
+           caller could confirm that a given ticket id belongs to somebody else. Ticket ids are not
+           guessable, so this is a small leak, but it costs nothing to close. Admins keep the
+           distinction — they are entitled to know a ticket does not exist. */
         if (!isAdmin && !isOwner) {
-            return NextResponse.json({ error: "Forbidden: Not your ticket" }, { status: 403 });
+            return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
         }
 
         return NextResponse.json({ ticket: isAdmin ? ticket : maskSupportAdminIdentity(ticket) });
@@ -71,13 +75,14 @@ export async function POST(
            and reading the whole thread back out of the response. addSupportTicketMessage does not
            check either: it validates ticket state and admin exclusivity, not authorship.
            Owner-only lookup rather than the full thread: this needs one column, and the messages are
-           loaded again below for the reply. 404-before-403 matches GET's existing ordering. */
+           loaded again below for the reply. A non-owner gets the same 404 a missing ticket gets, so
+           the response cannot be used to confirm that an id belongs to somebody else. */
         const existingTicket = await getSupportTicketOwner(ticketId);
-        if (!existingTicket) {
+        const isOwner = existingTicket
+            ? existingTicket.creatorWallet.toLowerCase() === cleanWallet
+            : false;
+        if (!existingTicket || (!isAdmin && !isOwner)) {
             return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
-        }
-        if (!isAdmin && existingTicket.creatorWallet.toLowerCase() !== cleanWallet) {
-            return NextResponse.json({ error: "Forbidden: Not your ticket" }, { status: 403 });
         }
 
         const [aliasRecord, merchantRecord, customerRecord] = await Promise.all([
