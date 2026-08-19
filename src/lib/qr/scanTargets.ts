@@ -11,14 +11,54 @@
  * These are separate functions so a caller has to say which one it means.
  */
 
-/** Paths that identify a SubScript destination worth navigating to. */
-const SUBSCRIPT_LINK_PATHS = [
-    /^\/dm\/invite\/[^/]+\/?$/i,
-    /^\/pay\/[^/]+\/?$/i,
-    /^\/receipt\/[^/]+\/?$/i,
-    /^\/commit\/[^/]+\/?$/i,
-    /^\/subscribe\/[^/]+\/?$/i,
+/**
+ * Routes worth navigating to, as literal path segments followed by exactly one parameter.
+ *
+ * Segment lists rather than one regex per route, because the parameter has to be validated as well
+ * as located. `/^\/pay\/[^/]+\/?$/` looks strict — one segment, no slashes — but `[^/]` matches a
+ * percent-encoded slash perfectly happily, so `/pay/..%2F..%2Fadmin` satisfied it.
+ */
+const LINK_ROUTES: readonly (readonly string[])[] = [
+    ["dm", "invite"],
+    ["pay"],
+    ["receipt"],
+    ["commit"],
+    ["subscribe"],
 ];
+
+/**
+ * Characters a route parameter may contain: the URL-unreserved set.
+ *
+ * Every parameter these routes take is an id, a token, or an address — UUIDs, `rcpt-<hex>`,
+ * `0x<hex>`, digits. None of them needs percent-encoding, so excluding `%` outright is free, and it
+ * is what rejects an encoded separator. Doing that here rather than trusting the router downstream is
+ * the point: whether `%2F` or `%5C` survives as one segment or gets normalised into two depends on
+ * the framework's URL handling, which is not a guarantee this app should be resting a security
+ * boundary on across an upgrade.
+ */
+const SAFE_PARAMETER = /^[A-Za-z0-9._~-]+$/;
+
+/**
+ * The origin-relative path a scanned pathname denotes, or null if it denotes nothing we navigate to.
+ *
+ * Rejects a parameter that is `.` or `..` even though both are in the unreserved set, since neither
+ * is an id and both mean "somewhere else" to anything that resolves paths.
+ */
+function matchLinkPath(pathname: string): string | null {
+    const segments = pathname.split("/").filter((segment) => segment.length > 0);
+
+    for (const prefix of LINK_ROUTES) {
+        if (segments.length !== prefix.length + 1) continue;
+        if (!prefix.every((literal, index) => segments[index].toLowerCase() === literal)) continue;
+
+        const parameter = segments[segments.length - 1];
+        if (parameter === "." || parameter === ".." || !SAFE_PARAMETER.test(parameter)) return null;
+
+        return `/${segments.join("/")}`;
+    }
+
+    return null;
+}
 
 /**
  * A complete 40-hex-digit address, bounded on both sides.
@@ -66,6 +106,14 @@ export function parseScannedAddress(raw: string): string {
     return match ?? result;
 }
 
+/** Splits a bare path into its pathname and its query (including the leading `?`, or empty). */
+function splitPathAndQuery(value: string): [string, string] {
+    const queryStart = value.search(/[?#]/);
+    if (queryStart === -1) return [value, ""];
+    const query = value[queryStart] === "?" ? value.slice(queryStart) : "";
+    return [value.slice(0, queryStart), query];
+}
+
 export type ScannedTarget =
     /** A SubScript page to navigate to, as an origin-relative path. */
     | { kind: "link"; path: string }
@@ -95,8 +143,8 @@ export function resolveScannedTarget(raw: string): ScannedTarget {
     if (/^https?:\/\//i.test(trimmed)) {
         try {
             const url = new URL(trimmed);
-            const path = url.pathname.replace(/\/+$/, "") || "/";
-            if (SUBSCRIPT_LINK_PATHS.some((pattern) => pattern.test(url.pathname))) {
+            const path = matchLinkPath(url.pathname);
+            if (path) {
                 return { kind: "link", path: `${path}${url.search}` };
             }
         } catch {
@@ -105,8 +153,10 @@ export function resolveScannedTarget(raw: string): ScannedTarget {
     }
 
     /* A bare path, which is what our own QR codes encode in some places. */
-    if (trimmed.startsWith("/") && SUBSCRIPT_LINK_PATHS.some((pattern) => pattern.test(trimmed.split("?")[0]))) {
-        return { kind: "link", path: trimmed };
+    if (trimmed.startsWith("/")) {
+        const [pathname, query] = splitPathAndQuery(trimmed);
+        const path = matchLinkPath(pathname);
+        if (path) return { kind: "link", path: `${path}${query}` };
     }
 
     const address = findAddress(trimmed);

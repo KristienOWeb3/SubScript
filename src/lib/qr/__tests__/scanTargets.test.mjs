@@ -121,9 +121,38 @@ test("the link allow-list cannot be walked out of", () => {
         kind: "link",
         path: "/pay/abc",
     });
+});
 
-    /* Encoded separators stay encoded, so they address a route parameter rather than a new segment. */
-    const encoded = resolveScannedTarget("https://x.com/pay/..%2F..%2Fadmin");
-    assert.equal(encoded.kind, "link");
-    assert.ok(encoded.path.startsWith("/pay/"), "stays under the matched route");
+test("an encoded separator is refused, not passed through as one segment", () => {
+    /* `[^/]+` matched a percent-encoded slash happily, so `/pay/..%2F..%2Fadmin` looked like a
+       single-segment id. Whether that stays one segment or gets normalised into two depends on the
+       router's URL handling, which is not something to rest a boundary on across an upgrade — so the
+       resolver refuses it outright instead of handing it on and hoping. */
+    for (const encoded of ["%2F", "%2f", "%5C", "%5c"]) {
+        const viaUrl = resolveScannedTarget(`https://x.com/pay/..${encoded}..${encoded}admin`);
+        assert.equal(viaUrl.kind, "text", `encoded separator ${encoded} must not resolve to a link`);
+
+        const viaPath = resolveScannedTarget(`/dm/invite/tok${encoded}evil`);
+        assert.equal(viaPath.kind, "text", `encoded separator ${encoded} must not resolve on a bare path`);
+    }
+
+    /* Percent-encoding has no legitimate use in these parameters, so any of it is refused. */
+    assert.equal(resolveScannedTarget("https://x.com/pay/%2e%2e%2fadmin").kind, "text");
+});
+
+test("a traversal parameter is refused even though its characters are unreserved", () => {
+    assert.equal(resolveScannedTarget("https://x.com/pay/..").kind, "text");
+    assert.equal(resolveScannedTarget("https://x.com/pay/.").kind, "text");
+    assert.equal(resolveScannedTarget("/pay/..").kind, "text");
+});
+
+test("a route needs exactly its own parameter count", () => {
+    /* Neither a missing parameter nor an extra segment is the route it resembles. */
+    assert.equal(resolveScannedTarget("https://x.com/pay").kind, "text");
+    assert.equal(resolveScannedTarget("https://x.com/pay/abc/extra").kind, "text");
+    assert.equal(resolveScannedTarget("https://x.com/dm/invite").kind, "text");
+    assert.deepEqual(resolveScannedTarget("https://x.com/dm/invite/tok"), {
+        kind: "link",
+        path: "/dm/invite/tok",
+    });
 });
