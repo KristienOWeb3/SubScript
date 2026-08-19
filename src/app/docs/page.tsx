@@ -125,10 +125,12 @@ export default function DocsOverviewPage() {
           Every page in this guide has a plain-Markdown twin at the same path with{" "}
           <span className="font-mono">.md</span> appended — <span className="font-mono">/docs/webhooks.md</span>{" "}
           returns the webhooks page as text with no markup to strip. If you are pointing an agent at these docs, feed
-          it those, or start from the indexes below.
+          it those, grab the whole guide in one request at <span className="font-mono">/docs.txt</span>, or start from
+          the indexes below.
         </p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[
+            ["Full docs text", "/docs.txt"],
             ["OpenAPI", "/openapi.json"],
             ["LLM index", "/llms.txt"],
             ["Full agent context", "/llms-full.txt"],

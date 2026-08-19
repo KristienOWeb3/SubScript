@@ -73,6 +73,10 @@ upgrade-only; never generate a downgrade action.
 The developer guide is one page per topic. Append `.md` to any path to get the plain-Markdown
 twin with no HTML to strip — e.g. https://www.subscriptonarc.com/docs/webhooks.md
 
+Want the whole guide in one request instead of page by page?
+https://www.subscriptonarc.com/docs.txt carries every section below, in reading order, generated
+from the same source as the twins.
+
 Essentials:
 - [Start here](https://www.subscriptonarc.com/docs/index.md): What SubScript is, which endpoint your billing model needs, and where the machine-readable specs live.
 - [5-minute quickstart](https://www.subscriptonarc.com/docs/quickstart.md): First sandbox Checkout Intent, the three ids to persist, redirect, and webhook fulfillment.
@@ -105,6 +109,7 @@ Reference:
 - [API Reference](https://www.subscriptonarc.com/api-reference.md): Prose reference — auth, amount units, idempotency, rate limits, error codes, endpoints, and webhook events.
 - [TypeScript SDK](https://www.npmjs.com/package/@subscriptonarc/sdk): `@subscriptonarc/sdk` — typed client for intents, subscriptions, usage, and webhook verification.
 - [MCP Server](https://github.com/KristienOWeb3/SubScript/tree/main/mcp-server): `@subscriptonarc/mcp` exposes create_intent, create_plan, list_plans, create_subscription, get_payment_status, report_usage, and verify_webhook tools for AI agents.
+- [Full Docs Text](https://www.subscriptonarc.com/docs.txt): The entire integration guide as one plain-text file, in reading order, with a canonical URL per section.
 - [Full LLM Reference](https://www.subscriptonarc.com/llms-full.txt): Extended API, protocol, webhook, and integration reference.
 - [Agent Integration Skill](https://www.subscriptonarc.com/skills/subscript-integration/SKILL.md): Drop-in SKILL.md for AI coding agents — keys, intent lifecycle, webhook verification, test clocks, and local webhook forwarding in one file.
 - [Sitemap](https://www.subscriptonarc.com/sitemap.xml): Search crawler sitemap.

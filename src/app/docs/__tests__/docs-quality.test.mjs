@@ -29,6 +29,7 @@ const corpus = sourceFiles.map((file) => readFileSync(file, "utf8")).join("\n");
 
 const markdown = readFileSync(path.join(docsRoot, "_content", "markdown.ts"), "utf8");
 const sectionsSource = readFileSync(path.join(docsRoot, "_components", "sections.ts"), "utf8");
+const llmsIndex = readFileSync(path.join(docsRoot, "..", "..", "..", "public", "llms.txt"), "utf8");
 
 /* Slugs declared in the registry, minus the overview's empty slug which lives at /docs itself. */
 const declaredSlugs = [...sectionsSource.matchAll(/slug:\s*"([^"]*)"/g)]
@@ -88,6 +89,50 @@ test("docs expose agent-friendly verification and machine-readable surfaces", ()
     "/api/user/vault/status",
     "npx @subscriptonarc/cli trigger",
     "/api/test/clocks",
+  ]) {
+    assertDocumented(required);
+  }
+});
+
+test("the whole guide is also served as one generated text file", () => {
+  /* /docs.txt is built from the same bodies as the .md twins instead of being committed under
+     public/. A hand-maintained copy drifts from the pages it describes — llms-full.txt is the
+     resident example — so these assertions pin the properties that generation depends on. */
+  assert.ok(
+    existsSync(path.join(docsRoot, "..", "docs.txt", "route.ts")),
+    "Missing the /docs.txt route handler at app/docs.txt/route.ts",
+  );
+  assertDocumented("export function fullTextDocument", markdown, "the Markdown twins module");
+
+  /* Built by walking docsSections, so a new section joins /docs.txt the moment it joins the pager.
+     A literal slug list here would quietly stop covering new pages. Sliced from the declaration so
+     the function's own doc comment cannot satisfy the match. */
+  const builder = markdown.slice(markdown.indexOf("export function fullTextDocument"));
+  assert.match(
+    builder,
+    /docsSections\s*\.map/,
+    "fullTextDocument must map over docsSections rather than a hardcoded slug list",
+  );
+
+  /* Discoverable from both the index agents read first and the page humans read first, or nothing
+     ever learns the file exists. */
+  assertDocumented("/docs.txt", llmsIndex, "the llms.txt index");
+  assertDocumented("/docs.txt", corpus, "the docs pages");
+});
+
+test("docs pin the conventions an integrator gets wrong first", () => {
+  /* These lived in a hand-written report card until 2026-08-19, where four claims about missing
+     features stayed wrong for a month because prose does not execute. Anything falsifiable belongs
+     here instead: a regression fails the build rather than waiting for someone to re-grade. */
+  for (const required of [
+    /* The unit convention. Sending 15.00 rather than "15000000" is the costliest typo in this API. */
+    "micro-USDC",
+    /* Metered billing: the accrual call, the running total it exposes, the commitment policy. */
+    "/api/user/vault/report-usage",
+    "accruedUsageUsdc",
+    "/api/merchant/vault/commit-config",
+    /* The legacy status alias stays documented while integrations are still pinned to it. */
+    "/api/intent/status",
   ]) {
     assertDocumented(required);
   }
