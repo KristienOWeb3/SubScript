@@ -1,6 +1,10 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind 4 replaces the three @tailwind directives with one import. The JS config is loaded
+   explicitly via @config: v4 prefers a CSS-first `@theme` block, but this project's theme is small
+   and already documented in tailwind.config.js (the 4.5 spacing step exists for a real icon-sizing
+   bug), and keeping it there means this migration changes the build without also rewriting the
+   theme. Porting to @theme is a separate, reviewable step. */
+@import "tailwindcss";
+@config "../../tailwind.config.js";
 
 @layer components {
   .koboyo-icon {
