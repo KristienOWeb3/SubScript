@@ -3,6 +3,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { adminTierOf } from "@/lib/admin/identity";
 import {
     getSupportTicketWithMessages,
+    getSupportTicketOwner,
     addSupportTicketMessage,
     maskSupportAdminIdentity,
     type SenderRole,
@@ -68,8 +69,10 @@ export async function POST(
         /* GET has always checked this; POST never did, so any authenticated wallet could write into
            any ticket it could name the id of — injecting messages into a stranger's support thread,
            and reading the whole thread back out of the response. addSupportTicketMessage does not
-           check either: it validates ticket state and admin exclusivity, not authorship. */
-        const existingTicket = await getSupportTicketWithMessages(ticketId);
+           check either: it validates ticket state and admin exclusivity, not authorship.
+           Owner-only lookup rather than the full thread: this needs one column, and the messages are
+           loaded again below for the reply. 404-before-403 matches GET's existing ordering. */
+        const existingTicket = await getSupportTicketOwner(ticketId);
         if (!existingTicket) {
             return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
         }

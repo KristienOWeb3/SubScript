@@ -319,6 +319,24 @@ export async function listSupportTickets(filter?: {
 }
 
 /**
+ * The wallet that opened a ticket, and nothing else — for an authorization check that has no use
+ * for the thread.
+ *
+ * Exists so the write path can verify authorship without pulling every message: a full
+ * getSupportTicketWithMessages there made sending one message cost three reads of the same ticket
+ * (authorize, then addSupportTicketMessage's own state check, then the reply payload), the first of
+ * which loaded the entire conversation to look at one column.
+ */
+export async function getSupportTicketOwner(ticketId: string): Promise<{ creatorWallet: string } | null> {
+    await ensureSupportTables();
+    const row = await pgMaybeOne<{ creator_wallet: string }>(
+        `SELECT creator_wallet FROM support_tickets WHERE id = $1`,
+        [ticketId],
+    );
+    return row ? { creatorWallet: row.creator_wallet } : null;
+}
+
+/**
  * Strips every trace of which admin is handling a ticket, for serving to the person who opened it.
  *
  * A support thread should read as coming from "Support", not from a named individual. Three fields
