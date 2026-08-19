@@ -414,7 +414,17 @@ export function AdminSupportTicketsView({
                             )}
 
                             {/* Reply Input Bar */}
-                            {isClaimedByOtherAdmin ? (
+                            {/* A settled ticket is read-only on this side too. The server rejects writes to
+                                RESOLVED and CLOSED, so leaving the composer live here just produced a reply
+                                that vanished into an error toast — and let an admin carry on a conversation
+                                the user's own composer had already been closed for. Reopen is the way back. */}
+                            {selectedTicket.status === "RESOLVED" || selectedTicket.status === "CLOSED" ? (
+                                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center text-xs font-medium text-slate-500">
+                                    {selectedTicket.status === "RESOLVED"
+                                        ? "This ticket is resolved. Reopen it to reply."
+                                        : "This ticket is closed and can't receive new messages."}
+                                </div>
+                            ) : isClaimedByOtherAdmin ? (
                                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center text-xs text-slate-500 font-medium">
                                     Read-only mode active. Only the claiming admin can reply.
                                 </div>

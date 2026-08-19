@@ -5,6 +5,12 @@ import crypto from "crypto";
 export type SupportTicketStatus = "OPEN" | "CLAIMED" | "RESOLVED" | "CLOSED";
 export type SenderRole = "USER" | "MERCHANT" | "ADMIN";
 
+/* What a ticket owner sees in place of the admin handling their thread. The sentinel stands in for
+   the admin's wallet: it is deliberately not an address, so nothing downstream can treat it as one
+   or resolve it to an on-chain identity. */
+export const SUPPORT_AGENT_LABEL = "Support";
+export const SUPPORT_AGENT_SENTINEL = "support";
+
 export interface SupportTicketMessage {
     id: string;
     ticketId: string;
@@ -313,6 +319,48 @@ export async function listSupportTickets(filter?: {
 }
 
 /**
+ * Strips every trace of which admin is handling a ticket, for serving to the person who opened it.
+ *
+ * A support thread should read as coming from "Support", not from a named individual. Three fields
+ * carried the admin's identity out to the ticket owner: `claimedByAdminAlias` (rendered verbatim in
+ * the status badge as "Claimed by Admin (alias)"), `claimedByAdminWallet`, and — the one that leaked
+ * a real name rather than a label — `senderAlias` on each admin message. That alias is written from
+ * the admin's own `addressAlias` record, falling back to "SubScript Support" only when they happen
+ * not to have one, so any admin with an alias was signing every reply with it.
+ *
+ * The wallet goes too: an address is identity here, and a linkable one. `senderWallet` is replaced
+ * rather than nulled because the client compares it against the viewer's wallet to decide which
+ * side of the thread a bubble belongs on, and a null would break that comparison.
+ *
+ * Call this on every read path that can serve a non-admin. Masking at the boundary rather than in
+ * the component means a future UI cannot reintroduce the leak by rendering a field it was handed.
+ */
+export function maskSupportAdminIdentity(ticket: SupportTicket): SupportTicket {
+    return {
+        ...ticket,
+        claimedByAdminWallet: ticket.claimedByAdminWallet ? SUPPORT_AGENT_SENTINEL : null,
+        claimedByAdminAlias: ticket.claimedByAdminAlias ? SUPPORT_AGENT_LABEL : null,
+        /* listSupportTickets returns summaries with no `messages` at all, and this runs over those
+           too. Spreading a mapped `[]` in would hand the caller an empty thread that reads as
+           "loaded and empty" rather than "not requested", so absence is preserved as absence. */
+        ...(ticket.messages
+            ? {
+                messages: ticket.messages.map((message) =>
+                    message.senderRole === "ADMIN"
+                        ? {
+                            ...message,
+                            senderWallet: SUPPORT_AGENT_SENTINEL,
+                            senderAlias: SUPPORT_AGENT_LABEL,
+                            senderProfilePic: null,
+                        }
+                        : message,
+                ),
+            }
+            : {}),
+    };
+}
+
+/**
  * Get ticket details with messages.
  */
 export async function getSupportTicketWithMessages(ticketId: string): Promise<SupportTicket | null> {
@@ -369,8 +417,19 @@ export async function addSupportTicketMessage(input: {
         return { ok: false, error: "Ticket not found", status: 404 };
     }
 
-    if (ticket.status === "CLOSED") {
-        return { ok: false, error: "This ticket is closed and cannot receive new messages.", status: 400 };
+    /* RESOLVED joins CLOSED here. It used to fall through, so a resolved ticket stayed fully
+       writable for both sides: the user could keep typing into a thread an admin had already
+       signed off, and the admin could keep answering, with neither side's UI showing the thread
+       was over. Reopening is the deliberate act that makes a settled thread writable again —
+       that is what the REOPEN action in the claim route exists for. */
+    if (ticket.status === "CLOSED" || ticket.status === "RESOLVED") {
+        return {
+            ok: false,
+            error: ticket.status === "CLOSED"
+                ? "This ticket is closed and cannot receive new messages."
+                : "This ticket has been resolved. Reopen it to continue the conversation.",
+            status: 400,
+        };
     }
 
     const cleanSender = input.senderWallet.toLowerCase();

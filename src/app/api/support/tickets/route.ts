@@ -5,6 +5,7 @@ import {
     listSupportTickets,
     createSupportTicket,
     checkTicketCreationRateLimit,
+    maskSupportAdminIdentity,
     type SupportTicketStatus,
 } from "@/lib/support/tickets";
 import { sendSupportTicketAlertEmail } from "@/lib/email/transactional";
@@ -36,7 +37,10 @@ export async function GET(request: Request) {
                 creatorWallet: wallet,
                 status: statusParam || undefined,
             });
-            return NextResponse.json({ tickets });
+            /* The list feeds the "Your Previous Tickets" picker, which shows a status per row —
+               and CLAIMED rows carry the handling admin's alias. Masked here for the same reason
+               as the thread itself: the owner sees "Support", never a person. */
+            return NextResponse.json({ tickets: tickets.map(maskSupportAdminIdentity) });
         }
     } catch (error: any) {
         console.error("[api/support/tickets] GET failed:", error);

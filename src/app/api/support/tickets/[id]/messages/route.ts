@@ -4,6 +4,7 @@ import { adminTierOf } from "@/lib/admin/identity";
 import {
     getSupportTicketWithMessages,
     addSupportTicketMessage,
+    maskSupportAdminIdentity,
     type SenderRole,
 } from "@/lib/support/tickets";
 import { prisma } from "@/lib/prisma";
@@ -32,7 +33,7 @@ export async function GET(
             return NextResponse.json({ error: "Forbidden: Not your ticket" }, { status: 403 });
         }
 
-        return NextResponse.json({ ticket });
+        return NextResponse.json({ ticket: isAdmin ? ticket : maskSupportAdminIdentity(ticket) });
     } catch (error: any) {
         console.error("[api/support/tickets/[id]/messages] GET failed:", error);
         return NextResponse.json({ error: error?.message || "Failed to load ticket" }, { status: 500 });
@@ -63,6 +64,19 @@ export async function POST(
 
         const isAdmin = Boolean(await adminTierOf(wallet));
         const cleanWallet = wallet.toLowerCase();
+
+        /* GET has always checked this; POST never did, so any authenticated wallet could write into
+           any ticket it could name the id of — injecting messages into a stranger's support thread,
+           and reading the whole thread back out of the response. addSupportTicketMessage does not
+           check either: it validates ticket state and admin exclusivity, not authorship. */
+        const existingTicket = await getSupportTicketWithMessages(ticketId);
+        if (!existingTicket) {
+            return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
+        }
+        if (!isAdmin && existingTicket.creatorWallet.toLowerCase() !== cleanWallet) {
+            return NextResponse.json({ error: "Forbidden: Not your ticket" }, { status: 403 });
+        }
+
         const [aliasRecord, merchantRecord, customerRecord] = await Promise.all([
             prisma.addressAlias.findFirst({
                 where: { address: { equals: cleanWallet, mode: "insensitive" } },
@@ -106,7 +120,7 @@ export async function POST(
         return NextResponse.json({
             success: true,
             message: result.message,
-            ticket: updatedTicket,
+            ticket: updatedTicket && !isAdmin ? maskSupportAdminIdentity(updatedTicket) : updatedTicket,
         });
     } catch (error: any) {
         console.error("[api/support/tickets/[id]/messages] POST failed:", error);
