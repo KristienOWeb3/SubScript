@@ -80,6 +80,7 @@ export async function createSubscriptionStartedDm({
     isChange = false,
     isResubscription = false,
     resubscriptionAccessUntil = null,
+    changeTerms = null,
     introTerms = null,
 }: {
     merchantAddress: string;
@@ -90,6 +91,15 @@ export async function createSubscriptionStartedDm({
     isChange?: boolean;
     isResubscription?: boolean;
     resubscriptionAccessUntil?: Date | string | null;
+    /* What a plan change actually did to the subscriber's money. The DM used to state only the new
+       amount and cadence, which leaves the one question an upgrade raises unanswered: was I charged
+       just now, or does this start at renewal? An immediate upgrade takes a prorated payment on the
+       spot, so omitting it means the charge appears with no message explaining it. */
+    changeTerms?: {
+        effective: "immediate" | "next_renewal";
+        proratedChargeUsdc?: bigint | null;
+        nextBillingDate?: Date | string | null;
+    } | null;
     /* Introductory terms the subscriber authorized: full disclosure of the price they paid
        today, how long the discount lasts, and when the regular price begins. */
     introTerms?: {
@@ -110,6 +120,22 @@ export async function createSubscriptionStartedDm({
         ? (typeof resubscriptionAccessUntil === "string" ? resubscriptionAccessUntil.slice(0, 10) : resubscriptionAccessUntil.toISOString().slice(0, 10))
         : null;
 
+    const formatDay = (value: Date | string | null | undefined) => {
+        if (!value) return null;
+        return typeof value === "string" ? value.slice(0, 10) : value.toISOString().slice(0, 10);
+    };
+    const changeNextBilling = formatDay(changeTerms?.nextBillingDate);
+    const changeLines = changeTerms
+        ? [
+            changeTerms.effective === "immediate"
+                ? (changeTerms.proratedChargeUsdc && changeTerms.proratedChargeUsdc > BigInt(0)
+                    ? `Charged today: ${formatUsdcFromMicros(changeTerms.proratedChargeUsdc)} USDC (prorated for the rest of this period)`
+                    : "Charged today: nothing — the new price starts from your next billing date.")
+                : "Charged today: nothing — this takes effect at your next renewal.",
+            ...(changeNextBilling ? [`Next billing date: ${changeNextBilling}`] : []),
+        ]
+        : [];
+
     const pricingLines = isResubscription
         ? [
             "Paid today: 0.00 USDC (active period still valid)",
@@ -124,7 +150,7 @@ export async function createSubscriptionStartedDm({
             `Then: ${amount} USDC / ${cadence} starting ${introTerms.firstRegularPaymentAt.toISOString().slice(0, 10)}`,
             "Cancel before then to avoid the regular price.",
         ]
-        : [`Amount: ${amount} USDC / ${cadence}`];
+        : [`Amount: ${amount} USDC / ${cadence}`, ...changeLines];
 
     const title = isResubscription
         ? `Resubscribed to ${planName}`

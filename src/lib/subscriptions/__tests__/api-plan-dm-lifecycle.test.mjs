@@ -103,17 +103,32 @@ test("sponsored plan requests dispatch in-app DM cards and merchant confirmation
     assert.match(dashboard, /Resubscribe for Yourself/);
 });
 
-test("resubscribing to the same plan with > 1 day remaining reactivates without extra initial charge", () => {
-    const subscribe = source("src/app/api/user/subscription/subscribe/route.ts");
+test("resubscribing to the same plan with time remaining reactivates without extra initial charge", () => {
+    /* The guarantee is unchanged; the implementation that provides it is not. This used to assert a
+       branch inside subscribe/route.ts that flipped the mirror row back to ACTIVE. That branch was
+       unreachable (an earlier guard returned first for every row it could match) and wrong where it
+       would have fired, because cancelling revokes the on-chain authorization — so it produced a
+       subscription the keeper could never bill. Resuming is now its own endpoint that mints a real
+       authorization whose first cycle is free and whose length is the time still left, so the
+       no-extra-charge promise holds for ANY remaining time rather than only beyond one day. */
+    const resume = source("src/app/api/user/subscription/resume/route.ts");
+    const bridge = source("src/lib/subscriptions/resumeBridge.ts");
 
-    assert.match(subscribe, /existingCanceledSamePlan = await tx\.subscription\.findFirst/);
-    assert.match(subscribe, /cancelAtPeriodEnd: true/);
-    assert.match(subscribe, /amountCapUsdc: plan\.amountUsdc\.toString\(\)/);
-    assert.match(subscribe, /billingIntervalSeconds: plan\.periodSeconds/);
-    assert.match(subscribe, /remainingMs > ONE_DAY_MS/);
-    assert.match(subscribe, /status: "RESUMED_SAME_PLAN"/);
-    assert.match(subscribe, /chargeSkipped: true/);
-    assert.match(subscribe, /horizonAllowance/);
+    /* No charge today: a zero introductory amount transfers nothing at signup. */
+    assert.match(bridge, /introAmountUsdc: BigInt\(0\)/);
+    assert.match(bridge, /introCycles: 1/);
+    assert.match(resume, /FREE_BRIDGE_INTRO_TERMS/);
+    assert.match(resume, /chargedNow: "0"/);
+
+    /* And the next charge lands on the date the subscriber had already paid through. */
+    assert.match(bridge, /bridgePeriodSeconds: remainingSeconds/);
+    assert.match(resume, /anchorNextPaymentSeconds/);
+
+    /* Allowance still has to cover full-price renewals after the free cycle. */
+    assert.match(resume, /allowancePeriodSeconds/);
+
+    /* The superseded run is closed so two rows never both claim to be billable. */
+    assert.match(resume, /status:\s*"CANCELED"/);
 });
 
 test("manage commit page provides a refresh usage button to update app commitments", () => {

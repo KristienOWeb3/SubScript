@@ -20,6 +20,7 @@ import {
 import { payMerchantLinkFromEmbedded } from "@/lib/paymentLinks/embeddedPay";
 import { createSubscriptionStartedDm, formatUsdcFromMicros } from "@/lib/dms/system";
 import { mirrorSubscriptionModified } from "@/lib/subscriptions/mirror";
+import { onActiveContract } from "@/lib/subscriptions/contractBinding";
 import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
@@ -91,11 +92,16 @@ export async function POST(request: Request) {
         }
 
         const mirroredBeforeChange = await prisma.subscription.findFirst({
-            where: { subscriptionId: BigInt(fromSubscriptionId) },
+            /* Scoped to the active PSA. `subscription_id` is not unique — an immutable PSA re-mints
+               ids from 1 on every redeploy — so a bare-id lookup can return a row stranded by an
+               abandoned deployment and carry ITS merchant reference and beneficiary into the change
+               webhook, pointing the merchant's entitlement update at the wrong account. */
+            where: { ...onActiveContract(), subscriptionId: BigInt(fromSubscriptionId) },
             select: {
                 beneficiaryAddress: true,
                 externalReference: true,
                 sourceCheckoutId: true,
+                nextBillingDate: true,
             },
         }).catch(() => null);
         const targetedCheckout = plan.targetSubscriber && plan.sourceCheckoutId
@@ -365,6 +371,13 @@ export async function POST(request: Request) {
             amountUsdc: plan.amountUsdc,
             periodSeconds: plan.periodSeconds,
             isChange: true,
+            /* States whether money moved. An immediate upgrade takes a prorated payment on the spot,
+               and without this the charge landed with no message accounting for it. */
+            changeTerms: {
+                effective: mode === "immediate" && isUpgrade ? "immediate" : "next_renewal",
+                proratedChargeUsdc: proratedChargeMicros > BigInt(0) ? proratedChargeMicros : null,
+                nextBillingDate: mirroredBeforeChange?.nextBillingDate ?? null,
+            },
         }).catch((err) => console.error("[subscription/change] DM creation failed:", err));
 
         /* Notify the merchant's own backend so entitlement on their platform tracks a DM-initiated

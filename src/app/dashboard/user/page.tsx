@@ -160,6 +160,8 @@ interface Subscription {
   amountCapUsdc: string;
   billingIntervalSeconds: string;
   lastSettlementTimestamp: string | null;
+  /** Paid-through date. Drives the resume dialog's "no charge until" statement. */
+  nextBillingDate: string | null;
   cancelAtPeriodEnd: boolean;
   createdAt: string;
 }
@@ -1519,46 +1521,65 @@ export default function UserDashboard() {
   };
 
   /* Resume a subscription the user canceled but is still inside the paid period.
-     Cancel revokes the on-chain PSA authorization immediately (see subscription/cancel), so
-     "resume" is a genuine re-subscribe, not a flag flip — we resolve the merchant plan that
-     matches the canceled terms and run it through the normal subscribe path so the first-charge
-     idempotency key and the post-subscribe reloads stay in one place. */
+     Cancel revokes the on-chain PSA authorization immediately (see subscription/cancel), so this
+     cannot be a flag flip — but it must not be a re-subscribe either, which is what it used to be:
+     it ran the canceled terms back through /subscribe and charged the full amount a second time for
+     a period the user had already paid for. /api/user/subscription/resume mints a bridge
+     authorization whose first cycle is free and whose length is the time still remaining, so nothing
+     is charged today and the next charge lands on the original billing date. */
   const [resumingSubscriptionId, setResumingSubscriptionId] = useState<string | null>(null);
 
   const handleResumeSubscription = async (subscription: Subscription) => {
     if (resumingSubscriptionId) return;
-    setResumingSubscriptionId(subscription.subscriptionId);
-    try {
-      const res = await fetch(`/api/merchant/plans?merchantAddress=${encodeURIComponent(subscription.merchantAddress)}`);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) throw new Error(data.error || "Could not load this merchant's plans.");
 
-      const plans: MerchantPlan[] = data.plans || [];
-      const match = plans.find(
-        (p) =>
-          p.active !== false &&
-          Number(p.amountUsdc) === Number(subscription.amountCapUsdc) &&
-          Number(p.periodSeconds) === Number(subscription.billingIntervalSeconds)
-      );
+    const paidThrough = subscription.nextBillingDate ? new Date(subscription.nextBillingDate) : null;
+    const paidThroughLabel = paidThrough ? paidThrough.toLocaleDateString() : "your next billing date";
 
-      /* The merchant may have retired the old tier while the cancellation was pending. Rather
-         than silently subscribing to different terms, hand the user to the thread's plan picker. */
-      if (!match) {
-        triggerToast("That plan is no longer offered — pick a current plan from the merchant.");
-        /* Lowercased to match every consumer of selectedDmPeer, which compares against
-           already-normalized addresses. A checksummed merchantAddress from the API would open
-           an empty thread with no plan picker — precisely the recovery this branch promises. */
-        setSelectedDmPeer(subscription.merchantAddress.toLowerCase());
-        setActiveTab("inbox");
-        return;
-      }
-
-      await handleSubscribeOrSwitchPlan(match);
-    } catch (err: any) {
-      triggerToast(err?.message || "Could not resume this subscription.");
-    } finally {
-      setResumingSubscriptionId(null);
-    }
+    setConfirmModal({
+      open: true,
+      title: "Resume this subscription",
+      /* States the two facts a returning subscriber actually wants: nothing leaves their wallet now,
+         and exactly when it will. The old flow promised neither and then debited them. */
+      description: `You won't be charged anything today — you've already paid through ${paidThroughLabel}. Billing resumes on ${paidThroughLabel} at the same price.`,
+      confirmLabel: "Resume",
+      cancelLabel: "Not now",
+      variant: "default",
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setResumingSubscriptionId(subscription.subscriptionId);
+        await runAction(`resume-sub-${subscription.subscriptionId}`, async () => {
+          setPlanManagerStatus("Restoring your subscription on-chain...");
+          setPlanManagerError(null);
+          const res = await fetch("/api/user/subscription/resume", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ subscriptionId: subscription.subscriptionId }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.success) {
+            /* The period is ending or has ended, so no free bridge exists. Say that rather than
+               reporting a generic failure — resubscribing from here is a new paid period. */
+            if (data.code === "RESUME_WINDOW_TOO_SHORT" || data.code === "PERIOD_ALREADY_ENDED") {
+              throw new Error(`${data.error} Pick the plan again from the merchant's thread to start a new period.`);
+            }
+            throw new Error(data.error || "Could not resume this subscription.");
+          }
+          const nextCharge = data.nextChargeAt ? new Date(data.nextChargeAt).toLocaleDateString() : null;
+          setPlanManagerStatus(
+            nextCharge
+              ? `Subscription resumed. Nothing was charged — next payment ${nextCharge}.`
+              : "Subscription resumed. Nothing was charged today."
+          );
+          triggerToast("Subscription resumed — no charge today");
+          await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
+        }).catch((err: any) => {
+          setPlanManagerError(err?.message || "Could not resume this subscription.");
+          triggerToast(err?.message || "Could not resume this subscription.");
+        });
+        setResumingSubscriptionId(null);
+      },
+      onCancel: () => setConfirmModal(null),
+    });
   };
 
   const openGiftPlanModal = (plan: MerchantPlan) => {
