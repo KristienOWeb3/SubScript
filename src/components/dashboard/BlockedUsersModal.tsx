@@ -10,7 +10,7 @@ import {
     AlertCircle,
     Info,
 } from "lucide-react";
-import Image from "next/image";
+import PeerAvatar from "@/components/dashboard/PeerAvatar";
 
 interface BlockedItem {
     id: string;
@@ -170,20 +170,11 @@ export default function BlockedUsersModal({
                                 className="flex items-center justify-between gap-3 rounded-2xl border border-black/10 bg-white/80 p-3.5 transition-colors hover:border-black/20"
                             >
                                 <div className="flex items-center gap-3 min-w-0">
-                                    {item.profilePic ? (
-                                        <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full border border-black/10">
-                                            <Image
-                                                src={item.profilePic}
-                                                alt={item.displayName}
-                                                fill
-                                                className="object-cover"
-                                            />
-                                        </div>
-                                    ) : (
-                                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/5 border border-black/10 text-xs font-black text-black/60">
-                                            {item.displayName.slice(0, 2).toUpperCase()}
-                                        </div>
-                                    )}
+                                    <PeerAvatar
+                                        src={item.profilePic}
+                                        name={item.displayName}
+                                        className="h-9 w-9"
+                                    />
                                     <div className="min-w-0">
                                         <p className="text-xs font-bold text-[#111827] truncate">
                                             {item.displayName}

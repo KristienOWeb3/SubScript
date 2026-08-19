@@ -7,6 +7,14 @@ import { X, QrCode, AlertCircle, Zap, RotateCw, Check, Copy } from "@/components
 interface QrScannerModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /**
+   * Receives the scan exactly as it was decoded, with nothing stripped.
+   *
+   * This used to hand over a pre-extracted address, which meant the scanner decided what a code
+   * "was" before the caller could look at it — so a DM invite arrived at a recipient field as a URL,
+   * and a `/commit/0x…` link arrived as a bare address with the link thrown away. Callers now say
+   * what they want with `parseScannedAddress` or `resolveScannedTarget` from `@/lib/qr/scanTargets`.
+   */
   onScan: (scannedText: string) => void;
   title?: string;
 }
@@ -83,30 +91,6 @@ export function QrScannerModal({
   const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
   const [cameraIndex, setCameraIndex] = useState<number>(0);
   const [clipboardBusy, setClipboardBusy] = useState(false);
-
-  const parseScannedData = (raw: string): string => {
-    let result = raw.trim();
-    // EIP-681 ethereum:0x... format
-    if (result.toLowerCase().startsWith("ethereum:")) {
-      result = result.replace(/^ethereum:/i, "").split("?")[0].split("/")[0].split("@")[0];
-    }
-    // Web URL format https://.../pay?address=0x... or /pay/0x...
-    if (result.includes("address=")) {
-      try {
-        const url = new URL(result);
-        const addr = url.searchParams.get("address");
-        if (addr) result = addr;
-      } catch {
-        // keep raw
-      }
-    } else {
-      const match = result.match(/0x[a-fA-F0-9]{40}/);
-      if (match) {
-        result = match[0];
-      }
-    }
-    return result;
-  };
 
   const triggerHaptic = () => {
     try {
@@ -290,13 +274,13 @@ export function QrScannerModal({
 
   const handleScanSuccess = useCallback(
     (rawResult: string) => {
-      const parsed = parseScannedData(rawResult);
-      if (parsed) {
+      const scanned = (rawResult || "").trim();
+      if (scanned) {
         setSuccessScanned(true);
         triggerHaptic();
         setTimeout(() => {
           stopCamera();
-          onScan(parsed);
+          onScan(scanned);
           onClose();
         }, 220);
       }
@@ -308,14 +292,14 @@ export function QrScannerModal({
     setClipboardBusy(true);
     try {
       const text = await navigator.clipboard.readText();
-      if (text && text.trim()) {
-        const parsed = parseScannedData(text.trim());
-        if (parsed) {
-          handleScanSuccess(parsed);
-          return;
-        }
+      const pasted = (text || "").trim();
+      /* An address, a SubScript link, or a handle are all legitimate here — the caller decides what
+         it will accept, so this only rejects an empty clipboard. */
+      if (pasted) {
+        handleScanSuccess(pasted);
+        return;
       }
-      setErrorMsg("Clipboard does not contain a valid address or QR link.");
+      setErrorMsg("Your clipboard is empty.");
     } catch {
       setErrorMsg("Clipboard access was not granted.");
     } finally {
@@ -536,7 +520,7 @@ export function QrScannerModal({
         {/* Footer Actions */}
         <div className="relative z-10 mt-4 space-y-2.5">
           <p className="text-center text-[11px] text-white/60">
-            Align the recipient QR code inside the frame to scan.
+            Line the QR code up inside the frame.
           </p>
 
           <button
@@ -546,7 +530,7 @@ export function QrScannerModal({
             className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5 py-2.5 text-xs font-bold text-white/90 hover:bg-white/10 hover:text-white transition shadow-sm"
           >
             <Copy className="h-3.5 w-3.5 text-[#2775ca]" />
-            {clipboardBusy ? "Reading clipboard..." : "Paste Address from Clipboard"}
+            {clipboardBusy ? "Reading clipboard..." : "Paste from clipboard"}
           </button>
         </div>
       </div>

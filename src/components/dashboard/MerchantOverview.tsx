@@ -9,6 +9,7 @@ import {
     EyeOff,
     RefreshCw,
     Send,
+    QrCode,
     Users,
     BarChart3,
     Sparkles,
@@ -69,6 +70,7 @@ export default function MerchantOverview({
     onSend,
     onReceive,
     onWithdraw,
+    onScanQr,
     onViewPlans,
 }: {
     walletBalance: number;
@@ -87,6 +89,8 @@ export default function MerchantOverview({
     onSend: () => void;
     onReceive: () => void;
     onWithdraw: () => void;
+    /* Optional so the component still renders for callers that have not wired a scanner. */
+    onScanQr?: () => void;
     onViewPlans: () => void;
 }) {
     const isDark = theme === "dark";
@@ -206,7 +210,7 @@ export default function MerchantOverview({
                         )}
                     </div>
 
-                    <div className="mt-6 flex flex-wrap gap-2.5">
+                    <div className="mt-6 flex flex-wrap items-center gap-2.5">
                         <button
                             onClick={onSend}
                             disabled={walletBalance <= 0}
@@ -214,6 +218,21 @@ export default function MerchantOverview({
                         >
                             <Send className="h-3.5 w-3.5" /> Send
                         </button>
+                        {/* Sits next to Send because it is the other way to answer "who am I paying?" —
+                            and unlike the scanner inside the Send dialog, this one follows SubScript
+                            links (a DM invite, a payment link, a receipt) instead of only reading an
+                            address. Deliberately not disabled on a zero balance: scanning an invite or
+                            a receipt has nothing to do with having funds. */}
+                        {onScanQr && (
+                            <button
+                                onClick={onScanQr}
+                                title="Scan a QR code"
+                                aria-label="Scan a QR code"
+                                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#082824]/15 bg-[#FFFFF0] text-[#082824] transition hover:bg-[#D4E3E8] shadow-sm"
+                            >
+                                <QrCode className="h-4 w-4" />
+                            </button>
+                        )}
                         <button
                             onClick={onReceive}
                             className="inline-flex items-center gap-2 rounded-full bg-[#D4E3E8] px-5 py-2.5 text-xs font-bold text-[#082824] transition hover:brightness-95 shadow-sm"

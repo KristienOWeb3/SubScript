@@ -15,6 +15,8 @@ import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
 import SendWalletModal from "@/components/SendWalletModal";
+import QrScannerModal from "@/components/QrScannerModal";
+import { resolveScannedTarget } from "@/lib/qr/scanTargets";
 import ConfirmModal from "@/components/ConfirmModal";
 import DurationPicker from "@/components/DurationPicker";
 import SharePlanModal from "@/components/SharePlanModal";
@@ -500,6 +502,8 @@ export default function DashboardPage() {
     const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
     const [isSendWalletOpen, setIsSendWalletOpen] = useState(false);
     const [isSendingWallet, setIsSendingWallet] = useState(false);
+    const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
+    const [scannedRecipient, setScannedRecipient] = useState("");
 
     /* Currency detection and real-time exchange rate states */
     const [detectedCurrency, setDetectedCurrency] = useState<{ code: string; symbol: string }>({ code: "USD", symbol: "$" });
@@ -4657,6 +4661,7 @@ Please complete the following implementation tasks:
                         onSend={() => setIsSendWalletOpen(true)}
                         onReceive={() => setIsDepositOpen(true)}
                         onWithdraw={() => setIsWithdrawOpen(true)}
+                        onScanQr={() => setIsQrScannerOpen(true)}
                         onViewPlans={() => { setActiveTab("payment-links"); setSubTab("subscriptions"); }}
                     />
                 );
@@ -6090,9 +6095,33 @@ Please complete the following implementation tasks:
                 isWithdrawing={isWithdrawing}
                 isPremium={isPremium}
             />
+            <QrScannerModal
+                isOpen={isQrScannerOpen}
+                onClose={() => setIsQrScannerOpen(false)}
+                title="Scan QR code"
+                onScan={(value) => {
+                    setIsQrScannerOpen(false);
+                    const target = resolveScannedTarget(value);
+                    /* A SubScript link goes to the page it names — this is the whole reason the
+                       button exists next to Send. Scanning a DM invite used to end up pasted into
+                       the recipient field of the Send dialog, because the only scanner a merchant
+                       could reach was the one inside it. */
+                    if (target.kind === "link") {
+                        router.push(target.path);
+                        return;
+                    }
+                    /* Anything that identifies a person is a payment, so hand it to Send. */
+                    setScannedRecipient(target.kind === "address" ? target.address : target.value);
+                    setIsSendWalletOpen(true);
+                }}
+            />
             <SendWalletModal
                 isOpen={isSendWalletOpen}
-                onClose={() => setIsSendWalletOpen(false)}
+                initialRecipient={scannedRecipient}
+                onClose={() => {
+                    setIsSendWalletOpen(false);
+                    setScannedRecipient("");
+                }}
                 walletBalance={walletBalance}
                 connectedAddress={address || ""}
                 isSending={isSendingWallet}

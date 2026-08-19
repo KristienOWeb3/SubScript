@@ -38,6 +38,7 @@ import { useTheme } from "@/hooks/useTheme";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
 import ConfirmModal from "@/components/ConfirmModal";
 import QrScannerModal from "@/components/QrScannerModal";
+import { parseScannedAddress, resolveScannedTarget } from "@/lib/qr/scanTargets";
 import SendSingleModal from "@/components/SendSingleModal";
 import SupportChatModal from "@/components/support/SupportChatModal";
 
@@ -2222,11 +2223,13 @@ export default function UserDashboard() {
   };
 
   const handleScanQrResult = (scannedText: string) => {
+    /* Batch and single-send rows are address fields, so narrow the scan to an address. */
+    const address = parseScannedAddress(scannedText);
     if (qrTargetIndex === null) {
-      setSingleRecipient(scannedText);
+      setSingleRecipient(address);
     } else if (typeof qrTargetIndex === "number") {
       setBatchRows((rows) =>
-        rows.map((row, idx) => (idx === qrTargetIndex ? { ...row, address: scannedText } : row))
+        rows.map((row, idx) => (idx === qrTargetIndex ? { ...row, address } : row))
       );
     }
   };
@@ -6444,22 +6447,21 @@ export default function UserDashboard() {
         isOpen={scannerOpen}
         onClose={() => setScannerOpen(false)}
         onScan={(value) => {
-          const raw = value.trim();
-          /* A hosted payment link or subscription link: take the user straight there. */
-          if (/^https?:\/\//i.test(raw) && /\/(pay|subscribe)\//.test(raw)) {
-            window.location.href = raw;
+          /* The scanner reports the code verbatim now, so this can tell a SubScript link from an
+             address instead of pattern-matching whatever survived a shared pre-parse. That also
+             fixes DM invites and `/commit/0x…`, neither of which used to reach here intact. */
+          const target = resolveScannedTarget(value);
+          if (target.kind === "link") {
+            router.push(target.path);
             return;
           }
-          /* EIP-681 (ethereum:0x...) or a bare address -> open the Send Funds screen prefilled with
-             the scanned recipient, so scanning a QR lands the user directly on the payment flow. */
-          const addrMatch = raw.match(/0x[a-fA-F0-9]{40}/);
-          if (addrMatch) {
-            setSendFundsRecipient(addrMatch[0]);
+          if (target.kind === "address") {
+            setSendFundsRecipient(target.address);
             setSendFundsOpen(true);
             return;
           }
-          /* Otherwise treat it as a DNS alias / handle — the Send Funds box resolves it. */
-          setSendFundsRecipient(raw);
+          /* An alias or handle — the Send Funds box resolves it. */
+          setSendFundsRecipient(target.value);
           setSendFundsOpen(true);
         }}
       />

@@ -94,7 +94,7 @@ export default function SupportChatModal({
             setLoading(true);
             fetchTickets();
 
-            // Poll every 3.5 seconds for real-time chat updates
+            // Poll every 3 seconds for real-time chat updates
             pollIntervalRef.current = setInterval(() => {
                 if (activeTicket?.id) {
                     fetch(`/api/support/tickets/${activeTicket.id}/messages`)
@@ -111,7 +111,7 @@ export default function SupportChatModal({
                         })
                         .catch(() => {});
                 }
-            }, 3500);
+            }, 3000);
         } else {
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
             setActiveTicket(null);
@@ -261,9 +261,42 @@ export default function SupportChatModal({
                     {/* Content Body */}
                     <div className="flex-1 overflow-y-auto p-4 sm:p-5 flex flex-col justify-between min-h-0 bg-[#0d0d0e]">
                         {loading ? (
-                            <div className="flex flex-col items-center justify-center h-full gap-3 text-white/50">
-                                <Loader2 className="h-6 w-6 animate-spin text-[#00d2b4]" />
-                                <span className="text-xs font-bold uppercase tracking-wider">Connecting to support…</span>
+                            <div className="flex h-full flex-col justify-between" aria-busy="true" aria-live="polite">
+                                {/* Shaped like the thread it is about to become — an incoming bubble
+                                    with an avatar, an outgoing one, then the banner — so the panel
+                                    does not jump when the real messages land. A centred spinner told
+                                    the user nothing about what was arriving and moved everything
+                                    when it left. */}
+                                <span className="sr-only">Loading your support conversation</span>
+                                <div className="mb-3 h-[52px] shrink-0 animate-pulse rounded-2xl border border-white/5 bg-[#18181b]" />
+
+                                <div className="flex-1 space-y-4 py-2">
+                                    {[
+                                        { outgoing: false, width: "w-[65%]" },
+                                        { outgoing: true, width: "w-[48%]" },
+                                        { outgoing: false, width: "w-[72%]" },
+                                        { outgoing: true, width: "w-[38%]" },
+                                    ].map((row, index) => (
+                                        <div
+                                            key={index}
+                                            className={`flex animate-pulse items-end gap-2.5 ${row.outgoing ? "justify-end" : "justify-start"}`}
+                                            style={{ animationDelay: `${index * 90}ms` }}
+                                        >
+                                            {!row.outgoing && <div className="h-8 w-8 shrink-0 rounded-full bg-white/10" />}
+                                            <div className={`space-y-1.5 ${row.width}`}>
+                                                <div className={`h-2 w-16 rounded bg-white/5 ${row.outgoing ? "ml-auto" : ""}`} />
+                                                <div
+                                                    className={`h-12 rounded-[20px] bg-[#1e1e22] ${row.outgoing ? "rounded-br-[4px] bg-white/[0.07]" : "rounded-bl-[4px]"}`}
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="mt-2 flex shrink-0 animate-pulse items-center gap-2">
+                                    <div className="h-11 flex-1 rounded-2xl border border-white/10 bg-[#18181b]" />
+                                    <div className="h-11 w-11 shrink-0 rounded-2xl bg-white/10" />
+                                </div>
                             </div>
                         ) : isCreating ? (
                             /* Create Ticket View */
@@ -345,9 +378,10 @@ export default function SupportChatModal({
                                                 ? "bg-sky-500/20 text-sky-300 border border-sky-500/30"
                                                 : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
                                         }`}>
-                                            {activeTicket.status === "CLAIMED" && activeTicket.claimedByAdminAlias
-                                                ? `Claimed by Admin (${activeTicket.claimedByAdminAlias})`
-                                                : activeTicket.status}
+                                            {/* Was `Claimed by Admin (${claimedByAdminAlias})`. Which admin picked
+                                                the ticket up is not the ticket owner's business, and the alias came
+                                                straight from the admin's own address alias. */}
+                                            {activeTicket.status === "CLAIMED" ? "With Support" : activeTicket.status}
                                         </span>
                                         <span className="text-white/60 truncate font-semibold">{activeTicket.subject}</span>
                                     </div>
@@ -378,8 +412,11 @@ export default function SupportChatModal({
 
                                                 <div className={`max-w-[82%] sm:max-w-[75%] flex flex-col gap-1 ${isOutgoing ? "items-end" : "items-start"}`}>
                                                     <div className="flex items-center gap-1.5 px-1 text-[9px] font-bold text-white/40">
-                                                        <span>{msg.senderAlias || (isAdmin ? "SubScript Support" : `${msg.senderWallet.slice(0, 6)}...`)}</span>
-                                                        {isAdmin && <span className="rounded bg-[#00d2b4]/20 px-1 py-0.2 text-[8px] font-bold text-[#00d2b4]">ADMIN</span>}
+                                                        {/* Admin messages are labelled by role, never by identity — the
+                                                            alias is masked server-side too, so this is belt and braces
+                                                            rather than the only guard. */}
+                                                        <span>{isAdmin ? "Support" : msg.senderAlias || `${msg.senderWallet.slice(0, 6)}...`}</span>
+                                                        {isAdmin && <span className="rounded bg-[#00d2b4]/20 px-1 py-0.2 text-[8px] font-bold text-[#00d2b4]">SUBSCRIPT</span>}
                                                     </div>
 
                                                     <div
@@ -412,9 +449,15 @@ export default function SupportChatModal({
                                 )}
 
                                 {/* Message Input Box */}
-                                {activeTicket.status === "CLOSED" ? (
-                                    <div className="rounded-2xl border border-white/10 bg-[#18181b] p-3 text-center text-xs text-white/50">
-                                        This ticket has been closed. You can open a new ticket if you require further assistance.
+                                {/* RESOLVED used to fall through to the composer, so a signed-off ticket
+                                    still looked and behaved like a live chat — the user typed, the server
+                                    accepted it, and nobody was watching the thread any more. Both settled
+                                    states now read as settled, and the server rejects writes to either. */}
+                                {activeTicket.status === "CLOSED" || activeTicket.status === "RESOLVED" ? (
+                                    <div className="shrink-0 rounded-2xl border border-white/10 bg-[#18181b] p-3 text-center text-xs text-white/50">
+                                        {activeTicket.status === "CLOSED"
+                                            ? "This ticket is closed. Open a new one if you still need help."
+                                            : "Support marked this resolved. Open a new ticket if you still need help."}
                                     </div>
                                 ) : (
                                     <form onSubmit={handleSendMessage} className="mt-2 flex items-center gap-2 shrink-0">
