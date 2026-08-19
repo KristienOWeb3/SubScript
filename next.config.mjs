@@ -64,6 +64,17 @@ const nextConfig = {
       },
     ];
   },
+  /* Turbopack became the default bundler in Next 16, and a `webpack` key with no `turbopack` key is
+     a hard build error there rather than a warning — Next cannot tell whether the webpack config
+     still matters. Both are kept, so `next build` (Turbopack) and `next build --webpack` behave the
+     same: the only customization is stubbing out an optional React Native dependency that
+     WalletConnect pulls in and never uses on the web. webpack takes `false` for that; Turbopack
+     wants a module path, hence the stub file. */
+  turbopack: {
+    resolveAlias: {
+      "@react-native-async-storage/async-storage": "./src/stubs/empty.js",
+    },
+  },
   webpack: (config) => {
     config.resolve.alias = {
       ...config.resolve.alias,

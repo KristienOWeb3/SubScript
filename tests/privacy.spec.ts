@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { SignJWT } from "jose";
 import dotenv from "dotenv";
 import path from "path";
@@ -8,7 +9,14 @@ import path from "path";
 dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
-const prisma = new PrismaClient();
+/* Prisma 7 takes a driver adapter instead of a connection string on the schema, so the
+   generated client throws PrismaClientInitializationError when constructed bare. The app
+   goes through src/lib/prisma.ts, but these specs run under Playwright's own transform,
+   outside the Next path aliases, so the adapter is built here from the same DATABASE_URL
+   that the schema's `url` resolved before the upgrade. */
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+});
 
 import * as crypto from "crypto";
 

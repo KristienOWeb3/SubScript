@@ -48,15 +48,28 @@ export function writeMockDb(data: MockDbSchema) {
 export function isConnectionError(err: any): boolean {
     const msg = String(err?.message || err || "").toLowerCase();
     const code = String(err?.code || "").toLowerCase();
-    
+
+    /* Prisma's P1xxx codes are still checked, but they are no longer the only shape this sees. Since
+       Prisma 7 the client queries through a driver adapter, so a connection failure arrives as the
+       node-postgres error rather than a Prisma one: an errno string like ECONNREFUSED, or a Postgres
+       class-08 SQLSTATE ("connection exception"). Matching those keeps the local offline fallback
+       working — without them a paused database read as an ordinary query failure and the dev
+       convenience silently stopped engaging. */
+    const isPgConnectionClass = /^08[0-9a-z]{3}$/.test(code);
+    const isDriverErrno = ["econnrefused", "enotfound", "etimedout", "econnreset", "epipe", "ehostunreach"]
+        .includes(code);
+
     return (
-        code.startsWith("p1") || 
-        code === "p2024" || 
+        code.startsWith("p1") ||
+        code === "p2024" ||
+        isPgConnectionClass ||
+        isDriverErrno ||
         msg.includes("can't reach database server") ||
         msg.includes("enotfound") ||
         msg.includes("econnrefused") ||
         msg.includes("etimedout") ||
         msg.includes("connection error") ||
+        msg.includes("connection terminated") ||
         msg.includes("failed to connect") ||
         msg.includes("pool timeout") ||
         msg.includes("db.jkrlsjpsytzffwjpixue.supabase.co") ||

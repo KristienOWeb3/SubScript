@@ -1,6 +1,10 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind 4 replaces the three @tailwind directives with one import. The JS config is loaded
+   explicitly via @config: v4 prefers a CSS-first `@theme` block, but this project's theme is small
+   and already documented in tailwind.config.js (the 4.5 spacing step exists for a real icon-sizing
+   bug), and keeping it there means this migration changes the build without also rewriting the
+   theme. Porting to @theme is a separate, reviewable step. */
+@import "tailwindcss";
+@config "../../tailwind.config.js";
 
 @layer components {
   .koboyo-icon {
@@ -170,10 +174,22 @@ body {
   width: 100%;
 }
 
-* {
-  box-sizing: border-box;
-  max-width: 100%;
-  font-family: var(--font-sukar), Sukar, sans-serif;
+/* Inside @layer base, and it has to be. Tailwind 4 emits its utilities into a real native
+   `@layer utilities`, and in the CSS cascade an UNLAYERED rule beats a layered one outright,
+   regardless of specificity. Left unlayered, this universal `max-width: 100%` therefore defeated
+   every `max-w-*` utility in the app — 296 call sites across 15 variants — so cards and containers
+   that should cap at 28rem or 42rem silently stretched to full width instead.
+   Under Tailwind 3 the same rule was harmless: `@tailwind utilities` was flattened into ordinary
+   unlayered CSS, so `.max-w-md` won on specificity (0,1,0 against 0,0,0). Nothing about the rule
+   changed — the cascade underneath it did.
+   Base sits below utilities, which restores the old precedence while keeping the intent: a
+   defensive guard against a stray wide child forcing a horizontal scrollbar. */
+@layer base {
+  * {
+    box-sizing: border-box;
+    max-width: 100%;
+    font-family: var(--font-sukar), Sukar, sans-serif;
+  }
 }
 
 /* Glassmorphism Card Style */

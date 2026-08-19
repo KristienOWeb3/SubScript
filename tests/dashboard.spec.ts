@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { SignJWT } from "jose";
 import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 import dotenv from "dotenv";
 import path from "path";
 
@@ -10,7 +11,14 @@ dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 import * as crypto from "crypto";
 
-const prisma = new PrismaClient();
+/* Prisma 7 takes a driver adapter instead of a connection string on the schema, so the
+   generated client throws PrismaClientInitializationError when constructed bare. The app
+   goes through src/lib/prisma.ts, but these specs run under Playwright's own transform,
+   outside the Next path aliases, so the adapter is built here from the same DATABASE_URL
+   that the schema's `url` resolved before the upgrade. */
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+});
 
 async function createAuthCookie(address: string): Promise<string> {
   const secretStr = process.env.JWT_SECRET || "mock_jwt_secret_for_testing_32_characters";
@@ -36,7 +44,9 @@ async function createAuthCookie(address: string): Promise<string> {
 
 test.describe("SubScript B2B SaaS E2E Flows", () => {
   test.beforeAll(async () => {
-    const prisma = new PrismaClient();
+    const prisma = new PrismaClient({
+      adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+    });
     const testWallet = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29".toLowerCase();
     
     // Seed/Upsert the account role as ENTERPRISE
