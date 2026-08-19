@@ -2,7 +2,7 @@ import Link from "next/link";
 import CodeBlock from "../_components/CodeBlock";
 import { ApiBadge, ApiTable, Callout, DocsHeader, DocsLead, DocsPager, PageFooter } from "../_components/primitives";
 import { docsMetadata, pagerFor } from "../_components/meta";
-import { planCatalogCode, subscriptionCode, subscriptionResponseCode } from "../_content/samples";
+import { planCatalogCode, subscriptionCode, subscriptionReconcileCode, subscriptionResponseCode } from "../_content/samples";
 
 export const metadata = docsMetadata("subscriptions", {
   description:
@@ -94,7 +94,9 @@ export default function SubscriptionsPage() {
           {[
             ["incomplete", "Created but not authorized yet. Redirect the customer to checkoutUrl."],
             ["active", "The customer authorized the recurring payment on-chain. Fulfill from the signed webhook."],
+            ["past_due", "A renewal charge failed. The authorization is still live, so a retry can recover it."],
             ["canceled", "Unaccepted checkout sessions can be withdrawn by the merchant; active authorizations are customer-controlled."],
+            ["expired", "Nobody accepted the checkout within 24 hours. Create a fresh one — accepting an expired checkout returns 410."],
           ].map(([status, text]) => (
             <div key={status} className="rounded-2xl border border-white/5 bg-black/30 p-5">
               <p className="font-mono text-sm font-bold text-[#00d2b4]">{status}</p>
@@ -102,12 +104,52 @@ export default function SubscriptionsPage() {
             </div>
           ))}
         </div>
+        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+          <span className="font-mono">status</span> reflects the billing record, not the checkout, so a subscription
+          canceled after activation reports <span className="font-mono">canceled</span> rather than staying{" "}
+          <span className="font-mono">active</span> forever. Filter on it with{" "}
+          <span className="font-mono">?status=active,past_due</span> — an unknown value is rejected rather than
+          silently returning everything.
+        </p>
         <Callout tone="amber" title="incomplete is not a failure">
           <p>
             A freshly created subscription is always <span className="font-mono">incomplete</span> — it becomes
             active only once the customer authorizes the bounded recurring payment on-chain. Do not grant access on
             creation, and do not treat a long-lived incomplete as an error; it usually means the customer has not
             finished checkout yet.
+          </p>
+        </Callout>
+      </section>
+
+      <section className="space-y-4">
+        <h2 id="reconcile" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+          Reading subscriptions back
+        </h2>
+        <ApiBadge method="GET" path="/api/v1/subscriptions/{id}" />
+        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+          The webhook is a notification, not the only copy of the mapping. Every subscription read returns your own{" "}
+          <span className="font-mono">externalReference</span>, so a missed delivery is recoverable instead of
+          leaving a paying customer with no plan.
+        </p>
+        <ApiTable
+          columns={["Field", "Meaning"]}
+          rows={[
+            ["externalReference", "The value you sent as merchantCustomerId. Key entitlements on this."],
+            ["currentPeriodEnd", "When access lapses without a renewal. Do not recompute it from createdAt + intervalSeconds — this accounts for renewals and matches what the dashboard shows."],
+            ["subscriptionId", "On-chain id, null until the authorization settles. Required to cancel an active subscription."],
+            ["subscriber", "The wallet that authorized the payment. Null only while the checkout is unaccepted."],
+            ["expiresAt", "When an unaccepted checkout stops being payable."],
+          ]}
+        />
+        <CodeBlock code={subscriptionReconcileCode} language="javascript" />
+        <Callout tone="plain" title="Both id forms resolve">
+          <p>
+            A subscription has two ids over its life: the checkout session (
+            <span className="font-mono">sub_&lt;uuid&gt;</span>) and, once authorized on-chain, a PSA id (
+            <span className="font-mono">sub_&lt;number&gt;</span>).{" "}
+            <span className="font-mono">GET /api/v1/subscriptions/&#123;id&#125;</span> accepts either, so an id
+            copied straight out of the list always reads back. Listing and filtering client-side is no longer the
+            only way to fetch one.
           </p>
         </Callout>
       </section>

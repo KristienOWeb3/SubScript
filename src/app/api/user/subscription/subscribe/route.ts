@@ -33,6 +33,7 @@ import { createSubscriptionStartedDm } from "@/lib/dms/system";
 import { withPgClient } from "@/lib/serverPg";
 import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 import { readSubscriptionCheckoutMeta, subscriptionCheckoutPeriod } from "@/lib/subscriptionCheckout";
+import { checkoutExpiresAt, isCheckoutExpired } from "@/lib/subscriptions/apiSubscriptionView";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
@@ -162,6 +163,18 @@ export async function POST(request: Request) {
         const sourceCheckout = checkout || (sourceCheckoutId
             ? await prisma.paymentLink.findUnique({ where: { id: sourceCheckoutId } })
             : null);
+        /* An abandoned API checkout reports `expired` on /api/v1/subscriptions once its window has
+           passed. Refusing it here is what makes that status true rather than cosmetic — otherwise a
+           merchant sees `expired` on an offer that can still be accepted and billed. Checked against
+           the source checkout so it covers both arrival paths: the checkout link directly, and the
+           catalog plan published from it. */
+        if (sourceCheckout && isCheckoutExpired(sourceCheckout)) {
+            return NextResponse.json({
+                error: "This subscription offer has expired. Ask the merchant for a new checkout link.",
+                code: "CHECKOUT_EXPIRED",
+                expiresAt: checkoutExpiresAt(sourceCheckout).toISOString(),
+            }, { status: 410 });
+        }
         const linkedPlan = !merchantPlan && sourceCheckoutId
             ? await prisma.merchantPlan.findUnique({ where: { sourceCheckoutId }, select: { id: true } })
             : null;

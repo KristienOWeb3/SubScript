@@ -201,6 +201,36 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: "list_subscriptions",
+        description: "List this merchant's subscriptions. Every row carries externalReference (your own customer id), currentPeriodEnd (when access lapses — use it instead of deriving createdAt + intervalSeconds), subscriptionId (needed to cancel an active subscription), and subscriber. Filter with status and externalReference. Returns the 100 most recent.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            status: {
+              type: "string",
+              description: "Comma-separated filter: incomplete, active, past_due, canceled, expired. An unknown value is rejected.",
+            },
+            externalReference: {
+              type: "string",
+              description: "Exact match on your own customer/account id, to find every subscription for one customer.",
+            },
+            subscriber: {
+              type: "string",
+              description: "Optional 0x wallet. Lists that subscriber's on-chain subscriptions instead of checkout sessions.",
+            },
+          },
+        },
+      },
+      {
+        name: "get_subscription",
+        description: "Retrieve one subscription. Accepts either id form: sub_<uuid> for a checkout session (what list_subscriptions returns) or sub_<number> for an on-chain subscription.",
+        inputSchema: {
+          type: "object",
+          properties: { id: { type: "string", description: "sub_<uuid> or sub_<number>; the sub_ prefix is optional." } },
+          required: ["id"],
+        },
+      },
+      {
         name: "get_payment_status",
         description: "Look up a payment intent's status (PENDING/PAID/EXPIRED/...) and on-chain settlement details by intent id.",
         inputSchema: {
@@ -341,6 +371,29 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         body: args,
       });
       return jsonResult({ httpStatus: status, ...json });
+    }
+
+    if (name === "list_subscriptions") {
+      const { status: statusFilter, externalReference, subscriber } = request.params.arguments || {};
+      for (const [label, value] of [["status", statusFilter], ["externalReference", externalReference], ["subscriber", subscriber]]) {
+        if (value !== undefined && typeof value !== "string") {
+          throw new Error(`list_subscriptions: '${label}' must be a string if provided.`);
+        }
+      }
+      const query = new URLSearchParams();
+      if (statusFilter) query.set("status", statusFilter);
+      if (externalReference) query.set("externalReference", externalReference);
+      if (subscriber) query.set("subscriber", subscriber);
+      const search = query.toString();
+      const { status, json } = await callSubscriptApi(`/api/v1/subscriptions${search ? `?${search}` : ""}`);
+      return jsonResult({ httpStatus: status, ...json });
+    }
+
+    if (name === "get_subscription") {
+      const { id } = request.params.arguments || {};
+      if (!id || typeof id !== "string") throw new Error("get_subscription: 'id' is required and must be a string.");
+      const { status, json } = await callSubscriptApi(`/api/v1/subscriptions/${encodeURIComponent(id)}`);
+      return jsonResult({ httpStatus: status, subscription: json });
     }
 
     if (name === "get_payment_status") {

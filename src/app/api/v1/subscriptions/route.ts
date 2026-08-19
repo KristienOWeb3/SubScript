@@ -1,13 +1,8 @@
 import { NextResponse } from "next/server";
-import { createPublicClient, formatUnits } from "viem";
-import { activeArcChain } from "@/lib/wagmi";
 import { ProtocolConfig } from "@/lib/payments/config";
-import { assertFinancialNetworkReady } from "@/lib/network/registry";
-import { arcHttp } from "@/lib/arc/transport";
 import {
     ARC_TESTNET_CHAIN_ID,
     DEMO_MERCHANT_ADDRESS,
-    STANDARD_CONTRACT_ADDRESS,
 } from "@/lib/contracts/constants";
 import { prisma } from "@/lib/prisma";
 import { apiError } from "@/lib/apiErrors";
@@ -17,12 +12,26 @@ import { generateReceiptId } from "@/lib/arc/memo";
 import { sanitizeInput } from "@/utils/security";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
-import { onActiveContract, subscriptionKey } from "@/lib/subscriptions/contractBinding";
+import { onActiveContract } from "@/lib/subscriptions/contractBinding";
 import {
     readSubscriptionCheckoutMeta,
     subscriptionCheckoutPeriod,
     type SubscriptionCheckoutMeta,
 } from "@/lib/subscriptionCheckout";
+import {
+    API_SUBSCRIPTION_STATUSES,
+    CHECKOUT_EXPIRY_SECONDS,
+    microsToDecimal,
+    serializeApiSubscription,
+    serializeOnChainSubscription,
+    type ApiSubscriptionStatus,
+} from "@/lib/subscriptions/apiSubscriptionView";
+import {
+    loadMirrorForCheckout,
+    loadMirrorsForCheckouts,
+    loadMirrorsForSubscriptionIds,
+} from "@/lib/subscriptions/apiSubscriptionLookup";
+import { readPsaSubscription, resolveApiSubscription } from "@/lib/subscriptions/apiSubscriptionResolve";
 import {
     checkoutHasPrivatePlanTerms,
     createCheckoutWithPublishedSitePlan,
@@ -31,32 +40,6 @@ import {
 } from "@/lib/subscriptions/sitePlans";
 import { createSubscriptionOfferDm } from "@/lib/dms/system";
 import { createDmAndNotify } from "@/lib/dms/notifications";
-
-const SUBSCRIPT_ABI = [
-    {
-        inputs: [],
-        name: "nextSubscriptionId",
-        outputs: [{ name: "", type: "uint256" }],
-        stateMutability: "view",
-        type: "function",
-    },
-    {
-        inputs: [{ name: "", type: "uint256" }],
-        name: "subscriptions",
-        outputs: [
-            { name: "subscriber", type: "address" },
-            { name: "merchant", type: "address" },
-            { name: "amount", type: "uint256" },
-            { name: "period", type: "uint256" },
-            { name: "nextPayment", type: "uint256" },
-            { name: "isActive", type: "bool" },
-        ],
-        stateMutability: "view",
-        type: "function",
-    },
-] as const;
-
-const publicClient = createPublicClient({ chain: activeArcChain, transport: arcHttp() });
 
 const NAMED_INTERVAL_SECONDS: Record<string, number> = {
     daily: 86_400,
@@ -68,14 +51,28 @@ const NAMED_INTERVAL_SECONDS: Record<string, number> = {
 /* authenticateMerchant lives in @/lib/v1/merchantAuth (imported above) so /api/v1/plans and
    /api/v1/subscriptions share one implementation — including the TEST/LIVE mode isolation
    from PR #70 (sk_live_ refused, non-TEST keys rejected). */
-function microsToDecimal(micros: bigint) {
-    return formatUnits(micros, 6);
+
+/* Comma-separated ?status= filter. Unknown values are rejected rather than ignored: a typo that
+   silently returns everything reads as "no subscriptions match", which is worse than an error. */
+function parseStatusFilter(raw: string | null): { ok: true; statuses: Set<ApiSubscriptionStatus> | null } | { ok: false; error: string } {
+    if (!raw || !raw.trim()) return { ok: true, statuses: null };
+    const requested = raw.split(",").map((value) => value.trim().toLowerCase()).filter(Boolean);
+    const invalid = requested.filter((value) => !API_SUBSCRIPTION_STATUSES.includes(value as ApiSubscriptionStatus));
+    if (invalid.length > 0) {
+        return {
+            ok: false,
+            error: `Bad Request: unknown status ${invalid.join(", ")}. Valid values: ${API_SUBSCRIPTION_STATUSES.join(", ")}`,
+        };
+    }
+    return { ok: true, statuses: new Set(requested as ApiSubscriptionStatus[]) };
 }
 
+
 /* ----------------------------------- GET ----------------------------------- */
-/* - ?id=sub_<n>         -> read a single on-chain subscription
-   - ?subscriber=0x...   -> list on-chain subscriptions for that subscriber under this merchant
-   - (no params)         -> list this merchant's subscription checkout sessions (created via POST) */
+/* - ?id=sub_<n> | sub_<uuid>  -> read a single subscription (see GET /api/v1/subscriptions/{id})
+   - ?subscriber=0x...         -> list on-chain subscriptions for that subscriber under this merchant
+   - (no params)               -> list this merchant's subscription checkout sessions, enriched from
+                                  the subscriptions mirror. Optional ?status= and ?externalReference=. */
 export async function GET(request: Request) {
     try {
         const auth = await authenticateMerchant(request);
@@ -89,41 +86,13 @@ export async function GET(request: Request) {
         const subscriberParam = searchParams.get("subscriber");
 
         if (subIdParam) {
-            /* Accept only a full decimal id after the sub_ prefix — parseInt would silently
-               accept "sub_123abc" as 123 and read a different subscription. */
-            const rawSubId = subIdParam.replace(/^sub_/, "");
-            if (!/^[1-9]\d*$/.test(rawSubId)) {
-                return NextResponse.json({ error: "Bad Request: Invalid subscription ID format" }, { status: 400 });
+            /* Both id spaces resolve through the same helper as /api/v1/subscriptions/{id}, so a
+               `sub_<uuid>` copied out of the list below reads back here instead of 400ing. */
+            const resolved = await resolveApiSubscription({ merchantAddress: merchantWallet, id: subIdParam });
+            if (!resolved.ok) {
+                return NextResponse.json({ error: resolved.error }, { status: resolved.status });
             }
-            const subId = BigInt(rawSubId);
-            try {
-                const sub = await publicClient.readContract({
-                    address: STANDARD_CONTRACT_ADDRESS,
-                    abi: SUBSCRIPT_ABI,
-                    functionName: "subscriptions",
-                    args: [subId],
-                });
-                const [subscriber, merchant, amount, period, nextPayment, isActive] = sub;
-                if (merchant.toLowerCase() !== merchantWallet) {
-                    return NextResponse.json({ error: "Forbidden: This subscription does not belong to your merchant wallet" }, { status: 403 });
-                }
-                return NextResponse.json({
-                    id: `sub_${subId}`,
-                    object: "subscription",
-                    subscriber,
-                    merchant,
-                    amountUsdc: microsToDecimal(amount),
-                    amountUsdcMicros: amount.toString(),
-                    periodSeconds: Number(period),
-                    nextPaymentTimestamp: Number(nextPayment),
-                    nextPaymentDate: new Date(Number(nextPayment) * 1000).toISOString(),
-                    status: isActive ? "active" : "inactive",
-                    isActive,
-                }, { status: 200 });
-            } catch (err: any) {
-                console.error(`Error reading subId ${subId} from contract:`, err);
-                return NextResponse.json({ error: "Subscription not found on-chain" }, { status: 404 });
-            }
+            return NextResponse.json(resolved.subscription, { status: 200 });
         }
 
         if (subscriberParam) {
@@ -135,41 +104,31 @@ export async function GET(request: Request) {
                 /* Indexer-backed: select candidate ids from the subscriptions mirror (indexed by
                    merchant + subscriber) rather than scanning every on-chain id, then read only
                    those from chain for authoritative amount/status. Bounded — scales with a
-                   subscriber's own subscriptions, not the whole contract. */
+                   subscriber's own subscriptions, not the whole contract. Scoped to the active PSA
+                   so ids stranded by an abandoned deployment are not read from a contract that
+                   never minted them. */
                 const rows = await prisma.subscription.findMany({
-                    where: { merchantAddress: merchantWallet, subscriber: subscriberWallet },
+                    where: { ...onActiveContract(), merchantAddress: merchantWallet, subscriber: subscriberWallet },
                     select: { subscriptionId: true },
                     orderBy: { subscriptionId: "desc" },
                     take: 100,
                 });
+                const mirrors = await loadMirrorsForSubscriptionIds(
+                    merchantWallet,
+                    rows.map(({ subscriptionId }: { subscriptionId: bigint }) => subscriptionId),
+                );
                 const subscriptions = (await Promise.all(rows.map(async ({ subscriptionId }: { subscriptionId: bigint }) => {
-                    try {
-                        const data = await publicClient.readContract({
-                            address: STANDARD_CONTRACT_ADDRESS,
-                            abi: SUBSCRIPT_ABI,
-                            functionName: "subscriptions",
-                            args: [subscriptionId],
-                        });
-                        const [subPayer, subMerchant, amount, period, nextPayment, isActive] = data;
-                        if (subPayer.toLowerCase() !== subscriberWallet || subMerchant.toLowerCase() !== merchantWallet) {
-                            return null;
-                        }
-                        return {
-                            id: `sub_${subscriptionId}`,
-                            object: "subscription" as const,
-                            subscriber: subPayer,
-                            merchant: subMerchant,
-                            amountUsdc: microsToDecimal(amount),
-                            amountUsdcMicros: amount.toString(),
-                            periodSeconds: Number(period),
-                            nextPaymentTimestamp: Number(nextPayment),
-                            nextPaymentDate: new Date(Number(nextPayment) * 1000).toISOString(),
-                            status: isActive ? "active" : "inactive",
-                            isActive,
-                        };
-                    } catch {
+                    const chain = await readPsaSubscription(subscriptionId);
+                    if (!chain) return null;
+                    if (chain.subscriber.toLowerCase() !== subscriberWallet
+                        || chain.merchant.toLowerCase() !== merchantWallet) {
                         return null;
                     }
+                    return serializeOnChainSubscription({
+                        subscriptionId,
+                        chain,
+                        mirror: mirrors.get(subscriptionId.toString()) || null,
+                    });
                 }))).filter((s): s is NonNullable<typeof s> => s !== null);
                 return NextResponse.json({ object: "list", data: subscriptions }, { status: 200 });
             } catch (err: any) {
@@ -178,6 +137,12 @@ export async function GET(request: Request) {
             }
         }
 
+        const statusFilter = parseStatusFilter(searchParams.get("status"));
+        if (!statusFilter.ok) {
+            return NextResponse.json({ error: statusFilter.error }, { status: 400 });
+        }
+        const referenceParam = (searchParams.get("externalReference") || searchParams.get("merchantCustomerId") || "").trim();
+
         /* No params: list this merchant's subscription checkout sessions created via POST.
            Filter on the subscription metadata in the query so one-time intents can't push
            older subscriptions out of the take:100 window. */
@@ -185,27 +150,21 @@ export async function GET(request: Request) {
             where: {
                 merchantAddress: merchantWallet,
                 stateSnapshot: { path: ["subscription", "kind"], equals: "subscription" },
+                ...(referenceParam ? { externalReference: referenceParam } : {}),
             },
             orderBy: { createdAt: "desc" },
             take: 100,
         });
+        /* The join that makes the rest of this object honest. A checkout row records what was
+           authorized and is never touched again when the subscription is later canceled, so
+           without the mirror `status` reports canceled subscriptions as active forever, and
+           currentPeriodEnd / subscriber / subscriptionId have nowhere to come from. */
+        const mirrors = await loadMirrorsForCheckouts(merchantWallet, links.map((link: { id: string }) => link.id));
+        const now = new Date();
         const data = links
-            .map((link: any) => ({ link, meta: readSubscriptionCheckoutMeta(link.stateSnapshot) }))
-            .filter((x: any) => x.meta)
-            .map(({ link, meta }: any) => ({
-                id: `sub_${link.id}`,
-                object: "subscription",
-                status: link.status === "PAID" ? "active" : link.active ? "incomplete" : "canceled",
-                merchantAddress: link.merchantAddress,
-                subscriber: meta.subscriber || null,
-                amountUsdc: microsToDecimal(link.amountUsdc),
-                amountUsdcMicros: link.amountUsdc.toString(),
-                intervalSeconds: meta.intervalSeconds,
-                intervalCount: meta.intervalCount,
-                interval: meta.interval || null,
-                checkoutUrl: buildSubscribeUrl(link.id),
-                createdAt: link.createdAt,
-            }));
+            .map((link: any) => serializeApiSubscription({ link, mirror: mirrors.get(link.id) || null, now }))
+            .filter((subscription): subscription is NonNullable<typeof subscription> => subscription !== null)
+            .filter((subscription) => !statusFilter.statuses || statusFilter.statuses.has(subscription.status));
         return NextResponse.json({ object: "list", data }, { status: 200 });
     } catch (error: any) {
         console.error("Subscriptions GET error:", error);
@@ -413,25 +372,35 @@ export async function POST(request: Request) {
                         periodSeconds: subscriptionCheckoutPeriod(meta),
                     });
                 }
+                /* Serialized through the shared view so a retried create returns exactly the object
+                   the list and GET /{id} return — including a mirror row if the subscriber has
+                   already accepted this checkout since the first call. */
+                const existingMirror = await loadMirrorForCheckout(merchantAddress, existing.id);
+                const existingView = serializeApiSubscription({ link: existing, mirror: existingMirror });
                 return NextResponse.json({
                     success: true,
-                    subscription: {
-                        id: `sub_${existing.id}`,
-                        object: "subscription",
-                        status: existing.status === "PAID" ? "active" : existing.active ? "incomplete" : "canceled",
-                        merchantAddress: existing.merchantAddress,
-                        subscriber: meta?.subscriber || null,
-                        amountUsdcMicros: existing.amountUsdc.toString(),
-                        amountUsdc: microsToDecimal(existing.amountUsdc),
-                        intervalSeconds: meta?.intervalSeconds ?? periodSeconds,
-                        intervalCount: meta?.intervalCount ?? count,
-                        interval: meta?.interval ?? resolvedInterval,
-                        planId: canonicalPlanId,
-                        merchantCustomerId: existing.externalReference,
-                        externalReference: existing.externalReference,
-                        checkoutUrl: buildSubscribeUrl(existing.id),
-                        createdAt: existing.createdAt,
-                    },
+                    subscription: existingView
+                        ? { ...existingView, planId: canonicalPlanId ?? existingView.planId }
+                        : {
+                            /* Unreachable in practice — the meta guard above already returned 409
+                               for a non-subscription link. Kept so a schema change cannot turn a
+                               null into a 500. */
+                            id: `sub_${existing.id}`,
+                            object: "subscription",
+                            status: existing.status === "PAID" ? "active" : existing.active ? "incomplete" : "canceled",
+                            merchantAddress: existing.merchantAddress,
+                            subscriber: meta.subscriber || null,
+                            amountUsdcMicros: existing.amountUsdc.toString(),
+                            amountUsdc: microsToDecimal(existing.amountUsdc),
+                            intervalSeconds: meta.intervalSeconds ?? periodSeconds,
+                            intervalCount: meta.intervalCount ?? count,
+                            interval: meta.interval ?? resolvedInterval,
+                            planId: canonicalPlanId,
+                            merchantCustomerId: existing.externalReference,
+                            externalReference: existing.externalReference,
+                            checkoutUrl: buildSubscribeUrl(existing.id),
+                            createdAt: existing.createdAt,
+                        },
                 }, { status: 200 });
             }
         }
@@ -449,6 +418,7 @@ export async function POST(request: Request) {
             successUrl: successUrlResult.value,
             cancelUrl: cancelUrlResult.value,
         };
+        const checkoutExpiry = new Date(Date.now() + CHECKOUT_EXPIRY_SECONDS * 1000);
         const linkData = {
             merchantAddress,
             title: (typeof title === "string" && title.trim()) ? title.trim() : "Subscription",
@@ -458,6 +428,10 @@ export async function POST(request: Request) {
             externalReference: merchantAccountReference,
             idempotencyKey: (idempotencyKey && String(idempotencyKey).trim()) || null,
             receiptToken: generateReceiptId("subscription"),
+            /* Abandoned checkouts used to sit at `incomplete` forever, so a merchant's list was
+               mostly dead offers. Recorded explicitly rather than only derived so the window is
+               visible in the API and in the database. */
+            expiresAt: checkoutExpiry,
             sandboxMode: isTestMode,
             simulationOnly: false,
             settlementChainId: isTestMode ? ARC_TESTNET_CHAIN_ID : ProtocolConfig.CHAIN_ID,
@@ -470,7 +444,11 @@ export async function POST(request: Request) {
                 simulationOnly: false,
                 settlementChainId: isTestMode ? ARC_TESTNET_CHAIN_ID : ProtocolConfig.CHAIN_ID,
                 maxUses: null,
-                expiresAt: null,
+                /* Kept in step with the column. The fingerprint is a snapshot of creation terms,
+                   and /api/intent compares it field-by-field when an idempotencyKey is reused
+                   across resources — a stale null there would let a subscription checkout be
+                   handed back as a one-time intent instead of conflicting. */
+                expiresAt: checkoutExpiry.toISOString(),
             },
             stateSnapshot: { subscription: subMeta },
         };
@@ -510,24 +488,14 @@ export async function POST(request: Request) {
             }
         }
 
+        /* A just-created checkout cannot have a mirror row yet, so the view is serialized without
+           one — same shape as the list and GET /{id}, `status: "incomplete"`, expiry included. */
+        const createdView = serializeApiSubscription({ link, mirror: null });
         return NextResponse.json({
             success: true,
             subscription: {
-                id: `sub_${link.id}`,
-                object: "subscription",
-                status: "incomplete",
-                merchantAddress,
-                subscriber: subscriberAddress,
-                amountUsdcMicros: amountMicros.toString(),
-                amountUsdc: microsToDecimal(amountMicros),
-                intervalSeconds: periodSeconds,
-                intervalCount: count,
-                interval: resolvedInterval,
+                ...createdView,
                 planId: canonicalPlanId,
-                merchantCustomerId: merchantAccountReference,
-                externalReference: merchantAccountReference,
-                checkoutUrl: buildSubscribeUrl(link.id),
-                createdAt: link.createdAt,
             },
             sandbox: isSandbox,
         }, { status: 201 });

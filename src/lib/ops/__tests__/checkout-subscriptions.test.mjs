@@ -192,9 +192,14 @@ test("recent transaction surfaces render both local date and time", () => {
 
 test("subscription API checkouts use the recurring subscribe surface", () => {
     const route = source("src/app/api/v1/subscriptions/route.ts");
+    /* The checkoutUrl is built once, in the shared serializer every v1 subscription response goes
+       through. Asserted there rather than in the route since that is where the call now lives —
+       the guarantee is unchanged: a recurring checkout links to /subscribe, never /pay. */
+    const view = source("src/lib/subscriptions/apiSubscriptionView.ts");
 
-    assert.match(route, /buildSubscribeUrl\(link\.id\)/);
+    assert.match(view, /buildSubscribeUrl\(link\.id\)/);
     assert.match(route, /buildSubscribeUrl\(existing\.id\)/);
+    assert.doesNotMatch(view, /buildCheckoutUrl/);
     assert.doesNotMatch(route, /buildCheckoutUrl/);
 });
 

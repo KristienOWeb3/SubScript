@@ -145,6 +145,27 @@ test("docs present subscriptions as a first-class shipped API", () => {
   assertDocumented("subscription.renewed", subscriptions, "the subscriptions page");
 });
 
+test("docs tell an integrator how to read a subscription back without the webhook", () => {
+  /* Added 2026-08-19 after an integrator audit found the list returned neither the merchant's own
+     reference nor a period end, and the only single-read rejected the ids the list handed out.
+     Each assertion is one finding that cost real money. */
+  const subscriptions = readFileSync(path.join(docsRoot, "subscriptions", "page.tsx"), "utf8");
+  for (const required of [
+    /* The mapping a merchant needs when a webhook is missed. */
+    "externalReference",
+    /* The period end, so nobody reimplements createdAt + intervalSeconds and lands 2 hours off. */
+    "currentPeriodEnd",
+    /* Single-resource retrieval, and the on-chain id cancellation needs. */
+    "/api/v1/subscriptions/{id}",
+    "subscriptionId",
+  ]) {
+    assertDocumented(required, subscriptions, "the subscriptions page");
+  }
+  /* Both statuses that the mirror-backed derivation made reachable. */
+  assertDocumented("past_due", subscriptions, "the subscriptions page");
+  assertDocumented("expired", subscriptions, "the subscriptions page");
+});
+
 test("docs prevent one-time intents from being mistaken for recurring DM plans", () => {
   assertDocumented("/api/v1/plans");
   assertDocumented("publishToDm: true");

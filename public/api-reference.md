@@ -171,15 +171,45 @@ modifies the existing on-chain subscription rather than creating a second author
 
 ### `GET /api/v1/subscriptions` — read / list
 
-`?id=sub_<n>` reads one on-chain subscription; `?subscriber=0x…` lists a subscriber's
-subscriptions; no params lists your subscription checkout sessions.
+No params lists your subscription checkout sessions. `?id=` reads one subscription and accepts
+either id form. `?subscriber=0x…` lists a subscriber's on-chain subscriptions.
 
-### `DELETE /api/v1/subscriptions?id=<id>` — cancel
+Every row is enriched from the billing record, so the list is enough to reconcile against:
+
+| Field | Meaning |
+|---|---|
+| `externalReference` | The value you sent as `merchantCustomerId`. Key entitlements on this — a missed webhook stays recoverable. |
+| `currentPeriodEnd` | When access lapses without a renewal (ISO; `currentPeriodEndTimestamp` for Unix seconds, `nextPaymentDate` as an alias). Do not recompute from `createdAt + intervalSeconds`. |
+| `subscriptionId` | On-chain PSA id, `null` until the authorization settles. Required to cancel an active subscription. |
+| `subscriber` | The wallet that authorized the payment. `null` only while the checkout is unaccepted. |
+| `status` | `incomplete`, `active`, `past_due`, `canceled`, or `expired`. Derived from the billing record, so a subscription canceled after activation no longer reports `active`. |
+| `expiresAt` | When an unaccepted checkout stops being payable (24h after creation). |
+
+Filters: `?status=active,past_due` (comma-separated; an unknown value is rejected rather than
+ignored) and `?externalReference=user_123` (exact match; `merchantCustomerId` is accepted as an
+alias). Both apply within the 100 most recent subscriptions.
+
+### `GET /api/v1/subscriptions/{id}` — retrieve one
+
+Single-intent read. Accepts either id the API hands out: `sub_<uuid>` for a checkout session (what
+the list returns) or `sub_<number>` for an on-chain subscription. Retrieving one subscription does
+not require listing all of them and filtering client-side.
+
+### `DELETE /api/v1/subscriptions/{id}` — cancel
+
+Also available as `DELETE /api/v1/subscriptions?id=<id>` with identical semantics.
 
 `sub_<uuid>` withdraws a not-yet-accepted checkout/offer and removes its published plan.
 Active `sub_<number>` authorizations are customer-controlled; the subscriber cancels them from
 their DM or user dashboard, where cancellation is normally scheduled for the end of the paid
 period.
+
+### Checkout expiry
+
+An unaccepted subscription checkout expires 24 hours after creation. It then reports
+`status: "expired"`, and a customer who follows the link gets `410` with
+`code: "CHECKOUT_EXPIRED"` instead of being billed against a stale offer. Create a new checkout
+rather than reusing an expired one.
 
 ### `POST /api/v1/commits` — create a hosted Pay-As-You-Go Vault Commit checkout intent
 
