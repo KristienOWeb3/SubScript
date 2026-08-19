@@ -173,7 +173,7 @@ test("production Prisma failures cannot fall back to the JSON mock database", ()
 });
 
 test("manual IP bans are not cached past an admin unban", () => {
-  const middleware = source("src/middleware.ts");
+  const middleware = source("src/proxy.ts");
   const redisBanBlock = middleware.slice(
     middleware.indexOf("/* 4. Redis IP Ban Check */"),
     middleware.indexOf("let rateLimitPassed", middleware.indexOf("/* 4. Redis IP Ban Check */")),

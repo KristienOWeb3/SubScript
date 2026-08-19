@@ -8,7 +8,7 @@ import { getAdminSession } from "@/lib/admin/guard";
  * deliberately skips the sessions table so signing out doesn't revoke until the token
  * expires. THIS layout is the check middleware's comment reserves for the page tree:
  * getAdminSession() verifies against the live sessions table, so a signed-out admin
- * is rejected here even with a valid JWT. See the comment in middleware.ts above
+ * is rejected here even with a valid JWT. See the comment in proxy.ts above
  * isAuthorizedAdmin.
  *
  * force-dynamic: this gate reads cookies/headers and the database on every request —

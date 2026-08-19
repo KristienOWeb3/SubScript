@@ -325,7 +325,7 @@ async function handleRateLimitViolation(ip: string, isRedisConfigured: boolean) 
 /* Define strict payload size limit: 1MB in bytes */
 const MAX_PAYLOAD_SIZE = 1048576;
 
-export async function middleware(request: NextRequest) {
+export default async function proxy(request: NextRequest) {
     const pathname = request.nextUrl.pathname;
     if (
         pathname.startsWith("/_next") ||

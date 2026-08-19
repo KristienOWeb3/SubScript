@@ -373,7 +373,7 @@ test("fresh beta databases preserve server CRUD and receipt delegation schema", 
 });
 
 test("production-mode E2E bypass is runner-bound and absent unless explicitly configured", () => {
-    const middleware = source("src/middleware.ts");
+    const middleware = source("src/proxy.ts");
     const playwright = source("playwright.config.ts");
     const workflow = source(".github/workflows/e2e.yml");
 

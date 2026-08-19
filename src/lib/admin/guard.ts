@@ -8,7 +8,7 @@ import { isAdminWallet } from "@/lib/admin/identity";
  *
  * This is a STRICTER check than the middleware gate, not a duplicate of it. Middleware
  * verifies the JWT signature only (see the comment above isAuthorizedAdmin in
- * middleware.ts) — it deliberately skips the sessions table to avoid a database round
+ * proxy.ts) — it deliberately skips the sessions table to avoid a database round
  * trip on every request, so a token whose session was revoked by signing out still
  * passes it until the JWT expires. getVerifiedSessionToken DOES consult that table, so
  * a signed-out admin is rejected here.
@@ -41,7 +41,7 @@ export async function getAdminSession(headers: Headers): Promise<AdminIdentity |
  * Route-handler guard. Returns the admin identity, or a response to return as-is.
  *
  * Answers 404 rather than 401/403 for BOTH the unauthenticated and the not-an-admin
- * case, matching the console's non-disclosure posture in middleware.ts: a 403 confirms
+ * case, matching the console's non-disclosure posture in proxy.ts: a 403 confirms
  * the endpoint exists and that admin-only surface area is worth probing. The two cases
  * are deliberately indistinguishable to the caller.
  */
