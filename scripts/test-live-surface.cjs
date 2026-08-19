@@ -2,12 +2,12 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-process.env.TS_NODE_COMPILER_OPTIONS = JSON.stringify({
-  module: "CommonJS",
-  moduleResolution: "node",
-  target: "ES2020",
-});
-require("ts-node/register/transpile-only");
+/* tsx, not ts-node. ts-node needs an explicit CommonJS compiler override, and the
+   moduleResolution that override has to request ("node", i.e. node10) is deprecated to a
+   hard error in TypeScript 6 — TS5107, which took this whole job down. tsx transpiles
+   without type-checking, the same contract ts-node/register/transpile-only had, needs no
+   compiler options, and is already what every other test script in package.json uses. */
+require("tsx/cjs");
 
 const { getFiatOnrampConfig } = require("../src/lib/fiat-onramp/config.ts");
 const { fundingUnavailableResponse } = require("../src/lib/fiat-onramp/route.ts");
@@ -72,7 +72,7 @@ for (const unsafeSurface of [
   );
 }
 
-const middlewareSource = read("src/middleware.ts");
+const middlewareSource = read("src/proxy.ts");
 assert.equal(middlewareSource.includes("/api/auth/social"), false);
 
 const otpSource = [
