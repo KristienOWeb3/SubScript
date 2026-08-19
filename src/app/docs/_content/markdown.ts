@@ -65,6 +65,7 @@ is almost always to switch endpoints, not to add the flag.
 ## Machine-readable surfaces
 
 - Every docs page has a Markdown twin: append \`.md\` to any docs path (\`/docs/webhooks.md\`).
+- Whole guide as one file: \`/docs.txt\`
 - OpenAPI contract: \`/openapi.json\`
 - LLM index: \`/llms.txt\`
 - Full agent context: \`/llms-full.txt\`
@@ -791,22 +792,85 @@ roadmap or deployment configuration item until the production keeper network is 
 `,
 };
 
+const SITE = "https://www.subscriptonarc.com";
+
+/* The overview owns /docs itself rather than /docs/overview, so its empty slug needs the special
+   case here rather than at every call site. */
+const canonicalFor = (slug: string) => (slug ? `${SITE}/docs/${slug}` : `${SITE}/docs`);
+
+/** Raw Markdown body for a slug with no footer, or null when the slug is not a docs section. */
+export function markdownBodyForSlug(slug: string): string | null {
+  const body = pages[slug];
+  return body === undefined ? null : body;
+}
+
 /** Markdown twin for a slug, with a shared footer pointing at the canonical HTML page. */
 export function markdownForSlug(slug: string): string | null {
-  const body = pages[slug];
-  if (body === undefined) return null;
+  const body = markdownBodyForSlug(slug);
+  if (body === null) return null;
 
   const section = docsSections.find((entry) => entry.slug === slug);
-  const canonical = slug ? `https://www.subscriptonarc.com/docs/${slug}` : "https://www.subscriptonarc.com/docs";
   const title = section ? section.title : "SubScript Docs";
 
   return `${body}
 ---
-Canonical HTML: ${canonical}
+Canonical HTML: ${canonicalFor(slug)}
 Section: ${title}
 All docs pages are available as Markdown by appending .md to the path.
-Index: https://www.subscriptonarc.com/llms.txt
+Whole guide as one file: ${SITE}/docs.txt
+Index: ${SITE}/llms.txt
 `;
+}
+
+/** The whole guide as one document, served at /docs.txt.
+
+    An agent that only has the per-page twins has to discover and fetch every section to read the
+    guide. This is the same prose in reading order, in one request, with a marker per section so a
+    citation can point at the right page.
+
+    Built from docsSections rather than a slug list of its own: a new section threads in here the
+    moment it joins the pager, which is the same property the prev/next walker relies on. */
+export function fullTextDocument(): string {
+  const contents = docsSections
+    .map((section) => `- ${section.title} — ${section.summary} (${canonicalFor(section.slug)})`)
+    .join("\n");
+
+  const sections = docsSections
+    .map((section) => {
+      const body = markdownBodyForSlug(section.slug);
+      if (body === null) return null;
+
+      /* An HTML comment rather than a heading: it carries the slug and canonical URL for an agent
+         without adding a phantom level to the document outline. */
+      return `<!-- section: ${section.slug || "index"} | canonical: ${canonicalFor(section.slug)} -->
+
+${body}`;
+    })
+    .filter((section): section is string => section !== null)
+    .join("\n---\n\n");
+
+  return `# SubScript docs — the whole guide as one file
+
+Every page of the SubScript integration guide, in reading order, for agents and LLMs. Each section
+below carries the canonical URL to cite, and single pages are also available as Markdown by
+appending .md to any docs path.
+
+Canonical HTML docs: ${SITE}/docs
+
+Two conventions that the rest of this file assumes:
+
+- USDC amounts are always positive integer strings in six-decimal micro-USDC. \`"15000000"\` is 15
+  USDC. Never send \`15.00\`.
+- A signed webhook is the only source of truth for fulfillment. Status reads are for dashboards,
+  support tools, and reconciliation, never for releasing goods.
+
+## Contents
+
+${contents}
+
+---
+
+${sections}`;
 }
 
 export const markdownSlugs = Object.keys(pages);
