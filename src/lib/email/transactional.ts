@@ -370,6 +370,44 @@ export async function sendPlatformFlagChangeEmail(input: {
 }
 
 /**
+ * Tell a business its merchant access was approved, and hand it the invite link.
+ *
+ * The link is a convenience, not a credential: signup still requires this exact email to be
+ * verified, so a forwarded link opens nothing. Say that plainly in the email so nobody passes it
+ * around expecting it to work.
+ */
+export async function sendMerchantAccessGrantedEmail(input: {
+    email: string;
+    inviteUrl: string;
+    companyName?: string | null;
+    note?: string | null;
+}) {
+    const greeting = input.companyName ? `Hi ${input.companyName} team,` : "Hi there,";
+    const noteBlock = input.note
+        ? `<p style="margin:0 0 16px;padding:14px;background:#f4f6f8;border-radius:12px;font-size:13px;color:#08090a">${htmlEscape(input.note)}</p>`
+        : "";
+
+    await safelySendEmail("merchant access granted", () => sendTransactionalEmail({
+        to: input.email,
+        subject: "Your SubScript merchant account is approved",
+        text: `${greeting}\n\nYou're approved to open a SubScript merchant account.\n\nOpen this link and sign up with ${input.email}:\n${input.inviteUrl}\n\nThe invite only works for ${input.email}, so there's no point forwarding it. Sign up with email or Google using that address.\n\n${input.note ? `${input.note}\n\n` : ""}Questions? Reply to this email or DM us @SubScript_onarc.`,
+        html: renderEmailLayout({
+            previewText: "You're approved to open a SubScript merchant account",
+            heading: "You're approved",
+            bodyHtml: `
+                <p style="margin:0 0 16px;font-size:14px;color:#08090a">${htmlEscape(greeting)}</p>
+                <p style="margin:0 0 16px;font-size:14px;color:#08090a">You can open a SubScript merchant account and start accepting USDC subscriptions on Arc.</p>
+                ${noteBlock}
+                <p style="margin:0 0 16px;font-size:14px;color:#08090a">Use the button below and sign up with <strong>${htmlEscape(input.email)}</strong> — email or Google, either works.</p>
+                <p style="margin:0;color:#6b7280;font-size:12px">The invite is tied to that address, so forwarding it won't give anyone else a merchant account.</p>
+            `,
+            cta: { label: "Create your merchant account", url: input.inviteUrl },
+        }),
+        idempotencyKey: `merchant-access-granted:${input.email.toLowerCase()}:${input.inviteUrl.slice(-16)}`,
+    }));
+}
+
+/**
  * Notify admins when a new support ticket is opened.
  */
 export async function sendSupportTicketAlertEmail(input: {

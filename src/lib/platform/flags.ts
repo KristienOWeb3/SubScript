@@ -7,7 +7,8 @@ import { prisma } from "@/lib/prisma";
  *
  * FAIL-OPEN. Every read failure resolves to "all features on, not in maintenance". A flags
  * table that blacks out the site when Postgres hiccups is worse than no flags table at all.
- * The single exception is google sign-in, whose consumer inverts this — see isGoogleSigninEnabled.
+ * Two flags invert this — google sign-in (see isGoogleSigninEnabled) and invite-only merchant
+ * signup (see merchantInviteOnlyEnabled in FLAGS_FALLBACK).
  *
  * Cached for 10s in module scope. Serverless instances are reused (Fluid Compute), so this
  * collapses per-request reads without making a toggle feel broken: worst case an operator
@@ -20,6 +21,7 @@ export type PlatformFlags = {
     maintenanceEnabled: boolean;
     maintenanceMessage: string | null;
     externalWalletEnabled: boolean;
+    merchantInviteOnlyEnabled: boolean;
 };
 
 /* What an unreadable table means. Not a "safe default" in the abstract — a deliberate
@@ -29,7 +31,33 @@ export const FLAGS_FALLBACK: PlatformFlags = {
     maintenanceEnabled: false,
     maintenanceMessage: null,
     externalWalletEnabled: true,
+    /* The one field here that does NOT fail open. Every other fallback answers "keep the product
+       working"; this one answers "do not hand out a merchant account we cannot verify was granted".
+       Its consumer (isMerchantInviteOnlyEnforced in @/lib/merchants/accessGrants) also treats a
+       thrown read as enforced, so the two agree. */
+    merchantInviteOnlyEnabled: true,
 };
+
+/* A MISSING singleton row is not the same failure as an unreadable table: the table answered, it
+   just has not been seeded (a fresh local database, say). Mirror the column DEFAULTs rather than
+   the incident fallback, so a dev box does not silently become invite-only. */
+const FLAGS_UNSEEDED: PlatformFlags = {
+    ...FLAGS_FALLBACK,
+    merchantInviteOnlyEnabled: false,
+};
+
+/* "This column does not exist yet" is not an incident either — it means the code is running ahead
+ * of its migration. Prisma reports it as P2022. Treating it like a database outage would flip
+ * merchant signup to invite-only against a schema that has no grants table to check, so every
+ * business would be refused a merchant account until the migration landed. Deploys apply migrations
+ * before building (see package.json:build), so this should never happen — but a half-finished
+ * rollback should degrade to "feature not live", not "feature enforced with nothing to enforce". */
+function isMissingColumnError(error: unknown): boolean {
+    const code = (error as { code?: string } | null)?.code;
+    if (code === "P2022" || code === "42703") return true;
+    const message = error instanceof Error ? error.message : String(error ?? "");
+    return /does not exist in the current database|column .* does not exist/i.test(message);
+}
 
 const CACHE_TTL_MS = 10_000;
 const REDIS_FLAGS_KEY = "platform:flags";
@@ -51,14 +79,15 @@ export async function getPlatformFlags(): Promise<PlatformFlags> {
                   maintenanceEnabled: row.maintenanceEnabled,
                   maintenanceMessage: row.maintenanceMessage,
                   externalWalletEnabled: row.externalWalletEnabled,
+                  merchantInviteOnlyEnabled: row.merchantInviteOnlyEnabled,
               }
-            : FLAGS_FALLBACK;
+            : FLAGS_UNSEEDED;
         cached = { value, at: Date.now() };
         return value;
     } catch (error) {
-        console.error("[flags] read failed, failing open:", error instanceof Error ? error.message : error);
+        console.error("[flags] read failed, using fallbacks:", error instanceof Error ? error.message : error);
         /* Not cached: a transient error should not pin the fallback for 10s. */
-        return FLAGS_FALLBACK;
+        return isMissingColumnError(error) ? FLAGS_UNSEEDED : FLAGS_FALLBACK;
     }
 }
 

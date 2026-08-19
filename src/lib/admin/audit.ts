@@ -25,6 +25,13 @@ export type AdminAction =
     | "RECEIPT_INVITE"
     | "WITHDRAWAL_HOLD_SET"
     | "WITHDRAWAL_HOLD_CLEARED"
+    /* Merchant access. Kept as four distinct actions rather than one MERCHANT_ACCESS_DECISION so an
+       auditor can ask "who let this business in" without reading through declines and link
+       regenerations to find out. */
+    | "MERCHANT_ACCESS_GRANT"
+    | "MERCHANT_ACCESS_DECLINE"
+    | "MERCHANT_ACCESS_REVOKE"
+    | "MERCHANT_INVITE_REGENERATE"
     /* KYC_FORCE_APPROVE is the only action here that overrides a compliance guard rather than
        flipping a product switch, so it is kept distinct from the ordinary KYC_DECISION: an
        auditor filtering this log wants those rows on their own, not buried among routine reviews. */

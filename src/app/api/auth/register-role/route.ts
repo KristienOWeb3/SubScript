@@ -5,6 +5,12 @@ import { withPgClient } from "@/lib/serverPg";
 import { AccountEmailConflictError, assertAccountEmailAvailable, normalizeAccountEmail } from "@/lib/auth/accountEmail";
 import { sanitizeInput } from "@/utils/security";
 import { safelySendEmail, sendWelcomeEmail } from "@/lib/email/transactional";
+import {
+    assertMerchantSignupAllowed,
+    isMerchantInviteOnlyEnforced,
+    markGrantClaimed,
+    type MerchantSignupRefusal,
+} from "@/lib/merchants/accessGrants";
 
 export async function POST(request: Request) {
     try {
@@ -19,7 +25,7 @@ export async function POST(request: Request) {
         }
 
         const sanitizedBody = sanitizeInput(body);
-        const { role, email, merchantSignupCode } = sanitizedBody;
+        const { role, email, merchantSignupCode, merchantInviteToken } = sanitizedBody;
 
         if (role !== "USER" && role !== "ENTERPRISE") {
             return NextResponse.json({ error: "Invalid role selected" }, { status: 400 });
@@ -28,6 +34,10 @@ export async function POST(request: Request) {
         const emailVal = normalizeAccountEmail(email);
 
         const normalizedWallet = wallet.toLowerCase();
+
+        /* Read once, outside the transaction: an env/flag lookup that hits Prisma must not run on
+           the pg client holding this transaction's locks. */
+        const inviteOnlyEnforced = role === "ENTERPRISE" ? await isMerchantInviteOnlyEnforced() : false;
 
         const accountRole = await withPgClient(async (client) => {
             await client.query("begin");
@@ -60,28 +70,10 @@ export async function POST(request: Request) {
                 const verifiedEmailVal = normalizeAccountEmail(verifiedEmailResult.rows[0]?.email);
 
                 if (role === "ENTERPRISE") {
-                    /* Self-serve merchant signup is open by default. Set ALLOW_PUBLIC_MERCHANT_SIGNUP
-                       ="false" to re-gate it behind a MERCHANT_SIGNUP_CODE invite. Either way, merchant
-                       accounts must still be email/embedded (checked below) and KYB verification still
-                       gates trust-sensitive capabilities. */
-                    const disableFlag = (process.env.ALLOW_PUBLIC_MERCHANT_SIGNUP || "").trim().toLowerCase();
-                    const publicMerchantSignupEnabled = !["false", "0", "no", "off"].includes(disableFlag);
-                    const requiredMerchantCode = process.env.MERCHANT_SIGNUP_CODE;
-                    const providedMerchantCode = typeof merchantSignupCode === "string" ? merchantSignupCode.trim() : "";
-                    const hasValidInviteCode = Boolean(requiredMerchantCode) && providedMerchantCode === requiredMerchantCode;
-
-                    if (!publicMerchantSignupEnabled && !hasValidInviteCode) {
-                        await client.query("rollback");
-                        return {
-                            role: "ENTERPRISE",
-                            alreadyRegistered: false,
-                            forbidden: true,
-                        };
-                    }
-
                     /* Merchant accounts must be email/embedded (server-recoverable) wallets, never an
                        external/self-custody wallet — more professional, and required for server-signed
-                       merchant operations (payouts, tier changes, vault draws). */
+                       merchant operations (payouts, tier changes, vault draws). Checked before the
+                       invite gate so an external wallet gets the reason that actually applies to it. */
                     const merchantKeyRow = await client.query(
                         "select encrypted_private_key, circle_wallet_id from user_embedded_wallets where wallet_address = $1 limit 1",
                         [normalizedWallet]
@@ -93,6 +85,44 @@ export async function POST(request: Request) {
                             alreadyRegistered: false,
                             externalWalletMerchant: true,
                         };
+                    }
+
+                    if (inviteOnlyEnforced) {
+                        /* Invite-only: an admin must have granted this exact VERIFIED email. The row is
+                           locked FOR UPDATE inside this transaction and claimed below, so two concurrent
+                           signups cannot both redeem one grant. MERCHANT_SIGNUP_CODE is deliberately not
+                           consulted here — a single shared code that anyone can forward is the thing
+                           per-business grants replace. */
+                        const decision = await assertMerchantSignupAllowed(client, {
+                            verifiedEmail: verifiedEmailVal,
+                            wallet: normalizedWallet,
+                            inviteToken: typeof merchantInviteToken === "string" ? merchantInviteToken : null,
+                        });
+                        if (!decision.allowed) {
+                            await client.query("rollback");
+                            return {
+                                role: "ENTERPRISE",
+                                alreadyRegistered: false,
+                                merchantRefusal: { code: decision.reason, message: decision.message },
+                            };
+                        }
+                    } else {
+                        /* Open self-serve merchant signup, the pre-mainnet default. A
+                           MERCHANT_SIGNUP_CODE, if one is configured, is honoured here only as the
+                           legacy soft gate it always was. */
+                        const requiredMerchantCode = process.env.MERCHANT_SIGNUP_CODE;
+                        const providedMerchantCode = typeof merchantSignupCode === "string" ? merchantSignupCode.trim() : "";
+                        if (requiredMerchantCode && providedMerchantCode && providedMerchantCode !== requiredMerchantCode) {
+                            await client.query("rollback");
+                            return {
+                                role: "ENTERPRISE",
+                                alreadyRegistered: false,
+                                merchantRefusal: {
+                                    code: "MERCHANT_INVITE_REQUIRED" as MerchantSignupRefusal,
+                                    message: "That merchant invite code isn't valid. Check the link you were sent.",
+                                },
+                            };
+                        }
                     }
                 }
 
@@ -118,6 +148,11 @@ export async function POST(request: Request) {
                             updated_at = now()`,
                         [normalizedWallet]
                     );
+                    /* Same transaction as the merchants row: the grant is spent exactly when the
+                       merchant account comes into existence, never before and never without it. */
+                    if (inviteOnlyEnforced && verifiedEmailVal) {
+                        await markGrantClaimed(client, verifiedEmailVal, normalizedWallet);
+                    }
                 } else {
                     await client.query("delete from merchants where wallet_address = $1", [normalizedWallet]);
                     if (verifiedEmailVal) {
@@ -148,9 +183,14 @@ export async function POST(request: Request) {
             }
         });
 
-        if (accountRole.forbidden) {
+        if (accountRole.merchantRefusal) {
+            /* 403 with a code, and no role written — the caller is still authenticated with no
+               account type, so the role picker stays open and they can take a USER account instead
+               of dead-ending here. That is the whole point: an ungranted business is not locked out
+               of SubScript, only out of a merchant account. */
             return NextResponse.json({
-                error: "Merchant onboarding is invite-only. Sign up as a user or use a valid merchant invite link.",
+                error: accountRole.merchantRefusal.message,
+                code: accountRole.merchantRefusal.code,
             }, { status: 403 });
         }
 

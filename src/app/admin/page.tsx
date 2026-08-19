@@ -161,7 +161,43 @@ type PlatformFlags = {
   maintenanceEnabled: boolean;
   maintenanceMessage: string | null;
   externalWalletEnabled: boolean;
+  merchantInviteOnlyEnabled: boolean;
   googleEnvConfigured?: boolean;
+};
+
+type MerchantAccessRequest = {
+  id: string;
+  email: string;
+  companyName: string | null;
+  website: string | null;
+  contactName: string | null;
+  useCase: string | null;
+  monthlyVolume: string | null;
+  status: string;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  createdAt: string;
+};
+
+type MerchantAccessGrant = {
+  email: string;
+  grantedBy: string;
+  inviteUrl: string;
+  inviteSentAt: string | null;
+  claimedAt: string | null;
+  claimedWallet: string | null;
+  revokedAt: string | null;
+  revokedBy: string | null;
+  revokeReason: string | null;
+  note: string | null;
+  createdAt: string;
+};
+
+type MerchantAccessEnforcement = {
+  enabled: boolean;
+  source: "env" | "flag" | "off";
+  isMainnet: boolean;
 };
 
 type KycRecord = {
@@ -229,6 +265,7 @@ type TabId =
   | "analytics"
   | "tickets"
   | "merchants"
+  | "merchant-access"
   | "kyc"
   | "moderation"
   | "system"
@@ -241,6 +278,7 @@ const TABS: Array<{ id: TabId; label: string }> = [
   { id: "analytics", label: "Analytics" },
   { id: "tickets", label: "Support Tickets" },
   { id: "merchants", label: "Merchants" },
+  { id: "merchant-access", label: "Merchant Access" },
   { id: "kyc", label: "KYC" },
   { id: "moderation", label: "Moderation" },
   { id: "system", label: "System" },
@@ -248,6 +286,10 @@ const TABS: Array<{ id: TabId; label: string }> = [
   { id: "receipts", label: "Receipts" },
   { id: "admins", label: "Admins" },
 ];
+
+/* Typing this arms the invite-only switch. It decides whether merchant signup is open to the whole
+   internet, so it should not be one stray click away — same reasoning as the maintenance switch. */
+const MERCHANT_INVITE_ONLY_CONFIRMATION = "invite only";
 
 const CARD =
   "rounded-xl border border-[#e2e8f0] bg-white p-6 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]";
@@ -308,6 +350,19 @@ export default function AdminDashboardPage() {
   /* Typing the word arms the switch. Maintenance takes the whole product down, so it
      should not be one misplaced click away. */
   const [maintenanceConfirm, setMaintenanceConfirm] = useState("");
+
+  const [maRequests, setMaRequests] = useState<MerchantAccessRequest[]>([]);
+  const [maGrants, setMaGrants] = useState<MerchantAccessGrant[]>([]);
+  const [maEnforcement, setMaEnforcement] = useState<MerchantAccessEnforcement | null>(null);
+  const [maLoading, setMaLoading] = useState(false);
+  const [maBusy, setMaBusy] = useState<string | null>(null);
+  const [maStatusFilter, setMaStatusFilter] = useState("PENDING");
+  const [maGrantEmail, setMaGrantEmail] = useState("");
+  const [maGrantNote, setMaGrantNote] = useState("");
+  /* Keyed by request id so two rows open at once cannot share a draft, matching kycReasonDraft. */
+  const [maDeclineDraft, setMaDeclineDraft] = useState<Record<string, string>>({});
+  const [maCopiedEmail, setMaCopiedEmail] = useState<string | null>(null);
+  const [maInviteOnlyConfirm, setMaInviteOnlyConfirm] = useState("");
 
   const [bcTitle, setBcTitle] = useState("");
   const [bcBody, setBcBody] = useState("");
@@ -414,6 +469,25 @@ export default function AdminDashboardPage() {
       setError(err.message || "Failed to load platform flags");
     }
   }, []);
+
+  const loadMerchantAccess = useCallback(async () => {
+    setMaLoading(true);
+    try {
+      const res = await fetch(
+        `/api/admin/merchant-access?status=${encodeURIComponent(maStatusFilter)}`
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to load merchant access");
+      setMaRequests(json.requests || []);
+      setMaGrants(json.grants || []);
+      setMaEnforcement(json.enforcement || null);
+      setViewerIsRoot(Boolean(json.viewerIsRoot));
+    } catch (err: any) {
+      setError(err.message || "Failed to load merchant access");
+    } finally {
+      setMaLoading(false);
+    }
+  }, [maStatusFilter]);
 
   const loadKyc = useCallback(async () => {
     setKycLoading(true);
@@ -543,9 +617,105 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const updateFlag = async (patch: Record<string, unknown>, key: string) => {
-    setFlagBusy(key);
+  /* One helper for every merchant-access action: they all POST the same shape, all reload the
+     queue, and all report through the same notice/error banners. */
+  const merchantAccessAction = async (
+    payload: Record<string, unknown>,
+    busyKey: string
+  ) => {
+    setMaBusy(busyKey);
     setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/admin/merchant-access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Merchant access action failed");
+      setNotice(json.message || "Done.");
+      await loadMerchantAccess();
+      return json;
+    } catch (err: any) {
+      setError(err.message || "Merchant access action failed");
+      return null;
+    } finally {
+      setMaBusy(null);
+    }
+  };
+
+  const grantMerchantAccess = async (
+    email: string,
+    opts: { requestId?: string; note?: string } = {}
+  ) => {
+    const trimmed = email.trim();
+    if (!trimmed) return;
+    const result = await merchantAccessAction(
+      {
+        action: "grant",
+        email: trimmed,
+        requestId: opts.requestId,
+        note: opts.note?.trim() || undefined,
+      },
+      `grant:${opts.requestId || trimmed}`
+    );
+    if (result?.success) {
+      setMaGrantEmail("");
+      setMaGrantNote("");
+    }
+  };
+
+  const declineMerchantRequest = async (requestId: string) => {
+    const reason = (maDeclineDraft[requestId] || "").trim();
+    if (reason.length < 3) {
+      setError("Give a reason — the next admin to read this queue needs to know why.");
+      return;
+    }
+    const result = await merchantAccessAction(
+      { action: "decline", requestId, reason },
+      `decline:${requestId}`
+    );
+    if (result?.success) {
+      setMaDeclineDraft((prev) => {
+        const next = { ...prev };
+        delete next[requestId];
+        return next;
+      });
+    }
+  };
+
+  const revokeMerchantGrant = async (email: string) => {
+    const reason = window.prompt(
+      `Why are you revoking merchant access for ${email}?`,
+      ""
+    );
+    if (reason === null) return;
+    if (reason.trim().length < 3) {
+      setError("A reason is required to revoke merchant access.");
+      return;
+    }
+    await merchantAccessAction(
+      { action: "revoke", email, reason: reason.trim() },
+      `revoke:${email}`
+    );
+  };
+
+  const regenerateMerchantInvite = async (email: string) => {
+    await merchantAccessAction(
+      { action: "regenerate-link", email },
+      `regen:${email}`
+    );
+  };
+
+  const copyInviteLink = (grant: MerchantAccessGrant) => {
+    navigator.clipboard.writeText(grant.inviteUrl);
+    setMaCopiedEmail(grant.email);
+    setTimeout(() => setMaCopiedEmail(null), 2000);
+  };
+
+  const updateFlag = async (patch: Record<string, unknown>, key: string) => {
+    setFlagBusy(key);    setError(null);
     setNotice(null);
     try {
       const res = await fetch("/api/admin/flags", {
@@ -697,7 +867,13 @@ export default function AdminDashboardPage() {
     if (tab === "system") loadFlags();
     if (tab === "kyc") loadKyc();
     if (tab === "moderation") loadWithdrawalHolds();
-  }, [tab, loadAdmins, loadAnalytics, loadFlags, loadKyc, loadWithdrawalHolds]);
+    /* Both: the tab renders the enforcement switch, which lives in platform_flags, alongside the
+       queue that comes from the merchant-access route. */
+    if (tab === "merchant-access") {
+      loadFlags();
+      loadMerchantAccess();
+    }
+  }, [tab, loadAdmins, loadAnalytics, loadFlags, loadKyc, loadWithdrawalHolds, loadMerchantAccess]);
 
   const handleCopySponsor = () => {
     if (!sponsor?.address) return;
@@ -990,6 +1166,7 @@ export default function AdminDashboardPage() {
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "tickets", label: "Support Tickets", icon: MessageSquare },
     { id: "merchants", label: "Merchants", icon: Building2 },
+    { id: "merchant-access", label: "Merchant Access", icon: UserPlus },
     { id: "kyc", label: "KYC Compliance", icon: ShieldCheck },
     { id: "moderation", label: "Moderation & Bans", icon: ShieldAlert },
     { id: "system", label: "System Flags", icon: Sliders },
@@ -1058,7 +1235,10 @@ export default function AdminDashboardPage() {
                       else if (tab === "analytics") loadAnalytics();
                       else if (tab === "system") loadFlags();
                       else if (tab === "kyc") loadKyc();
-                      else if (tab === "moderation") {
+                      else if (tab === "merchant-access") {
+                        loadFlags();
+                        loadMerchantAccess();
+                      } else if (tab === "moderation") {
                         loadWithdrawalHolds();
                         loadData();
                       } else loadData();
@@ -2105,6 +2285,427 @@ export default function AdminDashboardPage() {
                   </>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "merchant-access" && (
+          <div className="space-y-6">
+            {/* 1. The switch. Deliberately first: everything below behaves differently
+                   depending on it, and an operator should never have to guess which mode
+                   they are looking at. */}
+            <div
+              className={`${CARD} space-y-4 ${
+                maEnforcement?.enabled ? "border-[#2775ca]/40" : ""
+              }`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className={LABEL}>Invite-only merchant signup</span>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[9px] font-bold border ${
+                    maEnforcement?.enabled
+                      ? "bg-[#2775ca]/10 text-[#2775ca] border-[#2775ca]/30"
+                      : "bg-amber-50 text-amber-800 border-amber-200"
+                  }`}
+                >
+                  {maEnforcement?.enabled ? "Enforced" : "Not live yet"}
+                </span>
+              </div>
+
+              <p className="text-[11px] leading-relaxed text-[#475569]">
+                {maEnforcement?.enabled
+                  ? "Only emails granted below can open a merchant account. Everyone else who signs up gets a personal user account."
+                  : "Merchant signup is open to anyone right now. Turn this on and only the emails you grant below can open a merchant account — every other signup becomes a user account."}{" "}
+                A user account is never upgraded to a merchant account, in either mode.
+              </p>
+
+              {!maEnforcement?.isMainnet && (
+                <p className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-900">
+                  <span className="font-bold">This is a mainnet control.</span> You&apos;re on
+                  testnet — grant emails now so the queue is ready, but leave the switch off until
+                  mainnet.
+                </p>
+              )}
+
+              {maEnforcement?.source === "env" ? (
+                <p className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-[11px] text-[#475569]">
+                  Forced on by{" "}
+                  <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[#0f172a]">
+                    ALLOW_PUBLIC_MERCHANT_SIGNUP=false
+                  </code>
+                  . Clear that env var and redeploy to manage it from here.
+                </p>
+              ) : !viewerIsRoot ? (
+                <p className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-[11px] text-[#475569]">
+                  You can grant and revoke merchant access below, but only a root admin can change
+                  whether merchant signup is invite-only at all.
+                </p>
+              ) : !flags ? (
+                <SkeletonCard label="Loading the invite-only switch" lines={1} />
+              ) : flags.merchantInviteOnlyEnabled ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateFlag({ merchantInviteOnlyEnabled: false }, "merchantInviteOnly")
+                  }
+                  disabled={flagBusy === "merchantInviteOnly"}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white py-2.5 text-xs font-black uppercase tracking-wider text-[#0f172a] transition hover:bg-slate-50 disabled:opacity-40"
+                >
+                  {flagBusy === "merchantInviteOnly" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Reopen public merchant signup"
+                  )}
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={maInviteOnlyConfirm}
+                    onChange={(e) => setMaInviteOnlyConfirm(e.target.value)}
+                    placeholder={`Type "${MERCHANT_INVITE_ONLY_CONFIRMATION}" to arm`}
+                    className={INPUT}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateFlag({ merchantInviteOnlyEnabled: true }, "merchantInviteOnly");
+                      setMaInviteOnlyConfirm("");
+                    }}
+                    disabled={
+                      flagBusy === "merchantInviteOnly" ||
+                      maInviteOnlyConfirm.trim().toLowerCase() !==
+                        MERCHANT_INVITE_ONLY_CONFIRMATION
+                    }
+                    className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#2775ca] py-2.5 text-xs font-black uppercase tracking-wider text-white transition hover:bg-[#1d5fb0] disabled:opacity-30 shadow-sm"
+                  >
+                    {flagBusy === "merchantInviteOnly" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      "Make merchant signup invite-only"
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 2. The queue. */}
+            <div className={`${CARD} space-y-4`}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">
+                  Access requests
+                </h3>
+                <select
+                  value={maStatusFilter}
+                  onChange={(e) => setMaStatusFilter(e.target.value)}
+                  className={`${INPUT} sm:w-44`}
+                >
+                  <option value="PENDING">Pending</option>
+                  <option value="APPROVED">Approved</option>
+                  <option value="DECLINED">Declined</option>
+                  <option value="ALL">All</option>
+                </select>
+              </div>
+
+              {maLoading ? (
+                <SkeletonRows count={3} label="Loading merchant access requests" />
+              ) : maRequests.length === 0 ? (
+                <p className="text-xs text-[#64748b]">
+                  Nothing here. Businesses land in this queue from{" "}
+                  <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[11px] text-[#0f172a]">
+                    /merchant-access
+                  </code>
+                  , or you can grant an email directly below.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {maRequests.map((r) => (
+                    <div
+                      key={r.id}
+                      className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-[#0f172a] truncate">
+                            {r.companyName || "Unnamed business"}
+                          </p>
+                          <p className="font-mono text-[11px] text-[#475569] break-all">
+                            {r.email}
+                          </p>
+                        </div>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[9px] font-bold border ${
+                            r.status === "PENDING"
+                              ? "bg-amber-50 text-amber-800 border-amber-200"
+                              : r.status === "APPROVED"
+                                ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                : "bg-slate-100 text-[#475569] border-slate-200"
+                          }`}
+                        >
+                          {r.status}
+                        </span>
+                      </div>
+
+                      <dl className="grid gap-x-4 gap-y-1 text-[11px] text-[#475569] sm:grid-cols-2">
+                        {r.contactName && (
+                          <div>
+                            <dt className="inline font-bold text-[#0f172a]">Contact: </dt>
+                            <dd className="inline">{r.contactName}</dd>
+                          </div>
+                        )}
+                        {r.website && (
+                          <div className="min-w-0">
+                            <dt className="inline font-bold text-[#0f172a]">Site: </dt>
+                            <dd className="inline break-all">{r.website}</dd>
+                          </div>
+                        )}
+                        {r.useCase && (
+                          <div>
+                            <dt className="inline font-bold text-[#0f172a]">Use case: </dt>
+                            <dd className="inline">{r.useCase}</dd>
+                          </div>
+                        )}
+                        {r.monthlyVolume && (
+                          <div>
+                            <dt className="inline font-bold text-[#0f172a]">Volume: </dt>
+                            <dd className="inline">{r.monthlyVolume}</dd>
+                          </div>
+                        )}
+                        <div>
+                          <dt className="inline font-bold text-[#0f172a]">Submitted: </dt>
+                          <dd className="inline">
+                            {new Date(r.createdAt).toLocaleString()}
+                          </dd>
+                        </div>
+                      </dl>
+
+                      {r.status === "PENDING" ? (
+                        <div className="space-y-2 border-t border-slate-200 pt-3">
+                          <div className="flex flex-col gap-2 sm:flex-row">
+                            <input
+                              type="text"
+                              value={maDeclineDraft[r.id] || ""}
+                              onChange={(e) =>
+                                setMaDeclineDraft((prev) => ({
+                                  ...prev,
+                                  [r.id]: e.target.value,
+                                }))
+                              }
+                              placeholder="Note — sent with an approval, required to decline"
+                              className={`${INPUT} sm:flex-1`}
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  grantMerchantAccess(r.email, {
+                                    requestId: r.id,
+                                    note: maDeclineDraft[r.id],
+                                  })
+                                }
+                                disabled={maBusy === `grant:${r.id}`}
+                                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-black uppercase tracking-wider text-white transition hover:bg-emerald-700 disabled:opacity-40 shadow-sm"
+                              >
+                                {maBusy === `grant:${r.id}` ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  "Approve"
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => declineMerchantRequest(r.id)}
+                                disabled={maBusy === `decline:${r.id}`}
+                                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-black uppercase tracking-wider text-[#0f172a] transition hover:bg-slate-50 disabled:opacity-40"
+                              >
+                                {maBusy === `decline:${r.id}` ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  "Decline"
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                          <p className="text-[10px] text-[#64748b]">
+                            Approving emails them an invite link tied to {r.email} and nothing else.
+                            Declining is silent — reach out yourself if it deserves a reply.
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="border-t border-slate-200 pt-3 text-[11px] text-[#64748b]">
+                          {r.status === "APPROVED" ? "Approved" : "Declined"}
+                          {r.decidedBy
+                            ? ` by ${r.decidedBy.slice(0, 6)}...${r.decidedBy.slice(-4)}`
+                            : ""}
+                          {r.decidedAt ? ` on ${new Date(r.decidedAt).toLocaleString()}` : ""}
+                          {r.decisionNote ? ` — "${r.decisionNote}"` : ""}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 3. Live grants — the list that actually decides who can sign up. */}
+            <div className={`${CARD} space-y-3`}>
+              <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">
+                Merchant grants
+              </h3>
+              <p className="text-[11px] text-[#475569]">
+                An invite link only works for the email it was issued to, so forwarding one grants
+                nothing.
+              </p>
+
+              {maLoading ? (
+                <SkeletonRows count={3} label="Loading merchant grants" />
+              ) : maGrants.length === 0 ? (
+                <p className="text-xs text-[#64748b]">No merchant grants yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {maGrants.map((g) => (
+                    <div
+                      key={g.email}
+                      className={`rounded-2xl border p-3.5 text-xs space-y-2.5 ${
+                        g.revokedAt
+                          ? "border-slate-200 bg-slate-100 opacity-70"
+                          : "border-slate-200 bg-slate-50"
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-mono font-bold text-[#0f172a] break-all">
+                            {g.email}
+                          </p>
+                          <p className="mt-0.5 text-[10px] text-[#64748b]">
+                            Granted by {g.grantedBy.slice(0, 6)}...{g.grantedBy.slice(-4)} on{" "}
+                            {new Date(g.createdAt).toLocaleDateString()}
+                            {g.note ? ` — "${g.note}"` : ""}
+                          </p>
+                        </div>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[9px] font-bold border ${
+                            g.revokedAt
+                              ? "bg-red-50 text-red-800 border-red-200"
+                              : g.claimedAt
+                                ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                : "bg-amber-50 text-amber-800 border-amber-200"
+                          }`}
+                        >
+                          {g.revokedAt ? "Revoked" : g.claimedAt ? "Claimed" : "Unclaimed"}
+                        </span>
+                      </div>
+
+                      {g.claimedAt && (
+                        <p className="text-[10px] text-[#64748b] break-all">
+                          Opened {new Date(g.claimedAt).toLocaleString()}
+                          {g.claimedWallet ? ` by ${g.claimedWallet}` : ""}
+                        </p>
+                      )}
+                      {g.revokedAt && g.revokeReason && (
+                        <p className="text-[10px] text-red-800">
+                          Revoked: {g.revokeReason}
+                        </p>
+                      )}
+
+                      {!g.revokedAt && (
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => copyInviteLink(g)}
+                            className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#0f172a] transition hover:bg-slate-50"
+                          >
+                            <Copy className="h-3 w-3" />
+                            {maCopiedEmail === g.email ? "Copied" : "Copy invite link"}
+                          </button>
+                          {!g.claimedAt && (
+                            <button
+                              type="button"
+                              onClick={() => regenerateMerchantInvite(g.email)}
+                              disabled={maBusy === `regen:${g.email}`}
+                              className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#0f172a] transition hover:bg-slate-50 disabled:opacity-40"
+                            >
+                              {maBusy === `regen:${g.email}` ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <RefreshCw className="h-3 w-3" />
+                              )}
+                              New link
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => revokeMerchantGrant(g.email)}
+                            disabled={maBusy === `revoke:${g.email}`}
+                            className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[10px] font-bold text-red-800 transition hover:bg-red-100 disabled:opacity-40"
+                          >
+                            {maBusy === `revoke:${g.email}` ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3 w-3" />
+                            )}
+                            Revoke
+                          </button>
+                        </div>
+                      )}
+                      {g.claimedAt && !g.revokedAt && (
+                        <p className="text-[10px] text-[#64748b]">
+                          Revoking now kills the link but leaves the merchant account running — use
+                          Moderation to hold or ban it.
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 4. For businesses that reached us somewhere other than the form. */}
+            <div className={`${CARD} space-y-3`}>
+              <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">
+                Grant access directly
+              </h3>
+              <p className="text-[11px] text-[#475569]">
+                For a business that reached you on X or by email instead of the request form. The
+                email can&apos;t already have a SubScript account — a user account is never upgraded
+                to a merchant account.
+              </p>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  grantMerchantAccess(maGrantEmail, { note: maGrantNote });
+                }}
+                className="flex flex-col gap-3 sm:flex-row sm:items-center"
+              >
+                <input
+                  type="email"
+                  value={maGrantEmail}
+                  onChange={(e) => setMaGrantEmail(e.target.value)}
+                  placeholder="billing@company.com"
+                  className={`${INPUT} sm:flex-1`}
+                />
+                <input
+                  type="text"
+                  value={maGrantNote}
+                  onChange={(e) => setMaGrantNote(e.target.value)}
+                  placeholder="Note (optional)"
+                  className={`${INPUT} sm:w-56`}
+                />
+                <button
+                  type="submit"
+                  disabled={
+                    maBusy === `grant:${maGrantEmail.trim()}` || !maGrantEmail.trim()
+                  }
+                  className="flex items-center justify-center gap-2 rounded-xl bg-[#2775ca] px-4 py-2 text-xs font-black uppercase tracking-wider text-white transition hover:bg-[#1d5fb0] disabled:opacity-40 shadow-sm"
+                >
+                  {maBusy === `grant:${maGrantEmail.trim()}` ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <UserPlus className="h-4 w-4" />
+                  )}
+                  Grant
+                </button>
+              </form>
             </div>
           </div>
         )}

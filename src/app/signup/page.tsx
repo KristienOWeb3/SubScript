@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import posthog from "posthog-js";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAccount, useConnect, useSignMessage } from "wagmi";
 import { 
@@ -35,6 +36,9 @@ declare global {
 
 /* Survives the Google OAuth redirect, which remounts this page and clears React state. */
 const PRESELECTED_ROLE_KEY = "subscript_preselected_role";
+
+/* Where a business that isn't approved yet can reach us instead of bouncing off the merchant card. */
+const X_HANDLE_URL = "https://x.com/SubScript_onarc";
 
 /* The role here selects an account type that cannot be changed afterwards, so the value is only
    allowed to live as long as one authentication hand-off plausibly takes. Anything older is a
@@ -105,7 +109,7 @@ export default function SignupPage() {
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending: isConnecting } = useConnect();
   const { signMessageAsync } = useSignMessage();
-  const { externalWalletEnabled, googleSigninEnabled, loaded: platformFlagsLoaded } = usePlatformFlags();
+  const { externalWalletEnabled, googleSigninEnabled, merchantInviteOnlyEnabled, loaded: platformFlagsLoaded } = usePlatformFlags();
   const googleAvailable = CIRCLE_GOOGLE_ENABLED && platformFlagsLoaded && googleSigninEnabled;
 
   const [authMethod, setAuthMethod] = useState<"select" | "email">("select");
@@ -121,7 +125,16 @@ export default function SignupPage() {
   const [walletAuthRequested, setWalletAuthRequested] = useState(false);
   const [walletSignupPrompt, setWalletSignupPrompt] = useState(false);
   const [merchantSignupIntent, setMerchantSignupIntent] = useState(false);
-  const [merchantSignupCode, setMerchantSignupCode] = useState("");
+  /* Whatever came in on ?invite= / ?merchantCode=. Under invite-only enforcement the server treats
+     it as a token bound to one granted email; before then it is the legacy shared code. Either way
+     it is a hint, never the thing that decides — the server checks the verified email. */
+  const [merchantInvite, setMerchantInvite] = useState("");
+  /* Set when the server refuses a merchant signup for want of an invite, so the picker can offer
+     the request-access route instead of a bare error. */
+  const [merchantInviteBlocked, setMerchantInviteBlocked] = useState(false);
+  /* An invite link in the URL means an admin already approved this business, so the invite-only
+     nudge would just be noise on the way in. */
+  const inviteOnlyNotice = merchantInviteOnlyEnabled && !merchantInvite;
 
   /* Role selection states */
   const [showRoleSelector, setShowRoleSelector] = useState(false);
@@ -262,7 +275,7 @@ export default function SignupPage() {
         setSelectedRole(storedRole);
       }
     }
-    setMerchantSignupCode(params.get("merchantCode") || params.get("invite") || "");
+    setMerchantInvite(params.get("merchantCode") || params.get("invite") || "");
 
     const refParam = params.get("ref") || params.get("referral");
     if (refParam) {
@@ -332,7 +345,10 @@ export default function SignupPage() {
         body: JSON.stringify({
           role: intendedRole,
           email: userEmail || undefined,
-          merchantSignupCode: intendedRole === "ENTERPRISE" ? merchantSignupCode : undefined,
+          /* Both keys: the server reads merchantInviteToken under invite-only enforcement and
+             merchantSignupCode before it. One state, so a link keeps working either way. */
+          merchantInviteToken: intendedRole === "ENTERPRISE" ? merchantInvite : undefined,
+          merchantSignupCode: intendedRole === "ENTERPRISE" ? merchantInvite : undefined,
         }),
       })
         .then((res) => res.json())
@@ -347,10 +363,14 @@ export default function SignupPage() {
             });
           } else {
             /* Reopening the picker without the reason reads as "your choice didn't take" — the
-               user re-picks the same card and hits the same rejection. A bad merchant code, for
-               instance, is only fixable once it's named. */
+               user re-picks the same card and hits the same rejection. A missing merchant invite,
+               for instance, is only fixable once it's named. */
             clearPreselectedRole();
             setRoleError(regData.error || "Failed to register account type.");
+            setMerchantInviteBlocked(typeof regData.code === "string" && regData.code.startsWith("MERCHANT_"));
+            /* Nothing was written, so USER is still available on the picker. An ungranted business
+               is not locked out of SubScript — only out of a merchant account. */
+            setSelectedRole(null);
             setShowRoleSelector(true);
           }
         })
@@ -369,7 +389,7 @@ export default function SignupPage() {
       }
       setShowRoleSelector(true);
     }
-  }, [email, selectedRole, merchantSignupCode, triggerReferralLogging]);
+  }, [email, selectedRole, merchantInvite, triggerReferralLogging]);
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -520,6 +540,7 @@ export default function SignupPage() {
     }
     setRoleLoading(true);
     setRoleError(null);
+    setMerchantInviteBlocked(false);
     try {
       const res = await fetch("/api/auth/register-role", {
         method: "POST",
@@ -527,7 +548,8 @@ export default function SignupPage() {
         body: JSON.stringify({
           role: selectedRole,
           email: requiresEmailLinking ? email : undefined,
-          merchantSignupCode: selectedRole === "ENTERPRISE" ? merchantSignupCode : undefined,
+          merchantInviteToken: selectedRole === "ENTERPRISE" ? merchantInvite : undefined,
+          merchantSignupCode: selectedRole === "ENTERPRISE" ? merchantInvite : undefined,
         }),
       });
       const data = await res.json();
@@ -541,6 +563,7 @@ export default function SignupPage() {
         });
       } else {
         setRoleError(data.error || "Failed to register account type.");
+        setMerchantInviteBlocked(typeof data.code === "string" && data.code.startsWith("MERCHANT_"));
       }
     } catch (err) {
       setRoleError("Network error registering account type.");
@@ -653,14 +676,49 @@ export default function SignupPage() {
                     }`}>
                       Enterprise Merchant
                     </h3>
-                    <span className="text-[9px] text-[#00d2b4] uppercase font-bold tracking-wider">Merchant Dashboard</span>
+                    <span className="text-[9px] text-[#00d2b4] uppercase font-bold tracking-wider">
+                      {inviteOnlyNotice ? "Invite only" : "Merchant Dashboard"}
+                    </span>
                   </div>
                 </div>
                 <p className="text-[11px] text-white/50 mt-3 leading-relaxed">
                   Configure subscription tiers, generate hosted payment links, run automated payroll runs, and manage cashflow.
                 </p>
+                {/* Selectable either way — an approved business still has to come through this card,
+                    and we can't tell from here whether this visitor is one. The server decides. */}
+                {inviteOnlyNotice && (
+                  <p className="text-[10px] text-[#00d2b4]/80 mt-2.5 leading-relaxed">
+                    We approve merchants one at a time. Already approved? Sign up with the email we
+                    approved. Not yet? Request access below.
+                  </p>
+                )}
               </button>
             </div>
+
+            {inviteOnlyNotice && (
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 space-y-2.5 text-left">
+                <p className="text-[11px] text-white/60 leading-relaxed">
+                  Need a merchant account? Tell us about your business and we&apos;ll email you an invite.
+                </p>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                  <Link
+                    href="/merchant-access"
+                    className="text-[11px] font-bold uppercase tracking-wider text-[#00d2b4] hover:text-[#00d2b4]/80 transition-colors"
+                  >
+                    Request merchant access
+                  </Link>
+                  <span className="text-white/20">·</span>
+                  <a
+                    href={X_HANDLE_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] font-bold uppercase tracking-wider text-white/50 hover:text-white transition-colors"
+                  >
+                    Or DM us on X
+                  </a>
+                </div>
+              </div>
+            )}
 
             {requiresEmailLinking && isExternalWalletSignup && (
               <div className="space-y-2 pt-2 text-left">
@@ -687,7 +745,30 @@ export default function SignupPage() {
             {roleError && (
               <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-400 flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                <span className="leading-relaxed">{roleError}</span>
+                <div className="space-y-2">
+                  <span className="leading-relaxed block">{roleError}</span>
+                  {/* Refused for want of an invite: point at the fix. Without this the user re-picks
+                      the same card and hits the same wall. */}
+                  {merchantInviteBlocked && (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <Link
+                        href="/merchant-access"
+                        className="text-[11px] font-bold uppercase tracking-wider text-[#00d2b4] hover:text-[#00d2b4]/80 transition-colors"
+                      >
+                        Request merchant access
+                      </Link>
+                      <span className="text-white/20">·</span>
+                      <a
+                        href={X_HANDLE_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] font-bold uppercase tracking-wider text-white/50 hover:text-white transition-colors"
+                      >
+                        DM us on X
+                      </a>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -848,6 +929,38 @@ export default function SignupPage() {
               <p className="text-center text-xs text-white/50 leading-relaxed px-2">
                 Configure your payout wallet and secure your connection to the subscription system.
               </p>
+
+              {/* Arrived through the merchant funnel while invite-only is on. Say so before they
+                  authenticate — finding out after verifying an email is a worse way to learn it. */}
+              {inviteOnlyNotice && merchantSignupIntent && (
+                <div className="rounded-2xl border border-[#00d2b4]/25 bg-[#00d2b4]/[0.06] p-4 space-y-2 text-left">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-[#00d2b4]">
+                    Merchant accounts are invite only
+                  </p>
+                  <p className="text-[11px] text-white/60 leading-relaxed">
+                    We approve businesses one at a time. If we&apos;ve already approved you, sign up
+                    below with that email. If not, ask us first — signing up without an invite gets
+                    you a personal account.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                    <Link
+                      href="/merchant-access"
+                      className="text-[11px] font-bold uppercase tracking-wider text-[#00d2b4] hover:text-[#00d2b4]/80 transition-colors"
+                    >
+                      Request merchant access
+                    </Link>
+                    <span className="text-white/20">·</span>
+                    <a
+                      href={X_HANDLE_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] font-bold uppercase tracking-wider text-white/50 hover:text-white transition-colors"
+                    >
+                      Or DM us on X
+                    </a>
+                  </div>
+                </div>
+              )}
 
               <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 text-[10px] leading-relaxed text-emerald-300 flex items-start gap-2">
                 <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />

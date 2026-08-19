@@ -45,6 +45,19 @@ export async function POST(request: Request) {
                 ? String(body.maintenanceMessage).trim().slice(0, 300)
                 : null;
         }
+        /* Root-only, unlike the switches above. Granting one business merchant access is routine
+           review work any admin does; deciding whether merchant accounts are open to the public at
+           all is a platform-shape change, and it lands on the same side of the line as managing the
+           admin list itself (see requireRootAdmin). */
+        if (typeof body?.merchantInviteOnlyEnabled === "boolean") {
+            if (!auth.admin.isRoot) {
+                return NextResponse.json(
+                    { error: "Only root admins (ADMIN_WALLET_ADDRESSES) can change invite-only merchant signup." },
+                    { status: 403 },
+                );
+            }
+            data.merchantInviteOnlyEnabled = body.merchantInviteOnlyEnabled;
+        }
 
         if (Object.keys(data).length === 2) {
             return NextResponse.json({ error: "No flag changes supplied" }, { status: 400 });
@@ -61,6 +74,7 @@ export async function POST(request: Request) {
             maintenanceEnabled: row.maintenanceEnabled,
             maintenanceMessage: row.maintenanceMessage,
             externalWalletEnabled: row.externalWalletEnabled,
+            merchantInviteOnlyEnabled: row.merchantInviteOnlyEnabled,
         };
 
         /* Drop the local cache immediately so this instance reflects the change without
@@ -121,6 +135,9 @@ export async function POST(request: Request) {
             }
             if (before.maintenanceEnabled !== after.maintenanceEnabled) {
                 changes.push({ flagName: "Maintenance Mode", prev: before.maintenanceEnabled ? "Enabled" : "Disabled", next: after.maintenanceEnabled ? "Enabled" : "Disabled" });
+            }
+            if (before.merchantInviteOnlyEnabled !== after.merchantInviteOnlyEnabled) {
+                changes.push({ flagName: "Invite-only merchant signup", prev: before.merchantInviteOnlyEnabled ? "Enabled" : "Disabled", next: after.merchantInviteOnlyEnabled ? "Enabled" : "Disabled" });
             }
 
             // Send notification emails in background
