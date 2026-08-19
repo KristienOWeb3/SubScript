@@ -7,6 +7,12 @@
 # 250 characters, which it fits) and the rules in reviews.path_instructions, scoped to the files each
 # one is actually about. The $schema line above makes the next typo an editor error rather than a
 # silent no-op.
+#
+# Revised after PR #155, where the review caught two real defects (a truncated wallet address from an
+# unanchored regex, and a percent-encoded separator passing a route allow-list) but also produced two
+# false positives traceable to this file and to CLAUDE.md. Both have been corrected below. The rule of
+# thumb applied: a path instruction should describe a defect the reviewer can verify in the diff, not
+# a house preference stated as a fact about the runtime.
 language: "en-US"
 tone_instructions: "Act as a Principal Web3 Security Auditor and Protocol Engineer. You are auditing the SubScript Protocol, an event-sourced recurring revenue infrastructure built on Next.js, PostgreSQL, and Solidity."
 reviews:
@@ -15,9 +21,16 @@ reviews:
   high_level_summary: true
   poem: false
   path_instructions:
-    - path: "**"
+    - path: "src/**"
       instructions: |
-        - Flag and request changes for any emojis found in the code, comments, UI text strings, or commit messages.
+        - Flag emojis in source code, code comments, and user-facing UI strings.
+        - This rule covers reviewed source files only. It previously also claimed commit messages and
+          included every path in the repository, which had two problems: path_instructions are
+          evaluated per reviewed file and never see a commit message, so that half was unenforceable;
+          and the automated tooling this repository uses appends an attribution line containing an
+          emoji to pull request bodies and review replies. Flagging those produced noise on every PR
+          for text no human wrote and no user ever sees. Product surfaces are the thing worth keeping
+          clean, so the rule is scoped to `src/**`.
     - path: "**/*.sol"
       instructions: |
         Strict Security Focus - Solidity:
@@ -30,14 +43,69 @@ reviews:
         Strict Security Focus - Next.js & Backend:
         - Ensure all Next.js App Router `/api` endpoints explicitly verify the user's wallet session or signature before executing database state changes.
         - Flag any database queries (Prisma/SQL) that lack proper parameterized sanitation.
+        - Compare the authorization checks of every method in a route handler against each other. A
+          GET that verifies ownership beside a POST that does not is the shape to look for: the
+          asymmetry reads as intentional and is almost never noticed. This is exactly how
+          `POST /api/support/tickets/[id]/messages` shipped with no ownership check while its GET had
+          one, letting any authenticated wallet write into, and read back, a stranger's ticket.
+        - Flag responses that distinguish "does not exist" from "not yours" for a resource the caller
+          is not entitled to. Returning 404 for one and 403 for the other confirms the resource exists
+          and is an enumeration oracle. Prefer one indistinguishable response for unauthorized
+          callers, keeping the distinction only for roles entitled to it.
     - path: "src/lib/**"
       instructions: |
         Strict Security Focus - Next.js & Backend:
         - Audit the two-phase batch payout workers and event-sourced ledger updates for race conditions, idempotency failures, or unhandled promise rejections.
         - Flag any database queries (Prisma/SQL) that lack proper parameterized sanitation.
-    - path: "**/*.{ts,tsx}"
+        - Flag a state check that is a separate statement from the write it guards. Reading a status
+          and then inserting on the strength of it is a time-of-check-to-time-of-use gap; the check
+          belongs in the write, as a conditional `WHERE` with `RETURNING` to report rejection, or
+          inside a transaction holding a row lock.
+        - Scrutinize any regex that extracts a value with financial or routing meaning — a wallet
+          address, an amount, a token, an identifier. Require anchors or boundary assertions and ask
+          what a longer or differently-shaped input matches. An unanchored `0x[a-fA-F0-9]{40}` accepts
+          the first 40 digits of a 41-digit run and yields a well-formed address that is not the one
+          in the input; anything downstream that treats extraction as validation then acts on it.
+        - When a value crossing a trust boundary is allow-listed by pattern, check the pattern against
+          percent-encoded and alternately-encoded forms of the delimiters it relies on. `[^/]+`
+          matches `%2F` as readily as any other character, so a "single path segment" test admits an
+          encoded separator and defers the real decision to whatever normalizes the value later.
+    - path: "src/**/*.{ts,tsx}"
       instructions: |
-        Mandatory Formatting Constraints (CRITICAL):
-        - Both double-slash (//) and block (/* ... */) comments are permitted in TypeScript and JavaScript scopes. However, inside JSX return blocks, comments must always be wrapped as JSX expressions: {/* comment */}. Raw /* ... */ or // comments inside JSX will render as visible DOM text and must be flagged as a critical UI regression.
+        Mandatory Formatting Constraints:
+        - Both `//` and `/* ... */` comments are permitted in TypeScript and JavaScript scopes.
+        - Inside JSX, a comment in *children* position — between element tags, where text would render
+          — must be wrapped as a JSX expression: `{/* comment */}`. A raw comment there does render as
+          visible DOM text, and that is a genuine UI regression worth flagging.
+        - A comment in *expression* position is not that defect and must not be reported as one. A
+          `/* ... */` immediately after `return (`, or at the head of a ternary branch before the
+          element it labels, is an ordinary JavaScript comment: it compiles away and renders nothing.
+          `{/* ... */}` is not even valid syntax in those positions, so demanding the wrapper there
+          asks for a change that will not compile. If such a comment should move for consistency, ask
+          for it to be lifted above the `return`, and do not describe it as a rendering bug.
+    - path: "src/app/globals.css"
+      instructions: |
+        Theme Override Layers:
+        - This file re-paints Tailwind utility classes for the light redesign and for dark mode, and
+          the selectors are the sharp edge. `[class*="bg-black/"]` matches `hover:bg-black/[0.02]`
+          just as readily as the resting token, so a substring selector silently paints a hover-only
+          state onto the element permanently. Flag substring matching on fill, text, and border
+          utilities; whole-token `~=` is what these rules want.
+        - When a rule re-paints a background, check that a companion rule moves the foreground with
+          it. Repainting a light accent fill to a dark one while a `text-black` label stays put is how
+          this file produced black-on-black buttons more than once.
+        - Foreground rescue rules must match the element that carries both classes, not only its
+          descendants. A filled button holds its fill and its text colour on the same element, so a
+          descendant-only selector never reaches it.
+    - path: "src/**/*.tsx"
+      instructions: |
+        Design System (current):
+        - User-facing surfaces use the cream redesign: `bg-[#FFFFF0]` shells, white or cream cards with
+          `border-black/10`-family borders, `text-[#111827]` ink, and the `#2775CA` blue accent. The
+          public pages `/pay/[id]` and `/dm/invite/[token]` follow this, as do the DM surfaces.
+        - Merchant dashboard surfaces use the `#00d2b4` teal accent within the same light system.
+        - The dark glassmorphism style with the lime `#ccff00` user accent is the retired design. Do
+          not request that new or reworked UI be returned to it. CLAUDE.md described it as current for
+          longer than it was true, which produced a review asking for a corrected page to be reverted.
 chat:
   auto_reply: true
