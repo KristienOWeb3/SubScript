@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Wallet, Send, Loader2, ShieldCheck, CheckCircle2, QrCode } from "@/components/icons";
 import { ethers } from "ethers";
 import QrScannerModal from "@/components/QrScannerModal";
+import { parseScannedAddress } from "@/lib/qr/scanTargets";
 
 interface SendWalletModalProps {
     isOpen: boolean;
@@ -13,6 +14,8 @@ interface SendWalletModalProps {
     connectedAddress: string;
     onConfirmSend: (recipientAddress: string, amountUsdc: number) => Promise<void>;
     isSending: boolean;
+    /** Prefills the recipient when the dialog opens — used when a scanned QR resolved to an address. */
+    initialRecipient?: string;
 }
 
 export default function SendWalletModal({
@@ -22,12 +25,22 @@ export default function SendWalletModal({
     connectedAddress,
     onConfirmSend,
     isSending,
+    initialRecipient,
 }: SendWalletModalProps) {
     const [recipientAddress, setRecipientAddress] = useState("");
     const [amount, setAmount] = useState("");
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [successTx, setSuccessTx] = useState(false);
     const [isScanning, setIsScanning] = useState(false);
+
+    /* The parent keeps this mounted and toggles `isOpen`, so state survives a close. Applying the
+       prefill on open (rather than as an initial useState value) is what makes a second scan land. */
+    useEffect(() => {
+        if (isOpen && initialRecipient) {
+            setRecipientAddress(initialRecipient);
+            setErrorMsg(null);
+        }
+    }, [isOpen, initialRecipient]);
 
     if (!isOpen) return null;
 
@@ -108,7 +121,9 @@ export default function SendWalletModal({
                         isOpen={isScanning}
                         onClose={() => setIsScanning(false)}
                         onScan={(scanned) => {
-                            setRecipientAddress(scanned);
+                            /* This field wants an address, so ask for one explicitly — the scanner
+                               now reports what it saw rather than guessing what the caller wanted. */
+                            setRecipientAddress(parseScannedAddress(scanned));
                             setIsScanning(false);
                         }}
                         title="Scan Recipient QR Code"
