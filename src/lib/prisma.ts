@@ -1,8 +1,9 @@
 import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { getDatabaseUrl } from "@/lib/databaseUrl";
-import { 
-    isConnectionError, 
-    getOfflineAccountRole, 
+import {
+    isConnectionError,
+    getOfflineAccountRole,
     upsertOfflineAccountRole,
     upsertOfflineMerchant,
     upsertOfflineCustomer
@@ -23,14 +24,19 @@ const offlineFallbackEnabled = process.env.NODE_ENV !== "production";
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
+/* Prisma 7 removed the `datasources` constructor override along with `url` in the schema: the client
+   is handed a driver adapter instead, and queries run over that driver rather than Prisma's own
+   engine connection. PrismaPg wraps node-postgres, which this project already depends on for the raw
+   `serverPg` layer, so both paths now pool through the same driver.
+   The URL still comes from getDatabaseUrl, which prefers the pooler and keeps the build-time
+   fallback — `next build` imports modules that reach this file, and must not need real credentials
+   to do it. */
 const rawPrisma =
     globalForPrisma.prisma ||
     new PrismaClient({
-        datasources: {
-            db: {
-                url: getDatabaseUrl({ allowBuildTimeFallback: true, forPrisma: true }),
-            },
-        },
+        adapter: new PrismaPg({
+            connectionString: getDatabaseUrl({ allowBuildTimeFallback: true, forPrisma: true }),
+        }),
         log: ["query"],
     });
 
