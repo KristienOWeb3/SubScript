@@ -26,6 +26,22 @@ import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
+import { activeSubscriptionContract } from "@/lib/subscriptions/contractBinding";
+
+/* Every query below is scoped with `.eq("contract_address", activeSubscriptionContract())`.
+ *
+ * `subscriptions` is keyed (contract_address, subscription_id) because the PSA is immutable: each
+ * redeploy restarts nextSubscriptionId at 1 and re-mints ids that already exist. So an id is only
+ * meaningful against the contract that minted it, and this file compares every row it reads to
+ * on-chain state read from STANDARD_CONTRACT_ADDRESS — the ACTIVE deployment.
+ *
+ * Unscoped, a row from an abandoned deployment gets its id looked up on the active contract, which
+ * answers about a different subscription (or none). The zero-subscriber guard below catches the
+ * "none" case, but not the case that matters: when the active contract HAS minted that id to
+ * somebody else, this healer reads a stranger's terms and heals the wrong row against them.
+ *
+ * The writes need it just as much as the reads. `.eq("subscription_id", subId)` with no contract
+ * filter updates every generation's copy of that id at once — and ids ARE duplicated in practice. */
 
 const STANDARD_ABI = [
     "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive)",
@@ -60,6 +76,7 @@ export async function healSubscriptionDrift(
     const { data: liveSubs, error: liveErr } = await supabase
         .from("subscriptions")
         .select("subscription_id, merchant_address, status, amount_cap_usdc, beneficiary_address, external_reference, source_checkout_id, last_settlement_timestamp, updated_at")
+        .eq("contract_address", activeSubscriptionContract())
         .in("status", ["ACTIVE", "PAST_DUE"])
         .order("updated_at", { ascending: true })
         .limit(liveBudget);
@@ -69,6 +86,7 @@ export async function healSubscriptionDrift(
     const { data: cancelledSubs, error: cancErr } = await supabase
         .from("subscriptions")
         .select("subscription_id, merchant_address, status, amount_cap_usdc, beneficiary_address, external_reference, source_checkout_id, updated_at")
+        .eq("contract_address", activeSubscriptionContract())
         .eq("status", "CANCELED")
         .gte("updated_at", fourteenDaysAgo)
         .order("updated_at", { ascending: true })
@@ -98,6 +116,7 @@ export async function healSubscriptionDrift(
                 await supabase
                     .from("subscriptions")
                     .update({ status: "CANCELED", updated_at: new Date().toISOString() })
+                    .eq("contract_address", activeSubscriptionContract())
                     .eq("subscription_id", subId);
                 await dispatchDurableSubscriptionWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
                     subscriptionId: subId,
@@ -156,6 +175,7 @@ export async function healSubscriptionDrift(
                 await supabase
                     .from("subscriptions")
                     .update({ updated_at: new Date().toISOString() })
+                    .eq("contract_address", activeSubscriptionContract())
                     .eq("subscription_id", subId);
                 continue;
             }
@@ -183,6 +203,7 @@ export async function healSubscriptionDrift(
                                 last_settlement_timestamp: dueTime.toISOString(),
                                 updated_at: new Date().toISOString(),
                             })
+                            .eq("contract_address", activeSubscriptionContract())
                             .eq("subscription_id", subId);
                         healed.push({ subId, action: "HEALED_SETTLEMENT_TIMESTAMP", detail: dueTime.toISOString() });
                         continue;
@@ -193,6 +214,7 @@ export async function healSubscriptionDrift(
                 await supabase
                     .from("subscriptions")
                     .update({ updated_at: new Date().toISOString() })
+                    .eq("contract_address", activeSubscriptionContract())
                     .eq("subscription_id", subId);
             }
         } catch (err: any) {

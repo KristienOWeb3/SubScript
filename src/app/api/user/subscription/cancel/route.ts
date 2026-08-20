@@ -98,6 +98,64 @@ export async function POST(request: Request) {
 
             const accessUntil = new Date(Number(sub.nextPayment) * 1000).toISOString();
 
+            /* Distinct scheduled event now; the final subscription.canceled fires at entitlement
+               expiry from the keeper.
+             *
+             * Dispatched BEFORE the external-wallet branch below, deliberately. The mirror row above
+             * is what stops future billing, and it is already committed at this point — so returning
+             * without telling the merchant left SubScript having stopped the subscription while the
+             * merchant still believed it was live. The two wallet types told the merchant different
+             * stories about the same action: an embedded-wallet subscriber generated this event, an
+             * external-wallet one generated nothing until period end. */
+            const revocationState = revocationTxHash
+                ? "Cancellation requested; on-chain authorization revoked, access continues until period end"
+                : requiresWalletCancellation
+                    ? "Cancellation requested; the subscriber's own wallet must sign the on-chain revocation, so the authorization may still be chargeable"
+                    : "Cancellation requested; on-chain revocation is retrying";
+            try {
+                await dispatchDurableSubscriptionWebhook(sub.merchant, "subscription.cancel_scheduled", {
+                    ...subscriptionWebhookData({
+                        subscriptionId,
+                        status: "cancel_scheduled",
+                        amountUsdcMicros: sub.amount,
+                        subscriber: wallet.toLowerCase(),
+                        merchantAddress: sub.merchant,
+                        txHash: revocationTxHash ?? undefined,
+                        beneficiary: mirrored?.beneficiaryAddress ?? null,
+                        externalReference: mirrored?.externalReference ?? null,
+                        sourceCheckoutId: mirrored?.sourceCheckoutId ?? null,
+                        reason: revocationState,
+                    }),
+                    /* Whether the on-chain authorization is actually revoked yet. A merchant that
+                       gates entitlement on this event should still honour access until period end
+                       either way; this only says whether the chain agrees yet. */
+                    revocation_pending: !revocationTxHash,
+                    revocationPending: !revocationTxHash,
+                    access_until: accessUntil,
+                    accessUntil,
+                }, `customer-cancel-scheduled:${subscriptionId}`);
+            } catch (webhookError) {
+                /* Revocation and the cancellation mirror are already durable. A delivery-outbox
+                   outage must not turn the completed cancellation into an ambiguous HTTP 500. */
+                console.error("[ALERT] cancellation webhook enqueue failed after state committed:", webhookError);
+            }
+
+            /* The thread was silent on the ordinary cancellation. Only the lapsed branch below wrote a
+               DM, so a subscriber cancelling mid-period saw nothing in the conversation and neither
+               did the merchant — the webhook was the only trace. This is also where the paid-through
+               date gets stated somewhere durable rather than in a response body nobody keeps. */
+            await createDmAndNotify({
+                senderAddress: wallet.toLowerCase(),
+                receiverAddress: sub.merchant,
+                messageType: "SUBSCRIPTION_CANCELED",
+                status: "APPROVED",
+                title: "Subscription Canceled",
+                description: requiresWalletCancellation
+                    ? `Subscription sub_${subscriptionId} was canceled by the subscriber. Access continues through the paid period, until ${accessUntil.slice(0, 10)}. The subscriber still needs to sign the on-chain revocation from their own wallet.`
+                    : `Subscription sub_${subscriptionId} was canceled by the subscriber. Access continues through the paid period, until ${accessUntil.slice(0, 10)}. No further payments will be taken.`,
+                dedupeKey: `subscription-cancel-scheduled:${subscriptionId}`,
+            }).catch((err) => console.error("[subscription/cancel] DM notification failed:", err));
+
             if (requiresWalletCancellation) {
                 /* Do NOT claim the cancellation is safely scheduled: the connected wallet must
                    sign cancelSubscription itself. The revocation_pending row keeps the retry
@@ -111,43 +169,9 @@ export async function POST(request: Request) {
                 }, { status: 409 });
             }
 
-            /* Distinct scheduled event now; the final subscription.canceled fires at entitlement
-               expiry from the keeper. */
-            try {
-                await dispatchDurableSubscriptionWebhook(sub.merchant, "subscription.cancel_scheduled", subscriptionWebhookData({
-                    subscriptionId,
-                    status: "cancel_scheduled",
-                    amountUsdcMicros: sub.amount,
-                    subscriber: wallet.toLowerCase(),
-                    merchantAddress: sub.merchant,
-                    txHash: revocationTxHash ?? undefined,
-                    reason: revocationTxHash
-                        ? "Cancellation requested; on-chain authorization revoked, access continues until period end"
-                        : "Cancellation requested; on-chain revocation is retrying",
-                }), `customer-cancel-scheduled:${subscriptionId}`);
-            } catch (webhookError) {
-                /* Revocation and the cancellation mirror are already durable. A delivery-outbox
-                   outage must not turn the completed cancellation into an ambiguous HTTP 500. */
-                console.error("[ALERT] cancellation webhook enqueue failed after state committed:", webhookError);
-            }
-
             await triggerExitSurvey(sub.merchant, wallet.toLowerCase(), subscriptionId).catch((err) =>
                 console.error("[subscription/cancel] survey trigger failed:", err)
             );
-
-            /* The thread was silent on the ordinary cancellation. Only the lapsed branch below wrote a
-               DM, so a subscriber cancelling mid-period saw nothing in the conversation and neither
-               did the merchant — the webhook was the only trace. This is also where the paid-through
-               date gets stated somewhere durable rather than in a response body nobody keeps. */
-            await createDmAndNotify({
-                senderAddress: wallet.toLowerCase(),
-                receiverAddress: sub.merchant,
-                messageType: "SUBSCRIPTION_CANCELED",
-                status: "APPROVED",
-                title: "Subscription Canceled",
-                description: `Subscription sub_${subscriptionId} was canceled by the subscriber. Access continues through the paid period, until ${accessUntil.slice(0, 10)}. No further payments will be taken.`,
-                dedupeKey: `subscription-cancel-scheduled:${subscriptionId}`,
-            }).catch((err) => console.error("[subscription/cancel] DM notification failed:", err));
 
             /* Retention offer, if the merchant has published one this subscriber can take.
              *

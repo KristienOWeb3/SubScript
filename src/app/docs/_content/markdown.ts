@@ -468,6 +468,25 @@ The CLI sends signed local samples:
 Design \`subscription.renewed\` carefully: it arrives every period, so extending an access window on
 each renewal must be idempotent per event id, or one retried delivery grants a free extra period.
 
+### Cancellation is two events, not one
+
+A mid-period cancellation splits into two deliveries, because two different things happen at two
+different times:
+
+| Event | When | What it means |
+| --- | --- | --- |
+| \`subscription.cancel_scheduled\` | the subscriber cancels | They have cancelled. **Access continues** to the end of the period they already paid for — do not revoke entitlement here. Carries \`access_until\` (the date to revoke on) and \`revocation_pending\`. |
+| \`subscription.canceled\` | that paid period ends | Access is over. Revoke entitlement here. |
+
+The split is on-chain in origin: the spending authorization is revoked immediately, because
+\`executePayment\` is permissionless and anything left active stays chargeable whatever a database
+says. Entitlement is a separate question — the subscriber paid through the period, so it runs to the
+end. If their period had already lapsed when they cancelled, \`subscription.canceled\` arrives alone.
+
+\`revocation_pending: true\` means the subscriber signs from their own external wallet and has not yet.
+The cancellation still stands and billing has already stopped; the flag only says the chain has not
+caught up.
+
 ### An upgrade or a resume mints a new subscription id
 
 Two lifecycle events replace a subscription rather than editing it, so \`subscription_id\` changes and
