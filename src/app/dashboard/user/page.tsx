@@ -1540,6 +1540,18 @@ export default function UserDashboard() {
      is charged today and the next charge lands on the original billing date. */
   const [resumingSubscriptionId, setResumingSubscriptionId] = useState<string | null>(null);
 
+  /* Jump from a subscription straight into that merchant's conversation.
+   *
+   * The Active Subscriptions panel states what a subscriber is paying and when it renews, but every
+   * action beyond resume lives in the thread — the plan catalogue (and so the upgrade link out to the
+   * merchant's own page), cancel, and the lifecycle notices for that merchant. Without this the only
+   * route was to switch to Inbox and find the merchant by name in the thread list, which on a busy
+   * inbox is a search rather than a click. */
+  const openMerchantThread = (merchantAddress: string) => {
+    setSelectedDmPeer(merchantAddress.toLowerCase());
+    setActiveTab("inbox");
+  };
+
   const handleResumeSubscription = async (subscription: Subscription) => {
     if (resumingSubscriptionId) return;
 
@@ -3631,6 +3643,7 @@ export default function UserDashboard() {
                               balanceVisible={balanceVisible}
                               onResume={handleResumeSubscription}
                               resuming={resumingSubscriptionId === sub.subscriptionId}
+                              onOpenThread={openMerchantThread}
                             />
                           ))}
                         </div>
@@ -7254,11 +7267,14 @@ function SubscriptionRow({
   balanceVisible,
   onResume,
   resuming,
+  onOpenThread,
 }: {
   subscription: Subscription;
   balanceVisible: boolean;
   onResume?: (subscription: Subscription) => void;
   resuming?: boolean;
+  /** Opens the merchant's DM thread — where the plan catalogue and cancel live. */
+  onOpenThread?: (merchantAddress: string) => void;
 }) {
   const intervalDays = Math.max(1, Math.round(Number(subscription.billingIntervalSeconds) / 86400));
   return (
@@ -7268,13 +7284,27 @@ function SubscriptionRow({
           {subscription.merchantProfilePic ? <img src={subscription.merchantProfilePic} alt={subscription.merchantName} className="h-full w-full object-cover" /> : <Shield className="h-5 w-5 text-[#ccff00]/70" />}
         </div>
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
-            <p className="truncate text-xs font-black uppercase tracking-[0.1em] text-white">{subscription.merchantName}</p>
-            {subscription.merchantVerified && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />}
-          </div>
-          <p className={`mt-1 text-[10px] ${subscription.cancelAtPeriodEnd ? "font-bold text-amber-400" : "text-white/40"}`}>
-            {subscription.cancelAtPeriodEnd ? "Canceled · Access active until period end" : `Renews every ${intervalDays} days`}
-          </p>
+          {/* The merchant's name opens their conversation. Everything a subscriber might want next
+              — the plan catalogue, cancel, the billing history for this merchant — already lives in
+              that thread, and this panel is desktop-only, where the thread is one pane away. A real
+              button rather than a click handler on the row so it is reachable by keyboard and does
+              not swallow the Resume button nested below it. */}
+          <button
+            type="button"
+            onClick={onOpenThread ? () => onOpenThread(subscription.merchantAddress) : undefined}
+            disabled={!onOpenThread}
+            title={onOpenThread ? `Open your conversation with ${subscription.merchantName}` : undefined}
+            className={`block w-full text-left ${onOpenThread ? "group cursor-pointer" : "cursor-default"}`}
+          >
+            <div className="flex items-center gap-1.5">
+              <p className={`truncate text-xs font-black uppercase tracking-[0.1em] text-white ${onOpenThread ? "group-hover:text-[#ccff00] transition-colors" : ""}`}>{subscription.merchantName}</p>
+              {subscription.merchantVerified && <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-400" />}
+              {onOpenThread && <MessageSquare className="h-3 w-3 shrink-0 text-white/25 transition-colors group-hover:text-[#ccff00]" />}
+            </div>
+            <p className={`mt-1 text-[10px] ${subscription.cancelAtPeriodEnd ? "font-bold text-amber-400" : "text-white/40"}`}>
+              {subscription.cancelAtPeriodEnd ? "Canceled · Access active until period end" : `Renews every ${intervalDays} days`}
+            </p>
+          </button>
           {/* Inline recovery while the paid period is still running — no need to open the DM. */}
           {subscription.cancelAtPeriodEnd && onResume && (
             <motion.button
