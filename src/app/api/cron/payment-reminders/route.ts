@@ -34,6 +34,7 @@ import { createDmAndNotify } from "@/lib/dms/notifications";
 import { subscriptionDmDedupeKey, billingCycleDiscriminator } from "@/lib/dms/catalog";
 import {
     sendRenewalUpcomingDm,
+    sendSponsoredAccessEndingDm,
     sendTrialEndingDm,
     type LifecycleDmResult,
 } from "@/lib/dms/lifecycle";
@@ -56,6 +57,15 @@ const RENEWAL_LEAD_HOURS = 72;
  * decision from one funding a renewal they already want, and deserves more than three days.
  */
 const TRIAL_LEAD_HOURS = 7 * 24;
+
+/**
+ * Lead time before a gifted access window closes.
+ *
+ * Matched to the trial notice rather than the renewal one: the beneficiary of a gift is making the
+ * same decision a trialist is — whether to start paying for this themselves — and has no funding
+ * to arrange, so three days would be needlessly tight.
+ */
+const SPONSORED_LEAD_HOURS = 7 * 24;
 
 /** Bound on rows touched per pass, so one sweep cannot run long enough to be killed mid-write. */
 const SCAN_LIMIT = 200;
@@ -208,6 +218,8 @@ export async function POST(request: Request) {
             trialEndingSent: 0,
             overdueScanned: 0,
             overdueSent: 0,
+            sponsoredScanned: 0,
+            sponsoredSent: 0,
             skippedNoSubscriber: 0,
             deduped: 0,
             errors: 0,
@@ -449,9 +461,81 @@ export async function POST(request: Request) {
             }
         }
 
+        /* ------------ Scan 3: sponsored (gifted) access windows closing ------------
+         *
+         * Gifts are not subscriptions. A sponsored checkout is a one-time `payment_links` row with
+         * `maxUses: 1` and a beneficiary distinct from the payer — no authorization, no
+         * `subscriptions` row — so neither scan above and no billing cron can see it, and the
+         * beneficiary's access used to just stop.
+         *
+         * The window is derivable from what already exists: the settling payment's `created_at` plus
+         * the link's `state_snapshot.durationSeconds`. No new table, and the same value the merchant
+         * received as `access_until` on the payment.succeeded webhook. */
+        const sponsoredLeadMs = SPONSORED_LEAD_HOURS * 60 * 60 * 1000;
+        const sponsoredPayments = await prisma.paymentLinkPayment.findMany({
+            where: {
+                beneficiaryAddress: { not: null },
+                /* Only ever a window that could still be open: nothing older than the longest plan
+                   period we would notice, bounded so the scan does not walk all history. */
+                createdAt: { gte: new Date(now.getTime() - 400 * 24 * 60 * 60 * 1000) },
+                paymentLink: { stateSnapshot: { path: ["isSponsored"], equals: true } },
+            },
+            select: {
+                id: true,
+                createdAt: true,
+                amountUsdc: true,
+                merchantAddress: true,
+                beneficiaryAddress: true,
+                payerAddress: true,
+                paymentLink: { select: { stateSnapshot: true } },
+            },
+            orderBy: { createdAt: "desc" },
+            take: SCAN_LIMIT,
+        }).catch((err) => {
+            console.error("[cron/payment-reminders] sponsored scan failed:", err);
+            return [] as Array<never>;
+        });
+
+        for (const payment of sponsoredPayments) {
+            counts.sponsoredScanned += 1;
+            try {
+                const snapshot = (payment.paymentLink?.stateSnapshot ?? null) as Record<string, unknown> | null;
+                const durationSeconds = typeof snapshot?.durationSeconds === "number"
+                    && Number.isFinite(snapshot.durationSeconds)
+                    ? snapshot.durationSeconds
+                    : null;
+                if (!durationSeconds || durationSeconds <= 0 || !payment.beneficiaryAddress) continue;
+
+                const accessUntil = new Date(payment.createdAt.getTime() + durationSeconds * 1000);
+                /* Inside the lead window and not already past. A window that closed before we ever
+                   looked gets no retroactive notice — telling someone their access ended last month
+                   is noise, not service. */
+                if (accessUntil <= now) continue;
+                if (accessUntil.getTime() - now.getTime() > sponsoredLeadMs) continue;
+
+                const result = await sendSponsoredAccessEndingDm({
+                    merchantAddress: payment.merchantAddress,
+                    beneficiaryAddress: payment.beneficiaryAddress,
+                    sponsorshipId: payment.id,
+                    planName: typeof snapshot?.sponsoredPlanName === "string" ? snapshot.sponsoredPlanName : null,
+                    amountUsdcMicros: payment.amountUsdc,
+                    accessUntil,
+                });
+                if (result.sent) counts.sponsoredSent += 1;
+                if (result.deduped) counts.deduped += 1;
+            } catch (err) {
+                counts.errors += 1;
+                console.error(`[cron/payment-reminders] sponsored notice failed for payment ${payment.id}:`, err);
+            }
+        }
+
         return NextResponse.json({
             success: true,
-            leadHours: { renewal: RENEWAL_LEAD_HOURS, trial: TRIAL_LEAD_HOURS },
+            leadHours: {
+                renewal: RENEWAL_LEAD_HOURS,
+                trial: TRIAL_LEAD_HOURS,
+                sponsored: SPONSORED_LEAD_HOURS,
+            },
             ...counts,
         });
     } catch (error: any) {

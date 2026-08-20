@@ -384,6 +384,55 @@ export async function sendReactivatedDm(params: {
     });
 }
 
+/* ----------------------------- Sponsored access ---------------------------- */
+
+/**
+ * Notice that a gifted (sponsored) access window is about to close.
+ *
+ * The gap this closes: a gift is a one-time payment link with `maxUses: 1`. It creates no
+ * authorization and no `subscriptions` row, so `cron/customer-billing` — which iterates
+ * subscriptions — never sees it, and nothing in the product told the beneficiary anything after
+ * the "someone paid for you" confirmation. Their access simply stopped.
+ *
+ * Deliberately not an EXPIRY_WARNING. That type means "your subscription needs attention", and its
+ * remedy is funding or re-authorization. Here there is nothing to fix: the payment was always
+ * one-time, and the only action is deciding whether to subscribe for themselves.
+ *
+ * `sponsorshipId` is the settling payment's id rather than the plan's, so a beneficiary gifted the
+ * same plan twice is warned about each window.
+ */
+export async function sendSponsoredAccessEndingDm(params: {
+    merchantAddress: string;
+    beneficiaryAddress: string;
+    sponsorshipId: string;
+    planName?: string | null;
+    amountUsdcMicros: bigint;
+    accessUntil: Date;
+    sponsorLabel?: string | null;
+}): Promise<LifecycleDmResult> {
+    const merchantName = await resolveMerchantName(params.merchantAddress);
+    const amount = formatUsdcFromMicros(params.amountUsdcMicros);
+
+    return sendLifecycleDm({
+        messageType: "SPONSORED_ACCESS_ENDING",
+        merchantAddress: params.merchantAddress,
+        subscriberAddress: params.beneficiaryAddress,
+        subscriptionId: params.sponsorshipId,
+        occurrence: billingCycleDiscriminator(params.accessUntil),
+        amountUsdc: params.amountUsdcMicros,
+        title: `Your sponsored access ends ${formatDate(params.accessUntil)}`,
+        lines: [
+            `Merchant: ${merchantName}`,
+            params.planName ? `Plan: ${params.planName}` : null,
+            params.sponsorLabel
+                ? `${params.sponsorLabel} paid ${amount} USDC for this once — it was never a subscription, so it won't renew.`
+                : `This was paid for you once, as a ${amount} USDC one-time payment, so it won't renew.`,
+            `Access ends ${formatDate(params.accessUntil)}.`,
+            "Subscribe for yourself to keep it, or do nothing and it stops. Either way you won't be charged without setting it up.",
+        ],
+    });
+}
+
 /* ----------------------------- Commitment ---------------------------------- */
 
 /**

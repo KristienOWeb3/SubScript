@@ -468,6 +468,28 @@ The CLI sends signed local samples:
 Design \`subscription.renewed\` carefully: it arrives every period, so extending an access window on
 each renewal must be idempotent per event id, or one retried delivery grants a free extra period.
 
+### An upgrade or a resume mints a new subscription id
+
+Two lifecycle events replace a subscription rather than editing it, so \`subscription_id\` changes and
+\`previous_subscription_id\` names the id it supersedes:
+
+- \`subscription.reactivated\` — the subscriber resumed a subscription they had cancelled. **Nothing is
+  charged.** They keep the access they already paid for, and the next charge lands on the original date
+  on the original cadence. Do not count this event as revenue.
+- \`subscription.updated\` carrying \`previous_subscription_id\` — the subscriber upgraded to a
+  higher-rate plan at checkout. The new plan's full period is charged today less
+  \`credit_applied_usdc_micros\`, the value of the time they had already paid for, so the amount that
+  moves is smaller than the plan price.
+
+The reason is on-chain: an authorization cannot be revived once cancelled, and its terms cannot be
+raised in place after a resume, so both flows revoke the old authorization and mint a fresh one. There
+is no id to preserve.
+
+**If you key entitlements on \`subscription_id\`, an upgraded or resumed customer looks like a brand-new
+subscriber and their old record looks abandoned.** Key on \`merchant_customer_id\` (the
+\`merchantCustomerId\` you supplied at creation, also returned as \`external_reference\`) and treat
+\`subscription_id\` as the current authorization rather than the customer.
+
 ## Plan catalog: /api/v1/plans
 
 A subscription checkout and its reusable catalog plan are distinct records. This is the same catalog
@@ -592,6 +614,12 @@ On payment, SubScript dispatches a \`SPONSORED_PLAN_CONFIRMED\` Merchant DM to U
 \`data.beneficiary_address\`, \`data.sponsoredPlanId\`, and \`data.durationSeconds\`. Credit the
 beneficiary, not necessarily the payer. If the beneficiary already has active access, extend the
 existing window by \`durationSeconds\` instead of rejecting the webhook or creating a duplicate.
+
+A gift is a **one-time payment**. There is no authorization behind it, so nothing renews and no
+\`subscription.*\` event ever follows. The payload says so directly: \`data.renews\` is \`false\`,
+\`data.one_time\` is \`true\`, and \`data.access_until\` is the ISO timestamp the window closes
+(settlement time plus \`durationSeconds\`). Prefer \`access_until\` over computing the end date
+yourself — it is the same value SubScript uses to warn the beneficiary before their access lapses.
 
 ## Delivery behavior
 

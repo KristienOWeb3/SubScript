@@ -161,6 +161,23 @@ export const DM_TYPES = {
         direction: "MERCHANT_TO_USER",
         recurring: false,
     },
+    /**
+     * A sponsored (gifted) access window is about to close.
+     *
+     * Its own type because a gift is structurally unlike a subscription: it is a one-time payment
+     * link with no authorization and no `subscriptions` row, so no billing cron sees it and nothing
+     * else in the product would ever tell the beneficiary their access is ending. Without this the
+     * window simply lapses in silence.
+     *
+     * Marked recurring so the dedupe key is mandatory — a beneficiary can be gifted the same plan
+     * more than once, and the key is scoped to the paying settlement rather than the plan.
+     */
+    SPONSORED_ACCESS_ENDING: {
+        fallbackTitle: "Sponsored access ending",
+        direction: "MERCHANT_TO_USER",
+        recurring: true,
+        opensSubscriptionThread: true,
+    },
 
     /* --- Metered vaults --- */
     SERVICE_CANCELED: {

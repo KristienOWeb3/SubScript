@@ -65,6 +65,34 @@ test("publication and the active-plan ceiling are serialized atomically", () => 
     assert.match(route, /activeCount >= MAX_ACTIVE_MERCHANT_PLANS/);
 });
 
+test("the catalog lock is taken with a verb that does not read the result set", () => {
+    /* pg_advisory_xact_lock returns void, and $queryRaw deserializes every column it gets back —
+       Prisma has no mapping for void, so the lock succeeded and then the driver threw
+       "Failed to deserialize column of type 'void'". Because this lock is the FIRST statement in
+       both plan-creation transactions, that was a hard 500 on every attempt to add a plan.
+
+       Asserted on the helper rather than left to review: the two calls read identically at a glance,
+       and the broken one is the more idiomatic-looking of the pair. */
+    const publisher = source("src/lib/subscriptions/sitePlans.ts");
+    const lockHelper = publisher.slice(
+        publisher.indexOf("export async function lockMerchantPlanCatalog"),
+        publisher.indexOf("function assertPublishableCheckout"),
+    );
+
+    assert.match(lockHelper, /\$executeRaw/);
+    assert.doesNotMatch(lockHelper, /\$queryRaw/);
+
+    /* The contrast that makes the rule learnable: pg_try_advisory_xact_lock returns boolean, the
+       caller needs that boolean, and $queryRaw is correct there. The discriminator is the function's
+       return type, not the fact that it is a lock. */
+    for (const path of [
+        "src/app/api/user/subscription/subscribe/route.ts",
+        "src/app/api/user/subscription/upgrade/route.ts",
+    ]) {
+        assert.match(source(path), /\$queryRaw[\s\S]*pg_try_advisory_xact_lock[\s\S]*AS acquired/);
+    }
+});
+
 test("the normal site SDK flow publishes a DM-visible canonical plan by default", () => {
     const api = source("src/app/api/v1/subscriptions/route.ts");
     const sdk = source("packages/sdk/src/index.ts");

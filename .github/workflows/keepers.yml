@@ -25,6 +25,9 @@ on:
     - cron: "0 5 * * *"      # internal/payroll  — run due payroll campaigns
     - cron: "0 6 * * *"      # internal/billing  — premium downgrade sweep
     - cron: "0 7 * * *"      # cron/kyc-expiry   — expire stale KYC verifications
+    - cron: "40 8 * * *"     # cron/payment-reminders — renewal / trial-ending / sponsored-access
+                             #   notices. Off the top of the hour on purpose: GitHub's scheduler is
+                             #   busiest at :00 and this job is not time-critical to the minute.
   workflow_dispatch:
     inputs:
       run_all:
@@ -103,6 +106,23 @@ jobs:
             "${BASE:-https://www.subscriptonarc.com}/api/cron/kyc-expiry" \
             -H "Authorization: Bearer ${SECRET}"
 
+  payment-reminders:
+    # Renewal reminders, introductory-price-ending notices, and sponsored-access-ending notices.
+    # This route had no scheduler at all: vercel.json is full (Hobby allows 2 crons, spent on
+    # customer-billing + vault-draw), and it was never added here — so RENEWAL_UPCOMING and
+    # TRIAL_ENDING had never once fired in production despite both being fully implemented.
+    if: github.event_name == 'schedule' && github.event.schedule == '40 8 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: cron/payment-reminders
+        env:
+          BASE: ${{ secrets.KEEPER_BASE_URL }}
+          SECRET: ${{ secrets.KEEPER_SECRET }}
+        run: |
+          curl -fsS --retry 3 --retry-delay 5 --max-time 300 -X GET \
+            "${BASE:-https://www.subscriptonarc.com}/api/cron/payment-reminders" \
+            -H "Authorization: Bearer ${SECRET}"
+
   vault-topup:
     # Same schedule as reconcile: GitHub dispatches every job whose `if` matches, so two jobs can
     # share a cron string. Kept separate rather than folded into reconcile's steps so a failing
@@ -136,6 +156,7 @@ jobs:
             /api/internal/payroll \
             /api/internal/billing \
             /api/cron/kyc-expiry \
+            /api/cron/payment-reminders \
             /api/keeper/vault-topup; do
             echo "→ GET ${path}"
             curl -fsS --retry 2 --retry-delay 5 --max-time 300 -X GET \

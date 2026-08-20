@@ -77,7 +77,20 @@ function messageOf(error: unknown) {
     return error instanceof Error ? error.message : "Payment verification failed";
 }
 
-function sponsoredWebhookMetadata(stateSnapshot: unknown): Record<string, unknown> | undefined {
+/**
+ * Gift metadata for the merchant's `payment.succeeded` webhook.
+ *
+ * A sponsored checkout is a ONE-TIME payment that grants a fixed window of access to someone other
+ * than the payer, so the merchant needs three things to map it onto an entitlement: that it is a gift
+ * at all, which plan it stands in for, and when the window closes. `durationSeconds` alone left the
+ * merchant to compute the end date from a settlement time they had to infer, so `accessUntil` states
+ * it outright — the docs already tell integrators to extend the beneficiary's access window, and this
+ * is the value to extend it to.
+ */
+function sponsoredWebhookMetadata(
+    stateSnapshot: unknown,
+    settledAt: Date,
+): Record<string, unknown> | undefined {
     if (!stateSnapshot || typeof stateSnapshot !== "object") return undefined;
     const snapshot = stateSnapshot as Record<string, unknown>;
     if (snapshot.isSponsored !== true) return undefined;
@@ -86,14 +99,31 @@ function sponsoredWebhookMetadata(stateSnapshot: unknown): Record<string, unknow
     const durationSeconds = typeof snapshot.durationSeconds === "number" && Number.isFinite(snapshot.durationSeconds)
         ? snapshot.durationSeconds
         : null;
+    /* Measured from settlement rather than from link creation: the sponsor's window starts when their
+       friend actually paid, not when the request was raised. */
+    const accessUntil = durationSeconds !== null
+        ? new Date(settledAt.getTime() + durationSeconds * 1000).toISOString()
+        : null;
     return {
         isSponsored: true,
+        /* Both casings, like every other field on the payload. This one was camelCase-only, which made
+           `is_sponsored` read as absent — i.e. "not a gift" — to a handler that had followed the
+           documented snake_case convention everywhere else. It is the first field a gift handler
+           branches on, so that silence credited the payer instead of the beneficiary. */
+        is_sponsored: true,
         sponsoredPlanId,
         sponsored_plan_id: sponsoredPlanId,
         sponsoredPlanName,
         sponsored_plan_name: sponsoredPlanName,
         durationSeconds,
         duration_seconds: durationSeconds,
+        accessUntil,
+        access_until: accessUntil,
+        /* Said explicitly so a handler cannot mistake a gift for the start of a recurring plan: there
+           is no authorization behind it and nothing will renew. */
+        renews: false,
+        oneTime: true,
+        one_time: true,
     };
 }
 
@@ -381,6 +411,26 @@ async function runPostSettlementEffects(
                 .eq("payment_link_id", job.payment_link_id)
                 .eq("message_type", "SPONSORED_PLAN_REQUEST");
 
+            /* How long the gift actually buys. A sponsored checkout is a ONE-TIME payment: it creates no
+               authorization and no subscriptions row, so nothing renews and nothing warns the
+               beneficiary on its own. The old copy said only "your access is active", which reads like
+               the start of a subscription — the sponsor had no way to know their access was finite or
+               when it ran out. */
+            const { data: sponsoredLink } = await supabase
+                .from("payment_links")
+                .select("state_snapshot")
+                .eq("id", job.payment_link_id)
+                .maybeSingle();
+            const sponsoredSnapshot = (sponsoredLink?.state_snapshot ?? null) as Record<string, unknown> | null;
+            const durationSeconds = typeof sponsoredSnapshot?.durationSeconds === "number"
+                && Number.isFinite(sponsoredSnapshot.durationSeconds)
+                ? sponsoredSnapshot.durationSeconds
+                : null;
+            const accessUntil = durationSeconds !== null
+                ? new Date(Date.now() + durationSeconds * 1000)
+                : null;
+            const amountLabel = (Number(job.amount_usdc) / 1_000_000).toFixed(2);
+
             /* Deliver confirmation DM from Merchant to Beneficiary (User A) with Resubscribe action */
             await insertSupabaseDmAndNotify(supabase, {
                 sender_address: job.merchant_address,
@@ -388,8 +438,16 @@ async function runPostSettlementEffects(
                 message_type: "SPONSORED_PLAN_CONFIRMED",
                 status: "PAID",
                 amount_usdc: job.amount_usdc.toString(),
-                title: `Sponsored Access Active: ${job.payment_title}`,
-                description: `${payerLabel} sponsored your ${job.payment_title} plan! Your access is active. You can take over and resubscribe for yourself anytime below.`,
+                title: accessUntil
+                    ? `${job.payment_title} is covered until ${accessUntil.toISOString().slice(0, 10)}`
+                    : `Sponsored access active: ${job.payment_title}`,
+                description: [
+                    `${payerLabel} paid ${amountLabel} USDC for your ${job.payment_title} plan. Your access is on.`,
+                    accessUntil
+                        ? `This was a one-time payment. It covers you until ${accessUntil.toISOString().slice(0, 10)} and won't renew.`
+                        : "This was a one-time payment, so it won't renew.",
+                    "Nothing is charged to you and no card or wallet is on file. Subscribe for yourself below to keep it going after that.",
+                ].join("\n"),
                 tx_hash: job.tx_hash,
                 payment_link_id: job.payment_link_id,
                 dedupe_key: `sponsored-confirmed:${job.payment_link_id}`,
@@ -494,7 +552,7 @@ async function verifyAndFinalize(supabase: any, job: PaymentLinkVerificationJob)
             if (parentLinkError) {
                 throw new Error(`Failed to read payment-link metadata: ${parentLinkError.message}`);
             }
-            const webhookMetadata = sponsoredWebhookMetadata(parentLink?.state_snapshot);
+            const webhookMetadata = sponsoredWebhookMetadata(parentLink?.state_snapshot, new Date());
             const webhookPayload = job.settles_directly_to_user ? null : createPaymentSucceededWebhook({
                 paymentId: "pending",
                 checkoutSessionId: job.payment_link_id,

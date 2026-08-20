@@ -52,11 +52,27 @@ export function checkoutHasPrivatePlanTerms(
     );
 }
 
+/* $executeRaw, not $queryRaw — and that is the whole point of this comment.
+ *
+ * `pg_advisory_xact_lock` returns `void`. $queryRaw deserializes every column of every row it gets
+ * back, and Prisma has no mapping for `void`, so the lock acquired fine and then the driver threw
+ * while reading the result:
+ *
+ *   Failed to deserialize column of type 'void'
+ *
+ * That surfaced as a hard 500 on every plan creation — POST /api/merchant/plans and POST
+ * /api/v1/plans both take this lock as the first statement in their transaction, so no merchant
+ * could add a plan at all. $executeRaw discards the result set and returns a row count, which is
+ * all a lock statement has to offer.
+ *
+ * Note the contrast with the `pg_try_advisory_xact_lock(...) AS acquired` calls in
+ * api/user/subscription/{subscribe,upgrade}: those return boolean, the caller needs that boolean,
+ * and $queryRaw is correct there. The distinction is the return type, not the lock. */
 export async function lockMerchantPlanCatalog(
     tx: Prisma.TransactionClient,
     merchantAddress: string,
 ) {
-    await tx.$queryRaw`
+    await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(
             hashtextextended(${`merchant-plan-catalog:${merchantAddress.toLowerCase()}`}, 0)
         )

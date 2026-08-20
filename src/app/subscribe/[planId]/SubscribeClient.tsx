@@ -114,6 +114,30 @@ const ALREADY_SUBSCRIBED_CODES = new Set([
 
 type SubscribeFailure = { message: string; code: string | null };
 
+/**
+ * Server-priced upgrade terms for a visitor who already subscribes to this merchant.
+ *
+ * Every figure here is computed server-side from the on-chain authorization
+ * (see lib/subscriptions/upgradeCheckout) and only displayed by the client. The page must never do
+ * this arithmetic itself: the amount shown has to be the amount charged, and the credit depends on the
+ * authorization's real on-chain period, which after a resume is not the plan cadence.
+ */
+type UpgradePreview = {
+    upgrade: boolean;
+    planName?: string;
+    currentAmountUsdc?: string;
+    newAmountUsdc?: string;
+    creditAppliedUsdc?: string;
+    chargedNowUsdc?: string;
+    nextChargeAt?: string;
+    paidThroughAt?: string;
+    /* Present when the visitor has a subscription but this plan cannot be upgraded to yet — a lower
+       tier, or credit worth more than the new plan. Stated rather than hidden, so the CTA never
+       silently does nothing. */
+    error?: string;
+    code?: string;
+};
+
 export default function SubscribeClient({
     planId,
     initialPlanData,
@@ -129,6 +153,9 @@ export default function SubscribeClient({
 
     const [session, setSession] = useState<SessionInfo | null>(null);
     const [sessionLoaded, setSessionLoaded] = useState(false);
+
+    const [upgradePreview, setUpgradePreview] = useState<UpgradePreview | null>(null);
+    const isUpgrade = upgradePreview?.upgrade === true;
 
     const [isSubscribing, setIsSubscribing] = useState(false);
     const [subscribeError, setSubscribeError] = useState<SubscribeFailure | null>(null);
@@ -195,6 +222,28 @@ export default function SubscribeClient({
             .finally(() => { if (!cancelled) setSessionLoaded(true); });
         return () => { cancelled = true; };
     }, []);
+
+    /* Price an upgrade, if this visitor already subscribes to this merchant.
+     *
+     * Asked of the server rather than derived here: the credit for unused time depends on the
+     * authorization's real on-chain amount and period, and after a resume that period is the short
+     * bridge period rather than the plan cadence. The page displays what the server will charge.
+     *
+     * Only for an embedded-wallet USER session — the upgrade route signs from the server-held key, so
+     * an external wallet or a merchant session has nothing to preview. */
+    useEffect(() => {
+        if (!sessionLoaded || !plan?.id) return;
+        if (!session?.loggedIn || session.role === "ENTERPRISE" || session.isEmbedded === false) {
+            setUpgradePreview(null);
+            return;
+        }
+        let cancelled = false;
+        fetch(`/api/user/subscription/upgrade?planId=${encodeURIComponent(plan.id)}`, { cache: "no-store" })
+            .then((res) => res.json())
+            .then((data) => { if (!cancelled) setUpgradePreview(data?.success ? data : null); })
+            .catch(() => { if (!cancelled) setUpgradePreview(null); });
+        return () => { cancelled = true; };
+    }, [sessionLoaded, session?.loggedIn, session?.role, session?.isEmbedded, plan?.id]);
 
     useEffect(() => {
         if (!result || !plan?.successUrl) return;
@@ -279,13 +328,23 @@ export default function SubscribeClient({
             const requestStorageKey = `subscript_subscription_attempt:${session?.wallet || "anonymous"}:${plan.checkoutSessionId || plan.id}`;
             subscribeRequestKey.current = localStorage.getItem(requestStorageKey) || subscribeRequestKey.current;
             localStorage.setItem(requestStorageKey, subscribeRequestKey.current);
-            const res = await fetch("/api/user/subscription/subscribe", {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "x-request-id": subscribeRequestKey.current },
-                body: JSON.stringify(plan.checkoutSessionId
-                    ? { checkoutSessionId: plan.checkoutSessionId }
-                    : { planId: plan.id }),
-            });
+            /* An upgrade is a different transaction, not a subscribe with extra fields: it revokes the
+               old authorization and mints a new one at the new plan's terms. Routing it through
+               /subscribe would hit that route's ACTIVE_MERCHANT_SUBSCRIPTION guard and refuse. */
+            const res = await fetch(
+                isUpgrade ? "/api/user/subscription/upgrade" : "/api/user/subscription/subscribe",
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "x-request-id": subscribeRequestKey.current },
+                    body: JSON.stringify(
+                        isUpgrade
+                            ? { planId: plan.id }
+                            : plan.checkoutSessionId
+                                ? { checkoutSessionId: plan.checkoutSessionId }
+                                : { planId: plan.id },
+                    ),
+                },
+            );
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.success) {
                 /* Carry the response code, not just the message. It is what separates "you already
@@ -452,12 +511,51 @@ export default function SubscribeClient({
                             </div>
                         )}
 
-                        <p className="text-xs text-black/70 leading-relaxed">
-                            You&apos;ll be charged <span className="text-[#111827] font-bold">{formatAmount(promo ? promo.introductoryAmountUsdc : plan.amountUsdc)} USDC</span> now and then
-                            automatically every <span className="text-[#111827] font-bold">{formatPeriod(plan.periodSeconds)}</span>
-                            {promo ? <> (at <span className="text-[#111827] font-bold">{formatAmount(plan.amountUsdc)} USDC</span> once the introductory period ends)</> : null}. You can cancel
-                            anytime from your SubScript dashboard.
-                        </p>
+                        {isUpgrade && upgradePreview && (
+                            <div className="rounded-2xl border border-[#2775CA]/25 bg-[#2775CA]/[0.06] px-4 py-3 space-y-2">
+                                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#1f62ab]">Upgrading your plan</p>
+                                <div className="space-y-1 text-xs text-black/70">
+                                    <div className="flex justify-between gap-4">
+                                        <span>New plan</span>
+                                        <span className="font-bold text-[#111827]">{upgradePreview.newAmountUsdc} USDC / {formatPeriod(plan.periodSeconds)}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4">
+                                        <span>Credit for unused time</span>
+                                        <span className="font-bold text-emerald-700">− {upgradePreview.creditAppliedUsdc} USDC</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4 border-t border-black/10 pt-1">
+                                        <span className="font-bold text-[#111827]">Charged today</span>
+                                        <span className="font-black text-[#111827]">{upgradePreview.chargedNowUsdc} USDC</span>
+                                    </div>
+                                </div>
+                                <p className="text-xs leading-relaxed text-black/70">
+                                    Your current plan ends today and the time you already paid for comes off this price. Next charge{" "}
+                                    <span className="font-bold text-[#111827]">
+                                        {upgradePreview.nextChargeAt ? new Date(upgradePreview.nextChargeAt).toLocaleDateString() : ""}
+                                    </span>{" "}
+                                    at <span className="font-bold text-[#111827]">{upgradePreview.newAmountUsdc} USDC</span>, then every{" "}
+                                    {formatPeriod(plan.periodSeconds)}.
+                                </p>
+                            </div>
+                        )}
+
+                        {/* This visitor subscribes to the merchant but cannot move to THIS plan — a lower
+                            tier, or unused credit worth more than the plan costs. Stated plainly, because
+                            the button below would otherwise fail with no explanation. */}
+                        {upgradePreview && !upgradePreview.upgrade && upgradePreview.error && (
+                            <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
+                                {upgradePreview.error}
+                            </p>
+                        )}
+
+                        {!isUpgrade && (
+                            <p className="text-xs text-black/70 leading-relaxed">
+                                You&apos;ll be charged <span className="text-[#111827] font-bold">{formatAmount(promo ? promo.introductoryAmountUsdc : plan.amountUsdc)} USDC</span> now and then
+                                automatically every <span className="text-[#111827] font-bold">{formatPeriod(plan.periodSeconds)}</span>
+                                {promo ? <> (at <span className="text-[#111827] font-bold">{formatAmount(plan.amountUsdc)} USDC</span> once the introductory period ends)</> : null}. You can cancel
+                                anytime from your SubScript dashboard.
+                            </p>
+                        )}
                         {Number(plan.minCommitmentSeconds || 0) > 0 && (
                             <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
                                 This plan has a minimum commitment of{" "}
@@ -471,13 +569,15 @@ export default function SubscribeClient({
                             <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 text-center space-y-4 flex flex-col items-center">
                                 <CheckCircle className="w-8 h-8 text-emerald-700" />
                                 <div className="space-y-1">
-                                    <p className="text-sm font-bold text-emerald-900">Subscribed to {result.planName || plan.name}</p>
+                                    <p className="text-sm font-bold text-emerald-900">{isUpgrade ? "Upgraded to" : "Subscribed to"} {result.planName || plan.name}</p>
                                     <p className="text-xs text-emerald-900/80 leading-relaxed">
-                                        {promo && isFreeTrial
-                                            ? "Your free period has started — nothing was charged today."
-                                            : promo
-                                                ? `Your introductory payment of ${formatAmount(promo.introductoryAmountUsdc)} USDC has been taken.`
-                                                : "Your payment was processed successfully."}
+                                        {isUpgrade && upgradePreview
+                                            ? `${upgradePreview.creditAppliedUsdc} USDC of unused time was credited, so you paid ${upgradePreview.chargedNowUsdc} USDC today.`
+                                            : promo && isFreeTrial
+                                                ? "Your free period has started — nothing was charged today."
+                                                : promo
+                                                    ? `Your introductory payment of ${formatAmount(promo.introductoryAmountUsdc)} USDC has been taken.`
+                                                    : "Your payment was processed successfully."}
                                     </p>
                                 </div>
                                 <p className="text-xs text-black/70 leading-relaxed bg-white border border-black/10 rounded-xl p-3">
@@ -575,8 +675,8 @@ export default function SubscribeClient({
                                         disabled={isSubscribing}
                                         className="w-full py-4 bg-[#2775CA] hover:bg-[#1f62ab] disabled:opacity-50 text-[#FFFFF0] font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-sm"
                                     >
-                                        {isSubscribing ? <><Loader2 className="w-4 h-4 animate-spin" /> Setting up subscription…</>
-                                            : <>Review subscription <ArrowRight className="w-4 h-4" /></>}
+                                        {isSubscribing ? <><Loader2 className="w-4 h-4 animate-spin" /> {isUpgrade ? "Applying upgrade…" : "Setting up subscription…"}</>
+                                            : <>{isUpgrade ? "Review upgrade" : "Review subscription"} <ArrowRight className="w-4 h-4" /></>}
                                     </button>
                                 ) : (
                                     <>
@@ -607,24 +707,40 @@ export default function SubscribeClient({
                     <div role="dialog" aria-modal="true" aria-labelledby="subscription-review-title" className="max-h-[calc(100dvh-2rem)] w-full max-w-md space-y-5 overflow-y-auto overscroll-contain rounded-3xl border border-black/15 bg-white p-6 shadow-xl">
                         <div>
                             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#1f62ab]">Recurring authorization</p>
-                            <h3 id="subscription-review-title" className="mt-1 text-xl font-black text-[#111827]">Review subscription</h3>
+                            <h3 id="subscription-review-title" className="mt-1 text-xl font-black text-[#111827]">{isUpgrade ? "Review upgrade" : "Review subscription"}</h3>
                         </div>
                         {plan.cancelUrl && !result && (
                             <a href={plan.cancelUrl} className="block text-center text-xs text-black/60 underline hover:text-[#111827]">Cancel and return to {getHostname(plan.cancelUrl)}</a>
                         )}
                         <div className="space-y-3 rounded-2xl border border-black/10 bg-[#f8fafc] p-4 text-xs">
                             <div className="flex justify-between gap-4"><span className="text-black/60">Merchant</span><span className="text-right font-bold text-[#111827]">{merchant?.name || "Merchant"}</span></div>
-                            <div className="flex justify-between gap-4"><span className="text-black/60">Charge today</span><span className="font-bold text-[#111827]">{formatAmount(promo ? promo.introductoryAmountUsdc : plan.amountUsdc)} USDC</span></div>
-                            {promo && (
+                            {/* Upgrade figures come from the server preview, so this dialog states the same
+                                number the upgrade route will charge rather than re-deriving it. */}
+                            {isUpgrade && upgradePreview ? (
+                                <>
+                                    <div className="flex justify-between gap-4"><span className="text-black/60">New plan</span><span className="font-bold text-[#111827]">{upgradePreview.newAmountUsdc} USDC / {formatPeriod(plan.periodSeconds)}</span></div>
+                                    <div className="flex justify-between gap-4"><span className="text-black/60">Credit for unused time</span><span className="font-bold text-emerald-700">− {upgradePreview.creditAppliedUsdc} USDC</span></div>
+                                    <div className="flex justify-between gap-4"><span className="text-black/60">Charge today</span><span className="font-bold text-[#111827]">{upgradePreview.chargedNowUsdc} USDC</span></div>
+                                </>
+                            ) : (
+                                <div className="flex justify-between gap-4"><span className="text-black/60">Charge today</span><span className="font-bold text-[#111827]">{formatAmount(promo ? promo.introductoryAmountUsdc : plan.amountUsdc)} USDC</span></div>
+                            )}
+                            {promo && !isUpgrade && (
                                 <div className="flex justify-between gap-4"><span className="text-black/60">Regular price</span><span className="font-bold text-[#111827]">{formatAmount(plan.amountUsdc)} USDC / {formatPeriod(plan.periodSeconds)}</span></div>
                             )}
                             <div className="flex justify-between gap-4"><span className="text-black/60">Renews</span><span className="font-bold text-[#111827]">Every {formatPeriod(plan.periodSeconds)}</span></div>
-                            <div className="flex justify-between gap-4"><span className="text-black/60">Estimated next charge</span><span className="text-right font-bold text-[#111827]">{new Date(Date.now() + Number(plan.periodSeconds) * 1000).toLocaleDateString()}</span></div>
-                            {promo && firstRegularDate && (
+                            <div className="flex justify-between gap-4"><span className="text-black/60">Estimated next charge</span><span className="text-right font-bold text-[#111827]">{new Date(isUpgrade && upgradePreview?.nextChargeAt ? upgradePreview.nextChargeAt : Date.now() + Number(plan.periodSeconds) * 1000).toLocaleDateString()}</span></div>
+                            {promo && firstRegularDate && !isUpgrade && (
                                 <div className="flex justify-between gap-4"><span className="text-black/60">First full-price renewal</span><span className="text-right font-bold text-[#111827]">{firstRegularDate.toLocaleDateString()}</span></div>
                             )}
                         </div>
-                        {promo && (
+                        {isUpgrade && (
+                            <p className="rounded-2xl border border-[#2775CA]/25 bg-[#2775CA]/[0.06] p-3 text-xs leading-relaxed text-black/70">
+                                Confirming ends your current plan and starts this one today. The time you already paid for is
+                                credited against today&apos;s charge, so you&apos;re never billed twice for the same days.
+                            </p>
+                        )}
+                        {promo && !isUpgrade && (
                             <p className="rounded-2xl border border-[#2775CA]/25 bg-[#2775CA]/[0.06] p-3 text-xs leading-relaxed text-black/70">
                                 You are authorizing both prices now: {isFreeTrial ? "0 USDC" : `${formatAmount(promo.introductoryAmountUsdc)} USDC`} per {formatPeriod(plan.periodSeconds)} during
                                 the introductory period, then {formatAmount(plan.amountUsdc)} USDC per {formatPeriod(plan.periodSeconds)}. The price can never
@@ -634,7 +750,7 @@ export default function SubscribeClient({
                         <p className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">Confirming authorizes recurring USDC charges under these terms. You can manage or cancel the subscription from your dashboard; any minimum commitment shown above still applies.</p>
                         <div className="grid grid-cols-2 gap-3">
                             <button type="button" onClick={() => setShowSubscribeReview(false)} disabled={isSubscribing} className="rounded-2xl border border-black/15 bg-white hover:bg-black/5 px-4 py-3 text-xs font-bold text-[#111827] transition-all disabled:opacity-50">Back</button>
-                            <button type="button" onClick={() => { setShowSubscribeReview(false); void handleSubscribe(); }} disabled={isSubscribing} className="rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] px-4 py-3 text-xs font-bold text-[#FFFFF0] transition-all disabled:opacity-50">Confirm subscription</button>
+                            <button type="button" onClick={() => { setShowSubscribeReview(false); void handleSubscribe(); }} disabled={isSubscribing} className="rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] px-4 py-3 text-xs font-bold text-[#FFFFF0] transition-all disabled:opacity-50">{isUpgrade ? "Confirm upgrade" : "Confirm subscription"}</button>
                         </div>
                     </div>
                 </div>

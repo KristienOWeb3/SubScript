@@ -122,6 +122,61 @@ export default function WebhooksPage() {
             <span className="font-mono">durationSeconds</span> instead of rejecting the webhook or creating a
             duplicate subscription.
           </p>
+          <p className="mt-2">
+            A gift is a <strong>one-time payment</strong>. There is no authorization behind it, so nothing
+            renews and no <span className="font-mono">subscription.*</span> event ever follows. The payload
+            says so directly: <span className="font-mono">data.renews</span> is{" "}
+            <span className="font-mono">false</span>, <span className="font-mono">data.one_time</span> is{" "}
+            <span className="font-mono">true</span>, and <span className="font-mono">data.access_until</span>{" "}
+            is the ISO timestamp the window closes — settlement time plus{" "}
+            <span className="font-mono">durationSeconds</span>. Prefer{" "}
+            <span className="font-mono">access_until</span> over computing the end date yourself, since it is
+            the same value SubScript uses to warn the beneficiary before their access lapses.
+          </p>
+        </Callout>
+      </section>
+
+      <section className="space-y-4">
+        <h2 id="subscription-id-changes" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+          Key entitlements on the customer, not the subscription id
+        </h2>
+        <Callout tone="amber" title="An upgrade or a resume mints a new subscription id">
+          <p>
+            Two lifecycle events replace a subscription rather than editing it, so{" "}
+            <span className="font-mono">subscription_id</span> changes and{" "}
+            <span className="font-mono">previous_subscription_id</span> names the id it supersedes:
+          </p>
+          <ul className="mt-2 list-disc space-y-2 pl-5">
+            <li>
+              <span className="font-mono">subscription.reactivated</span> — the subscriber resumed a
+              subscription they had cancelled. <strong>Nothing is charged.</strong> They keep the access they
+              already paid for and the next charge lands on the original date, on the original cadence. Do not
+              count this event as revenue.
+            </li>
+            <li>
+              <span className="font-mono">subscription.updated</span> with{" "}
+              <span className="font-mono">previous_subscription_id</span> — the subscriber upgraded to a
+              higher-rate plan at checkout. The new plan&apos;s full period is charged today less{" "}
+              <span className="font-mono">credit_applied_usdc_micros</span>, the value of the time they had
+              already paid for, so the amount that moves is smaller than the plan price.
+            </li>
+          </ul>
+          <p className="mt-2">
+            The reason is on-chain: a payment authorization cannot be revived once cancelled, and its terms
+            cannot be raised in place after a resume, so both flows revoke the old authorization and mint a
+            fresh one. There is no id to preserve.
+          </p>
+          <p className="mt-2">
+            <strong>
+              If you key entitlements on <span className="font-mono">subscription_id</span>, an upgraded or
+              resumed customer looks like a brand-new subscriber and their old record looks abandoned.
+            </strong>{" "}
+            Key on <span className="font-mono">merchant_customer_id</span> (the{" "}
+            <span className="font-mono">merchantCustomerId</span> you supplied at creation, also returned as{" "}
+            <span className="font-mono">external_reference</span>) and treat{" "}
+            <span className="font-mono">subscription_id</span> as the current authorization rather than the
+            customer.
+          </p>
         </Callout>
       </section>
 

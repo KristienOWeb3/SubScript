@@ -55,13 +55,27 @@ test("accepting or upgrading an assigned offer preserves one account-bound subsc
 
 test("plan changes enforce strictly higher recurring rates in the UI and server", () => {
     const change = source("src/app/api/user/subscription/change/route.ts");
+    const upgrade = source("src/app/api/user/subscription/upgrade/route.ts");
     const dashboard = source("src/app/dashboard/user/page.tsx");
 
     assert.match(change, /if \(rateComparison <= 0\)/);
     assert.match(change, /PLAN_REDUCTION_NOT_ALLOWED/);
     assert.match(change, /PLAN_UPGRADE_REQUIRED/);
-    assert.match(dashboard, /comparison <= 0/);
-    assert.match(dashboard, /Upgrade only/);
+    /* The upgrade path is a fresh authorization now, not an in-place modify, but the rate rule is
+       unchanged and still shares one predicate with the contract's own guard. */
+    assert.match(upgrade, /NOT_AN_UPGRADE/);
+    /* The dashboard refuses equal and lower rates separately, so each gets copy that says which one
+       happened rather than one message covering both. */
+    assert.match(dashboard, /if \(comparison === 0\)/);
+    assert.match(dashboard, /if \(comparison < 0\)/);
+    assert.match(dashboard, /Plan reductions aren't available/);
+    /* The DM plan list no longer offers an in-thread switch. `modifySubscription` cross-multiplies
+       the new terms against the authorization's CURRENT on-chain period, which after a resume is the
+       short bridge period — so an in-thread upgrade button reverted on-chain for exactly the
+       subscribers most likely to press it. A higher tier now links to the merchant's own page. */
+    assert.match(dashboard, /const isUpgradePath = hasActiveSubscription/);
+    assert.doesNotMatch(dashboard, /subscription\/change/);
+    assert.doesNotMatch(dashboard, /Upgrade only/);
 });
 
 test("active subscription cancellation and renewal webhooks retain merchant identity", () => {
@@ -95,7 +109,9 @@ test("sponsored plan requests dispatch in-app DM cards and merchant confirmation
     assert.match(requestRoute, /messageType: "SPONSORED_PLAN_REQUEST"/);
     assert.match(requestRoute, /createDmAndNotify\(\{/);
     assert.match(verifyWorker, /message_type: "SPONSORED_PLAN_CONFIRMED"/);
-    assert.match(verifyWorker, /Sponsored Access Active/);
+    /* The title now names the date the gifted window closes rather than asserting that access is
+       simply "active", which read like the start of a subscription. */
+    assert.match(verifyWorker, /is covered until/);
     assert.match(catalog, /SPONSORED_PLAN_REQUEST/);
     assert.match(catalog, /SPONSORED_PLAN_CONFIRMED/);
     assert.match(dashboard, /SPONSORED_PLAN_REQUEST/);
