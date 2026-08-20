@@ -13,6 +13,9 @@ const SUB_ABI = [
     "function cancelSubscription(uint256 subId)",
     "function modifySubscription(uint256 subId, uint256 newAmount, uint256 newPeriod)",
     "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive, address settlementToken, address paymentToken)",
+    /* Public id counter. findActiveOnChainSubscriptionId enumerates the id space with this rather
+       than querying SubscriptionCreated logs, which Arc's RPC rejects beyond a ~10k block span. */
+    "function nextSubscriptionId() view returns (uint256)",
     "function introductoryTerms(uint256) view returns (uint256 amount, uint256 cycles)",
     "function chargeAmountFor(uint256 subId, uint256 sequenceId) view returns (uint256)",
     "event SubscriptionCreated(uint256 indexed subId, address indexed subscriber, address indexed merchant, uint256 amount, uint256 period)",
@@ -79,6 +82,31 @@ export async function getIntroductoryTermsOnChain(
    SubscriptionCreated, so it reads only this pair's own creations — and returns the id of the
    first still-active one. Best-effort: any RPC error returns null so a transient failure never
    blocks a legitimate subscribe (the DB guard already covers the normal path). */
+/* How many ids to walk back from the head of the counter before giving up.
+   The PSA is redeployed rather than upgraded, so each deployment's id space starts at 1 and stays
+   small. The cap only exists so a mature deployment cannot turn this into an unbounded scan; when it
+   is hit the miss is logged rather than passed off as "no subscription". */
+const MAX_SUBSCRIPTION_ID_SCAN = 1_000;
+
+/**
+ * The subscriber's currently-active subscription id with `merchant`, or null.
+ *
+ * Walks the id counter downwards instead of querying logs. The log-based version asked for
+ * `SubscriptionCreated` over block 0 -> latest, which Arc's RPC refuses outright:
+ *
+ *   request exceeded max allowed range: query exceeds max block range 100000
+ *
+ * and the catch below turned that into a silent `null`, so both recovery paths built on this never
+ * worked — `subscribeFromEmbedded`'s subId fallback for when receipt logs lag, and the mirror
+ * self-heal in /api/user/subscriptions. Chunking the range is not a fix either: the real ceiling
+ * measured against Arc is under 90k blocks with ~10k reliable, and the chain is already past block
+ * 58,000,000, so covering any useful history costs hundreds of requests and trips rate limits.
+ *
+ * `nextSubscriptionId` is public, so the id space is directly enumerable and `subscriptions(id)` is a
+ * plain view call — no block ranges, no log limits, and cheap at these id counts. Descending because
+ * a subscriber who has resubscribed has older ids for the same pair that are now inactive; the newest
+ * live one is the answer, and stopping there avoids reading the dead ones at all.
+ */
 export async function findActiveOnChainSubscriptionId(
     subscriber: string,
     merchant: string,
@@ -87,15 +115,30 @@ export async function findActiveOnChainSubscriptionId(
         const contract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider());
         const sub = subscriber.toLowerCase();
         const merch = merchant.toLowerCase();
-        const filter = contract.filters.SubscriptionCreated(null, sub, merch);
-        const logs = await contract.queryFilter(filter);
-        for (const log of logs) {
-            const subId = (log as ethers.EventLog).args?.subId;
-            if (subId === undefined || subId === null) continue;
-            const onChain = await getSubscriptionOnChain(subId);
-            if (onChain && onChain.isActive && onChain.merchant === merch && onChain.subscriber === sub) {
-                return subId.toString();
+
+        const nextId = BigInt(await contract.nextSubscriptionId());
+        const highest = nextId - BigInt(1);
+        const floor = highest > BigInt(MAX_SUBSCRIPTION_ID_SCAN)
+            ? highest - BigInt(MAX_SUBSCRIPTION_ID_SCAN) + BigInt(1)
+            : BigInt(1);
+
+        for (let id = highest; id >= floor; id--) {
+            const s = await contract.subscriptions(id).catch(() => null);
+            if (!s) continue;
+            if (
+                Boolean(s[5])
+                && String(s[0]).toLowerCase() === sub
+                && String(s[1]).toLowerCase() === merch
+            ) {
+                return id.toString();
             }
+        }
+
+        if (floor > BigInt(1)) {
+            console.warn(
+                `[onchain] active-sub scan stopped at id ${floor} of ${highest} without a match for `
+                + `${sub}/${merch} — raise MAX_SUBSCRIPTION_ID_SCAN if this deployment has outgrown it.`,
+            );
         }
         return null;
     } catch (err) {

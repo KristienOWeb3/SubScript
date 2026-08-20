@@ -53,6 +53,7 @@ import { createSubscriptionStartedDm, formatUsdcFromMicros } from "@/lib/dms/sys
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
+import { deterministicIdempotencyKey } from "@/lib/custody";
 
 export const maxDuration = 120;
 
@@ -372,6 +373,12 @@ export async function POST(request: Request) {
            concurrent subscribe cannot both pass their duplicate checks before either has mirrored. */
         const lockKey = `customer-subscription:${subscriber}:${merchant}`;
         const idempotencyKey = `upgrade:${current.contractAddress}:${fromSubscriptionId}:${target.id}`;
+        /* The provider key is the same seed in the UUID shape Circle requires — it rejects anything
+           else with a bare `400 API parameter invalid`. Kept separate from `idempotencyKey` so the
+           attempt row stays human-readable while the persisted `providerIdempotencyKey` is exactly
+           what Circle was sent, which is what reconciliation matches on. Sending the raw seed here
+           failed AFTER the old authorization had already been revoked. */
+        const providerIdempotencyKey = deterministicIdempotencyKey(idempotencyKey);
         const requestFingerprint = crypto
             .createHash("sha256")
             .update(`${idempotencyKey}:${newAmountMicros}:${newPeriodSeconds}`)
@@ -394,7 +401,7 @@ export async function POST(request: Request) {
                     subscriberAddress: subscriber,
                     idempotencyKey,
                     requestFingerprint,
-                    providerIdempotencyKey: idempotencyKey,
+                    providerIdempotencyKey,
                     status: "PREPARED",
                 },
             });
@@ -433,7 +440,7 @@ export async function POST(request: Request) {
                 merchant,
                 newAmountMicros,
                 newPeriodSeconds,
-                idempotencyKey,
+                providerIdempotencyKey,
                 /* The credit is expressed as the sequence-0 charge. With no credit dueToday EQUALS the
                    new amount, and the contract rejects `_introductoryAmount >= _amount` — so that case
                    goes through the plain create, which charges the same figure. */

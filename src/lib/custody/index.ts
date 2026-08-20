@@ -44,6 +44,32 @@ export function deterministicIdempotencyKey(seed: string): string {
     return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${variant}${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Coerce a caller-supplied idempotency key into the UUID shape Circle requires.
+ *
+ * Circle rejects a non-UUID key with `400 API parameter invalid` — a generic message that names no
+ * field, so it reads as "the transaction was malformed" rather than "your key is the wrong shape".
+ * `/api/user/subscription/resume` shipped passing its raw seed (`resume:0x<contract>:<subId>`)
+ * straight through, so every resume 400'd at the custody boundary and the subscriber was told their
+ * subscription could not be restored. `/api/user/subscription/upgrade` carried the identical
+ * mistake, and there it landed after the old authorization had already been revoked.
+ *
+ * Normalizing here rather than only at those two call sites because the failure is silent at the
+ * type level: `idempotencyKey?: string` accepts any string, the doc comment saying to prefer
+ * `deterministicIdempotencyKey` is advisory, and the error surfaces from Circle rather than from us.
+ * A well-formed UUID passes through untouched, so this only ever rescues a key that was already
+ * guaranteed to fail.
+ *
+ * Call sites should still seed through `deterministicIdempotencyKey` themselves when they persist
+ * the key (e.g. `subscription_attempts.provider_idempotency_key`), so the stored value matches what
+ * Circle actually saw.
+ */
+export function circleIdempotencyKey(key: string): string {
+    return UUID_PATTERN.test(key) ? key.toLowerCase() : deterministicIdempotencyKey(key);
+}
+
 /**
  * Idempotency key for cancelling a specific subscription. A subId is terminal and single-use, so it
  * is safe to dedupe across every caller path (the execute-tx route and cancelFromEmbedded). Defined
@@ -101,8 +127,9 @@ class CircleCustody implements WalletCustody {
             callData,
             fee: { type: "level", config: { feeLevel: "MEDIUM" } },
             /* Durable when the caller supplies a stable key (retries dedupe at Circle); random
-               otherwise, preserving prior behavior for operations without a natural key. */
-            idempotencyKey: call.idempotencyKey || randomUUID(),
+               otherwise, preserving prior behavior for operations without a natural key. Coerced to
+               the UUID shape Circle demands — see circleIdempotencyKey. */
+            idempotencyKey: call.idempotencyKey ? circleIdempotencyKey(call.idempotencyKey) : randomUUID(),
         });
         const txId = created.data?.id;
         if (!txId) {
