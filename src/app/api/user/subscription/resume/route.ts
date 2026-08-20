@@ -32,6 +32,7 @@ import { sendReactivatedDm } from "@/lib/dms/lifecycle";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
+import { deterministicIdempotencyKey } from "@/lib/custody";
 
 export const maxDuration = 120;
 
@@ -140,8 +141,13 @@ export async function POST(request: Request) {
         }
 
         /* Stable across retries: a resubmitted resume must return the original transaction from the
-           custody provider rather than minting a second authorization. */
-        const resumeRequestKey = `resume:${row.contractAddress}:${subscriptionId}`;
+           custody provider rather than minting a second authorization.
+           Seeded through deterministicIdempotencyKey because Circle requires a UUID and rejects
+           anything else with a bare `400 API parameter invalid`. Passing the raw seed here is what
+           made every resume fail at the custody boundary. */
+        const resumeRequestKey = deterministicIdempotencyKey(
+            `resume:${row.contractAddress}:${subscriptionId}`,
+        );
         await requireSponsoredGas({
             /* Shares the `subscribe` budget on purpose — a resume mints an authorization exactly as a
                subscribe does, so it belongs in the same per-action daily bucket. */
