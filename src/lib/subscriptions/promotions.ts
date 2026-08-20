@@ -84,19 +84,39 @@ export function isPromotionLive(promo: PromotionRow, now: Date = new Date()): bo
 /* The live promotion a given subscriber may redeem on a plan, or null. Checks the offer
    window/cap, once-per-customer, and (when the offer demands it) that the subscriber has
    never had a subscription with this merchant. Advisory only — claimPromotionRedemption
-   re-checks the cap atomically. */
+   re-checks the cap atomically.
+
+   Considers EVERY active promotion on the plan rather than the first row the database happens to
+   return. A plan can carry both an acquisition offer (newCustomersOnly) and a win-back offer
+   (newCustomersOnly false); picking one blindly meant a returning subscriber could be handed the
+   acquisition offer, fail its never-subscribed-here check, and be told there was no offer at all
+   while a win-back they were entitled to sat right beside it. */
 export async function findApplicablePromotion(args: {
     planId: string;
     merchantAddress: string;
     subscriber?: string | null;
 }): Promise<PromotionRow | null> {
-    const promo = await prisma.merchantPlanPromotion.findFirst({
+    const candidates = await prisma.merchantPlanPromotion.findMany({
         where: { planId: args.planId, active: true },
+        orderBy: { createdAt: "desc" },
     });
-    if (!promo || !isPromotionLive(promo as PromotionRow)) return null;
+    const live = candidates.filter((promo) => isPromotionLive(promo as PromotionRow));
+    if (live.length === 0) return null;
 
     const subscriber = args.subscriber?.toLowerCase();
-    if (subscriber) {
+    if (!subscriber) return live[0] as PromotionRow;
+
+    /* Counted once rather than per candidate: this is the same question for every offer on the
+       plan, and it is the expensive part of the check. */
+    const priorSubscriptions = await prisma.subscription.count({
+        where: {
+            subscriber,
+            merchantAddress: args.merchantAddress.toLowerCase(),
+            kind: "CUSTOMER",
+        },
+    });
+
+    for (const promo of live) {
         const redeemed = await prisma.promotionRedemption.findUnique({
             where: {
                 promotionId_subscriberAddress: {
@@ -105,20 +125,48 @@ export async function findApplicablePromotion(args: {
                 },
             },
         });
-        if (redeemed) return null;
-
-        if (promo.newCustomersOnly) {
-            const prior = await prisma.subscription.count({
-                where: {
-                    subscriber,
-                    merchantAddress: args.merchantAddress.toLowerCase(),
-                    kind: "CUSTOMER",
-                },
-            });
-            if (prior > 0) return null;
-        }
+        if (redeemed) continue;
+        if (promo.newCustomersOnly && priorSubscriptions > 0) continue;
+        return promo as PromotionRow;
     }
-    return promo as PromotionRow;
+    return null;
+}
+
+/**
+ * A live win-back offer this subscriber could take on the plan they are leaving, or null.
+ *
+ * A win-back offer is simply a promotion with `newCustomersOnly: false` — that flag already means
+ * "returning customers may redeem this", so no new column or offer kind is needed. Filtered
+ * explicitly rather than going through findApplicablePromotion because at cancellation time we want
+ * the offer that a departing customer can actually use, not whichever offer ranks first.
+ *
+ * Presentation only: no redemption is claimed here. The claim happens if and when they resubscribe.
+ */
+export async function findWinbackPromotion(args: {
+    planId: string;
+    merchantAddress: string;
+    subscriber: string;
+}): Promise<PromotionRow | null> {
+    const subscriber = args.subscriber.toLowerCase();
+    const candidates = await prisma.merchantPlanPromotion.findMany({
+        where: { planId: args.planId, active: true, newCustomersOnly: false },
+        orderBy: { createdAt: "desc" },
+    });
+
+    for (const promo of candidates) {
+        if (!isPromotionLive(promo as PromotionRow)) continue;
+        const redeemed = await prisma.promotionRedemption.findUnique({
+            where: {
+                promotionId_subscriberAddress: {
+                    promotionId: promo.id,
+                    subscriberAddress: subscriber,
+                },
+            },
+        });
+        if (redeemed) continue;
+        return promo as PromotionRow;
+    }
+    return null;
 }
 
 /* Atomic redemption claim (SQL function locks the promotion row, enforces the cap and

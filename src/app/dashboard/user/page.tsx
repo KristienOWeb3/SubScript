@@ -1104,14 +1104,20 @@ export default function UserDashboard() {
     }
   };
 
-  const loadSubscriptions = async () => {
+  const loadSubscriptions = async (): Promise<Subscription[] | null> => {
     try {
       const res = await fetch("/api/user/subscriptions");
       const data = await res.json();
-      if (data.success) setSubscriptions(data.subscriptions);
+      if (data.success) {
+        setSubscriptions(data.subscriptions);
+        /* Returned as well as stored. A caller that has just learned a row exists cannot read it
+           back out of state in the same tick, and the resume hand-off below needs it immediately. */
+        return data.subscriptions as Subscription[];
+      }
     } catch (err) {
       console.error("Failed to load subscriptions:", err);
     }
+    return null;
   };
 
   const loadRequestsCount = useCallback(async () => {
@@ -1431,93 +1437,98 @@ export default function UserDashboard() {
      dedupes the first charge; cleared on success so the next subscribe is a fresh attempt. */
   const subscribeRequestKey = useRef<string | null>(null);
 
+  /* Subscribe to a plan from the merchant thread.
+   *
+   * Only a FIRST subscribe transacts here. Upgrades deliberately do not: the DM plan list is a
+   * catalogue of what the business offers, and an upgrade is settled at checkout on the business's own
+   * page (its plan `detailsUrl`) so the business owns where that decision starts. The server prices it
+   * there — /api/user/subscription/upgrade credits the time already paid for and mints a fresh
+   * authorization at the new plan's terms.
+   *
+   * In-place plan changes are gone from the product entirely. `modifySubscription` rejects a rate
+   * reduction by cross-multiplying against the authorization's CURRENT on-chain period, and a resumed
+   * subscription's period is the short bridge period — so upgrading a 20 USDC/30d plan to 40 USDC/30d
+   * with 14 days left evaluates `40 * 14 < 20 * 30` and reverts on-chain. Any in-thread switch button
+   * would have failed for exactly the subscribers most likely to press it.
+   */
   const handleSubscribeOrSwitchPlan = async (plan: MerchantPlan) => {
     const activeSub = getActiveSubscriptionForMerchant(plan.merchantAddress);
 
-    /* Plan reductions are intentionally unavailable. Compare normalized recurring rates so a
-       longer billing period cannot disguise a cheaper tier as an upgrade. */
-    let isUpgrade = false;
-    if (activeSub && !activeSub.cancelAtPeriodEnd) {
+    if (activeSub) {
+      /* Compare normalized recurring rates so a longer billing period cannot disguise a cheaper
+         tier as a nominal amount increase. */
+      let comparison: number;
       try {
-        const comparison = compareRecurringRates(
+        comparison = compareRecurringRates(
           BigInt(plan.amountUsdc),
           BigInt(plan.periodSeconds),
           BigInt(activeSub.amountCapUsdc),
           BigInt(activeSub.billingIntervalSeconds),
         );
-        if (comparison <= 0) {
-          setPlanManagerStatus(null);
-          setPlanManagerError(
-            comparison < 0
-              ? "Plan reductions are not available. Choose your current plan or a higher tier."
-              : "Only upgrades to a higher recurring rate are available."
-          );
-          return;
-        }
-        isUpgrade = true;
       } catch {
         setPlanManagerError("This plan could not be compared with your current subscription.");
         return;
       }
-    }
 
-    const applyPlanChange = async (mode: "scheduled" | "immediate") => {
-      const isSwitch = activeSub && !activeSub.cancelAtPeriodEnd;
-      const actionKey = isSwitch ? `switch-plan-${plan.id}` : `subscribe-plan-${plan.id}`;
-      await runAction(actionKey, async () => {
-        setPlanManagerStatus(isSwitch ? "Switching plan on-chain..." : "Creating subscription on-chain...");
-        setPlanManagerError(null);
-        const endpoint = isSwitch ? "/api/user/subscription/change" : "/api/user/subscription/subscribe";
-        const body = isSwitch
-          ? { fromSubscriptionId: activeSub.subscriptionId, planId: plan.id, mode }
-          : plan.checkoutSessionId
-            ? { checkoutSessionId: plan.checkoutSessionId }
-            : { planId: plan.id };
-        /* Subscribing charges the first payment server-side; a retry with the same x-request-id
-           dedupes at Circle instead of creating (and charging) a second subscription. */
-        subscribeRequestKey.current ||= crypto.randomUUID();
-        const res = await fetch(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-request-id": subscribeRequestKey.current },
-          body: JSON.stringify(body),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.success) throw new Error(data.error || "Subscription transaction failed.");
-        subscribeRequestKey.current = null;
-        const charged = data.proratedChargeUsdc ? ` Charged ${data.proratedChargeUsdc} USDC now.` : "";
-        setPlanManagerStatus(
-          activeSub
-            ? `${data.effective || `Switched to ${data.planName || plan.name}.`}${charged}`
-            : `Subscribed to ${data.planName || plan.name}.`
+      setPlanManagerStatus(null);
+      if (comparison === 0) {
+        setPlanManagerError(
+          activeSub.cancelAtPeriodEnd
+            ? "This is the plan you're already paying for. Use Resume to keep it — nothing will be charged."
+            : "You're already on this plan."
         );
-        triggerToast(activeSub ? "Plan change applied" : "Subscription created on-chain");
-        await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
-      }).catch((err: any) => {
-        setPlanManagerError(err.message || "Subscription transaction failed.");
-      });
-    };
+        return;
+      }
+      if (comparison < 0) {
+        setPlanManagerError("Plan reductions aren't available. Stay on your current plan or pick a higher tier.");
+        return;
+      }
 
-    if (isUpgrade) {
-      setConfirmModal({
-        open: true,
-        title: `Upgrade to ${plan.name}`,
-        description: "Upgrade now to pay the prorated amount for the rest of this period, or switch at renewal with no charge today.",
-        confirmLabel: "Upgrade Now",
-        cancelLabel: "At Renewal",
-        variant: "default",
-        onConfirm: () => {
-          setConfirmModal(null);
-          void applyPlanChange("immediate");
-        },
-        onCancel: () => {
-          setConfirmModal(null);
-          void applyPlanChange("scheduled");
-        },
-      });
+      /* Defensive: the card renders a link rather than a button for this case, so this is only
+         reachable if a plan's link is missing. Say where the upgrade happens instead of failing. */
+      setPlanManagerError("Upgrades are completed on the merchant's own site. Open their plan page to switch.");
       return;
     }
 
-    await applyPlanChange("scheduled");
+    await runAction(`subscribe-plan-${plan.id}`, async () => {
+      setPlanManagerStatus("Creating subscription on-chain...");
+      setPlanManagerError(null);
+      /* Subscribing charges the first payment server-side; a retry with the same x-request-id
+         dedupes at Circle instead of creating (and charging) a second subscription. */
+      subscribeRequestKey.current ||= crypto.randomUUID();
+      const res = await fetch("/api/user/subscription/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-request-id": subscribeRequestKey.current },
+        body: JSON.stringify(
+          plan.checkoutSessionId ? { checkoutSessionId: plan.checkoutSessionId } : { planId: plan.id },
+        ),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      /* The local mirror said there was no active subscription, but the server found one that is
+         canceled with paid time left. Subscribing again would charge for a period already owned, so
+         the server refuses — hand off to the free resume rather than surfacing a dead end. */
+      if (data?.code === "RESUME_INSTEAD") {
+        subscribeRequestKey.current = null;
+        const refreshed = await loadSubscriptions();
+        const canceled = (refreshed ?? subscriptions).find(
+          (sub) => String(sub.subscriptionId) === String(data.subscriptionId),
+        );
+        if (canceled) {
+          await handleResumeSubscription(canceled);
+          return;
+        }
+        throw new Error(data.error || "This subscription is canceled but still active. Resume it to keep it.");
+      }
+
+      if (!res.ok || !data.success) throw new Error(data.error || "Subscription transaction failed.");
+      subscribeRequestKey.current = null;
+      setPlanManagerStatus(`Subscribed to ${data.planName || plan.name}.`);
+      triggerToast("Subscription created on-chain");
+      await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
+    }).catch((err: any) => {
+      setPlanManagerError(err.message || "Subscription transaction failed.");
+    });
   };
 
   /* Resume a subscription the user canceled but is still inside the paid period.
@@ -3971,6 +3982,9 @@ export default function UserDashboard() {
                               onResumeService={() => handleResumeService(dm.senderAddress)}
                               onTopUpCommit={() => openVaultCommit(dm.senderAddress)}
                               onViewCommit={() => setActiveTab("commit")}
+                              onManagePlan={handleTogglePlanManager}
+                              onCancelSubscription={() => handleCancelSubscriptionForMerchant(dm.senderAddress)}
+                              onResumeSubscription={() => activeThreadSubscription && handleResumeSubscription(activeThreadSubscription)}
                               resumeBusy={vaultResumeBusyId === dm.senderAddress || vaultResumeBusyId === dm.senderAddress?.toLowerCase()}
                             />
                           ))}
@@ -4000,6 +4014,7 @@ export default function UserDashboard() {
                               onSubscribe={handleSubscribeOrSwitchPlan}
                               onAskFriend={openGiftPlanModal}
                               onCancel={() => selectedDmPeer && handleCancelSubscriptionForMerchant(selectedDmPeer)}
+                              onResume={handleResumeSubscription}
                               giftLoadingPlanId={giftRequestBusyPlanId}
                             />
                           ) : (
@@ -4178,6 +4193,9 @@ export default function UserDashboard() {
                                   onResumeService={() => handleResumeService(dm.senderAddress)}
                                   onTopUpCommit={() => openVaultCommit(dm.senderAddress)}
                                   onViewCommit={() => setActiveTab("commit")}
+                                  onManagePlan={handleTogglePlanManager}
+                                  onCancelSubscription={() => handleCancelSubscriptionForMerchant(dm.senderAddress)}
+                                  onResumeSubscription={() => activeThreadSubscription && handleResumeSubscription(activeThreadSubscription)}
                                   resumeBusy={vaultResumeBusyId === dm.senderAddress || vaultResumeBusyId === dm.senderAddress?.toLowerCase()}
                                 />
                               ))}
@@ -4207,6 +4225,7 @@ export default function UserDashboard() {
                                   onSubscribe={handleSubscribeOrSwitchPlan}
                                   onAskFriend={openGiftPlanModal}
                                   onCancel={() => selectedDmPeer && handleCancelSubscriptionForMerchant(selectedDmPeer)}
+                                  onResume={handleResumeSubscription}
                                   giftLoadingPlanId={giftRequestBusyPlanId}
                                 />
                               ) : (
@@ -7463,6 +7482,9 @@ function DmBubble({
   onResumeService,
   onTopUpCommit,
   onViewCommit,
+  onManagePlan,
+  onCancelSubscription,
+  onResumeSubscription,
   resumeBusy,
 }: {
   dm: DmMessage;
@@ -7479,6 +7501,14 @@ function DmBubble({
   onResumeService?: () => void;
   onTopUpCommit?: () => void;
   onViewCommit?: () => void;
+  /* Subscription-lifecycle actions.
+   *
+   * Every lifecycle DM used to end with "manage or cancel from your dashboard" and carry no button,
+   * so the message that told a subscriber their price was about to change was the one place they
+   * could not act on it. These three cover what those notices actually ask for. */
+  onManagePlan?: () => void;
+  onCancelSubscription?: () => void;
+  onResumeSubscription?: () => void;
   resumeBusy?: boolean;
 }) {
   const isPending = dm.status === "PENDING";
@@ -7555,6 +7585,37 @@ function DmBubble({
     if (onViewCommit) {
       actionItems.push({ key: "view-commit", label: "Auto top-up settings", onClick: onViewCommit });
     }
+  }
+  /* Subscription-lifecycle notices. Each one names an action in its copy — this is that action,
+     in the same message, instead of "from your dashboard".
+     ALLOWANCE_LOW is deliberately absent: its remedy is re-authorizing the ERC-20 allowance, and
+     there is no endpoint for that yet (extendAllowanceForCustodial has no callers), so a button
+     would go nowhere. */
+  if (dm.messageType === "SUBSCRIPTION_STARTED" || dm.messageType === "RENEWAL_UPCOMING") {
+    if (onManagePlan) {
+      actionItems.push({ key: "manage-plan", label: "Manage plan", onClick: onManagePlan });
+    }
+    if (onCancelSubscription) {
+      actionItems.push({
+        key: "cancel-subscription",
+        label: dm.messageType === "RENEWAL_UPCOMING" ? "Cancel before renewal" : "Cancel plan",
+        onClick: onCancelSubscription,
+      });
+    }
+  }
+  if (dm.messageType === "TRIAL_ENDING") {
+    /* "Keep it" is a dismissal, not a purchase: staying subscribed is the default and needs no
+       transaction. Saying so explicitly stops the notice reading like a demand. */
+    actionItems.push({ key: "keep-plan", label: "Keep it", onClick: onDismiss, loadingKey: `dismiss-${dm.id}` });
+    if (onCancelSubscription) {
+      actionItems.push({ key: "cancel-subscription", label: "Cancel plan", onClick: onCancelSubscription });
+    }
+  }
+  if (dm.messageType === "WINBACK_OFFER" && onResumeSubscription) {
+    actionItems.push({ key: "resume-subscription", label: "Resume", onClick: onResumeSubscription });
+  }
+  if (dm.messageType === "SPONSORED_ACCESS_ENDING" && onManagePlan) {
+    actionItems.push({ key: "subscribe-self", label: "Subscribe for yourself", onClick: onManagePlan });
   }
   if (dm.messageType === "CHURN_SURVEY" && isPending && onSurveySubmit) {
     actionItems.push(
@@ -7875,6 +7936,16 @@ function DmBubble({
   );
 }
 
+/** Hostname of a merchant-authored link, for labelling where a tap will take the customer. */
+function linkHostname(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
 function MerchantPlanManager({
   open,
   merchantLabel,
@@ -7888,6 +7959,7 @@ function MerchantPlanManager({
   onSubscribe,
   onAskFriend,
   onCancel,
+  onResume,
   giftLoadingPlanId,
 }: {
   open: boolean;
@@ -7902,6 +7974,12 @@ function MerchantPlanManager({
   onSubscribe: (plan: MerchantPlan) => void;
   onAskFriend: (plan: MerchantPlan) => void;
   onCancel: () => void;
+  /* Restoring a canceled subscription is NOT onSubscribe. Cancelling revoked the on-chain
+     authorization, so subscribing again mints a second one and charges for a period the
+     subscriber already paid for — /api/user/subscription/resume mints a free bridge instead.
+     This prop is what routes the canceled branch there; without it the button posted to
+     /subscribe, which now refuses with RESUME_INSTEAD and dead-ends the thread. */
+  onResume?: (subscription: Subscription) => void;
   giftLoadingPlanId?: string | null;
 }) {
   const hasActiveSubscription = !!activeSubscription;
@@ -7943,11 +8021,16 @@ function MerchantPlanManager({
               whileTap={{ scale: 0.92 }}
               transition={{ type: "spring", stiffness: 450, damping: 32 }}
               type="button"
-              onClick={() => activePlan && onSubscribe(activePlan)}
-              disabled={loadingAction === `subscribe-plan-${activePlan?.id}`}
+              /* activeSubscription, not activePlan. activePlan is matched by exact amount+period
+                 against the merchant's published plans, so a plan edited or delisted after signup
+                 resolves to null and used to disable the only way back. Resume needs the
+                 subscription row alone. */
+              onClick={() => onResume?.(activeSubscription)}
+              disabled={loadingAction === `resume-sub-${activeSubscription.subscriptionId}`}
               className="dm-quick-button flex-1 min-w-0 text-center truncate relative overflow-hidden border-black/15 bg-white text-black shadow-sm font-black"
             >
-              Resubscribe
+              {/* "Resume", not "Resubscribe": nothing is charged and the paid period continues. */}
+              {loadingAction === `resume-sub-${activeSubscription.subscriptionId}` ? "Resuming…" : "Resume"}
             </motion.button>
           ) : (
             <motion.button
@@ -7975,7 +8058,9 @@ function MerchantPlanManager({
           onClick={onToggle}
           className={`dm-quick-button dm-action-menu-trigger relative overflow-hidden border-black/15 bg-white text-black font-black shadow-sm ${hasActiveSubscription ? "flex-1 min-w-0 text-center truncate" : ""}`}
         >
-          {open ? "Hide Plans" : hasActiveSubscription ? (isCanceledAtPeriodEnd ? "Reactivate Plan" : "Manage Plan") : "Subscribe"}
+          {/* Not "Reactivate Plan" — Resume above is what reactivates, for free. This only opens
+              the plan list, which for a canceled subscriber means starting a new paid period. */}
+          {open ? "Hide Plans" : hasActiveSubscription ? (isCanceledAtPeriodEnd ? "View Plans" : "Manage Plan") : "Subscribe"}
         </motion.button>
       </motion.div>
 
@@ -8018,8 +8103,22 @@ function MerchantPlanManager({
                       isUnavailableChange = true;
                     }
                   }
-                  const loadingKey = hasActiveSubscription ? `switch-plan-${plan.id}` : `subscribe-plan-${plan.id}`;
+                  /* Only a first subscribe transacts from this card. An upgrade navigates to
+                     /subscribe/<planId>, so there is no in-place "switch" action to show progress
+                     for — the old `switch-plan-*` key could never be set again. */
+                  const loadingKey = `subscribe-plan-${plan.id}`;
                   const giftBusy = giftLoadingPlanId === plan.id;
+                  /* A higher tier the subscriber could move to, but not from here.
+                   *
+                   * The DM plan list is a catalogue of what the business offers, not a switcher. An
+                   * upgrade is settled at checkout, and the business decides where that starts — so the
+                   * action is the merchant's own page (its plan `detailsUrl`), and checking out there is
+                   * what upgrades them. Rendering an in-thread upgrade button instead would put SubScript
+                   * in the middle of a decision the business owns, and for a subscriber who had ever
+                   * resumed it would have failed on-chain anyway (the PSA reads the new terms against the
+                   * bridge period and reverts). */
+                  const isUpgradePath = hasActiveSubscription && !isCurrent && !isUnavailableChange;
+                  const merchantPlanHost = linkHostname(plan.detailsUrl);
                   return (
                     <motion.div
                       key={plan.id}
@@ -8041,7 +8140,7 @@ function MerchantPlanManager({
                               {plan.description}
                             </p>
                           )}
-                          {plan.detailsUrl && (
+                          {plan.detailsUrl && !isUpgradePath && (
                             <a
                               href={plan.detailsUrl}
                               target="_blank"
@@ -8063,27 +8162,50 @@ function MerchantPlanManager({
                           </motion.span>
                         )}
                       </div>
-                      <motion.button
-                        whileHover={{ scale: 1.04 }}
-                        whileTap={{ scale: 0.93 }}
-                        transition={{ type: "spring", stiffness: 450, damping: 32 }}
-                        type="button"
-                        onClick={() => onSubscribe(plan)}
-                        disabled={isCurrent || isUnavailableChange || loadingAction === loadingKey}
-                        className={`mt-3 w-full rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition shadow-sm ${
-                          isCurrent || isUnavailableChange
-                            ? "border-black/10 bg-black/5 text-black/30 cursor-not-allowed"
-                            : "border-black/20 bg-[#D5E3EE] text-[#111827] hover:bg-[#c2d7e6]"
-                        } ${loadingAction === loadingKey ? "quick-action-loading" : ""}`}
-                      >
-                        {isCurrent
-                          ? "Active now"
-                          : isUnavailableChange
-                            ? "Upgrade only"
-                            : hasActiveSubscription
-                              ? "Upgrade"
+                      {isUpgradePath ? (
+                        plan.detailsUrl ? (
+                          /* The business's own page. Checking out there is what upgrades them — the
+                             checkout credits the time they have already paid for. */
+                          <motion.a
+                            whileHover={{ scale: 1.04 }}
+                            whileTap={{ scale: 0.93 }}
+                            transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                            href={plan.detailsUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-black/20 bg-[#D5E3EE] px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-[#111827] shadow-sm transition hover:bg-[#c2d7e6]"
+                          >
+                            {merchantPlanHost ? `View on ${merchantPlanHost}` : "View on merchant site"}
+                            <ExternalLink className="h-3 w-3" />
+                          </motion.a>
+                        ) : (
+                          /* No link published, so there is nowhere to send them. Said plainly rather
+                             than rendered as a button that cannot do anything. */
+                          <p className="mt-3 rounded-xl border border-dashed border-black/15 bg-black/[0.02] px-3 py-2 text-center text-[9px] font-bold uppercase tracking-[0.1em] text-black/40">
+                            Switch to this plan on the merchant&apos;s site
+                          </p>
+                        )
+                      ) : (
+                        <motion.button
+                          whileHover={{ scale: 1.04 }}
+                          whileTap={{ scale: 0.93 }}
+                          transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                          type="button"
+                          onClick={() => onSubscribe(plan)}
+                          disabled={isCurrent || isUnavailableChange || loadingAction === loadingKey}
+                          className={`mt-3 w-full rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition shadow-sm ${
+                            isCurrent || isUnavailableChange
+                              ? "border-black/10 bg-black/5 text-black/30 cursor-not-allowed"
+                              : "border-black/20 bg-[#D5E3EE] text-[#111827] hover:bg-[#c2d7e6]"
+                          } ${loadingAction === loadingKey ? "quick-action-loading" : ""}`}
+                        >
+                          {isCurrent
+                            ? (isCanceledAtPeriodEnd ? "Use Resume" : "Active now")
+                            : isUnavailableChange
+                              ? "Lower tier"
                               : "Subscribe"}
-                      </motion.button>
+                        </motion.button>
+                      )}
                       <motion.button
                         whileHover={{ scale: 1.04 }}
                         whileTap={{ scale: 0.93 }}

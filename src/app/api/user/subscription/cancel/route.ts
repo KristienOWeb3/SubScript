@@ -13,6 +13,8 @@ import { subscriptionWebhookData } from "@/lib/webhooks";
 import { prisma } from "@/lib/prisma";
 import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 import { createDmAndNotify } from "@/lib/dms/notifications";
+import { sendWinbackOfferDm } from "@/lib/dms/lifecycle";
+import { findWinbackPromotion } from "@/lib/subscriptions/promotions";
 import { subscriptionKey } from "@/lib/subscriptions/contractBinding";
 
 export const maxDuration = 120;
@@ -44,6 +46,9 @@ export async function POST(request: Request) {
                 beneficiaryAddress: true,
                 externalReference: true,
                 sourceCheckoutId: true,
+                planId: true,
+                billingIntervalSeconds: true,
+                plan: { select: { name: true } },
             },
         }).catch(() => null);
 
@@ -143,6 +148,40 @@ export async function POST(request: Request) {
                 description: `Subscription sub_${subscriptionId} was canceled by the subscriber. Access continues through the paid period, until ${accessUntil.slice(0, 10)}. No further payments will be taken.`,
                 dedupeKey: `subscription-cancel-scheduled:${subscriptionId}`,
             }).catch((err) => console.error("[subscription/cancel] DM notification failed:", err));
+
+            /* Retention offer, if the merchant has published one this subscriber can take.
+             *
+             * sendWinbackOfferDm shipped complete with zero callers, so a merchant could configure a
+             * returning-customer offer and no departing subscriber would ever see it. Keyed on the
+             * cancellation rather than a cycle, so one offer per cancellation and not one per pass.
+             * Presentation only — the redemption is claimed if and when they actually resubscribe. */
+            if (mirrored?.planId) {
+                try {
+                    const winback = await findWinbackPromotion({
+                        planId: mirrored.planId,
+                        merchantAddress: sub.merchant,
+                        subscriber: wallet.toLowerCase(),
+                    });
+                    if (winback) {
+                        await sendWinbackOfferDm({
+                            merchantAddress: sub.merchant,
+                            subscriberAddress: wallet.toLowerCase(),
+                            subscriptionId,
+                            planName: mirrored.plan?.name ?? null,
+                            promotionName: winback.name,
+                            offerAmountUsdcMicros: winback.introductoryAmountUsdc,
+                            regularAmountUsdcMicros: winback.regularAmountUsdc,
+                            offerCycles: winback.introductoryCycles,
+                            periodSeconds: mirrored.billingIntervalSeconds ?? sub.period,
+                            accessUntil: new Date(Number(sub.nextPayment) * 1000),
+                            expiresAt: winback.expiresAt,
+                        });
+                    }
+                } catch (winbackError) {
+                    /* A retention offer is never worth failing a cancellation over. */
+                    console.error("[subscription/cancel] win-back offer failed:", winbackError);
+                }
+            }
 
             return NextResponse.json({
                 success: true,

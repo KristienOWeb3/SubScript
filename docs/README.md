@@ -13,6 +13,8 @@ material lives here, grouped by purpose.
 
 ## Architecture and operations
 
+- [System blueprint](architecture/blueprint.md) — start here: what the pieces are, how a payment
+  travels through them, and which file to open to change something
 - [Strategic architecture suggestions](architecture/strategic-suggestions.md)
 - [Security operations](SECOPS.md)
 - [External cron jobs](external-crons.md)

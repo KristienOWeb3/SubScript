@@ -254,3 +254,73 @@ test("a plan change states whether money moved", () => {
        can carry another deployment's merchant reference into the change webhook. */
     assert.match(change, /\.\.\.onActiveContract\(\), subscriptionId: BigInt\(fromSubscriptionId\)/);
 });
+
+test("the DM thread's plan bar resumes rather than resubscribes", () => {
+    /* The bug this pins. The resume endpoint landed wired only into the Subscriptions-tab card, so the
+       merchant thread's plan bar still routed a canceled subscription through onSubscribe ->
+       /api/user/subscription/subscribe. Before the resume endpoint existed that charged a full period
+       a second time; afterwards the server refuses with RESUME_INSTEAD and the thread showed a red
+       error with no way forward. Either way resume from the DM never worked. */
+    const dashboard = readFileSync(
+        new URL("../../../app/dashboard/user/page.tsx", import.meta.url),
+        "utf8",
+    );
+
+    /* The prop exists and is supplied at EVERY plan-bar call site — mobile footer and desktop.
+       Counted per <MerchantPlanManager> block rather than across the file, because the
+       Subscriptions-tab card (SubscriptionRow) legitimately passes the same handler. */
+    assert.match(dashboard, /onResume\?: \(subscription: Subscription\) => void/);
+    const managerCallSites = dashboard
+        .split("<MerchantPlanManager")
+        .slice(1)
+        .map((block) => block.slice(0, block.indexOf("/>")));
+    assert.equal(managerCallSites.length, 2, "expected two MerchantPlanManager call sites");
+    for (const [index, block] of managerCallSites.entries()) {
+        assert.match(block, /onResume=\{handleResumeSubscription\}/, `call site ${index} must pass onResume`);
+    }
+
+    /* The canceled branch calls onResume with the SUBSCRIPTION, not onSubscribe with a plan.
+       activePlan is matched by exact amount+period against the merchant's published plans, so an
+       edited or delisted plan resolved to null and disabled the only way back. */
+    const manager = dashboard.slice(dashboard.indexOf("function MerchantPlanManager"));
+    const canceledBranch = manager.slice(
+        manager.indexOf("isCanceledAtPeriodEnd ? ("),
+        manager.indexOf("Cancel current plan"),
+    );
+    assert.match(canceledBranch, /onResume\?\.\(activeSubscription\)/);
+    assert.doesNotMatch(canceledBranch, /onSubscribe/);
+    assert.doesNotMatch(canceledBranch, /activePlan &&/);
+
+    /* Belt and braces: any surface that still routes a canceled row through /subscribe hands off to
+       the free resume instead of surfacing the refusal. */
+    assert.match(dashboard, /data\?\.code === "RESUME_INSTEAD"/);
+    assert.match(dashboard, /await handleResumeSubscription\(canceled\)/);
+});
+
+test("a departing subscriber is shown a win-back offer they can actually redeem", () => {
+    /* sendWinbackOfferDm shipped complete with zero callers, so a merchant could publish a
+       returning-customer offer and no cancelling subscriber would ever see it. */
+    const cancel = readFileSync(
+        new URL("../../../app/api/user/subscription/cancel/route.ts", import.meta.url),
+        "utf8",
+    );
+    const promotions = readFileSync(
+        new URL("../promotions.ts", import.meta.url),
+        "utf8",
+    );
+
+    assert.match(cancel, /sendWinbackOfferDm/);
+    assert.match(cancel, /findWinbackPromotion/);
+    /* Never worth failing a cancellation over. */
+    assert.match(cancel, /win-back offer failed/);
+
+    /* A win-back offer is a promotion with newCustomersOnly false — that flag already means
+       "returning customers may redeem this", so no new column or offer kind was added. */
+    assert.match(promotions, /newCustomersOnly: false/);
+
+    /* And findApplicablePromotion must consider EVERY live offer on the plan. It used to take
+       findFirst, so a returning subscriber could be handed the acquisition offer, fail its
+       never-subscribed-here check, and be told there was no offer while a win-back sat beside it. */
+    assert.match(promotions, /findMany\(\{\s*where: \{ planId: args\.planId, active: true \}/);
+    assert.doesNotMatch(promotions, /findFirst\(\{\s*where: \{ planId: args\.planId, active: true \},?\s*\}\)/);
+});

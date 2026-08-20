@@ -56,11 +56,47 @@ test("sponsored metadata is merged into payment.succeeded webhooks", async () =>
     assert.match(webhooks, /metadata\?:\s*Record<string,\s*unknown>/);
     assert.match(webhooks, /\.\.\.\(args\.metadata \?\? \{\}\)/);
     assert.match(worker, /\.from\("payment_links"\)[\s\S]*\.select\("state_snapshot"\)/);
-    assert.match(worker, /sponsoredWebhookMetadata\(parentLink\?\.state_snapshot\)/);
+    /* Takes the settlement moment now, because `accessUntil` is measured from when the friend
+       actually paid rather than from when the request was raised. */
+    assert.match(worker, /sponsoredWebhookMetadata\(parentLink\?\.state_snapshot,\s*new Date\(\)\)/);
     assert.match(worker, /isSponsored:\s*true/);
+    /* Both casings, which is the documented contract for every field on the payload ("Pick one; they
+       will not diverge"). This field was camelCase-only, so `is_sponsored` read as absent — i.e. NOT a
+       gift — to a handler that had followed the snake_case convention the rest of the payload
+       advertises. It is the field a gift handler branches on first, so that silence credited the payer
+       rather than the beneficiary. */
+    assert.match(worker, /is_sponsored:\s*true/);
     assert.match(worker, /duration_seconds/);
+    /* An absolute end date, not just a duration the merchant has to derive a start for. This is the
+       value the docs tell integrators to extend the beneficiary's access window to. */
+    assert.match(worker, /access_until: accessUntil/);
+    assert.match(worker, /accessUntil,/);
+    /* Stated outright so a handler cannot mistake a gift for the start of a recurring plan. */
+    assert.match(worker, /renews: false/);
+    assert.match(worker, /one_time: true/);
     assert.match(docs, /POST \/api\/user\/requests\/merchant-plan/);
     assert.match(docs, /extend the existing access window/);
+});
+
+test("a gifted access window announces that it is one-time and when it ends", async () => {
+    const worker = await source("src/lib/payments/paymentLinkVerificationWorker.ts");
+    const catalog = await source("src/lib/dms/catalog.ts");
+    const lifecycle = await source("src/lib/dms/lifecycle.ts");
+    const reminders = await source("src/app/api/cron/payment-reminders/route.ts");
+
+    /* The confirmation DM used to say only "your access is active", which reads like the start of a
+       subscription. The beneficiary had no way to know the payment was one-time or when it ran out. */
+    assert.match(worker, /one-time payment/);
+    assert.match(worker, /won't renew/);
+    assert.match(worker, /is covered until/);
+
+    /* A gift creates no subscriptions row, so no billing cron sees it. The end-of-window notice is
+       its own type and is swept from the settling payment plus the link's durationSeconds. */
+    assert.match(catalog, /SPONSORED_ACCESS_ENDING/);
+    assert.match(lifecycle, /export async function sendSponsoredAccessEndingDm/);
+    assert.match(reminders, /sendSponsoredAccessEndingDm/);
+    assert.match(reminders, /path: \["isSponsored"\], equals: true/);
+    assert.match(reminders, /SPONSORED_LEAD_HOURS/);
 });
 
 test("user dashboard exposes gift link creation from merchant DM plan controls", async () => {

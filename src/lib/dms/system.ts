@@ -98,6 +98,12 @@ export async function createSubscriptionStartedDm({
     changeTerms?: {
         effective: "immediate" | "next_renewal";
         proratedChargeUsdc?: bigint | null;
+        /* Credit for paid-but-unused time on the previous plan, applied against today's charge.
+           Present only for a checkout upgrade, which revokes the old authorization and buys a whole
+           new period — so the subscriber's remaining time becomes a discount rather than a period
+           that keeps running. An in-place modify keeps the old billing anchor and has no credit,
+           which is why this distinguishes the two rather than reusing the prorated wording. */
+        creditAppliedUsdc?: bigint | null;
         nextBillingDate?: Date | string | null;
     } | null;
     /* Introductory terms the subscriber authorized: full disclosure of the price they paid
@@ -125,11 +131,20 @@ export async function createSubscriptionStartedDm({
         return typeof value === "string" ? value.slice(0, 10) : value.toISOString().slice(0, 10);
     };
     const changeNextBilling = formatDay(changeTerms?.nextBillingDate);
+    const hasCredit = Boolean(changeTerms?.creditAppliedUsdc && changeTerms.creditAppliedUsdc > BigInt(0));
     const changeLines = changeTerms
         ? [
+            /* A checkout upgrade states the credit first, because it is the answer to the question the
+               charge raises: the subscriber sees less than the new plan's price leave their wallet and
+               needs to know why. */
+            ...(hasCredit
+                ? [`Credit for unused time: ${formatUsdcFromMicros(changeTerms.creditAppliedUsdc!)} USDC`]
+                : []),
             changeTerms.effective === "immediate"
                 ? (changeTerms.proratedChargeUsdc && changeTerms.proratedChargeUsdc > BigInt(0)
-                    ? `Charged today: ${formatUsdcFromMicros(changeTerms.proratedChargeUsdc)} USDC (prorated for the rest of this period)`
+                    ? (hasCredit
+                        ? `Charged today: ${formatUsdcFromMicros(changeTerms.proratedChargeUsdc)} USDC (new price less your credit)`
+                        : `Charged today: ${formatUsdcFromMicros(changeTerms.proratedChargeUsdc)} USDC (prorated for the rest of this period)`)
                     : "Charged today: nothing — the new price starts from your next billing date.")
                 : "Charged today: nothing — this takes effect at your next renewal.",
             ...(changeNextBilling ? [`Next billing date: ${changeNextBilling}`] : []),
