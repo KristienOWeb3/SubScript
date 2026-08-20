@@ -137,6 +137,44 @@ export default function WebhooksPage() {
       </section>
 
       <section className="space-y-4">
+        <h2 id="cancellation" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+          Cancellation is two events, not one
+        </h2>
+        <Callout tone="amber" title="Do not revoke access on cancel_scheduled">
+          <p>
+            A mid-period cancellation splits into two deliveries, because two different things happen at
+            two different times:
+          </p>
+          <ul className="mt-2 list-disc space-y-2 pl-5">
+            <li>
+              <span className="font-mono">subscription.cancel_scheduled</span> — the subscriber
+              cancelled. <strong>Access continues</strong> to the end of the period they already paid
+              for. Carries <span className="font-mono">access_until</span>, the timestamp to revoke on,
+              and <span className="font-mono">revocation_pending</span>.
+            </li>
+            <li>
+              <span className="font-mono">subscription.canceled</span> — that paid period has ended.
+              This is where entitlement comes off.
+            </li>
+          </ul>
+          <p className="mt-2">
+            The split is on-chain in origin. The spending authorization is revoked immediately, because{" "}
+            <span className="font-mono">executePayment</span> is permissionless and anything left active
+            stays chargeable whatever a database says. Entitlement is a separate question — the
+            subscriber paid through the period, so it runs to the end. Revoking on{" "}
+            <span className="font-mono">cancel_scheduled</span> takes away time they paid for. If their
+            period had already lapsed when they cancelled,{" "}
+            <span className="font-mono">subscription.canceled</span> arrives on its own.
+          </p>
+          <p className="mt-2">
+            <span className="font-mono">revocation_pending: true</span> means the subscriber signs from
+            their own external wallet and has not yet. The cancellation still stands and billing has
+            already stopped; the flag only says the chain has not caught up.
+          </p>
+        </Callout>
+      </section>
+
+      <section className="space-y-4">
         <h2 id="subscription-id-changes" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
           Key entitlements on the customer, not the subscription id
         </h2>

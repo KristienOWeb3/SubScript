@@ -1,3 +1,17 @@
+/* PREMIUM-subscription billing keeper (merchant -> SubScript). `cron/customer-billing` bills the
+ * customer-facing kind.
+ *
+ * Every `subscriptions` read AND write below is scoped to `activeSubscriptionContract()`. The table
+ * is keyed (contract_address, subscription_id): the PSA is immutable, so each redeploy restarts
+ * nextSubscriptionId at 1 and re-mints ids that already exist. An id only means something against
+ * the contract that minted it, and every on-chain read here goes to the ACTIVE deployment — so an
+ * unscoped row from an abandoned one is billed or cancelled against a stranger's terms. Writes need
+ * it too: `.eq("subscription_id", subId)` alone hits every generation's copy of that id.
+ *
+ * KNOWN GAP: `subscription_billing_claims` is still keyed on subscription_id alone, so two
+ * generations sharing an id contend for one claim row. Fixing that needs a migration on the table
+ * and its claim/release/complete RPCs.
+ */
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
@@ -11,6 +25,7 @@ import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
 import { cancelFromEmbedded } from "@/lib/subscriptions/onchain";
 import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { getRpcProviderForWrite } from "@/lib/payments/rpc";
+import { activeSubscriptionContract } from "@/lib/subscriptions/contractBinding";
 
 const STANDARD_ABI = [
     "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive)",
@@ -127,6 +142,7 @@ export async function POST(request: Request) {
         const { data: cancelSubs, error: cancelError } = await supabase
             .from("subscriptions")
             .select("*")
+            .eq("contract_address", activeSubscriptionContract())
             .eq("kind", "PREMIUM")
             .eq("status", "ACTIVE")
             .eq("cancel_at_period_end", true)
@@ -280,6 +296,7 @@ export async function POST(request: Request) {
                             tier: 0,
                             updated_at: new Date().toISOString()
                         })
+                        .eq("contract_address", activeSubscriptionContract())
                         .eq("subscription_id", subId);
 
                     await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
@@ -321,6 +338,7 @@ export async function POST(request: Request) {
                             downgrade_failures: currentFailures + 1,
                             updated_at: new Date().toISOString()
                         })
+                        .eq("contract_address", activeSubscriptionContract())
                         .eq("subscription_id", subId);
 
                     downgradeResults.push({
@@ -338,6 +356,7 @@ export async function POST(request: Request) {
         const { data: dbSubs, error: dbError } = await supabase
             .from("subscriptions")
             .select("*")
+            .eq("contract_address", activeSubscriptionContract())
             .eq("kind", "PREMIUM")
             .in("status", ["ACTIVE", "FAILED", "PAST_DUE"]);
 
@@ -403,6 +422,7 @@ export async function POST(request: Request) {
                             downgrade_failures: 1,
                             updated_at: new Date().toISOString()
                         })
+                        .eq("contract_address", activeSubscriptionContract())
                         .eq("subscription_id", subId);
 
                     results.push({
@@ -422,6 +442,7 @@ export async function POST(request: Request) {
                                 downgrade_failures: newFailures,
                                 updated_at: new Date().toISOString()
                             })
+                            .eq("contract_address", activeSubscriptionContract())
                             .eq("subscription_id", subId);
 
                         results.push({
@@ -456,6 +477,7 @@ export async function POST(request: Request) {
                                 downgrade_failures: newFailures,
                                 updated_at: new Date().toISOString()
                             })
+                            .eq("contract_address", activeSubscriptionContract())
                             .eq("subscription_id", subId);
 
                         await supabase
@@ -598,6 +620,7 @@ export async function POST(request: Request) {
                         last_settlement_timestamp: settlementTimestampIso,
                         updated_at: new Date().toISOString(),
                     })
+                    .eq("contract_address", activeSubscriptionContract())
                     .eq("subscription_id", subId)
                     .select("subscription_id")
                     .maybeSingle();
@@ -679,6 +702,7 @@ export async function POST(request: Request) {
                             last_settlement_timestamp: new Date(0).toISOString(), /* Sentinel value to stop further retries */
                             updated_at: new Date().toISOString()
                         })
+                        .eq("contract_address", activeSubscriptionContract())
                         .eq("subscription_id", subId);
 
                     await supabase

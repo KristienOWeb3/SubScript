@@ -14,6 +14,16 @@
  *     sequence. Balance + allowance are checked first so we don't waste gas on a guaranteed revert.
  *   - `next_billing_date` is DB-derived by a trigger from `last_settlement_timestamp +
  *     billing_interval_seconds`, so on success we only stamp `last_settlement_timestamp = now`.
+ *   - Every `subscriptions` read AND write is scoped to `activeSubscriptionContract()`. The table is
+ *     keyed (contract_address, subscription_id) because the PSA is immutable: each redeploy restarts
+ *     nextSubscriptionId at 1, so an id only means something against the contract that minted it,
+ *     and every on-chain read here goes to STANDARD_CONTRACT_ADDRESS — the ACTIVE deployment.
+ *     Unscoped, a row from an abandoned deployment has its id looked up on the active contract and
+ *     billed against a stranger's terms; when the id is absent there entirely the struct reads
+ *     zeroed, the zero-address subscriber has no custody row, and this keeper reports a false
+ *     `subscription.payment_failed` for a subscription that was never in trouble. The writes need
+ *     the same scope: `.eq("subscription_id", subId)` alone updates every generation's copy of that
+ *     id, and ids ARE duplicated in practice.
  */
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -32,6 +42,7 @@ import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
 import { sendAllowanceLowDm } from "@/lib/dms/lifecycle";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { getRpcProviderForWrite } from "@/lib/payments/rpc";
+import { activeSubscriptionContract } from "@/lib/subscriptions/contractBinding";
 
 export const maxDuration = 300;
 
@@ -175,6 +186,7 @@ export async function POST(request: Request) {
         const { data: dueSubs, error: dueError } = await supabase
             .from("subscriptions")
             .select("*")
+            .eq("contract_address", activeSubscriptionContract())
             .eq("kind", "CUSTOMER")
             .eq("status", "ACTIVE")
             .eq("cancel_at_period_end", false)
@@ -245,6 +257,7 @@ export async function POST(request: Request) {
                             status: "USER_ACTION_REQUIRED",
                             updated_at: new Date().toISOString(),
                         })
+                        .eq("contract_address", activeSubscriptionContract())
                         .eq("subscription_id", subId);
 
                     await createBillingDm({
@@ -280,6 +293,7 @@ export async function POST(request: Request) {
                     await supabase
                         .from("subscriptions")
                         .update({ status: "CANCELED", updated_at: new Date().toISOString() })
+                        .eq("contract_address", activeSubscriptionContract())
                         .eq("subscription_id", subId);
                     await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
                         subscriptionId: subId,
@@ -353,6 +367,7 @@ export async function POST(request: Request) {
                 const { data: persistedClaim, error: persistedClaimError } = await supabase
                     .from("subscription_billing_claims")
                     .select("status,tx_hash")
+                    .eq("contract_address", activeSubscriptionContract())
                     .eq("subscription_id", subId)
                     .eq("sequence_id", sequenceId)
                     .eq("claim_id", requestedClaimId)
@@ -371,6 +386,7 @@ export async function POST(request: Request) {
                             last_settlement_timestamp: settlementTimestampIso,
                             updated_at: new Date().toISOString(),
                         })
+                        .eq("contract_address", activeSubscriptionContract())
                         .eq("subscription_id", subId)
                         .select("subscription_id")
                         .maybeSingle();
@@ -508,6 +524,7 @@ export async function POST(request: Request) {
                                 ...(revocationTxHash ? { revocation_tx_hash: revocationTxHash.toLowerCase() } : {}),
                                 updated_at: new Date().toISOString(),
                             })
+                            .eq("contract_address", activeSubscriptionContract())
                             .eq("subscription_id", subId);
                         if (zombieStateError) {
                             throw new Error(`Failed to persist zombie revocation state: ${zombieStateError.message}`);
@@ -553,6 +570,7 @@ export async function POST(request: Request) {
                         await supabase
                             .from("subscriptions")
                             .update({ downgrade_failures: newFailures, updated_at: new Date().toISOString() })
+                            .eq("contract_address", activeSubscriptionContract())
                             .eq("subscription_id", subId);
                         results.push({ subId, subscriber, action: "RETRY_SCHEDULED", success: false, failuresCount: newFailures });
                     }
@@ -585,6 +603,7 @@ export async function POST(request: Request) {
                         last_settlement_timestamp: settlementTimestampIso,
                         updated_at: new Date().toISOString(),
                     })
+                    .eq("contract_address", activeSubscriptionContract())
                     .eq("subscription_id", subId)
                     .select("subscription_id")
                     .maybeSingle();
@@ -778,6 +797,7 @@ export async function POST(request: Request) {
         const { data: dueCancels, error: dueCancelError } = await supabase
             .from("subscriptions")
             .select("subscription_id, merchant_address, beneficiary_address, external_reference, source_checkout_id")
+            .eq("contract_address", activeSubscriptionContract())
             .eq("kind", "CUSTOMER")
             .in("status", ["ACTIVE", "PAST_DUE"])
             .eq("cancel_at_period_end", true)
@@ -812,6 +832,7 @@ export async function POST(request: Request) {
                             ...(cancellationTxHash ? { revocation_tx_hash: cancellationTxHash.toLowerCase() } : {}),
                             updated_at: new Date().toISOString(),
                         })
+                        .eq("contract_address", activeSubscriptionContract())
                         .eq("subscription_id", subId);
                     if (cancelStateError) {
                         throw new Error(`Failed to persist period-end cancellation: ${cancelStateError.message}`);
@@ -852,6 +873,7 @@ export async function POST(request: Request) {
                             revocation_pending: true,
                             updated_at: new Date().toISOString(),
                         })
+                        .eq("contract_address", activeSubscriptionContract())
                         .eq("subscription_id", subId);
                     if (pendingStateError) {
                         console.error(`[ALERT] failed to persist pending period-end revocation for sub ${subId}:`, pendingStateError.message);

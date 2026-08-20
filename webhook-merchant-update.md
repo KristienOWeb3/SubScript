@@ -112,7 +112,42 @@ subscribe for themselves.
 
 ---
 
-## 4. Reconciliation API additions
+## 4. Cancellation is two events, not one
+
+A mid-period cancellation splits into two deliveries, because two different things happen at two
+different times:
+
+| Event | When | What it means |
+|---|---|---|
+| `subscription.cancel_scheduled` | the moment the subscriber cancels | They have cancelled. **Access continues** to the end of the period they already paid for. Do not revoke entitlement here. |
+| `subscription.canceled` | when that paid period actually ends | Access is over. Revoke entitlement here. |
+
+The reason for the split is on-chain. The spending authorization is revoked immediately, because
+`executePayment` is permissionless — anything left active stays chargeable no matter what a database
+says. Entitlement is a separate question, and the subscriber has already paid through the period, so
+it runs to the end. Revoking access on `cancel_scheduled` takes away time they paid for.
+
+If the subscriber's period had already lapsed when they cancelled, there is no time left to preserve
+and you get `subscription.canceled` on its own.
+
+### New fields on `cancel_scheduled`
+
+| Field | What it is |
+|---|---|
+| `access_until` | ISO timestamp entitlement actually ends — the date to revoke on. |
+| `revocation_pending` | `true` when the on-chain revocation has not confirmed yet. |
+
+`revocation_pending: true` means the subscriber signs from their own external wallet and hasn't yet.
+Their cancellation still stands and SubScript has already stopped future billing, so treat the
+cancellation as real; the flag only says the chain hasn't caught up.
+
+**This event now fires for external-wallet subscribers too.** It previously did not: SubScript
+recorded the cancellation and stopped billing, but returned without notifying you, so you learned
+nothing until the period ended. Embedded and external wallets now tell you the same story.
+
+---
+
+## 5. Reconciliation API additions
 
 `GET /api/v1/subscriptions` previously returned no way to map a subscription to your own user, and
 no period end. Both are fixed.
@@ -135,7 +170,7 @@ no period end. Both are fixed.
 
 ---
 
-## 5. Delivery reliability — you may have seen these symptoms
+## 6. Delivery reliability — you may have seen these symptoms
 
 If you were missing events recently, these are the causes, all fixed:
 
@@ -152,7 +187,7 @@ Signature verification is unchanged: `x-subscript-signature: t=<unix>,v1=<hex>`,
 
 ---
 
-## 6. Do not build handlers for these yet
+## 7. Do not build handlers for these yet
 
 These names appear in the catalog and the endpoint picker, and **nothing emits them today**. A
 handler will never fire. They are named so the names cannot be reused, not because they are ready.
