@@ -2,6 +2,7 @@ import type { Prisma, SubscriptDm } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sendPushToWallet, type PushDeliveryResult } from "@/lib/push";
 import { DM_TYPES, dmFallbackTitle, isKnownDmType } from "@/lib/dms/catalog";
+import { withoutReceiptReference } from "@/lib/dms/receiptPresentation";
 
 export type DmPushInput = {
     id?: string | null;
@@ -72,8 +73,11 @@ export async function pushDmNotification(dm: DmPushInput): Promise<PushDeliveryR
     const title =
         notificationText(dm.title, 100) ||
         dmFallbackTitle(dm.messageType);
+    /* A device notification is one line a person glances at, so the receipt reference is
+       stripped before it becomes the body. The reference stays in the stored DM, where the
+       inbox turns it into a "View receipt" link. */
     const body =
-        notificationText(dm.description, 180) ||
+        notificationText(withoutReceiptReference(dm.description || ""), 180) ||
         "Open SubScript to view this message.";
 
     try {

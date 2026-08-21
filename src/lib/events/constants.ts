@@ -20,8 +20,15 @@ export const API_VERSION = "2026-07-01";
  *         Moved payment.refunded out of the public catalog into RESERVED_EVENT_TYPES:
  *         it was subscribable but emitted by nothing. Minor, not major — the envelope
  *         is unchanged and no public type an integrator could have received was removed.
+ *
+ * 1.2.0 — Added vault.withdrawn, and split the meaning of vault.paused. The withdrawal path was
+ *         emitting vault.paused to mean "escrow was drained", while vault.pause_requested and
+ *         vault.resumed were declared and emitted by nothing. Withdrawals now emit
+ *         vault.withdrawn; the three pause names carry the self-halt lifecycle. Minor, because
+ *         the envelope is unchanged and no type was removed, but note that an endpoint subscribed
+ *         to vault.paused for withdrawals must move to vault.withdrawn.
  */
-export const EVENT_CATALOG_VERSION = "1.1.0";
+export const EVENT_CATALOG_VERSION = "1.2.0";
 
 /** Default chain ID for Arc testnet */
 export const ARC_TESTNET_CHAIN_ID = 5042002;

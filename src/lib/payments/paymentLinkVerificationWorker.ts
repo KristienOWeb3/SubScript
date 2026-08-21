@@ -375,13 +375,19 @@ async function runPostSettlementEffects(
                 console.error("[verify-worker] Failed to resolve receipt merchant alias:", merchantAliasError.message);
             }
             const merchantLabel = safeReceiptPayeeLabel(merchantAlias?.alias, job.merchant_address);
+            /* Reads as something a person would say. It used to be "Receipt: <title>", which is
+               a label, not a sentence — and the title can be empty, so it could arrive as a
+               bare "Receipt:". */
+            const paymentSubject = job.payment_title?.trim();
             await insertSupabaseDmAndNotify(supabase, {
                 sender_address: job.merchant_address,
                 receiver_address: job.payer_address,
                 message_type: "DEBIT_SUCCESS",
                 status: "PENDING",
                 amount_usdc: job.amount_usdc.toString(),
-                title: `Receipt: ${job.payment_title}`,
+                title: paymentSubject
+                    ? `You paid for ${paymentSubject}`
+                    : `You paid ${merchantLabel}`,
                 description: buildReceiptDmDescription({
                     amountUsdcMicros: job.amount_usdc,
                     payeeLabel: merchantLabel,

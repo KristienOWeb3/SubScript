@@ -22,6 +22,7 @@ import { payMerchantLinkFromEmbedded, payPeerLinkFromEmbedded } from "@/lib/paym
 import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 import { enqueuePaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { haltGuard } from "@/lib/accountHalt";
 
 type RouteContext = {
     params: Promise<{ id: string }>;
@@ -45,6 +46,12 @@ export async function POST(request: Request, { params }: RouteContext) {
         if (!verifiedEmail?.email) {
             return NextResponse.json({ error: "Verify an email address with OTP before paying." }, { status: 403 });
         }
+
+        /* This route signs a payment out of the caller's own custodial wallet, for a merchant link or
+           a peer request alike, so it is the halted account's money leaving. Placed before the link is
+           even loaded: nothing downstream needs to run for a refusal. */
+        const held = await haltGuard(wallet);
+        if (held) return held;
 
         const { id } = await params;
         if (!id) {

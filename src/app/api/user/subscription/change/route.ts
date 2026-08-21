@@ -26,6 +26,7 @@ import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookD
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { deterministicIdempotencyKey } from "@/lib/custody";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
+import { haltGuard } from "@/lib/accountHalt";
 
 export const maxDuration = 150;
 
@@ -41,6 +42,11 @@ export async function POST(request: Request) {
         if (!wallet) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         const roleCheck = await requireAccountRole(wallet, "USER");
         if (!roleCheck.ok) return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
+
+        /* A plan change re-authorizes billing and, in immediate mode, charges a proration now. Both
+           are new authorizations against the caller's wallet, so a hold refuses them. */
+        const held = await haltGuard(wallet);
+        if (held) return held;
 
         const body = sanitizeInput(await request.json().catch(() => null)) || {};
         const fromSubscriptionId = body.fromSubscriptionId !== undefined ? String(body.fromSubscriptionId) : "";

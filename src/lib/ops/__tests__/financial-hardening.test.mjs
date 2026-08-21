@@ -40,7 +40,12 @@ test("receipt access lets a connected wallet replace a mismatched browser sessio
 
     assert.match(client, /connectedWalletDiffersFromSession/);
     assert.match(client, /onClick=\{handleAuthenticate\}/);
-    assert.match(client, /This browser is signed in as/);
+    /* The mismatch has to be visible, not just handled: the message names BOTH the session
+       wallet and the connected one, so the reader can tell which is which before re-signing.
+       Asserted on the interpolations rather than the sentence around them — the prose is
+       user-facing copy and gets rewritten, the two addresses are the security property. */
+    assert.match(client, /formatAddress\(sessionWallet \|\| ""\)/);
+    assert.match(client, /is connected\./);
 });
 
 test("batch payouts fail closed until reservation is atomic", () => {

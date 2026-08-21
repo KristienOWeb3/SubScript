@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
+import { haltGuard } from "@/lib/accountHalt";
 import { getWalletCustody } from "@/lib/custody";
 import { getRpcProviderForWrite } from "@/lib/payments/rpc";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
@@ -40,6 +41,12 @@ export async function POST(request: Request) {
         if (!roleCheck.ok) {
             return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
         }
+
+        /* This is where the Permit2 authorization for a payroll run is minted, so it is the single
+           largest new authorization an organization grants: one signature the keeper then draws a
+           whole payroll against. A hold refuses it. */
+        const held = await haltGuard(wallet);
+        if (held) return held;
 
         const body = await request.json().catch(() => null);
         const totalAmountText = typeof body?.totalAmountUsdc === "string"
