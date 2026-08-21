@@ -52,3 +52,21 @@ export function receiptHrefFromDescriptionLine(line: string) {
     const receiptId = line.match(RECEIPT_ID_PATTERN)?.[0]?.toLowerCase();
     return receiptId ? `/receipt/${encodeURIComponent(receiptId)}` : null;
 }
+
+/**
+ * Drop the receipt-reference line from text that is about to be read by a person.
+ *
+ * The reference has to STAY in the stored description: receiptHrefFromDescriptionLine parses it
+ * to build the inbox's "View receipt" action, and that link is the only way back to the receipt
+ * from a chat bubble. But a device notification has no such affordance, so the same line arrives
+ * as 32 hex characters in the middle of a sentence. Strip it there instead of at the source.
+ *
+ * Legacy rows carry the reference as a full URL rather than a labelled line, so both shapes go.
+ */
+export function withoutReceiptReference(text: string): string {
+    return text
+        .split(/\r?\n/)
+        .filter((line) => !RECEIPT_ID_PATTERN.test(line) && !/^\s*receipt(\s+id)?\s*:/i.test(line))
+        .join("\n")
+        .trim();
+}

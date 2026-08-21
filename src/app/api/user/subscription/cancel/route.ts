@@ -149,7 +149,7 @@ export async function POST(request: Request) {
                 receiverAddress: sub.merchant,
                 messageType: "SUBSCRIPTION_CANCELED",
                 status: "APPROVED",
-                title: "Subscription Canceled",
+                title: "A subscriber canceled",
                 description: requiresWalletCancellation
                     ? `Subscription sub_${subscriptionId} was canceled by the subscriber. Access continues through the paid period, until ${accessUntil.slice(0, 10)}. The subscriber still needs to sign the on-chain revocation from their own wallet.`
                     : `Subscription sub_${subscriptionId} was canceled by the subscriber. Access continues through the paid period, until ${accessUntil.slice(0, 10)}. No further payments will be taken.`,
@@ -258,7 +258,7 @@ export async function POST(request: Request) {
             receiverAddress: sub.merchant,
             messageType: "SUBSCRIPTION_CANCELED",
             status: "APPROVED",
-            title: "Subscription Canceled",
+            title: "A subscriber canceled",
             description: `Subscription sub_${subscriptionId} was canceled by the subscriber.`,
         }).catch((err) => console.error("[subscription/cancel] DM notification failed:", err));
 
