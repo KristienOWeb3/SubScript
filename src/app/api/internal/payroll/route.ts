@@ -4,6 +4,7 @@ import { ethers } from "ethers";
 import { ARC_TESTNET_CHAIN_ID, CONFIDENTIAL_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 import { CONFIDENTIAL_CONTRACT_ABI } from "@/lib/contracts/abis";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
+import { sendBatchPayoutReceipts } from "@/lib/email/settlementReceipts";
 import { ProtocolConfig } from "@/lib/payments/config";
 import { getRpcProviderForWrite } from "@/lib/payments/rpc";
 import { buildPermitSingle } from "@/lib/payroll/permit2";
@@ -559,6 +560,28 @@ export async function POST(request: Request) {
                         next_payday: nextPaydayDate.toISOString(),
                     },
                 }).catch((err: unknown) => console.error("[payroll] payroll.authorization_required webhook error:", err));
+
+                /* Payday receipts, one per employee. Reaching here means the batch mined with
+                   status 1 — the ambiguous and reverted branches above all throw or refund, so
+                   nobody is ever told they were paid out of a payout that didn't land.
+
+                   The paying organization is not mailed. A fifty-person payday would put fifty
+                   near-identical emails in the org's inbox and burn its whole hourly transactional
+                   budget, dropping the tail; the org already has payroll.execution_succeeded on its
+                   webhook and the run in its dashboard.
+
+                   Very large campaigns can still run into the shared Resend limit. Those sends drop
+                   with an [email-dropped] log line rather than failing the payday, and the campaign
+                   record stays the durable proof of what was paid. */
+                await sendBatchPayoutReceipts({
+                    kind: "payroll_payout",
+                    txHash,
+                    paymentTitle: "Payroll",
+                    recipients: campaign.recipients.map((recipient) => ({
+                        address: recipient.employeeWallet,
+                        amountUsdc: recipient.salaryAmountUsdc,
+                    })),
+                });
 
                 executionResults.push({
                     campaignId: campaign.id,

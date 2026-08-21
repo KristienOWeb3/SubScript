@@ -24,6 +24,7 @@ import { getWalletCustody, deterministicIdempotencyKey } from "@/lib/custody";
 import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { withPgClient } from "@/lib/serverPg";
 import { createDmAndNotify } from "@/lib/dms/notifications";
+import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { merchantDisplayName } from "@/lib/identityDisplay";
 import {
@@ -298,7 +299,25 @@ async function topUpVault(vault: VaultRow, merchantName: string): Promise<{ id: 
     }
 
     const amountLabel = (Number(amount) / 1_000_000).toFixed(2);
-    /* Money left the wallet while the user was away — they get a record of it, always. */
+    /* Money left the wallet while the user was away — they get a record of it, always. In their
+       inbox as well as their DMs: a mandate that debits unattended is exactly the case where the
+       person may not open the app for weeks.
+
+       commitFromEmbedded returned, which means Circle reported the commit CONFIRMED (mined, not
+       reverted), so this is a settled movement and not an attempt.
+
+       Only the user is mailed. A top-up escrows funds against future usage; the merchant has not
+       received anything yet and gets their receipt at vault-draw, when the cycle actually settles.
+       Because there is no payee on this email, the title can name the merchant the user knows. */
+    await sendSettlementReceipts({
+        kind: "vault_topup",
+        amountUsdc: amount,
+        txHash: txHash.toLowerCase(),
+        payerAddress: vault.userAddress,
+        payeeAddress: null,
+        paymentTitle: `Auto top-up for ${merchantName}`,
+    });
+
     await createDmAndNotify({
         senderAddress: vault.merchantAddress,
         receiverAddress: vault.userAddress,

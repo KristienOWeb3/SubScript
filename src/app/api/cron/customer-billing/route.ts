@@ -40,6 +40,7 @@ import { cancelFromEmbedded } from "@/lib/subscriptions/onchain";
 import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
 import { sendAllowanceLowDm } from "@/lib/dms/lifecycle";
+import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { getRpcProviderForWrite } from "@/lib/payments/rpc";
 import { activeSubscriptionContract } from "@/lib/subscriptions/contractBinding";
@@ -129,6 +130,42 @@ async function createBillingDm({
         description,
         tx_hash: txHash || null,
         dedupe_key: dedupeKey || null,
+    });
+}
+
+/**
+ * Receipt email for a renewal that has settled on-chain.
+ *
+ * One shape shared by both settlement points below — the fresh charge, and the repair pass that
+ * finds the sequence already executed — so the two can never describe the same renewal
+ * differently. A renewal mints no `receipts` row, so this sends the receipt without the
+ * "view receipt" button rather than link a receipt id that would 404.
+ *
+ * Called before the DM and the merchant webhook, not after: this one is guaranteed not to throw,
+ * and the other two can, so putting it first means an unrelated DM or outbox failure can't take
+ * the customer's proof of payment down with it.
+ */
+async function mailRenewalReceipt(args: {
+    subId: number;
+    sequenceId: number;
+    subscriber: string;
+    merchantAddress: string;
+    chargeAmount: bigint;
+    txHash: string | null;
+}) {
+    await sendSettlementReceipts({
+        kind: "subscription_renewal",
+        amountUsdc: args.chargeAmount,
+        txHash: args.txHash,
+        /* The repair pass can prove the charge executed on-chain without knowing which
+           transaction did it, so key on (subscription, sequence) instead. The contract executes a
+           sequence exactly once, which makes that pair as un-repeatable as a hash. */
+        settlementRef: `customer-renewal:${args.subId}:${args.sequenceId}`,
+        payerAddress: args.subscriber,
+        payeeAddress: args.merchantAddress,
+        /* Read by both the customer and the merchant, so it carries the subscription id and
+           nothing about who the customer is. */
+        paymentTitle: `Subscription renewal (#${args.subId})`,
     });
 }
 
@@ -391,6 +428,14 @@ export async function POST(request: Request) {
                         .select("subscription_id")
                         .maybeSingle();
                     if (mirrorError || !mirrored) throw new Error(`Customer renewal repair failed: ${mirrorError?.message || "subscription missing"}`);
+                    await mailRenewalReceipt({
+                        subId,
+                        sequenceId,
+                        subscriber,
+                        merchantAddress,
+                        chargeAmount,
+                        txHash: settlementTxHash,
+                    });
                     await createBillingDm({
                         supabase,
                         senderAddress: merchantAddress,
@@ -608,6 +653,15 @@ export async function POST(request: Request) {
                     .select("subscription_id")
                     .maybeSingle();
                 if (mirrorError || !mirrored) throw new Error(`Customer renewal mirror failed: ${mirrorError?.message || "subscription missing"}`);
+
+                await mailRenewalReceipt({
+                    subId,
+                    sequenceId,
+                    subscriber,
+                    merchantAddress,
+                    chargeAmount,
+                    txHash: tx.hash,
+                });
 
                 await createBillingDm({
                     supabase,

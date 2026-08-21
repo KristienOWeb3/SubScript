@@ -2,7 +2,15 @@
    a browser wallet would make on /pay/[id], server-side, so Google/email users can pay a merchant
    link (or peer request) without being bounced through DMs. Returns the confirmed tx hash; the
    client then runs the standard /api/payment-links/verify + status stream, so settlement, receipts,
-   and merchant webhooks are entirely unchanged. */
+   and merchant webhooks are entirely unchanged.
+
+   No receipt email is sent from here, on purpose. Circle confirming the transfer is not settlement:
+   the payment is settled when paymentLinkVerificationWorker has matched the on-chain
+   DepositWithMemo (or USDC Transfer) event against this link's merchant, amount and receipt token,
+   and that worker owns the receipt email under the payment_link_settlement_effects guard. Mailing a
+   receipt here would mean mailing one for a transfer that verification can still reject, and would
+   double-send against the worker's. The durable bind below is what guarantees the worker runs even
+   if the tab closes before the client calls /verify. */
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { getKeeperSigner, syncVaultMirror, VAULT_ABI } from "@/lib/vault/onchain";
 import { SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
 import { withPgClient } from "@/lib/serverPg";
+import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import crypto from "crypto";
@@ -175,6 +176,27 @@ async function runVaultDraw(request: Request) {
                             id: row.id,
                             txHash: submittedHash,
                             warning: "Draw settled; mirror repair queued",
+                        });
+                    }
+
+                    /* Receipts for a cycle that has actually settled. Reaching here means
+                       drawUsageFor mined: the failure branch above `continue`s, so a draw that
+                       reverted or is still ambiguous never gets this far.
+
+                       Deliberately outside the mirror-sync try/catch — the money moved either way,
+                       and a stale mirror is no reason to leave both sides without a record.
+
+                       The recovery branch above (an already-settled draw found during error
+                       handling) is skipped on purpose: it has no transaction hash, so there is no
+                       stable key, and a receipt keyed on anything weaker could send twice. */
+                    if (submittedHash) {
+                        await sendSettlementReceipts({
+                            kind: "vault_draw",
+                            amountUsdc: row.accruedUsageUsdc,
+                            txHash: submittedHash,
+                            payerAddress: row.userAddress,
+                            payeeAddress: row.merchantAddress,
+                            paymentTitle: "Usage settled for this cycle",
                         });
                     }
                 }

@@ -1,6 +1,6 @@
 /* Hard-cancel a subscription on-chain from a DM, then fire the merchant's (optional)
    exit survey. Server-signed from the embedded wallet; gas covered by SubScript. */
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { sanitizeInput } from "@/utils/security";
@@ -15,7 +15,12 @@ import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 import { createDmAndNotify } from "@/lib/dms/notifications";
 import { sendWinbackOfferDm } from "@/lib/dms/lifecycle";
 import { findWinbackPromotion } from "@/lib/subscriptions/promotions";
-import { subscriptionKey } from "@/lib/subscriptions/contractBinding";
+import { activeSubscriptionContract, subscriptionKey } from "@/lib/subscriptions/contractBinding";
+import {
+    sendSubscriptionCanceledEmail,
+    sendSubscriptionCancellationNeedsSignatureEmail,
+    sendSubscriptionCancelScheduledEmail,
+} from "@/lib/email/templates/subscriptionLifecycle";
 
 export const maxDuration = 120;
 
@@ -98,6 +103,22 @@ export async function POST(request: Request) {
 
             const accessUntil = new Date(Number(sub.nextPayment) * 1000).toISOString();
 
+            /* Fact sheet for the customer's email, built once and shared by the two outcomes
+               below. Section 3.5 of docs/email-audit.md calls the cancellation confirmation
+               "the email users screenshot as proof", and the customer was the one audience this
+               route told nothing: the merchant got a DM, a webhook and an exit survey, while the
+               person who cancelled got a JSON body they never see. */
+            const cancellationEmailFacts = {
+                subscriptionId,
+                planName: mirrored?.plan?.name ?? null,
+                amountUsdcMicros: sub.amount,
+                periodSeconds: mirrored?.billingIntervalSeconds ?? sub.period,
+                merchantAddress: sub.merchant,
+                accessUntil,
+                requestedAt: new Date(Number(nowSec) * 1000),
+                contractAddress: activeSubscriptionContract(),
+            };
+
             /* Distinct scheduled event now; the final subscription.canceled fires at entitlement
                expiry from the keeper.
              *
@@ -143,7 +164,13 @@ export async function POST(request: Request) {
             /* The thread was silent on the ordinary cancellation. Only the lapsed branch below wrote a
                DM, so a subscriber cancelling mid-period saw nothing in the conversation and neither
                did the merchant — the webhook was the only trace. This is also where the paid-through
-               date gets stated somewhere durable rather than in a response body nobody keeps. */
+               date gets stated somewhere durable rather than in a response body nobody keeps.
+
+               Stays subscriber → merchant, and stays third-person. The subscriber's own confirmation
+               is the email added below; this row exists so the MERCHANT learns the subscription
+               stopped, and in the requiresWalletCancellation case that the authorization is still
+               chargeable until the subscriber signs. Rewriting it in second person points both
+               facts at the wrong audience. */
             await createDmAndNotify({
                 senderAddress: wallet.toLowerCase(),
                 receiverAddress: sub.merchant,
@@ -160,6 +187,19 @@ export async function POST(request: Request) {
                 /* Do NOT claim the cancellation is safely scheduled: the connected wallet must
                    sign cancelSubscription itself. The revocation_pending row keeps the retry
                    worker watching until the chain reports inactive. */
+
+                /* The email on this path is not a confirmation, and it must never read like one.
+                   The authorization is still chargeable until the subscriber's own key signs the
+                   revocation, so this one states the unfinished step instead. It's also the only
+                   notice they get: the 409 body is rendered as a red error string in the
+                   dashboard, and nothing in the UI walks them through signing it. */
+                after(async () => {
+                    await sendSubscriptionCancellationNeedsSignatureEmail({
+                        subscriberAddress: wallet.toLowerCase(),
+                        facts: cancellationEmailFacts,
+                    });
+                });
+
                 return NextResponse.json({
                     success: false,
                     requiresWalletCancellation: true,
@@ -207,6 +247,16 @@ export async function POST(request: Request) {
                 }
             }
 
+            /* The customer's receipt. Sent after the response because the cancellation is already
+               durable at this point and a mail outage must never turn it into an HTTP 500. */
+            after(async () => {
+                await sendSubscriptionCancelScheduledEmail({
+                    subscriberAddress: wallet.toLowerCase(),
+                    facts: cancellationEmailFacts,
+                    revocationTxHash,
+                });
+            });
+
             return NextResponse.json({
                 success: true,
                 cancelAtPeriodEnd: true,
@@ -253,6 +303,9 @@ export async function POST(request: Request) {
             console.error("[ALERT] cancellation webhook enqueue failed after state committed:", webhookError);
         }
 
+        /* Subscriber → merchant, same audience as the mid-period branch above. The dedupe key it
+           was missing is scoped to this branch, so a mid-period cancel followed later by a lapsed
+           one still writes both rows. */
         await createDmAndNotify({
             senderAddress: wallet.toLowerCase(),
             receiverAddress: sub.merchant,
@@ -260,12 +313,32 @@ export async function POST(request: Request) {
             status: "APPROVED",
             title: "Subscription Canceled",
             description: `Subscription sub_${subscriptionId} was canceled by the subscriber.`,
+            dedupeKey: `subscription-cancel-immediate:${subscriptionId}`,
         }).catch((err) => console.error("[subscription/cancel] DM notification failed:", err));
 
         /* Fire the merchant's exit survey (no-op if the merchant disabled it). */
         await triggerExitSurvey(sub.merchant, wallet.toLowerCase(), subscriptionId).catch((err) =>
             console.error("[subscription/cancel] survey trigger failed:", err)
         );
+
+        /* Same receipt as the mid-period branch, minus the paid-through date: this period had
+           already lapsed, so access is over now and the email says so rather than implying
+           there are days left to use. */
+        after(async () => {
+            await sendSubscriptionCanceledEmail({
+                subscriberAddress: wallet.toLowerCase(),
+                facts: {
+                    subscriptionId,
+                    planName: mirrored?.plan?.name ?? null,
+                    amountUsdcMicros: sub.amount,
+                    periodSeconds: mirrored?.billingIntervalSeconds ?? sub.period,
+                    merchantAddress: sub.merchant,
+                    requestedAt: new Date(),
+                    contractAddress: activeSubscriptionContract(),
+                },
+                cancellationTxHash: txHash,
+            });
+        });
 
         return NextResponse.json({ success: true, txHash, cancelAtPeriodEnd: false }, { status: 200 });
     } catch (error: any) {
