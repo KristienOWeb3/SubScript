@@ -50,7 +50,6 @@ export function HealthView({ analytics, sponsor }: HealthViewProps) {
           value={health?.revocationPending ?? 0}
           badgeText="Pending PSA chain confirm"
           icon={RefreshCw}
-          color="#6366f1"
         />
 
         <StatCardWithSparkline
@@ -67,20 +66,23 @@ export function HealthView({ analytics, sponsor }: HealthViewProps) {
           value={`${deliveryRate}%`}
           badgeText={`${broadcasts.length} campaigns sent`}
           icon={Bell}
-          color="#2775ca"
         />
       </div>
 
       {/* Gas Runway and Operations Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Gas Relayer Runway Meter */}
+        {/* targetUsdc stays at the component default. What the sponsor payload actually reports is a
+            balance, a top-up size and an underfunded flag derived from twice that top-up, which is a
+            warning threshold rather than a funding target. Nothing here knows the real target, so
+            passing a number would be inventing one. */}
         <RunwayGaugeChart
           valueUsdc={activeSponsor?.balanceUsdc}
           topupsRemaining={activeSponsor?.estimatedTopupsRemaining}
           underfunded={Boolean(activeSponsor?.underfunded)}
           emergencyStop={Boolean(activeSponsor?.emergencyStop)}
           dailyBurnRateUsdc={activeSponsor?.topupUsdc ?? "0.10"}
-          title="Gas Sponsor Reserve Runway"
+          title="Gas sponsor reserve runway"
         />
 
         {/* Operational Incident Summary */}

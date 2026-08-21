@@ -9,6 +9,7 @@ import {
   type DataPoint,
   type DonutSegment,
 } from "../analytics/AdminCharts";
+import { CHART_CATEGORICAL } from "../analytics/chartPalette";
 import {
   DollarSign,
   TrendingUp,
@@ -80,10 +81,13 @@ export function AdminOverviewDashboard({
   );
   const verifiedMerchantsCount = safeMerchants.filter((m) => Boolean(m?.verified)).length;
 
+  /* These three are rails, not states, so they take the categorical ring and not the status slots.
+     Keep the order: it was validated as a sequence, and a donut's first and last slice sit next to
+     each other, so reshuffling changes which pairs a reader has to separate. */
   const streamSegments: DonutSegment[] = [
-    { label: "Settled Receipts", value: analyticsData?.volume?.paymentCount ?? 0, color: "#2775ca" },
-    { label: "Checkout Links", value: analyticsData?.volume?.checkoutCount ?? 0, color: "#00d2b4" },
-    { label: "Subscriptions", value: activeSubs, color: "#10b981" },
+    { label: "Settled receipts", value: analyticsData?.volume?.paymentCount ?? 0, color: CHART_CATEGORICAL[0] },
+    { label: "Checkout links", value: analyticsData?.volume?.checkoutCount ?? 0, color: CHART_CATEGORICAL[1] },
+    { label: "Subscriptions", value: activeSubs, color: CHART_CATEGORICAL[2] },
   ];
 
   const handleCopy = (text: string, key: string) => {
@@ -115,7 +119,6 @@ export function AdminOverviewDashboard({
           badgeText="Arc settled receipts"
           sparklineData={sparklineVolume}
           icon={DollarSign}
-          color="#2775ca"
         />
 
         <StatCardWithSparkline
@@ -124,7 +127,6 @@ export function AdminOverviewDashboard({
           badgeText="Active billing velocity"
           sparklineData={sparklineVolume.slice(-7)}
           icon={TrendingUp}
-          color="#10b981"
         />
 
         <StatCardWithSparkline
@@ -132,7 +134,6 @@ export function AdminOverviewDashboard({
           value={activeSubs}
           badgeText="Recurring plans"
           icon={Layers}
-          color="#6366f1"
         />
 
         <StatCardWithSparkline
@@ -140,7 +141,6 @@ export function AdminOverviewDashboard({
           value={totalUsers ?? 0}
           badgeText="Registered platform accounts"
           icon={Users}
-          color="#f59e0b"
         />
 
         <StatCardWithSparkline
@@ -148,7 +148,6 @@ export function AdminOverviewDashboard({
           value={safeMerchants.length}
           badgeText={`${verifiedMerchantsCount} verified (${safeMerchants.length > 0 ? Math.round((verifiedMerchantsCount / safeMerchants.length) * 100) : 0}%)`}
           icon={Building2}
-          color="#00d2b4"
         />
       </div>
 
@@ -195,35 +194,38 @@ export function AdminOverviewDashboard({
       {/* Main Interactive Settlement Chart */}
       <AreaTrendChart
         data={timelineData}
-        title="Protocol Settlement Velocity"
+        title="Protocol settlement velocity"
         subtitle="14-day daily transaction volume on Arc"
-        primaryLabel="Settled Volume"
-        secondaryLabel="Checkout Links"
-        color="#2775ca"
-        secondaryColor="#00d2b4"
+        primaryLabel="Settled volume"
+        secondaryLabel="Checkout links"
         showRangeSelector={false}
         height={240}
+        emptyMessage="No settlements in this window yet."
       />
 
       {/* Two Column Grid: Gas Gauge + Stream Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Gas Sponsor Runway Gauge */}
+        {/* targetUsdc is left at the component default. The sponsor payload carries a balance, a
+            top-up size and an underfunded flag, but no funding target, so there is no real number
+            to pass here. */}
         <RunwayGaugeChart
           valueUsdc={sponsor?.balanceUsdc ?? null}
           topupsRemaining={sponsor?.estimatedTopupsRemaining ?? null}
           underfunded={Boolean(sponsor?.underfunded)}
           emergencyStop={Boolean(sponsor?.emergencyStop)}
           dailyBurnRateUsdc={sponsor?.topupUsdc ?? "0.10"}
-          title="Gas Sponsor Reserve Runway"
+          title="Gas sponsor reserve runway"
         />
 
         {/* Protocol Commerce Activity Stream Donut */}
         <DonutMetricChart
           segments={streamSegments}
-          title="Commerce Activity Breakdown"
+          title="Commerce activity breakdown"
           subtitle="Relative transaction frequency across payment rails"
           centerLabel="Activity"
           centerValue={`${(analyticsData?.volume?.paymentCount ?? 0) + (analyticsData?.volume?.checkoutCount ?? 0)} txs`}
+          emptyMessage="Nothing has moved yet. The rail split shows up here after the first payment."
         />
       </div>
 

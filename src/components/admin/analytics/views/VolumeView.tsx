@@ -57,7 +57,6 @@ export function VolumeView({ analytics, onNavigateToMerchant }: VolumeViewProps)
           badgeText={`${analytics?.volume?.paymentCount ?? 0} confirmed txs`}
           sparklineData={sparklineData}
           icon={DollarSign}
-          color="#2775ca"
         />
 
         <StatCardWithSparkline
@@ -66,7 +65,6 @@ export function VolumeView({ analytics, onNavigateToMerchant }: VolumeViewProps)
           badgeText={`${analytics?.volume?.last30DaysCount ?? 0} payments`}
           sparklineData={sparklineData.slice(-14)}
           icon={TrendingUp}
-          color="#10b981"
         />
 
         <StatCardWithSparkline
@@ -74,7 +72,6 @@ export function VolumeView({ analytics, onNavigateToMerchant }: VolumeViewProps)
           value={`$${analytics?.volume?.averageUsdc ?? "0.00"}`}
           badgeText="Per settled payment"
           icon={ReceiptText}
-          color="#6366f1"
         />
 
         <StatCardWithSparkline
@@ -82,34 +79,32 @@ export function VolumeView({ analytics, onNavigateToMerchant }: VolumeViewProps)
           value={`$${analytics?.volume?.checkoutVolumeUsdc ?? "0.00"}`}
           badgeText={`${analytics?.volume?.checkoutCount ?? 0} credited links`}
           icon={CreditCard}
-          color="#00d2b4"
         />
       </div>
 
-      {/* Main Interactive Volume Chart */}
+      {/* Main Interactive Volume Chart. Both series are USDC, so this one keeps money formatting. */}
       <AreaTrendChart
         data={timelineData}
-        title="Protocol Settlement Trajectory"
+        title="Protocol settlement trajectory"
         subtitle="Daily settled on-chain receipts compared with checkout link payments"
-        primaryLabel="Settled Receipts"
-        secondaryLabel="Checkout Links"
-        color="#2775ca"
-        secondaryColor="#00d2b4"
+        primaryLabel="Settled receipts"
+        secondaryLabel="Checkout links"
         range={range}
         onRangeChange={setRange}
+        emptyMessage="No payments settled in this window yet."
         height={260}
       />
 
       {/* Breakdown Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Ticket Size Brackets */}
+        {/* Ticket Size Brackets. The bars are payment counts, not amounts, so no currency here. */}
         <BarMetricChart
           data={bracketData}
-          title="Payment Distribution by Ticket Size"
+          title="Payment distribution by ticket size"
           subtitle="Actual 30-day payment count across ticket sizes"
           height={200}
-          valuePrefix=""
-          barColor="#2775ca"
+          valueKind="count"
+          emptyMessage="Nothing here yet. Bands fill in as payments settle."
         />
 
         {/* Volume Run-Rate & Velocity Info */}

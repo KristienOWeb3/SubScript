@@ -7,6 +7,7 @@ import {
   StatCardWithSparkline,
   type DonutSegment,
 } from "../AdminCharts";
+import { CHART_SERIES, CHART_STATUS } from "../chartPalette";
 import {
   ShieldCheck,
   ShieldAlert,
@@ -26,23 +27,42 @@ export function KycView({ analytics, onNavigateToKycTab }: KycViewProps) {
 
   const kycSegments: DonutSegment[] = useMemo(() => {
     const statusCounts = kyc?.byStatus || {};
+    const expired = statusCounts.EXPIRED || 0;
+    const revoked = statusCounts.REVOKED || 0;
+
+    /* Expired and revoked share the terminal slice. Seven states wanted seven colours, and
+       CHART_STATUS stops at six because a seventh hue that still separates from the other six under
+       simulated colourblindness is not something you can pick by eye. Both of these mean the same
+       thing to whoever is reading the ring: the record no longer counts as verified. So they fold,
+       and the sublabel below carries the split for anyone who needs the exact figures. */
+    const terminalSublabel = [
+      expired > 0 ? `${expired} expired` : null,
+      revoked > 0 ? `${revoked} revoked` : null,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
     return [
-      { label: "Approved", value: statusCounts.APPROVED || kyc?.approved || 0, color: "#10b981" },
-      { label: "Pending", value: statusCounts.PENDING || 0, color: "#2775ca" },
-      { label: "In Review", value: statusCounts.IN_REVIEW || 0, color: "#6366f1" },
-      { label: "Needs Input", value: statusCounts.NEEDS_INPUT || kyc?.needsInput || 0, color: "#f59e0b" },
-      { label: "Rejected", value: statusCounts.REJECTED || kyc?.rejected || 0, color: "#ef4444" },
-      { label: "Expired", value: statusCounts.EXPIRED || 0, color: "#94a3b8" },
-      { label: "Revoked", value: statusCounts.REVOKED || 0, color: "#64748b" },
+      { label: "Approved", value: statusCounts.APPROVED || kyc?.approved || 0, color: CHART_STATUS.good },
+      { label: "Pending", value: statusCounts.PENDING || 0, color: CHART_STATUS.info },
+      { label: "In review", value: statusCounts.IN_REVIEW || 0, color: CHART_STATUS.paused },
+      { label: "Needs input", value: statusCounts.NEEDS_INPUT || kyc?.needsInput || 0, color: CHART_STATUS.warning },
+      { label: "Rejected", value: statusCounts.REJECTED || kyc?.rejected || 0, color: CHART_STATUS.critical },
+      { label: "Expired or revoked", value: expired + revoked, color: CHART_STATUS.inactive, sublabel: terminalSublabel },
     ].filter((s) => s.value > 0);
   }, [kyc]);
+
+  /* Sum the slices rather than three of the seven states. The old centre total added approved,
+     pending and rejected only, so the ring and the number inside it disagreed whenever anything sat
+     in review, needed input, or had lapsed. */
+  const kycTotal = kycSegments.reduce((acc, s) => acc + s.value, 0);
 
   const statusCounts = kyc?.byStatus || {};
 
   const barData = [
     { label: "Approved", value: kyc?.approved || statusCounts.APPROVED || 0, highlight: true },
-    { label: "In Queue", value: kyc?.pending || 0 },
-    { label: "Needs Info", value: statusCounts.NEEDS_INPUT || 0 },
+    { label: "In queue", value: kyc?.pending || 0 },
+    { label: "Needs info", value: statusCounts.NEEDS_INPUT || 0 },
     { label: "Rejected", value: statusCounts.REJECTED || 0 },
     { label: "Expired", value: statusCounts.EXPIRED || 0 },
   ];
@@ -58,7 +78,6 @@ export function KycView({ analytics, onNavigateToKycTab }: KycViewProps) {
           value={kyc?.approved ?? 0}
           badgeText="Production verified"
           icon={ShieldCheck}
-          color="#10b981"
         />
 
         <StatCardWithSparkline
@@ -66,7 +85,6 @@ export function KycView({ analytics, onNavigateToKycTab }: KycViewProps) {
           value={kyc?.pending ?? 0}
           badgeText="Pending human decision"
           icon={Clock}
-          color="#2775ca"
         />
 
         <StatCardWithSparkline
@@ -74,7 +92,6 @@ export function KycView({ analytics, onNavigateToKycTab }: KycViewProps) {
           value={`${kyc?.approvalRate ?? 0}%`}
           badgeText={`From ${totalDecided} decided cases`}
           icon={CheckCircle2}
-          color="#10b981"
         />
 
         <StatCardWithSparkline
@@ -82,7 +99,6 @@ export function KycView({ analytics, onNavigateToKycTab }: KycViewProps) {
           value={kyc?.needsInput ?? statusCounts.NEEDS_INPUT ?? 0}
           badgeText="Applicant action required"
           icon={AlertTriangle}
-          color="#f59e0b"
         />
       </div>
 
@@ -119,20 +135,22 @@ export function KycView({ analytics, onNavigateToKycTab }: KycViewProps) {
         {/* Status Donut */}
         <DonutMetricChart
           segments={kycSegments}
-          title="Verification Status Breakdown"
+          title="Verification status breakdown"
           subtitle="All applicant and admin-asserted KYC records"
           centerLabel="Total KYC"
-          centerValue={(kyc?.approved || 0) + (kyc?.pending || 0) + (kyc?.rejected || 0)}
+          centerValue={kycTotal}
+          emptyMessage="No verifications on file yet. The status split lands here once records exist."
         />
 
         {/* Volume per bucket */}
         <BarMetricChart
           data={barData}
-          title="Case Resolution Volume"
-          subtitle="Decided vs In-flight compliance investigations"
+          title="Case resolution volume"
+          subtitle="Decided cases against the ones still in flight"
           height={200}
-          valuePrefix=""
-          barColor="#2775ca"
+          valueKind="count"
+          barColor={CHART_SERIES.primary}
+          emptyMessage="No cases to chart yet."
         />
       </div>
     </div>
