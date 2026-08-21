@@ -20,9 +20,11 @@ import { activeArcChain } from "@/lib/wagmi";
 import { ARC_TESTNET_CHAIN_ID } from "@/lib/contracts/constants";
 
 const RANGE_OPTIONS: Array<{ id: MerchantOverviewRange; label: string; caption: string }> = [
+    { id: "24h", label: "24H", caption: "24H Settled" },
     { id: "7d", label: "7D", caption: "7D Settled" },
-    { id: "30d", label: "30D", caption: "30D Settled" },
-    { id: "90d", label: "90D", caption: "90D Settled" },
+    { id: "1m", label: "1M", caption: "1M Settled" },
+    { id: "3m", label: "3M", caption: "3M Settled" },
+    { id: "6m", label: "6M", caption: "6M Settled" },
     { id: "12m", label: "12M", caption: "12M Settled" },
 ];
 
@@ -94,7 +96,7 @@ export default function MerchantOverview({
     onViewPlans: () => void;
 }) {
     const isDark = theme === "dark";
-    const [range, setRange] = useState<MerchantOverviewRange>("30d");
+    const [range, setRange] = useState<MerchantOverviewRange>("1m");
     const [overview, setOverview] = useState<MerchantOverviewSummary | null>(null);
     const [loading, setLoading] = useState(true);
 
@@ -166,11 +168,13 @@ export default function MerchantOverview({
                         </div>
 
                         {/* One control for the figure and the chart below, so the two can never
-                            disagree about which window they are describing. */}
+                            disagree about which window they are describing. Six options rather than
+                            four now, so the group wraps and the padding is tighter — it shares this
+                            card with the headline figure. */}
                         <div
                             role="group"
                             aria-label="Earnings timeframe"
-                            className="mt-3 inline-flex items-center gap-0.5 rounded-full border border-black/10 bg-black/[0.03] p-0.5"
+                            className="mt-3 inline-flex max-w-full flex-wrap items-center gap-0.5 rounded-full border border-black/10 bg-black/[0.03] p-0.5"
                         >
                             {RANGE_OPTIONS.map((option) => (
                                 <button
@@ -178,7 +182,7 @@ export default function MerchantOverview({
                                     type="button"
                                     onClick={() => setRange(option.id)}
                                     aria-pressed={range === option.id}
-                                    className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition ${
+                                    className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide transition ${
                                         range === option.id
                                             ? "bg-[#8AB4DB] text-[#082824] shadow-sm"
                                             : "text-black/55 hover:text-[#082824]"
@@ -320,7 +324,10 @@ export default function MerchantOverview({
                                     <span className="h-2.5 w-2.5 rounded-full bg-[#8AB4DB]" /> Gross
                                 </span>
                                 <span className="flex items-center gap-1.5 font-medium">
-                                    <span className={`h-2.5 w-2.5 rounded-full ${isDark ? "bg-[#7fd8c9]" : "bg-[#082824]"}`} /> Net
+                                    {/* Mirrors MerchantTrendChart's netStroke exactly, so the legend and the
+                                        line can never disagree. Light moved to #111827 with the rest of the
+                                        merchant ink; dark is unchanged. */}
+                                    <span className={`h-2.5 w-2.5 rounded-full ${isDark ? "bg-[#7fd8c9]" : "bg-[#111827]"}`} /> Net
                                 </span>
                             </div>
                         </div>

@@ -101,7 +101,7 @@ export async function GET(request: Request) {
         const range = parseRange(searchParams.get("range"));
         if (!year) return NextResponse.json({ error: "year must be between 2020 and 2100" }, { status: 400 });
         if (!environment) return NextResponse.json({ error: "environment must be TEST or LIVE" }, { status: 400 });
-        if (!range) return NextResponse.json({ error: "range must be 7d, 30d, 90d or 12m" }, { status: 400 });
+        if (!range) return NextResponse.json({ error: "range must be 24h, 7d, 1m, 3m, 6m or 12m" }, { status: 400 });
 
         const merchantAddress = wallet.toLowerCase();
         const yearStart = new Date(Date.UTC(year, 0, 1));
@@ -113,17 +113,19 @@ export async function GET(request: Request) {
         /* Same helper and therefore the same definition of a settlement as the yearly aggregate —
            the headline figure and the plotted line cannot drift apart. */
         const rangeSql = settlementSql(merchantAddress, environment, window.from, window.to);
-        const bucketUnit = window.granularity === "day" ? "day" : "month";
+        /* date_trunc takes 'hour' | 'day' | 'week' | 'month' verbatim, so the granularity the range
+           already decided is passed straight through rather than collapsed to day-or-month. */
+        const bucketUnit = window.granularity;
 
         const [monthlyRows, rangeRows, seriesRows, activePlans, planMetrics] = await Promise.all([
             prisma.$queryRaw<AggregateRow[]>(Prisma.sql`
                 ${monthlySql}
-                SELECT EXTRACT(MONTH FROM occurred_at)::int AS month,
+                SELECT EXTRACT(MONTH FROM occurred_at AT TIME ZONE 'UTC')::int AS month,
                        COALESCE(SUM(amount_micros), 0)::text AS "grossMicros",
                        COALESCE(SUM(amount_micros - FLOOR(amount_micros * ${feeBps} / 10000)), 0)::text AS "netMicros",
                        COUNT(*)::bigint AS "transactionCount"
                 FROM settlements
-                GROUP BY EXTRACT(MONTH FROM occurred_at)
+                GROUP BY EXTRACT(MONTH FROM occurred_at AT TIME ZONE 'UTC')
                 ORDER BY month
             `),
             prisma.$queryRaw<RecentRow[]>(Prisma.sql`
@@ -132,14 +134,25 @@ export async function GET(request: Request) {
                        COALESCE(SUM(amount_micros - FLOOR(amount_micros * ${feeBps} / 10000)), 0)::text AS "netMicros"
                 FROM settlements
             `),
-            /* No AT TIME ZONE here on purpose. confirmed_at and occurred_at are plain `timestamp`
-               columns (no @db.Timestamptz in the schema) already holding UTC, so converting them
-               would shift every bucket by the server's offset. The yearly aggregate above reads
-               them the same way. bucketUnit is bound as a parameter, cast to text so Postgres does
-               not have to infer the type of date_trunc's first argument. */
+            /* AT TIME ZONE 'UTC' is load-bearing, and a comment here used to claim the opposite.
+             *
+             * It asserted these were plain `timestamp` columns already holding UTC, on the evidence
+             * that the Prisma schema has no @db.Timestamptz. The schema does not, but the database
+             * does: align_runtime_schema declares `confirmed_at TIMESTAMPTZ` and
+             * webhook_schema_addendum declares `occurred_at TIMESTAMPTZ`, and nothing since alters
+             * them. That is Prisma/Postgres drift, not a plain timestamp.
+             *
+             * For a timestamptz, date_trunc resolves in the session TimeZone — and nothing in this
+             * repo pins it. Day and month buckets absorbed an offset almost invisibly (a handful of
+             * settlements near midnight landing one bucket over), which is why this went unnoticed.
+             * Hour buckets would shift by the entire offset and be obviously wrong. Truncating an
+             * explicit UTC wall time makes every granularity deterministic regardless of session.
+             *
+             * bucketUnit is bound as a parameter, cast to text so Postgres does not have to infer
+             * the type of date_trunc's first argument. */
             prisma.$queryRaw<SeriesRow[]>(Prisma.sql`
                 ${rangeSql}
-                SELECT date_trunc(${bucketUnit}::text, occurred_at)::text AS bucket,
+                SELECT date_trunc(${bucketUnit}::text, occurred_at AT TIME ZONE 'UTC')::text AS bucket,
                        COALESCE(SUM(amount_micros), 0)::text AS "grossMicros",
                        COALESCE(SUM(amount_micros - FLOOR(amount_micros * ${feeBps} / 10000)), 0)::text AS "netMicros",
                        COUNT(*)::bigint AS "transactionCount"
