@@ -1,5 +1,12 @@
 -- Commit ID rotation, and a self-halt a user can apply to their own root commit.
 --
+-- The 121000 in the filename is deliberate, not a guess at the time of day. Two migrations
+-- landed the same day and both started at 120000; scripts/apply-migrations.mjs sorts on the
+-- whole filename and did not mind, but the Supabase CLI keys
+-- supabase_migrations.schema_migrations on the VERSION alone, so a shared timestamp is a
+-- duplicate primary key and `supabase start` fails before any test runs. Keep versions unique
+-- within supabase/migrations even when the names differ.
+--
 -- Two gaps this closes, both consequences of the same fact: a Commit ID is a bearer credential.
 -- See the header of src/lib/vaultCommitSharing.ts — "the Commit ID is the whole credential they
 -- paste into the platform" — and claimSubUser in src/lib/commitId.ts, where the same 10 chars
