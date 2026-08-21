@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { resolveInviteToken } from "@/lib/dms/inviteTokens";
 import { prisma } from "@/lib/prisma";
 import { accountDisplayName } from "@/lib/identityDisplay";
+import { resolveProfilePics } from "@/lib/dms/peerProfiles";
 
 type RouteContext = {
     params: Promise<{ token: string }>;
@@ -25,15 +26,12 @@ export async function GET(_request: Request, { params }: RouteContext) {
 
         const targetWallet = resolution.wallet.toLowerCase();
 
-        const [aliasRecord, customer] = await Promise.all([
+        const [aliasRecord, profilePics] = await Promise.all([
             prisma.addressAlias.findUnique({
                 where: { address: targetWallet },
                 select: { alias: true, isAnonymous: true },
             }),
-            prisma.customer.findUnique({
-                where: { walletAddress: targetWallet },
-                select: { profilePic: true },
-            }),
+            resolveProfilePics([targetWallet]),
         ]);
 
         const displayName = accountDisplayName(aliasRecord?.alias) || `${targetWallet.slice(0, 6)}...${targetWallet.slice(-4)}`;
@@ -45,7 +43,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
                 walletAddress: targetWallet,
                 displayName,
                 alias: aliasRecord?.alias || null,
-                profilePic: customer?.profilePic || null,
+                profilePic: profilePics.get(targetWallet) || null,
             },
         }, { status: 200 });
     } catch (err: any) {

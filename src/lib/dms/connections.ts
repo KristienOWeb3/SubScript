@@ -5,6 +5,7 @@ import { generateInviteToken } from "@/lib/dms/inviteTokens";
 import { isBlocked, assertNotBlocked } from "@/lib/dms/blocks";
 import { accountDisplayName } from "@/lib/identityDisplay";
 import { getAccountRole } from "@/lib/accounts/roles";
+import { resolveProfilePics } from "@/lib/dms/peerProfiles";
 
 const DECLINE_COOLDOWN_DAYS = 30;
 const REQUEST_EXPIRATION_DAYS = 7;
@@ -388,19 +389,15 @@ export async function listDmRequests(wallet: string) {
     sentRows.forEach((s) => uniqueAddrs.add(s.receiverAddress.toLowerCase()));
 
     const addrList = Array.from(uniqueAddrs);
-    const [aliases, customers] = await Promise.all([
+    const [aliases, profilePicMap] = await Promise.all([
         prisma.addressAlias.findMany({
             where: { address: { in: addrList } },
             select: { address: true, alias: true },
         }),
-        prisma.customer.findMany({
-            where: { walletAddress: { in: addrList } },
-            select: { walletAddress: true, profilePic: true },
-        }),
+        resolveProfilePics(addrList),
     ]);
 
     const aliasMap = new Map(aliases.map((a) => [a.address.toLowerCase(), a.alias]));
-    const profilePicMap = new Map(customers.map((c) => [c.walletAddress.toLowerCase(), c.profilePic]));
 
     const formatItem = (req: any, peerAddr: string) => {
         const alias = aliasMap.get(peerAddr);
@@ -458,19 +455,15 @@ export async function listUserConnections(wallet: string) {
         c.user1Address.toLowerCase() === normWallet ? c.user2Address.toLowerCase() : c.user1Address.toLowerCase()
     );
 
-    const [aliases, customers] = await Promise.all([
+    const [aliases, profilePicMap] = await Promise.all([
         prisma.addressAlias.findMany({
             where: { address: { in: peerAddresses } },
             select: { address: true, alias: true },
         }),
-        prisma.customer.findMany({
-            where: { walletAddress: { in: peerAddresses } },
-            select: { walletAddress: true, profilePic: true },
-        }),
+        resolveProfilePics(peerAddresses),
     ]);
 
     const aliasMap = new Map(aliases.map((a) => [a.address.toLowerCase(), a.alias]));
-    const profilePicMap = new Map(customers.map((c) => [c.walletAddress.toLowerCase(), c.profilePic]));
 
     return conns.map((c) => {
         const peer = c.user1Address.toLowerCase() === normWallet ? c.user2Address.toLowerCase() : c.user1Address.toLowerCase();

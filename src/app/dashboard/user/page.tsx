@@ -46,10 +46,13 @@ import DmRequestsModal from "@/components/dashboard/DmRequestsModal";
 import DmInviteManagerModal from "@/components/dashboard/DmInviteManagerModal";
 import BlockedUsersModal from "@/components/dashboard/BlockedUsersModal";
 import VaultShareManager from "@/components/VaultShareManager";
+import AccountHoldPanel from "@/components/dashboard/AccountHoldPanel";
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
 import { MerchantVerifiedTick } from "@/components/MerchantVerifiedBadge";
 import { receiptHrefFromDescriptionLine } from "@/lib/dms/receiptPresentation";
+import { isMerchantOpsDm } from "@/lib/dms/catalog";
+import { buildSubscribeUrl } from "@/lib/checkoutUrl";
 import {
   AlertCircle,
   ArrowDown,
@@ -198,6 +201,14 @@ interface MerchantPlan {
   detailsUrl?: string | null;
   amountUsdc: string;
   periodSeconds: string;
+  /* Both of these already come back from /api/merchant/plans and were simply not declared here, so
+     the plan cards silently dropped the two terms a subscriber most needs before deciding. */
+  minCommitmentSeconds?: string | null;
+  promotion?: {
+    name: string;
+    introductoryAmountUsdc: string;
+    introductoryCycles: number;
+  } | null;
   active: boolean;
 }
 
@@ -1433,103 +1444,20 @@ export default function UserDashboard() {
     }
   };
 
-  /* Stable per subscribe attempt: reused on retry so the server's Circle idempotency key
-     dedupes the first charge; cleared on success so the next subscribe is a fresh attempt. */
-  const subscribeRequestKey = useRef<string | null>(null);
-
-  /* Subscribe to a plan from the merchant thread.
+  /* Subscribing is no longer something the dashboard does.
    *
-   * Only a FIRST subscribe transacts here. Upgrades deliberately do not: the DM plan list is a
-   * catalogue of what the business offers, and an upgrade is settled at checkout on the business's own
-   * page (its plan `detailsUrl`) so the business owns where that decision starts. The server prices it
-   * there — /api/user/subscription/upgrade credits the time already paid for and mints a fresh
-   * authorization at the new plan's terms.
+   * There used to be a handleSubscribeOrSwitchPlan here that authorized on-chain straight from the
+   * merchant thread. It carried the whole rate-comparison rulebook in the client — refuse an equal
+   * rate, refuse a reduction, send upgrades to the merchant's own page — and still disclosed none of
+   * the terms /subscribe/[planId] shows before someone commits money. Both callers now open that
+   * page instead: the offer DM (handleConfirmPaymentDm) and the plan catalogue, which is read-only.
    *
-   * In-place plan changes are gone from the product entirely. `modifySubscription` rejects a rate
-   * reduction by cross-multiplying against the authorization's CURRENT on-chain period, and a resumed
-   * subscription's period is the short bridge period — so upgrading a 20 USDC/30d plan to 40 USDC/30d
-   * with 14 days left evaluates `40 * 14 < 20 * 30` and reverts on-chain. Any in-thread switch button
-   * would have failed for exactly the subscribers most likely to press it.
-   */
-  const handleSubscribeOrSwitchPlan = async (plan: MerchantPlan) => {
-    const activeSub = getActiveSubscriptionForMerchant(plan.merchantAddress);
-
-    if (activeSub) {
-      /* Compare normalized recurring rates so a longer billing period cannot disguise a cheaper
-         tier as a nominal amount increase. */
-      let comparison: number;
-      try {
-        comparison = compareRecurringRates(
-          BigInt(plan.amountUsdc),
-          BigInt(plan.periodSeconds),
-          BigInt(activeSub.amountCapUsdc),
-          BigInt(activeSub.billingIntervalSeconds),
-        );
-      } catch {
-        setPlanManagerError("This plan could not be compared with your current subscription.");
-        return;
-      }
-
-      setPlanManagerStatus(null);
-      if (comparison === 0) {
-        setPlanManagerError(
-          activeSub.cancelAtPeriodEnd
-            ? "This is the plan you're already paying for. Use Resume to keep it — nothing will be charged."
-            : "You're already on this plan."
-        );
-        return;
-      }
-      if (comparison < 0) {
-        setPlanManagerError("Plan reductions aren't available. Stay on your current plan or pick a higher tier.");
-        return;
-      }
-
-      /* Defensive: the card renders a link rather than a button for this case, so this is only
-         reachable if a plan's link is missing. Say where the upgrade happens instead of failing. */
-      setPlanManagerError("Upgrades are completed on the merchant's own site. Open their plan page to switch.");
-      return;
-    }
-
-    await runAction(`subscribe-plan-${plan.id}`, async () => {
-      setPlanManagerStatus("Creating subscription on-chain...");
-      setPlanManagerError(null);
-      /* Subscribing charges the first payment server-side; a retry with the same x-request-id
-         dedupes at Circle instead of creating (and charging) a second subscription. */
-      subscribeRequestKey.current ||= crypto.randomUUID();
-      const res = await fetch("/api/user/subscription/subscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-request-id": subscribeRequestKey.current },
-        body: JSON.stringify(
-          plan.checkoutSessionId ? { checkoutSessionId: plan.checkoutSessionId } : { planId: plan.id },
-        ),
-      });
-      const data = await res.json().catch(() => ({}));
-
-      /* The local mirror said there was no active subscription, but the server found one that is
-         canceled with paid time left. Subscribing again would charge for a period already owned, so
-         the server refuses — hand off to the free resume rather than surfacing a dead end. */
-      if (data?.code === "RESUME_INSTEAD") {
-        subscribeRequestKey.current = null;
-        const refreshed = await loadSubscriptions();
-        const canceled = (refreshed ?? subscriptions).find(
-          (sub) => String(sub.subscriptionId) === String(data.subscriptionId),
-        );
-        if (canceled) {
-          await handleResumeSubscription(canceled);
-          return;
-        }
-        throw new Error(data.error || "This subscription is canceled but still active. Resume it to keep it.");
-      }
-
-      if (!res.ok || !data.success) throw new Error(data.error || "Subscription transaction failed.");
-      subscribeRequestKey.current = null;
-      setPlanManagerStatus(`Subscribed to ${data.planName || plan.name}.`);
-      triggerToast("Subscription created on-chain");
-      await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
-    }).catch((err: any) => {
-      setPlanManagerError(err.message || "Subscription transaction failed.");
-    });
-  };
+   * The rate rules were never really the client's to enforce. The plan-change endpoint returns
+   * PLAN_REDUCTION_NOT_ALLOWED and the upgrade endpoint returns NOT_AN_UPGRADE, and those remain the
+   * guards.
+   *
+   * Resume is deliberately untouched and still settles in-app — it mints a free bridge authorization
+   * for time already paid for, which is not a checkout and must not become one. */
 
   /* Resume a subscription the user canceled but is still inside the paid period.
      Cancel revokes the on-chain PSA authorization immediately (see subscription/cancel), so this
@@ -1605,6 +1533,13 @@ export default function UserDashboard() {
     });
   };
 
+  /* Deliberately unreferenced for now.
+   *
+   * "Ask a Friend to Pay" was the only caller, and that button is gone from the plan cards along with
+   * Subscribe — the catalogue is read-only. The rest of the flow is kept whole and working (this
+   * opener, the modal, handleCreateGiftPlanRequest, /api/user/requests/merchant-plan) because
+   * sponsoring someone else's plan is a feature we want back, just not from a browse-only card.
+   * Wire this to a new entry point rather than rebuilding it. */
   const openGiftPlanModal = (plan: MerchantPlan) => {
     setGiftPlan(plan);
     setGiftTab("friends");
@@ -1713,24 +1648,23 @@ export default function UserDashboard() {
   };
 
   const handleConfirmPaymentDm = async (dm: DmMessage) => {
-    /* Assigned API subscription offers use the same plan-change controller as the DM plan
-       picker. That controller detects an existing merchant subscription and modifies its
-       on-chain id in place; a new subscriber activates the assigned checkout instead. */
+    /* An assigned subscription offer opens the real checkout rather than authorizing from inside the
+       thread.
+
+       Subscribing in place meant the terms a subscriber agreed to — promotion, minimum commitment,
+       the price the intro reverts to, the email-verified gate — were all disclosed on
+       /subscribe/[planId] and none of them on the way through this button. The offer carries its own
+       checkout session id, and that route accepts one directly (it falls back from merchant_plans to
+       payment_links), so the link needs no plan lookup. */
     if (dm.messageType === "SUBSCRIPTION_OFFER") {
       if (!dm.paymentLinkId) return;
-      try {
-        const merchantAddress = dm.senderAddress.toLowerCase();
-        const res = await fetch(`/api/merchant/plans?merchantAddress=${encodeURIComponent(merchantAddress)}`);
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.success) throw new Error(data.error || "Failed to load this subscription offer.");
-        const plans = (data.plans || []) as MerchantPlan[];
-        const assignedPlan = plans.find((plan) => plan.checkoutSessionId === dm.paymentLinkId);
-        if (!assignedPlan) throw new Error("This subscription offer is no longer available.");
-        setThreadPlans(plans);
-        setPlansMerchantAddress(merchantAddress);
-        await handleSubscribeOrSwitchPlan(assignedPlan);
-      } catch (error: any) {
-        setPlanManagerError(error.message || "Failed to open this subscription offer.");
+      const checkoutUrl = buildSubscribeUrl(dm.paymentLinkId, window.location.origin);
+      const opened = window.open("about:blank", "_blank");
+      if (opened) {
+        opened.opener = null;
+        opened.location.href = checkoutUrl;
+      } else {
+        router.push(checkoutUrl);
       }
       return;
     }
@@ -2838,6 +2772,10 @@ export default function UserDashboard() {
   const selectedThreadDms = selectedDmPeer
     ? dms
         .filter((dm) => getDmPeerAddress(dm, userWallet).toLowerCase() === selectedDmPeer)
+        /* The merchant-facing half of a two-row event is written to the merchant in their own terms
+           and would read as the merchant narrating the subscriber's actions back at them. The
+           subscriber-facing row of the same pair stays. See MERCHANT_OPS_DM_TYPES. */
+        .filter((dm) => !isMerchantOpsDm(dm.messageType, dm.senderAddress, userWallet))
         .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
     : [];
   const activeThread = selectedDmPeer
@@ -3728,6 +3666,9 @@ export default function UserDashboard() {
                   subtitle="Fund prepaid balances for metered services"
                 />
 
+                {/* Account-level, so it sits above the per-merchant vaults rather than inside one. */}
+                <AccountHoldPanel />
+
                 <section className="commit-vault-shell p-0 sm:rounded-3xl sm:border sm:border-black/35 sm:bg-[#2775CA]/20 sm:p-8">
                   <div className="mb-5 flex items-end justify-between gap-3">
                     <div>
@@ -3941,7 +3882,7 @@ export default function UserDashboard() {
                         >
                           <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55 mt-3">
                             {isActiveDmMerchant
-                              ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
+                              ? "Updates from this merchant — you can't reply here"
                               : "Direct peer-to-peer system messages only"}
                           </div>
                           <div className="mx-auto w-fit rounded-full bg-white/10 px-6 py-1 text-[10px] font-bold text-white/55">
@@ -3984,6 +3925,7 @@ export default function UserDashboard() {
                               dm={dm}
                               focused={focusIntentId === dm.paymentLinkId}
                               incoming={dm.senderAddress.toLowerCase() !== userWallet?.toLowerCase()}
+                              forceMerchantVoice={isActiveDmMerchant}
                               loadingAction={loadingAction}
                               onPay={() => handleConfirmPaymentDm(dm)}
                               onDecline={() => handleDeclineDm(dm)}
@@ -4024,11 +3966,8 @@ export default function UserDashboard() {
                               status={planManagerStatus}
                               error={planManagerError}
                               onToggle={handleTogglePlanManager}
-                              onSubscribe={handleSubscribeOrSwitchPlan}
-                              onAskFriend={openGiftPlanModal}
                               onCancel={() => selectedDmPeer && handleCancelSubscriptionForMerchant(selectedDmPeer)}
                               onResume={handleResumeSubscription}
-                              giftLoadingPlanId={giftRequestBusyPlanId}
                             />
                           ) : (
                             <div className="flex flex-col gap-2">
@@ -4088,7 +4027,7 @@ export default function UserDashboard() {
                               className="sticky top-0 z-20 flex shrink-0 items-center justify-between border border-white/10 bg-black/40 px-4 py-3 rounded-2xl backdrop-blur-xl shadow-xl mb-3"
                             >
                               <div className="flex items-center gap-3">
-                                <Avatar profilePic={activeThread?.peerProfilePic || null} />
+                                <Avatar profilePic={activeThread?.peerProfilePic || null} name={activeThreadLabel} />
                                 <div>
                                   <div className="flex items-center gap-1.5">
                                     <h4 className="text-sm font-black uppercase tracking-wider text-white">
@@ -4152,7 +4091,7 @@ export default function UserDashboard() {
                             <div ref={attachDmScroller} onScroll={handleDmScroll} className="min-h-0 flex-1 overflow-y-auto overscroll-contain will-change-transform translate-z-0 pr-1 space-y-4">
                               <div className="mx-auto w-fit max-w-full rounded-full border border-[#2775CA]/20 bg-[#2775CA]/10 px-5 py-2 text-center text-[10px] font-black uppercase tracking-[0.16em] text-[#2775CA] backdrop-blur-md shadow-sm mt-2">
                                 {isActiveDmMerchant
-                                  ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
+                                  ? "Updates from this merchant — you can't reply here"
                                   : "Direct peer-to-peer system messages only"}
                               </div>
                               <div className="mx-auto w-fit rounded-full border border-black/10 bg-black/5 backdrop-blur-md px-5 py-1 text-[10px] font-bold text-black/60">
@@ -4195,6 +4134,7 @@ export default function UserDashboard() {
                                   dm={dm}
                                   focused={focusIntentId === dm.paymentLinkId}
                                   incoming={dm.senderAddress.toLowerCase() !== userWallet?.toLowerCase()}
+                                  forceMerchantVoice={isActiveDmMerchant}
                                   loadingAction={loadingAction}
                                   onPay={() => handleConfirmPaymentDm(dm)}
                                   onDecline={() => handleDeclineDm(dm)}
@@ -4235,11 +4175,8 @@ export default function UserDashboard() {
                                   status={planManagerStatus}
                                   error={planManagerError}
                                   onToggle={handleTogglePlanManager}
-                                  onSubscribe={handleSubscribeOrSwitchPlan}
-                                  onAskFriend={openGiftPlanModal}
                                   onCancel={() => selectedDmPeer && handleCancelSubscriptionForMerchant(selectedDmPeer)}
                                   onResume={handleResumeSubscription}
-                                  giftLoadingPlanId={giftRequestBusyPlanId}
                                 />
                               ) : (
                                 <div className="flex flex-col gap-2">
@@ -6681,7 +6618,7 @@ export default function UserDashboard() {
                               className={`w-full flex items-center justify-between gap-3 rounded-2xl border p-2.5 text-left transition ${isSelected ? "border-[#00d2b4] bg-[#00d2b4]/10" : "border-white/5 bg-white/[0.02] hover:bg-white/5"}`}
                             >
                               <div className="flex items-center gap-2.5 overflow-hidden">
-                                <Avatar profilePic={thread.peerProfilePic} />
+                                <Avatar profilePic={thread.peerProfilePic} name={formatPeerDisplayName(thread.peerName, thread.peerAddress)} />
                                 <div className="truncate">
                                   <p className="text-xs font-bold text-white truncate">
                                     {formatPeerDisplayName(thread.peerName, thread.peerAddress)}
@@ -7134,7 +7071,7 @@ function HomeHeader({
       <header className="w-full max-w-md px-1 py-2 pointer-events-auto transition-all duration-300">
         <div className="flex items-center justify-between w-full">
           <button type="button" onClick={handleProfileClick} aria-label={profileExpanded ? "Open settings" : "Show DNS name"} className={profileExpanded ? "profile-trigger profile-trigger-expanded flex h-12 max-w-[calc(100vw-7rem)] items-center gap-2 overflow-hidden rounded-2xl border border-black/15 bg-[#2775CA]/20 px-2 text-black transition-all duration-300" : "profile-trigger flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-0 bg-transparent p-0 text-black transition-all duration-300"}>
-            <Avatar profilePic={profilePic} size="xs" />
+            <Avatar profilePic={profilePic} name={profileLabel} size="xs" />
             {profileExpanded && <span className="truncate text-[11px] font-semibold">{profileLabel}</span>}
           </button>
           {/* Actions (Right) */}
@@ -7188,7 +7125,7 @@ function ChatHeader({
             
             {/* Peer Info Capsule */}
             <div className="flex items-center gap-2 px-2.5 py-1 bg-white/[0.04] border border-white/5 rounded-full min-w-0">
-              <Avatar profilePic={peerProfilePic} size="xs" />
+              <Avatar profilePic={peerProfilePic} name={peerName} size="xs" />
               <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#ccff00] truncate max-w-[100px]">
                 {peerName}
               </span>
@@ -7235,13 +7172,40 @@ function ChatHeader({
   );
 }
 
-function Avatar({ profilePic, size = "sm" }: { profilePic: string | null; size?: "xs" | "sm" | "lg" }) {
+/* Initials beat a generic glyph: they tell you *who* the empty circle belongs to. The onError
+   fallback matters just as much — a dead or hotlink-protected avatar URL otherwise leaves the
+   browser's broken-image icon in a 40px circle, which reads as our bug rather than a missing
+   picture. `src` is tracked in state so a changed prop retries instead of staying failed. Same
+   reasoning as PeerAvatar, which solves this for the DM request and block modals; this one stays
+   local because it also renders the viewer's own avatar and the dark DM bubbles. */
+function Avatar({ profilePic, name, size = "sm" }: { profilePic: string | null; name?: string | null; size?: "xs" | "sm" | "lg" }) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [profilePic]);
+
+  const initials = (name || "").trim().slice(0, 2).toUpperCase();
+  const showImage = Boolean(profilePic) && !failed;
+
   return (
     <div className={`${
       size === "lg" ? "h-16 w-16" : size === "xs" ? "h-7 w-7" : "h-10 w-10"
     } flex items-center justify-center overflow-hidden rounded-full border border-white/5 bg-black/30 shrink-0`}>
-      {profilePic ? (
-        <img src={profilePic} alt="Profile" className="h-full w-full object-cover" />
+      {showImage ? (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+          src={profilePic as string}
+          alt={name || "Profile"}
+          className="h-full w-full object-cover"
+          onError={() => setFailed(true)}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+        />
+      ) : initials ? (
+        <span className={`font-black text-white/70 ${size === "xs" ? "text-[9px]" : size === "lg" ? "text-base" : "text-[11px]"}`}>
+          {initials}
+        </span>
       ) : (
         <User className={`${size === "xs" ? "h-3.5 w-3.5" : "h-4 w-4"} text-white/45`} />
       )}
@@ -7460,7 +7424,7 @@ function DmThreadSelect({
                     : "border-black/10 bg-white/80 hover:bg-white text-black"
                 }`}
               >
-                <Avatar profilePic={thread.peerProfilePic} />
+                <Avatar profilePic={thread.peerProfilePic} name={peerLabel} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <p className="flex min-w-0 items-center gap-1.5 truncate text-xs font-black uppercase tracking-[0.12em] text-[#111827]">
@@ -7500,7 +7464,8 @@ function DmThreadSelect({
 function DmBubble({
   dm,
   focused,
-  incoming,
+  incoming: senderIsPeer,
+  forceMerchantVoice = false,
   loadingAction,
   onPay,
   onDecline,
@@ -7520,6 +7485,13 @@ function DmBubble({
   dm: DmMessage;
   focused: boolean;
   incoming: boolean;
+  /* Merchant threads are a one-way notification feed, so every message in one is drawn in the
+     merchant's voice — left, with their avatar and name — whatever `sender_address` says.
+     A few lifecycle events (cancel, service pause/resume) are still written by the user's own
+     wallet, and drawing those as the subscriber's outgoing messages made a notification feed look
+     like a two-way chat. Presentation only: action gating keeps reading the real sender, or pay
+     and decline buttons would appear on the user's own messages. */
+  forceMerchantVoice?: boolean;
   loadingAction: string | null;
   onPay: () => void;
   onDecline: () => void;
@@ -7542,12 +7514,21 @@ function DmBubble({
   resumeBusy?: boolean;
 }) {
   const isPending = dm.status === "PENDING";
+  /* `incoming` drives every visual decision below — side, avatar, bubble fill, label colour.
+     `senderIsPeer` is the real direction and is what the action gates use. */
+  const incoming = forceMerchantVoice || senderIsPeer;
   const displayTitle = shortenWalletsInText(dm.title);
   const displayDescription = shortenWalletsInText(dm.description);
   const senderLabel = formatPeerDisplayName(dm.senderName, dm.senderAddress);
+  /* When the user's own wallet wrote the row, the merchant is the receiver — so merchant voice has
+     to read identity off that side instead. */
+  const voiceLabel = forceMerchantVoice && !senderIsPeer
+    ? formatPeerDisplayName(dm.receiverName, dm.receiverAddress)
+    : senderLabel;
+  const voiceProfilePic = forceMerchantVoice && !senderIsPeer ? dm.receiverProfilePic : dm.senderProfilePic;
   const lines = splitDmDescription(displayDescription);
-  const canPay = incoming && isPending && Boolean(dm.paymentLinkId) && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER", "SPONSORED_PLAN_REQUEST"].includes(dm.messageType);
-  const canDecline = incoming && isPending && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER", "SPONSORED_PLAN_REQUEST"].includes(dm.messageType);
+  const canPay = senderIsPeer && isPending && Boolean(dm.paymentLinkId) && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER", "SPONSORED_PLAN_REQUEST"].includes(dm.messageType);
+  const canDecline = senderIsPeer && isPending && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER", "SPONSORED_PLAN_REQUEST"].includes(dm.messageType);
 
   /* Parse lines to show a beautiful checkout details card for payment requests and shared commits */
   const isRequest = ["PAYMENT_REQUEST", "PEER_REQUEST", "SUBSCRIPTION_OFFER", "SPONSORED_PLAN_REQUEST", "SPONSORED_PLAN_CONFIRMED", "SHARE_COMMIT"].includes(dm.messageType);
@@ -7591,13 +7572,13 @@ function DmBubble({
     });
   }
   /* Only the recipient of a transfer can thank the sender — you don't thank yourself. */
-  if (dm.messageType === "PEER_TRANSFER" && incoming && onThanks) {
+  if (dm.messageType === "PEER_TRANSFER" && senderIsPeer && onThanks) {
     actionItems.push({ key: "thanks", label: "Thanks", onClick: onThanks, loadingKey: `thanks-${dm.id}` });
   }
-  if (dm.messageType === "PEER_REQUEST" && isPending && !incoming && onNudge) {
+  if (dm.messageType === "PEER_REQUEST" && isPending && !senderIsPeer && onNudge) {
     actionItems.push({ key: "nudge", label: "Nudge", onClick: onNudge, loadingKey: `nudge-${dm.id}` });
   }
-  if (dm.messageType === "PAYMENT_REQUEST" && isPending && incoming && onCancelPlan) {
+  if (dm.messageType === "PAYMENT_REQUEST" && isPending && senderIsPeer && onCancelPlan) {
     actionItems.push({ key: "cancel", label: "Cancel Plan", onClick: onCancelPlan, loadingKey: `cancel-${dm.id}` });
   }
   /* The threshold notice tells the user to "review the usage breakdown in your dashboard" —
@@ -7645,7 +7626,7 @@ function DmBubble({
     actionItems.push({ key: "resume-subscription", label: "Resume", onClick: onResumeSubscription });
   }
   if (dm.messageType === "SPONSORED_ACCESS_ENDING" && onManagePlan) {
-    actionItems.push({ key: "subscribe-self", label: "Subscribe for yourself", onClick: onManagePlan });
+    actionItems.push({ key: "subscribe-self", label: "View plans", onClick: onManagePlan });
   }
   if (dm.messageType === "CHURN_SURVEY" && isPending && onSurveySubmit) {
     actionItems.push(
@@ -7677,7 +7658,7 @@ function DmBubble({
         style={{ transformOrigin: bubbleOrigin }}
         className={`flex gap-2.5 ${incoming ? "justify-start" : "justify-end"}`}
       >
-        {incoming && <Avatar profilePic={dm.senderProfilePic} />}
+        {incoming && <Avatar profilePic={voiceProfilePic} name={voiceLabel} />}
         <div className={`flex flex-col gap-1 ${incoming ? "items-start" : "items-end"}`}>
           <div
             data-dm-bubble={incoming ? "dark" : undefined}
@@ -7761,7 +7742,7 @@ function DmBubble({
       style={{ transformOrigin: bubbleOrigin }}
       className={`flex gap-2.5 ${incoming ? "justify-start" : "justify-end"}`}
     >
-      {incoming && <Avatar profilePic={dm.senderProfilePic} />}
+      {incoming && <Avatar profilePic={voiceProfilePic} name={voiceLabel} />}
       <div className={`max-w-[85%] sm:max-w-[75%] ${incoming ? "items-start" : "items-end"} flex flex-col gap-1.5 min-w-0`}>
         <div 
           data-dm-bubble={incoming ? "dark" : "sent"}
@@ -7795,7 +7776,7 @@ function DmBubble({
                 </div>
                 <div>
                   <span className={`block uppercase tracking-widest text-[8px] ${incoming ? "text-white/40" : "text-white/60"}`}>Merchant / Sender</span>
-                  <span className="font-bold text-white truncate block">{senderLabel}</span>
+                  <span className="font-bold text-white truncate block">{voiceLabel}</span>
                 </div>
               </div>
               
@@ -7986,11 +7967,8 @@ function MerchantPlanManager({
   status,
   error,
   onToggle,
-  onSubscribe,
-  onAskFriend,
   onCancel,
   onResume,
-  giftLoadingPlanId,
 }: {
   open: boolean;
   merchantLabel: string;
@@ -8001,16 +7979,12 @@ function MerchantPlanManager({
   status: string | null;
   error: string | null;
   onToggle: () => void;
-  onSubscribe: (plan: MerchantPlan) => void;
-  onAskFriend: (plan: MerchantPlan) => void;
   onCancel: () => void;
-  /* Restoring a canceled subscription is NOT onSubscribe. Cancelling revoked the on-chain
+  /* Restoring a canceled subscription is not a fresh subscribe. Cancelling revoked the on-chain
      authorization, so subscribing again mints a second one and charges for a period the
      subscriber already paid for — /api/user/subscription/resume mints a free bridge instead.
-     This prop is what routes the canceled branch there; without it the button posted to
-     /subscribe, which now refuses with RESUME_INSTEAD and dead-ends the thread. */
+     This prop is what routes the canceled branch there. */
   onResume?: (subscription: Subscription) => void;
-  giftLoadingPlanId?: string | null;
 }) {
   const hasActiveSubscription = !!activeSubscription;
   const isCanceledAtPeriodEnd = Boolean(activeSubscription?.cancelAtPeriodEnd);
@@ -8088,9 +8062,10 @@ function MerchantPlanManager({
           onClick={onToggle}
           className={`dm-quick-button dm-action-menu-trigger relative overflow-hidden border-black/15 bg-white text-black font-black shadow-sm ${hasActiveSubscription ? "flex-1 min-w-0 text-center truncate" : ""}`}
         >
-          {/* Not "Reactivate Plan" — Resume above is what reactivates, for free. This only opens
-              the plan list, which for a canceled subscriber means starting a new paid period. */}
-          {open ? "Hide Plans" : hasActiveSubscription ? (isCanceledAtPeriodEnd ? "View Plans" : "Manage Plan") : "Subscribe"}
+          {/* One label for every case. The list is a catalogue now — it shows what this merchant
+              sells and nothing transacts from it — so "Manage Plan" and "Subscribe" both overstated
+              what opening it does. Resume and Cancel above are the actions. */}
+          {open ? "Hide plans" : "View plans"}
         </motion.button>
       </motion.div>
 
@@ -8133,11 +8108,25 @@ function MerchantPlanManager({
                       isUnavailableChange = true;
                     }
                   }
-                  /* Only a first subscribe transacts from this card. An upgrade navigates to
-                     /subscribe/<planId>, so there is no in-place "switch" action to show progress
-                     for — the old `switch-plan-*` key could never be set again. */
-                  const loadingKey = `subscribe-plan-${plan.id}`;
-                  const giftBusy = giftLoadingPlanId === plan.id;
+                  /* Nothing transacts from this card any more, so there is no per-plan busy state to
+                     track. Subscribing starts from the link in the merchant's message. */
+                  const commitmentDays = plan.minCommitmentSeconds
+                    ? Math.max(1, Math.round(Number(plan.minCommitmentSeconds) / 86_400))
+                    : 0;
+                  /* A one-line version of the disclosure the checkout page spells out in full. The
+                     card is a compact grid cell, so it states the offer and the price it reverts to
+                     and leaves the dates to checkout. */
+                  const promo = plan.promotion;
+                  const promoSpan = promo
+                    ? promo.introductoryCycles > 1
+                      ? `first ${promo.introductoryCycles} cycles`
+                      : `first ${formatPlanPeriod(plan.periodSeconds)}`
+                    : "";
+                  const promoLine = promo
+                    ? BigInt(promo.introductoryAmountUsdc) === BigInt(0)
+                      ? `${promo.name}: your ${promoSpan} free, then ${formatUsdc(plan.amountUsdc)} USDC / ${formatPlanPeriod(plan.periodSeconds)}.`
+                      : `${promo.name}: ${formatUsdc(promo.introductoryAmountUsdc)} USDC for your ${promoSpan}, then ${formatUsdc(plan.amountUsdc)} USDC / ${formatPlanPeriod(plan.periodSeconds)}.`
+                    : "";
                   /* A higher tier the subscriber could move to, but not from here.
                    *
                    * The DM plan list is a catalogue of what the business offers, not a switcher. An
@@ -8170,6 +8159,19 @@ function MerchantPlanManager({
                               {plan.description}
                             </p>
                           )}
+                          {/* Both of these come back from /api/merchant/plans and were being dropped
+                              on the floor. They are exactly the terms someone browsing plans needs
+                              before they decide, and the checkout page already discloses them. */}
+                          {promoLine && (
+                            <p className="mt-2 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-2 py-1 text-[9px] font-bold leading-relaxed text-emerald-800">
+                              {promoLine}
+                            </p>
+                          )}
+                          {commitmentDays > 0 && (
+                            <p className="mt-2 text-[9px] font-bold leading-relaxed text-amber-800">
+                              {commitmentDays}-day minimum. Cancel sooner and it takes effect at the end of the period you&apos;ve paid for.
+                            </p>
+                          )}
                           {plan.detailsUrl && !isUpgradePath && (
                             <a
                               href={plan.detailsUrl}
@@ -8192,7 +8194,7 @@ function MerchantPlanManager({
                           </motion.span>
                         )}
                       </div>
-                      {isUpgradePath ? (
+                      {isUpgradePath && (
                         plan.detailsUrl ? (
                           /* The business's own page. Checking out there is what upgrades them — the
                              checkout credits the time they have already paid for. */
@@ -8215,38 +8217,7 @@ function MerchantPlanManager({
                             Switch to this plan on the merchant&apos;s site
                           </p>
                         )
-                      ) : (
-                        <motion.button
-                          whileHover={{ scale: 1.04 }}
-                          whileTap={{ scale: 0.93 }}
-                          transition={{ type: "spring", stiffness: 450, damping: 32 }}
-                          type="button"
-                          onClick={() => onSubscribe(plan)}
-                          disabled={isCurrent || isUnavailableChange || loadingAction === loadingKey}
-                          className={`mt-3 w-full rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition shadow-sm ${
-                            isCurrent || isUnavailableChange
-                              ? "border-black/10 bg-black/5 text-black/30 cursor-not-allowed"
-                              : "border-black/20 bg-[#D5E3EE] text-[#111827] hover:bg-[#c2d7e6]"
-                          } ${loadingAction === loadingKey ? "quick-action-loading" : ""}`}
-                        >
-                          {isCurrent
-                            ? (isCanceledAtPeriodEnd ? "Use Resume" : "Active now")
-                            : isUnavailableChange
-                              ? "Lower tier"
-                              : "Subscribe"}
-                        </motion.button>
                       )}
-                      <motion.button
-                        whileHover={{ scale: 1.04 }}
-                        whileTap={{ scale: 0.93 }}
-                        transition={{ type: "spring", stiffness: 450, damping: 32 }}
-                        type="button"
-                        onClick={() => onAskFriend(plan)}
-                        disabled={giftBusy}
-                        className={`mt-2 w-full rounded-xl border border-black/15 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-[#111827] transition hover:bg-black/5 disabled:opacity-45 shadow-sm ${giftBusy ? "quick-action-loading" : ""}`}
-                      >
-                        {giftBusy ? "Creating link" : "Ask a Friend to Pay"}
-                      </motion.button>
                     </motion.div>
                   );
                 })}

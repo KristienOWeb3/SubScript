@@ -7,8 +7,10 @@ import { prisma } from "@/lib/prisma";
 import { getKeeperSigner, syncVaultMirror, VAULT_ABI } from "@/lib/vault/onchain";
 import { SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
 import { withPgClient } from "@/lib/serverPg";
+import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
+import { getAccountHalt } from "@/lib/accountHalt";
 import crypto from "crypto";
 
 export const maxDuration = 300;
@@ -111,6 +113,40 @@ async function runVaultDraw(request: Request) {
                 }> = [];
                 for (const row of due) {
                     let submittedHash: string | undefined;
+
+                    /* A held account still settles usage the merchant already rendered — see the
+                       Merchant Protection note in src/lib/accountHalt.ts for why blocking this would
+                       invite the abuse it is meant to prevent. What is NOT legitimate is a cycle that
+                       began after the hold: report-usage refuses new accrual while a hold is in
+                       force, so accrual under such a cycle means something bypassed that gate. Skip
+                       it and leave it for a human rather than drawing on it.
+
+                       Its own try/catch, outside the draw's, so a database error here is a skipped
+                       row rather than a draw attempted blind. Fail closed, matching the rest of the
+                       halt read path. */
+                    let haltBlocked = false;
+                    try {
+                        const halt = await getAccountHalt(row.userAddress);
+                        haltBlocked = Boolean(
+                            halt?.haltedAt && row.cycleStart && row.cycleStart > new Date(halt.haltedAt),
+                        );
+                        if (haltBlocked) {
+                            console.error(
+                                `[ALERT] vault-draw: vault ${row.id} accrued usage in a cycle that started after its owner's hold — skipping`,
+                            );
+                        }
+                    } catch (haltError) {
+                        console.error(`[vault-draw] hold read failed for vault ${row.id}; skipping:`, haltError);
+                        haltBlocked = true;
+                    }
+                    if (haltBlocked) {
+                        results.push({
+                            id: row.id,
+                            error: "Owner is on hold and this cycle began after the hold started",
+                        });
+                        continue;
+                    }
+
                     try {
                         const tx = await vault.drawUsageFor(row.merchantAddress, row.userAddress, row.accruedUsageUsdc);
                         const receipt = await tx.wait();
@@ -175,6 +211,27 @@ async function runVaultDraw(request: Request) {
                             id: row.id,
                             txHash: submittedHash,
                             warning: "Draw settled; mirror repair queued",
+                        });
+                    }
+
+                    /* Receipts for a cycle that has actually settled. Reaching here means
+                       drawUsageFor mined: the failure branch above `continue`s, so a draw that
+                       reverted or is still ambiguous never gets this far.
+
+                       Deliberately outside the mirror-sync try/catch — the money moved either way,
+                       and a stale mirror is no reason to leave both sides without a record.
+
+                       The recovery branch above (an already-settled draw found during error
+                       handling) is skipped on purpose: it has no transaction hash, so there is no
+                       stable key, and a receipt keyed on anything weaker could send twice. */
+                    if (submittedHash) {
+                        await sendSettlementReceipts({
+                            kind: "vault_draw",
+                            amountUsdc: row.accruedUsageUsdc,
+                            txHash: submittedHash,
+                            payerAddress: row.userAddress,
+                            payeeAddress: row.merchantAddress,
+                            paymentTitle: "Usage settled for this cycle",
                         });
                     }
                 }

@@ -10,8 +10,6 @@ import {
     Building2,
     Check,
     ChevronDown,
-    ChevronLeft,
-    ChevronRight,
     Code2,
     HelpCircle,
     Key,
@@ -62,33 +60,6 @@ export default function MerchantDashboardNav({
     const [developerOpen, setDeveloperOpen] = useState(true);
     const [moreOpen, setMoreOpen] = useState(false);
     const [accountMenuOpen, setAccountMenuOpen] = useState(false);
-    /* Tablet widths gave the fixed 280px+ rail too large a share of the screen with no way to
-       reclaim it. Collapsing to an icon rail matches what the shared DashboardSidebar already
-       offers on admin and user. Its own storage key so collapsing one rail does not silently
-       collapse the other. */
-    const [isCollapsed, setIsCollapsed] = useState(false);
-
-    useEffect(() => {
-        try {
-            if (localStorage.getItem("subscript_merchant_sidebar_collapsed") === "true") {
-                setIsCollapsed(true);
-            }
-        } catch {
-            /* ignore storage access issues */
-        }
-    }, []);
-
-    const toggleCollapse = () => {
-        setIsCollapsed((previous) => {
-            const next = !previous;
-            try {
-                localStorage.setItem("subscript_merchant_sidebar_collapsed", String(next));
-            } catch {
-                /* ignore storage access issues */
-            }
-            return next;
-        });
-    };
 
     useEffect(() => {
         if (paymentIds.has(activeId)) setPaymentsOpen(true);
@@ -97,98 +68,88 @@ export default function MerchantDashboardNav({
         setAccountMenuOpen(false);
     }, [activeId]);
 
-    const baseRow = "flex w-full items-center gap-3 rounded-full px-5 py-3.5 text-left text-[17px] font-medium transition-all duration-200";
+    /* Sizing note. The rail used to be collapsible, which existed to buy back screen space at
+       tablet widths. It is fixed open now, and the space is bought back by scale instead: the rail
+       is narrower and its type smaller so it sits at the same visual density as the workspace, which
+       renders at 0.8 (see .merchant-dashboard-workspace > main in globals.css). The rail is a sibling
+       of that element, so CSS zoom there does not reach it and these numbers are the hand-tuned
+       equivalent. Colour tokens are deliberately untouched — the dark-theme layer keys off these
+       exact literal class names, so renaming one silently orphans its dark mapping. */
+    const baseRow = "flex w-full items-center gap-2.5 rounded-full px-4 py-2.5 text-left text-[14px] font-medium transition-all duration-200";
     /* [&_.koboyo-icon]:bg-white is what actually whitens the icon on a selected row. Icons render
        as a mask span coloured by background-color: currentColor from @layer components, so a
        text-* utility on the row alone does not reliably win — this sets the mask fill directly. */
     const selectedRow = "bg-[#082824] text-white shadow-md font-bold [&_.koboyo-icon]:bg-white";
-    const rowClass = (active: boolean) => `${baseRow} ${isCollapsed ? "justify-center gap-0 px-0" : ""} ${active ? selectedRow : "text-black/80 hover:bg-[#D4E3E8]/55"}`;
-    const childClass = (active: boolean) => `flex w-full items-center gap-3 rounded-full px-5 py-2.5 pl-10 text-left text-sm font-medium transition-all duration-200 ${active ? selectedRow : "text-black/65 hover:bg-[#D4E3E8]/45 hover:text-black"}`;
+    const rowClass = (active: boolean) => `${baseRow} ${active ? selectedRow : "text-black/80 hover:bg-[#D4E3E8]/55"}`;
+    const childClass = (active: boolean) => `flex w-full items-center gap-2.5 rounded-full px-4 py-2 pl-8 text-left text-[12px] font-medium transition-all duration-200 ${active ? selectedRow : "text-black/65 hover:bg-[#D4E3E8]/45 hover:text-black"}`;
 
     return (
         <>
             <aside
                 aria-busy={isLoading}
-                className={`relative hidden h-full shrink-0 flex-col overflow-y-auto overscroll-contain bg-[#FFFFF0] pb-8 pt-9 text-black transition-[width] duration-300 ease-in-out md:flex [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
-                    isCollapsed ? "w-[88px] px-3" : "w-[clamp(264px,17vw,340px)] px-6"
-                }`}
+                className="merchant-rail relative hidden h-full w-[clamp(212px,14vw,272px)] shrink-0 flex-col overflow-y-auto overscroll-contain bg-[#FFFFF0] px-5 pb-6 pt-7 text-black md:flex [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             >
                 {isLoading && (
-                    <div className="absolute inset-0 z-20 bg-[#FFFFF0] px-6 pb-8 pt-9" aria-hidden="true">
+                    <div className="merchant-rail-skeleton absolute inset-0 z-20 bg-[#FFFFF0] px-5 pb-6 pt-7" aria-hidden="true">
                         <div className="flex items-center justify-between">
-                            <div className="h-8 w-40 rounded-lg subscript-skeleton" />
-                            <div className="h-9 w-9 rounded-full subscript-skeleton subscript-skeleton--faint" />
+                            <div className="h-6 w-32 rounded-lg subscript-skeleton" />
+                            <div className="h-8 w-8 rounded-full subscript-skeleton subscript-skeleton--faint" />
                         </div>
-                        <div className="mt-5 flex items-center gap-3 rounded-full bg-[#D4E3E8]/70 p-3">
-                            <div className="h-11 w-11 shrink-0 rounded-full subscript-skeleton" />
-                            <div className="h-4 flex-1 rounded-full subscript-skeleton" />
-                            <div className="h-5 w-5 rounded-full subscript-skeleton subscript-skeleton--faint" />
+                        <div className="mt-4 flex items-center gap-2.5 rounded-full bg-[#D4E3E8]/70 p-2.5">
+                            <div className="h-9 w-9 shrink-0 rounded-full subscript-skeleton" />
+                            <div className="h-3 flex-1 rounded-full subscript-skeleton" />
+                            <div className="h-4 w-4 rounded-full subscript-skeleton subscript-skeleton--faint" />
                         </div>
-                        <div className="mt-10 space-y-3">
+                        <div className="mt-8 space-y-1.5">
                             {Array.from({ length: 8 }).map((_, index) => (
-                                <div key={index} className="flex items-center gap-3 rounded-full px-5 py-3.5">
-                                    <div className="h-5 w-5 shrink-0 rounded-md subscript-skeleton subscript-skeleton--faint" />
-                                    <div className={`h-3 rounded-full subscript-skeleton ${index % 3 === 0 ? "w-36" : index % 2 === 0 ? "w-28" : "w-32"}`} />
+                                <div key={index} className="flex items-center gap-2.5 rounded-full px-4 py-2.5">
+                                    <div className="h-4 w-4 shrink-0 rounded-md subscript-skeleton subscript-skeleton--faint" />
+                                    <div className={`h-2.5 rounded-full subscript-skeleton ${index % 3 === 0 ? "w-28" : index % 2 === 0 ? "w-20" : "w-24"}`} />
                                 </div>
                             ))}
                         </div>
                     </div>
                 )}
                 <div className={`flex min-h-full flex-col ${isLoading ? "invisible" : ""}`}>
-                <div className={`flex items-center ${isCollapsed ? "flex-col gap-3" : "justify-between"}`}>
-                    {!isCollapsed && (
-                        <span className="text-[28px] font-bold tracking-tight text-[#082824]">MERCHANT</span>
-                    )}
+                <div className="flex items-center justify-between">
+                    <span className="text-[22px] font-bold tracking-tight text-[#082824]">MERCHANT</span>
                     <div className="relative">
                         {isPremium && (
                             <span className="absolute -inset-1 rounded-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 opacity-80 blur-sm animate-pulse pointer-events-none" />
                         )}
                         <button
                             onClick={() => onSelect("premium")}
-                            className={`relative flex h-9 w-9 items-center justify-center rounded-full bg-[#EFE2AC] text-black transition hover:brightness-95 shadow-sm ${
+                            className={`relative flex h-8 w-8 items-center justify-center rounded-full bg-[#EFE2AC] text-black transition hover:brightness-95 shadow-sm ${
                                 isPremium ? "ring-2 ring-amber-400/90 shadow-[0_0_16px_rgba(245,158,11,0.6)]" : ""
                             }`}
                             aria-label="Open Premium"
                             title={isPremium ? "Premium Pro Active" : "Open Premium"}
                         >
-                            <DiamondIcon className="h-4.5 w-4.5" />
+                            <DiamondIcon className="h-4 w-4" />
                         </button>
                     </div>
-
-                    <button
-                        type="button"
-                        onClick={toggleCollapse}
-                        aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                        title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-black/10 bg-[#D4E3E8]/60 text-[#082824] transition hover:bg-[#D4E3E8]"
-                    >
-                        {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-                    </button>
                 </div>
 
-                <div className="relative mt-5">
+                <div className="relative mt-4">
                     <button
                         onClick={() => setAccountMenuOpen((prev) => !prev)}
-                        className={`flex w-full items-center rounded-full bg-[#D4E3E8] text-left transition hover:bg-[#c6d8de] ${isCollapsed ? "justify-center p-2" : "gap-3 p-3"}`}
+                        className="flex w-full items-center gap-2.5 rounded-full bg-[#D4E3E8] p-2.5 text-left transition hover:bg-[#c6d8de]"
                         aria-expanded={accountMenuOpen}
-                        title={isCollapsed ? identityLabel : undefined}
                     >
-                        <span className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#082824] text-sm font-semibold text-white shadow-sm ${isCollapsed ? "h-9 w-9" : "h-11 w-11"}`}>
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#082824] text-xs font-semibold text-white shadow-sm">
                             {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : identityLabel.slice(0, 1).toUpperCase()}
                         </span>
-                        {!isCollapsed && (
-                            <span className="min-w-0 flex-1 truncate text-lg font-semibold text-[#082824]">{identityLabel}</span>
-                        )}
+                        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[#082824]">{identityLabel}</span>
                         {verified && (
-                            <span title="Verified Merchant" className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm shrink-0">
-                                <Check className="h-3 w-3 stroke-[3]" />
+                            <span title="Verified Merchant" className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm shrink-0">
+                                <Check className="h-2.5 w-2.5 stroke-[3]" />
                             </span>
                         )}
-                        <ChevronDown className={`h-4 w-4 text-black/50 transition ${accountMenuOpen ? "rotate-180" : ""}`} />
+                        <ChevronDown className={`h-3.5 w-3.5 text-black/50 transition ${accountMenuOpen ? "rotate-180" : ""}`} />
                     </button>
 
                     {accountMenuOpen && (
-                        <div className="absolute left-0 right-0 top-full z-30 mt-2 space-y-1 rounded-2xl border border-black/10 bg-[#FFFFF0] p-2 shadow-xl">
+                        <div className="merchant-rail-menu absolute left-0 right-0 top-full z-30 mt-2 space-y-1 rounded-2xl border border-black/10 bg-[#FFFFF0] p-2 shadow-xl">
                             {isAdmin && (
                                 <Link
                                     href="/admin"
@@ -222,71 +183,60 @@ export default function MerchantDashboardNav({
                     )}
                 </div>
 
-                {/* Collapsed, the rail is icons only: labels are dropped, the accordions stop
-                    expanding inline and their group heading jumps straight to its first page
-                    instead, and every row carries a title so the icon stays identifiable. */}
-                <nav className={`space-y-2 ${isCollapsed ? "mt-6" : "mt-10"}`} aria-label="Merchant dashboard navigation">
+                <nav className="mt-8 space-y-1.5" aria-label="Merchant dashboard navigation">
                     <button onClick={() => onSelect("overview")} className={rowClass(activeId === "overview")} title="Overview">
-                        <SquaresFour className="h-5 w-5 shrink-0" />{!isCollapsed && <span>Overview</span>}
+                        <SquaresFour className="h-4.5 w-4.5 shrink-0" /><span>Overview</span>
                     </button>
                     <button onClick={() => onSelect("analytics")} className={rowClass(activeId === "analytics")} title="Analytics">
-                        <BarChart3 className="h-5 w-5 shrink-0" />{!isCollapsed && <span>Analytics</span>}
+                        <BarChart3 className="h-4.5 w-4.5 shrink-0" /><span>Analytics</span>
                     </button>
 
                     <div>
                         <button
-                            onClick={() => (isCollapsed ? onSelect("payment-links") : setPaymentsOpen((open) => !open))}
+                            onClick={() => setPaymentsOpen((open) => !open)}
                             className={rowClass(paymentIds.has(activeId))}
-                            aria-expanded={isCollapsed ? undefined : paymentsOpen}
+                            aria-expanded={paymentsOpen}
                             title="Payments and Payroll"
                         >
-                            <Sliders className="h-5 w-5 shrink-0" />
-                            {!isCollapsed && (
-                                <>
-                                    <span className="flex-1">Payments &amp; Payroll</span>
-                                    <ChevronDown className={`h-4 w-4 transition ${paymentsOpen ? "rotate-180" : ""}`} />
-                                </>
-                            )}
+                            <Sliders className="h-4.5 w-4.5 shrink-0" />
+                            <span className="flex-1">Payments &amp; Payroll</span>
+                            <ChevronDown className={`h-3.5 w-3.5 transition ${paymentsOpen ? "rotate-180" : ""}`} />
                         </button>
-                        {paymentsOpen && !isCollapsed && (
+                        {paymentsOpen && (
                             <div className="mt-1 space-y-1">
-                                <button onClick={() => onSelect("payment-links")} className={childClass(activeId === "payment-links")}><MessageSquare className="h-4 w-4 shrink-0" /> Payments &amp; Plans</button>
-                                <button onClick={() => onSelect("payroll")} className={childClass(activeId === "payroll")}><Building2 className="h-4 w-4 shrink-0" /> Payroll</button>
+                                <button onClick={() => onSelect("payment-links")} className={childClass(activeId === "payment-links")}><MessageSquare className="h-3.5 w-3.5 shrink-0" /> Payments &amp; Plans</button>
+                                <button onClick={() => onSelect("payroll")} className={childClass(activeId === "payroll")}><Building2 className="h-3.5 w-3.5 shrink-0" /> Payroll</button>
                             </div>
                         )}
                     </div>
 
                     <div>
                         <button
-                            onClick={() => (isCollapsed ? onSelect("apikeys") : setDeveloperOpen((open) => !open))}
+                            onClick={() => setDeveloperOpen((open) => !open)}
                             className={rowClass(developerIds.has(activeId))}
-                            aria-expanded={isCollapsed ? undefined : developerOpen}
+                            aria-expanded={developerOpen}
                             title="Developer Tools"
                         >
-                            <Code2 className="h-5 w-5 shrink-0" />
-                            {!isCollapsed && (
-                                <>
-                                    <span className="flex-1">Developer Tools</span>
-                                    <ChevronDown className={`h-4 w-4 transition ${developerOpen ? "rotate-180" : ""}`} />
-                                </>
-                            )}
+                            <Code2 className="h-4.5 w-4.5 shrink-0" />
+                            <span className="flex-1">Developer Tools</span>
+                            <ChevronDown className={`h-3.5 w-3.5 transition ${developerOpen ? "rotate-180" : ""}`} />
                         </button>
-                        {developerOpen && !isCollapsed && (
+                        {developerOpen && (
                             <div className="mt-1 space-y-1">
-                                <button onClick={() => onSelect("apikeys")} className={childClass(activeId === "apikeys")}><Key className="h-4 w-4 shrink-0" /> API Keys</button>
-                                <button onClick={() => onSelect("checkout")} className={childClass(activeId === "checkout")}><Code2 className="h-4 w-4 shrink-0" /> Checkout Setup</button>
-                                <button onClick={() => onSelect("webhooks")} className={childClass(activeId === "webhooks")}><Webhook className="h-4 w-4 shrink-0" /> Webhooks</button>
+                                <button onClick={() => onSelect("apikeys")} className={childClass(activeId === "apikeys")}><Key className="h-3.5 w-3.5 shrink-0" /> API Keys</button>
+                                <button onClick={() => onSelect("checkout")} className={childClass(activeId === "checkout")}><Code2 className="h-3.5 w-3.5 shrink-0" /> Checkout Setup</button>
+                                <button onClick={() => onSelect("webhooks")} className={childClass(activeId === "webhooks")}><Webhook className="h-3.5 w-3.5 shrink-0" /> Webhooks</button>
                             </div>
                         )}
                     </div>
                 </nav>
 
-                <div className="mt-auto space-y-2 pt-8">
+                <div className="mt-auto space-y-1.5 pt-6">
                     <button onClick={() => onSelect("settings")} className={rowClass(activeId === "settings")} title="Settings">
-                        <Sliders className="h-5 w-5 shrink-0" />{!isCollapsed && <span>Settings</span>}
+                        <Sliders className="h-4.5 w-4.5 shrink-0" /><span>Settings</span>
                     </button>
                     <Link href="/support" target="_blank" className={rowClass(false)} title="Help Center">
-                        <HelpCircle className="h-5 w-5 shrink-0" />{!isCollapsed && <span>Help Center</span>}
+                        <HelpCircle className="h-4.5 w-4.5 shrink-0" /><span>Help Center</span>
                     </Link>
                 </div>
                 </div>

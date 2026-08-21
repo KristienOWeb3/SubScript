@@ -5,6 +5,7 @@ import { merchantDisplayName } from "@/lib/identityDisplay";
 import { notifyCommitInvite, resolveInviteeAddress } from "@/lib/dms/commitInvite";
 import { consumeDistributedRateLimit } from "@/lib/distributedRateLimit";
 import { CommitAccessError, isCommitId, resolveDisplayName } from "@/lib/commitId";
+import { haltGuard } from "@/lib/accountHalt";
 import {
     MAX_SHARES_PER_VAULT,
     createVaultShare,
@@ -186,6 +187,12 @@ export async function POST(request: Request) {
 
         const limited = await guardWriteRate(walletAddress);
         if (limited) return limited;
+
+        /* Handing a friend a Commit ID is a new authorization against the primary's escrow, so a
+           hold refuses it. Pausing and revoking an existing share stay open (../shares/status): both
+           reduce outflow, and refusing them would trap the user in the state they wanted out of. */
+        const held = await haltGuard(walletAddress);
+        if (held) return held;
 
         const body = await request.json().catch(() => ({}));
 

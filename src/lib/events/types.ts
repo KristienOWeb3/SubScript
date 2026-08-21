@@ -58,11 +58,25 @@ export const PROMOTION_EVENT_TYPES = [
 ] as const;
 
 /* ----------------------------- Metered vaults ------------------------------ */
+/* `vault.paused` used to carry two unrelated meanings: the escrow was drained by a withdrawal,
+   and the vault was temporarily stopped. Only the first was ever emitted, from
+   /api/user/vault/withdraw. The names are now split three ways:
+
+     vault.withdrawn       — the primary pulled escrow back out. Money moved, and the vault may
+                             have dropped below its commit.
+     vault.pause_requested — the account holder halted their own account, but a commitment window
+                             the subscriber authorized is still open, so draws continue until it
+                             closes. The merchant should stop granting NEW usage now.
+     vault.paused          — draws against this escrow have actually stopped.
+     vault.resumed         — the halt was lifted and draws may proceed again.
+
+   See src/lib/accountHalt.ts for why a halt is a forward gate and not a retroactive void. */
 export const VAULT_EVENT_TYPES = [
     "vault.activated",
     "vault.topped_up",
     "vault.usage_recorded",
     "vault.threshold_reached",
+    "vault.withdrawn",
     "vault.pause_requested",
     "vault.paused",
     "vault.resumed",
@@ -451,6 +465,52 @@ export interface VaultServiceCanceledEventData {
     balance_usdc_micros: string;
 }
 
+/** The primary pulled escrow back out of a vault. `active` says whether service survived it. */
+export interface VaultWithdrawnEventData {
+    user_address: string;
+    merchant_address: string;
+    amount_withdrawn_usdc_micros: string;
+    vault_balance_usdc_micros: string;
+    tx_hash: string;
+    active: boolean;
+}
+
+/**
+ * The account holder halted their own account.
+ *
+ * `draws_continue` is the part a merchant has to read. When it is true, a commitment window the
+ * subscriber authorized at subscribe time is still open, so end-of-cycle draws will still settle
+ * usage rendered inside it; `commitment_until` is when that stops. When it is false, draws have
+ * already stopped and the merchant should drop entitlement.
+ *
+ * Either way, NEW usage should not be granted from now on.
+ */
+export interface VaultPauseRequestedEventData {
+    user_address: string;
+    merchant_address: string;
+    vault_id: string | null;
+    halted_at: string;
+    draws_continue: boolean;
+    commitment_until: string | null;
+}
+
+/** Draws against this escrow have stopped. */
+export interface VaultPausedEventData {
+    user_address: string;
+    merchant_address: string;
+    vault_id: string | null;
+    halted_at: string;
+    reason: string;
+}
+
+/** The halt was lifted. Draws and renewals may proceed again. */
+export interface VaultResumedEventData {
+    user_address: string;
+    merchant_address: string;
+    vault_id: string | null;
+    resumed_at: string;
+}
+
 /* ----------------------------- Typed event shorthands ---------------------- */
 export type PaymentSucceededEvent = EventEnvelope<PaymentSucceededEventData> & {
     type: "payment.succeeded";
@@ -500,6 +560,18 @@ export type PromotionRedeemedEvent = EventEnvelope<PromotionRedeemedEventData> &
 export type VaultServiceCanceledEvent = EventEnvelope<VaultServiceCanceledEventData> & {
     type: "vault.service_canceled";
 };
+export type VaultWithdrawnEvent = EventEnvelope<VaultWithdrawnEventData> & {
+    type: "vault.withdrawn";
+};
+export type VaultPauseRequestedEvent = EventEnvelope<VaultPauseRequestedEventData> & {
+    type: "vault.pause_requested";
+};
+export type VaultPausedEvent = EventEnvelope<VaultPausedEventData> & {
+    type: "vault.paused";
+};
+export type VaultResumedEvent = EventEnvelope<VaultResumedEventData> & {
+    type: "vault.resumed";
+};
 
 /**
  * Discriminated union of all SubScript webhook events.
@@ -521,7 +593,11 @@ export type SubScriptWebhookEvent =
     | SubscriptionWinbackOfferedEvent
     | PromotionRedeemedEvent
     | CheckoutCreatedEvent
-    | VaultServiceCanceledEvent;
+    | VaultServiceCanceledEvent
+    | VaultWithdrawnEvent
+    | VaultPauseRequestedEvent
+    | VaultPausedEvent
+    | VaultResumedEvent;
 
 /* ----------------------------- Event type guards --------------------------- */
 

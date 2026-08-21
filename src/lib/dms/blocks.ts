@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { withPgClient } from "@/lib/serverPg";
 import { accountDisplayName } from "@/lib/identityDisplay";
+import { resolveProfilePics } from "@/lib/dms/peerProfiles";
 
 /**
  * Checks if communication between two wallets is blocked in either direction.
@@ -125,19 +126,15 @@ export async function listBlockedPeers(wallet: string) {
 
     const blockedAddresses = blocks.map((b) => b.blockedAddress.toLowerCase());
 
-    const [aliases, customers] = await Promise.all([
+    const [aliases, profilePicMap] = await Promise.all([
         prisma.addressAlias.findMany({
             where: { address: { in: blockedAddresses } },
             select: { address: true, alias: true },
         }),
-        prisma.customer.findMany({
-            where: { walletAddress: { in: blockedAddresses } },
-            select: { walletAddress: true, profilePic: true },
-        }),
+        resolveProfilePics(blockedAddresses),
     ]);
 
     const aliasMap = new Map(aliases.map((a) => [a.address.toLowerCase(), a.alias]));
-    const profilePicMap = new Map(customers.map((c) => [c.walletAddress.toLowerCase(), c.profilePic]));
 
     return blocks.map((b) => {
         const addr = b.blockedAddress.toLowerCase();

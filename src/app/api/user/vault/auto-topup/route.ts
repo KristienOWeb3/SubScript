@@ -25,6 +25,7 @@ import { prisma } from "@/lib/prisma";
 import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import { validateMandate, nextMonthlyWindow, isRunningLow } from "@/lib/vault/autoTopUp";
+import { haltGuard } from "@/lib/accountHalt";
 
 export const maxDuration = 120;
 
@@ -60,6 +61,12 @@ export async function POST(request: Request) {
         if (!roleCheck.ok) {
             return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
         }
+
+        /* A mandate authorizes an unbounded run of future commits, which is the largest new
+           authorization this account can grant, so a hold refuses it. DELETE stays open: removing a
+           mandate reduces outflow. */
+        const held = await haltGuard(wallet);
+        if (held) return held;
 
         /* Same bar as committing funds: a mandate authorizes an unbounded number of future
            commits, so it must not be grantable from a session with no verified contact address. */

@@ -6,7 +6,7 @@ import { ROUTER_DEPOSIT_INTERFACE, USDC_TRANSFER_INTERFACE, receiptUrl } from "@
 import { ARC_TESTNET_CHAIN_ID, SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
 import { buildReceiptDmDescription, safeReceiptPayeeLabel } from "@/lib/dms/receiptPresentation";
-import { sendPaymentReceiptEmails } from "@/lib/email/transactional";
+import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { createPaymentSucceededWebhook } from "@/lib/webhooks";
 import { deliverWebhookOutboxEvent } from "@/lib/webhookOutbox";
@@ -375,13 +375,19 @@ async function runPostSettlementEffects(
                 console.error("[verify-worker] Failed to resolve receipt merchant alias:", merchantAliasError.message);
             }
             const merchantLabel = safeReceiptPayeeLabel(merchantAlias?.alias, job.merchant_address);
+            /* Reads as something a person would say. It used to be "Receipt: <title>", which is
+               a label, not a sentence — and the title can be empty, so it could arrive as a
+               bare "Receipt:". */
+            const paymentSubject = job.payment_title?.trim();
             await insertSupabaseDmAndNotify(supabase, {
                 sender_address: job.merchant_address,
                 receiver_address: job.payer_address,
                 message_type: "DEBIT_SUCCESS",
                 status: "PENDING",
                 amount_usdc: job.amount_usdc.toString(),
-                title: `Receipt: ${job.payment_title}`,
+                title: paymentSubject
+                    ? `You paid for ${paymentSubject}`
+                    : `You paid ${merchantLabel}`,
                 description: buildReceiptDmDescription({
                     amountUsdcMicros: job.amount_usdc,
                     payeeLabel: merchantLabel,
@@ -455,14 +461,20 @@ async function runPostSettlementEffects(
         }
     }
 
-    await sendPaymentReceiptEmails({
+    /* Routed through the shared settlement entry point rather than calling the template directly.
+       Every other settlement path in the product (renewals, vault draws, top-ups, payroll) now
+       calls the same function, so the argument shape can't drift per path the way it did when
+       this was the only caller in the codebase. Guarded by payment_link_settlement_effects above,
+       so an inline pass and a later cron drain cannot both send. */
+    await sendSettlementReceipts({
+        kind: "payment_link",
         amountUsdc: job.amount_usdc,
-        receiptUrl: shareUrl,
-        receiptId: job.receipt_id,
-        merchantAddress: job.merchant_address,
-        payerAddress: job.payer_address,
-        paymentTitle: job.payment_title,
         txHash: job.tx_hash,
+        payerAddress: job.payer_address,
+        payeeAddress: job.merchant_address,
+        paymentTitle: job.payment_title,
+        receiptId: job.receipt_id,
+        receiptShareUrl: shareUrl,
     });
 
     if (!job.settles_directly_to_user) {
