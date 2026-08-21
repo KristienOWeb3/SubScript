@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
@@ -16,8 +16,10 @@ import {
 } from "@/lib/commitId";
 import { sanitizeInput } from "@/utils/security";
 import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
+import { assertAccountNotHalted, AccountHaltError } from "@/lib/accountHalt";
 import { assertNotBlocked } from "@/lib/dms/blocks";
 import { MAX_BATCH_RECIPIENTS } from "@/lib/payments/batchLimits";
+import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
 
 export const maxDuration = 120;
 
@@ -99,8 +101,16 @@ export async function POST(request: Request) {
             /* This route is a user-wallet outflow. For delegated sends the parent funding wallet
                is the account whose funds leave the chain, so the hold is keyed to that wallet. */
             await assertWithdrawalAllowed(fundingWallet, "USER");
+            /* The account holder's own brake, checked on the same wallet and for the same reason:
+               the funding account is the one whose money leaves. A delegated send is covered twice
+               over, because resolveSpendingAuthority above already refuses a halted parent — this
+               is the gate that runs before any gas is reserved. */
+            await assertAccountNotHalted(fundingWallet);
         } catch (holdError) {
             if (holdError instanceof WithdrawalHeldError) {
+                return NextResponse.json({ error: holdError.message }, { status: holdError.status });
+            }
+            if (holdError instanceof AccountHaltError) {
                 return NextResponse.json({ error: holdError.message }, { status: holdError.status });
             }
             throw holdError;
@@ -223,6 +233,9 @@ export async function POST(request: Request) {
         // waits for each transfer to confirm and throws on revert.
         const custody = await getWalletCustody(fundingWallet);
         const txs: { receiverAddress: string; amountUsdc: string; txHash: string }[] = [];
+        /* Kept beside `txs` rather than folded into it: `txs` is the response body, and a receipt
+           needs the raw micros that formatAmount() has already rounded for display. */
+        const settledForReceipts: Array<{ receiver: string; amountMicros: bigint; txHash: string }> = [];
 
         /* Transfers move funds, so each recipient gets a deterministic Circle idempotency key
            scoped to (request, recipient, amount). A client that reuses its x-request-id on
@@ -255,6 +268,7 @@ export async function POST(request: Request) {
                     amountUsdc: formatAmount(item.amountMicros),
                     txHash,
                 });
+                settledForReceipts.push({ receiver: item.receiver, amountMicros: item.amountMicros, txHash });
             } catch (err: any) {
                 failure = {
                     index: i,
@@ -287,6 +301,30 @@ export async function POST(request: Request) {
             /* The loop ran to completion, so the ledger now matches what settled either way.
                Anything the catch might otherwise release would double-credit the cap. */
             strandedReservation = null;
+        }
+
+        /*
+         * Receipts for whatever actually settled, to both sides, whether the batch finished or
+         * stopped early. Wallet-to-wallet sends were the last settlement path that mailed nobody:
+         * the email audit's finding 2 named "peer-to-peer transfers" but pointed at the payment-link
+         * worker, and P2P payment links were already covered there — this route is the real gap.
+         *
+         * Keyed per transaction, so retrying only the remaining recipients after a partial batch
+         * never re-mails one that already settled. In after() because a transfer is irreversible
+         * once mined and nothing about email may touch that path.
+         */
+        if (settledForReceipts.length > 0) {
+            after(async () => {
+                for (const settled of settledForReceipts) {
+                    await sendSettlementReceipts({
+                        kind: "wallet_transfer",
+                        amountUsdc: settled.amountMicros,
+                        txHash: settled.txHash,
+                        payerAddress: normalizedSender,
+                        payeeAddress: settled.receiver,
+                    });
+                }
+            });
         }
 
         if (failure) {

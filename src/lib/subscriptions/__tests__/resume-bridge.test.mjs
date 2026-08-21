@@ -279,7 +279,7 @@ test("the DM thread's plan bar resumes rather than resubscribes", () => {
         assert.match(block, /onResume=\{handleResumeSubscription\}/, `call site ${index} must pass onResume`);
     }
 
-    /* The canceled branch calls onResume with the SUBSCRIPTION, not onSubscribe with a plan.
+    /* The canceled branch calls onResume with the SUBSCRIPTION, not a subscribe handler with a plan.
        activePlan is matched by exact amount+period against the merchant's published plans, so an
        edited or delisted plan resolved to null and disabled the only way back. */
     const manager = dashboard.slice(dashboard.indexOf("function MerchantPlanManager"));
@@ -291,10 +291,15 @@ test("the DM thread's plan bar resumes rather than resubscribes", () => {
     assert.doesNotMatch(canceledBranch, /onSubscribe/);
     assert.doesNotMatch(canceledBranch, /activePlan &&/);
 
-    /* Belt and braces: any surface that still routes a canceled row through /subscribe hands off to
-       the free resume instead of surfacing the refusal. */
-    assert.match(dashboard, /data\?\.code === "RESUME_INSTEAD"/);
-    assert.match(dashboard, /await handleResumeSubscription\(canceled\)/);
+    /* Resume stays in-app while subscribing does not.
+     *
+     * The plan catalogue is browse-only now — nothing authorizes on-chain from a plan card, and the
+     * RESUME_INSTEAD handoff that used to catch a canceled row mid-subscribe went with it. That
+     * refusal is unreachable from here precisely because no dashboard surface posts to /subscribe
+     * any more, which is a stronger guarantee than handling it. Resume must NOT follow: it mints a
+     * free bridge for time already paid for, so routing it to checkout would charge for it twice. */
+    assert.doesNotMatch(dashboard, /"\/api\/user\/subscription\/subscribe"/);
+    assert.match(dashboard, /"\/api\/user\/subscription\/resume"/);
 });
 
 test("a departing subscriber is shown a win-back offer they can actually redeem", () => {

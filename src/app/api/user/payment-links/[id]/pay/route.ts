@@ -2,7 +2,15 @@
    a browser wallet would make on /pay/[id], server-side, so Google/email users can pay a merchant
    link (or peer request) without being bounced through DMs. Returns the confirmed tx hash; the
    client then runs the standard /api/payment-links/verify + status stream, so settlement, receipts,
-   and merchant webhooks are entirely unchanged. */
+   and merchant webhooks are entirely unchanged.
+
+   No receipt email is sent from here, on purpose. Circle confirming the transfer is not settlement:
+   the payment is settled when paymentLinkVerificationWorker has matched the on-chain
+   DepositWithMemo (or USDC Transfer) event against this link's merchant, amount and receipt token,
+   and that worker owns the receipt email under the payment_link_settlement_effects guard. Mailing a
+   receipt here would mean mailing one for a transfer that verification can still reject, and would
+   double-send against the worker's. The durable bind below is what guarantees the worker runs even
+   if the tab closes before the client calls /verify. */
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
@@ -14,6 +22,7 @@ import { payMerchantLinkFromEmbedded, payPeerLinkFromEmbedded } from "@/lib/paym
 import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 import { enqueuePaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { haltGuard } from "@/lib/accountHalt";
 
 type RouteContext = {
     params: Promise<{ id: string }>;
@@ -37,6 +46,12 @@ export async function POST(request: Request, { params }: RouteContext) {
         if (!verifiedEmail?.email) {
             return NextResponse.json({ error: "Verify an email address with OTP before paying." }, { status: 403 });
         }
+
+        /* This route signs a payment out of the caller's own custodial wallet, for a merchant link or
+           a peer request alike, so it is the halted account's money leaving. Placed before the link is
+           even loaded: nothing downstream needs to run for a refusal. */
+        const held = await haltGuard(wallet);
+        if (held) return held;
 
         const { id } = await params;
         if (!id) {

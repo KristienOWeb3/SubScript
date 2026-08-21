@@ -8,6 +8,7 @@ import {
   type DataPoint,
   type DonutSegment,
 } from "../AdminCharts";
+import { CHART_CATEGORICAL } from "../chartPalette";
 import {
   Users,
   Building2,
@@ -27,9 +28,12 @@ export function GrowthView({ analytics }: GrowthViewProps) {
   const roleSegments: DonutSegment[] = useMemo(() => {
     const users = growth?.usersRoleUser || 0;
     const enterprise = growth?.usersRoleEnterprise || 0;
+    /* Identity, not status: these two slices say WHICH KIND of account, so they take categorical
+       slots rather than the status ramp. The old teal here was #00d2b4, which measures 1.88:1
+       against the white card and never cleared the 3:1 a data mark needs. */
     return [
-      { label: "Individual Users", value: users, color: "#2775ca" },
-      { label: "Enterprise / Merchants", value: enterprise, color: "#00d2b4" },
+      { label: "Individual users", value: users, color: CHART_CATEGORICAL[0] },
+      { label: "Enterprise / merchants", value: enterprise, color: CHART_CATEGORICAL[1] },
     ].filter((s) => s.value > 0);
   }, [growth]);
 
@@ -55,7 +59,6 @@ export function GrowthView({ analytics }: GrowthViewProps) {
           value={growth?.usersTotal ?? 0}
           badgeText={`${growth?.usersNew30d ?? 0} new (30d)`}
           icon={Users}
-          color="#2775ca"
         />
 
         <StatCardWithSparkline
@@ -63,7 +66,6 @@ export function GrowthView({ analytics }: GrowthViewProps) {
           value={growth?.merchantsTotal ?? 0}
           badgeText={`${growth?.merchantsNew30d ?? 0} new (30d)`}
           icon={Building2}
-          color="#00d2b4"
         />
 
         <StatCardWithSparkline
@@ -71,7 +73,6 @@ export function GrowthView({ analytics }: GrowthViewProps) {
           value={`${verificationRate}%`}
           badgeText={`${growth?.merchantsVerified ?? 0} verified`}
           icon={ShieldCheck}
-          color="#10b981"
         />
 
         <StatCardWithSparkline
@@ -79,20 +80,18 @@ export function GrowthView({ analytics }: GrowthViewProps) {
           value={growth?.customersTotal ?? 0}
           badgeText={`${growth?.customersNew30d ?? 0} new (30d)`}
           icon={CreditCard}
-          color="#6366f1"
         />
       </div>
 
       {/* Main Growth Curve */}
       <AreaTrendChart
         data={timelineSignups}
-        title="Account Acquisition Velocity (30 Days)"
+        title="Account acquisition velocity (30 days)"
         subtitle="Daily new registered accounts and onboarded enterprise merchants"
-        primaryLabel="Total Signups"
-        secondaryLabel="New Merchants"
-        color="#2775ca"
-        secondaryColor="#00d2b4"
-        valuePrefix=""
+        primaryLabel="Total signups"
+        secondaryLabel="New merchants"
+        valueKind="count"
+        emptyMessage="No signups yet. New accounts show up here the day they land."
         height={240}
       />
 
@@ -101,10 +100,11 @@ export function GrowthView({ analytics }: GrowthViewProps) {
         {/* Roles Donut */}
         <DonutMetricChart
           segments={roleSegments}
-          title="Account Role Distribution"
+          title="Account role distribution"
           subtitle="Proportion of consumers vs business merchant operators"
           centerLabel="Accounts"
           centerValue={growth?.usersTotal ?? 0}
+          emptyMessage="Nothing here yet. The consumer and merchant split appears once accounts exist."
         />
 
         {/* Merchant Onboarding Funnel */}

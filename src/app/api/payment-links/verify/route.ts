@@ -253,6 +253,11 @@ export async function POST(request: Request) {
                         beneficiary_address: normalizedBeneficiary,
                         merchant_address: paymentLink.merchant_address.toLowerCase(),
                         amount_usdc: paymentLink.amount_usdc.toString(),
+                        /* What the payer bought, so the receipt page has a subject to lead
+                           with. Sourced from the link this settlement belongs to. */
+                        title: typeof paymentLink.title === "string" && paymentLink.title.trim()
+                            ? paymentLink.title.trim()
+                            : null,
                         memo_note: finalReceiptId,
                         share_url: receiptUrl(finalReceiptId, requestOrigin),
                         status: "CONFIRMED",
@@ -270,6 +275,25 @@ export async function POST(request: Request) {
                 } catch (repairError) {
                     console.error("[verify] Missing-receipt repair errored:", repairError);
                 }
+
+                /* Drain the settlement's post-effects now instead of waiting for cron/reconcile.
+                 *
+                 * A COMPLETED claim only proves the execution key finished; it does NOT prove the
+                 * post-settlement effects ran. finalize_payment_link_settlement marks the key
+                 * COMPLETED inside the settlement transaction, so a worker that died between that
+                 * commit and runDurablePostSettlementEffects leaves the receipt email, the receipt
+                 * DM and the merchant webhook undone — and this branch used to return without
+                 * touching them, so recovery waited on the 15-minute reconcile pass. That is the
+                 * same 3-to-55-minute latency documented in lib/subscriptions/webhookDelivery.ts,
+                 * and it is worse here because the payer is looking at a confirmed payment.
+                 *
+                 * Safe to run unconditionally: the job claim is single-flight, recoverCompletedSettlement
+                 * short-circuits on the existing payment row without polling the chain, and
+                 * payment_link_settlement_effects still guards the effects, so this can never send a
+                 * second receipt. Deliberately after the receipt repair above so the receipt page the
+                 * email links to exists by the time the email does. */
+                await processPaymentLinkVerificationJob(supabase, normalizedTx)
+                    .catch((error) => console.error("[verify] Settled-payment effects drain failed:", error));
             });
             return NextResponse.json(claimResult.responsePayload, { status: 200 });
         }

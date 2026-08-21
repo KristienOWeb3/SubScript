@@ -4,16 +4,23 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useAccount, useSignMessage, useConnect } from "wagmi";
 import { injected } from "wagmi/connectors";
-import { CheckCircle2, Lock, Eye, EyeOff, UserPlus, Loader2, ExternalLink, ShieldAlert, Key } from "@/components/icons";
-import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
+import { CheckCircle2, Lock, UserPlus, Loader2, ExternalLink, ShieldAlert, Key, Copy, Check, Download } from "@/components/icons";
 import { Identity } from "@/components/Identity";
+import { resolveAliasForAddress } from "@/lib/alias/resolve";
+import { merchantDisplayName } from "@/lib/identityDisplay";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
-import FinancialStatusBadge, { financialStatusMeta } from "@/components/FinancialStatusBadge";
+import { financialStatusMeta } from "@/components/FinancialStatusBadge";
 import { usePlatformFlags } from "@/hooks/usePlatformFlags";
 
 interface ReceiptClientProps {
     receiptId: string;
 }
+
+/* The checkout's palette (src/app/pay/[id]/PublicPayClient.tsx), so a payer who just came from
+   there recognises the document: ivory page, white card, hairline borders, #111827 ink. The
+   accent stays SubScript teal. #00d2b4 is a fill colour — as text on white it sits at 1.9:1 — so
+   anything teal and readable uses the darker ink below (4.9:1). */
+const ACCENT_INK = "#007f70";
 
 function formatAddress(address: string) {
     if (!address) return "";
@@ -27,6 +34,29 @@ function formatUsdc(value: string | number | bigint) {
     });
 }
 
+function formatPaidAt(value: string) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleString(undefined, {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+    });
+}
+
+/* Settlement writes the on-chain memo into memo_note, and that memo IS the receipt id. So a
+   receipt with nothing a person typed still has a memo_note — it just reads as a hex string.
+   Treat that as "no note" everywhere rather than showing the id twice on one page. */
+function humanNote(memoNote: unknown, receiptId: string): string | null {
+    if (typeof memoNote !== "string") return null;
+    const trimmed = memoNote.trim();
+    if (!trimmed || trimmed.toLowerCase() === receiptId.toLowerCase()) return null;
+    if (/^rcpt-[0-9a-f]{32}$/i.test(trimmed)) return null;
+    return trimmed;
+}
+
 export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
     const { address: connectedAddress, isConnected } = useAccount();
     const { connect, isPending: isConnecting } = useConnect();
@@ -38,7 +68,9 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
     const [error, setError] = useState<string | null>(null);
     const [sessionWallet, setSessionWallet] = useState<string | null>(null);
     const [authRequired, setAuthRequired] = useState(false);
-    
+    const [merchantName, setMerchantName] = useState<string | null>(null);
+    const [referenceCopied, setReferenceCopied] = useState(false);
+
     const [inviteAddress, setInviteAddress] = useState("");
     const [inviting, setInviting] = useState(false);
     const [inviteError, setInviteError] = useState<string | null>(null);
@@ -68,7 +100,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
             // Check session wallet first
             const sessionRes = await fetch("/api/auth/session");
             const sessionData = await sessionRes.json();
-            
+
             if (sessionData.loggedIn && sessionData.wallet) {
                 setSessionWallet(sessionData.wallet.toLowerCase());
             } else {
@@ -82,9 +114,9 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
             if (res.status === 401) {
                 setAuthRequired(true);
             } else if (res.status === 403) {
-                setError("Private Receipt: You do not have permission to view this receipt.");
+                setError("This receipt is private, and this account isn't on it.");
             } else if (!res.ok) {
-                setError(data.error || "Failed to load receipt details.");
+                setError(data.error || "We couldn't load this receipt.");
             } else {
                 setReceipt(data.receipt);
                 if (data.receipt.invited_addresses) {
@@ -98,7 +130,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
             }
         } catch (err: any) {
             console.error("Error fetching receipt:", err);
-            setError("An error occurred while loading receipt details.");
+            setError("Something went wrong loading this receipt.");
         } finally {
             setLoading(false);
         }
@@ -107,6 +139,21 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
     useEffect(() => {
         fetchReceiptDetails();
     }, [fetchReceiptDetails]);
+
+    /* The headline needs the merchant's name as a STRING for the last fallback, which the
+       Identity component can't hand back. Same cached resolver Identity uses, so the two agree
+       and only one request goes out. */
+    useEffect(() => {
+        const address = receipt?.merchant_address;
+        if (!address) return;
+        let active = true;
+        resolveAliasForAddress(address)
+            .then((alias) => {
+                if (active) setMerchantName(alias ? merchantDisplayName(alias) : null);
+            })
+            .catch(() => undefined);
+        return () => { active = false; };
+    }, [receipt?.merchant_address]);
 
     // Handle wallet change vs session mismatch
     useEffect(() => {
@@ -154,7 +201,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
             await fetchReceiptDetails();
         } catch (err: any) {
             console.error("Authentication error:", err);
-            setError(err.message || "Failed to authenticate wallet.");
+            setError(err.message || "We couldn't verify that wallet.");
             setLoading(false);
         }
     };
@@ -164,7 +211,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
         setInviteError(null);
         setInviteSuccess(null);
         if (!inviteAddress || !inviteAddress.startsWith("0x") || inviteAddress.length !== 42) {
-            setInviteError("Please enter a valid Ethereum address");
+            setInviteError("That doesn't look like a wallet address. It starts with 0x and has 42 characters.");
             return;
         }
 
@@ -181,9 +228,9 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
 
             const data = await res.json();
             if (!res.ok) {
-                setInviteError(data.error || "Failed to invite address.");
+                setInviteError(data.error || "We couldn't give that address access.");
             } else {
-                setInviteSuccess(`Successfully invited ${formatAddress(inviteAddress)}!`);
+                setInviteSuccess(`${formatAddress(inviteAddress)} can open this receipt now.`);
                 const added = inviteAddress.toLowerCase();
                 if (!invitedList.includes(added)) {
                     setInvitedList(prev => [...prev, added]);
@@ -192,18 +239,38 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
             }
         } catch (err: any) {
             console.error("Invite error:", err);
-            setInviteError("An error occurred while inviting viewer.");
+            setInviteError("Something went wrong. Try again.");
         } finally {
             setInviting(false);
         }
     };
 
+    const copyReference = async () => {
+        try {
+            await navigator.clipboard.writeText(receiptId);
+            setReferenceCopied(true);
+            setTimeout(() => setReferenceCopied(false), 2000);
+        } catch {
+            setReferenceCopied(false);
+        }
+    };
+
+    const pageShell = "subscript-receipt min-h-screen bg-[#FFFFF0] text-black selection:bg-[#00d2b4]/20 selection:text-black font-sans px-4 py-8 sm:px-6 sm:py-12";
+
+    const brandLockup = (
+        <div className="text-center mb-8">
+            <p className="text-2xl font-extrabold tracking-tight text-[#111827]">
+                SubScript <span className="font-serif italic font-normal" style={{ color: ACCENT_INK }}>receipt</span>
+            </p>
+        </div>
+    );
+
     if (loading) {
         return (
-            <main className="min-h-screen bg-[#060608] text-white px-4 py-8 sm:px-6 sm:py-10 flex items-center justify-center">
-                <div className="flex flex-col items-center gap-4">
-                    <Loader2 className="h-10 w-10 animate-spin text-[#00d2b4]" />
-                    <p className="text-white/60 text-sm tracking-wide">Loading secure receipt...</p>
+            <main className={`${pageShell} flex items-center justify-center`}>
+                <div className="flex flex-col items-center gap-4" role="status" aria-live="polite">
+                    <Loader2 className="h-9 w-9 animate-spin" style={{ color: ACCENT_INK }} />
+                    <p className="text-sm text-black/60">Opening your receipt…</p>
                 </div>
             </main>
         );
@@ -219,81 +286,85 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
     // 1. Access Denied State (Not Logged In / Non-Authorized Wallet)
     if (authRequired || error) {
         return (
-            <main className="min-h-screen bg-[#060608] text-white px-4 py-8 sm:px-6 sm:py-10 flex items-center justify-center">
-                <section className="w-full max-w-lg border border-white/5 bg-white/[0.02] backdrop-blur-md rounded-3xl p-6 sm:p-8 shadow-2xl text-center space-y-6">
-                    <div className="mx-auto rounded-full bg-red-500/10 border border-red-500/20 p-4 w-16 h-16 flex items-center justify-center text-red-400">
-                        <Lock className="h-8 w-8" />
-                    </div>
-
-                    <div className="space-y-2">
-                        <h1 className="text-xl font-bold tracking-tight">Private Receipt</h1>
-                        <p className="text-sm text-white/60 leading-relaxed">
-                            This receipt is protected under Arc's Opt-In Privacy standard. Only the merchant, payer, SubScript treasury, or explicitly invited addresses can view it.
-                        </p>
-                    </div>
-
-                    {authRequired ? (
-                        <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-4">
-                            <p className="text-xs text-white/40">
-                                {connectedAddress
-                                    ? `Authenticate wallet ${formatAddress(connectedAddress)} to check access.`
-                                    : externalWalletEnabled
-                                      ? "Connect your wallet to verify receipt access."
-                                      : "Sign in to verify receipt access."}
-                            </p>
-
-                            {!connectedAddress ? (
-                                <div className="grid gap-3">
-                                    <Link href={`/signin?next=${encodeURIComponent(`/receipt/${receiptId}`)}`} className="w-full rounded-xl bg-[#00d2b4] px-4 py-3 text-sm font-bold text-black flex items-center justify-center gap-2 hover:bg-[#00d2b4]/90 transition">Sign in with email or Google</Link>
-                                    {/* Hidden while external wallets are paused. The signature would
-                                        be refused by /api/auth/verify-signature anyway. */}
-                                    {externalWalletEnabled && (
-                                        <button
-                                            onClick={() => connect({ connector: injected() })}
-                                            className="w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-bold text-white flex items-center justify-center gap-2 hover:bg-white/10 transition"
-                                        >
-                                            Use browser wallet
-                                        </button>
-                                    )}
-                                </div>
-                            ) : (
-                                <button
-                                    onClick={handleAuthenticate}
-                                    className="w-full rounded-xl bg-[#00d2b4] px-4 py-3 text-sm font-bold text-black flex items-center justify-center gap-2 hover:bg-[#00d2b4]/90 transition"
-                                >
-                                    Verify Wallet Ownership
-                                    <Key className="h-4 w-4" />
-                                </button>
-                            )}
+            <main className={`${pageShell} flex items-center justify-center`}>
+                <div className="w-full max-w-md">
+                    {brandLockup}
+                    <section className="rounded-3xl border border-black/15 bg-white p-6 sm:p-8 shadow-sm text-center space-y-6">
+                        <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-black/10 bg-[#f8fafc] text-black/60">
+                            <Lock className="h-6 w-6" />
                         </div>
-                    ) : (
-                        <div className="p-4 rounded-2xl bg-red-500/5 border border-red-500/10 space-y-3">
-                            <p className="text-xs text-red-300">
-                                {connectedWalletDiffersFromSession
-                                    ? `This browser is signed in as ${formatAddress(sessionWallet || "")}, but ${formatAddress(connectedAddress || "")} is connected.`
-                                    : connectedAddress
-                                    ? `Wallet ${formatAddress(connectedAddress)} is not authorized to view this receipt.`
-                                    : "Unauthorized to view receipt details."}
+
+                        <div className="space-y-2">
+                            <h1 className="text-xl font-extrabold tracking-tight text-[#111827]">This receipt is private</h1>
+                            <p className="text-sm leading-relaxed text-black/65">
+                                Only the payer, the merchant, and people they invite can open it. Sign in with the account that's on the receipt.
                             </p>
-                            {connectedWalletDiffersFromSession ? (
-                                <button
-                                    onClick={handleAuthenticate}
-                                    className="w-full rounded-xl bg-[#00d2b4] px-4 py-3 text-sm font-bold text-black flex items-center justify-center gap-2 hover:bg-[#00d2b4]/90 transition"
-                                >
-                                    Verify {formatAddress(connectedAddress || "")}
-                                    <Key className="h-4 w-4" />
-                                </button>
-                            ) : (
-                                <button
-                                    onClick={fetchReceiptDetails}
-                                    className="text-xs font-bold text-white underline hover:text-white/80"
-                                >
-                                    Try checking session again
-                                </button>
-                            )}
                         </div>
-                    )}
-                </section>
+
+                        {authRequired ? (
+                            <div className="rounded-2xl border border-black/10 bg-[#f8fafc] p-4 space-y-4">
+                                <p className="text-sm text-black/65">
+                                    {connectedAddress
+                                        ? `Verify that you own ${formatAddress(connectedAddress)} to check your access.`
+                                        : externalWalletEnabled
+                                          ? "Connect your wallet to check your access."
+                                          : "Sign in to check your access."}
+                                </p>
+
+                                {!connectedAddress ? (
+                                    <div className="grid gap-3">
+                                        <Link href={`/signin?next=${encodeURIComponent(`/receipt/${receiptId}`)}`} className="w-full rounded-2xl bg-[#00d2b4] px-4 py-3 text-sm font-bold text-black flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/85">Sign in with email or Google</Link>
+                                        {/* Hidden while external wallets are paused. The signature would
+                                            be refused by /api/auth/verify-signature anyway. */}
+                                        {externalWalletEnabled && (
+                                            <button
+                                                onClick={() => connect({ connector: injected() })}
+                                                disabled={isConnecting}
+                                                className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3 text-sm font-bold text-[#111827] flex items-center justify-center gap-2 transition hover:bg-black/[0.04] disabled:opacity-50"
+                                            >
+                                                {isConnecting ? "Connecting…" : "Use browser wallet"}
+                                            </button>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <button
+                                        onClick={handleAuthenticate}
+                                        className="w-full rounded-2xl bg-[#00d2b4] px-4 py-3 text-sm font-bold text-black flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/85"
+                                    >
+                                        Verify this wallet
+                                        <Key className="h-4 w-4" />
+                                    </button>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 space-y-3 text-left">
+                                <p className="text-sm leading-relaxed text-red-900">
+                                    {connectedWalletDiffersFromSession
+                                        ? `You're signed in as ${formatAddress(sessionWallet || "")}, but ${formatAddress(connectedAddress || "")} is connected. Verify the connected one to check its access.`
+                                        : connectedAddress
+                                        ? `${formatAddress(connectedAddress)} isn't on this receipt, so it can't open it.`
+                                        : error}
+                                </p>
+                                {connectedWalletDiffersFromSession ? (
+                                    <button
+                                        onClick={handleAuthenticate}
+                                        className="w-full rounded-2xl bg-[#00d2b4] px-4 py-3 text-sm font-bold text-black flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/85"
+                                    >
+                                        Verify {formatAddress(connectedAddress || "")}
+                                        <Key className="h-4 w-4" />
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={fetchReceiptDetails}
+                                        className="text-sm font-bold text-[#111827] underline underline-offset-2 hover:opacity-70"
+                                    >
+                                        Check again
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </section>
+                </div>
             </main>
         );
     }
@@ -303,120 +374,215 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
     const claimHref = `/signup?next=/user&claimReceipt=${encodeURIComponent(receiptId)}`;
     const receiptStatus = financialStatusMeta(receipt.status);
     const receiptConfirmed = receiptStatus.tone === "success";
+    const note = humanNote(receipt.memo_note, receipt.receipt_id);
+
+    /* The subject of the document, in falling order of how much a person would recognise it.
+       The receipt id is deliberately absent from this chain: it is the reference, not the
+       subject, and it appears once, near the foot of the page. */
+    const subject = (typeof receipt.title === "string" && receipt.title.trim())
+        || note
+        || `Payment to ${merchantName || "a SubScript merchant"}`;
+
+    /* When there is no title the note becomes the headline, and repeating it in the Note row
+       below is the same duplication this page was fixed to stop: the old version showed the
+       receipt id as both the headline and the note. One place each. */
+    const showNote = Boolean(note) && note !== subject;
+
+    const statusChrome = receiptConfirmed
+        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+        : receiptStatus.tone === "failure"
+            ? "border-red-200 bg-red-50 text-red-800"
+            : receiptStatus.tone === "pending"
+                ? "border-amber-200 bg-amber-50 text-amber-900"
+                : "border-black/15 bg-[#f8fafc] text-black/70";
+
+    const rowLabel = "shrink-0 text-sm text-black/55";
+    const rowValue = "min-w-0 text-right text-sm font-semibold text-[#111827]";
 
     return (
-        <main className="min-h-screen bg-[#060608] text-white px-4 py-8 sm:px-6 sm:py-10 flex items-center justify-center">
-            <div className="w-full max-w-lg space-y-6">
-                <section className="w-full border border-white/10 bg-white/[0.03] rounded-3xl p-6 sm:p-8 shadow-2xl space-y-8">
-                    <div className="flex items-start justify-between gap-4">
+        <main className={pageShell}>
+            <div className="mx-auto w-full max-w-2xl space-y-5">
+                {brandLockup}
+
+                <article className="receipt-document rounded-3xl border border-black/15 bg-white p-6 sm:p-8 shadow-sm">
+                    <header className="flex items-start justify-between gap-5">
                         <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <p className="text-[10px] uppercase tracking-[0.24em] text-white/40">SubScript Receipt</p>
-                                <span className="inline-flex items-center gap-1 rounded bg-[#00d2b4]/10 px-1.5 py-0.5 text-[9px] font-medium text-[#00d2b4] border border-[#00d2b4]/20">
-                                    <Lock className="h-2.5 w-2.5" /> Opt-In Privacy
-                                </span>
-                            </div>
-                            <h1 className="mt-2 text-xl sm:text-2xl font-bold tracking-tight break-all">{receipt.receipt_id}</h1>
+                            <p className="text-sm text-black/55">Receipt for</p>
+                            <h1 className="mt-1 text-2xl sm:text-3xl font-extrabold tracking-tight text-[#111827] break-words">
+                                {subject}
+                            </h1>
                         </div>
-                        <div className={`shrink-0 rounded-2xl border p-3 ${receiptConfirmed ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300" : receiptStatus.tone === "failure" ? "border-red-400/20 bg-red-400/10 text-red-300" : "border-amber-400/20 bg-amber-400/10 text-amber-200"}`}>
+                        <div className={`shrink-0 grid h-12 w-12 place-items-center rounded-2xl border ${statusChrome}`} aria-hidden="true">
                             {receiptConfirmed ? <CheckCircle2 className="h-6 w-6" /> : receiptStatus.tone === "failure" ? <ShieldAlert className="h-6 w-6" /> : receiptStatus.tone === "pending" ? <Loader2 className="h-6 w-6 animate-spin" /> : <Lock className="h-6 w-6" />}
                         </div>
+                    </header>
+
+                    <div className="mt-6 flex flex-wrap items-baseline justify-between gap-3 rounded-2xl border border-black/10 bg-[#f8fafc] p-5">
+                        <span className="text-sm text-black/60">Amount paid</span>
+                        <span className="text-3xl sm:text-4xl font-extrabold tracking-tight" style={{ color: ACCENT_INK }}>
+                            {formatUsdc(receipt.amount_usdc)} USDC
+                        </span>
                     </div>
 
-                    <div className="grid gap-4">
-                        <div className="border border-white/10 rounded-2xl p-5 bg-black/20">
-                            <p className="text-[10px] uppercase tracking-[0.2em] text-white/35">Amount</p>
-                            <p className="mt-1 text-4xl font-bold text-[#00d2b4]">{formatUsdc(receipt.amount_usdc)} USDC</p>
-                            <div className="mt-3"><FinancialStatusBadge status={receipt.status} /></div>
+                    {/* Hairline rows rather than a grid of cards: this is the part someone reads
+                        line by line, and hairlines survive a print far better than nested fills. */}
+                    <dl className="mt-2 divide-y divide-black/10">
+                        <div className="flex items-baseline justify-between gap-6 py-4">
+                            <dt className={rowLabel}>Paid to</dt>
+                            <dd className={rowValue}>
+                                <Identity
+                                    address={receipt.merchant_address}
+                                    fallback={formatAddress(receipt.merchant_address)}
+                                    placeholderClassName="bg-black/10"
+                                />
+                            </dd>
                         </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                            <div className="border border-white/10 rounded-2xl p-4 bg-black/20">
-                                <p className="text-[10px] uppercase tracking-[0.2em] text-white/35">Sender</p>
-                                <Identity address={receipt.payer_address} className="mt-1 block text-white/85 text-xs" />
+                        <div className="flex items-baseline justify-between gap-6 py-4">
+                            <dt className={rowLabel}>Paid by</dt>
+                            <dd className={rowValue}>
+                                <Identity
+                                    address={receipt.payer_address}
+                                    fallback={formatAddress(receipt.payer_address)}
+                                    placeholderClassName="bg-black/10"
+                                />
+                            </dd>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-6 py-4">
+                            <dt className={rowLabel}>Paid on</dt>
+                            <dd className={rowValue}>{formatPaidAt(paidAt)}</dd>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-6 py-4">
+                            <dt className={rowLabel}>Status</dt>
+                            <dd className="min-w-0 text-right">
+                                <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${statusChrome}`}>
+                                    {receiptStatus.label}
+                                </span>
+                            </dd>
+                        </div>
+                        {/* No note, no block. The field used to fall back to the receipt id, which
+                            put the same hex string on the page twice. */}
+                        {showNote && (
+                            <div className="py-4">
+                                <dt className={rowLabel}>Note</dt>
+                                <dd className="mt-1 text-sm leading-relaxed text-[#111827] break-words">{note}</dd>
                             </div>
-                            <div className="border border-white/10 rounded-2xl p-4 bg-black/20">
-                                <p className="text-[10px] uppercase tracking-[0.2em] text-white/35">Date</p>
-                                <p className="mt-1 text-white/85 text-xs">{new Date(paidAt).toLocaleString()}</p>
-                            </div>
-                        </div>
+                        )}
+                    </dl>
 
-                        <div className="border border-white/10 rounded-2xl p-4 bg-black/20">
-                            <p className="text-[10px] uppercase tracking-[0.2em] text-white/35">Merchant</p>
-                            <Identity address={receipt.merchant_address} className="mt-1 block text-white/85 text-xs" />
-                        </div>
+                    <p className="mt-5 flex items-start gap-2 text-sm leading-relaxed text-black/60">
+                        <Lock className="mt-0.5 h-4 w-4 shrink-0" style={{ color: ACCENT_INK }} />
+                        <span>Only the payer, the merchant, and people they invite can open this page. The link on its own isn't enough.</span>
+                    </p>
 
-                        <div className="border border-white/10 rounded-2xl p-4 bg-black/20">
-                            <p className="text-[10px] uppercase tracking-[0.2em] text-white/35">Memo note</p>
-                            <p className="mt-1 text-white/85 break-words text-xs">{receipt.memo_note || receipt.receipt_id}</p>
+                    <div className="mt-5 rounded-2xl border border-black/10 bg-[#f8fafc] p-4">
+                        <p className="text-sm font-semibold text-[#111827]">Reference</p>
+                        <p className="mt-0.5 text-sm leading-relaxed text-black/55">
+                            The memo written on Arc with this payment. Quote it if you ever need to ask about it.
+                        </p>
+                        <div className="mt-2.5 flex items-center gap-2">
+                            <code className="min-w-0 flex-1 break-all rounded-xl border border-black/10 bg-white px-3 py-2 font-mono text-xs text-black/70">
+                                {receipt.receipt_id}
+                            </code>
+                            <button
+                                type="button"
+                                onClick={copyReference}
+                                className="receipt-screen-only shrink-0 rounded-xl border border-black/15 bg-white px-3 py-2 text-xs font-bold text-[#111827] transition hover:bg-black/[0.04]"
+                            >
+                                {referenceCopied ? (
+                                    <span className="inline-flex items-center gap-1.5"><Check className="h-3.5 w-3.5" /> Copied</span>
+                                ) : (
+                                    <span className="inline-flex items-center gap-1.5"><Copy className="h-3.5 w-3.5" /> Copy</span>
+                                )}
+                            </button>
                         </div>
+                        <span aria-live="polite" className="sr-only">{referenceCopied ? "Reference copied" : ""}</span>
                     </div>
 
-                    {!sessionWallet && <div className="rounded-2xl border border-[#00d2b4]/25 bg-[#00d2b4]/10 p-5 space-y-4">
-                        <p className="text-sm leading-relaxed text-white/85">
-                            Claim your permanent SubScript account to manage this subscription and lock in spending limits.
+                    {!sessionWallet && <div className="receipt-screen-only mt-5 rounded-2xl border p-5 space-y-4" style={{ borderColor: "rgba(0,210,180,0.35)", backgroundColor: "rgba(0,210,180,0.08)" }}>
+                        <p className="text-sm leading-relaxed text-[#111827]">
+                            Set up a SubScript account and this receipt sits with the rest of your payments, with limits you set.
                         </p>
                         <Link
                             href={claimHref}
-                            className="w-full rounded-xl bg-[#00d2b4] px-4 py-3 text-sm font-bold text-black flex items-center justify-center gap-2 hover:bg-[#00d2b4]/90 transition"
+                            className="w-full rounded-2xl bg-[#00d2b4] px-4 py-3 text-sm font-bold text-black flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/85"
                         >
                             Continue with Google
                             <ExternalLink className="h-4 w-4" />
                         </Link>
                     </div>}
-                </section>
+                </article>
+
+                {/* Expenses and tax are what a receipt is actually for, so the print path is a
+                    first-class action rather than something to find in a browser menu. */}
+                <div className="receipt-screen-only flex flex-wrap items-center gap-3">
+                    <button
+                        type="button"
+                        onClick={() => window.print()}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-black/15 bg-white px-4 py-3 text-sm font-bold text-[#111827] shadow-sm transition hover:bg-black/[0.04]"
+                    >
+                        <Download className="h-4 w-4" /> Save as PDF
+                    </button>
+                    <Link href="/dashboard-router" className="inline-flex items-center rounded-2xl border border-black/15 bg-white px-4 py-3 text-sm font-bold text-black/70 shadow-sm transition hover:text-[#111827]">
+                        Back to dashboard
+                    </Link>
+                </div>
 
                 {/* 3. Owner Access: Invite Address Form */}
                 {isOwner && (
-                    <section id="invite-section" className="border border-[#00d2b4]/15 bg-white/[0.02] backdrop-blur-md rounded-3xl p-6 shadow-2xl space-y-6 scroll-mt-24">
+                    <section id="invite-section" className="receipt-screen-only rounded-3xl border border-black/15 bg-white p-6 shadow-sm space-y-5 scroll-mt-24">
                         <div>
-                            <h2 className="text-sm font-bold flex items-center gap-2">
-                                <UserPlus className="h-4 w-4 text-[#00d2b4]" /> Invite Address to View Receipt
+                            <h2 className="flex items-center gap-2 text-base font-extrabold tracking-tight text-[#111827]">
+                                <UserPlus className="h-4 w-4" style={{ color: ACCENT_INK }} /> Let someone else see this
                             </h2>
-                            <p className="text-xs text-white/40 mt-1">
-                                As receipt owner, you can grant read access to auditors, customers, or third-parties.
+                            <p className="mt-1.5 text-sm leading-relaxed text-black/60">
+                                Paste the wallet address of the person you want to show it to, and they'll be able to open this page. Handy for an accountant or a bookkeeper. You can add more than one.
                             </p>
                         </div>
 
-                        <form onSubmit={handleInvite} className="flex gap-2">
+                        <form onSubmit={handleInvite} className="flex flex-col gap-2 sm:flex-row">
                             <input
                                 id="invite-input"
                                 type="text"
                                 value={inviteAddress}
                                 onChange={(e) => setInviteAddress(e.target.value)}
-                                placeholder="0x..."
-                                className="flex-1 rounded-xl bg-black/40 border border-white/10 px-4 py-2.5 text-sm font-mono text-white placeholder-white/30 focus:border-[#00d2b4] focus:outline-none transition"
+                                placeholder="0x1234…5678"
+                                aria-label="Wallet address to give access to"
+                                className="min-w-0 flex-1 rounded-2xl border border-black/15 bg-white px-4 py-3 font-mono text-sm text-[#111827] placeholder-black/35 transition focus:border-[#00d2b4] focus:outline-none"
                             />
                             <button
                                 type="submit"
                                 disabled={inviting || !inviteAddress}
-                                className="rounded-xl bg-white text-black px-4 py-2 text-xs font-bold hover:bg-white/90 disabled:bg-white/40 disabled:text-black/60 transition flex items-center gap-1"
+                                className="shrink-0 rounded-2xl bg-[#00d2b4] px-5 py-3 text-sm font-bold text-black transition hover:bg-[#00d2b4]/85 disabled:cursor-not-allowed disabled:opacity-45"
                             >
-                                {inviting ? <Loader2 className="h-3 w-3 animate-spin" /> : "Invite"}
+                                {inviting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Give access"}
                             </button>
                         </form>
 
-                        {inviteError && <p className="text-xs text-red-400">{inviteError}</p>}
-                        {inviteSuccess && <p className="text-xs text-emerald-400">{inviteSuccess}</p>}
+                        {inviteError && <p className="text-sm text-red-700" role="alert">{inviteError}</p>}
+                        {inviteSuccess && <p className="text-sm font-semibold" style={{ color: ACCENT_INK }} role="status">{inviteSuccess}</p>}
 
                         {invitedList.length > 0 && (
-                            <div className="space-y-2 pt-2 border-t border-white/5">
-                                <p className="text-[10px] uppercase tracking-wider text-white/35">Authorized Viewers</p>
-                                <div className="grid gap-1.5">
+                            <div className="space-y-2 border-t border-black/10 pt-4">
+                                <p className="text-sm font-semibold text-[#111827]">Can open this receipt</p>
+                                <ul className="grid gap-1.5">
                                     {invitedList.map((addr, idx) => (
-                                        <div key={idx} className="flex items-center justify-between text-xs py-1.5 px-3 rounded-lg bg-white/[0.02] border border-white/5">
-                                            <Identity address={addr} className="text-white/60" />
-                                            <span className="text-[9px] text-[#00d2b4] bg-[#00d2b4]/5 border border-[#00d2b4]/10 px-1 py-0.5 rounded font-mono">
-                                                Authorized
+                                        <li key={idx} className="flex items-center justify-between gap-3 rounded-xl border border-black/10 bg-[#f8fafc] px-3 py-2 text-sm">
+                                            <Identity
+                                                address={addr}
+                                                fallback={formatAddress(addr)}
+                                                className="min-w-0 truncate text-black/70"
+                                                placeholderClassName="bg-black/10"
+                                            />
+                                            <span className="shrink-0 text-xs font-semibold" style={{ color: ACCENT_INK }}>
+                                                Has access
                                             </span>
-                                        </div>
+                                        </li>
                                     ))}
-                                </div>
+                                </ul>
                             </div>
                         )}
                     </section>
                 )}
-                <Link href="/dashboard-router" className="block w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-center text-xs font-bold text-white/70 hover:text-white">Back to dashboard</Link>
             </div>
         </main>
     );

@@ -57,7 +57,9 @@ export async function POST(request: Request) {
         await recordMerchantEvent({
             merchantAddress: merchantAddress.toLowerCase(),
             environment: "TEST",
-            eventType: "vault.paused",
+            /* Was vault.paused, which was doing two jobs: this drain, and a temporary stop. The
+               vault is not paused here, it is emptied. See VAULT_EVENT_TYPES for the split. */
+            eventType: "vault.withdrawn",
             resourceType: "vault",
             resourceId: `${wallet.toLowerCase()}:${merchantAddress.toLowerCase()}`,
             resourceVersion: 1,

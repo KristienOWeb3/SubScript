@@ -51,25 +51,29 @@ test("merchant overview renders the wireframe sections and actions", () => {
     assert.doesNotMatch(html, /customer\.sub/);
 });
 
-test("earnings timeframe control offers every range and defaults to 30d", () => {
+test("earnings timeframe control offers every range and defaults to 1m", () => {
     const html = renderToStaticMarkup(React.createElement(MerchantOverview, baseProps));
 
     assert.match(html, /aria-label="Earnings timeframe"/);
-    for (const label of ["7D", "30D", "90D", "12M"]) {
+    for (const label of ["24H", "7D", "1M", "3M", "6M", "12M"]) {
         assert.match(html, new RegExp(`>${label}</button>`));
     }
-    /* 30D is the default, and the heading caption has to agree with it — the two used to be
+    /* 1M is the default, and the heading caption has to agree with it — the two used to be
        independent, with the caption hardcoded. */
-    assert.match(html, /aria-pressed="true"[^>]*>30D</);
-    assert.match(html, /30D Settled/);
+    assert.match(html, /aria-pressed="true"[^>]*>1M</);
+    assert.match(html, /1M Settled/);
 });
 
-test("parseRange accepts the four ranges, defaults to 30d, and rejects anything else", () => {
-    assert.equal(parseRange(null), "30d");
-    for (const value of ["7d", "30d", "90d", "12m"]) {
+test("parseRange accepts the six ranges, aliases the old names, and rejects anything else", () => {
+    assert.equal(parseRange(null), "1m");
+    for (const value of ["24h", "7d", "1m", "3m", "6m", "12m"]) {
         assert.equal(parseRange(value), value);
     }
-    for (const value of ["1d", "24h", "all", "'; drop table--"]) {
+    /* 30d/90d were the old labels for 1m/3m. A client mid-deploy must not get a 400 for a range
+       that still means something. */
+    assert.equal(parseRange("30d"), "1m");
+    assert.equal(parseRange("90d"), "3m");
+    for (const value of ["1d", "all", "48h", "'; drop table--"]) {
         assert.equal(parseRange(value), null);
     }
 });
@@ -84,6 +88,24 @@ test("range windows are inclusive of today so a 7d range plots seven buckets", (
     const year = rangeWindow("12m", now);
     assert.equal(year.granularity, "month");
     assert.equal(year.from.toISOString().slice(0, 10), "2025-09-01");
+
+    /* 24h rolls on the hour rather than aligning to midnight: a day-aligned window would show
+       "today so far", which at 13:45 is 14 bars for a range that claims 24 hours. */
+    const day = rangeWindow("24h", now);
+    assert.equal(day.granularity, "hour");
+    assert.equal(day.to.toISOString(), "2026-08-17T14:00:00.000Z");
+    assert.equal(day.from.toISOString(), "2026-08-16T14:00:00.000Z");
+
+    /* Postgres date_trunc('week', …) lands on Monday, so the window has to start on one or the
+       gap-fill keys never match the query's. 2026-08-17 is itself a Monday. */
+    const quarter = rangeWindow("3m", now);
+    assert.equal(quarter.granularity, "week");
+    assert.equal(quarter.from.getUTCDay(), 1);
+    assert.equal(quarter.from.toISOString().slice(0, 10), "2026-05-25");
+
+    const half = rangeWindow("6m", now);
+    assert.equal(half.granularity, "week");
+    assert.equal(half.from.getUTCDay(), 1);
 });
 
 test("series gap-fills empty buckets with zero rather than dropping them", () => {
@@ -127,8 +149,52 @@ test("series handles Date buckets and month granularity", () => {
     assert.equal(series[11].label, "Aug");
 });
 
-test("two trend charts on one page get distinct gradient ids", () => {
-    /* SVG ids resolve against the whole document, not the subtree. AdminCharts' AreaTrendChart uses
+test("hourly buckets roll on the hour and carry a clock label", () => {
+    const now = new Date("2026-08-17T13:45:00.000Z");
+    /* Postgres hands date_trunc back as ::text with a space where an ISO string has a "T", so the
+       bucket key has to normalise both. This is also the granularity where the timestamptz/session
+       TimeZone drift would be obvious — a whole-offset shift moves every bar. */
+    const series = buildOverviewSeries(
+        [
+            { bucket: "2026-08-17 09:00:00", grossMicros: "2000000", netMicros: "1980000", transactionCount: 4 },
+            { bucket: "2026-08-17 13:00:00", grossMicros: "750000", netMicros: "742500", transactionCount: 1 },
+        ],
+        "24h",
+        now,
+    );
+
+    assert.equal(series.length, 24);
+    assert.equal(series[0].bucket, "2026-08-16T14");
+    assert.equal(series[23].bucket, "2026-08-17T13");
+    assert.equal(series[23].label, "13:00");
+    assert.equal(series[23].grossUsdcMicros, "750000");
+    assert.equal(series[19].bucket, "2026-08-17T09");
+    assert.equal(series[19].transactionCount, 4);
+    /* Silent hours still plot. */
+    assert.equal(series[0].grossUsdcMicros, "0");
+});
+
+test("weekly buckets key off Mondays so they line up with date_trunc('week')", () => {
+    const now = new Date("2026-08-17T13:45:00.000Z");
+    const series = buildOverviewSeries(
+        [{ bucket: "2026-08-10 00:00:00", grossMicros: "3000000", netMicros: "2970000", transactionCount: 6 }],
+        "3m",
+        now,
+    );
+
+    assert.equal(series.length, 13);
+    for (const point of series) {
+        assert.equal(new Date(`${point.bucket}T00:00:00.000Z`).getUTCDay(), 1, `${point.bucket} must be a Monday`);
+    }
+    assert.equal(series[12].bucket, "2026-08-17");
+    assert.equal(series[11].bucket, "2026-08-10");
+    assert.equal(series[11].grossUsdcMicros, "3000000");
+    assert.equal(series[11].label, "10 Aug");
+
+    assert.equal(buildOverviewSeries([], "6m", now).length, 26);
+});
+
+test("two trend charts on one page get distinct gradient ids", () => {    /* SVG ids resolve against the whole document, not the subtree. AdminCharts' AreaTrendChart uses
        a fixed id="areaGradient", so a second instance silently repaints with the first one's fill —
        which is why this chart was written fresh rather than imported. Guard the property. */
     const points = [

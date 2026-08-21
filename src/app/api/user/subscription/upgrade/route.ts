@@ -53,6 +53,7 @@ import { createSubscriptionStartedDm, formatUsdcFromMicros } from "@/lib/dms/sys
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
+import { haltGuard } from "@/lib/accountHalt";
 import { deterministicIdempotencyKey } from "@/lib/custody";
 
 export const maxDuration = 120;
@@ -351,6 +352,13 @@ export async function POST(request: Request) {
         const auth = await requireSubscriber(request);
         if (!auth.ok) return NextResponse.json(auth.body, { status: auth.status });
         const subscriber = auth.subscriber;
+
+        /* An upgrade re-authorizes the subscription at a new price and usually charges a proration
+           straight away, so it is a new authorization against the caller's own wallet. Gated in POST
+           rather than in requireSubscriber, because GET is a read-only preview for the checkout page
+           and a held account still gets to see what an upgrade would cost. */
+        const held = await haltGuard(subscriber);
+        if (held) return held;
 
         try {
             assertFinancialNetworkReady();

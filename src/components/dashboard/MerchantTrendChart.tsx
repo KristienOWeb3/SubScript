@@ -69,7 +69,9 @@ export default function MerchantTrendChart({
     points,
     isDark = false,
     grossColor = "#8AB4DB",
-    netColor = "#082824",
+    /* #111827, matching the merchant light theme's ink after it aligned onto the user dashboard's
+       surfaces. Was the old dusty-green #082824. */
+    netColor = "#111827",
 }: {
     points: TrendPoint[];
     isDark?: boolean;
@@ -81,12 +83,15 @@ export default function MerchantTrendChart({
        whole document, not the subtree. useId gives a stable, hydration-safe suffix. */
     const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
 
-    /* Net is drawn light on a dark canvas; the ink-dark stroke used in light mode would vanish. */
+    /* Strokes and gridlines are SVG attributes, so the theme CSS layers cannot reach them — hence
+       the prop rather than a class. Only the light branches moved when merchant light mode adopted
+       the user dashboard's surfaces: neutral rgba instead of tinted green, and a white dot ring now
+       that cards are white rather than cream. Every isDark branch is untouched. */
     const netStroke = isDark ? "#7fd8c9" : netColor;
-    const gridColor = isDark ? "rgba(255,255,255,0.1)" : "rgba(8,40,36,0.08)";
-    const zeroColor = isDark ? "rgba(255,255,255,0.18)" : "rgba(8,40,36,0.16)";
-    const axisText = isDark ? "rgba(244,244,245,0.5)" : "rgba(8,40,36,0.45)";
-    const dotRing = isDark ? "#1f2023" : "#FFFFF0";
+    const gridColor = isDark ? "rgba(255,255,255,0.1)" : "rgba(17,24,39,0.08)";
+    const zeroColor = isDark ? "rgba(255,255,255,0.18)" : "rgba(17,24,39,0.16)";
+    const axisText = isDark ? "rgba(244,244,245,0.5)" : "rgba(17,24,39,0.45)";
+    const dotRing = isDark ? "#1f2023" : "#ffffff";
 
     const { grossPoints, netPoints, ticks } = useMemo(() => {
         const gross = points.map((p) => microsToUsdc(p.grossUsdcMicros));
@@ -246,7 +251,7 @@ export default function MerchantTrendChart({
                             y={VIEW_HEIGHT - 8}
                             textAnchor={index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"}
                             fontSize="9"
-                            fill={hoverIndex === index ? (isDark ? "#f4f4f5" : "#082824") : axisText}
+                            fill={hoverIndex === index ? (isDark ? "#f4f4f5" : "#111827") : axisText}
                             fontWeight={hoverIndex === index ? 700 : 500}
                         >
                             {point.label}

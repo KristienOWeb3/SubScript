@@ -558,8 +558,8 @@ export async function DELETE(request: Request) {
                 receiverAddress: sub.subscriber || "",
                 messageType: "SUBSCRIPTION_CANCELED",
                 status: "APPROVED",
-                title: "Subscription Canceled by Merchant",
-                description: `Subscription sub_${idParam} was set to cancel at period end by the merchant. Access continues through your paid period.`,
+                title: "The merchant canceled this subscription",
+                description: `The merchant set this subscription to end when your paid period runs out. You won't be charged again, and you keep access until then.`,
             }).catch((err) => console.error("[v1/subscriptions] DM notification error:", err));
 
             await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.cancel_scheduled", subscriptionWebhookData({
