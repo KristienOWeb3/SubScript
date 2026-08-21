@@ -627,6 +627,12 @@ model Receipt {
   beneficiaryAddress   String?   @map("beneficiary_address")
   merchantAddress      String    @map("merchant_address")
   amountUsdc           BigInt    @map("amount_usdc")
+  /* What the payment was for, in the payer's words: the checkout title, plan name, or
+     intent title captured at settlement. Nullable because receipts written before this
+     column existed have no recorded subject, and receipts indexed straight from an Arc
+     Memo event carry only the receipt id on-chain. Never fall back to receiptId here —
+     the page's headline reads from this field. */
+  title                String?   @map("title")
   memoNote             String?   @map("memo_note")
   shareUrl             String    @map("share_url")
   status               String    @default("PENDING")
