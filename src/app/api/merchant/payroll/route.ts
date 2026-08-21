@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { revokePayrollAuthority } from "@/lib/payroll/authority";
+import { haltGuard } from "@/lib/accountHalt";
 
 /* Ethereum address validation: 0x followed by 40 hex characters */
 const ETH_ADDRESS_REGEX = /^0x[0-9a-fA-F]{40}$/;
@@ -186,6 +187,12 @@ export async function POST(request: Request) {
         if (!isPremium) {
             return NextResponse.json({ error: "Forbidden: Institutional Payroll requires a PREMIUM tier subscription." }, { status: 403 });
         }
+
+        /* Creating a campaign schedules recurring batch payouts out of this organization's wallet, so
+           a hold refuses it. DELETE stays open, because tearing a campaign down reduces outflow, and
+           so does GET. */
+        const held = await haltGuard(normalizedUser);
+        if (held) return held;
 
         const body = await request.json();
         const {
@@ -411,6 +418,14 @@ export async function PUT(request: Request) {
             return NextResponse.json({
                 error: `Invalid action: must be one of ${VALID_ACTIONS.join(", ")}`,
             }, { status: 400 });
+        }
+
+        /* Scoped to the two actions that increase outflow. RESUME restarts a payout schedule and
+           UPDATE_PERMIT mints a fresh Permit2 authorization, so a hold refuses both. PAUSE is left
+           open on purpose: it stops payouts, and a held organization must still be able to do that. */
+        if (action === "RESUME" || action === "UPDATE_PERMIT") {
+            const held = await haltGuard(normalizedUser);
+            if (held) return held;
         }
 
         /* Verify campaign exists and belongs to this merchant */
