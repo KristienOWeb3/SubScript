@@ -8,6 +8,7 @@ import {
   type DonutSegment,
   type DataPoint,
 } from "../AdminCharts";
+import { CHART_STATUS } from "../chartPalette";
 import {
   Layers,
   CreditCard,
@@ -34,13 +35,17 @@ export function SubscriptionsView({ analytics }: SubscriptionsViewProps) {
     const paused = statusCounts.PAUSED || 0;
     const trialing = statusCounts.TRIALING || 0;
 
+    /* Billing states are status, so they map to the status ramp instead of loose hex. The old set
+       put Cancelling (#f59e0b) next to Past due (#ef4444), a pair measuring ΔE 14.4 in normal
+       vision against a floor of 15, and paired Active (#10b981) with Trialing (#00d2b4) at ΔE 8.6
+       so one ring carried two near-identical greens. */
     return [
-      { label: "Active", value: active, color: "#10b981" },
-      { label: "Cancelling", value: subs?.cancellingAtPeriodEnd || 0, color: "#f59e0b" },
-      { label: "Past Due", value: pastDue, color: "#ef4444" },
-      { label: "Paused", value: paused, color: "#6366f1" },
-      { label: "Trialing", value: trialing, color: "#00d2b4" },
-      { label: "Cancelled", value: cancelled, color: "#94a3b8" },
+      { label: "Active", value: active, color: CHART_STATUS.good },
+      { label: "Cancelling", value: subs?.cancellingAtPeriodEnd || 0, color: CHART_STATUS.warning },
+      { label: "Past due", value: pastDue, color: CHART_STATUS.critical },
+      { label: "Paused", value: paused, color: CHART_STATUS.paused },
+      { label: "Trialing", value: trialing, color: CHART_STATUS.info },
+      { label: "Cancelled", value: cancelled, color: CHART_STATUS.inactive },
     ].filter((s) => s.value > 0);
   }, [subs]);
 
@@ -62,7 +67,6 @@ export function SubscriptionsView({ analytics }: SubscriptionsViewProps) {
           value={activeTotal}
           badgeText="Active on-chain & cron"
           icon={Layers}
-          color="#2775ca"
         />
 
         <StatCardWithSparkline
@@ -70,7 +74,6 @@ export function SubscriptionsView({ analytics }: SubscriptionsViewProps) {
           value={subs?.activeCustomer ?? 0}
           badgeText="Merchant commerce"
           icon={CreditCard}
-          color="#10b981"
         />
 
         <StatCardWithSparkline
@@ -78,7 +81,6 @@ export function SubscriptionsView({ analytics }: SubscriptionsViewProps) {
           value={subs?.activePremium ?? 0}
           badgeText="SubScript SaaS ARR"
           icon={Building2}
-          color="#6366f1"
         />
 
         <StatCardWithSparkline
@@ -88,7 +90,6 @@ export function SubscriptionsView({ analytics }: SubscriptionsViewProps) {
           isPositive={parseFloat(subs?.churnRatePercent || "0") < 5}
           changePercent={subs?.churnRatePercent}
           icon={AlertTriangle}
-          color="#f59e0b"
         />
       </div>
 
@@ -97,10 +98,11 @@ export function SubscriptionsView({ analytics }: SubscriptionsViewProps) {
         {/* Status Donut Chart */}
         <DonutMetricChart
           segments={statusSegments}
-          title="Subscription Health & Statuses"
+          title="Subscription health and statuses"
           subtitle="Real-time distribution across all billing states"
-          centerLabel="Total Active"
+          centerLabel="Total active"
           centerValue={activeTotal}
+          emptyMessage="Nothing here yet. Once plans are live, the billing-state split lands here."
         />
 
         {/* Plan Type Breakdown */}
@@ -171,13 +173,12 @@ export function SubscriptionsView({ analytics }: SubscriptionsViewProps) {
       {/* Subscription Creation Velocity */}
       <AreaTrendChart
         data={timelineSubs}
-        title="Subscription Velocity (30 Days)"
+        title="Subscription velocity (30 days)"
         subtitle="Daily new subscriptions compared with new account signups"
-        primaryLabel="New Subscriptions"
-        secondaryLabel="New Accounts"
-        color="#10b981"
-        secondaryColor="#2775ca"
-        valuePrefix=""
+        primaryLabel="New subscriptions"
+        secondaryLabel="New accounts"
+        valueKind="count"
+        emptyMessage="No subscriptions started yet in this window."
         height={220}
       />
     </div>

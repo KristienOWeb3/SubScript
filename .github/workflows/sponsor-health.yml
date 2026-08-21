@@ -1,0 +1,50 @@
+name: Sponsor wallet health
+
+# Alerts platform admins when the gas sponsor wallet is running down, has emptied, or when the
+# emergency stop is engaged. See src/lib/sponsor/gasAlerts.ts for the alert design and
+# docs/external-crons.md for the wider external-scheduler setup.
+#
+# WHY THIS IS NOT A VERCEL CRON
+# Vercel Hobby crons are DAILY-ONLY (the plan limit is on frequency, not job count), and
+# vercel.json is already at its 2-job cap. An empty sponsor wallet means every sponsored payment
+# fails closed, so up to 24 hours of silence is the exact bug this alert exists to fix.
+#
+# WHY EVERY 15 MINUTES
+# It matches the cadence the other user-facing keepers already run at, and the check is cheap: one
+# eth_getBalance, one small upsert, and no email at all unless the state actually changed. The
+# route mails on a transition, re-mails on a 6-hour cooldown, and mails once on recovery, so this
+# frequency buys detection latency without buying inbox noise. Offset off the top of the hour on
+# purpose: GitHub's scheduler is busiest at :00, and keepers.yml already owns that slot.
+#
+# Setup (one-time, same repo secrets as keepers.yml):
+#   - Secret  KEEPER_SECRET    = the same value as the Vercel env KEEPER_SECRET
+#                                (CRON_SECRET is also accepted by the route).
+#   - Secret  KEEPER_BASE_URL  = https://www.subscriptonarc.com   (optional; this is the default).
+#
+# Kept in its own workflow rather than added to keepers.yml so a failing sponsor-health run is
+# attributable on its own and does not turn the keeper run red, or get masked by one.
+#
+# A 401/5xx turns the run red so you get a GitHub notification. An underfunded wallet does NOT:
+# that is a successful check with a finding, and it emails the admins instead.
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: sponsor-health
+  cancel-in-progress: false
+
+jobs:
+  sponsor-health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: internal/sponsor-health
+        env:
+          BASE: ${{ secrets.KEEPER_BASE_URL }}
+          SECRET: ${{ secrets.KEEPER_SECRET }}
+        run: |
+          curl -fsS --retry 3 --retry-delay 5 --max-time 60 -X GET \
+            "${BASE:-https://www.subscriptonarc.com}/api/internal/sponsor-health" \
+            -H "Authorization: Bearer ${SECRET}"

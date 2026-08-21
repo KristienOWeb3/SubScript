@@ -15,18 +15,22 @@ type Notification = {
     createdAt: string;
 };
 
+/* Timestamps people read, not timestamps people decode. "12m ago" in uppercase mono looked like
+   a log line; a notification panel is closer to a message list, so it says "12 minutes ago".
+   Anything older than a week gets the date, because "43 days ago" is not how anyone thinks. */
 function relativeTime(iso: string): string {
     const then = new Date(iso).getTime();
     if (!Number.isFinite(then)) return "";
     const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
     if (seconds < 60) return "just now";
     const minutes = Math.round(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
+    if (minutes < 60) return minutes === 1 ? "1 minute ago" : `${minutes} minutes ago`;
     const hours = Math.round(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
+    if (hours < 24) return hours === 1 ? "1 hour ago" : `${hours} hours ago`;
     const days = Math.round(hours / 24);
-    if (days < 7) return `${days}d ago`;
-    return new Date(iso).toLocaleDateString();
+    if (days === 1) return "yesterday";
+    if (days < 7) return `${days} days ago`;
+    return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function getSourceIcon(source: string) {
@@ -182,9 +186,9 @@ export default function NotificationBell({
                 <div key={i} className="notification-panel-skeleton flex items-start gap-3 p-3 rounded-2xl bg-black/[0.03] border border-black/5 animate-pulse">
                     <div className="w-8 h-8 rounded-xl bg-black/10 shrink-0" />
                     <div className="flex-1 space-y-2">
-                        <div className="h-3.5 bg-black/10 rounded w-3/4" />
-                        <div className="h-3 bg-black/5 rounded w-5/6" />
-                        <div className="h-2.5 bg-black/5 rounded w-1/4" />
+                        <div className="h-4 bg-black/10 rounded w-3/4" />
+                        <div className="h-3.5 bg-black/5 rounded w-5/6" />
+                        <div className="h-3 bg-black/5 rounded w-1/3" />
                     </div>
                 </div>
             ))}
@@ -200,12 +204,12 @@ export default function NotificationBell({
                         className="w-2 h-2 rounded-full shadow-[0_0_10px_var(--nb-accent)]"
                         style={{ backgroundColor: accent }}
                     />
-                    <h3 className="text-xs font-black text-[#111827] uppercase tracking-wider">
+                    <h3 className="text-base font-extrabold tracking-tight text-[#111827]">
                         Notifications
                     </h3>
                     {unread > 0 && (
                         <span
-                            className="rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider shadow-sm"
+                            className="rounded-full px-2 py-0.5 text-xs font-bold shadow-sm"
                             style={{ backgroundColor: accent, color: accentForeground }}
                         >
                             {unread} new
@@ -217,10 +221,10 @@ export default function NotificationBell({
                         <button
                             type="button"
                             onClick={markAllRead}
-                            className="text-[10px] font-bold uppercase tracking-wider transition hover:opacity-80 flex items-center gap-1.5"
+                            className="text-sm font-semibold transition hover:opacity-80 flex items-center gap-1.5"
                             style={{ color: accentInk }}
                         >
-                            <CheckCircle className="w-3 h-3" /> Mark all read
+                            <CheckCircle className="w-3.5 h-3.5" /> Mark all read
                         </button>
                     )}
                     <button
@@ -240,11 +244,11 @@ export default function NotificationBell({
                     skeletonContent
                 ) : failed ? (
                     <div className="px-5 py-12 text-center space-y-3">
-                        <p className="text-xs text-black/60">We couldn&apos;t load your notifications.</p>
+                        <p className="text-sm text-black/60">We couldn&apos;t load your notifications.</p>
                         <button
                             type="button"
                             onClick={() => void load()}
-                            className="notification-panel-tile px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-black/5 border border-black/10 text-black hover:bg-black/10 transition flex items-center gap-2 mx-auto"
+                            className="notification-panel-tile px-4 py-2 rounded-xl text-sm font-semibold bg-black/5 border border-black/10 text-black hover:bg-black/10 transition flex items-center gap-2 mx-auto"
                         >
                             <RefreshCw className="w-3.5 h-3.5" /> Try again
                         </button>
@@ -254,9 +258,9 @@ export default function NotificationBell({
                         <div className="notification-panel-tile mx-auto w-12 h-12 rounded-2xl bg-black/[0.03] border border-black/5 flex items-center justify-center shadow-inner">
                             <Bell className="h-5 w-5 text-black/30" />
                         </div>
-                        <p className="text-xs font-bold text-black/75 uppercase tracking-wider">All caught up</p>
-                        <p className="text-[10px] text-black/45 max-w-xs mx-auto leading-relaxed">
-                            System alerts, admin announcements, and activity updates will appear here.
+                        <p className="text-sm font-bold text-black/75">Nothing new</p>
+                        <p className="text-sm text-black/55 max-w-xs mx-auto leading-relaxed">
+                            Payment activity and anything we need to tell you will show up here.
                         </p>
                     </div>
                 ) : (
@@ -270,18 +274,18 @@ export default function NotificationBell({
                                     </div>
                                     <div className="min-w-0 flex-1 space-y-1">
                                         <div className="flex items-start justify-between gap-2">
-                                            <p className={`text-xs leading-snug ${isUnread ? "font-extrabold text-[#111827]" : "font-semibold text-black/75"}`}>
+                                            <p className={`text-sm leading-snug ${isUnread ? "font-extrabold text-[#111827]" : "font-semibold text-black/75"}`}>
                                                 {item.title}
                                             </p>
                                             {isUnread && (
                                                 <span
-                                                    className="w-2 h-2 rounded-full shrink-0 mt-1 shadow-[0_0_8px_var(--nb-accent)]"
+                                                    className="w-2 h-2 rounded-full shrink-0 mt-1.5 shadow-[0_0_8px_var(--nb-accent)]"
                                                     style={{ backgroundColor: accent }}
                                                 />
                                             )}
                                         </div>
-                                        <p className="text-[11px] leading-relaxed text-black/60">{item.body}</p>
-                                        <p className="text-[9px] font-mono text-black/40 tracking-wider uppercase pt-0.5">
+                                        <p className="text-sm leading-relaxed text-black/60">{item.body}</p>
+                                        <p className="text-xs text-black/45 pt-0.5">
                                             {relativeTime(item.createdAt)}
                                         </p>
                                     </div>

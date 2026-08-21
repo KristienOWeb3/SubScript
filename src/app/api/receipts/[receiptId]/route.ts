@@ -63,6 +63,9 @@ export async function GET(request: Request, { params }: RouteContext) {
             beneficiary_address: receipt.beneficiaryAddress || receipt.payerAddress,
             merchant_address: receipt.merchantAddress,
             amount_usdc: receipt.amountUsdc.toString(),
+            /* What the payment was for. The page leads with this; the receipt id is never its
+               headline. May be null for rows written before the column existed. */
+            title: receipt.title,
             memo_note: receipt.memoNote,
             share_url: receipt.shareUrl,
             status: receipt.status,

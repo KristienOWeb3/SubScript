@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { adminTierOf } from "@/lib/admin/identity";
 import {
@@ -9,6 +9,8 @@ import {
     type SupportTicketStatus,
 } from "@/lib/support/tickets";
 import { sendSupportTicketAlertEmail } from "@/lib/email/transactional";
+import { listAdminNotificationEmails } from "@/lib/email/adminRecipients";
+import { sendSupportTicketReceivedEmail } from "@/lib/email/templates/support";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: Request) {
@@ -108,38 +110,47 @@ export async function POST(request: Request) {
             initialMessage,
         });
 
-        // Notify all platform admins via email
-        try {
-            const adminWallets = new Set<string>();
-            const dbAdmins = await prisma.adminWallet.findMany({ select: { wallet: true } });
-            dbAdmins.forEach((a) => adminWallets.add(a.wallet.toLowerCase()));
-            const envRoot = process.env.ADMIN_ROOT_WALLET?.toLowerCase();
-            if (envRoot) adminWallets.add(envRoot);
+        /* Mail runs after the response, never on the way to it. A filed ticket must not fail
+           because Resend is unreachable, and the requester is waiting on this request. */
+        after(async () => {
+            // Notify all platform admins via email
+            try {
+                /* The audience comes from listAdminNotificationEmails(), not from an env read here.
+                   This block used to union admin_wallets with process.env.ADMIN_ROOT_WALLET, a
+                   variable that exists nowhere in this repo and isn't in .env.example. The canonical
+                   one is ADMIN_WALLET_ADDRESSES, parsed by lib/admin/allowlist. So root admins were
+                   silently dropped from every support-ticket alert: the delegated wallets in
+                   admin_wallets got mail, the un-revokable root tier did not. Resolve the audience
+                   through the shared helper, which covers ROOT ∪ DELEGATED and degrades to root-only
+                   when Postgres is down. */
+                const adminEmails = await listAdminNotificationEmails();
 
-            const allAdminWallets = Array.from(adminWallets);
-            const identities = await prisma.authIdentity.findMany({
-                where: { walletAddress: { in: allAdminWallets } },
-                select: { currentEmail: true },
-            });
-
-            const emails = new Set<string>();
-            identities.forEach((i) => {
-                if (i.currentEmail) emails.add(i.currentEmail.toLowerCase());
-            });
-
-            for (const adminEmail of emails) {
-                sendSupportTicketAlertEmail({
+                await Promise.all(adminEmails.map((adminEmail) => sendSupportTicketAlertEmail({
                     adminEmail,
                     ticketId: ticket.id,
                     subject: ticket.subject,
                     creatorWallet: ticket.creatorWallet,
                     creatorRole: ticket.creatorRole,
                     messagePreview: initialMessage.slice(0, 300),
-                }).catch((e) => console.error("[support/tickets] admin email alert error:", e));
+                })));
+            } catch (alertErr) {
+                console.error("[support/tickets] Failed to send admin email alerts:", alertErr);
             }
-        } catch (alertErr) {
-            console.error("[support/tickets] Failed to send admin email alerts:", alertErr);
-        }
+
+            /* And tell the person who filed it that it landed (email audit 3.9). Every admin heard
+               about a new ticket and the requester heard nothing at all, which is worst for exactly
+               the tickets that matter most: somebody reporting a problem with their money got no
+               reference and no confirmation we had it. */
+            try {
+                await sendSupportTicketReceivedEmail({
+                    creatorWallet: ticket.creatorWallet,
+                    ticketId: ticket.id,
+                    subject: ticket.subject,
+                });
+            } catch (ackErr) {
+                console.error("[support/tickets] Failed to send requester acknowledgement:", ackErr);
+            }
+        });
 
         return NextResponse.json({ success: true, ticket });
     } catch (error: any) {

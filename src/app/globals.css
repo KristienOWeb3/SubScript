@@ -1102,10 +1102,20 @@ body {
   color: var(--merchant-ink) !important;
 }
 
+/* The translucent half of the pair above: Tailwind's `/10`, `/20` … opacity suffixes on the same
+   three accents. Those are pills and badges rather than actions, so they take the pale blue while
+   the solid fills take the mid blue — --merchant-blue is the tint of --merchant-action, which is
+   what keeps the two rules reading as one family.
+
+   This referenced an undefined --merchant-soft until 2026-08-21. With no definition and no
+   fallback the declaration was invalid at computed-value time, so background-color fell back to
+   inherited instead of the tint, and every translucent accent pill rendered untinted. The palette
+   block had defined the value as --merchant-blue all along and nothing consumed it, so the two
+   were halves of one naming slip in the commit that added both. */
 .merchant-dashboard-workspace [class*="bg-[#00d2b4]/"],
 .merchant-dashboard-workspace [class*="bg-[#ccff00]/"],
 .merchant-dashboard-workspace [class*="bg-[#d4a853]/"] {
-  background-color: var(--merchant-soft) !important;
+  background-color: var(--merchant-blue) !important;
   color: var(--merchant-ink) !important;
 }
 
@@ -1178,6 +1188,199 @@ body {
     min-height: 100dvh;
     border-radius: 0;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   MERCHANT DENSITY
+
+   The merchant dashboard read as congested at 100% and comfortable at 80%, and the fix is
+   literally that: render the workspace at 0.8.
+
+   `zoom` rather than a base font-size, because a font-size lever cannot reach what makes this
+   dashboard dense. The merchant tree carries ~235 arbitrary-pixel text sizes (148 × text-[10px],
+   53 × text-[9px], 25 × text-[11px], 9 × text-[8px]) plus 39 rounded-[34px], several min-h-[…px]
+   card floors, and MerchantTrendChart's hard inline height: 240. None of those are rem, so
+   html { font-size: 87.5% } would shrink the padding around unchanged 8–10px type — tighter AND
+   harder to read, the opposite of zooming out. `transform: scale()` was the other candidate and is
+   worse: it does not reflow, so the workspace keeps its full-size layout box, leaving a dead gutter
+   and breaking the overflow-y-auto scroll math on the same element.
+
+   Applied to the inner <main>, not .merchant-dashboard-workspace itself: the workspace carries
+   md:h-[calc(100vh-14px)], and zooming an element that sizes itself in viewport units would shrink
+   the scroll container to 80% of the viewport.
+
+   Known difference from browser zoom, worth stating rather than discovering: `zoom` does not move
+   media queries. sm:/md:/lg: still fire at their real viewport widths, so the extra room shows up
+   inside the existing breakpoint tier rather than promoting the layout to the next one.
+
+   The rail is a sibling of the workspace, so this does not touch it — MerchantDashboardNav is
+   hand-tuned to match (see the sizing note there).
+
+   Nothing position: fixed lives inside <main>. The session-consent alert sits between the workspace
+   and <main> as a sibling, and all seven modals render after the workspace closes, so no fixed
+   overlay resolves inset-0 against a zoomed coordinate space.
+
+   The max-width caps are deliberately left alone. They are what made 80% look roomy in the first
+   place: on a 1440px screen the unzoomed content region is ~1120px, so MerchantOverview's
+   max-w-[1340px] never engaged and the layout ran edge to edge. Zooming to 0.8 hands <main> ~1500
+   zoomed pixels, which is past that cap — so it engages and centres on its own, no retuning.
+
+   Desktop only. Mobile is already a single column at a comfortable scale, and shrinking tap
+   targets on a phone would be a straight regression. */
+@media (min-width: 768px) {
+  .merchant-dashboard-workspace > main {
+    zoom: 0.8;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   MERCHANT LIGHT MODE → USER DASHBOARD SURFACES
+
+   The two dashboards' light themes diverged by accident rather than by design (the split accreted
+   over four commits), leaving the merchant on a cream-and-dusty-blue repaint and the user on a
+   cream-and-blue-tint one. This aligns the merchant onto the user's surfaces: cream canvas, white
+   cards, charcoal rail, #111827 ink. The accent stays #8AB4DB — merchant light mode already renders
+   the brand teal as that (see the remap above), and keeping it is what still distinguishes the two
+   dashboards at a glance.
+
+   WHY THIS IS CSS AND NOT A CLASS RENAME. The dark layer below maps merchant tokens by literal
+   class name, not by colour. bg-[#D4E3E8] resolves to --dk-canvas while bg-[#FFFFF0] resolves to
+   --dk-shell, so swapping the content pane's class to cream would silently repaint the dark canvas
+   too. Worse, bg-[#353935] and text-[#111827] have no merchant dark rule at all — introducing them
+   into the merchant tree would render them literally in dark mode, charcoal-on-charcoal and
+   near-black headings. Repainting here instead keeps every class name intact, so dark mode is
+   provably unchanged rather than re-verified.
+
+   Written WITHOUT !important, deliberately. The dark layer's contract is that its !important rules
+   out-rank this one on the cascade without having to out-specify its :not() chains. Specificity
+   still carries these in light mode: `.merchant-dashboard-workspace [class~="…"]` is 0,2,0 against
+   Tailwind's 0,1,0. Add !important here and dark mode breaks. */
+
+/* Canvas: dusty blue → cream, matching .user-dashboard-content. */
+.merchant-dashboard-workspace {
+  background-color: var(--merchant-cream);
+}
+
+/* Cards: cream would now vanish into the canvas, so they go white like the user's. Covers the
+   .liquid-glass repaint above (which resolved to cream) for the same reason. */
+.merchant-dashboard-workspace [class~="bg-[#FFFFF0]"],
+.merchant-dashboard-workspace .liquid-glass {
+  background-color: #ffffff;
+}
+
+/* Secondary panels: the alpha variants of the dusty blue are the merchant's equivalent of the
+   user's bg-black/[0.02] sub-panels, which that layer paints with this exact blue tint. Opaque
+   bg-[#D4E3E8] is deliberately NOT included — those are pills and badges, and flattening them into
+   the panel colour would erase the distinction.
+
+   Enumerated with `~=` rather than matched with `*="bg-[#D4E3E8]/"`, for the reason the dark layer
+   documents at length: a substring match also catches `hover:bg-[#D4E3E8]/80`, of which there are
+   five in the merchant tree, and painting a hover colour onto a resting state makes the hover look
+   broken. These three are the resting tokens actually in use.
+
+   Gated to light because the dark layer covers only the opaque token (its `~=` is exact), so the
+   alpha variants render literally in dark today. Leaving this ungated would change that. */
+:root:not([data-theme="dark"]) .merchant-dashboard-workspace [class~="bg-[#D4E3E8]/30"],
+:root:not([data-theme="dark"]) .merchant-dashboard-workspace [class~="bg-[#D4E3E8]/40"],
+:root:not([data-theme="dark"]) .merchant-dashboard-workspace [class~="bg-[#D4E3E8]/50"] {
+  background-color: rgb(39 117 202 / 20%);
+}
+
+/* Surface repaints from the block above resolved to cream; on a cream canvas they need to be white
+   for the same reason the cards do. */
+.merchant-dashboard-workspace [class~="bg-black/60"],
+.merchant-dashboard-workspace [class~="bg-black/50"],
+.merchant-dashboard-workspace [class~="bg-black/40"],
+.merchant-dashboard-workspace [class~="bg-black/35"],
+.merchant-dashboard-workspace [class~="bg-black/30"],
+.merchant-dashboard-workspace [class~="bg-white/10"],
+.merchant-dashboard-workspace [class~="bg-white/5"],
+.merchant-dashboard-workspace [class~="bg-white/[0.03]"],
+.merchant-dashboard-workspace [class~="bg-white/[0.02]"],
+.merchant-dashboard-workspace [class~="bg-white/[0.01]"] {
+  background-color: #ffffff;
+}
+
+/* Ink: the merchant's dark green → the user's #111827. */
+.merchant-dashboard-workspace [class*="text-[#082824]" i] {
+  color: #111827;
+}
+
+/* Table rows, matching the user's lighter divider and hover. */
+.merchant-dashboard-workspace tbody tr {
+  border-color: rgba(0, 0, 0, 0.05);
+}
+
+/* Inputs: the user's are opaque white rather than translucent. The #8AB4DB focus ring stays. */
+.merchant-dashboard-workspace input,
+.merchant-dashboard-workspace textarea,
+.merchant-dashboard-workspace select {
+  background: #ffffff;
+}
+
+/* --- The rail ---------------------------------------------------------------
+   Charcoal, like .user-dashboard-redesign's DashboardSidebar. The rail sits outside
+   .merchant-dashboard-workspace, so it needs its own scope. `.merchant-rail` and
+   `.merchant-rail-menu` are colourless marker classes added for exactly this purpose — the dark
+   layer keys off colour tokens, so a marker cannot collide with it. */
+.merchant-rail,
+.merchant-rail .merchant-rail-skeleton {
+  background-color: #353935;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.merchant-rail [class*="text-[#082824]" i] {
+  color: var(--merchant-cream);
+}
+
+.merchant-rail [class*="text-black/"] {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* The account pill. `~=` and not a substring match, so the nav rows' hover:bg-[#D4E3E8]/45 and /55
+   do not get their hover colour painted onto their resting state — the hover rule below is what
+   handles those. */
+.merchant-rail [class~="bg-[#D4E3E8]"] {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.merchant-rail [class~="bg-[#D4E3E8]"]:hover,
+.merchant-rail [class*="hover:bg-[#D4E3E8]"]:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+/* bg-[#082824] serves two jobs in the rail, so they are split by element rather than by token: on a
+   button or link it is the selected row, on a span it is the avatar circle. */
+.merchant-rail button[class*="bg-[#082824]"],
+.merchant-rail a[class*="bg-[#082824]"] {
+  background-color: var(--merchant-cream);
+  color: #353935;
+}
+
+.merchant-rail span[class*="bg-[#082824]"] {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Icons render as a mask tinted by background-color, so a selected row's icon has to be repainted
+   directly — the [&_.koboyo-icon]:bg-white utility on the row would otherwise leave it white on the
+   cream pill.
+
+   This is the one rule in this block the dark layer does not already cover: it has no .koboyo-icon
+   selector, and in dark mode a selected row sits on --dk-selected with a white icon, which is
+   correct. So this is gated to light explicitly rather than relying on a dark override that isn't
+   there. Everything else above is safe unscoped because the dark layer repaints the same tokens with
+   !important — bg-[#FFFFF0], bg-[#D4E3E8], bg-[#082824], text-black, text-black/N, text-white,
+   border-black/N and the form fields are all mapped there. */
+:root:not([data-theme="dark"]) .merchant-rail button[class*="bg-[#082824]"] .koboyo-icon,
+:root:not([data-theme="dark"]) .merchant-rail a[class*="bg-[#082824]"] .koboyo-icon {
+  background-color: #353935;
+}
+
+/* The account menu opens over a charcoal rail, so it reads as part of it rather than a cream card
+   floating on top. */
+.merchant-rail-menu {
+  background-color: #2b302b;
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 @keyframes scannerSweep {
@@ -1969,5 +2172,58 @@ body {
 [data-theme="dark"] [data-theme-preview][class*="border-white/"],
 [data-theme="dark"] [data-theme-preview] [class*="border-white/"] {
   border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* ------------------------------------------------------------------- receipts
+   A receipt's other job is paperwork: it gets printed, saved as a PDF, and mailed to an
+   accountant. The "Save as PDF" button on /receipt/[receiptId] is just window.print(), so
+   everything below is what makes that output look like a document instead of a screenshot of
+   a web page.
+
+   .receipt-screen-only marks the parts that only make sense in a browser — the copy button,
+   the invite form, the account prompt, the navigation. The reference itself stays: it is the
+   one thing someone reading the printout might need to quote back.
+
+   The page is not themed for dark mode on purpose, matching .subscript-checkout: a payment
+   document keeps one appearance wherever it is opened, and the dark layer above is scoped to
+   the dashboard shells so it never reaches here.
+
+   Every selector here is prefixed with .subscript-receipt, so no other surface is affected. In
+   particular there is no @page rule: page margins cannot be scoped to a selector, and setting
+   them would change printing on every route in the app to fix one. The browser default is
+   fine, and the card carries its own padding. */
+@media print {
+  .subscript-receipt {
+    background: #ffffff !important;
+    padding: 0 !important;
+    color: #000000 !important;
+  }
+
+  .subscript-receipt .receipt-screen-only {
+    display: none !important;
+  }
+
+  /* Hairlines print; 0.15 alpha borders and drop shadows do not. */
+  .subscript-receipt .receipt-document {
+    border: 1px solid #d4d4d4 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    padding: 24px !important;
+  }
+
+  .subscript-receipt [class*="bg-[#f8fafc]"] {
+    background: #ffffff !important;
+    border-color: #e5e5e5 !important;
+  }
+
+  /* Ink, not grey-on-grey. Print drivers dither light greys into something unreadable. */
+  .subscript-receipt [class*="text-black/5"],
+  .subscript-receipt [class*="text-black/6"] {
+    color: #4a4a4a !important;
+  }
+
+  .subscript-receipt a[href]::after {
+    content: "";
+  }
 }
 

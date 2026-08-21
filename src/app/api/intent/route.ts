@@ -341,6 +341,10 @@ export async function POST(request: Request) {
 
         const settlement = arcReconciliation();
 
+        /* No receipt email from this route, and there is nothing here to send one for: an intent is
+           a PaymentLink in PENDING with a checkout URL, so the only event it can honestly emit is
+           payment.pending. One-time intents settle through /api/payment-links/verify like every
+           other link, and paymentLinkVerificationWorker mails the receipt at that point. */
         await recordMerchantEvent({
             merchantAddress: merchantAddress.toLowerCase(),
             eventType: "payment.pending",

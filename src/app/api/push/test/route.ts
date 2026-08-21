@@ -12,7 +12,7 @@ export async function POST(request: Request) {
 
     const result = await sendPushToWallet(wallet, {
         title: "SubScript notifications are on",
-        body: "This device is ready for payment, subscription, and balance alerts.",
+        body: "This device will get your payment and subscription alerts.",
         url: "/user?tab=account",
         tag: "push-self-test",
     });

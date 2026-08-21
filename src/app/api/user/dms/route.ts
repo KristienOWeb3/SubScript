@@ -15,6 +15,7 @@ import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 import { readSubscriptionCheckoutMeta } from "@/lib/subscriptionCheckout";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
+import { safeProfilePicOrNull } from "@/lib/profilePicSafety";
 
 export const maxDuration = 60;
 
@@ -100,8 +101,24 @@ export async function GET(request: Request) {
         const aliasMap = new Map(aliases.map((a: any) => [a.address.toLowerCase(), a.alias]));
         const roleMap = new Map(roles.map((r: any) => [r.address.toLowerCase(), r.role]));
         const profilePicMap = new Map<string, string | null>();
-        customers.forEach((c: any) => profilePicMap.set(c.walletAddress.toLowerCase(), c.profilePic));
-        merchants.forEach((m: any) => profilePicMap.set(m.walletAddress.toLowerCase(), m.profilePic));
+
+        /* Record an avatar only when there is actually one to record.
+
+           Merchants are read after customers, and an unconditional set() meant a merchant row with a
+           NULL profile_pic wiped out a perfectly good customer row. Avatar writes are role-scoped —
+           /api/user/settings writes to merchants when the role is ENTERPRISE and to customers
+           otherwise — so a wallet that uploaded a picture as a USER and was later upgraded has the
+           image in customers and NULL in merchants. That clobber is why merchant threads fell back
+           to the default avatar even though the picture was sitting in the database.
+
+           Sanitizing here rather than at each emit site means every consumer below — messages,
+           connections, both sides of each row — gets the same guarantee for free. */
+        const rememberProfilePic = (address: string, value: string | null | undefined) => {
+            const safe = safeProfilePicOrNull(value);
+            if (safe) profilePicMap.set(address.toLowerCase(), safe);
+        };
+        customers.forEach((c: any) => rememberProfilePic(c.walletAddress, c.profilePic));
+        merchants.forEach((m: any) => rememberProfilePic(m.walletAddress, m.profilePic));
 
         /* Verification is a per-address FACT from the merchants table, not an inference from the
            account role. The inbox previously showed a green check beside any counterparty it had
@@ -153,7 +170,10 @@ export async function GET(request: Request) {
         const missingProfileAddrs = connectionPeerAddresses.filter((a) => !uniqueAddresses.has(a));
 
         if (missingProfileAddrs.length > 0) {
-            const [missingAliases, missingCustomers, missingRoles] = await Promise.all([
+            /* Merchants are queried here too. Without them, a merchant peer with an accepted
+               connection but no messages yet resolved to a null avatar — the empty-thread case of
+               the same role-scoped storage split handled above. */
+            const [missingAliases, missingCustomers, missingMerchants, missingRoles] = await Promise.all([
                 prisma.addressAlias.findMany({
                     where: { address: { in: missingProfileAddrs } },
                 }),
@@ -161,13 +181,22 @@ export async function GET(request: Request) {
                     where: { walletAddress: { in: missingProfileAddrs } },
                     select: { walletAddress: true, profilePic: true },
                 }),
+                prisma.merchant.findMany({
+                    where: { walletAddress: { in: missingProfileAddrs } },
+                    select: { walletAddress: true, profilePic: true, verified: true },
+                }),
                 prisma.accountRole.findMany({
                     where: { address: { in: missingProfileAddrs } },
                     select: { address: true, role: true },
                 }),
             ]);
             missingAliases.forEach((a) => aliasMap.set(a.address.toLowerCase(), a.alias));
-            missingCustomers.forEach((c) => profilePicMap.set(c.walletAddress.toLowerCase(), c.profilePic));
+            missingCustomers.forEach((c) => rememberProfilePic(c.walletAddress, c.profilePic));
+            missingMerchants.forEach((m) => {
+                rememberProfilePic(m.walletAddress, m.profilePic);
+                /* Same trust rule as above: the badge comes from merchants.verified, nothing else. */
+                if (m.verified === true) verifiedMerchants.add(m.walletAddress.toLowerCase());
+            });
             missingRoles.forEach((r) => roleMap.set(r.address.toLowerCase(), r.role));
         }
 

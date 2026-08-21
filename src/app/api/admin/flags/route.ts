@@ -96,34 +96,35 @@ export async function POST(request: Request) {
         /* Notify all platform admins via email about the toggled switch */
         try {
             const { sendPlatformFlagChangeEmail } = await import("@/lib/email/transactional");
-            const adminWallets = new Set<string>();
-            if (auth.admin.wallet) adminWallets.add(auth.admin.wallet.toLowerCase());
-            
-            const dbAdmins = await prisma.adminWallet.findMany({ select: { wallet: true } });
-            dbAdmins.forEach(a => adminWallets.add(a.wallet.toLowerCase()));
-            
-            const envRoot = process.env.ADMIN_ROOT_WALLET?.toLowerCase();
-            if (envRoot) adminWallets.add(envRoot);
+            const { listAdminNotificationEmails } = await import("@/lib/email/adminRecipients");
 
-            const allWallets = Array.from(adminWallets);
-            
-            // Find all emails linked to these wallets
-            const [identities, aliases] = await Promise.all([
-                prisma.authIdentity.findMany({
-                    where: { walletAddress: { in: allWallets } },
-                    select: { currentEmail: true, walletAddress: true },
-                }),
-                prisma.addressAlias.findMany({
-                    where: { address: { in: allWallets } },
-                    select: { alias: true, address: true },
-                }),
-            ]);
+            /*
+             * The audience used to be assembled inline here, and it read
+             * `process.env.ADMIN_ROOT_WALLET` for the root tier. That variable exists nowhere in
+             * this repository: not in .env.example, not in any deployment, referenced only by this
+             * block and one other copy of it. The canonical variable is ADMIN_WALLET_ADDRESSES,
+             * parsed by lib/admin/allowlist. So root admins were silently excluded from every
+             * flag-change alert: the delegated wallets in admin_wallets got mail, and the
+             * un-revokable tier that can turn invite-only signup on and off did not.
+             *
+             * listAdminNotificationEmails() resolves ROOT (env) union DELEGATED (admin_wallets),
+             * and degrades to root-only when Postgres is unreachable. Do not reintroduce an inline
+             * lookup here; adding a wallet source in one route and not the others is how this bug
+             * happened in the first place. The old block also added auth.admin.wallet by hand,
+             * which is redundant: requireAdmin only lets root or delegated wallets through, so the
+             * actor is already inside that union.
+             */
+            const adminEmails = await listAdminNotificationEmails();
 
-            const actorAlias = aliases.find(a => a.address.toLowerCase() === auth.admin.wallet.toLowerCase())?.alias || null;
-            const adminEmails = new Set<string>();
-            identities.forEach(i => {
-                if (i.currentEmail) adminEmails.add(i.currentEmail.toLowerCase());
-            });
+            /* The alias is a separate concern from the audience: it labels the ACTOR in the email
+               body so an admin recognises who flipped the switch. Only the actor's own alias is
+               needed, so this no longer piggybacks on a bulk aliases query over the audience.
+               `address` is the primary key and is stored lowercase (see auth/defaultAlias). */
+            const actorWallet = auth.admin.wallet.toLowerCase();
+            const actorAlias = (await prisma.addressAlias.findUnique({
+                where: { address: actorWallet },
+                select: { alias: true },
+            }))?.alias || null;
 
             // Detect which flags actually changed
             const changes: Array<{ flagName: string; prev: unknown; next: unknown }> = [];
@@ -141,7 +142,7 @@ export async function POST(request: Request) {
             }
 
             // Send notification emails in background
-            if (changes.length > 0 && adminEmails.size > 0) {
+            if (changes.length > 0 && adminEmails.length > 0) {
                 for (const change of changes) {
                     for (const email of adminEmails) {
                         sendPlatformFlagChangeEmail({

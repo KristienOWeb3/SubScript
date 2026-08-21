@@ -33,6 +33,7 @@ import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookD
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
 import { deterministicIdempotencyKey } from "@/lib/custody";
+import { haltGuard } from "@/lib/accountHalt";
 
 export const maxDuration = 120;
 
@@ -48,6 +49,12 @@ export async function POST(request: Request) {
         if (!wallet) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         const roleCheck = await requireAccountRole(wallet, "USER");
         if (!roleCheck.ok) return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
+
+        /* Resuming restarts a billing schedule the user had stopped, which is a new authorization
+           however it is worded. A held account has to lift the hold first, or resume would be a way
+           around it. */
+        const held = await haltGuard(wallet);
+        if (held) return held;
 
         try {
             assertFinancialNetworkReady();

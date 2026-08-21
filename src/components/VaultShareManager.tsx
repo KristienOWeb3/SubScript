@@ -220,8 +220,10 @@ export default function VaultShareManager({
         share: Share;
         value: string;
     } | null>(null);
+    /* Set only by a successful rotation, so the new ID stays on screen after the list reloads. */
+    const [rotatedCommitId, setRotatedCommitId] = useState<string | null>(null);
 
-    const executeAction = async (commitId: string, action: "pause" | "resume" | "revoke" | "withdraw") => {
+    const executeAction = async (commitId: string, action: "pause" | "resume" | "revoke" | "withdraw" | "rotate") => {
         setBusy({ commitId, action });
         setError(null);
         try {
@@ -233,6 +235,11 @@ export default function VaultShareManager({
             });
             const json = await res.json();
             if (!res.ok) throw new Error(json.error || "Could not update share");
+            /* A rotation returns a brand new ID, and the primary has to hand it over or the friend is
+               locked out. Surfaced before the reload so it survives the list refresh. */
+            if (action === "rotate" && json.commitId) {
+                setRotatedCommitId(json.commitId);
+            }
             await load();
             if (selectedShare?.commitId === commitId) {
                 setSelectedShare(null);
@@ -245,7 +252,7 @@ export default function VaultShareManager({
         }
     };
 
-    const runAction = (commitId: string, action: "pause" | "resume" | "revoke" | "withdraw") => {
+    const runAction = (commitId: string, action: "pause" | "resume" | "revoke" | "withdraw" | "rotate") => {
         if (action === "revoke") {
             setConfirmModal({
                 title: "Revoke Commit ID",
@@ -260,6 +267,20 @@ export default function VaultShareManager({
                 title: "Withdraw & Reclaim Share",
                 message: "Withdraw and revoke this share? Unspent funds will return to your unallocated escrow.",
                 confirmText: "Withdraw",
+                onConfirm: () => executeAction(commitId, action),
+            });
+            return;
+        }
+        /* Always a live credential here. A vault share never binds a wallet, so there is no unclaimed
+           case to soften the warning for: whoever holds this ID is using it on the merchant's platform
+           right now, and the swap breaks them until they paste the new one. */
+        if (action === "rotate") {
+            setConfirmModal({
+                title: "Replace this commit ID",
+                message: "The old ID stops working straight away, so whoever's using it will be refused "
+                    + "until you send them the new one. Their cap and what they've used stay the same. "
+                    + "Do this if the ID has leaked.",
+                confirmText: "Replace ID",
                 onConfirm: () => executeAction(commitId, action),
             });
             return;
@@ -310,6 +331,43 @@ export default function VaultShareManager({
 
     return (
         <div className="space-y-3">
+            {/* A rotated share's new ID. Held on screen until dismissed, because the friend can't use
+                the vault until the primary sends it to them. */}
+            {rotatedCommitId && (
+                <div className="rounded-2xl border border-[#2775CA]/30 bg-[#2775CA]/10 px-3.5 py-2.5 text-black shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-[#2775CA]">New commit ID</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-black/65">
+                        The old one stopped working just now. Send this to whoever was using it.
+                    </p>
+                    <div className="mt-2 flex items-center gap-2">
+                        <code className="min-w-0 flex-1 truncate rounded-lg border border-black/10 bg-white px-2 py-1.5 font-mono text-[11px] font-bold text-[#2775CA]">
+                            {rotatedCommitId}
+                        </code>
+                        <button
+                            type="button"
+                            onClick={() => copyId(rotatedCommitId)}
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-black/15 bg-white text-black shadow-sm transition hover:bg-black/5"
+                            title="Copy the new commit ID"
+                            aria-label="Copy the new commit ID"
+                        >
+                            {copiedId === rotatedCommitId ? (
+                                <Check className="h-3.5 w-3.5 text-emerald-600" />
+                            ) : (
+                                <Copy className="h-3.5 w-3.5" />
+                            )}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setRotatedCommitId(null)}
+                            className="shrink-0 px-1.5 text-[10px] font-bold uppercase tracking-wider text-black/40 transition hover:text-black"
+                            aria-label="Dismiss the new commit ID"
+                        >
+                            Done
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Scoped Root Commit ID Pill with 1-Tap Copy */}
             <div className="flex items-center justify-between gap-2 rounded-2xl border border-black/10 bg-[#FFFFF0] px-3.5 py-2 text-black shadow-sm">
                 <span className="text-[10px] font-black uppercase tracking-wider text-black/60">
@@ -622,6 +680,14 @@ export default function VaultShareManager({
                                         Resume Access
                                     </button>
                                 )}
+                                <button
+                                    type="button"
+                                    onClick={() => runAction(selectedShare.commitId, "rotate")}
+                                    className="flex-1 py-2.5 rounded-2xl border border-black/15 bg-white text-black hover:bg-black/5 text-xs font-bold transition shadow-sm"
+                                    title="Issue a new commit ID. Keeps the cap and usage, and the old ID stops working now."
+                                >
+                                    New ID
+                                </button>
                                 <button
                                     type="button"
                                     onClick={() => runAction(selectedShare.commitId, "revoke")}

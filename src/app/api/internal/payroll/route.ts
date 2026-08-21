@@ -4,10 +4,12 @@ import { ethers } from "ethers";
 import { ARC_TESTNET_CHAIN_ID, CONFIDENTIAL_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 import { CONFIDENTIAL_CONTRACT_ABI } from "@/lib/contracts/abis";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
+import { sendBatchPayoutReceipts } from "@/lib/email/settlementReceipts";
 import { ProtocolConfig } from "@/lib/payments/config";
 import { getRpcProviderForWrite } from "@/lib/payments/rpc";
 import { buildPermitSingle } from "@/lib/payroll/permit2";
 import { revokePayrollAuthority } from "@/lib/payroll/authority";
+import { isAccountHalted } from "@/lib/accountHalt";
 import crypto from "crypto";
 
 export const maxDuration = 300;
@@ -122,6 +124,24 @@ export async function POST(request: Request) {
             let recoveryPending = false;
             try {
                 const orgAddress = campaign.organizationAddress.toLowerCase();
+
+                /* The organization's own hold on outbound money, checked before the premium lookup so
+                   a held org costs nothing. This is the batch-payout case: one Permit2 signature the
+                   keeper draws a whole payroll against, all of it leaving the org's wallet.
+
+                   Skipped rather than paused, and the authority is deliberately NOT revoked. A hold is
+                   reversible, so revoking would make the org re-sign a permit to get back to where
+                   they were. The campaign is simply passed over until the hold lifts.
+                   isAccountHalted returns true on a read failure, so a database incident skips too. */
+                if (await isAccountHalted(orgAddress)) {
+                    console.log(`[internal/payroll] campaign ${campaign.id}: organization is on hold — skipping`);
+                    executionResults.push({
+                        campaignId: campaign.id,
+                        status: "SKIPPED",
+                        reason: "ORGANIZATION_ON_HOLD",
+                    });
+                    continue;
+                }
 
                 /* Verify organization's premium status in database */
                 const merchant = await prisma.merchant.findUnique({
@@ -559,6 +579,28 @@ export async function POST(request: Request) {
                         next_payday: nextPaydayDate.toISOString(),
                     },
                 }).catch((err: unknown) => console.error("[payroll] payroll.authorization_required webhook error:", err));
+
+                /* Payday receipts, one per employee. Reaching here means the batch mined with
+                   status 1 — the ambiguous and reverted branches above all throw or refund, so
+                   nobody is ever told they were paid out of a payout that didn't land.
+
+                   The paying organization is not mailed. A fifty-person payday would put fifty
+                   near-identical emails in the org's inbox and burn its whole hourly transactional
+                   budget, dropping the tail; the org already has payroll.execution_succeeded on its
+                   webhook and the run in its dashboard.
+
+                   Very large campaigns can still run into the shared Resend limit. Those sends drop
+                   with an [email-dropped] log line rather than failing the payday, and the campaign
+                   record stays the durable proof of what was paid. */
+                await sendBatchPayoutReceipts({
+                    kind: "payroll_payout",
+                    txHash,
+                    paymentTitle: "Payroll",
+                    recipients: campaign.recipients.map((recipient) => ({
+                        address: recipient.employeeWallet,
+                        amountUsdc: recipient.salaryAmountUsdc,
+                    })),
+                });
 
                 executionResults.push({
                     campaignId: campaign.id,

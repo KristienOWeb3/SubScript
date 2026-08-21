@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
 import { triggerExitSurvey } from "@/lib/payments/email";
+import { sendPremiumCancellationEmail } from "@/lib/email/templates/subscriptionLifecycle";
 
 export async function POST(request: Request) {
     try {
@@ -41,7 +42,7 @@ export async function POST(request: Request) {
         /* 4. Update associated premium subscription rows if present */
         const { data: subData } = await supabase
             .from("subscriptions")
-            .select("subscription_id, next_billing_date")
+            .select("subscription_id, next_billing_date, amount_cap_usdc, billing_interval_seconds")
             .eq("kind", "PREMIUM")
             .eq("merchant_address", normalizedUser)
             .in("status", ["ACTIVE", "PAST_DUE"])
@@ -70,6 +71,34 @@ export async function POST(request: Request) {
                 console.error("Failed to trigger exit survey:", err);
             });
         }
+
+        /* The merchant's own receipt for cancelling Premium Pro.
+         *
+         * Section 3.5 of docs/email-audit.md: a cancellation is the one confirmation people keep
+         * as proof, and until now this route confirmed nothing outside the dashboard toast. Sent
+         * after the response, and never allowed to fail the request, because the tier change and
+         * the cancel flags above are already committed. The email states only what this route
+         * actually did: billing stopped and the row flagged for the downgrade pass. It doesn't
+         * claim the on-chain authorization is revoked yet, because the billing cron does that
+         * when the period ends. */
+        const paidThrough = subData?.next_billing_date ? new Date(subData.next_billing_date) : null;
+        const paidThroughValid = paidThrough && !Number.isNaN(paidThrough.getTime()) ? paidThrough : null;
+        after(async () => {
+            await sendPremiumCancellationEmail({
+                subscriberAddress: normalizedUser,
+                facts: {
+                    subscriptionId: subData?.subscription_id ? String(subData.subscription_id) : null,
+                    planName: "Premium Pro",
+                    amountUsdcMicros: subData?.amount_cap_usdc ?? null,
+                    periodSeconds: subData?.billing_interval_seconds ?? null,
+                    accessUntil: paidThroughValid,
+                    requestedAt: new Date(nowIso),
+                },
+                /* /api/premium/resume accepts a change of mind only while the paid period is
+                   still running, so the email mentions that option only when it really exists. */
+                resumableUntilPaidThrough: Boolean(paidThroughValid && paidThroughValid.getTime() > Date.now()),
+            });
+        });
 
         return NextResponse.json({
             success: true,

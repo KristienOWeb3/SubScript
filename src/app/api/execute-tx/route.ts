@@ -16,6 +16,7 @@ import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { assertProviderRateLimit, ProviderRateLimitError } from "@/lib/providerRateLimit";
 import { createDmAndNotify } from "@/lib/dms/notifications";
 import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
+import { assertAccountNotHalted, AccountHaltError } from "@/lib/accountHalt";
 
 /* Custody execution waits for on-chain confirmation (required for Circle SCA wallets,
    whose tx hash only exists once confirmed), so give the route enough headroom. */
@@ -246,9 +247,17 @@ export async function POST(request: Request) {
                a held account must read as a refusal, not a fault. */
             try {
                 await assertWithdrawalAllowed(wallet, "MERCHANT");
+                /* The account holder's own brake, alongside the operator-placed hold. Same inline
+                   handling for the same reason: a hold is a refusal, and the outer catch maps
+                   everything to 500. */
+                await assertAccountNotHalted(wallet);
             } catch (holdError: any) {
                 if (holdError instanceof WithdrawalHeldError) {
                     console.warn(`[execute-tx] Withdrawal hold blocked ${wallet.toLowerCase()}. requestId: ${requestId}`);
+                    return NextResponse.json({ error: holdError.message }, { status: holdError.status });
+                }
+                if (holdError instanceof AccountHaltError) {
+                    console.warn(`[execute-tx] Account hold blocked withdrawal from ${wallet.toLowerCase()}. requestId: ${requestId}`);
                     return NextResponse.json({ error: holdError.message }, { status: holdError.status });
                 }
                 throw holdError;
@@ -257,9 +266,17 @@ export async function POST(request: Request) {
         if (action === "transferUsdc") {
             try {
                 await assertWithdrawalAllowed(wallet, accountRole === "ENTERPRISE" ? "MERCHANT" : "USER");
+                await assertAccountNotHalted(wallet);
             } catch (holdError: any) {
                 if (holdError instanceof WithdrawalHeldError) {
                     console.warn(`[execute-tx] Withdrawal hold blocked merchant transfer from ${wallet.toLowerCase()}. requestId: ${requestId}`);
+                    return NextResponse.json(
+                        { error: holdError.message },
+                        { status: holdError.status },
+                    );
+                }
+                if (holdError instanceof AccountHaltError) {
+                    console.warn(`[execute-tx] Account hold blocked transfer from ${wallet.toLowerCase()}. requestId: ${requestId}`);
                     return NextResponse.json(
                         { error: holdError.message },
                         { status: holdError.status },

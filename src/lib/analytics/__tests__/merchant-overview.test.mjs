@@ -60,7 +60,17 @@ test("overview endpoint enforces merchant auth, canonical micros path, UTC bound
     assert.match(combined, /requireAccountRole\(wallet, "ENTERPRISE"\)/);
     assert.match(combined, /environment must be TEST or LIVE/);
     assert.match(combined, /\{data,object,amount_usdc_micros\}/);
-    assert.match(combined, /Date\.UTC\(now\.getUTCFullYear\(\), now\.getUTCMonth\(\), now\.getUTCDate\(\) - 30/);
+    /* Window boundaries are built in UTC, never local time. This assertion used to pin a literal
+       `getUTCDate() - 30`, which stopped existing the moment the range became a parameter — and
+       because it matched source text rather than behaviour, it sat failing instead of catching
+       anything. The invariant is the UTC construction and the bucket count driving the offset. */
+    assert.match(combined, /now\.getUTCDate\(\) - \(buckets - 1\)/);
+    assert.doesNotMatch(overviewLib, /now\.getFullYear\(\)|now\.getMonth\(\)|now\.getDate\(\)/);
+    /* And the buckets themselves are truncated against an explicit UTC wall time. confirmed_at and
+       occurred_at are TIMESTAMPTZ in the database despite Prisma modelling them as plain timestamp,
+       so date_trunc would otherwise resolve in whatever the session TimeZone happens to be —
+       invisible at day granularity, a whole-offset shift at hourly. */
+    assert.match(overviewRoute, /date_trunc\(\$\{bucketUnit\}::text, occurred_at AT TIME ZONE 'UTC'\)/);
     assert.match(combined, /event_type IN \('subscription\.activated', 'subscription\.renewed'\)/);
     assert.match(combined, /COALESCE\(\(e\.payload ->> 'simulated'\)::boolean, false\) = false/);
     assert.match(combined, /FLOOR\(amount_micros \* \$\{feeBps\} \/ 10000\)/);
