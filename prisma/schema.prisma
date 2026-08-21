@@ -587,10 +587,19 @@ model UserCommit {
   // MeteredVault.userAddress, not by walletAddress, which stays null on vault-scoped rows.
   vaultId        String?      @map("vault_id") @db.Uuid
   vault          MeteredVault? @relation(fields: [vaultId], references: [id], onDelete: Cascade)
-  // "ACTIVE" | "PAUSED" | "REVOKED"
+  // "ACTIVE" | "PAUSED" | "HALTED" | "REVOKED". HALTED is the account holder stopping their own
+  // outbound money and only ever appears on a root commit (SQL CHECK user_commits_halt_root_only).
+  // PAUSED is a parent stopping one delegate. See src/lib/accountHalt.ts for why halt reuses this
+  // column instead of adding a boolean.
   status         String       @default("ACTIVE") @map("status")
   pausedAt       DateTime?    @map("paused_at")
+  // Set while status is HALTED, cleared on self-resume. Distinct from pausedAt because the console
+  // reports "you stopped this" and "your parent stopped this" differently.
+  haltedAt       DateTime?    @map("halted_at")
   revokedAt      DateTime?    @map("revoked_at")
+  // Last time commitId was re-issued. Rotation answers a leaked Commit ID without spending the
+  // delegation, because commitId is a separate unique column from id and the ledger hangs off id.
+  commitIdRotatedAt DateTime? @map("commit_id_rotated_at")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @default(now()) @updatedAt @map("updated_at")
 
