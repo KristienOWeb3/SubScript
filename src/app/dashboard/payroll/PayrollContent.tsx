@@ -211,10 +211,14 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
     const [isDepositOpen, setIsDepositOpen] = useState(false);
     const [isWithdrawing, setIsWithdrawing] = useState(false);
     const [withdrawSuccess, setWithdrawSuccess] = useState(false);
-    /* Stable x-request-id for the vault withdrawal. Minted once, reused by every retry, and
+    /* Stable x-request-id per withdrawal destination. Minted once, reused by every retry, and
        only dropped once the server confirms the payout — a fresh id per attempt would land on
-       a different idempotency key and pay out twice. */
-    const withdrawRequestIdRef = useRef<string | null>(null);
+       a different idempotency key and pay out twice.
+       Keyed by destination, not one id for the whole page: the server's key is
+       withdraw:<wallet>:<requestId> with no recipient in it, so carrying one id across two
+       different payout addresses would dedupe the second payout onto the first and the money
+       would land at the first address. */
+    const withdrawRequestIdsRef = useRef<Record<string, string>>({});
 
     const pageIsLoading = isLoading || isLoadingTier || isAuthLoading;
 
@@ -469,16 +473,28 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
             if (functionName === "withdraw") {
                 action = "withdraw";
                 serializedArgs = {};
+            } else if (functionName === "withdrawTo") {
+                /* Same server action; the route reads args.to and picks withdrawTo itself. The
+                   recipient has to travel as `to` — drop it and the route falls back to a plain
+                   withdraw, quietly paying out to the connected wallet instead. */
+                const to = args[0];
+                if (typeof to !== "string" || !to) {
+                    throw new Error("No payout address for this withdrawal. Close this and try again.");
+                }
+                action = "withdraw";
+                serializedArgs = { to };
             } else {
                 throw new Error(`Execution intent not allowlisted for embedded wallets: ${functionName}`);
             }
 
             const headers: Record<string, string> = { "Content-Type": "application/json" };
+            let withdrawIdKey = "";
             if (action === "withdraw") {
-                if (!withdrawRequestIdRef.current) {
-                    withdrawRequestIdRef.current = crypto.randomUUID();
+                withdrawIdKey = typeof serializedArgs.to === "string" ? serializedArgs.to.toLowerCase() : "self";
+                if (!withdrawRequestIdsRef.current[withdrawIdKey]) {
+                    withdrawRequestIdsRef.current[withdrawIdKey] = crypto.randomUUID();
                 }
-                headers["x-request-id"] = withdrawRequestIdRef.current;
+                headers["x-request-id"] = withdrawRequestIdsRef.current[withdrawIdKey];
             }
             const res = await fetch("/api/execute-tx", {
                 method: "POST",
@@ -490,7 +506,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                 throw new Error(data.error || "Server transaction execution failed");
             }
             if (action === "withdraw") {
-                withdrawRequestIdRef.current = null;
+                delete withdrawRequestIdsRef.current[withdrawIdKey];
             }
             return data.txHash as string;
         } else {
