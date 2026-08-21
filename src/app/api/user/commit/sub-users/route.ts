@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { consumeDistributedRateLimit } from "@/lib/distributedRateLimit";
+import { haltGuard } from "@/lib/accountHalt";
 import { notifyCommitInvite, resolveInviteeAddress } from "@/lib/dms/commitInvite";
 import {
     CommitAccessError,
@@ -110,6 +111,12 @@ export async function POST(request: Request) {
                 { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } },
             );
         }
+
+        /* Minting a delegation is granting new spending authority over this wallet, so a hold refuses
+           it. Pausing, revoking and rotating an existing delegate stay open: each one reduces what can
+           be spent, and a held account still has to be able to shut a leak down. */
+        const held = await haltGuard(walletAddress);
+        if (held) return held;
 
         const body = await request.json().catch(() => ({}));
         const displayName = typeof body.displayName === "string" ? body.displayName.trim() : null;
