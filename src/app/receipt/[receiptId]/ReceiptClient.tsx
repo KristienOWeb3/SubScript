@@ -383,6 +383,11 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
         || note
         || `Payment to ${merchantName || "a SubScript merchant"}`;
 
+    /* When there is no title the note becomes the headline, and repeating it in the Note row
+       below is the same duplication this page was fixed to stop: the old version showed the
+       receipt id as both the headline and the note. One place each. */
+    const showNote = Boolean(note) && note !== subject;
+
     const statusChrome = receiptConfirmed
         ? "border-emerald-200 bg-emerald-50 text-emerald-800"
         : receiptStatus.tone === "failure"
@@ -456,7 +461,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                         </div>
                         {/* No note, no block. The field used to fall back to the receipt id, which
                             put the same hex string on the page twice. */}
-                        {note && (
+                        {showNote && (
                             <div className="py-4">
                                 <dt className={rowLabel}>Note</dt>
                                 <dd className="mt-1 text-sm leading-relaxed text-[#111827] break-words">{note}</dd>
