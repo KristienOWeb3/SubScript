@@ -253,6 +253,11 @@ export async function POST(request: Request) {
                         beneficiary_address: normalizedBeneficiary,
                         merchant_address: paymentLink.merchant_address.toLowerCase(),
                         amount_usdc: paymentLink.amount_usdc.toString(),
+                        /* What the payer bought, so the receipt page has a subject to lead
+                           with. Sourced from the link this settlement belongs to. */
+                        title: typeof paymentLink.title === "string" && paymentLink.title.trim()
+                            ? paymentLink.title.trim()
+                            : null,
                         memo_note: finalReceiptId,
                         share_url: receiptUrl(finalReceiptId, requestOrigin),
                         status: "CONFIRMED",

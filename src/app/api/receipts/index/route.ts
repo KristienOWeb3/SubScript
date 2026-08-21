@@ -64,16 +64,32 @@ export async function POST(request: Request) {
                 continue;
             }
 
+            /* The on-chain memo carries the receipt id and nothing else, so the subject line
+               has to be recovered from the link that minted that id. payment_links.receipt_token
+               is where it was reserved. A miss leaves title null: an indexed receipt with no
+               matching link genuinely has no recorded subject, and the page says so rather
+               than showing the id. */
+            const { data: linkForReceipt } = await supabaseAdmin
+                .from("payment_links")
+                .select("id, title")
+                .eq("receipt_token", receiptId)
+                .maybeSingle();
+            const indexedTitle = typeof linkForReceipt?.title === "string" && linkForReceipt.title.trim()
+                ? linkForReceipt.title.trim()
+                : null;
+
             const { error: receiptInsertError } = await supabaseAdmin
                 .from("receipts")
                 .insert({
                     receipt_id: receiptId,
+                    payment_link_id: linkForReceipt?.id ?? null,
                     tx_hash: log.transactionHash.toLowerCase(),
                     chain_id: Number((await provider.getNetwork()).chainId),
                     memo_contract: SUBSCRIPT_ROUTER_ADDRESS.toLowerCase(),
                     payer_address: parsedDeposit.args.payer.toLowerCase(),
                     merchant_address: parsedDeposit.args.merchant.toLowerCase(),
                     amount_usdc: BigInt(parsedDeposit.args.amount).toString(),
+                    title: indexedTitle,
                     memo_note: receiptId,
                     share_url: receiptUrl(receiptId, request.headers.get("origin")),
                     status: "CONFIRMED",
