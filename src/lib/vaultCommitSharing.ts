@@ -148,6 +148,9 @@ async function assertCapWithinEscrow(args: {
         where: {
             vaultId: args.vaultId,
             parentCommitId: args.rootId,
+            /* ACTIVE and PAUSED are the two states that still hold an allocation: a paused share can
+               be resumed, so its unspent cap is still promised. HALTED is absent on purpose, not by
+               omission — the root-only CHECK keeps it off child rows, so no share can ever carry it. */
             status: { in: ["ACTIVE", "PAUSED"] },
             ...(args.excludeCommitId ? { commitId: { not: args.excludeCommitId } } : {}),
         },
@@ -302,6 +305,51 @@ async function setVaultShareStatus(
             revokedAt: status === "REVOKED" ? new Date() : null,
         },
     });
+}
+
+/* Re-issue one share's Commit ID without touching anything else about it.
+ *
+ * The proportionate answer to a leaked share. This file's own header says it plainly: the Commit ID
+ * is the whole credential, and a friend needs no account and no wallet to use it. So a leak lets a
+ * stranger drive usage against the primary's escrow up to that share's cap. Revocation was the only
+ * remedy, and it is terminal, so it also cost the spend ledger.
+ *
+ * Rotation keeps all of it, because commit_id is a UNIQUE column separate from the row's id and
+ * spent_usdc, spend_limit_usdc and parent_commit_id all key off id.
+ *
+ * THE OLD ID DIES IMMEDIATELY. No grace window: a window in which the leaked ID still draws escrow
+ * is the condition rotation exists to remove. Whatever the friend pasted into the merchant's
+ * platform stops resolving on the next report, which is the intended effect.
+ *
+ * Authority comes from requireOwnedShare, so it is proven by MeteredVault.userAddress owning the
+ * vault, not by wallet_address on the commit row — which stays null on vault-scoped rows.
+ */
+export async function rotateVaultShareCommitId(userAddress: string, commitId: string) {
+    const share = await requireOwnedShare(userAddress, commitId);
+
+    /* Same 409 as every other mutation here. A revoked share is closed, and giving it a working
+       credential would partly reopen it. */
+    if (share.status === "REVOKED") {
+        throw new CommitAccessError("This share has been revoked and cannot be changed", 409);
+    }
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+        try {
+            /* createCommitRow's collision recovery, reused: only the generated ID can breach a
+               unique constraint on this write, so a fresh one is the whole fix. Concurrent
+               rotations both succeed and the last write wins, which is correct for a leak
+               response — every earlier ID is dead either way. */
+            const rotated = await prisma.userCommit.update({
+                where: { id: share.id },
+                data: { commitId: generateCommitId(), commitIdRotatedAt: new Date() },
+            });
+            return { previousCommitId: share.commitId, share: rotated };
+        } catch (error) {
+            if (!isUniqueViolation(error)) throw error;
+        }
+    }
+
+    throw new Error("Could not allocate a new commit ID for this share");
 }
 
 export function pauseVaultShare(userAddress: string, commitId: string) {

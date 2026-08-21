@@ -2,7 +2,16 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { accountDisplayName } from "@/lib/identityDisplay";
 
-export type CommitStatus = "ACTIVE" | "PAUSED" | "REVOKED";
+/* HALTED is the account holder stopping their own outbound money, and only ever appears on a root
+   commit (SQL CHECK user_commits_halt_root_only). PAUSED is a parent stopping one delegate. The two
+   are disjoint by construction: a root has no parent to pause it, and a delegate cannot self-halt.
+   src/lib/accountHalt.ts explains why halt reuses this column instead of adding a boolean. */
+export type CommitStatus = "ACTIVE" | "PAUSED" | "HALTED" | "REVOKED";
+
+/* The subset a PARENT may write to a delegate. Deliberately excludes HALTED so no parent-facing
+   path can mark a child as a halted account, which the root-only CHECK would reject as an opaque
+   500 anyway. */
+type DelegateStatus = Exclude<CommitStatus, "HALTED">;
 
 /* Crockford base32 — I, L, O and U are omitted so a commit ID read aloud or copied off a
    screen can't be transcribed into a different, valid ID. 32 divides 256 evenly, so masking
@@ -185,6 +194,9 @@ export async function claimSubUser(walletAddress: string, subCommitId: string) {
     if (subUser.walletAddress) {
         throw new CommitAccessError("That invite has already been claimed");
     }
+    /* Covers a HALTED parent without naming it: a primary who stopped their own outbound money is
+       not ACTIVE, so a pending invite under them cannot be claimed until they resume. Claiming is
+       a new authorization, which is exactly what a halt is meant to refuse. */
     if (subUser.status !== "ACTIVE" || (subUser.parent && subUser.parent.status !== "ACTIVE")) {
         throw new CommitAccessError("That invite is no longer active");
     }
@@ -212,7 +224,7 @@ export async function claimSubUser(walletAddress: string, subCommitId: string) {
 async function setSubUserStatus(
     parentWalletAddress: string,
     subCommitId: string,
-    status: CommitStatus,
+    status: DelegateStatus,
 ) {
     const subUser = await requireOwnedSubUser(parentWalletAddress, subCommitId);
 
@@ -242,6 +254,102 @@ export function resumeSubUser(parentWalletAddress: string, subCommitId: string) 
 
 export function revokeSubUser(parentWalletAddress: string, subCommitId: string) {
     return setSubUserStatus(parentWalletAddress, subCommitId, "REVOKED");
+}
+
+/* Re-issue a delegate's Commit ID, keeping everything else about them.
+ *
+ * The answer to a leaked credential. A Commit ID is a bearer token — claimSubUser treats the same
+ * 10 chars as the invite, and a vault share needs no wallet at all — so anyone holding it can spend
+ * against the primary up to that delegate's cap. Before this, the only remedy was revokeSubUser,
+ * which is terminal on purpose, so a leak also cost the spend ledger and a re-onboard.
+ *
+ * Rotation avoids all of that because commit_id is a UNIQUE column separate from the row's id:
+ * parent_commit_id, spend_limit_usdc and spent_usdc all key off id, so writing a new commit_id
+ * preserves identity, cap and ledger exactly.
+ *
+ * THE OLD ID STOPS WORKING THE MOMENT THIS RETURNS. There is no grace window, and adding one would
+ * defeat the point: a grace window is a window in which the leaked credential still spends, which
+ * is the exact condition rotation exists to end. A delegate mid-session gets an error and pastes
+ * the new ID. That is the cost, and it is smaller than the alternative.
+ *
+ * Authority goes through requireOwnedSubUser like every other mutation here, so a delegate can
+ * never rotate a sibling out from under them.
+ */
+export async function rotateSubUserCommitId(parentWalletAddress: string, subCommitId: string) {
+    const subUser = await requireOwnedSubUser(parentWalletAddress, subCommitId);
+
+    /* Matches setSubUserStatus: a revoked delegation is closed, and handing it a working credential
+       would partly reopen it. Reactivation means a fresh sub-user, ledger and all. */
+    if (subUser.status === "REVOKED") {
+        throw new CommitAccessError("This sub-user has been revoked and cannot be changed", 409);
+    }
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+        try {
+            /* Same collision recovery as createSubUser: only the generated ID can breach a unique
+               constraint on this write, so retrying with a fresh one is the whole fix.
+
+               Two concurrent rotations both succeed and the later write wins. That is the right
+               outcome for a leak response: every ID issued before the last one is dead either way. */
+            const rotated = await prisma.userCommit.update({
+                where: { id: subUser.id },
+                data: { commitId: generateCommitId(), commitIdRotatedAt: new Date() },
+            });
+            return { previousCommitId: subUser.commitId, subUser: rotated };
+        } catch (error) {
+            if (!isUniqueViolation(error)) throw error;
+        }
+    }
+
+    throw new Error("Could not allocate a new commit ID for this sub-user");
+}
+
+/* Stop this account's own outbound money, authorized by the caller's own session.
+ *
+ * Pause already covered "a parent stops a delegate". This covers "a user stops themselves", which
+ * had no path at all: the only way to halt outbound money was cancelling every subscription one by
+ * one, and cancelling is destructive where a halt is not.
+ *
+ * requireRootCommit does the authority work. It refuses a delegated identity, which matters twice
+ * here: a sub-user has no account of its own to halt, and the root-only CHECK in SQL would reject
+ * the write as an opaque 500 rather than a clear 403.
+ *
+ * The cascade to delegates is not written anywhere. findInactiveAncestor walks to the root and
+ * tests `status <> 'ACTIVE'`, and recordSubUserSpend's atomic UPDATE carries the same predicate, so
+ * flipping the root to HALTED stops every delegate beneath it as a consequence of statements that
+ * already existed. See src/lib/accountHalt.ts for what a halt does and does not stop.
+ */
+export async function haltOwnAccount(walletAddress: string) {
+    const commit = await requireRootCommit(walletAddress);
+
+    if (commit.status === "REVOKED") {
+        throw new CommitAccessError("This account has been revoked and cannot be changed", 409);
+    }
+    if (commit.status === "HALTED") {
+        throw new CommitAccessError("Your account is already on hold", 409);
+    }
+
+    return prisma.userCommit.update({
+        where: { id: commit.id },
+        data: { status: "HALTED", haltedAt: new Date(), pausedAt: null, revokedAt: null },
+    });
+}
+
+/* Lift a self-halt. Unlike revocation, a halt is reversible — it is a brake, not a decision. */
+export async function resumeOwnAccount(walletAddress: string) {
+    const commit = await requireRootCommit(walletAddress);
+
+    if (commit.status === "REVOKED") {
+        throw new CommitAccessError("This account has been revoked and cannot be changed", 409);
+    }
+    if (commit.status !== "HALTED") {
+        throw new CommitAccessError("Your account isn't on hold", 409);
+    }
+
+    return prisma.userCommit.update({
+        where: { id: commit.id },
+        data: { status: "ACTIVE", haltedAt: null, pausedAt: null, revokedAt: null },
+    });
 }
 
 /* Re-capping an existing delegation. Raising is always safe; lowering is refused once it would
@@ -279,11 +387,24 @@ export type SpendValidation =
     | { allowed: true; remainingUsdc: bigint | null }
     | { allowed: false; reason: string; remainingUsdc: bigint | null };
 
+/* One place to name a non-ACTIVE status, so the four states cannot be described differently by the
+   preflight and by resolveSpendingAuthority. HALTED reads as the account holder's own act, because
+   that is who did it — telling a delegate "paused" when the primary halted the whole account sends
+   them to the wrong person for a fix. */
+function inactiveStatusReason(status: string): string {
+    if (status === "PAUSED") return "This sub-user is paused";
+    if (status === "HALTED") return "This account is on hold";
+    return "This sub-user has been revoked";
+}
+
 /* Walks the whole ancestor chain, not just the immediate parent: pausing a commit has to
    cascade to everything beneath it, and checking one level would let a grandchild keep
    spending under a paused grandparent. createSubUser() now caps depth at one, but rows
    created before that fix can be deeper, so the walk stays general. The depth ceiling is a
-   cycle guard — the self-parent CHECK cannot see longer loops. */
+   cycle guard — the self-parent CHECK cannot see longer loops.
+
+   `status <> 'ACTIVE'` is why a self-halt cascades for free: HALTED on the root is not ACTIVE, so
+   every delegate beneath it stops without this CTE being touched. */
 async function findInactiveAncestor(commitId: string): Promise<boolean> {
     const rows = await prisma.$queryRaw<{ inactive: boolean }[]>`
         WITH RECURSIVE chain AS (
@@ -323,18 +444,21 @@ export async function validateSubUserCanSpend(
         return { allowed: false, reason: "Amount must be greater than zero", remainingUsdc: null };
     }
 
+    /* Also checked before the root shortcut, and for the same class of reason. A halted account is
+       the one case where a ROOT commit's own status has to block a spend, so returning early on
+       "roots are uncapped" would wave the halt straight through. */
+    if (!commit.parentCommitId && commit.status === "HALTED") {
+        return { allowed: false, reason: "This account is on hold", remainingUsdc: null };
+    }
+
     // Root commits spend their own wallet balance; the delegation cap doesn't apply.
     if (!commit.parentCommitId) return { allowed: true, remainingUsdc: null };
 
     if (commit.status !== "ACTIVE") {
-        const reason =
-            commit.status === "PAUSED"
-                ? "This sub-user is paused"
-                : "This sub-user has been revoked";
-        return { allowed: false, reason, remainingUsdc: null };
+        return { allowed: false, reason: inactiveStatusReason(commit.status), remainingUsdc: null };
     }
 
-    // A paused or revoked ancestor must cascade: children cannot outlive the delegation.
+    /* A paused, halted or revoked ancestor must cascade: children cannot outlive the delegation. */
     if (await findInactiveAncestor(commitId)) {
         return { allowed: false, reason: "The parent account is not active", remainingUsdc: null };
     }
@@ -446,6 +570,15 @@ export async function resolveSpendingAuthority(walletAddress: string): Promise<S
     });
 
     if (!commit || !commit.parentCommitId) {
+        /* A wallet with no commit row has never been halted, so it falls through as before. A root
+           that HAS been halted is refused here rather than at the "roots are uncapped" shortcut,
+           which would otherwise let the account holder's own brake be ignored by the one function
+           whose whole job is deciding whose money moves. Callers still gate on
+           assertAccountNotHalted so the refusal happens before gas is reserved; this is the
+           backstop for any path that forgets. */
+        if (commit?.status === "HALTED") {
+            throw new CommitAccessError("Your account is on hold, so payments out are stopped", 403);
+        }
         return { delegated: false, fundingWallet: wallet };
     }
 
@@ -456,10 +589,13 @@ export async function resolveSpendingAuthority(walletAddress: string): Promise<S
         throw new CommitAccessError("This sub-user's parent account is not available", 409);
     }
     if (commit.status !== "ACTIVE") {
-        throw new CommitAccessError(
-            commit.status === "PAUSED" ? "This sub-user is paused" : "This sub-user has been revoked",
-            403,
-        );
+        throw new CommitAccessError(inactiveStatusReason(commit.status), 403);
+    }
+    /* The parent's own state cascades. A halted primary must not fund a delegate's spend, and the
+       parent is the only row that can carry HALTED, so this is the level that matters. Deeper
+       ancestors are covered by findInactiveAncestor on the enforcement path. */
+    if (commit.parent.status === "HALTED") {
+        throw new CommitAccessError("The funding account is on hold, so payments out are stopped", 403);
     }
 
     return {
