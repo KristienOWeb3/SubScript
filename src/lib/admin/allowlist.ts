@@ -22,7 +22,7 @@
  */
 
 export function adminWalletAllowlist(): Set<string> {
-    const raw = process.env.ADMIN_WALLET_ADDRESSES || process.env.ADMIN_WALLET_ADDRESS || "0x497b0e2c08fb93464354e7023f040e088b169a3f";
+    const raw = process.env.ADMIN_WALLET_ADDRESSES || process.env.ADMIN_WALLET_ADDRESS || "";
     return new Set(
         raw
             .split(",")
