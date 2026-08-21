@@ -12,6 +12,8 @@ export function Identity({
     knownAlias,
     className,
     fallbackToAddress = true,
+    fallback,
+    placeholderClassName = "bg-white/15",
 }: {
     address: string | null | undefined;
     /** Alias already loaded by the caller (skips the fetch). */
@@ -19,6 +21,17 @@ export function Identity({
     className?: string;
     /** When no alias, show the shortened address (true) or nothing (false). */
     fallbackToAddress?: boolean;
+    /**
+     * Label to show when the address has no registered name. Overrides the generic
+     * "SubScript account". A receipt is a document someone may forward or file, so it says
+     * `0x1234…5678` rather than naming an account that was never named.
+     */
+    fallback?: string;
+    /**
+     * Tint for the loading bar. Defaults to a white wash, which is what the dark dashboards
+     * need and what a light surface cannot show at all.
+     */
+    placeholderClassName?: string;
 }) {
     const [alias, setAlias] = useState<string | null>(knownAlias ?? null);
     const [isLoading, setIsLoading] = useState<boolean>(!knownAlias && Boolean(address));
@@ -50,11 +63,12 @@ export function Identity({
 
     if (isLoading) {
         return (
-            <span className={`inline-block h-3.5 w-24 rounded bg-white/15 animate-pulse align-middle ${className || ""}`} />
+            <span className={`inline-block h-3.5 w-24 rounded ${placeholderClassName} animate-pulse align-middle ${className || ""}`} />
         );
     }
 
-    const label = accountDisplayName(alias, fallbackToAddress ? "SubScript account" : "");
+    const defaultFallback = fallbackToAddress ? "SubScript account" : "";
+    const label = accountDisplayName(alias, fallback ?? defaultFallback);
     return (
         <span className={className}>
             {label}
