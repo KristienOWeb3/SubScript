@@ -183,6 +183,30 @@ export async function POST(request: Request) {
                 dedupeKey: `subscription-cancel-scheduled:${subscriptionId}`,
             }).catch((err) => console.error("[subscription/cancel] DM notification failed:", err));
 
+            /* And the subscriber's own half of the same event, merchant → subscriber.
+             *
+             * The row above is deliberately third-person and addressed to the merchant, which is
+             * correct for its audience but is not something to show the person who cancelled: their
+             * thread with a merchant is a one-way notification feed drawn in the merchant's voice, so
+             * a merchant-facing row rendered there reads as the merchant narrating their actions back
+             * at them. Two rows rather than a rewrite, the same way pausing a metered service writes
+             * SERVICE_CANCELED to the merchant and SERVICE_PAUSED to the subscriber. The inbox hides
+             * the merchant-facing one from the subscriber (see MERCHANT_OPS_DM_TYPES) so they see
+             * exactly one notice.
+             *
+             * The email added below is the durable receipt; this is the in-app trace. */
+            await createDmAndNotify({
+                senderAddress: sub.merchant,
+                receiverAddress: wallet.toLowerCase(),
+                messageType: "SUBSCRIPTION_CANCELED",
+                status: "APPROVED",
+                title: "Subscription canceled",
+                description: requiresWalletCancellation
+                    ? `Your subscription sub_${subscriptionId} is canceled. You keep access through the period you've already paid for, until ${accessUntil.slice(0, 10)}. One step left — sign the on-chain revocation from your wallet.`
+                    : `Your subscription sub_${subscriptionId} is canceled. You keep access through the period you've already paid for, until ${accessUntil.slice(0, 10)}. We won't take any more payments.`,
+                dedupeKey: `subscription-cancel-scheduled-subscriber:${subscriptionId}`,
+            }).catch((err) => console.error("[subscription/cancel] subscriber DM notification failed:", err));
+
             if (requiresWalletCancellation) {
                 /* Do NOT claim the cancellation is safely scheduled: the connected wallet must
                    sign cancelSubscription itself. The revocation_pending row keeps the retry
@@ -315,6 +339,19 @@ export async function POST(request: Request) {
             description: `Subscription sub_${subscriptionId} was canceled by the subscriber.`,
             dedupeKey: `subscription-cancel-immediate:${subscriptionId}`,
         }).catch((err) => console.error("[subscription/cancel] DM notification failed:", err));
+
+        /* Subscriber's half of the same event, as in the mid-period branch above. No paid-through
+           date here: the period had already lapsed, so access is over now and saying otherwise
+           would promise time that does not exist. */
+        await createDmAndNotify({
+            senderAddress: sub.merchant,
+            receiverAddress: wallet.toLowerCase(),
+            messageType: "SUBSCRIPTION_CANCELED",
+            status: "APPROVED",
+            title: "Subscription canceled",
+            description: `Your subscription sub_${subscriptionId} is canceled. Access has ended and we won't take any more payments.`,
+            dedupeKey: `subscription-cancel-immediate-subscriber:${subscriptionId}`,
+        }).catch((err) => console.error("[subscription/cancel] subscriber DM notification failed:", err));
 
         /* Fire the merchant's exit survey (no-op if the merchant disabled it). */
         await triggerExitSurvey(sub.merchant, wallet.toLowerCase(), subscriptionId).catch((err) =>

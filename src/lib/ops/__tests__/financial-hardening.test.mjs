@@ -278,7 +278,10 @@ test("custody money-moving calls carry attempt-scoped deterministic idempotency 
     /* Vault commits graduated from a ref-only key to a localStorage-durable intent id that
        survives reloads (see vault-commit-idempotency tests for the full contract). */
     assert.match(dashboard, /storedIntent\?\.requestId \|\| vaultCommitRequestKey\.current \|\| crypto\.randomUUID\(\)/);
-    assert.match(dashboard, /subscribeRequestKey\.current \|\|= crypto\.randomUUID\(\)/);
+    /* Subscribing moved from dashboard to /subscribe/[planId]. The dashboard had a stable ref-keyed
+       idempotency key for first subscribes; that's gone along with the transacting handler. The
+       checkout page kept its own key. */
+    assert.doesNotMatch(dashboard, /subscribeRequestKey/);
     assert.match(subscribeClient, /subscribeRequestKey\.current \|\|= crypto\.randomUUID\(\)/);
 });
 
