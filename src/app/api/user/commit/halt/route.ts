@@ -6,8 +6,8 @@ import { consumeDistributedRateLimit } from "@/lib/distributedRateLimit";
 import { onActiveContract } from "@/lib/subscriptions/contractBinding";
 import {
     CommitAccessError,
-    getOrCreateCommitForWallet,
     haltOwnAccount,
+    requireRootCommit,
     resumeOwnAccount,
 } from "@/lib/commitId";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
@@ -62,12 +62,15 @@ async function guardHaltRate(walletAddress: string) {
 
 /* What a hold on this wallet touches, and which of it keeps running.
  *
+ * Takes the caller's already-resolved root commit, because every caller has to prove they own one
+ * before they get here. Reading it again would be a second query for an answer we hold.
+ *
  * Two kinds of bounded commitment count, and both were agreed to before the hold:
  *   - MeteredVault.lockedUntil, the service lock window from the Merchant Protection Layer.
  *   - Subscription.minCommitmentUntil, snapshotted at subscribe time and capped at one period.
  * Unsettled accrued usage also counts: the merchant already rendered it, and a hold is not a way to
  * take delivery and then refuse to pay. */
-async function summarizeExposure(walletAddress: string) {
+async function summarizeExposure(walletAddress: string, rootCommitId: string) {
     const wallet = walletAddress.toLowerCase();
     const now = new Date();
 
@@ -88,12 +91,10 @@ async function summarizeExposure(walletAddress: string) {
             where: { ...onActiveContract(), subscriber: wallet, status: "ACTIVE" },
             select: { subscriptionId: true, merchantAddress: true, minCommitmentUntil: true },
         }),
-        getOrCreateCommitForWallet(wallet).then(root =>
-            prisma.userCommit.findMany({
-                where: { parentCommitId: root.id, status: { in: ["ACTIVE", "PAUSED"] } },
-                select: { commitId: true, displayName: true },
-            }),
-        ),
+        prisma.userCommit.findMany({
+            where: { parentCommitId: rootCommitId, status: { in: ["ACTIVE", "PAUSED"] } },
+            select: { commitId: true, displayName: true },
+        }),
     ]);
 
     const commitmentByMerchant = new Map<string, Date>();
@@ -168,8 +169,12 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Unauthorized: Connect wallet first" }, { status: 401 });
         }
 
-        const commit = await getOrCreateCommitForWallet(walletAddress);
-        const exposure = await summarizeExposure(walletAddress);
+        /* requireRootCommit, not getOrCreateCommitForWallet. A delegate has no account of its own to
+           hold, and resolving their own child row here would answer "not on hold" to someone whose
+           root may well BE on hold. That is a wrong answer, not a harmless one. Refusing with the
+           same 403 the other commit routes give a delegate is the honest reply. */
+        const commit = await requireRootCommit(walletAddress);
+        const exposure = await summarizeExposure(walletAddress, commit.id);
 
         /* The UI needs the honest version of what a hold will and won't stop, so it can say so
            before the user commits to it rather than after. */
@@ -207,10 +212,12 @@ export async function POST(request: Request) {
         const limited = await guardHaltRate(walletAddress);
         if (limited) return limited;
 
-        /* Read the exposure BEFORE the write. Afterwards a keeper may already have skipped a
-           renewal, and the merchant notice would then describe a state the user never saw. */
-        const exposure = await summarizeExposure(walletAddress);
+        /* Write first, then summarise. haltOwnAccount goes through requireRootCommit, so a delegate
+           is refused here rather than after an exposure read it was never entitled to trigger.
+           Reading afterwards is safe: the hold writes one status column, and everything the summary
+           reads (vault lock windows, minCommitmentUntil, the delegate list) is untouched by it. */
         const commit = await haltOwnAccount(walletAddress);
+        const exposure = await summarizeExposure(walletAddress, commit.id);
         const haltedAt = commit.haltedAt ?? new Date();
 
         const merchants = [...new Set([
@@ -258,7 +265,7 @@ export async function DELETE(request: Request) {
         if (limited) return limited;
 
         const commit = await resumeOwnAccount(walletAddress);
-        const exposure = await summarizeExposure(walletAddress);
+        const exposure = await summarizeExposure(walletAddress, commit.id);
         const resumedAt = new Date();
         const correlationId = request.headers.get("x-request-id")?.trim() || crypto.randomUUID();
 

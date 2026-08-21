@@ -120,8 +120,11 @@ async function requireOwnedSubUser(parentWalletAddress: string, subCommitId: str
    getOrCreateCommitForWallet() matches on wallet_address, which sub-user rows may also carry,
    so without this a capped sub-user could pass its own address as parentWalletAddress and mint
    itself an uncapped grandchild — escaping its cap, since debits only ever touch the row they
-   are charged to. Delegation is therefore exactly one level deep: only roots grant authority. */
-async function requireRootCommit(walletAddress: string) {
+   are charged to. Delegation is therefore exactly one level deep: only roots grant authority.
+
+   Exported so routes whose subject is the account itself, rather than one of its delegates, can
+   reuse the same refusal instead of reimplementing it. It only ever narrows access. */
+export async function requireRootCommit(walletAddress: string) {
     const commit = await getOrCreateCommitForWallet(walletAddress);
     if (commit.parentCommitId) {
         throw new CommitAccessError("A sub-user account cannot manage sub-users of its own", 403);

@@ -520,12 +520,23 @@ test("a hold gates spending only, never sign-in or reading", () => {
 
 test("every outbound-money path this change covers carries the gate", () => {
     const gated = [
+        /* The caller's own wallet or escrow. */
         "src/app/api/user/wallet/send/route.ts",
         "src/app/api/user/subscription/subscribe/route.ts",
+        "src/app/api/user/subscription/upgrade/route.ts",
+        "src/app/api/user/subscription/change/route.ts",
+        "src/app/api/user/subscription/resume/route.ts",
+        "src/app/api/user/payment-links/[id]/pay/route.ts",
+        "src/app/api/execute-tx/route.ts",
         "src/app/api/user/vault/commit/route.ts",
         "src/app/api/user/vault/shares/route.ts",
         "src/app/api/user/vault/auto-topup/route.ts",
         "src/app/api/user/commit/sub-users/route.ts",
+        /* Batch payouts out of an organization's wallet. */
+        "src/app/api/merchant/payroll/route.ts",
+        "src/app/api/merchant/payroll/permit-sign/route.ts",
+        "src/app/api/internal/payroll/route.ts",
+        /* Unattended jobs. */
         "src/app/api/keeper/vault-topup/route.ts",
         "src/app/api/keeper/vault-draw/route.ts",
         "src/app/api/cron/customer-billing/route.ts",
@@ -535,9 +546,60 @@ test("every outbound-money path this change covers carries the gate", () => {
         assert.match(source(path), /@\/lib\/accountHalt/, `${path} must import the halt gate`);
     }
 
+    /* Action-scoped gates, where a blanket one would block a brake. Payroll PUT carries PAUSE
+       alongside RESUME and UPDATE_PERMIT, and a held organization must still be able to pause. */
+    const payroll = source("src/app/api/merchant/payroll/route.ts");
+    assert.match(payroll, /action === "RESUME" \|\| action === "UPDATE_PERMIT"/);
+
+    /* execute-tx keeps the withdrawal hold ahead of the account hold in both branches, so the
+       operator-placed freeze is still the first thing that answers. */
+    const executeTx = source("src/app/api/execute-tx/route.ts");
+    assert.ok(
+        executeTx.indexOf('assertWithdrawalAllowed(wallet, "MERCHANT")')
+            < executeTx.indexOf("assertAccountNotHalted(wallet)"),
+    );
+
+    /* The upgrade preview is a read, so only POST is gated. If the guard ever moves into the shared
+       auth helper it would start refusing GET too. */
+    const upgrade = source("src/app/api/user/subscription/upgrade/route.ts");
+    assert.doesNotMatch(
+        upgrade.slice(upgrade.indexOf("async function requireSubscriber"), upgrade.indexOf("export async function GET")),
+        /haltGuard/,
+    );
+
     /* Rotation must not have quietly acquired a grace window, and the ID format must be untouched. */
     const commitId = source("src/lib/commitId.ts");
     assert.match(commitId, /COMMIT_ID_ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz"/);
     assert.match(commitId, /COMMIT_ID_BODY_LENGTH = 10/);
     assert.match(commitId, /THE OLD ID STOPS WORKING THE MOMENT THIS RETURNS/);
+});
+
+test("a delegate is refused the account hold endpoint rather than told it is not on hold", async () => {
+    const lib = loadModules([PARENT, child()]);
+
+    /* requireRootCommit is what GET and both mutations lean on. Answering a delegate with their own
+       child row would report "not on hold" to someone whose root may well be halted. */
+    await assert.rejects(
+        () => lib.requireRootCommit("0xchild"),
+        (error) => error.name === "CommitAccessError" && error.httpStatus === 403,
+    );
+
+    const root = await lib.requireRootCommit("0xparent");
+    assert.equal(root.id, PARENT.id);
+
+    const halt = source("src/app/api/user/commit/halt/route.ts");
+    assert.match(halt, /requireRootCommit\(walletAddress\)/);
+    /* Calling getOrCreateCommitForWallet would resolve a delegate's own row and defeat the refusal.
+       Matched with the paren so the route's comment naming it stays allowed. */
+    assert.doesNotMatch(halt, /getOrCreateCommitForWallet\(/);
+    /* The write proves authority before anything is summarised, so a delegate triggers no reads.
+       Sliced to POST: GET legitimately summarises before POST's body appears in the file. */
+    const postBlock = halt.slice(
+        halt.indexOf("export async function POST"),
+        halt.indexOf("export async function DELETE"),
+    );
+    assert.ok(postBlock.length > 0);
+    assert.ok(
+        postBlock.indexOf("haltOwnAccount(walletAddress)") < postBlock.indexOf("summarizeExposure("),
+    );
 });
