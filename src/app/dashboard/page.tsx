@@ -223,7 +223,6 @@ export default function DashboardPage() {
     const [planDetailsUrl, setPlanDetailsUrl] = useState("");
     const [planAmountUsdc, setPlanAmountUsdc] = useState("");
     const [planPeriodDays, setPlanPeriodDays] = useState("30");
-    const [planMinCommitmentDays, setPlanMinCommitmentDays] = useState("");
     const [planError, setPlanError] = useState<string | null>(null);
     const [planSuccess, setPlanSuccess] = useState<string | null>(null);
 
@@ -1243,12 +1242,6 @@ export default function DashboardPage() {
             setPlanError("Details link must start with http:// or https://");
             return;
         }
-        const commitmentDays = planMinCommitmentDays === "" ? 0 : Number(planMinCommitmentDays);
-        const commitmentCap = Math.min(30, Number(planPeriodDays));
-        if (!Number.isFinite(commitmentDays) || commitmentDays < 0 || commitmentDays > commitmentCap) {
-            setPlanError(`Minimum commitment must be between 0 and ${commitmentCap} days (one billing period, capped at 30).`);
-            return;
-        }
 
         setIsPlansLoading(true);
         try {
@@ -1261,7 +1254,13 @@ export default function DashboardPage() {
                     detailsUrl: trimmedDetailsUrl || undefined,
                     amountUsdc: planAmountUsdc,
                     periodDays: Number(planPeriodDays),
-                    minCommitmentDays: commitmentDays > 0 ? commitmentDays : undefined,
+                    /* minCommitmentDays is deliberately absent. Nothing ever enforced it — the cancel
+                       route never reads min_commitment_until, and no contract signature takes a
+                       commitment argument — so from this form it was a promise to customers the
+                       product could not keep. The column stays (NOT NULL DEFAULT 0) and API callers
+                       can still set it via /api/v1/plans, which is where a merchant who genuinely
+                       wants one can disclose it. Omitting the key is the path this form already took
+                       whenever the field was left blank. */
                 }),
             });
             const data = await res.json().catch(() => ({}));
@@ -1271,7 +1270,6 @@ export default function DashboardPage() {
             setPlanDetailsUrl("");
             setPlanAmountUsdc("");
             setPlanPeriodDays("30");
-            setPlanMinCommitmentDays("");
             setPlanSuccess("Plan created. Copy its subscribe link below and share it with customers.");
             setToastMessage("Plan Created");
             setShowToast(true);
@@ -3150,21 +3148,6 @@ Please complete the following implementation tasks:
                                     className="w-full rounded-xl border border-black/15 bg-white px-4 py-3 text-black transition-colors focus:border-[#8AB4DB] focus:outline-none"
                                 />
                             </div>
-                        </div>
-
-                        <div className="space-y-1">
-                            <label className="text-black/60 font-semibold text-[10px] tracking-wide">
-                                Minimum Commitment (days) <span className="normal-case text-black/40">(optional, disclosed to subscribers before they authorize; max one billing period, capped at 30 days)</span>
-                            </label>
-                            <input
-                                type="number"
-                                min="0"
-                                max="30"
-                                value={planMinCommitmentDays}
-                                onChange={(event) => setPlanMinCommitmentDays(event.target.value)}
-                                placeholder="0 = no commitment"
-                                className="w-full rounded-xl border border-black/15 bg-white px-4 py-3 text-black transition-colors focus:border-[#8AB4DB] focus:outline-none"
-                            />
                         </div>
 
                         <div className="space-y-1">

@@ -1,15 +1,35 @@
-import { Resend } from "resend";
+/*
+ * The original eight transactional templates.
+ *
+ * The layout shell, the escaping, the sender, the rate limiter, and the recipient lookup
+ * moved to ./core.ts so that adding a template no longer means editing code every other
+ * template depends on. Re-exported below for callers that still import them from here.
+ */
+
 import crypto from "crypto";
 import { pgMaybeOne } from "@/lib/serverPg";
-import { assertProviderRateLimit } from "@/lib/providerRateLimit";
+import { merchantDisplayName } from "@/lib/identityDisplay";
+import {
+    formatUsdc,
+    getWalletEmailPreference,
+    htmlEscape,
+    renderEmailLayout,
+    safelySendEmail,
+    sendTransactionalEmail,
+    shortAddress,
+    type WalletEmailPreference,
+} from "./core";
 
-type EmailMessage = {
-    to: string;
-    subject: string;
-    html: string;
-    text: string;
-    idempotencyKey: string;
+export {
+    safelySendEmail,
+    sendTransactionalEmail,
+    renderEmailLayout,
+    htmlEscape,
+    formatUsdc,
+    shortAddress,
+    getWalletEmailPreference,
 };
+export type { WalletEmailPreference, EmailCategory, EmailSendOutcome } from "./core";
 
 type PaymentReceipt = {
     recipient: string;
@@ -20,120 +40,20 @@ type PaymentReceipt = {
     merchantAddress: string;
     payerAddress: string;
     paymentTitle?: string | null;
+    /**
+     * The merchant's registered name, resolved from address_aliases by
+     * sendPaymentReceiptEmails. Never the merchant_name supplied with an individual checkout:
+     * that field is branding metadata and must not be able to name a different payee.
+     */
+    merchantName?: string | null;
     txHash: string;
 };
-
-const htmlEscape = (value: string) => value.replace(/[&<>'"]/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    "'": "&#39;",
-    "\"": "&quot;",
-}[character] || character));
-
-/*
- * Shared responsive email shell (SUB-601). Table-based and inline-styled because Gmail/Outlook
- * strip <style> blocks, flexbox, and most modern CSS. Dark page (#08090a) with a white card,
- * #00d2b4 accent + buttons, and an Outfit/Inter font stack that degrades to system sans-serif
- * (web fonts don't load in most email clients, so the fallback is what actually renders).
- */
-const EMAIL_FONT_STACK = "'Outfit','Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
-
-function renderEmailLayout(opts: {
-    previewText: string;
-    heading: string;
-    bodyHtml: string;
-    cta?: { label: string; url: string };
-}): string {
-    const button = opts.cta
-        ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:28px 0 4px">
-             <tr><td style="border-radius:9999px;background:#00d2b4">
-               <a href="${htmlEscape(opts.cta.url)}" style="display:inline-block;padding:13px 30px;font-family:${EMAIL_FONT_STACK};font-size:14px;font-weight:700;color:#08090a;text-decoration:none;border-radius:9999px">${htmlEscape(opts.cta.label)}</a>
-             </td></tr>
-           </table>`
-        : "";
-
-    return `<!DOCTYPE html>
-<html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light dark"><meta name="supported-color-schemes" content="light dark">
-</head>
-<body style="margin:0;padding:0;background:#08090a">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0">${htmlEscape(opts.previewText)}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#08090a;padding:32px 16px">
-  <tr><td align="center">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%">
-      <tr><td style="padding:8px 4px 20px">
-        <span style="font-family:${EMAIL_FONT_STACK};font-size:20px;font-weight:800;letter-spacing:-0.5px;color:#ffffff">Sub<span style="color:#00d2b4">Script</span></span>
-      </td></tr>
-      <tr><td style="background:#ffffff;border-radius:20px;padding:36px 34px">
-        <h1 style="margin:0 0 16px;font-family:${EMAIL_FONT_STACK};font-size:22px;font-weight:800;color:#08090a;letter-spacing:-0.4px">${htmlEscape(opts.heading)}</h1>
-        <div style="font-family:${EMAIL_FONT_STACK};font-size:15px;line-height:1.6;color:#3a3d44">${opts.bodyHtml}</div>
-        ${button}
-      </td></tr>
-      <tr><td style="padding:22px 4px;font-family:${EMAIL_FONT_STACK};font-size:12px;line-height:1.6;color:#6b7280">
-        Programmable USDC payments on Arc. You're receiving this because your email is linked to a SubScript account.
-      </td></tr>
-    </table>
-  </td></tr>
-</table>
-</body></html>`;
-}
-
-function configuredSender() {
-    const sender = process.env.EMAIL_FROM;
-    if (sender) return sender;
-    if (process.env.NODE_ENV !== "production") return "SubScript <onboarding@resend.dev>";
-    throw new Error("EMAIL_FROM must be configured with a verified Resend sending domain in production");
-}
-
-function formatUsdc(value: bigint | string | number) {
-    const amount = typeof value === "bigint" ? value : BigInt(value);
-    const microUsdc = BigInt(1_000_000);
-    const whole = amount / microUsdc;
-    const fractional = (amount % microUsdc).toString().padStart(6, "0").replace(/0+$/, "");
-    return fractional ? `${whole}.${fractional}` : whole.toString();
-}
-
-async function sendTransactionalEmail(message: EmailMessage) {
-    const apiKey = process.env.RESEND_API_KEY;
-    if (!apiKey) throw new Error("RESEND_API_KEY is not configured");
-
-    assertProviderRateLimit({
-        provider: "resend",
-        key: "global",
-        limit: 120,
-        windowMs: 60 * 1000,
-    });
-    assertProviderRateLimit({
-        provider: "resend",
-        key: `recipient:${message.to.toLowerCase()}`,
-        limit: 5,
-        windowMs: 60 * 60 * 1000,
-    });
-
-    const resend = new Resend(apiKey);
-    const response = await resend.emails.send({
-        from: configuredSender(),
-        to: message.to,
-        subject: message.subject,
-        html: message.html,
-        text: message.text,
-    }, {
-        idempotencyKey: message.idempotencyKey,
-    });
-
-    if (response.error) {
-        throw new Error(response.error.message || "Resend rejected the email");
-    }
-
-    return response.data?.id || null;
-}
 
 export async function sendAuthenticationCodeEmail(email: string, code: string) {
     const safeCode = htmlEscape(code);
     return sendTransactionalEmail({
         to: email,
+        category: "security",
         subject: "Your SubScript verification code",
         text: `Your SubScript verification code is ${code}. It expires in 10 minutes. If you did not request it, you can ignore this email.`,
         html: renderEmailLayout({
@@ -149,7 +69,7 @@ export async function sendAuthenticationCodeEmail(email: string, code: string) {
 
 export async function sendSignInAlertEmail(
     email: string,
-    details: { provider: string; when?: Date }
+    details: { provider: string; when?: Date; deviceLabel?: string | null; locationLabel?: string | null }
 ) {
     const providerLabel = details.provider === "google"
         ? "Google"
@@ -158,20 +78,54 @@ export async function sendSignInAlertEmail(
             : details.provider;
     const when = (details.when || new Date()).toUTCString();
     const safeProvider = htmlEscape(providerLabel);
+
+    /* Device and location are what make this email actionable — "someone signed in" is not
+       something a person can judge, "signed in from Chrome on Windows, Frankfurt" is. Both
+       are optional because a request can arrive without a usable User-Agent or geo header,
+       and a partial alert still beats no alert. */
+    const contextRows = [
+        details.deviceLabel ? { label: "Device", value: details.deviceLabel } : null,
+        details.locationLabel ? { label: "Location", value: details.locationLabel } : null,
+        { label: "When", value: when },
+    ].filter(Boolean) as Array<{ label: string; value: string }>;
+
+    const contextHtml = contextRows
+        .map((row) => `<p style="margin:0 0 6px;font-size:13px"><span style="color:#6b7280">${htmlEscape(row.label)}</span> &nbsp;<strong style="color:#08090a">${htmlEscape(row.value)}</strong></p>`)
+        .join("");
+    const contextText = contextRows.map((row) => `${row.label}: ${row.value}`).join("\n");
+
     return sendTransactionalEmail({
         to: email,
+        category: "security",
         subject: "New sign-in to your SubScript account",
-        text: `Your SubScript account was just signed in to using Continue with ${providerLabel} at ${when}. If this was you, no action is needed. If you don't recognize this sign-in, secure your email account immediately.`,
+        text: `Your SubScript account was just signed in to using ${providerLabel}.\n\n${contextText}\n\nIf this was you, no action is needed. If you don't recognize this sign-in, secure your email account immediately.`,
         html: renderEmailLayout({
-            previewText: `New sign-in using Continue with ${providerLabel}`,
+            previewText: `New sign-in using ${providerLabel}`,
             heading: "New sign-in detected",
-            bodyHtml: `<p style="margin:0 0 12px">Your SubScript account was just signed in to using <strong style="color:#08090a">Continue with ${safeProvider}</strong>.</p>
-                <p style="margin:0 0 18px;color:#6b7280;font-size:13px">${htmlEscape(when)}</p>
+            bodyHtml: `<p style="margin:0 0 14px">Your SubScript account was just signed in to using <strong style="color:#08090a">${safeProvider}</strong>.</p>
+                <div style="margin:0 0 18px;padding:14px 16px;background:#f4f6f8;border-radius:12px">${contextHtml}</div>
                 <p style="margin:0">If this was you, no action is needed. If you don't recognize this sign-in, secure your email account immediately.</p>`,
         }),
-        // Bucket by the minute so a rapid retry de-dupes, but later genuine sign-ins still alert.
-        // Hash the email so recipient PII isn't duplicated into the provider-visible Idempotency-Key header.
-        idempotencyKey: `signin-alert:${crypto.createHash("sha256").update(email.toLowerCase()).digest("hex").slice(0, 16)}:${details.provider}:${Math.floor(Date.now() / 60000)}`,
+        /* Bucket by the minute so a rapid retry de-dupes, but later genuine sign-ins still alert.
+           Hash the email so recipient PII isn't duplicated into the provider-visible
+           Idempotency-Key header.
+
+           The device and location are folded in too, because without them the key was
+           provider-plus-minute: two different devices signing in during the same minute collided,
+           and Resend suppressed the second alert as a duplicate. On a security notification that
+           is the wrong way round — the whole point of the email is that a sign-in the account
+           holder doesn't recognise reaches them, and the unrecognised one is exactly the one most
+           likely to arrive alongside a legitimate sign-in. */
+        idempotencyKey: [
+            "signin-alert",
+            crypto.createHash("sha256").update(email.toLowerCase()).digest("hex").slice(0, 16),
+            details.provider,
+            crypto.createHash("sha256")
+                .update(`${details.deviceLabel || "unknown-device"}|${details.locationLabel || "unknown-location"}`)
+                .digest("hex")
+                .slice(0, 12),
+            Math.floor(Date.now() / 60000),
+        ].join(":"),
     });
 }
 
@@ -179,6 +133,7 @@ export async function sendWelcomeEmail(email: string, role: "USER" | "ENTERPRISE
     const audience = role === "ENTERPRISE" ? "merchant" : "user";
     return sendTransactionalEmail({
         to: email,
+        category: "lifecycle",
         subject: "Welcome to SubScript",
         text: `Your SubScript ${audience} account is ready. Wallet: ${walletAddress}`,
         html: renderEmailLayout({
@@ -194,51 +149,52 @@ export async function sendWelcomeEmail(email: string, role: "USER" | "ENTERPRISE
 
 export async function sendPaymentReceiptEmail(receipt: PaymentReceipt) {
     const amount = formatUsdc(receipt.amountUsdc);
-    const title = receipt.paymentTitle ? htmlEscape(receipt.paymentTitle) : "SubScript payment";
-    const perspective = receipt.recipientKind === "payer" ? "Your payment is confirmed" : "You received a payment";
+    /* Who was paid, in words. Falls back to a shortened address rather than a full one: an
+       inbox is a place where a 42-character hex string is pure noise. */
+    const paidTo = receipt.merchantName?.trim()
+        || `${receipt.merchantAddress.slice(0, 6)}…${receipt.merchantAddress.slice(-4)}`;
+    /* Same subject the receipt page leads with, and the same fallback order, so the email and
+       the page agree on what this payment was. The receipt id is not in this chain. */
+    const subject = receipt.paymentTitle?.trim() || `Payment to ${paidTo}`;
+    const lead = receipt.recipientKind === "payer"
+        ? `Your payment to ${htmlEscape(paidTo)} went through.`
+        : "This payment has landed in your account.";
+    const emailSubject = receipt.recipientKind === "payer"
+        ? `Your receipt: ${subject}`
+        : `You got paid: ${subject}`;
     return sendTransactionalEmail({
         to: receipt.recipient,
-        subject: `${perspective}: ${amount} USDC`,
-        text: `${perspective}. ${title}: ${amount} USDC. Receipt: ${receipt.receiptUrl}. Transaction: ${receipt.txHash}`,
+        category: "transactional",
+        subject: emailSubject,
+        text: `${subject}. ${amount} USDC. ${receipt.recipientKind === "payer" ? `Paid to ${paidTo}.` : "Paid into your account."} Open your receipt: ${receipt.receiptUrl} (reference ${receipt.receiptId})`,
         html: renderEmailLayout({
-            previewText: `${perspective}: ${amount} USDC`,
-            heading: perspective,
-            bodyHtml: `<p style="margin:0 0 16px">${title}</p>
-                <div style="margin:0 0 8px;padding:18px 20px;background:#f4f6f8;border-radius:14px">
+            previewText: `${subject} · ${amount} USDC`,
+            heading: subject,
+            bodyHtml: `<p style="margin:0 0 16px">${lead}</p>
+                <div style="margin:0 0 14px;padding:18px 20px;background:#f4f6f8;border-radius:14px">
                     <span style="font-size:28px;font-weight:800;color:#08090a">${amount}</span>
                     <span style="font-size:15px;font-weight:700;color:#00a892;margin-left:6px">USDC</span>
                 </div>
-                <p style="margin:0;color:#6b7280;font-size:12px">Receipt ${htmlEscape(receipt.receiptId)}</p>`,
-            cta: { label: "View private receipt", url: receipt.receiptUrl },
+                <p style="margin:0;color:#6b7280;font-size:12px">Reference ${htmlEscape(receipt.receiptId)} · keep it if you need to ask us about this payment</p>`,
+            cta: { label: "Open your receipt", url: receipt.receiptUrl },
         }),
         idempotencyKey: `payment-receipt:${receipt.recipientKind}:${receipt.txHash}:${receipt.recipient}`,
     });
 }
 
-export async function safelySendEmail(action: string, send: () => Promise<unknown>) {
+/** The merchant's registered handle, or null when there is none or it is marked anonymous. */
+async function getMerchantAliasName(merchantAddress: string): Promise<string | null> {
     try {
-        await send();
+        const row = await pgMaybeOne<{ alias: string | null; is_anonymous: boolean | null }>(
+            `select alias, is_anonymous from address_aliases where address = $1 limit 1`,
+            [merchantAddress.toLowerCase()]
+        );
+        if (!row?.alias || row.is_anonymous) return null;
+        return merchantDisplayName(row.alias);
     } catch (error) {
-        // Avoid logging recipient addresses or email content in server logs.
-        console.error(`Transactional email failed: ${action}`, error instanceof Error ? error.message : "Unknown error");
+        console.error("Merchant name lookup failed", error instanceof Error ? error.message : "Unknown error");
+        return null;
     }
-}
-
-type WalletEmailPreference = {
-    email: string | null;
-    email_enabled: boolean | null;
-};
-
-async function getWalletEmailPreference(walletAddress: string) {
-    return pgMaybeOne<WalletEmailPreference>(
-        `select embedded.email, coalesce(customer.email_enabled, merchant.email_enabled, true) as email_enabled
-         from user_embedded_wallets embedded
-         left join customers customer on customer.wallet_address = embedded.wallet_address
-         left join merchants merchant on merchant.wallet_address = embedded.wallet_address
-         where embedded.wallet_address = $1
-         limit 1`,
-        [walletAddress.toLowerCase()]
-    );
 }
 
 export async function sendPaymentReceiptEmails(input: Omit<PaymentReceipt, "recipient" | "recipientKind">) {
@@ -254,6 +210,13 @@ export async function sendPaymentReceiptEmails(input: Omit<PaymentReceipt, "reci
         return;
     }
 
+    /* Resolved here rather than passed in by the caller, for the same reason the settlement
+       worker resolves it for the receipt DM: identity comes from the database, never from the
+       merchant_name a checkout submitted. An anonymous alias counts as no name, matching what
+       the UI does, so a merchant who hid their handle is not named by email either. A failed
+       lookup is not worth failing a receipt over — the email falls back to a short address. */
+    const merchantName = await getMerchantAliasName(input.merchantAddress);
+
     const recipients = [
         { preference: payer, recipientKind: "payer" as const },
         { preference: merchant, recipientKind: "merchant" as const },
@@ -266,6 +229,7 @@ export async function sendPaymentReceiptEmails(input: Omit<PaymentReceipt, "reci
         sentTo.add(email);
         await safelySendEmail(`payment receipt for ${recipientKind}`, () => sendPaymentReceiptEmail({
             ...input,
+            merchantName: input.merchantName ?? merchantName,
             recipient: email,
             recipientKind,
         }));
@@ -304,11 +268,12 @@ export async function sendSubscriptionCancellationReasonEmail(input: {
     const email = merchant?.email?.toLowerCase();
     if (!email || merchant?.email_enabled === false) return;
 
-    const shortCustomer = `${input.customerAddress.slice(0, 6)}...${input.customerAddress.slice(-4)}`;
+    const shortCustomer = shortAddress(input.customerAddress);
     const subLine = input.subscriptionId ? ` (subscription #${input.subscriptionId})` : "";
 
     await safelySendEmail("subscription cancellation reason", () => sendTransactionalEmail({
         to: email,
+        category: "transactional",
         subject: `A subscriber cancelled — reason: ${label}`,
         text: `A customer (${shortCustomer}) cancelled their subscription${subLine}.\n\nReason given: ${label}\n\nYou're receiving this because the customer chose to share why. Customers who prefer not to answer are never reported.`,
         html: renderEmailLayout({
@@ -337,8 +302,8 @@ export async function sendPlatformFlagChangeEmail(input: {
 }) {
     const when = (input.timestamp || new Date()).toUTCString();
     const actorLabel = input.actorAlias
-        ? `${input.actorAlias} (${input.actorWallet.slice(0, 6)}...${input.actorWallet.slice(-4)})`
-        : `${input.actorWallet.slice(0, 6)}...${input.actorWallet.slice(-4)}`;
+        ? `${input.actorAlias} (${shortAddress(input.actorWallet)})`
+        : shortAddress(input.actorWallet);
 
     const flagNameSafe = htmlEscape(input.flagName);
     const actorSafe = htmlEscape(actorLabel);
@@ -347,6 +312,7 @@ export async function sendPlatformFlagChangeEmail(input: {
 
     await safelySendEmail("platform flag change alert", () => sendTransactionalEmail({
         to: input.adminEmail,
+        category: "ops",
         subject: `[SubScript Security Alert] Global Switch Toggled: ${input.flagName}`,
         text: `SubScript Security Alert\n\nGlobal Switch: ${input.flagName}\nToggled by: ${actorLabel}\nPrevious Value: ${input.previousValue}\nNew Value: ${input.newValue}\nTimestamp: ${when}\n\nThis notification is sent to all registered platform administrators.`,
         html: renderEmailLayout({
@@ -389,6 +355,7 @@ export async function sendMerchantAccessGrantedEmail(input: {
 
     await safelySendEmail("merchant access granted", () => sendTransactionalEmail({
         to: input.email,
+        category: "transactional",
         subject: "Your SubScript merchant account is approved",
         text: `${greeting}\n\nYou're approved to open a SubScript merchant account.\n\nOpen this link and sign up with ${input.email}:\n${input.inviteUrl}\n\nThe invite only works for ${input.email}, so there's no point forwarding it. Sign up with email or Google using that address.\n\n${input.note ? `${input.note}\n\n` : ""}Questions? Reply to this email or DM us @SubScript_onarc.`,
         html: renderEmailLayout({
@@ -418,13 +385,14 @@ export async function sendSupportTicketAlertEmail(input: {
     creatorRole: string;
     messagePreview: string;
 }) {
-    const shortWallet = `${input.creatorWallet.slice(0, 6)}...${input.creatorWallet.slice(-4)}`;
+    const shortWallet = shortAddress(input.creatorWallet);
     const subjectSafe = htmlEscape(input.subject);
     const roleSafe = htmlEscape(input.creatorRole);
     const previewSafe = htmlEscape(input.messagePreview);
 
     await safelySendEmail("support ticket admin alert", () => sendTransactionalEmail({
         to: input.adminEmail,
+        category: "ops",
         subject: `[SubScript Support] New Ticket #${input.ticketId.slice(0, 8)}: ${input.subject}`,
         text: `New Support Ticket Received\n\nTicket #${input.ticketId}\nFrom: ${shortWallet} (${input.creatorRole})\nSubject: ${input.subject}\n\nMessage:\n${input.messagePreview}\n\nRespond in the Admin Console: https://www.subscriptonarc.com/admin`,
         html: renderEmailLayout({
@@ -445,4 +413,3 @@ export async function sendSupportTicketAlertEmail(input: {
         idempotencyKey: `ticket-alert:${input.ticketId}:${input.adminEmail}`,
     }));
 }
-

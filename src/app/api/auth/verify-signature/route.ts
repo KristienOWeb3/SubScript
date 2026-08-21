@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { verifyMessage } from "viem";
 import { sanitizeInput } from "@/utils/security";
 import { createSessionToken, getCookieValue } from "@/lib/auth";
@@ -8,6 +8,7 @@ import { verifyCaptchaToken } from "@/lib/captcha";
 import { clearSiweNonceCookie, setSessionCookie } from "@/lib/authCookies";
 import { buildWalletAuthMessage, walletAuthRequestContext } from "@/lib/walletAuthMessage";
 import { getPlatformFlags } from "@/lib/platform/flags";
+import { notifySignInAlert, SIGN_IN_PROVIDERS } from "@/lib/email/signInContext";
 
 export async function POST(request: Request) {
     try {
@@ -98,6 +99,16 @@ export async function POST(request: Request) {
         
         setSessionCookie(response, request, jwt, expiresAt);
         clearSiweNonceCookie(response, request);
+
+        /* The path where this alert is genuinely new information. A signature proves control of a
+           private key and says nothing about control of the mailbox on the account, so if a key
+           leaks this email is the only thing that tells the owner their account was opened. Silent
+           when the wallet has no email on file, which is the normal case for wallet-only accounts.
+           In after() so a mail failure can't undo a session the signature already earned. */
+        after(() => notifySignInAlert(request, {
+            walletAddress: address,
+            provider: SIGN_IN_PROVIDERS.connectedWallet,
+        }));
 
         return response;
     } catch (error: any) {

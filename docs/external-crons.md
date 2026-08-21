@@ -52,11 +52,20 @@ If you use a scheduler other than the workflow above, hit each **via `GET`** wit
 |---|---|---|
 | `/api/cron/reconcile` | every 15 min | Recover stuck premium-upgrade payment sessions (user-facing — keep frequent) |
 | `/api/keeper/vault-topup` | every 15 min | Refill metered vaults under a user's auto top-up mandate (user-facing — keep frequent) |
+| `/api/internal/sponsor-health` | every 15 min | Watch the gas sponsor wallet and email admins before it empties (see below) |
 | `/api/cron/billing` | daily | Premium (merchant→SubScript) recurring billing + grace-period downgrades |
 | `/api/internal/payroll` | daily | Execute due payroll campaigns (per-payday atomic claim makes overlapping runs safe) |
 | `/api/internal/billing` | daily | Premium downgrade sweep for delinquent merchants |
 
 ### Gotchas
+
+- **`/api/internal/sponsor-health` returns 200 when the wallet is low.** That's deliberate.
+  The condition is already being emailed to every admin, and a scheduler run that turns red
+  for a known, already-reported state is how people learn to ignore red runs. It 5xxs only
+  when the check itself couldn't run. It also has its own workflow rather than a job inside
+  `keepers.yml`, so a failure here is attributable instead of masking the keepers.
+  Daily is not enough for this one: an empty sponsor wallet fails every sponsored payment
+  closed, and up to 24 hours of silence is the outage this endpoint exists to prevent.
 
 - **`/api/internal/billing` — use GET for the sweep.** Its `POST` handler is the
   HMAC-signed protocol webhook receiver (verified with `SUBSCRIPT_WEBHOOK_SECRET`),

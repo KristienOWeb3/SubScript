@@ -277,6 +277,39 @@ export const THREAD_OPENING_DM_TYPES: DmType[] = DM_TYPE_NAMES.filter(
     (name) => (DM_TYPES[name] as DmTypeSpec).opensSubscriptionThread === true,
 );
 
+/**
+ * Types whose subscriber→merchant rows are addressed to the merchant's operations, not to the
+ * subscriber.
+ *
+ * These carry facts or instructions only a merchant acts on — "stop rendering service and stop
+ * reporting new usage", "canceled by the subscriber" in the third person — yet they live in the
+ * shared thread, so the subscriber's inbox rendered them too. As the subscriber's own outgoing chat
+ * bubble they were merely odd; once the merchant thread became a one-way notification feed drawn in
+ * the merchant's voice, they would read as the merchant narrating the subscriber's actions back at
+ * them.
+ *
+ * Membership here is not enough on its own — see isMerchantOpsDm, which also needs the direction.
+ * SUBSCRIPTION_CANCELED in particular is written twice per cancellation: once to the merchant in
+ * their own terms, and once to the subscriber. Only the first is hidden.
+ */
+export const MERCHANT_OPS_DM_TYPES: DmType[] = ["SERVICE_CANCELED", "SERVICE_RESUMED", "SUBSCRIPTION_CANCELED"];
+
+/**
+ * True when this row is the merchant-facing half and `viewerAddress` is the subscriber who sent it.
+ *
+ * Direction is the whole point. Filtering on message type alone would also hide the merchant→
+ * subscriber row that replaces it, leaving the subscriber with no record of their own cancellation.
+ */
+export function isMerchantOpsDm(
+    messageType: string,
+    senderAddress: string,
+    viewerAddress: string | null | undefined,
+): boolean {
+    if (!(MERCHANT_OPS_DM_TYPES as string[]).includes(messageType)) return false;
+    if (!viewerAddress) return false;
+    return senderAddress.toLowerCase() === viewerAddress.toLowerCase();
+}
+
 /* ----------------------------- Dedupe keys --------------------------------- */
 
 /**

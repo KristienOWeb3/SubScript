@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withPgClient } from "@/lib/serverPg";
 import { requireAdmin } from "@/lib/admin/guard";
@@ -6,6 +6,10 @@ import { recordAdminAction } from "@/lib/admin/audit";
 import { normalizeAccountEmail } from "@/lib/auth/accountEmail";
 import { isProd } from "@/lib/contracts/constants";
 import { sendMerchantAccessGrantedEmail } from "@/lib/email/transactional";
+import {
+    sanitizeApplicantMessage,
+    sendMerchantAccessDeclinedEmail,
+} from "@/lib/email/templates/merchantAccess";
 import {
     describeMerchantInviteEnforcement,
     findConflictingAccountForEmail,
@@ -226,7 +230,13 @@ async function grant(request: Request, actor: string, body: any) {
 
 async function decline(request: Request, actor: string, body: any) {
     const requestId = typeof body?.requestId === "string" ? body.requestId.trim() : "";
+    /* INTERNAL. This is the queue note, which is why the check below talks about the next
+       admin rather than the applicant. It goes in the audit log and it is never mailed. */
     const reason = typeof body?.reason === "string" ? body.reason.trim().slice(0, 500) : "";
+    /* Opt in per decline, never a default. A silent decline and an automatic rejection
+       notice are both bad; the admin who made the call decides which one this is. */
+    const notifyApplicant = body?.notifyApplicant === true;
+    const applicantMessage = notifyApplicant ? sanitizeApplicantMessage(body?.applicantMessage) : null;
 
     if (!requestId) {
         return NextResponse.json({ error: "Missing requestId" }, { status: 400 });
@@ -250,13 +260,49 @@ async function decline(request: Request, actor: string, body: any) {
         actor,
         action: "MERCHANT_ACCESS_DECLINE",
         target: requestId,
-        detail: { reason },
+        /* Both notes, kept apart. The next admin needs to know what was said internally AND
+           what the applicant was already told, or they'll repeat it or contradict it. */
+        detail: { reason, notifiedApplicant: notifyApplicant, applicantMessage },
         request,
     });
 
-    /* Deliberately no email. A decline is a judgement call about a business, and an automated
-       rejection notice is the wrong way to deliver one — reach out directly if it warrants a reply. */
-    return NextResponse.json({ success: true, message: "Request declined." });
+    /*
+     * The decline no longer has to mean silence, but it still isn't automatic. The original
+     * reasoning stands: a decline is a judgement call about a business, and a canned rejection
+     * is the wrong way to deliver one. So nothing goes out unless an admin ticked
+     * notifyApplicant, and the only explanation the applicant reads is applicantMessage, which
+     * an admin wrote for them. What changed is that "reach out directly if it warrants a reply"
+     * was, in practice, nobody reaching out: the business sat waiting on a queue that had
+     * already decided (email audit 3.2).
+     *
+     * `reason` is withheld from that email on purpose. It's written for colleagues, it's the
+     * field this route demands "so the next admin knows why", and it's an internal judgement
+     * about someone's business. Mailing it to that business would leak the review rather than
+     * explain the decision. Only applicantMessage crosses the line.
+     */
+    if (notifyApplicant) {
+        const applicant = await prisma.merchantAccessRequest.findUnique({
+            where: { id: requestId },
+            select: { email: true, companyName: true },
+        });
+        if (applicant?.email) {
+            /* Mail runs after the response. A committed decline must not 500 because Resend
+               is down, and the admin is waiting on this request. */
+            after(() => sendMerchantAccessDeclinedEmail({
+                email: applicant.email,
+                requestId,
+                companyName: applicant.companyName,
+                applicantMessage,
+            }));
+        }
+    }
+
+    return NextResponse.json({
+        success: true,
+        message: notifyApplicant
+            ? "Request declined, and the applicant has been told."
+            : "Request declined. Nothing was sent to the applicant.",
+    });
 }
 
 async function revoke(request: Request, actor: string, body: any) {

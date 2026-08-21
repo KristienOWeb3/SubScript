@@ -19,6 +19,7 @@ import { SUBSCRIPT_ROUTER_ADDRESS, STANDARD_CONTRACT_ADDRESS, PREMIUM_PAYMENT_RE
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import crypto from "crypto";
 import { triggerExitSurvey } from "@/lib/payments/email";
+import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
@@ -637,6 +638,30 @@ export async function POST(request: Request) {
                 if (merchantUpdateError || !mirroredMerchant) {
                     throw new Error(`Renewal merchant update failed: ${merchantUpdateError?.message || "merchant missing"}`);
                 }
+
+                /* Every confirmed Premium renewal funnels through here — the fresh charge, the
+                   already-executed-on-chain repair, and the post-error repair in the catch — so one
+                   call covers all three settlement points and none of them can drift.
+
+                   Only the paying merchant is mailed. The counterparty is SubScript's own treasury,
+                   so there is no third party to notify, and passing it as a payee would put a
+                   "you received a payment" receipt into whatever inbox that wallet resolves to.
+
+                   No `receipts` row exists for a keeper renewal, so this goes out without the
+                   "view receipt" button rather than link a receipt id that would 404. First in the
+                   sequence because it cannot throw, unlike the DM and the webhook below it. */
+                await sendSettlementReceipts({
+                    kind: "premium_renewal",
+                    amountUsdc: amountMicros,
+                    txHash,
+                    /* The repair paths prove the sequence executed without always knowing which
+                       transaction did it. (subscription, sequence) is executed exactly once
+                       on-chain, so it is as un-repeatable a key as a hash. */
+                    settlementRef: `premium-renewal:${subId}:${sequenceId}`,
+                    payerAddress: subscriberAddress,
+                    payeeAddress: null,
+                    paymentTitle: "SubScript Premium renewal",
+                });
 
                 await createBillingDm({
                     supabase,

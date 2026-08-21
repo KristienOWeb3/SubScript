@@ -10,8 +10,9 @@ export type MerchantOverviewMonth = {
     transactionCount: number;
 };
 
-/* One plotted point. `bucket` is a UTC date key — YYYY-MM-DD for day granularity, YYYY-MM for
-   month — so the client can key React children off it without re-deriving a date. */
+/* One plotted point. `bucket` is a UTC key — YYYY-MM-DD for day and week granularity (a week keys
+   off its Monday), YYYY-MM for month, YYYY-MM-DDTHH for hour — so the client can key React children
+   off it without re-deriving a date. */
 export type MerchantOverviewPoint = {
     bucket: string;
     label: string;
@@ -20,7 +21,10 @@ export type MerchantOverviewPoint = {
     transactionCount: number;
 };
 
-export type MerchantOverviewRange = "7d" | "30d" | "90d" | "12m";
+export type MerchantOverviewRange = "24h" | "7d" | "1m" | "3m" | "6m" | "12m";
+
+/* Maps one-to-one onto the unit passed to Postgres date_trunc. */
+export type MerchantOverviewGranularity = "hour" | "day" | "week" | "month";
 
 export type MerchantOverviewPlan = {
     id: string;
@@ -47,35 +51,100 @@ export type MerchantOverviewSummary = {
 
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-const RANGE_DAYS: Record<Exclude<MerchantOverviewRange, "12m">, number> = {
-    "7d": 7,
-    "30d": 30,
-    "90d": 90,
+/* Granularity is chosen per range rather than left to the caller, because the plot area is a fixed
+   582px wide (VIEW_WIDTH 640 less PAD_LEFT 46 and PAD_RIGHT 12). Six months of daily points is 180
+   points at 3.2px apart, which is noise rather than a trend — so the longer ranges bucket weekly.
+   `buckets` is the exact number of points the gap-fill emits, so the axis length is known without
+   consulting the data. */
+const RANGE_SPEC: Record<MerchantOverviewRange, { granularity: MerchantOverviewGranularity; buckets: number }> = {
+    "24h": { granularity: "hour", buckets: 24 },
+    "7d": { granularity: "day", buckets: 7 },
+    "1m": { granularity: "day", buckets: 30 },
+    "3m": { granularity: "week", buckets: 13 },
+    "6m": { granularity: "week", buckets: 26 },
+    "12m": { granularity: "month", buckets: 12 },
+};
+
+/* Older callers and any in-flight request still say 30d/90d. Kept as aliases rather than rejected,
+   so a client mid-deploy does not get a 400 for a range that still means something. */
+const RANGE_ALIASES: Record<string, MerchantOverviewRange> = {
+    "30d": "1m",
+    "90d": "3m",
 };
 
 export function parseRange(value: string | null): MerchantOverviewRange | null {
-    if (!value) return "30d";
-    return value === "7d" || value === "30d" || value === "90d" || value === "12m" ? value : null;
+    if (!value) return "1m";
+    if (value in RANGE_SPEC) return value as MerchantOverviewRange;
+    return RANGE_ALIASES[value] ?? null;
 }
 
-/* Inclusive-of-today UTC window for a range. Day ranges start at midnight N-1 days back so that
-   "7d" plots seven buckets including today rather than eight. */
+export function rangeGranularity(range: MerchantOverviewRange): MerchantOverviewGranularity {
+    return RANGE_SPEC[range].granularity;
+}
+
+export function rangeBuckets(range: MerchantOverviewRange): number {
+    return RANGE_SPEC[range].buckets;
+}
+
+/* Postgres date_trunc('week', …) lands on Monday, so week buckets have to be enumerated from
+   Mondays or the gap-fill keys never match the query's. */
+function startOfUtcWeek(date: Date) {
+    const daysSinceMonday = (date.getUTCDay() + 6) % 7;
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() - daysSinceMonday));
+}
+
+/* Inclusive-of-now UTC window for a range.
+ *
+ * Day, week and month ranges end at the close of today so the current partial bucket is included;
+ * 24h is different and deliberately so. A day-aligned window would show "today so far", which for
+ * anyone looking at 09:00 is three bars — the range says 24 hours, so it rolls: it ends at the top of
+ * the next hour and starts 24 hours before that, giving 24 hourly buckets ending with the one in
+ * progress. */
 export function rangeWindow(range: MerchantOverviewRange, now: Date) {
+    const { granularity, buckets } = RANGE_SPEC[range];
+
+    if (granularity === "hour") {
+        const to = new Date(Date.UTC(
+            now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours() + 1,
+        ));
+        return {
+            from: new Date(to.getTime() - buckets * 3_600_000),
+            to,
+            granularity,
+        };
+    }
+
     const to = new Date(Date.UTC(
         now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999,
     ));
-    if (range === "12m") {
+
+    if (granularity === "month") {
         return {
-            from: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1)),
+            from: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (buckets - 1), 1)),
             to,
-            granularity: "month" as const,
+            granularity,
         };
     }
-    const days = RANGE_DAYS[range];
+
+    if (granularity === "week") {
+        const thisWeek = startOfUtcWeek(now);
+        return {
+            from: new Date(Date.UTC(
+                thisWeek.getUTCFullYear(), thisWeek.getUTCMonth(), thisWeek.getUTCDate() - (buckets - 1) * 7,
+            )),
+            to,
+            granularity,
+        };
+    }
+
+    /* Day ranges start at midnight N-1 days back so that "7d" plots seven buckets including today
+       rather than eight. */
     return {
-        from: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (days - 1))),
+        from: new Date(Date.UTC(
+            now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (buckets - 1),
+        )),
         to,
-        granularity: "day" as const,
+        granularity,
     };
 }
 
@@ -178,46 +247,80 @@ export function buildOverviewSeries(
     now: Date,
 ): MerchantOverviewPoint[] {
     const { granularity } = rangeWindow(range, now);
+    const buckets = RANGE_SPEC[range].buckets;
 
     /* Postgres date_trunc comes back as a Date via the driver, but a string when the query is
-       shaped to cast it. Normalise both to the bucket key. */
+       shaped to cast it — and the ::text form uses a space where an ISO string uses "T". Normalise
+       both to the bucket key. */
     const keyOf = (value: string | Date) => {
-        const iso = value instanceof Date ? value.toISOString() : String(value);
-        return granularity === "day" ? iso.slice(0, 10) : iso.slice(0, 7);
+        const raw = value instanceof Date ? value.toISOString() : String(value);
+        const iso = raw.replace(" ", "T");
+        if (granularity === "hour") return iso.slice(0, 13);
+        if (granularity === "month") return iso.slice(0, 7);
+        return iso.slice(0, 10);
     };
     const byBucket = new Map(rows.map((row) => [keyOf(row.bucket), row]));
 
+    const at = (bucket: string, label: string): MerchantOverviewPoint => {
+        const row = byBucket.get(bucket);
+        return {
+            bucket,
+            label,
+            grossUsdcMicros: row?.grossMicros || "0",
+            netUsdcMicros: row?.netMicros || "0",
+            transactionCount: Number(row?.transactionCount || 0),
+        };
+    };
+
     const points: MerchantOverviewPoint[] = [];
-    if (granularity === "month") {
-        for (let offset = 11; offset >= 0; offset -= 1) {
-            const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1));
-            const bucket = date.toISOString().slice(0, 7);
-            const row = byBucket.get(bucket);
-            points.push({
-                bucket,
-                label: MONTH_LABELS[date.getUTCMonth()],
-                grossUsdcMicros: row?.grossMicros || "0",
-                netUsdcMicros: row?.netMicros || "0",
-                transactionCount: Number(row?.transactionCount || 0),
-            });
+
+    if (granularity === "hour") {
+        /* Anchored on the same next-hour boundary rangeWindow uses, so the last bucket is the hour
+           in progress. */
+        const end = new Date(Date.UTC(
+            now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours() + 1,
+        ));
+        for (let offset = buckets; offset >= 1; offset -= 1) {
+            const date = new Date(end.getTime() - offset * 3_600_000);
+            points.push(at(
+                date.toISOString().slice(0, 13),
+                `${String(date.getUTCHours()).padStart(2, "0")}:00`,
+            ));
         }
         return points;
     }
 
-    const days = RANGE_DAYS[range as Exclude<MerchantOverviewRange, "12m">];
-    for (let offset = days - 1; offset >= 0; offset -= 1) {
+    if (granularity === "month") {
+        for (let offset = buckets - 1; offset >= 0; offset -= 1) {
+            const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1));
+            points.push(at(date.toISOString().slice(0, 7), MONTH_LABELS[date.getUTCMonth()]));
+        }
+        return points;
+    }
+
+    if (granularity === "week") {
+        const thisWeek = startOfUtcWeek(now);
+        for (let offset = buckets - 1; offset >= 0; offset -= 1) {
+            const date = new Date(Date.UTC(
+                thisWeek.getUTCFullYear(), thisWeek.getUTCMonth(), thisWeek.getUTCDate() - offset * 7,
+            ));
+            /* Labelled by the week's first day — "5 Sep" for the week of the 5th. */
+            points.push(at(
+                date.toISOString().slice(0, 10),
+                `${date.getUTCDate()} ${MONTH_LABELS[date.getUTCMonth()]}`,
+            ));
+        }
+        return points;
+    }
+
+    for (let offset = buckets - 1; offset >= 0; offset -= 1) {
         const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - offset));
-        const bucket = date.toISOString().slice(0, 10);
-        const row = byBucket.get(bucket);
-        points.push({
-            bucket,
-            /* "5 Sep" reads on a crowded axis where "2026-09-05" does not. The chart only labels
-               every few points anyway. */
-            label: `${date.getUTCDate()} ${MONTH_LABELS[date.getUTCMonth()]}`,
-            grossUsdcMicros: row?.grossMicros || "0",
-            netUsdcMicros: row?.netMicros || "0",
-            transactionCount: Number(row?.transactionCount || 0),
-        });
+        /* "5 Sep" reads on a crowded axis where "2026-09-05" does not. The chart only labels
+           every few points anyway. */
+        points.push(at(
+            date.toISOString().slice(0, 10),
+            `${date.getUTCDate()} ${MONTH_LABELS[date.getUTCMonth()]}`,
+        ));
     }
     return points;
 }

@@ -18,9 +18,11 @@ export interface UserCommit {
     commitId: string;
     walletAddress: string | null;
     displayName: string;
-    /* Constrained to the same three values as the column's CHECK, so a switch on this field
-       gets exhaustiveness checking. A `| string` widening here would collapse to plain
-       `string` and let "revoked" or "REVOKED " past a gate that controls spending. */
+    /* Constrained to the same values as the column's CHECK, so a switch on this field gets
+       exhaustiveness checking. A `| string` widening here would collapse to plain `string` and let
+       "revoked" or "REVOKED " past a gate that controls spending. HALTED is in the union because the
+       column allows it, but a sub-user row never carries it: a hold is the account holder stopping
+       themselves and SQL keeps it on root commits only. */
     status: CommitStatus;
     /* USDC micros as a decimal string; null means "no cap". */
     spendLimitUsdc: string | null;
