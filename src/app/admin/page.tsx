@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/skeletons";
 import { AdminOverviewDashboard } from "@/components/admin/overview/AdminOverviewDashboard";
 import { AdminSupportTicketsView } from "@/components/admin/AdminSupportTicketsView";
+import { AdminAuditLogView } from "@/components/admin/AdminAuditLogView";
 import {
   AnalyticsSubSidebar,
   type AnalyticsSectionId,
@@ -271,6 +272,7 @@ type TabId =
   | "system"
   | "broadcast"
   | "receipts"
+  | "audit-log"
   | "admins";
 
 const TABS: Array<{ id: TabId; label: string }> = [
@@ -284,6 +286,7 @@ const TABS: Array<{ id: TabId; label: string }> = [
   { id: "system", label: "System" },
   { id: "broadcast", label: "Broadcast" },
   { id: "receipts", label: "Receipts" },
+  { id: "audit-log", label: "Audit Log" },
   { id: "admins", label: "Admins" },
 ];
 
@@ -3060,6 +3063,12 @@ export default function AdminDashboardPage() {
                 )}
               </button>
             </form>
+          </div>
+        )}
+
+        {tab === "audit-log" && (
+          <div className={`${CARD} space-y-4`}>
+            <AdminAuditLogView viewerWallet={viewerWallet} />
           </div>
         )}
 
