@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAccount, useSignTypedData, useConnect, useDisconnect, useWriteContract, useSwitchChain, useSignMessage } from "wagmi";
 import Link from "next/link";
@@ -211,6 +211,10 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
     const [isDepositOpen, setIsDepositOpen] = useState(false);
     const [isWithdrawing, setIsWithdrawing] = useState(false);
     const [withdrawSuccess, setWithdrawSuccess] = useState(false);
+    /* Stable x-request-id for the vault withdrawal. Minted once, reused by every retry, and
+       only dropped once the server confirms the payout — a fresh id per attempt would land on
+       a different idempotency key and pay out twice. */
+    const withdrawRequestIdRef = useRef<string | null>(null);
 
     const pageIsLoading = isLoading || isLoadingTier || isAuthLoading;
 
@@ -469,14 +473,24 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                 throw new Error(`Execution intent not allowlisted for embedded wallets: ${functionName}`);
             }
 
+            const headers: Record<string, string> = { "Content-Type": "application/json" };
+            if (action === "withdraw") {
+                if (!withdrawRequestIdRef.current) {
+                    withdrawRequestIdRef.current = crypto.randomUUID();
+                }
+                headers["x-request-id"] = withdrawRequestIdRef.current;
+            }
             const res = await fetch("/api/execute-tx", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers,
                 body: JSON.stringify({ action, args: serializedArgs }),
             });
             const data = await res.json();
             if (!res.ok || !data.success) {
                 throw new Error(data.error || "Server transaction execution failed");
+            }
+            if (action === "withdraw") {
+                withdrawRequestIdRef.current = null;
             }
             return data.txHash as string;
         } else {
