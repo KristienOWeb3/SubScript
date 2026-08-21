@@ -20,6 +20,7 @@ import {
 } from "@/lib/dms/notifications";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { isCommitId } from "@/lib/commitId";
+import { HALTED_ACCOUNT_SQL } from "@/lib/accountHalt";
 import { resolveVaultCommitForMerchant } from "@/lib/vaultCommitSharing";
 
 type VaultUsageRow = {
@@ -42,6 +43,10 @@ type UsageResult =
        friend "your allowance is used up" rather than "the account is out of funds". */
     | { kind: "share_blocked"; reason: string; remainingUsdc: bigint | null }
     | { kind: "cancelled" }
+    /* The account holder put their own account on hold. New usage stops here; anything already
+       accrued still settles at cycle end, because the merchant already rendered it. See the Merchant
+       Protection note in src/lib/accountHalt.ts. */
+    | { kind: "account_on_hold" }
     /* vaultId and userAddress were both sent and point at different accounts. Decided against the
        locked row rather than with a second read, so it cannot go stale between check and charge. */
     | { kind: "selector_mismatch" }
@@ -227,6 +232,22 @@ async function accrueUsageAtomically(
             if (selected.rows[0].cancel_requested_at) {
                 await client.query("commit");
                 return { kind: "cancelled" } as const;
+            }
+
+            /* The account holder's own hold, checked in this same transaction against the row we
+               already hold a lock on. Sits beside the cancel gate because it answers the same
+               question: may new usage be recorded at all? Placed after idempotency so an
+               already-recorded report still replays, and before the active gate and the share debit
+               so nothing partial is written.
+
+               A hold stops NEW usage only. Whatever accrued before it still draws at cycle end,
+               because the merchant delivered that. HALTED_ACCOUNT_SQL is shared with the Prisma path
+               so the two cannot disagree about what "on hold" means. A throw here rolls the
+               transaction back, which refuses the accrual: fail closed, same as everywhere else. */
+            const heldOwner = await client.query(HALTED_ACCOUNT_SQL, [resolvedUserAddress.toLowerCase()]);
+            if (heldOwner.rowCount > 0) {
+                await client.query("commit");
+                return { kind: "account_on_hold" } as const;
             }
 
             if (!vault.active) {
@@ -645,6 +666,16 @@ export async function POST(request: Request) {
             return NextResponse.json({
                 error: "The customer cancelled this service. Stop rendering service — new usage is no longer accepted for this vault.",
                 code: "SERVICE_CANCELED",
+            }, { status: 409 });
+        }
+
+        /* 409, not 403: the request was well formed and authorized, and it may well succeed later.
+           A hold is reversible, so an integrator should treat this as "stop for now", not "this key
+           can't do that". Usage already reported still settles at cycle end. */
+        if (result.kind === "account_on_hold") {
+            return NextResponse.json({
+                error: "The customer put their account on hold. Stop rendering service — new usage isn't accepted while the hold is on. Usage you already reported will still settle.",
+                code: "ACCOUNT_ON_HOLD",
             }, { status: 409 });
         }
 

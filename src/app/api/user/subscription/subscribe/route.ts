@@ -38,6 +38,7 @@ import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookD
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
 import { subscriptionKey } from "@/lib/subscriptions/contractBinding";
+import { haltGuard } from "@/lib/accountHalt";
 
 export const maxDuration = 120;
 
@@ -81,6 +82,12 @@ export async function POST(request: Request) {
         if (!wallet) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         const roleCheck = await requireAccountRole(wallet, "USER");
         if (!roleCheck.ok) return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
+        /* Subscribing is a new authorization, so a hold refuses it outright. No commitment carve-out
+           applies here: nothing has been promised yet, which is the whole point of the distinction
+           drawn in src/lib/accountHalt.ts. Placed before the email check and well before
+           requireSponsoredGas so a held account burns no gas budget. */
+        const held = await haltGuard(wallet);
+        if (held) return held;
         const verifiedEmail = await getVerifiedAccountEmail(wallet);
         if (!verifiedEmail?.email) {
             return NextResponse.json({ error: "Verify an email address with OTP before subscribing." }, { status: 403 });
