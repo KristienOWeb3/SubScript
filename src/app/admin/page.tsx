@@ -1182,8 +1182,24 @@ export default function AdminDashboardPage() {
     { id: "docs", label: "Documentation", icon: FileText, href: "/support", newTab: true },
   ];
 
+  /* min-h-screen + a light background on mobile, and both are load-bearing.
+   *
+   * html/body carry `min-height: 100vh` and `background-color: #000000` (the black is deliberate,
+   * so the installed PWA never flashes a white splash frame). The mobile scroller below is
+   * `h-[100dvh]`, and 100dvh is the CURRENT viewport while 100vh is the viewport with the browser
+   * toolbar retracted — so on any phone with a retractable toolbar this element was shorter than
+   * body by the toolbar's height, and body painted that difference pure black under the console.
+   * That was the black bar at the end of the page, and it survived a refresh because it is layout,
+   * not state.
+   *
+   * min-h-[100vh] makes this element match body's own min-height so there is no strip left over,
+   * and the light background means any residual sliver reads as the console's own surface
+   * (#f8fafc, matching .admin-topography) instead of black. The unit is spelled out rather than
+   * written as min-h-screen on purpose: this whole bug is a vh-versus-dvh mismatch, and body's
+   * min-height is literally 100vh, so the value that has to match it should say so. md:min-h-0
+   * hands height back to md:h-[100dvh] on desktop, where the shell is a fixed-height frame. */
   return (
-    <div className="relative overflow-x-hidden bg-[#353935] text-white font-sans md:h-[100dvh] md:overflow-hidden">
+    <div className="relative overflow-x-hidden bg-[#f8fafc] md:bg-[#353935] text-white font-sans min-h-[100vh] md:min-h-0 md:h-[100dvh] md:overflow-hidden">
       <div className="relative z-10 md:flex md:h-[100dvh] md:min-h-0">
         <DashboardSidebar
           className="topo-admin-header"
@@ -1210,7 +1226,12 @@ export default function AdminDashboardPage() {
             just grows instead of scrolling, and touch drags went nowhere. The user
             dashboard already owns its mobile scroller this way; this matches it. */}
         <div className="relative z-10 min-w-0 flex-1 h-[100dvh] md:mt-[14px] md:h-[calc(100vh-14px)] bg-white shadow-[-8px_0_24px_rgba(0,0,0,0.12)] md:rounded-tl-[32px] border-t border-l border-white/10 overflow-y-auto overscroll-y-contain admin-topography text-[#0f172a]">
-          <main className="min-h-screen pt-4 sm:pt-6 pb-16">
+          {/* min-h-full, not min-h-screen: this sits inside a scroller with a definite
+              h-[100dvh], so 100% resolves to exactly that. min-h-screen was 100vh — larger than
+              the container on mobile — which forced a phantom scroll of the toolbar's height even
+              on a tab with almost no content. Invisible, being white on white, but it is the same
+              vh-inside-dvh mistake as the black bar above. */}
+          <main className="min-h-full pt-4 sm:pt-6 pb-16">
             <div className="admin-workspace mx-auto max-w-6xl space-y-6 px-4 py-2 sm:px-8">
               <section className="topo-admin-blue flex flex-col justify-between gap-5 rounded-2xl border border-white/20 px-5 py-5 text-white shadow-[0_12px_30px_rgba(39,117,202,0.18)] sm:flex-row sm:items-end sm:px-6">
                 <div>
