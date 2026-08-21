@@ -1983,7 +1983,12 @@ body {
 
    The page is not themed for dark mode on purpose, matching .subscript-checkout: a payment
    document keeps one appearance wherever it is opened, and the dark layer above is scoped to
-   the dashboard shells so it never reaches here. */
+   the dashboard shells so it never reaches here.
+
+   Every selector here is prefixed with .subscript-receipt, so no other surface is affected. In
+   particular there is no @page rule: page margins cannot be scoped to a selector, and setting
+   them would change printing on every route in the app to fix one. The browser default is
+   fine, and the card carries its own padding. */
 @media print {
   .subscript-receipt {
     background: #ffffff !important;
@@ -2016,10 +2021,6 @@ body {
 
   .subscript-receipt a[href]::after {
     content: "";
-  }
-
-  @page {
-    margin: 16mm;
   }
 }
 
