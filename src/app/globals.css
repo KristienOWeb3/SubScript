@@ -1102,10 +1102,20 @@ body {
   color: var(--merchant-ink) !important;
 }
 
+/* The translucent half of the pair above: Tailwind's `/10`, `/20` … opacity suffixes on the same
+   three accents. Those are pills and badges rather than actions, so they take the pale blue while
+   the solid fills take the mid blue — --merchant-blue is the tint of --merchant-action, which is
+   what keeps the two rules reading as one family.
+
+   This referenced an undefined --merchant-soft until 2026-08-21. With no definition and no
+   fallback the declaration was invalid at computed-value time, so background-color fell back to
+   inherited instead of the tint, and every translucent accent pill rendered untinted. The palette
+   block had defined the value as --merchant-blue all along and nothing consumed it, so the two
+   were halves of one naming slip in the commit that added both. */
 .merchant-dashboard-workspace [class*="bg-[#00d2b4]/"],
 .merchant-dashboard-workspace [class*="bg-[#ccff00]/"],
 .merchant-dashboard-workspace [class*="bg-[#d4a853]/"] {
-  background-color: var(--merchant-soft) !important;
+  background-color: var(--merchant-blue) !important;
   color: var(--merchant-ink) !important;
 }
 
