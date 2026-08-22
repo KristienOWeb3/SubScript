@@ -7,6 +7,7 @@ import DashboardSidebar, {
 import {
   AlertTriangle,
   Bell,
+  BookOpen,
   Building2,
   CheckCircle2,
   Copy,
@@ -1175,6 +1176,7 @@ export default function AdminDashboardPage() {
     { id: "system", label: "System Flags", icon: Sliders },
     { id: "broadcast", label: "Broadcast", icon: Bell },
     { id: "receipts", label: "Receipts", icon: ReceiptText },
+    { id: "audit-log", label: "Audit Log", icon: BookOpen },
     { id: "admins", label: "Admin Access", icon: Shield },
   ];
 
