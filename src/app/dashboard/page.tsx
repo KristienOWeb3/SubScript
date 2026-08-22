@@ -5983,18 +5983,21 @@ Please complete the following implementation tasks:
                         setActiveTab("settings");
                     }}
                 />
-                {/* Geometry aligned to the user dashboard's content pane (.user-dashboard-content):
-                    same 20px corner and the same hairline border, which this pane was missing at a
-                    70px corner.
+                {/* Geometry and token both aligned to the user dashboard's content pane
+                    (.user-dashboard-content): same 20px corner, same hairline border, same cream
+                    token.
 
-                    The bg class stays bg-[#D4E3E8] and must not be changed to cream. globals.css
-                    already repaints this pane to cream in LIGHT mode via
-                    `.merchant-dashboard-workspace { background-color: var(--merchant-cream) }`, and
-                    the dark layer maps merchant tokens by literal class name — bg-[#D4E3E8] resolves
-                    to --dk-canvas, bg-[#FFFFF0] to --dk-shell. Renaming the class here would repaint
-                    the dark canvas as the shell colour. The comment above that CSS rule spells this
-                    out; colour parity belongs there, geometry belongs here. */}
-                <div className="merchant-dashboard-workspace relative min-w-0 flex-1 overflow-y-auto bg-[#D4E3E8] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[20px] md:border md:border-black/10">
+                    bg-[#FFFFF0] rather than bg-[#D4E3E8], and this is measured rather than assumed.
+                    The comment above the light-mode repaint in globals.css warns that swapping this
+                    class would "repaint the dark canvas too" — it does, and that is the point. With
+                    bg-[#D4E3E8] this pane computed rgb(23,24,26) in dark mode while the user's
+                    computed rgb(17,17,17), because the user's pane carries the cream token and picks
+                    up `.user-dashboard-redesign [class~="bg-[#FFFFF0]"] -> --dk-shell`, whereas the
+                    dusty-blue token only ever reached --dk-canvas. Sharing the token makes both
+                    panes resolve to rgb(17,17,17) in dark and stay cream in light, which is the
+                    parity this was asked for. The old warning was written when keeping the canvas
+                    distinct was the goal. */}
+                <div className="merchant-dashboard-workspace relative min-w-0 flex-1 overflow-y-auto bg-[#FFFFF0] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[20px] md:border md:border-black/10">
             {/* Session Consent Alerts Overlay */}
             {sessionAlert && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
