@@ -992,7 +992,7 @@ body {
   --merchant-cream: #fffff0;
   --merchant-blue: #d4e3e8;
   --merchant-gold: #efe2ac;
-  --merchant-action: #8ab4db;
+  --merchant-action: #ccff00;
   --merchant-gray: #d9d9d9;
   --merchant-ink: #082824;
   color-scheme: light;
@@ -1284,6 +1284,27 @@ body {
 :root:not([data-theme="dark"]) .merchant-dashboard-workspace [class~="bg-[#D4E3E8]/40"],
 :root:not([data-theme="dark"]) .merchant-dashboard-workspace [class~="bg-[#D4E3E8]/50"] {
   background-color: rgb(39 117 202 / 20%);
+}
+
+/* Accent: dusty blue → the user dashboard's lime.
+ *
+ * This overrides a deliberate decision recorded above, which kept the merchant on #8AB4DB because
+ * "keeping it is what still distinguishes the two dashboards at a glance". That was the right call
+ * on its own terms; it is being reversed on an explicit request for the two dashboards to be
+ * indistinguishable on desktop. Panel tints and canvas already matched — this hue was the last
+ * thing telling them apart.
+ *
+ * A REPAINT, NOT A RENAME, for the reason the block above documents at length: bg-[#8AB4DB] appears
+ * 70 times in the merchant tree and the dark layer keys on that literal token, so renaming the class
+ * would silently drop the dark-mode contrast rule that pairs it with the user's bg-[#ccff00].
+ *
+ * Ungated by mode, unlike the tint rule above, because the accent has to match in BOTH modes and
+ * the dark layer only ever sets `color` on this token, never `background-color` — so there is no
+ * !important background to fight. Specificity carries it: 0,2,0 against Tailwind's 0,1,0.
+ * bg-[#7AA7D0] is the hover step and moves with it, or hovering would flash the old blue. */
+.merchant-dashboard-root [class~="bg-[#8AB4DB]"],
+.merchant-dashboard-root [class~="bg-[#7AA7D0]"] {
+  background-color: #ccff00;
 }
 
 /* Surface repaints from the block above resolved to cream; on a cream canvas they need to be white

@@ -3666,8 +3666,12 @@ export default function UserDashboard() {
                   subtitle="Fund prepaid balances for metered services"
                 />
 
-                {/* Account-level, so it sits above the per-merchant vaults rather than inside one. */}
-                <AccountHoldPanel />
+                {/* The account hold used to sit here. It moved to Account settings: it is an
+                    account-level switch, not a commit control, and it applies to every merchant
+                    rather than to the vaults below. */}
+                <p className="text-[11px] text-black/55">
+                  Freezing your account now lives in Settings.
+                </p>
 
                 <section className="commit-vault-shell p-0 sm:rounded-3xl sm:border sm:border-black/35 sm:bg-[#2775CA]/20 sm:p-8">
                   <div className="mb-5 flex items-end justify-between gap-3">
@@ -4549,6 +4553,14 @@ export default function UserDashboard() {
                       </div>
                       <ChevronRight className="h-5 w-5 text-emerald-700/40 group-hover:text-emerald-700 group-hover:translate-x-1 transition-all" />
                     </div>
+
+                    {/* Account hold. Sits between the referral banner and the settings menu on
+                        purpose: it is a real control rather than a link, so it does not belong
+                        inside the navigation card below, and putting it above that card keeps the
+                        destructive Delete Account action last in the reading order. It applies to
+                        the whole account, which is why it is here rather than on the commit tab
+                        above the per-merchant vaults, where it used to live. */}
+                    <AccountHoldPanel />
 
                     {/* Settings Menu Options Card */}
                     <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-3 space-y-1 shadow-sm">

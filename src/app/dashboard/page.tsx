@@ -5960,7 +5960,7 @@ Please complete the following implementation tasks:
         merchantAlias || (address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Your account");
 
     return (
-        <div data-mounted={isMounted} data-merchant-theme={resolvedTheme} className="merchant-dashboard-root relative min-h-[100dvh] overflow-x-hidden bg-[#FFFFF0] font-sans text-black selection:bg-[#8AB4DB]/45 md:h-[100dvh] md:overflow-hidden">
+        <div data-mounted={isMounted} data-merchant-theme={resolvedTheme} className="merchant-dashboard-root relative min-h-[100dvh] overflow-x-hidden bg-[#FFFFF0] font-sans text-black selection:bg-[#2775CA]/20 selection:text-black md:h-[100dvh] md:overflow-hidden">
             <div className="relative md:flex md:h-[100dvh] md:min-h-0">
                 <MerchantDashboardNav
                     activeId={activeTab}
@@ -5983,7 +5983,18 @@ Please complete the following implementation tasks:
                         setActiveTab("settings");
                     }}
                 />
-                <div className="merchant-dashboard-workspace relative min-w-0 flex-1 overflow-y-auto bg-[#D4E3E8] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[70px]">
+                {/* Geometry aligned to the user dashboard's content pane (.user-dashboard-content):
+                    same 20px corner and the same hairline border, which this pane was missing at a
+                    70px corner.
+
+                    The bg class stays bg-[#D4E3E8] and must not be changed to cream. globals.css
+                    already repaints this pane to cream in LIGHT mode via
+                    `.merchant-dashboard-workspace { background-color: var(--merchant-cream) }`, and
+                    the dark layer maps merchant tokens by literal class name — bg-[#D4E3E8] resolves
+                    to --dk-canvas, bg-[#FFFFF0] to --dk-shell. Renaming the class here would repaint
+                    the dark canvas as the shell colour. The comment above that CSS rule spells this
+                    out; colour parity belongs there, geometry belongs here. */}
+                <div className="merchant-dashboard-workspace relative min-w-0 flex-1 overflow-y-auto bg-[#D4E3E8] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[20px] md:border md:border-black/10">
             {/* Session Consent Alerts Overlay */}
             {sessionAlert && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
