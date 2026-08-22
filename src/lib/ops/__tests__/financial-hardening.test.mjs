@@ -288,6 +288,21 @@ test("custody money-moving calls carry attempt-scoped deterministic idempotency 
        checkout page kept its own key. */
     assert.doesNotMatch(dashboard, /subscribeRequestKey/);
     assert.match(subscribeClient, /subscribeRequestKey\.current \|\|= crypto\.randomUUID\(\)/);
+
+    /* Premium upgrade and payroll withdrawal post to /api/execute-tx, whose durable keys are seeded
+       only by the request id, so both pages have to send one and hold it across retries. */
+    const upgrade = source("src/app/dashboard/upgrade/page.tsx");
+    const payroll = source("src/app/dashboard/payroll/PayrollContent.tsx");
+    assert.match(upgrade, /x-request-id/);
+    assert.match(payroll, /x-request-id/);
+
+    /* Withdrawals key that id by destination. The server key is withdraw:<wallet>:<requestId> with no
+       recipient in it, so one id carried across two payout addresses would dedupe the second payout
+       onto the first and the money would land at the first address. */
+    assert.match(payroll, /withdrawRequestIdsRef\.current\[withdrawIdKey\]/);
+    /* And withdrawTo has to forward the recipient; dropped, the route falls back to a plain withdraw
+       and pays out to the connected wallet instead. */
+    assert.match(payroll, /serializedArgs\s*=\s*\{\s*to\s*\}/);
 });
 
 test("premium verification accepts custody SCA submissions via the SubscriptionCreated event", () => {

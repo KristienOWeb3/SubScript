@@ -163,9 +163,6 @@ export async function POST(request: Request) {
 
         const { action, args } = body;
 
-        const FINANCIAL_ACTIONS = new Set(["transferUsdc", "createPremiumSubscription", "withdraw"]);
-        const effectiveRequestId = request.headers.get("x-request-id") || requestId;
-
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
         if (!supabaseUrl || !supabaseServiceKey) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useAccount, useConnect, useWriteContract, useSwitchChain, useWaitForTransactionReceipt } from "wagmi";
 import { useRouter } from "next/navigation";
@@ -85,6 +85,10 @@ export default function UpgradePage() {
        (or may have) been debited, so the UI must never offer a fresh checkout — only re-running
        server verification of this same transaction. */
     const [submittedTxHash, setSubmittedTxHash] = useState<string | null>(null);
+    /* Stable x-request-id for the premium subscription charge. Minted once, reused by every
+       retry, and only dropped once the server confirms the charge — a fresh id per attempt
+       would land on a different idempotency key and bill the user twice. */
+    const premiumRequestIdRef = useRef<string | null>(null);
 
     const [isCancelling, setIsCancelling] = useState(false);
     const [cancellationError, setCancellationError] = useState<string | null>(null);
@@ -204,14 +208,24 @@ export default function UpgradePage() {
                 throw new Error(`Execution intent not allowlisted for embedded wallets: ${functionName}`);
             }
 
+            const headers: Record<string, string> = { "Content-Type": "application/json" };
+            if (action === "createPremiumSubscription") {
+                if (!premiumRequestIdRef.current) {
+                    premiumRequestIdRef.current = crypto.randomUUID();
+                }
+                headers["x-request-id"] = premiumRequestIdRef.current;
+            }
             const res = await fetch("/api/execute-tx", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers,
                 body: JSON.stringify({ action, args: serializedArgs }),
             });
             const data = await res.json();
             if (!res.ok || !data.success) {
                 throw new Error(data.error || "Server transaction execution failed");
+            }
+            if (action === "createPremiumSubscription") {
+                premiumRequestIdRef.current = null;
             }
             return data.txHash as string;
         }
