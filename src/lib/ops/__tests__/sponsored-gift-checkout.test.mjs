@@ -34,6 +34,27 @@ test("sponsored merchant-plan route creates single-use one-time gift checkouts w
     assert.match(route, /durationSeconds:\s*Number\(plan\.periodSeconds\)/);
 });
 
+test("the 5-minute dedupe window only reuses a gift link that is aimed at the same recipient", async () => {
+    const route = await source("src/app/api/user/requests/merchant-plan/route.ts");
+
+    /* The recipient used to be resolved AFTER the dedupe query, which meant the query could not filter on
+       them: a friend-locked request raised inside the window was handed the public link from moments
+       earlier (lock gone, DM skipped by the early return), and a public request was handed a friend-locked
+       link that /verify refuses for everyone but that friend. Resolution has to come first. */
+    const receiverResolved = route.search(/let\s+receiverAddress\s*:/);
+    const dedupeQuery = route.search(/paymentLink\s*\.\s*findFirst/);
+    assert.ok(receiverResolved > -1, "expected receiverAddress to be resolved in the route");
+    assert.ok(dedupeQuery > -1, "expected a findFirst dedupe query in the route");
+    assert.ok(
+        receiverResolved < dedupeQuery,
+        "receiverAddress must be resolved before the dedupe findFirst, or the dedupe cannot filter on it",
+    );
+
+    /* And the query has to actually use it. Public links store null, so threading the resolved value
+       through keeps public and friend-locked links in separate buckets. */
+    assert.match(route, /findFirst\(\s*\{[\s\S]*?receiverAddress[\s\S]*?orderBy/);
+});
+
 test("friend-locked gift links are enforced server-side without leaking receiver_address publicly", async () => {
     const verifyRoute = await source("src/app/api/payment-links/verify/route.ts");
     const embeddedPayRoute = await source("src/app/api/user/payment-links/[id]/pay/route.ts");

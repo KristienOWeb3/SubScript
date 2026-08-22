@@ -117,46 +117,11 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: requested amount does not match the merchant plan price" }, { status: 400 });
         }
 
-        const pendingCount = await prisma.paymentLink.count({
-            where: {
-                beneficiaryAddress: normalizedRequester,
-                active: true,
-                useCount: 0,
-                status: "PENDING",
-                stateSnapshot: { path: ["isSponsored"], equals: true },
-                OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-            },
-        });
-        if (pendingCount >= MAX_PENDING_SPONSORED_REQUESTS) {
-            return NextResponse.json({ error: "Too many active pending sponsored checkout links" }, { status: 429 });
-        }
-
-        const dedupeSince = new Date(Date.now() - DEDUPE_WINDOW_MS);
-        const existing = await prisma.paymentLink.findFirst({
-            where: {
-                beneficiaryAddress: normalizedRequester,
-                active: true,
-                useCount: 0,
-                status: "PENDING",
-                createdAt: { gte: dedupeSince },
-                expiresAt: { gt: new Date() },
-                stateSnapshot: { path: ["sponsoredPlanId"], equals: plan.id },
-            },
-            orderBy: { createdAt: "desc" },
-            select: { id: true },
-        });
-        if (existing) {
-            return NextResponse.json(sponsoredResponse(existing, true), { status: 200 });
-        }
-
-        const requesterAlias = await prisma.addressAlias.findUnique({
-            where: { address: normalizedRequester },
-            select: { alias: true, isAnonymous: true },
-        });
-        const requesterLabel = requesterAlias?.alias && !requesterAlias.isAnonymous
-            ? `@${requesterAlias.alias}`
-            : shortAddress(normalizedRequester);
-
+        /* Who the link is for has to be settled before the dedupe lookup below, because a link is only
+           reusable when it is locked to the same person. Resolved after, a friend-locked request got
+           handed a public link raised seconds earlier, so the lock quietly went missing and the early
+           return skipped the DM. The reverse was worse: a "public" request got handed a friend-locked
+           link that /verify turns away for everyone except that one friend. */
         const friendUsername = typeof body.friendUsername === "string"
             ? body.friendUsername.trim().replace(/^@/, "")
             : "";
@@ -182,6 +147,49 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: "You cannot request sponsorship from yourself" }, { status: 400 });
             }
         }
+
+        const pendingCount = await prisma.paymentLink.count({
+            where: {
+                beneficiaryAddress: normalizedRequester,
+                active: true,
+                useCount: 0,
+                status: "PENDING",
+                stateSnapshot: { path: ["isSponsored"], equals: true },
+                OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            },
+        });
+        if (pendingCount >= MAX_PENDING_SPONSORED_REQUESTS) {
+            return NextResponse.json({ error: "Too many active pending sponsored checkout links" }, { status: 429 });
+        }
+
+        const dedupeSince = new Date(Date.now() - DEDUPE_WINDOW_MS);
+        const existing = await prisma.paymentLink.findFirst({
+            where: {
+                beneficiaryAddress: normalizedRequester,
+                active: true,
+                useCount: 0,
+                status: "PENDING",
+                createdAt: { gte: dedupeSince },
+                expiresAt: { gt: new Date() },
+                /* Public links store null here, so passing the resolved value through matches IS NULL for
+                   a public request and the exact address for a friend-locked one. The two never collide. */
+                receiverAddress: receiverAddress,
+                stateSnapshot: { path: ["sponsoredPlanId"], equals: plan.id },
+            },
+            orderBy: { createdAt: "desc" },
+            select: { id: true },
+        });
+        if (existing) {
+            return NextResponse.json(sponsoredResponse(existing, true), { status: 200 });
+        }
+
+        const requesterAlias = await prisma.addressAlias.findUnique({
+            where: { address: normalizedRequester },
+            select: { alias: true, isAnonymous: true },
+        });
+        const requesterLabel = requesterAlias?.alias && !requesterAlias.isAnonymous
+            ? `@${requesterAlias.alias}`
+            : shortAddress(normalizedRequester);
 
         const sourceCheckout = plan.sourceCheckoutId
             ? await prisma.paymentLink.findUnique({
