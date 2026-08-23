@@ -545,6 +545,11 @@ export default function UserDashboard() {
   const [dmRequestsModalOpen, setDmRequestsModalOpen] = useState(false);
   const [dmInviteModalOpen, setDmInviteModalOpen] = useState(false);
   const [blockedUsersModalOpen, setBlockedUsersModalOpen] = useState(false);
+  /* In-DM subscription review. Set to the SUBSCRIPTION_OFFER DM being confirmed so the user
+     can review terms and subscribe without leaving the thread. */
+  const [subscribeReviewDm, setSubscribeReviewDm] = useState<DmMessage | null>(null);
+  const [subscribeReviewBusy, setSubscribeReviewBusy] = useState(false);
+  const [subscribeReviewError, setSubscribeReviewError] = useState<string | null>(null);
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
   const [threadPlans, setThreadPlans] = useState<MerchantPlan[]>([]);
   const [plansMerchantAddress, setPlansMerchantAddress] = useState<string | null>(null);
@@ -1683,16 +1688,12 @@ export default function UserDashboard() {
        /subscribe/[planId] and none of them on the way through this button. The offer carries its own
        checkout session id, and that route accepts one directly (it falls back from merchant_plans to
        payment_links), so the link needs no plan lookup. */
+    /* Assigned subscription offer: show a review modal inside the thread instead of navigating
+       to the external checkout page. The user sees the terms and confirms without leaving the DM. */
     if (dm.messageType === "SUBSCRIPTION_OFFER") {
       if (!dm.paymentLinkId) return;
-      const checkoutUrl = buildSubscribeUrl(dm.paymentLinkId, window.location.origin);
-      const opened = window.open("about:blank", "_blank");
-      if (opened) {
-        opened.opener = null;
-        opened.location.href = checkoutUrl;
-      } else {
-        router.push(checkoutUrl);
-      }
+      setSubscribeReviewDm(dm);
+      setSubscribeReviewError(null);
       return;
     }
 
@@ -5401,7 +5402,7 @@ export default function UserDashboard() {
                             })}
                           </div>
 
-                          {/* Monthly Spending Trend Bar Chart */}
+                          {/* Monthly Spending Trend — bar on mobile, area graph on desktop */}
                           <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-7 shadow-sm space-y-4">
                             <div className="flex items-center justify-between">
                               <div>
@@ -5415,17 +5416,16 @@ export default function UserDashboard() {
                               </span>
                             </div>
 
-                            <div className="pt-4 pb-2">
-                              <div className="flex items-end justify-between gap-2 sm:gap-4 h-40 pt-6 px-2">
+                            {/* ── Mobile: vertical bar chart ─────────────────────────── */}
+                            <div className="md:hidden pt-4 pb-2">
+                              <div className="flex items-end justify-between gap-2 h-40 pt-6 px-2">
                                 {monthData.map((m) => {
                                   const heightPct = Math.max(8, Math.round((m.amount / maxMonthSpend) * 100));
                                   return (
                                     <div key={m.key} className="flex-1 flex flex-col items-center h-full justify-end group">
-                                      {/* Bar tooltip / amount */}
                                       <span className="text-[9px] font-mono font-black text-black/60 mb-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                         {balanceVisible ? `$${m.amount.toFixed(0)}` : "••••"}
                                       </span>
-                                      {/* Bar */}
                                       <div className="w-full max-w-[48px] bg-black/5 rounded-t-xl overflow-hidden flex items-end relative h-full">
                                         <div
                                           className={`w-full rounded-t-xl transition-all duration-700 ${
@@ -5443,7 +5443,6 @@ export default function UserDashboard() {
                                           </div>
                                         )}
                                       </div>
-                                      {/* Month Label */}
                                       <span className="mt-2 text-[10px] font-bold uppercase tracking-wider text-black/60">
                                         {m.label}
                                       </span>
@@ -5452,6 +5451,225 @@ export default function UserDashboard() {
                                 })}
                               </div>
                             </div>
+
+                            {/* ── Desktop: SVG area + line graph ─────────────────────── */}
+                            {(() => {
+                              /* Build scales for the SVG graph */
+                              const SVG_H = 180;
+                              const PAD_L = 52;  /* wide enough for "$1,200" labels */
+                              const PAD_R = 16;
+                              const PAD_T = 18;
+                              const PAD_B = 28;  /* x-axis label space */
+                              const plotW = 600 - PAD_L - PAD_R; /* viewBox is 600 wide */
+                              const plotH = SVG_H - PAD_T - PAD_B;
+                              const n = monthData.length;
+
+                              /* Nice scale: round the domain ceiling to a clean step */
+                              const rawMax = maxMonthSpend;
+                              const rawStep = rawMax / 4;
+                              const mag = Math.pow(10, Math.floor(Math.log10(Math.max(rawStep, 1))));
+                              const norm = rawStep / mag;
+                              const stepMult = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10;
+                              const step = stepMult * mag;
+                              const domainMax = Math.max(step * 4, Math.ceil(rawMax / step) * step);
+
+                              const scaleX = (i: number) => PAD_L + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+                              const scaleY = (v: number) => PAD_T + plotH - (v / domainMax) * plotH;
+
+                              /* Gridlines: 4 horizontal ticks */
+                              const gridTicks = [0, 1, 2, 3, 4].map((k) => (domainMax / 4) * k);
+
+                              /* SVG cubic bezier path (monotone-ish) */
+                              const pts = monthData.map((m, i) => ({ x: scaleX(i), y: scaleY(m.amount) }));
+                              let linePath = "";
+                              let areaPath = "";
+                              if (pts.length >= 2) {
+                                const segments: string[] = [`M ${pts[0].x},${pts[0].y}`];
+                                for (let i = 0; i < pts.length - 1; i++) {
+                                  const cpx = (pts[i].x + pts[i + 1].x) / 2;
+                                  segments.push(`C ${cpx},${pts[i].y} ${cpx},${pts[i + 1].y} ${pts[i + 1].x},${pts[i + 1].y}`);
+                                }
+                                linePath = segments.join(" ");
+                                const baseline = scaleY(0);
+                                areaPath = `${linePath} L ${pts[pts.length - 1].x},${baseline} L ${pts[0].x},${baseline} Z`;
+                              } else if (pts.length === 1) {
+                                linePath = `M ${pts[0].x},${pts[0].y}`;
+                              }
+
+                              const gradId = "spend-area-grad";
+
+                              return (
+                                <div className="hidden md:block">
+                                  <svg
+                                    viewBox={`0 0 600 ${SVG_H}`}
+                                    className="w-full overflow-visible"
+                                    style={{ height: SVG_H }}
+                                    aria-hidden="true"
+                                  >
+                                    <defs>
+                                      <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#2775CA" stopOpacity="0.22" />
+                                        <stop offset="100%" stopColor="#2775CA" stopOpacity="0.01" />
+                                      </linearGradient>
+                                    </defs>
+
+                                    {/* Horizontal gridlines + y-axis labels */}
+                                    {gridTicks.map((tick) => {
+                                      const y = scaleY(tick);
+                                      const label = tick >= 1000
+                                        ? `$${(tick / 1000).toFixed(tick % 1000 === 0 ? 0 : 1)}k`
+                                        : `$${tick.toFixed(0)}`;
+                                      return (
+                                        <g key={tick}>
+                                          <line
+                                            x1={PAD_L}
+                                            y1={y}
+                                            x2={600 - PAD_R}
+                                            y2={y}
+                                            stroke="rgba(0,0,0,0.07)"
+                                            strokeWidth="1"
+                                            strokeDasharray={tick === 0 ? "none" : "4 3"}
+                                          />
+                                          <text
+                                            x={PAD_L - 6}
+                                            y={y + 4}
+                                            textAnchor="end"
+                                            fontSize="9"
+                                            fontFamily="ui-monospace, monospace"
+                                            fill="rgba(0,0,0,0.38)"
+                                          >
+                                            {balanceVisible ? label : "••"}
+                                          </text>
+                                        </g>
+                                      );
+                                    })}
+
+                                    {/* Area fill under the line */}
+                                    {areaPath && (
+                                      <path d={areaPath} fill={`url(#${gradId})`} />
+                                    )}
+
+                                    {/* Line */}
+                                    {linePath && (
+                                      <path
+                                        d={linePath}
+                                        fill="none"
+                                        stroke="#2775CA"
+                                        strokeWidth="2.5"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                      />
+                                    )}
+
+                                    {/* Data points + x-axis labels */}
+                                    {pts.map((pt, i) => {
+                                      const m = monthData[i];
+                                      const isPeak = m.isPeak && m.amount > 0;
+                                      return (
+                                        <g key={m.key} className="group">
+                                          {/* Hover area */}
+                                          <rect
+                                            x={pt.x - 18}
+                                            y={PAD_T}
+                                            width="36"
+                                            height={plotH}
+                                            fill="transparent"
+                                          />
+                                          {/* Vertical guide on hover */}
+                                          <line
+                                            x1={pt.x} y1={PAD_T}
+                                            x2={pt.x} y2={scaleY(0)}
+                                            stroke="#2775CA"
+                                            strokeWidth="1"
+                                            strokeDasharray="3 3"
+                                            opacity="0"
+                                            className="group-hover:opacity-40 transition-opacity"
+                                          />
+                                          {/* Outer glow ring */}
+                                          <circle
+                                            cx={pt.x} cy={pt.y} r={isPeak ? 7 : 6}
+                                            fill="white"
+                                            stroke={isPeak ? "#2775CA" : "rgba(39,117,202,0.4)"}
+                                            strokeWidth={isPeak ? 2.5 : 1.5}
+                                          />
+                                          {/* Inner dot */}
+                                          <circle
+                                            cx={pt.x} cy={pt.y} r={isPeak ? 3.5 : 2.5}
+                                            fill={isPeak ? "#2775CA" : "rgba(39,117,202,0.6)"}
+                                          />
+
+                                          {/* Tooltip on hover */}
+                                          <g className="opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                            <rect
+                                              x={pt.x - 28} y={pt.y - 28}
+                                              width="56" height="18"
+                                              rx="5"
+                                              fill="#1a1a2e"
+                                              opacity="0.88"
+                                            />
+                                            <text
+                                              x={pt.x} y={pt.y - 16}
+                                              textAnchor="middle"
+                                              fontSize="9"
+                                              fontWeight="700"
+                                              fontFamily="ui-monospace, monospace"
+                                              fill="white"
+                                            >
+                                              {balanceVisible ? `$${m.amount.toFixed(0)}` : "••••"}
+                                            </text>
+                                          </g>
+
+                                          {/* Peak label */}
+                                          {isPeak && (
+                                            <text
+                                              x={pt.x} y={pt.y - 14}
+                                              textAnchor="middle"
+                                              fontSize="8"
+                                              fontWeight="900"
+                                              fill="#2775CA"
+                                              letterSpacing="0.08em"
+                                            >
+                                              PEAK
+                                            </text>
+                                          )}
+
+                                          {/* X-axis label */}
+                                          <text
+                                            x={pt.x}
+                                            y={SVG_H - 4}
+                                            textAnchor="middle"
+                                            fontSize="9"
+                                            fontWeight="700"
+                                            fontFamily="system-ui, sans-serif"
+                                            fill="rgba(0,0,0,0.5)"
+                                            letterSpacing="0.06em"
+                                          >
+                                            {m.label.toUpperCase()}
+                                          </text>
+                                        </g>
+                                      );
+                                    })}
+                                  </svg>
+
+                                  {/* Inflow vs Outflow dual-line legend */}
+                                  <div className="mt-4 flex items-center gap-5 px-1">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="h-2.5 w-6 rounded-full bg-[#2775CA] block" />
+                                      <span className="text-[9px] font-bold text-black/50 uppercase tracking-wider">Outflow</span>
+                                    </div>
+                                    {totalInflow > 0 && (
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="h-2.5 w-6 rounded-full bg-emerald-500 block" />
+                                        <span className="text-[9px] font-bold text-black/50 uppercase tracking-wider">Inflow</span>
+                                      </div>
+                                    )}
+                                    <span className="ml-auto text-[9px] font-mono text-black/35">
+                                      Peak: {balanceVisible ? `$${Math.max(0, ...monthData.map(m => m.amount)).toFixed(0)}` : "••••"}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
 
                           {/* Cash Flow & Net Balance Breakdown */}
@@ -7037,6 +7255,127 @@ export default function UserDashboard() {
           }}
         />
       )}
+
+      {/* ── In-DM Subscription Review Modal ────────────────────────────────────── */}
+      <AnimatePresence>
+        {subscribeReviewDm && (() => {
+          const dm = subscribeReviewDm;
+          const rawAmount = dm.amountUsdc ? (Number(dm.amountUsdc) / 1_000_000).toFixed(2) : null;
+
+          const handleConfirmSubscription = async () => {
+            if (!dm.paymentLinkId) return;
+            setSubscribeReviewBusy(true);
+            setSubscribeReviewError(null);
+            try {
+              const res = await fetch("/api/user/subscription/subscribe", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ checkoutSessionId: dm.paymentLinkId }),
+              });
+              const json = await res.json().catch(() => ({}));
+              if (!res.ok) {
+                throw new Error(json?.error || json?.message || "Could not complete subscription.");
+              }
+              /* Mark the DM as handled and refresh subscriptions */
+              await handleUpdateDmStatus(dm.id, "APPROVED");
+              triggerToast("Subscription activated!");
+              await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
+              setSubscribeReviewDm(null);
+            } catch (err: any) {
+              setSubscribeReviewError(err?.message || "Something went wrong. Please try again.");
+            } finally {
+              setSubscribeReviewBusy(false);
+            }
+          };
+
+          return (
+            <motion.div
+              key="subscribe-review-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center p-4 sm:p-6"
+              style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(6px)" }}
+              onClick={(e) => { if (e.target === e.currentTarget && !subscribeReviewBusy) setSubscribeReviewDm(null); }}
+            >
+              <motion.div
+                key="subscribe-review-sheet"
+                initial={{ opacity: 0, y: 40, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 24, scale: 0.97 }}
+                transition={{ type: "spring", stiffness: 420, damping: 32 }}
+                className="w-full max-w-md rounded-3xl border border-black/10 bg-[#FFFFF0] shadow-2xl overflow-hidden"
+              >
+                {/* Header */}
+                <div className="flex items-start justify-between px-6 pt-6 pb-4 border-b border-black/8">
+                  <div className="min-w-0">
+                    <p className="text-[9px] font-black uppercase tracking-[0.18em] text-[#2775CA]/80">Subscription Offer</p>
+                    <h2 className="mt-0.5 text-base font-black text-black truncate">{dm.title || "Review Plan"}</h2>
+                    <p className="text-[10px] text-black/50 mt-0.5">From {dm.senderName || dm.senderAddress.slice(0, 8) + "…"}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => !subscribeReviewBusy && setSubscribeReviewDm(null)}
+                    className="ml-4 shrink-0 p-1.5 rounded-full hover:bg-black/8 text-black/40 hover:text-black/70 transition"
+                    aria-label="Close"
+                  >
+                    <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4"><path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" /></svg>
+                  </button>
+                </div>
+
+                {/* Plan detail */}
+                <div className="px-6 py-5 space-y-3">
+                  {rawAmount && (
+                    <div className="flex items-center justify-between rounded-2xl border border-[#2775CA]/20 bg-[#2775CA]/5 px-4 py-3">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-[#2775CA]/70">Recurring Amount</span>
+                      <span className="text-xl font-black text-[#2775CA]">${rawAmount} <span className="text-xs font-bold text-[#2775CA]/60">USDC</span></span>
+                    </div>
+                  )}
+
+                  {dm.description && (
+                    <div className="rounded-2xl border border-black/10 bg-white/60 px-4 py-3">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-black/40 mb-1">Plan Details</p>
+                      <p className="text-xs text-black/70 leading-relaxed">{dm.description}</p>
+                    </div>
+                  )}
+
+                  <div className="rounded-2xl border border-amber-400/25 bg-amber-50/60 px-4 py-3">
+                    <p className="text-[9px] font-bold text-amber-700/80 leading-relaxed">
+                      By confirming you authorise a recurring charge at the amount above. You can cancel at any time from your subscriptions dashboard.
+                    </p>
+                  </div>
+
+                  {subscribeReviewError && (
+                    <div className="rounded-2xl border border-red-400/30 bg-red-50/60 px-4 py-3">
+                      <p className="text-[10px] font-bold text-red-700">{subscribeReviewError}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div className="px-6 pb-6 flex gap-3">
+                  <button
+                    type="button"
+                    disabled={subscribeReviewBusy}
+                    onClick={() => !subscribeReviewBusy && setSubscribeReviewDm(null)}
+                    className="flex-1 rounded-2xl border border-black/15 bg-white py-3 text-xs font-black uppercase tracking-wider text-black/70 hover:bg-black/5 transition disabled:opacity-40"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={subscribeReviewBusy}
+                    onClick={handleConfirmSubscription}
+                    className={`relative flex-1 overflow-hidden rounded-2xl bg-[#2775CA] py-3 text-xs font-black uppercase tracking-wider text-white hover:bg-[#1e5fa8] transition disabled:opacity-60 ${subscribeReviewBusy ? "quick-action-loading cursor-not-allowed" : ""}`}
+                  >
+                    {subscribeReviewBusy ? "Subscribing…" : "Confirm & Subscribe"}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
 
       <SupportChatModal
         open={supportChatOpen}
