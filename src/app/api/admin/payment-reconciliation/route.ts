@@ -24,21 +24,12 @@ type ReconciliationRow = {
     updated_at: Date | string;
 };
 
-async function authenticateReconciliationRequest(request: Request) {
-    const isApiKey = verifyAdminApiKey(request.headers);
-    if (isApiKey) {
-        return { ok: true as const, isApiKey: true, actor: "api_key" };
-    }
-    const adminAuth = await requireAdmin(request);
-    if (adminAuth.ok) {
-        return { ok: true as const, isApiKey: false, actor: adminAuth.admin.wallet };
-    }
-    return { ok: false as const, response: adminAuth.response };
-}
-
 export async function GET(request: Request) {
-    const auth = await authenticateReconciliationRequest(request);
-    if (!auth.ok) return auth.response;
+    const isApiKey = verifyAdminApiKey(request.headers);
+    if (!isApiKey) {
+        const adminAuth = await requireAdmin(request);
+        if (!adminAuth.ok) return adminAuth.response;
+    }
 
     const searchParams = new URL(request.url).searchParams;
     const status = searchParams.get("status")?.toUpperCase() || null;
@@ -78,8 +69,13 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-    const auth = await authenticateReconciliationRequest(request);
-    if (!auth.ok) return auth.response;
+    const isApiKey = verifyAdminApiKey(request.headers);
+    let actor = "api_key";
+    if (!isApiKey) {
+        const adminAuth = await requireAdmin(request);
+        if (!adminAuth.ok) return adminAuth.response;
+        actor = adminAuth.admin.wallet;
+    }
 
     const body = await request.json().catch(() => null);
     const id = typeof body?.id === "string" ? body.id : "";
