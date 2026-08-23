@@ -232,7 +232,7 @@ export default function MerchantOverview({
                                 onClick={onScanQr}
                                 title="Scan a QR code"
                                 aria-label="Scan a QR code"
-                                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#082824]/15 bg-[#FFFFF0] text-[#082824] transition hover:bg-[#D4E3E8] shadow-sm"
+                                className="inline-flex md:hidden h-10 w-10 items-center justify-center rounded-full border border-[#082824]/15 bg-[#FFFFF0] text-[#082824] transition hover:bg-[#D4E3E8] shadow-sm"
                             >
                                 <QrCode className="h-4 w-4" />
                             </button>

@@ -46,7 +46,7 @@ import DmRequestsModal from "@/components/dashboard/DmRequestsModal";
 import DmInviteManagerModal from "@/components/dashboard/DmInviteManagerModal";
 import BlockedUsersModal from "@/components/dashboard/BlockedUsersModal";
 import VaultShareManager from "@/components/VaultShareManager";
-import AccountHoldPanel from "@/components/dashboard/AccountHoldPanel";
+import AccountHoldModal from "@/components/dashboard/AccountHoldModal";
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
 import { MerchantVerifiedTick } from "@/components/MerchantVerifiedBadge";
@@ -515,7 +515,9 @@ export default function UserDashboard() {
   const [vaultActionAmount, setVaultActionAmount] = useState("");
   const [vaultActionBusy, setVaultActionBusy] = useState(false);
   const [vaultActionError, setVaultActionError] = useState<string | null>(null);
-  const [expandedCommitAction, setExpandedCommitAction] = useState<"refresh" | "commit" | null>(null);
+  const [expandedCommitAction, setExpandedCommitAction] = useState<"refresh" | "commit" | "hold" | null>(null);
+  const [accountHoldModalOpen, setAccountHoldModalOpen] = useState(false);
+  const [isAccountOnHold, setIsAccountOnHold] = useState(false);
   /* Unverified-merchant commit warning (informed consent before escrowing to an unverified merchant). */
   const [vaultUnverifiedWarning, setVaultUnverifiedWarning] = useState(false);
   const [isEmbeddedWalletSession, setIsEmbeddedWalletSession] = useState(false);
@@ -902,10 +904,19 @@ export default function UserDashboard() {
   const loadVaults = async () => {
     setIsVaultsLoading(true);
     try {
-      const res = await fetch("/api/user/vault/config");
+      const [res, haltRes] = await Promise.all([
+        fetch("/api/user/vault/config"),
+        fetch("/api/user/commit/halt").catch(() => null),
+      ]);
       const data = await res.json();
       if (data.success) {
         setVaults(data.vaults);
+      }
+      if (haltRes && haltRes.ok) {
+        const haltData = await haltRes.json().catch(() => ({}));
+        if (typeof haltData.onHold === "boolean") {
+          setIsAccountOnHold(haltData.onHold);
+        }
       }
     } catch (err) {
       console.error("Failed to load metered vaults:", err);
@@ -3528,7 +3539,7 @@ export default function UserDashboard() {
                               setQrTargetIndex(null);
                               setQrScannerOpen(true);
                             }}
-                            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-black/15 bg-white text-[#111827] hover:bg-black/5 active:scale-95 transition shadow-sm"
+                            className="flex md:hidden h-11 w-11 shrink-0 items-center justify-center rounded-full border border-black/15 bg-white text-[#111827] hover:bg-black/5 active:scale-95 transition shadow-sm"
                             aria-label="Scan QR Code"
                             title="Scan SubScript QR code or link"
                           >
@@ -3700,11 +3711,8 @@ export default function UserDashboard() {
                   subtitle="Fund prepaid balances for metered services"
                 />
 
-                {/* Account-level, so it sits above the per-merchant vaults rather than inside one. */}
-                <AccountHoldPanel />
-
                 <section className="commit-vault-shell p-0 sm:rounded-3xl sm:border sm:border-black/35 sm:bg-[#2775CA]/20 sm:p-8">
-                  <div className="mb-5 flex items-end justify-between gap-3">
+                  <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                       <div className="flex items-center gap-2">
                         <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Prepaid Metered Vaults</h2>
@@ -3790,6 +3798,28 @@ export default function UserDashboard() {
                       >
                         <Plus className="h-6 w-6 shrink-0" />
                         {expandedCommitAction === "commit" && <span className="whitespace-nowrap text-[10px] font-bold">Commit to a service</span>}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (expandedCommitAction !== "hold") return setExpandedCommitAction("hold");
+                          setExpandedCommitAction(null);
+                          setAccountHoldModalOpen(true);
+                        }}
+                        className={`flex h-12 items-center justify-center gap-2 overflow-hidden rounded-2xl border transition-all duration-300 ${
+                          isAccountOnHold
+                            ? "border-amber-400/50 bg-amber-400/20 text-amber-300"
+                            : "border-black/30 bg-[#D5E3EE] text-black"
+                        } ${expandedCommitAction === "hold" ? "w-36 px-3" : "w-12"}`}
+                        title={isAccountOnHold ? "Account is on hold" : "Manage account hold"}
+                        aria-label={isAccountOnHold ? "Account is on hold" : "Manage account hold"}
+                      >
+                        <Shield className={`h-4.5 w-4.5 shrink-0 ${isAccountOnHold ? "text-amber-400" : "text-black"}`} />
+                        {expandedCommitAction === "hold" && (
+                          <span className="whitespace-nowrap text-[10px] font-bold">
+                            {isAccountOnHold ? "On hold" : "Account hold"}
+                          </span>
+                        )}
                       </button>
                     </div>
                   </div>
@@ -6610,6 +6640,12 @@ export default function UserDashboard() {
 
       <VaultInfoModal open={vaultInfoOpen} onClose={() => setVaultInfoOpen(false)} />
 
+      <AccountHoldModal
+        isOpen={accountHoldModalOpen}
+        onClose={() => setAccountHoldModalOpen(false)}
+        onHoldChange={(onHold) => setIsAccountOnHold(onHold)}
+      />
+
       <AnimatePresence>
         {giftPlan && (
           <motion.div
@@ -6966,7 +7002,7 @@ export default function UserDashboard() {
         isOpen={qrScannerOpen}
         onClose={() => setQrScannerOpen(false)}
         onScan={handleScanQrResult}
-        title={qrTargetIndex !== null ? `Scan QR for Recipient #${qrTargetIndex + 1}` : "Scan Recipient QR Code"}
+        title={qrTargetIndex !== null ? `Scan QR for Recipient #${qrTargetIndex + 1}` : "Scan QR"}
       />
 
       {/* Single Send is a modal now; the Send tab body belongs to Batch Payouts. The routing
@@ -9353,7 +9389,7 @@ function SendFundsModal({
                   className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3 text-xs font-mono text-[#111827] focus:border-[#2775CA] focus:outline-none"
                 />
                 {onScanQr && (
-                  <button type="button" onClick={onScanQr} className="mt-2 inline-flex md:hidden items-center gap-2 rounded-full border border-black/15 bg-white px-3 py-1.5 text-[10px] font-bold text-black shadow-sm" aria-label="Scan recipient QR">
+                  <button type="button" onClick={onScanQr} className="mt-2 inline-flex md:hidden items-center gap-2 rounded-full border border-black/15 bg-white px-3 py-1.5 text-[10px] font-bold text-black shadow-sm" aria-label="Scan QR">
                     <QrCode className="h-3.5 w-3.5" /> Scan QR
                   </button>
                 )}

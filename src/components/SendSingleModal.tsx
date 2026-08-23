@@ -171,7 +171,7 @@ export default function SendSingleModal({
                                         type="button"
                                         onClick={onScanQr}
                                         title="Scan QR Code"
-                                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-black/10 bg-white text-black/70 transition hover:border-[#2775CA] hover:bg-[#2775CA]/10 hover:text-[#2775CA] shadow-sm"
+                                        className="flex md:hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-black/10 bg-white text-black/70 transition hover:border-[#2775CA] hover:bg-[#2775CA]/10 hover:text-[#2775CA] shadow-sm"
                                     >
                                         <QrCode className="h-5 w-5 text-[#2775CA]" />
                                     </button>
