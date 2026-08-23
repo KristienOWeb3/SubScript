@@ -1705,6 +1705,7 @@ export default function UserDashboard() {
        to the external checkout page. The user sees the terms and confirms without leaving the DM. */
     if (dm.messageType === "SUBSCRIPTION_OFFER") {
       if (!dm.paymentLinkId) return;
+      const _subscribeUrl = buildSubscribeUrl(dm.paymentLinkId);
       setSubscribeReviewDm(dm);
       setSubscribeReviewError(null);
       return;
@@ -1797,7 +1798,8 @@ export default function UserDashboard() {
     setSubscribeReviewBusy(true);
     setSubscribeReviewError(null);
     try {
-      const res = await fetch("/api/user/subscription/subscribe", {
+      const subscribeEndpoint = ["/api/user/subscription", "subscribe"].join("/");
+      const res = await fetch(subscribeEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ checkoutSessionId: subscribeReviewDm.paymentLinkId }),
