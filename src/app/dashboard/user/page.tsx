@@ -838,7 +838,6 @@ export default function UserDashboard() {
      flush first, which a slow frame or an edit to that effect would silently break. */
   const pendingAccountSubView = useRef<AccountSubView | null>(null);
   const [dataViewLoading, setDataViewLoading] = useState<AccountSubView | null>(null);
-  const [isSettingsLoading, setIsSettingsLoading] = useState(false);
 
   const openSubView = useCallback((subView: AccountSubView) => {
     if (subView === "spend-analysis" || subView === "transactions") {
