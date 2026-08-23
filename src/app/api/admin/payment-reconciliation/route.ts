@@ -125,7 +125,7 @@ export async function POST(request: Request) {
                 if (!resolved) throw new Error("Reconciliation event changed while the retry was running");
                 
                 await recordAdminAction({
-                    actor: auth.actor,
+                    actor,
                     action: "RECONCILIATION_RETRY",
                     target: id,
                     detail: { outcome: "RESOLVED", attemptCount: event.attempt_count + 1 },
@@ -152,7 +152,7 @@ export async function POST(request: Request) {
                 );
                 console.error("Payment reconciliation retry failed:", { id, error: retryError });
                 await recordAdminAction({
-                    actor: auth.actor,
+                    actor,
                     action: "RECONCILIATION_RETRY",
                     target: id,
                     detail: { outcome: "FAILED", error: message },
@@ -178,7 +178,7 @@ export async function POST(request: Request) {
         }
 
         await recordAdminAction({
-            actor: auth.actor,
+            actor,
             action: "RECONCILIATION_RETRY",
             target: id,
             detail: { outcome: "MANUALLY_RESOLVED" },
