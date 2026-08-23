@@ -3428,6 +3428,7 @@ export default function UserDashboard() {
                   isMerchant={isActiveDmMerchant}
                   isVerifiedMerchant={isActiveDmMerchantVerified}
                   isBlocked={isCurrentPeerBlocked}
+                  activeSubscription={activeThreadSubscription}
                   onBack={() => setSelectedDmPeer(null)}
                   onBlock={() => handleBlockPeer(selectedDmPeer)}
                   onUnblock={() => handleUnblockPeer(selectedDmPeer)}
@@ -4118,6 +4119,21 @@ export default function UserDashboard() {
                                       <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                                     )}
                                   </div>
+                                  {/* Recurring subscription indicator — pulsing dot + label */}
+                                  {activeThreadSubscription && (
+                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                      {/* Beacon: outer ping ring + inner solid dot */}
+                                      <span className="relative flex h-2 w-2 shrink-0">
+                                        {!activeThreadSubscription.cancelAtPeriodEnd && (
+                                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
+                                        )}
+                                        <span className={`relative inline-flex h-2 w-2 rounded-full ${activeThreadSubscription.cancelAtPeriodEnd ? "bg-amber-400" : "bg-emerald-400"}`} />
+                                      </span>
+                                      <span className={`text-[9px] font-black uppercase tracking-[0.12em] ${activeThreadSubscription.cancelAtPeriodEnd ? "text-amber-400" : "text-emerald-400"}`}>
+                                        {activeThreadSubscription.cancelAtPeriodEnd ? "Cancelling" : "Recurring active"}
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                               
@@ -7628,6 +7644,7 @@ function ChatHeader({
   isMerchant,
   isVerifiedMerchant,
   isBlocked,
+  activeSubscription,
   onBack,
   onSendFunds,
   onBlock,
@@ -7639,6 +7656,7 @@ function ChatHeader({
   isMerchant: boolean;
   isVerifiedMerchant: boolean;
   isBlocked?: boolean;
+  activeSubscription?: { cancelAtPeriodEnd?: boolean | null } | null;
   onBack: () => void;
   onSendFunds: () => void;
   onBlock?: () => void;
@@ -7665,6 +7683,15 @@ function ChatHeader({
                 {peerName}
               </span>
               <MerchantVerifiedTick verified={isVerifiedMerchant} size="xs" />
+              {/* Recurring subscription beacon */}
+              {activeSubscription && (
+                <span className="relative flex h-2 w-2 shrink-0" title={activeSubscription.cancelAtPeriodEnd ? "Subscription cancelling" : "Recurring subscription active"}>
+                  {!activeSubscription.cancelAtPeriodEnd && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
+                  )}
+                  <span className={`relative inline-flex h-2 w-2 rounded-full ${activeSubscription.cancelAtPeriodEnd ? "bg-amber-400" : "bg-emerald-400"}`} />
+                </span>
+              )}
             </div>
           </div>
 
