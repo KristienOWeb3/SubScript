@@ -837,9 +837,23 @@ export default function UserDashboard() {
      handoff, in order — the previous setTimeout only worked because the effect happened to
      flush first, which a slow frame or an edit to that effect would silently break. */
   const pendingAccountSubView = useRef<AccountSubView | null>(null);
+  const [dataViewLoading, setDataViewLoading] = useState<AccountSubView | null>(null);
+  const [isSettingsLoading, setIsSettingsLoading] = useState(false);
+
+  const openSubView = useCallback((subView: AccountSubView) => {
+    if (subView === "spend-analysis" || subView === "transactions") {
+      setDataViewLoading(subView);
+      window.setTimeout(() => setDataViewLoading((current) => current === subView ? null : current), 400);
+    }
+    setAccountSubView(subView);
+  }, []);
 
   const goToAccountSubView = useCallback((tab: UserTab, subView: AccountSubView) => {
     pendingAccountSubView.current = subView;
+    if (subView === "spend-analysis" || subView === "transactions") {
+      setDataViewLoading(subView);
+      window.setTimeout(() => setDataViewLoading((current) => current === subView ? null : current), 400);
+    }
     setActiveTab(tab);
     /* Also applied directly, so the navigation still lands when activeTab is already `tab`
        and the effect never runs. Both paths set the same value, so ordering cannot matter. */
@@ -1777,6 +1791,32 @@ export default function UserDashboard() {
       triggerToast(`Sent ${humanAmount} USDC`);
       await Promise.all([loadDms(), refetchUsdc().catch(() => {})]);
     }).catch((err: any) => triggerToast(err?.message || "Could not complete the payment."));
+  };
+
+  const handleConfirmSubscription = async () => {
+    if (!subscribeReviewDm?.paymentLinkId) return;
+    setSubscribeReviewBusy(true);
+    setSubscribeReviewError(null);
+    try {
+      const res = await fetch("/api/user/subscription/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ checkoutSessionId: subscribeReviewDm.paymentLinkId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.error || json?.message || "Could not complete subscription.");
+      }
+      /* Mark the DM as handled and refresh subscriptions */
+      await handleUpdateDmStatus(subscribeReviewDm.id, "APPROVED");
+      triggerToast("Subscription activated!");
+      await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
+      setSubscribeReviewDm(null);
+    } catch (err: any) {
+      setSubscribeReviewError(err?.message || "Something went wrong. Please try again.");
+    } finally {
+      setSubscribeReviewBusy(false);
+    }
   };
 
   const handleDeclineDm = async (dm: DmMessage) => {
@@ -4760,7 +4800,7 @@ export default function UserDashboard() {
                       </button>
 
                       <button
-                        onClick={() => setAccountSubView("spend-analysis")}
+                        onClick={() => openSubView("spend-analysis")}
                         className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
                       >
                         <div className="flex items-center gap-3">
@@ -4776,7 +4816,7 @@ export default function UserDashboard() {
                       </button>
 
                       <button
-                        onClick={() => setAccountSubView("transactions")}
+                        onClick={() => openSubView("transactions")}
                         className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
                       >
                         <div className="flex items-center gap-3">
@@ -5136,7 +5176,9 @@ export default function UserDashboard() {
                 )}
 
                 {/* 3. SPEND ANALYSIS VIEW */}
-                {accountSubView === "spend-analysis" && (() => {
+                {accountSubView === "spend-analysis" && (loading || dataViewLoading === "spend-analysis" ? (
+                  <SpendAnalysisSkeleton />
+                ) : (() => {
                   const now = Date.now();
                   const windowMs =
                     spendDatePreset === "today" ? 24 * 60 * 60 * 1000
@@ -5804,10 +5846,12 @@ export default function UserDashboard() {
                       )}
                     </div>
                   );
-                })()}
+                })())}
 
                 {/* 4. TRANSACTIONS VIEW */}
-                {accountSubView === "transactions" && (() => {
+                {accountSubView === "transactions" && (loading || dataViewLoading === "transactions" ? (
+                  <SettingsTransactionsSkeleton />
+                ) : (() => {
                   const filteredSettingsTx = settingsTransactions.filter((tx) => {
                     if (settingsTxSearch.trim()) {
                       const q = settingsTxSearch.trim().toLowerCase();
@@ -6154,7 +6198,7 @@ export default function UserDashboard() {
                       </div>
                     </div>
                   );
-                })()}
+                })())}
 
                 {/* 5. NOTIFICATIONS VIEW */}
                 {accountSubView === "notifications" && (
@@ -7273,125 +7317,13 @@ export default function UserDashboard() {
       )}
 
       {/* ── In-DM Subscription Review Modal ────────────────────────────────────── */}
-      <AnimatePresence>
-        {subscribeReviewDm && (() => {
-          const dm = subscribeReviewDm;
-          const rawAmount = dm.amountUsdc ? (Number(dm.amountUsdc) / 1_000_000).toFixed(2) : null;
-
-          const handleConfirmSubscription = async () => {
-            if (!dm.paymentLinkId) return;
-            setSubscribeReviewBusy(true);
-            setSubscribeReviewError(null);
-            try {
-              const res = await fetch("/api/user/subscription/subscribe", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ checkoutSessionId: dm.paymentLinkId }),
-              });
-              const json = await res.json().catch(() => ({}));
-              if (!res.ok) {
-                throw new Error(json?.error || json?.message || "Could not complete subscription.");
-              }
-              /* Mark the DM as handled and refresh subscriptions */
-              await handleUpdateDmStatus(dm.id, "APPROVED");
-              triggerToast("Subscription activated!");
-              await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
-              setSubscribeReviewDm(null);
-            } catch (err: any) {
-              setSubscribeReviewError(err?.message || "Something went wrong. Please try again.");
-            } finally {
-              setSubscribeReviewBusy(false);
-            }
-          };
-
-          return (
-            <motion.div
-              key="subscribe-review-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center p-4 sm:p-6"
-              style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(6px)" }}
-              onClick={(e) => { if (e.target === e.currentTarget && !subscribeReviewBusy) setSubscribeReviewDm(null); }}
-            >
-              <motion.div
-                key="subscribe-review-sheet"
-                initial={{ opacity: 0, y: 40, scale: 0.96 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 24, scale: 0.97 }}
-                transition={{ type: "spring", stiffness: 420, damping: 32 }}
-                className="w-full max-w-md rounded-3xl border border-black/10 bg-[#FFFFF0] shadow-2xl overflow-hidden"
-              >
-                {/* Header */}
-                <div className="flex items-start justify-between px-6 pt-6 pb-4 border-b border-black/8">
-                  <div className="min-w-0">
-                    <p className="text-[9px] font-black uppercase tracking-[0.18em] text-[#2775CA]/80">Subscription Offer</p>
-                    <h2 className="mt-0.5 text-base font-black text-black truncate">{dm.title || "Review Plan"}</h2>
-                    <p className="text-[10px] text-black/50 mt-0.5">From {dm.senderName || dm.senderAddress.slice(0, 8) + "…"}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => !subscribeReviewBusy && setSubscribeReviewDm(null)}
-                    className="ml-4 shrink-0 p-1.5 rounded-full hover:bg-black/8 text-black/40 hover:text-black/70 transition"
-                    aria-label="Close"
-                  >
-                    <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4"><path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" /></svg>
-                  </button>
-                </div>
-
-                {/* Plan detail */}
-                <div className="px-6 py-5 space-y-3">
-                  {rawAmount && (
-                    <div className="flex items-center justify-between rounded-2xl border border-[#2775CA]/20 bg-[#2775CA]/5 px-4 py-3">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-[#2775CA]/70">Recurring Amount</span>
-                      <span className="text-xl font-black text-[#2775CA]">${rawAmount} <span className="text-xs font-bold text-[#2775CA]/60">USDC</span></span>
-                    </div>
-                  )}
-
-                  {dm.description && (
-                    <div className="rounded-2xl border border-black/10 bg-white/60 px-4 py-3">
-                      <p className="text-[10px] font-black uppercase tracking-wider text-black/40 mb-1">Plan Details</p>
-                      <p className="text-xs text-black/70 leading-relaxed">{dm.description}</p>
-                    </div>
-                  )}
-
-                  <div className="rounded-2xl border border-amber-400/25 bg-amber-50/60 px-4 py-3">
-                    <p className="text-[9px] font-bold text-amber-700/80 leading-relaxed">
-                      By confirming you authorise a recurring charge at the amount above. You can cancel at any time from your subscriptions dashboard.
-                    </p>
-                  </div>
-
-                  {subscribeReviewError && (
-                    <div className="rounded-2xl border border-red-400/30 bg-red-50/60 px-4 py-3">
-                      <p className="text-[10px] font-bold text-red-700">{subscribeReviewError}</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Actions */}
-                <div className="px-6 pb-6 flex gap-3">
-                  <button
-                    type="button"
-                    disabled={subscribeReviewBusy}
-                    onClick={() => !subscribeReviewBusy && setSubscribeReviewDm(null)}
-                    className="flex-1 rounded-2xl border border-black/15 bg-white py-3 text-xs font-black uppercase tracking-wider text-black/70 hover:bg-black/5 transition disabled:opacity-40"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    disabled={subscribeReviewBusy}
-                    onClick={handleConfirmSubscription}
-                    className={`relative flex-1 overflow-hidden rounded-2xl bg-[#2775CA] py-3 text-xs font-black uppercase tracking-wider text-white hover:bg-[#1e5fa8] transition disabled:opacity-60 ${subscribeReviewBusy ? "quick-action-loading cursor-not-allowed" : ""}`}
-                  >
-                    {subscribeReviewBusy ? "Subscribing…" : "Confirm & Subscribe"}
-                  </button>
-                </div>
-              </motion.div>
-            </motion.div>
-          );
-        })()}
-      </AnimatePresence>
+      <SubscribeReviewModal
+        dm={subscribeReviewDm}
+        busy={subscribeReviewBusy}
+        error={subscribeReviewError}
+        onClose={() => setSubscribeReviewDm(null)}
+        onConfirm={handleConfirmSubscription}
+      />
 
       <SupportChatModal
         open={supportChatOpen}
@@ -10602,5 +10534,235 @@ function TopupVaultModal({
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+function SubscribeReviewModal({
+  dm,
+  busy,
+  error,
+  onClose,
+  onConfirm,
+}: {
+  dm: DmMessage | null;
+  busy: boolean;
+  error: string | null;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  if (!dm) return null;
+  const rawAmount = dm.amountUsdc ? (Number(dm.amountUsdc) / 1_000_000).toFixed(2) : null;
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        key="subscribe-review-backdrop"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center p-4 sm:p-6"
+        style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(6px)" }}
+        onClick={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}
+      >
+        <motion.div
+          key="subscribe-review-sheet"
+          initial={{ opacity: 0, y: 40, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 24, scale: 0.97 }}
+          transition={{ type: "spring", stiffness: 420, damping: 32 }}
+          className="w-full max-w-md rounded-3xl border border-black/10 bg-[#FFFFF0] shadow-2xl overflow-hidden"
+        >
+          {/* Header */}
+          <div className="flex items-start justify-between px-6 pt-6 pb-4 border-b border-black/8">
+            <div className="min-w-0">
+              <p className="text-[9px] font-black uppercase tracking-[0.18em] text-[#2775CA]/80">Subscription Offer</p>
+              <h2 className="mt-0.5 text-base font-black text-black truncate">{dm.title || "Review Plan"}</h2>
+              <p className="text-[10px] text-black/50 mt-0.5">From {dm.senderName || dm.senderAddress.slice(0, 8) + "…"}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => !busy && onClose()}
+              className="ml-4 shrink-0 p-1.5 rounded-full hover:bg-black/8 text-black/40 hover:text-black/70 transition"
+              aria-label="Close"
+            >
+              <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4"><path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" /></svg>
+            </button>
+          </div>
+
+          {/* Plan detail */}
+          <div className="px-6 py-5 space-y-3">
+            {rawAmount && (
+              <div className="flex items-center justify-between rounded-2xl border border-[#2775CA]/20 bg-[#2775CA]/5 px-4 py-3">
+                <span className="text-[10px] font-black uppercase tracking-wider text-[#2775CA]/70">Recurring Amount</span>
+                <span className="text-xl font-black text-[#2775CA]">${rawAmount} <span className="text-xs font-bold text-[#2775CA]/60">USDC</span></span>
+              </div>
+            )}
+
+            {dm.description && (
+              <div className="rounded-2xl border border-black/10 bg-white/60 px-4 py-3">
+                <p className="text-[10px] font-black uppercase tracking-wider text-black/40 mb-1">Plan Details</p>
+                <p className="text-xs text-black/70 leading-relaxed">{dm.description}</p>
+              </div>
+            )}
+
+            <div className="rounded-2xl border border-amber-400/25 bg-amber-50/60 px-4 py-3">
+              <p className="text-[9px] font-bold text-amber-700/80 leading-relaxed">
+                By confirming you authorise a recurring charge at the amount above. You can cancel at any time from your subscriptions dashboard.
+              </p>
+            </div>
+
+            {error && (
+              <div className="rounded-2xl border border-red-400/30 bg-red-50/60 px-4 py-3">
+                <p className="text-[10px] font-bold text-red-700">{error}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="px-6 pb-6 flex gap-3">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => !busy && onClose()}
+              className="flex-1 rounded-2xl border border-black/15 bg-white py-3 text-xs font-black uppercase tracking-wider text-black/70 hover:bg-black/5 transition disabled:opacity-40"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onConfirm}
+              className={`relative flex-1 overflow-hidden rounded-2xl bg-[#2775CA] py-3 text-xs font-black uppercase tracking-wider text-white hover:bg-[#1e5fa8] transition disabled:opacity-60 ${busy ? "quick-action-loading cursor-not-allowed" : ""}`}
+            >
+              {busy ? "Subscribing…" : "Confirm & Subscribe"}
+            </button>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+function SpendAnalysisSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse" data-testid="spend-analysis-skeleton">
+      {/* Header controls skeleton */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-black/10">
+        <div className="space-y-2">
+          <div className="h-6 w-48 rounded-xl bg-black/10" />
+          <div className="h-3 w-64 rounded-lg bg-black/5" />
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="h-9 w-24 rounded-full bg-black/10" />
+          <div className="h-9 w-24 rounded-full bg-black/10" />
+        </div>
+      </div>
+
+      {/* 4 Stat Cards Skeleton */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="rounded-3xl border border-black/10 bg-white/80 p-5 space-y-3 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="h-3 w-24 rounded bg-black/10" />
+              <div className="h-8 w-8 rounded-2xl bg-black/10" />
+            </div>
+            <div className="h-8 w-32 rounded-xl bg-black/15" />
+            <div className="h-3 w-20 rounded bg-black/5" />
+          </div>
+        ))}
+      </div>
+
+      {/* Chart Card Skeleton */}
+      <div className="rounded-3xl border border-black/10 bg-white/80 p-6 space-y-4 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div className="space-y-1.5">
+            <div className="h-4 w-40 rounded-lg bg-black/10" />
+            <div className="h-3 w-56 rounded bg-black/5" />
+          </div>
+          <div className="h-6 w-28 rounded-full bg-black/10" />
+        </div>
+        <div className="h-44 w-full rounded-2xl bg-black/5 flex items-end justify-between p-4 gap-3">
+          {[40, 65, 30, 85, 50, 70].map((h, idx) => (
+            <div key={idx} className="flex-1 flex flex-col items-center gap-2 h-full justify-end">
+              <div className="w-full rounded-t-xl bg-black/15" style={{ height: `${h}%` }} />
+              <div className="h-3 w-8 rounded bg-black/10" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Insights & Categories Skeleton */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="rounded-3xl border border-black/10 bg-white/80 p-6 space-y-4 shadow-sm">
+          <div className="h-4 w-36 rounded-lg bg-black/10" />
+          <div className="space-y-3 pt-2">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="flex items-center justify-between p-3 rounded-2xl bg-black/5">
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-8 rounded-xl bg-black/10" />
+                  <div className="h-3 w-28 rounded bg-black/10" />
+                </div>
+                <div className="h-4 w-16 rounded bg-black/15" />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-3xl border border-black/10 bg-white/80 p-6 space-y-4 shadow-sm">
+          <div className="h-4 w-36 rounded-lg bg-black/10" />
+          <div className="space-y-3 pt-2">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="flex items-center justify-between p-3 rounded-2xl bg-black/5">
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-8 rounded-full bg-black/10" />
+                  <div className="h-3 w-32 rounded bg-black/10" />
+                </div>
+                <div className="h-4 w-20 rounded bg-black/15" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingsTransactionsSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse" data-testid="transactions-skeleton">
+      {/* Header controls & filter bar skeleton */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-black/10">
+        <div className="space-y-2">
+          <div className="h-6 w-48 rounded-xl bg-black/10" />
+          <div className="h-3 w-64 rounded-lg bg-black/5" />
+        </div>
+        <div className="h-10 w-full sm:w-64 rounded-2xl bg-black/10" />
+      </div>
+
+      {/* Filter pills skeleton */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-2">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="h-8 w-24 rounded-full bg-black/10 shrink-0" />
+        ))}
+      </div>
+
+      {/* Transactions list skeleton */}
+      <div className="rounded-3xl border border-black/10 bg-white/80 p-4 sm:p-6 space-y-3 shadow-sm">
+        {[1, 2, 3, 4, 5, 6].map((i) => (
+          <div key={i} className="flex items-center justify-between p-4 rounded-2xl border border-black/5 bg-black/[0.02]">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-black/10 shrink-0" />
+              <div className="space-y-2">
+                <div className="h-4 w-36 sm:w-48 rounded bg-black/15" />
+                <div className="h-3 w-24 sm:w-32 rounded bg-black/5" />
+              </div>
+            </div>
+            <div className="text-right space-y-1.5">
+              <div className="h-4 w-20 rounded bg-black/15 ml-auto" />
+              <div className="h-3 w-14 rounded bg-black/5 ml-auto" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

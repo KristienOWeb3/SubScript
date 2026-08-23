@@ -152,7 +152,8 @@ export default function UserTransactionsPage() {
       const [subRes, dmRes, sessionRes] = await Promise.all([
         fetch("/api/user/subscriptions"),
         fetch("/api/user/dms"),
-        fetch("/api/auth/session")
+        fetch("/api/auth/session"),
+        new Promise<void>((resolve) => window.setTimeout(resolve, 350))
       ]);
       const subData = await subRes.json().catch(() => ({}));
       const dmData = await dmRes.json().catch(() => ({}));
