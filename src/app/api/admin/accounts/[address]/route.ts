@@ -117,9 +117,9 @@ export async function GET(
                 authIdentities,
                 customer: customer ? {
                     email: customer.email,
-                    spendingLimitDaily: customer.spendingLimitDaily ? customer.spendingLimitDaily.toString() : null,
-                    spendingLimitWeekly: customer.spendingLimitWeekly ? customer.spendingLimitWeekly.toString() : null,
-                    spendingLimitMonthly: customer.spendingLimitMonthly ? customer.spendingLimitMonthly.toString() : null,
+                    spendingLimitDaily: customer.spendingLimitDaily ? (Number(customer.spendingLimitDaily) / 1_000_000).toFixed(2) : null,
+                    spendingLimitWeekly: customer.spendingLimitWeekly ? (Number(customer.spendingLimitWeekly) / 1_000_000).toFixed(2) : null,
+                    spendingLimitMonthly: customer.spendingLimitMonthly ? (Number(customer.spendingLimitMonthly) / 1_000_000).toFixed(2) : null,
                     closureStatus: customer.closureStatus,
                     createdAt: customer.createdAt,
                 } : null,
