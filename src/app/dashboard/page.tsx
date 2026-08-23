@@ -4580,14 +4580,17 @@ Please complete the following implementation tasks:
                                         enter: (dir: number) => ({
                                             x: dir > 0 ? "100%" : "-100%",
                                             opacity: 0,
+                                            filter: "blur(1.5px)",
                                         }),
                                         center: {
                                             x: 0,
                                             opacity: 1,
+                                            filter: "blur(0px)",
                                         },
                                         exit: (dir: number) => ({
                                             x: dir < 0 ? "100%" : "-100%",
                                             opacity: 0,
+                                            filter: "blur(1.5px)",
                                         }),
                                     }}
                                     initial="enter"
@@ -6038,8 +6041,8 @@ Please complete the following implementation tasks:
                                 left the content area blank. */}
                             <motion.div
                                 key={activeTab}
-                                initial={{ opacity: 0, y: 15, scale: 0.985 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                initial={{ opacity: 0, y: 15, scale: 0.985, filter: "blur(1.5px)" }}
+                                animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
                                 transition={{ type: "spring", stiffness: 450, damping: 32 }}
                             >
                                 {renderView()}
@@ -6141,9 +6144,9 @@ Please complete the following implementation tasks:
             {activeQrCodeLink && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md font-sans">
                     <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
+                        initial={{ opacity: 0, scale: 0.95, filter: "blur(1.5px)" }}
+                        animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+                        exit={{ opacity: 0, scale: 0.95, filter: "blur(1.5px)" }}
                         className="liquid-glass border border-white/10 rounded-3xl p-6 w-full max-w-sm shadow-2xl relative space-y-6 text-center"
                     >
                         {/* Close button */}

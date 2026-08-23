@@ -23,7 +23,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
         }
 
-        const { receiverAddress, amountUsdc, title, description, expiresInHours } = sanitizeInput(body);
+        const { receiverAddress, amountUsdc, title, description, expiresInHours, billingType, isRecurring, interval, periodSeconds } = sanitizeInput(body);
         
         let normalizedReceiver: string | null = null;
         if (typeof receiverAddress !== "string" || !ethers.isAddress(receiverAddress)) {
@@ -45,12 +45,24 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Amount must be greater than 0" }, { status: 400 });
         }
 
+        const recurringRequested = billingType === "RECURRING" || isRecurring === true;
+        let recurringPeriodSecs = 2592000; // default 30 days
+        if (periodSeconds && Number(periodSeconds) > 0) {
+            recurringPeriodSecs = Number(periodSeconds);
+        } else if (interval === "weekly") {
+            recurringPeriodSecs = 604800;
+        } else if (interval === "daily") {
+            recurringPeriodSecs = 86400;
+        } else if (interval === "yearly") {
+            recurringPeriodSecs = 31536000;
+        }
+
         const cleanTitle = typeof title === "string" && title.trim()
             ? title.trim().slice(0, 120)
-            : "USDC request";
+            : (recurringRequested ? "Recurring subscription request" : "USDC request");
         const cleanDescription = typeof description === "string" && description.trim()
             ? description.trim().slice(0, 500)
-            : "Peer USDC request through SubScript.";
+            : (recurringRequested ? "Recurring subscription request via SubScript." : "Peer USDC request through SubScript.");
         const parsedExpiresInHours = expiresInHours === undefined || expiresInHours === null || expiresInHours === ""
             ? null
             : Number(expiresInHours);
@@ -70,12 +82,16 @@ export async function POST(request: Request) {
             description: cleanDescription,
             expiresAt,
             dmOnly: isDmOnly,
+            isRecurring: recurringRequested,
+            periodSeconds: recurringPeriodSecs,
         });
 
         const responseBody: Record<string, unknown> = {
             success: true,
             paymentLinkId: paymentRequest.paymentLinkId,
+            planId: paymentRequest.planId,
             dmId: paymentRequest.dmId,
+            isRecurring: recurringRequested,
             shareable: !isDmOnly,
         };
         if (!isDmOnly) {

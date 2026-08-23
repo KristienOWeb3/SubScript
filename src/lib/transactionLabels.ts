@@ -10,6 +10,9 @@ export function humanStatus(messageType: string): string {
     REFUND: "Refund",
     WITHDRAWAL: "Withdrawal",
     COMMIT_EXHAUSTED: "Commitment Exhausted",
+    SUBSCRIPTION_OFFER: "Subscription Request",
+    PEER_REQUEST: "Payment Request",
+    SPONSORED_PLAN_REQUEST: "Subscription Request",
     /* Without these the fallback title-cases to "Auto Topup Success", which reads as a typo. */
     AUTO_TOPUP_SUCCESS: "Auto Top-up",
     AUTO_TOPUP_FAILED: "Auto Top-up Needs Attention",

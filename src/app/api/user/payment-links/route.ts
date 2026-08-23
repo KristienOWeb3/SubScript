@@ -9,7 +9,7 @@ import { requireAccountRole } from "@/lib/accounts/roles";
 import { sanitizeInput } from "@/utils/security";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { createUserPaymentRequest } from "@/lib/userPaymentRequests";
-import { buildCheckoutUrl } from "@/lib/checkoutUrl";
+import { buildCheckoutUrl, buildSubscribeUrl } from "@/lib/checkoutUrl";
 import { prisma } from "@/lib/prisma";
 
 const MAX_ACTIVE_USER_LINKS = 30;
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
         }
 
-        const { amountUsdc, title, description, expiresInHours } = sanitizeInput(body);
+        const { amountUsdc, title, description, expiresInHours, billingType, isRecurring, interval, periodSeconds } = sanitizeInput(body);
 
         const amountMicros = parseUsdcToMicros(amountUsdc);
         if (amountMicros <= 0) {
@@ -52,12 +52,24 @@ export async function POST(request: Request) {
             );
         }
 
+        const recurringRequested = billingType === "RECURRING" || isRecurring === true;
+        let recurringPeriodSecs = 2592000; // default 30 days
+        if (periodSeconds && Number(periodSeconds) > 0) {
+            recurringPeriodSecs = Number(periodSeconds);
+        } else if (interval === "weekly") {
+            recurringPeriodSecs = 604800;
+        } else if (interval === "daily") {
+            recurringPeriodSecs = 86400;
+        } else if (interval === "yearly") {
+            recurringPeriodSecs = 31536000;
+        }
+
         const cleanTitle = typeof title === "string" && title.trim()
             ? title.trim().slice(0, 120)
-            : "USDC payment";
+            : (recurringRequested ? "Recurring Subscription" : "USDC payment");
         const cleanDescription = typeof description === "string" && description.trim()
             ? description.trim().slice(0, 500)
-            : "SubScript payment link.";
+            : (recurringRequested ? "SubScript recurring payment link." : "SubScript payment link.");
 
         const parsedExpiresInHours = expiresInHours === undefined || expiresInHours === null || expiresInHours === ""
             ? null
@@ -78,13 +90,21 @@ export async function POST(request: Request) {
             description: cleanDescription,
             expiresAt,
             dmOnly: false,
+            isRecurring: recurringRequested,
+            periodSeconds: recurringPeriodSecs,
         });
 
         const origin = request.headers.get("origin");
+        const checkoutUrl = recurringRequested && paymentRequest.planId
+            ? buildSubscribeUrl(paymentRequest.planId, origin)
+            : buildCheckoutUrl(paymentRequest.paymentLinkId, origin);
+
         return NextResponse.json({
             success: true,
             paymentLinkId: paymentRequest.paymentLinkId,
-            checkoutUrl: buildCheckoutUrl(paymentRequest.paymentLinkId, origin),
+            planId: paymentRequest.planId,
+            isRecurring: recurringRequested,
+            checkoutUrl,
         }, { status: 201 });
     } catch (error: any) {
         console.error("User payment link creation failed:", error);

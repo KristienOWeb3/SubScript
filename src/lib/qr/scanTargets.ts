@@ -47,6 +47,13 @@ const SAFE_PARAMETER = /^[A-Za-z0-9._~-]+$/;
 function matchLinkPath(pathname: string): string | null {
     const segments = pathname.split("/").filter((segment) => segment.length > 0);
 
+    if (segments.length === 1 && segments[0].toLowerCase() === "dm") {
+        return "/dm";
+    }
+    if (segments.length === 2 && segments[0].toLowerCase() === "dashboard" && segments[1].toLowerCase() === "user") {
+        return "/dashboard/user";
+    }
+
     for (const prefix of LINK_ROUTES) {
         if (segments.length !== prefix.length + 1) continue;
         if (!prefix.every((literal, index) => segments[index].toLowerCase() === literal)) continue;
