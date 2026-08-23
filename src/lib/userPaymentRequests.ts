@@ -114,7 +114,7 @@ export async function createUserPaymentRequest({
                     link_kind,
                     sandbox_mode,
                     state_snapshot
-                ) values ($1, $2, $3, $4, true, $5, $6, $7, $8, $9, $10, $11, false, $12)
+                ) values ($1, $2, $3, $4, true, $5, $6, $7, $8, $9, $10, 'PEER_REQUEST', false, $11)
                 returning id`,
                 [
                     requester,
@@ -127,7 +127,6 @@ export async function createUserPaymentRequest({
                     requesterName,
                     `${isRecurring ? "recurring" : "peer-request"}:${requester}:${Date.now()}`,
                     generateReceiptId(title),
-                    isRecurring ? "PEER_PLAN" : "PEER_REQUEST",
                     stateSnapshot,
                 ]
             );
