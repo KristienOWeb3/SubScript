@@ -29,7 +29,7 @@ export async function GET(request: Request) {
         const highVelocityPayers = (recentPaymentAggregations || []).map((item: any) => ({
             payerAddress: item.payerAddress,
             txCount10m: item._count?.id || 0,
-            totalAmountUsdc: item._sum?.amountUsdc?.toString() || "0",
+            totalAmountUsdc: (Number(item._sum?.amountUsdc || 0n) / 1_000_000).toFixed(2),
             riskLevel: (item._count?.id || 0) > 10 ? "CRITICAL" : "ELEVATED",
             reason: `${item._count?.id || 0} payments submitted in the last 10 minutes`,
         }));

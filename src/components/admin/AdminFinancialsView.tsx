@@ -12,15 +12,38 @@ import {
   ShieldAlert,
   Loader2,
   CheckCircle2,
+  Layers,
+  Send,
+  History,
+  FileSpreadsheet,
 } from "lucide-react";
 import { SkeletonStatGrid, SkeletonTable, SkeletonCard } from "@/components/ui/skeletons";
 
 type FinancialsData = {
   summary: {
-    totalVolumeUsdc: string;
+    totalSettledVolumeUsdc: string;
+    totalSettledCount: number;
     feeRevenueUsdc: string;
+    volume30dUsdc: string;
+    volume30dCount: number;
+    feeRevenue30dUsdc: string;
+    volume7dUsdc: string;
+    feeRevenue7dUsdc: string;
+    volume24hUsdc: string;
+    feeRevenue24hUsdc: string;
+    paymentLinksVolumeUsdc: string;
+    paymentLinksCount: number;
     totalVaultEscrowUsdc: string;
+    totalVaultOwedUsdc: string;
+    totalVaultCommitUsdc: string;
     activeVaultsCount: number;
+    totalVaultsCount: number;
+    totalDisbursedUsdc: string;
+    completedPayoutsCount: number;
+    pendingPayoutsCount: number;
+    failedPayoutsCount: number;
+    totalRefundedUsdc: string;
+    refundsCount: number;
     stuckPaymentsCount: number;
     dunningFailuresCount: number;
     revocationPendingCount: number;
@@ -40,25 +63,10 @@ type FinancialsData = {
     merchantAddress: string;
     balanceUsdc: string;
     owedUsdc: string;
+    commitUsdc: string;
     active: boolean;
     environment: string;
     updatedAt: string;
-  }>;
-  stuckPayments: Array<{
-    id: string;
-    txHash: string;
-    payerAddress: string;
-    merchantAddress: string;
-    amountUsdc: string;
-    createdAt: string;
-  }>;
-  dunningFailures: Array<{
-    subscriptionId: string;
-    merchantAddress: string;
-    subscriber: string;
-    downgradeFailures: number;
-    status: string;
-    nextBillingDate: string | null;
   }>;
   payoutBatches: Array<{
     id: string;
@@ -69,6 +77,43 @@ type FinancialsData = {
     txHash: string | null;
     createdAt: string;
   }>;
+  refunds: Array<{
+    id: string;
+    referenceId: string;
+    status: string;
+    amountUsdc: string;
+    txHash: string | null;
+    actor: string;
+    reason: string;
+    target: string | null;
+    createdAt: string;
+  }>;
+  stuckPayments: Array<{
+    id: string;
+    paymentType: string;
+    txHash: string;
+    payerAddress: string;
+    merchantAddress: string;
+    amountUsdc: string;
+    reason: string;
+    createdAt: string;
+  }>;
+  dunningFailures: Array<{
+    subscriptionId: string;
+    merchantAddress: string;
+    subscriber: string;
+    downgradeFailures: number;
+    status: string;
+    nextBillingDate: string | null;
+    lastSettlementTimestamp: string | null;
+  }>;
+  revocationPending: Array<{
+    subscriptionId: string;
+    merchantAddress: string;
+    subscriber: string;
+    revocationTxHash: string | null;
+    updatedAt: string;
+  }>;
 };
 
 export function AdminFinancialsView() {
@@ -76,6 +121,8 @@ export function AdminFinancialsView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"escrows" | "payouts" | "refunds" | "exceptions">("escrows");
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Refund Modal State
   const [refundOpen, setRefundOpen] = useState(false);
@@ -140,12 +187,34 @@ export function AdminFinancialsView() {
   if (loading && !data) {
     return (
       <div className="space-y-6">
-        <SkeletonStatGrid count={4} columns={4} label="Loading financial indicators..." />
-        <SkeletonCard lines={3} label="Loading stuck payments & dunning status..." />
-        <SkeletonTable rows={6} columns={6} label="Loading metered vault escrows..." />
+        <SkeletonStatGrid count={4} columns={4} label="Loading reconciled financial indicators..." />
+        <SkeletonCard lines={3} label="Loading exception & settlement queue..." />
+        <SkeletonTable rows={6} columns={6} label="Loading ledger records..." />
       </div>
     );
   }
+
+  const filteredVaults = (data?.vaults || []).filter(
+    (v) =>
+      !searchQuery ||
+      v.userAddress.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      v.merchantAddress.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredPayouts = (data?.payoutBatches || []).filter(
+    (p) =>
+      !searchQuery ||
+      p.merchantAddress.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.txHash && p.txHash.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
+  const filteredRefunds = (data?.refunds || []).filter(
+    (r) =>
+      !searchQuery ||
+      r.referenceId.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      r.actor.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (r.target && r.target.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
 
   return (
     <div className="space-y-6">
@@ -154,7 +223,7 @@ export function AdminFinancialsView() {
         <div>
           <h2 className="text-xl font-bold text-[#0f172a]">Financials & Settlement Ledger</h2>
           <p className="text-xs text-[#64748b]">
-            Platform-wide volume, 1% fee revenue, metered vault escrows, and stuck payment queues.
+            Platform-wide reconciled volume, 1% fee revenue, metered vault escrows, merchant payouts, and refund ledger.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -188,16 +257,18 @@ export function AdminFinancialsView() {
       )}
 
       {/* Summary KPI Grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <div className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-[0_4px_12px_rgba(15,23,42,0.04)]">
           <div className="flex items-center justify-between text-[#64748b]">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Total Volume</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider">Total Settled GMV</span>
             <DollarSign className="h-4 w-4 text-[#2775ca]" />
           </div>
           <p className="mt-2 text-2xl font-black text-[#0f172a]">
-            ${data?.summary.totalVolumeUsdc || "0.00"}
+            ${data?.summary.totalSettledVolumeUsdc || "0.00"}
           </p>
-          <p className="mt-1 text-[11px] text-[#64748b]">All settled checkout & subscription flows</p>
+          <p className="mt-1 text-[11px] text-[#64748b]">
+            {data?.summary.totalSettledCount || 0} confirmed on-chain receipts
+          </p>
         </div>
 
         <div className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-[0_4px_12px_rgba(15,23,42,0.04)]">
@@ -208,7 +279,9 @@ export function AdminFinancialsView() {
           <p className="mt-2 text-2xl font-black text-emerald-600">
             ${data?.summary.feeRevenueUsdc || "0.00"}
           </p>
-          <p className="mt-1 text-[11px] text-[#64748b]">Accrued SubScript protocol fees</p>
+          <p className="mt-1 text-[11px] text-[#64748b]">
+            ${data?.summary.feeRevenue30dUsdc || "0.00"} last 30 days
+          </p>
         </div>
 
         <div className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-[0_4px_12px_rgba(15,23,42,0.04)]">
@@ -220,7 +293,20 @@ export function AdminFinancialsView() {
             ${data?.summary.totalVaultEscrowUsdc || "0.00"}
           </p>
           <p className="mt-1 text-[11px] text-[#64748b]">
-            Across {data?.summary.activeVaultsCount || 0} active metering commitments
+            {data?.summary.activeVaultsCount || 0} active ({data?.summary.totalVaultsCount || 0} total)
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-[0_4px_12px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center justify-between text-[#64748b]">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Disbursed Payouts</span>
+            <Send className="h-4 w-4 text-purple-600" />
+          </div>
+          <p className="mt-2 text-2xl font-black text-[#0f172a]">
+            ${data?.summary.totalDisbursedUsdc || "0.00"}
+          </p>
+          <p className="mt-1 text-[11px] text-[#64748b]">
+            {data?.summary.completedPayoutsCount || 0} completed batches
           </p>
         </div>
 
@@ -246,102 +332,355 @@ export function AdminFinancialsView() {
         </div>
       </div>
 
-      {/* Stuck & Dunning Failures Warning Card */}
-      {((data?.summary.stuckPaymentsCount || 0) > 0 || (data?.summary.dunningFailuresCount || 0) > 0) && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-5">
-          <div className="flex items-center gap-2 text-amber-800 font-bold text-sm">
-            <AlertTriangle className="h-4 w-4 text-amber-600" />
-            Attention: Stuck or Drifted Payments Detected
-          </div>
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
-            {data?.stuckPayments && data.stuckPayments.length > 0 && (
-              <div className="rounded-lg bg-white p-4 border border-amber-200">
-                <p className="text-xs font-bold text-amber-900 mb-2">
-                  Uncredited Payment Link Payments ({data.stuckPayments.length})
-                </p>
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {data.stuckPayments.map((p) => (
-                    <div key={p.id} className="text-[11px] border-b border-gray-100 pb-1.5 flex justify-between items-center">
-                      <div>
-                        <span className="font-mono text-gray-700">{p.txHash.slice(0, 10)}...</span>
-                        <span className="text-gray-400 ml-2">(${p.amountUsdc})</span>
-                      </div>
-                      <span className="text-amber-700 font-medium">Uncredited</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+      {/* Secondary Metrics Strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="rounded-xl border border-[#f1f5f9] bg-[#f8fafc] p-3">
+          <span className="text-[10px] font-black uppercase text-[#64748b]">30-Day GMV</span>
+          <p className="text-base font-black text-[#0f172a] mt-0.5">
+            ${data?.summary.volume30dUsdc || "0.00"}
+          </p>
+          <p className="text-[10px] text-[#94a3b8]">{data?.summary.volume30dCount || 0} transactions</p>
+        </div>
 
-            {data?.dunningFailures && data.dunningFailures.length > 0 && (
-              <div className="rounded-lg bg-white p-4 border border-amber-200">
-                <p className="text-xs font-bold text-amber-900 mb-2">
-                  Subscription Dunning Failures ({data.dunningFailures.length})
-                </p>
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {data.dunningFailures.map((d) => (
-                    <div key={d.subscriptionId} className="text-[11px] border-b border-gray-100 pb-1.5 flex justify-between items-center">
-                      <div>
-                        <span className="font-mono text-gray-700">Sub #{d.subscriptionId}</span>
-                        <span className="text-gray-400 ml-2">({d.subscriber.slice(0, 8)}...)</span>
-                      </div>
-                      <span className="text-red-600 font-bold">{d.downgradeFailures} fail(s)</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+        <div className="rounded-xl border border-[#f1f5f9] bg-[#f8fafc] p-3">
+          <span className="text-[10px] font-black uppercase text-[#64748b]">24-Hour GMV</span>
+          <p className="text-base font-black text-[#0f172a] mt-0.5">
+            ${data?.summary.volume24hUsdc || "0.00"}
+          </p>
+          <p className="text-[10px] text-[#94a3b8]">1% fee: ${data?.summary.feeRevenue24hUsdc || "0.00"}</p>
+        </div>
+
+        <div className="rounded-xl border border-[#f1f5f9] bg-[#f8fafc] p-3">
+          <span className="text-[10px] font-black uppercase text-[#64748b]">Checkout Links GMV</span>
+          <p className="text-base font-black text-[#0f172a] mt-0.5">
+            ${data?.summary.paymentLinksVolumeUsdc || "0.00"}
+          </p>
+          <p className="text-[10px] text-[#94a3b8]">{data?.summary.paymentLinksCount || 0} payments</p>
+        </div>
+
+        <div className="rounded-xl border border-[#f1f5f9] bg-[#f8fafc] p-3">
+          <span className="text-[10px] font-black uppercase text-[#64748b]">Admin Refunds Issued</span>
+          <p className="text-base font-black text-[#0f172a] mt-0.5">
+            ${data?.summary.totalRefundedUsdc || "0.00"}
+          </p>
+          <p className="text-[10px] text-[#94a3b8]">{data?.summary.refundsCount || 0} recorded</p>
+        </div>
+      </div>
+
+      {/* Exception Banner */}
+      {((data?.summary.stuckPaymentsCount || 0) > 0 ||
+        (data?.summary.dunningFailuresCount || 0) > 0 ||
+        (data?.summary.revocationPendingCount || 0) > 0) && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-amber-800 font-bold text-sm">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              Exception Queue: Drifted Payments or Dunning Failures Detected
+            </div>
+            <button
+              onClick={() => setActiveTab("exceptions")}
+              className="text-xs font-bold text-amber-900 underline hover:text-amber-950"
+            >
+              View All ({((data?.summary.stuckPaymentsCount || 0) + (data?.summary.dunningFailuresCount || 0) + (data?.summary.revocationPendingCount || 0))}) &rarr;
+            </button>
           </div>
         </div>
       )}
 
-      {/* Metered Vault Escrows Table */}
-      <div className="rounded-xl border border-[#e2e8f0] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
-        <div className="border-b border-[#e2e8f0] px-6 py-4 flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-bold text-[#0f172a]">Metered Vault Escrows</h3>
-            <p className="text-xs text-[#64748b]">Active customer escrow balances committed to merchants</p>
-          </div>
+      {/* Sub-Tabs and Search */}
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#e2e8f0] pb-2">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveTab("escrows")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+              activeTab === "escrows"
+                ? "bg-[#0f172a] text-white"
+                : "bg-[#f1f5f9] text-[#64748b] hover:text-[#0f172a]"
+            }`}
+          >
+            Metered Escrows ({data?.vaults.length || 0})
+          </button>
+          <button
+            onClick={() => setActiveTab("payouts")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+              activeTab === "payouts"
+                ? "bg-[#0f172a] text-white"
+                : "bg-[#f1f5f9] text-[#64748b] hover:text-[#0f172a]"
+            }`}
+          >
+            Merchant Payouts ({data?.payoutBatches.length || 0})
+          </button>
+          <button
+            onClick={() => setActiveTab("refunds")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+              activeTab === "refunds"
+                ? "bg-[#0f172a] text-white"
+                : "bg-[#f1f5f9] text-[#64748b] hover:text-[#0f172a]"
+            }`}
+          >
+            Refund Ledger ({data?.refunds.length || 0})
+          </button>
+          <button
+            onClick={() => setActiveTab("exceptions")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+              activeTab === "exceptions"
+                ? "bg-[#0f172a] text-white"
+                : "bg-[#f1f5f9] text-[#64748b] hover:text-[#0f172a]"
+            }`}
+          >
+            Exceptions & Dunning ({((data?.summary.stuckPaymentsCount || 0) + (data?.summary.dunningFailuresCount || 0))}
+          </button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-[#f8fafc] text-[#64748b] font-semibold border-b border-[#e2e8f0]">
-              <tr>
-                <th className="px-6 py-3">User Wallet</th>
-                <th className="px-6 py-3">Merchant</th>
-                <th className="px-6 py-3">Escrow Balance</th>
-                <th className="px-6 py-3">Owed Amount</th>
-                <th className="px-6 py-3">Status</th>
-                <th className="px-6 py-3">Environment</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#e2e8f0]">
-              {data?.vaults && data.vaults.length > 0 ? (
-                data.vaults.map((v) => (
-                  <tr key={v.id} className="hover:bg-[#f8fafc]">
-                    <td className="px-6 py-3 font-mono text-[#0f172a]">{v.userAddress.slice(0, 10)}...</td>
-                    <td className="px-6 py-3 font-mono text-[#64748b]">{v.merchantAddress.slice(0, 10)}...</td>
-                    <td className="px-6 py-3 font-bold text-emerald-600">${v.balanceUsdc}</td>
-                    <td className="px-6 py-3 text-amber-600 font-medium">${v.owedUsdc}</td>
-                    <td className="px-6 py-3">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${v.active ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-600"}`}>
-                        {v.active ? "ACTIVE" : "INACTIVE"}
-                      </span>
-                    </td>
-                    <td className="px-6 py-3 text-gray-500 uppercase font-mono text-[10px]">{v.environment}</td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-[#64748b]">
-                    No metered vault escrows found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+
+        <div className="relative w-full max-w-xs">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#94a3b8]" />
+          <input
+            type="text"
+            placeholder="Filter by wallet or tx..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full rounded-lg border border-[#cbd5e1] bg-white py-1.5 pl-8 pr-3 text-xs text-[#0f172a] placeholder-[#94a3b8] focus:border-[#2775ca] focus:outline-none"
+          />
         </div>
       </div>
+
+      {/* Tab 1: Metered Vault Escrows Table */}
+      {activeTab === "escrows" && (
+        <div className="rounded-xl border border-[#e2e8f0] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
+          <div className="border-b border-[#e2e8f0] px-6 py-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-[#0f172a]">Metered Vault Escrow Balances</h3>
+              <p className="text-xs text-[#64748b]">Active customer escrow balances committed to merchants on Arc</p>
+            </div>
+            <span className="text-xs font-bold text-[#64748b]">
+              Total Escrow: <strong className="text-emerald-600">${data?.summary.totalVaultEscrowUsdc}</strong>
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-[#f8fafc] text-[#64748b] font-semibold border-b border-[#e2e8f0]">
+                <tr>
+                  <th className="px-6 py-3">User Wallet</th>
+                  <th className="px-6 py-3">Merchant</th>
+                  <th className="px-6 py-3">Escrow Balance</th>
+                  <th className="px-6 py-3">Owed Amount</th>
+                  <th className="px-6 py-3">Commitment</th>
+                  <th className="px-6 py-3">Status</th>
+                  <th className="px-6 py-3">Environment</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#e2e8f0]">
+                {filteredVaults.length > 0 ? (
+                  filteredVaults.map((v) => (
+                    <tr key={v.id} className="hover:bg-[#f8fafc]">
+                      <td className="px-6 py-3 font-mono text-[#0f172a]">{v.userAddress.slice(0, 10)}...</td>
+                      <td className="px-6 py-3 font-mono text-[#64748b]">{v.merchantAddress.slice(0, 10)}...</td>
+                      <td className="px-6 py-3 font-bold text-emerald-600">${v.balanceUsdc}</td>
+                      <td className="px-6 py-3 text-amber-600 font-medium">${v.owedUsdc}</td>
+                      <td className="px-6 py-3 text-gray-500 font-mono">${v.commitUsdc}</td>
+                      <td className="px-6 py-3">
+                        <span
+                          className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            v.active ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-600"
+                          }`}
+                        >
+                          {v.active ? "ACTIVE" : "INACTIVE"}
+                        </span>
+                      </td>
+                      <td className="px-6 py-3 text-gray-500 uppercase font-mono text-[10px]">{v.environment}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-8 text-center text-[#64748b]">
+                      No metered vault escrows found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Tab 2: Merchant Payout Batches Table */}
+      {activeTab === "payouts" && (
+        <div className="rounded-xl border border-[#e2e8f0] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
+          <div className="border-b border-[#e2e8f0] px-6 py-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-[#0f172a]">Merchant Payout Disbursements</h3>
+              <p className="text-xs text-[#64748b]">Recorded batch payouts disbursed to merchant wallets</p>
+            </div>
+            <span className="text-xs font-bold text-[#64748b]">
+              Disbursed Total: <strong className="text-purple-600">${data?.summary.totalDisbursedUsdc}</strong>
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-[#f8fafc] text-[#64748b] font-semibold border-b border-[#e2e8f0]">
+                <tr>
+                  <th className="px-6 py-3">Batch ID</th>
+                  <th className="px-6 py-3">Merchant</th>
+                  <th className="px-6 py-3">Recipients</th>
+                  <th className="px-6 py-3">Total Amount</th>
+                  <th className="px-6 py-3">Status</th>
+                  <th className="px-6 py-3">TxHash</th>
+                  <th className="px-6 py-3">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#e2e8f0]">
+                {filteredPayouts.length > 0 ? (
+                  filteredPayouts.map((b) => (
+                    <tr key={b.id} className="hover:bg-[#f8fafc]">
+                      <td className="px-6 py-3 font-mono text-[#0f172a]">{b.id.slice(0, 8)}...</td>
+                      <td className="px-6 py-3 font-mono text-[#64748b]">{b.merchantAddress.slice(0, 10)}...</td>
+                      <td className="px-6 py-3 font-medium text-slate-800">{b.recipientCount}</td>
+                      <td className="px-6 py-3 font-bold text-emerald-600">${b.totalAmountUsdc}</td>
+                      <td className="px-6 py-3">
+                        <span
+                          className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            b.status === "COMPLETED"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : b.status === "PENDING"
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-red-100 text-red-700"
+                          }`}
+                        >
+                          {b.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-3 font-mono text-[#64748b]">
+                        {b.txHash ? `${b.txHash.slice(0, 10)}...` : "—"}
+                      </td>
+                      <td className="px-6 py-3 text-gray-400 text-[11px]">
+                        {new Date(b.createdAt).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-8 text-center text-[#64748b]">
+                      No payout batches found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Tab 3: Administrative Refund Ledger */}
+      {activeTab === "refunds" && (
+        <div className="rounded-xl border border-[#e2e8f0] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
+          <div className="border-b border-[#e2e8f0] px-6 py-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-[#0f172a]">Administrative Refund & Dispute Ledger</h3>
+              <p className="text-xs text-[#64748b]">Dual-controlled administrative adjustments and refund history</p>
+            </div>
+            <span className="text-xs font-bold text-[#64748b]">
+              Total Refunded: <strong className="text-red-600">${data?.summary.totalRefundedUsdc}</strong>
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-[#f8fafc] text-[#64748b] font-semibold border-b border-[#e2e8f0]">
+                <tr>
+                  <th className="px-6 py-3">Reference ID</th>
+                  <th className="px-6 py-3">Authorizing Staff</th>
+                  <th className="px-6 py-3">Target Wallet</th>
+                  <th className="px-6 py-3">Amount</th>
+                  <th className="px-6 py-3">Reason / Justification</th>
+                  <th className="px-6 py-3">Status</th>
+                  <th className="px-6 py-3">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#e2e8f0]">
+                {filteredRefunds.length > 0 ? (
+                  filteredRefunds.map((r) => (
+                    <tr key={r.id} className="hover:bg-[#f8fafc]">
+                      <td className="px-6 py-3 font-mono font-medium text-[#0f172a]">{r.referenceId}</td>
+                      <td className="px-6 py-3 font-mono text-[#64748b]">{r.actor.slice(0, 10)}...</td>
+                      <td className="px-6 py-3 font-mono text-[#64748b]">{r.target ? `${r.target.slice(0, 10)}...` : "—"}</td>
+                      <td className="px-6 py-3 font-bold text-red-600">-${r.amountUsdc}</td>
+                      <td className="px-6 py-3 text-slate-700 max-w-xs truncate">{r.reason}</td>
+                      <td className="px-6 py-3">
+                        <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                          {r.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-3 text-gray-400 text-[11px]">
+                        {new Date(r.createdAt).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-8 text-center text-[#64748b]">
+                      No administrative refund entries recorded.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Tab 4: Exception & Dunning Queue */}
+      {activeTab === "exceptions" && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Stuck Payments */}
+            <div className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+              <h3 className="text-sm font-bold text-[#0f172a] mb-1">Uncredited or Pending Payments</h3>
+              <p className="text-xs text-[#64748b] mb-4">Transactions requiring manual verification or reconciliation retry</p>
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {data?.stuckPayments && data.stuckPayments.length > 0 ? (
+                  data.stuckPayments.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between p-3 rounded-lg border border-amber-200 bg-amber-50/50 text-xs">
+                      <div>
+                        <span className="font-mono font-bold text-slate-900">{p.txHash.slice(0, 12)}...</span>
+                        <p className="text-[11px] text-amber-800 mt-0.5">{p.reason} (${p.amountUsdc})</p>
+                      </div>
+                      <span className="text-[10px] font-bold uppercase rounded bg-amber-200 px-2 py-0.5 text-amber-900">
+                        {p.paymentType}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-slate-400 py-6 text-center">No stuck payments in queue.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Dunning Failures */}
+            <div className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+              <h3 className="text-sm font-bold text-[#0f172a] mb-1">Subscription Dunning Failures</h3>
+              <p className="text-xs text-[#64748b] mb-4">Recurring subscribers with payment retry failures</p>
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {data?.dunningFailures && data.dunningFailures.length > 0 ? (
+                  data.dunningFailures.map((d) => (
+                    <div key={d.subscriptionId} className="flex items-center justify-between p-3 rounded-lg border border-red-200 bg-red-50/50 text-xs">
+                      <div>
+                        <span className="font-mono font-bold text-slate-900">Sub #{d.subscriptionId}</span>
+                        <p className="text-[11px] text-red-700 mt-0.5">
+                          Subscriber: {d.subscriber.slice(0, 10)}... | Status: {d.status}
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-bold rounded bg-red-200 px-2 py-0.5 text-red-900">
+                        {d.downgradeFailures} failure(s)
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-slate-400 py-6 text-center">No dunning failures active.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Admin Refund Modal */}
       {refundOpen && (
@@ -436,3 +775,4 @@ export function AdminFinancialsView() {
     </div>
   );
 }
+

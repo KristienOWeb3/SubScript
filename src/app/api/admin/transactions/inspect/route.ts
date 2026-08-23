@@ -133,7 +133,7 @@ export async function GET(request: Request) {
                     status: fiatIntent.status,
                     grossUsdc: (Number(fiatIntent.grossUsdcMicros) / 1_000_000).toFixed(2),
                     fiatCurrency: fiatIntent.fiatCurrency,
-                    fiatAmount: fiatIntent.fiatAmountMinor.toString(),
+                    fiatAmount: (Number(fiatIntent.fiatAmountMinor) / 100).toFixed(2),
                     settlementTxHash: fiatIntent.settlementTxHash,
                     createdAt: fiatIntent.createdAt,
                 } : null,
