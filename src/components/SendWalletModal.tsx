@@ -137,7 +137,7 @@ export default function SendWalletModal({
                             setRecipientAddress(address);
                             setErrorMsg(null);
                         }}
-                        title="Scan Recipient QR Code"
+                        title="Scan QR"
                     />
 
                     {successTx ? (
@@ -168,7 +168,7 @@ export default function SendWalletModal({
                                     <button
                                         type="button"
                                         onClick={() => setIsScanning(true)}
-                                        className="flex items-center gap-1 text-[10px] font-bold text-[#082824] hover:underline uppercase tracking-wider transition-colors"
+                                        className="flex md:hidden items-center gap-1 text-[10px] font-bold text-[#082824] hover:underline uppercase tracking-wider transition-colors"
                                     >
                                         <QrCode className="w-3 h-3" />
                                         Scan QR

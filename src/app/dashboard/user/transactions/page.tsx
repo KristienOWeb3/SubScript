@@ -411,9 +411,15 @@ export default function UserTransactionsPage() {
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="rounded-3xl border border-white/10 bg-black/40 p-4 shadow-xl backdrop-blur-xl sm:ml-auto sm:text-right">
             <span className="text-[10px] font-black uppercase tracking-wider text-white/40">Monthly Commitment</span>
-            <p className="text-2xl font-black text-white mt-0.5">
-              {balanceVisible ? `$${totalMonthlyCommitmentUsdc.toFixed(2)}` : "••••"} <span className="text-xs font-bold text-[#ccff00]">/mo</span>
-            </p>
+            <div className="mt-0.5">
+              {loading ? (
+                <div className="h-8 w-28 rounded-lg bg-white/10 animate-pulse sm:ml-auto" />
+              ) : (
+                <p className="text-2xl font-black text-white">
+                  {balanceVisible ? `$${totalMonthlyCommitmentUsdc.toFixed(2)}` : "••••"} <span className="text-xs font-bold text-[#ccff00]">/mo</span>
+                </p>
+              )}
+            </div>
           </div>
         </div>
 
@@ -422,11 +428,29 @@ export default function UserTransactionsPage() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xs font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions</h2>
             <span className="rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-2.5 py-0.5 text-[10px] font-bold text-[#ccff00]">
-              {activeSubscriptions.length} Active Streams
+              {loading ? "..." : `${activeSubscriptions.length} Active Streams`}
             </span>
           </div>
 
-          {activeSubscriptions.length === 0 ? (
+          {loading ? (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {[1, 2].map((i) => (
+                <div key={i} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/40 p-3.5 animate-pulse">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-white/10" />
+                    <div className="space-y-1.5">
+                      <div className="h-3 w-28 rounded bg-white/10" />
+                      <div className="h-2 w-20 rounded bg-white/5" />
+                    </div>
+                  </div>
+                  <div className="space-y-1 text-right">
+                    <div className="h-3 w-14 rounded bg-white/10 ml-auto" />
+                    <div className="h-2 w-10 rounded bg-white/5 ml-auto" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : activeSubscriptions.length === 0 ? (
             <div className="flex h-32 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center p-4">
               <CreditCard className="mb-2 h-6 w-6 text-white/20" />
               <p className="text-xs text-white/40">No active subscriptions</p>
@@ -595,9 +619,22 @@ export default function UserTransactionsPage() {
         {/* Transactions List */}
         <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-[28px] p-6 sm:p-8 shadow-2xl min-h-[400px]">
           {loading ? (
-            <div className="flex h-64 flex-col items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-[#ccff00]" />
-              <p className="mt-3 text-xs text-white/40 font-bold uppercase tracking-wider">Loading history...</p>
+            <div className="divide-y divide-white/[0.06]">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="flex items-center justify-between py-4 first:pt-0 last:pb-0 animate-pulse">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-white/10 shrink-0" />
+                    <div className="space-y-2">
+                      <div className="h-3.5 w-36 rounded bg-white/10" />
+                      <div className="h-2.5 w-52 rounded bg-white/5" />
+                    </div>
+                  </div>
+                  <div className="space-y-2 text-right">
+                    <div className="h-3.5 w-20 rounded bg-white/10 ml-auto" />
+                    <div className="h-2.5 w-14 rounded bg-white/5 ml-auto" />
+                  </div>
+                </div>
+              ))}
             </div>
           ) : loadError ? (
             <div className="flex h-64 flex-col items-center justify-center rounded-2xl border border-red-400/20 bg-red-400/[0.04] px-6 text-center" role="alert">

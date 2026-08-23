@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import jsQR from "jsqr";
-import { X, QrCode, AlertCircle, Zap, RotateCw, Check, Copy } from "@/components/icons";
+import { X, QrCode, AlertCircle, Zap, RotateCw, Check } from "@/components/icons";
 
 interface QrScannerModalProps {
   isOpen: boolean;
@@ -76,7 +76,7 @@ export function QrScannerModal({
   isOpen,
   onClose,
   onScan,
-  title = "Scan Recipient QR Code",
+  title = "Scan QR",
 }: QrScannerModalProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -89,8 +89,6 @@ export function QrScannerModal({
   const [torchSupported, setTorchSupported] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
-  const [cameraIndex, setCameraIndex] = useState<number>(0);
-  const [clipboardBusy, setClipboardBusy] = useState(false);
 
   const triggerHaptic = () => {
     try {
@@ -132,12 +130,6 @@ export function QrScannerModal({
     }
   };
 
-  const switchCamera = () => {
-    if (availableCameras.length <= 1) return;
-    const nextIdx = (cameraIndex + 1) % availableCameras.length;
-    setCameraIndex(nextIdx);
-  };
-
   const startCamera = useCallback(async () => {
     stopCamera();
     setErrorMsg(null);
@@ -161,7 +153,7 @@ export function QrScannerModal({
       }
 
       let mediaStream: MediaStream | null = null;
-      const targetDevice = videoDevices[cameraIndex];
+      const targetDevice = videoDevices[0];
 
       // 1. Try with chosen 1x main deviceId if available
       if (targetDevice?.deviceId) {
@@ -270,7 +262,7 @@ export function QrScannerModal({
       );
       setCameraActive(false);
     }
-  }, [stopCamera, cameraIndex]);
+  }, [stopCamera]);
 
   const handleScanSuccess = useCallback(
     (rawResult: string) => {
@@ -287,25 +279,6 @@ export function QrScannerModal({
     },
     [onScan, onClose, stopCamera]
   );
-
-  const handlePasteFromClipboard = async () => {
-    setClipboardBusy(true);
-    try {
-      const text = await navigator.clipboard.readText();
-      const pasted = (text || "").trim();
-      /* An address, a SubScript link, or a handle are all legitimate here — the caller decides what
-         it will accept, so this only rejects an empty clipboard. */
-      if (pasted) {
-        handleScanSuccess(pasted);
-        return;
-      }
-      setErrorMsg("Your clipboard is empty.");
-    } catch {
-      setErrorMsg("Clipboard access was not granted.");
-    } finally {
-      setClipboardBusy(false);
-    }
-  };
 
   // Scan frame loop using BarcodeDetector (hardware accelerated) or jsQR fallback
   useEffect(() => {
@@ -407,10 +380,6 @@ export function QrScannerModal({
             </div>
             <div>
               <h3 className="text-xs font-black uppercase tracking-wider text-white">{title}</h3>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-[10px] font-bold text-white/60">1x Main Camera Active</span>
-              </div>
             </div>
           </div>
 
@@ -428,18 +397,6 @@ export function QrScannerModal({
                 }`}
               >
                 <Zap className="h-3.5 w-3.5" />
-              </button>
-            )}
-
-            {/* Camera Switch Button */}
-            {availableCameras.length > 1 && (
-              <button
-                type="button"
-                onClick={switchCamera}
-                title="Switch Camera Lens"
-                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white transition"
-              >
-                <RotateCw className="h-3.5 w-3.5" />
               </button>
             )}
 
@@ -517,21 +474,11 @@ export function QrScannerModal({
           )}
         </div>
 
-        {/* Footer Actions */}
-        <div className="relative z-10 mt-4 space-y-2.5">
+        {/* Footer */}
+        <div className="relative z-10 mt-4">
           <p className="text-center text-[11px] text-white/60">
             Line the QR code up inside the frame.
           </p>
-
-          <button
-            type="button"
-            onClick={handlePasteFromClipboard}
-            disabled={clipboardBusy}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5 py-2.5 text-xs font-bold text-white/90 hover:bg-white/10 hover:text-white transition shadow-sm"
-          >
-            <Copy className="h-3.5 w-3.5 text-[#2775ca]" />
-            {clipboardBusy ? "Reading clipboard..." : "Paste from clipboard"}
-          </button>
         </div>
       </div>
     </div>

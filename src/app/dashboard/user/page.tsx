@@ -46,7 +46,7 @@ import DmRequestsModal from "@/components/dashboard/DmRequestsModal";
 import DmInviteManagerModal from "@/components/dashboard/DmInviteManagerModal";
 import BlockedUsersModal from "@/components/dashboard/BlockedUsersModal";
 import VaultShareManager from "@/components/VaultShareManager";
-import AccountHoldPanel from "@/components/dashboard/AccountHoldPanel";
+import AccountHoldModal from "@/components/dashboard/AccountHoldModal";
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
 import { MerchantVerifiedTick } from "@/components/MerchantVerifiedBadge";
@@ -59,10 +59,12 @@ import {
   ArrowUpRight,
   ArrowLeft,
   ArrowRight,
+  ArrowDownToLine,
   ChevronLeft,
   ChevronRight,
   Check,
   Building2,
+  Calendar,
   CheckCircle2,
   Copy,
   CreditCard,
@@ -102,6 +104,7 @@ import {
   EyeOff,
   RefreshCw,
   Gift,
+  KeyRound,
   Lock,
   BarChart3,
   TrendingUp,
@@ -466,6 +469,8 @@ export default function UserDashboard() {
     variant: "danger" | "warning" | "default";
     onConfirm: () => void;
     onCancel?: () => void;
+    requiredMatchText?: string;
+    matchPlaceholder?: string;
   } | null>(null);
 
   const triggerToast = (message: string) => {
@@ -515,7 +520,9 @@ export default function UserDashboard() {
   const [vaultActionAmount, setVaultActionAmount] = useState("");
   const [vaultActionBusy, setVaultActionBusy] = useState(false);
   const [vaultActionError, setVaultActionError] = useState<string | null>(null);
-  const [expandedCommitAction, setExpandedCommitAction] = useState<"refresh" | "commit" | null>(null);
+  const [expandedCommitAction, setExpandedCommitAction] = useState<"refresh" | "commit" | "hold" | null>(null);
+  const [accountHoldModalOpen, setAccountHoldModalOpen] = useState(false);
+  const [isAccountOnHold, setIsAccountOnHold] = useState(false);
   /* Unverified-merchant commit warning (informed consent before escrowing to an unverified merchant). */
   const [vaultUnverifiedWarning, setVaultUnverifiedWarning] = useState(false);
   const [isEmbeddedWalletSession, setIsEmbeddedWalletSession] = useState(false);
@@ -902,10 +909,19 @@ export default function UserDashboard() {
   const loadVaults = async () => {
     setIsVaultsLoading(true);
     try {
-      const res = await fetch("/api/user/vault/config");
+      const [res, haltRes] = await Promise.all([
+        fetch("/api/user/vault/config"),
+        fetch("/api/user/commit/halt").catch(() => null),
+      ]);
       const data = await res.json();
       if (data.success) {
         setVaults(data.vaults);
+      }
+      if (haltRes && haltRes.ok) {
+        const haltData = await haltRes.json().catch(() => ({}));
+        if (typeof haltData.onHold === "boolean") {
+          setIsAccountOnHold(haltData.onHold);
+        }
       }
     } catch (err) {
       console.error("Failed to load metered vaults:", err);
@@ -1298,9 +1314,13 @@ export default function UserDashboard() {
   }, [selectedDmPeer]);
 
   const handleLogout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch (e) {
+      console.error("Logout request error:", e);
+    }
     disconnect();
-    redirectTo(getDashboardUrl("USER", "/signup"), "Signing you out...");
+    redirectTo(getDashboardUrl("USER", "/login"), "Signing you out...");
   };
 
   const [deleteAccountLoading, setDeleteAccountLoading] = useState(false);
@@ -1311,6 +1331,8 @@ export default function UserDashboard() {
       description: "This erases your profile, alias, and settings, and signs you out everywhere. Your payment receipts remain part of the shared ledger. Active subscriptions must be cancelled and vault funds withdrawn before deleting. This cannot be undone.",
       confirmLabel: "Delete Account",
       variant: "danger",
+      requiredMatchText: "DELETE",
+      matchPlaceholder: "Type DELETE",
       onConfirm: async () => {
         setConfirmModal(null);
         setDeleteAccountLoading(true);
@@ -1321,6 +1343,7 @@ export default function UserDashboard() {
             triggerToast(data.error || "Account deletion failed.");
             return;
           }
+          await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
           disconnect();
           redirectTo(getDashboardUrl("USER", "/signup"), "Deleting your account...");
         } catch {
@@ -3528,7 +3551,7 @@ export default function UserDashboard() {
                               setQrTargetIndex(null);
                               setQrScannerOpen(true);
                             }}
-                            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-black/15 bg-white text-[#111827] hover:bg-black/5 active:scale-95 transition shadow-sm"
+                            className="flex md:hidden h-11 w-11 shrink-0 items-center justify-center rounded-full border border-black/15 bg-white text-[#111827] hover:bg-black/5 active:scale-95 transition shadow-sm"
                             aria-label="Scan QR Code"
                             title="Scan SubScript QR code or link"
                           >
@@ -3631,7 +3654,7 @@ export default function UserDashboard() {
                     <div className="flex items-center gap-3">
                       <button
                         type="button"
-                        onClick={() => goToAccountSubView("dns", "spend-analysis")}
+                        onClick={() => router.push("/dashboard/user/transactions")}
                         className="inline-flex items-center text-[10px] font-black uppercase tracking-wider text-black/70 hover:text-black transition-colors"
                       >
                         View All
@@ -3700,11 +3723,8 @@ export default function UserDashboard() {
                   subtitle="Fund prepaid balances for metered services"
                 />
 
-                {/* Account-level, so it sits above the per-merchant vaults rather than inside one. */}
-                <AccountHoldPanel />
-
                 <section className="commit-vault-shell p-0 sm:rounded-3xl sm:border sm:border-black/35 sm:bg-[#2775CA]/20 sm:p-8">
-                  <div className="mb-5 flex items-end justify-between gap-3">
+                  <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                       <div className="flex items-center gap-2">
                         <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Prepaid Metered Vaults</h2>
@@ -3790,6 +3810,28 @@ export default function UserDashboard() {
                       >
                         <Plus className="h-6 w-6 shrink-0" />
                         {expandedCommitAction === "commit" && <span className="whitespace-nowrap text-[10px] font-bold">Commit to a service</span>}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (expandedCommitAction !== "hold") return setExpandedCommitAction("hold");
+                          setExpandedCommitAction(null);
+                          setAccountHoldModalOpen(true);
+                        }}
+                        className={`flex h-12 items-center justify-center gap-2 overflow-hidden rounded-2xl border transition-all duration-300 ${
+                          isAccountOnHold
+                            ? "border-amber-400/50 bg-amber-400/20 text-amber-300"
+                            : "border-black/30 bg-[#D5E3EE] text-black"
+                        } ${expandedCommitAction === "hold" ? "w-36 px-3" : "w-12"}`}
+                        title={isAccountOnHold ? "Account is on hold" : "Manage account hold"}
+                        aria-label={isAccountOnHold ? "Account is on hold" : "Manage account hold"}
+                      >
+                        <Shield className={`h-4.5 w-4.5 shrink-0 ${isAccountOnHold ? "text-amber-400" : "text-black"}`} />
+                        {expandedCommitAction === "hold" && (
+                          <span className="whitespace-nowrap text-[10px] font-bold">
+                            {isAccountOnHold ? "On hold" : "Account hold"}
+                          </span>
+                        )}
                       </button>
                     </div>
                   </div>
@@ -5066,171 +5108,149 @@ export default function UserDashboard() {
                     </div>
 
                     <button
-                      onClick={() => disconnect()}
-                      className="w-full py-4 border border-red-500/30 hover:bg-red-500/10 text-red-600 rounded-3xl text-xs font-black uppercase tracking-widest transition shadow-sm"
+                      type="button"
+                      onClick={() => void handleLogout()}
+                      className="w-full py-4 border border-red-500/30 hover:bg-red-500/10 text-red-600 rounded-3xl text-xs font-black uppercase tracking-widest transition shadow-sm flex items-center justify-center gap-2"
                     >
-                      Disconnect Account
+                      <LogOut className="h-4 w-4" />
+                      Log out
                     </button>
                   </div>
                 )}
 
                 {/* 3. SPEND ANALYSIS VIEW */}
                 {accountSubView === "spend-analysis" && (() => {
-                  /* ---- Category classification engine ----
-                     Keyed off tx.kind, which the feed already assigns from the source record, so
-                     the buckets here line up exactly with the category filter below and with the
-                     Home tab's pills. This previously sniffed substrings out of tx.detail, which
-                     put a payment described as "monthly transfer" in a different bucket than the
-                     filter did. Only outgoing rows count toward spend — money received is not
-                     spending, and summing it here inflated the headline figure. */
-                  const spendCategories = (() => {
-                    const cats: Record<string, { label: string; color: string; bgColor: string; borderColor: string; icon: string; total: number; items: typeof recentTransactions }> = {
-                      subscriptions: { label: "Subscriptions", color: "#2775CA", bgColor: "rgba(39,117,202,0.08)", borderColor: "rgba(39,117,202,0.25)", icon: "🔄", total: 0, items: [] },
-                      payments: { label: "Payments", color: "#0284c7", bgColor: "rgba(2,132,199,0.08)", borderColor: "rgba(2,132,199,0.25)", icon: "💳", total: 0, items: [] },
-                      transfers: { label: "Transfers", color: "#7c3aed", bgColor: "rgba(124,58,237,0.08)", borderColor: "rgba(124,58,237,0.25)", icon: "↗️", total: 0, items: [] },
-                      withdrawals: { label: "Withdrawals", color: "#ea580c", bgColor: "rgba(234,88,12,0.08)", borderColor: "rgba(234,88,12,0.25)", icon: "📦", total: 0, items: [] },
-                    };
-                    const bucketFor = (kind: string) =>
-                      kind === "recurring" ? "subscriptions"
-                      : kind === "transfers" ? "transfers"
-                      : kind === "withdrawals" ? "withdrawals"
-                      : "payments";
-                    recentTransactions.forEach((tx) => {
-                      if (tx.incoming) return;
-                      const bucket = cats[bucketFor(tx.kind)];
-                      bucket.total += tx.amountUsdc;
-                      bucket.items.push(tx);
-                    });
-                    return cats;
-                  })();
-                  const totalSpending = Object.values(spendCategories).reduce((s, c) => s + c.total, 0);
-                  const categoryEntries = Object.entries(spendCategories).filter(([, c]) => c.total > 0);
-                  const allCategoryEntries = Object.entries(spendCategories);
+                  const now = Date.now();
+                  const windowMs =
+                    spendDatePreset === "today" ? 24 * 60 * 60 * 1000
+                    : spendDatePreset === "7days" ? 7 * 24 * 60 * 60 * 1000
+                    : spendDatePreset === "30days" ? 30 * 24 * 60 * 60 * 1000
+                    : spendDatePreset === "90days" ? 90 * 24 * 60 * 60 * 1000
+                    : spendDatePreset === "1year" ? 365 * 24 * 60 * 60 * 1000
+                    : 0;
 
-                  /* Months present in the data, newest first, for the month picker. */
-                  const monthKey = (ms: number) => {
-                    const d = new Date(ms);
-                    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-                  };
-                  const availableMonths = (() => {
-                    const months = new Set<string>();
-                    const currentYear = new Date().getFullYear();
-                    for (let m = 0; m < 12; m++) {
-                      months.add(`${currentYear}-${String(m + 1).padStart(2, "0")}`);
-                    }
-                    recentTransactions.forEach((tx) => {
-                      months.add(monthKey(tx.time));
-                    });
-                    return Array.from(months).sort((a, b) => b.localeCompare(a));
-                  })();
-                  const monthLabel = (key: string) => {
-                    const [year, month] = key.split("-");
-                    return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString("en-US", {
-                      month: "long",
-                      year: "numeric",
-                    });
-                  };
-
-                  /* ---- Filtered transaction list ---- */
-                  const spendTxList = recentTransactions.filter((tx) => {
-                    if (spendSearchQuery.trim()) {
-                      const q = spendSearchQuery.toLowerCase();
-                      const hit =
-                        tx.name.toLowerCase().includes(q)
-                        || tx.detail.toLowerCase().includes(q)
-                        || tx.amountLabel.toLowerCase().includes(q);
-                      if (!hit) return false;
-                    }
-
-                    if (spendCategory !== "all") {
-                      if (spendCategory === "received") {
-                        if (!tx.incoming) return false;
-                      } else if (spendCategory === "sent") {
-                        if (tx.incoming) return false;
-                      } else if (tx.kind !== spendCategory) {
-                        return false;
+                  const periodTxs = recentTransactions.filter((tx) => {
+                    if (windowMs > 0 && tx.time < now - windowMs) return false;
+                    if (spendDatePreset === "custom") {
+                      if (spendStartDate) {
+                        const startMs = new Date(spendStartDate).getTime();
+                        if (!Number.isNaN(startMs) && tx.time < startMs) return false;
+                      }
+                      if (spendEndDate) {
+                        const endMs = new Date(spendEndDate).setHours(23, 59, 59, 999);
+                        if (!Number.isNaN(endMs) && tx.time > endMs) return false;
                       }
                     }
-
-                    if (spendStatus !== "all" && tx.status !== spendStatus) return false;
-
-                    if (spendMonth && monthKey(tx.time) !== spendMonth) return false;
-
-                    if (spendDatePreset !== "all" || spendStartDate || spendEndDate) {
-                      const now = Date.now();
-                      if (spendDatePreset === "today") {
-                        const todayStart = new Date();
-                        todayStart.setHours(0, 0, 0, 0);
-                        if (tx.time < todayStart.getTime()) return false;
-                      } else if (spendDatePreset === "7days") {
-                        if (tx.time < now - 7 * 24 * 60 * 60 * 1000) return false;
-                      } else if (spendDatePreset === "30days") {
-                        if (tx.time < now - 30 * 24 * 60 * 60 * 1000) return false;
-                      } else if (spendDatePreset === "custom") {
-                        if (spendStartDate) {
-                          const parts = spendStartDate.split("-").map(Number);
-                          if (parts.length === 3) {
-                            const startMs = new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0).getTime();
-                            if (!Number.isNaN(startMs) && tx.time < startMs) return false;
-                          }
-                        }
-                        if (spendEndDate) {
-                          const parts = spendEndDate.split("-").map(Number);
-                          if (parts.length === 3) {
-                            const endMs = new Date(parts[0], parts[1] - 1, parts[2], 23, 59, 59, 999).getTime();
-                            if (!Number.isNaN(endMs) && tx.time > endMs) return false;
-                          }
-                        }
-                      }
-                    }
-
                     return true;
                   });
 
-                  /* In/Out for the summary header. Computed from the rows actually on screen, so
-                     the header can never disagree with the list under it. Failed rows are excluded
-                     — no money moved — but pending ones count, since they are expected to. */
-                  const summaryRows = spendTxList.filter((tx) => tx.status !== "FAILED");
-                  const monthIn = summaryRows.filter((tx) => tx.incoming).reduce((s, tx) => s + tx.amountUsdc, 0);
-                  const monthOut = summaryRows.filter((tx) => !tx.incoming).reduce((s, tx) => s + tx.amountUsdc, 0);
-                  const summaryHasRecurring = summaryRows.some((tx) => !tx.incoming && tx.kind === "recurring");
-                  const spendFiltersActive =
-                    Boolean(spendSearchQuery)
-                    || spendCategory !== "all"
-                    || spendStatus !== "all"
-                    || spendDatePreset !== "all"
-                    || Boolean(spendStartDate)
-                    || Boolean(spendEndDate)
-                    || Boolean(spendMonth);
+                  /* Category classification */
+                  const spendCategories: Record<string, { label: string; color: string; bgColor: string; borderColor: string; Icon: LucideIcon; total: number; count: number }> = {
+                    subscriptions: { label: "Subscriptions", color: "#2775CA", bgColor: "rgba(39,117,202,0.08)", borderColor: "rgba(39,117,202,0.25)", Icon: Shield, total: 0, count: 0 },
+                    payments: { label: "One-Time Payments", color: "#0284c7", bgColor: "rgba(2,132,199,0.08)", borderColor: "rgba(2,132,199,0.25)", Icon: CreditCard, total: 0, count: 0 },
+                    transfers: { label: "Transfers", color: "#7c3aed", bgColor: "rgba(124,58,237,0.08)", borderColor: "rgba(124,58,237,0.25)", Icon: ArrowUpRight, total: 0, count: 0 },
+                    withdrawals: { label: "Withdrawals", color: "#ea580c", bgColor: "rgba(234,88,12,0.08)", borderColor: "rgba(234,88,12,0.25)", Icon: ArrowDownToLine, total: 0, count: 0 },
+                  };
+
+                  const bucketFor = (kind: string) =>
+                    kind === "recurring" ? "subscriptions"
+                    : kind === "transfers" ? "transfers"
+                    : kind === "withdrawals" ? "withdrawals"
+                    : "payments";
+
+                  let totalInflow = 0;
+                  let totalOutflow = 0;
+                  const merchantSpendMap: Record<string, { name: string; amount: number; count: number; pic?: string | null }> = {};
+
+                  periodTxs.forEach((tx) => {
+                    if (tx.status === "FAILED") return;
+                    if (tx.incoming) {
+                      totalInflow += tx.amountUsdc;
+                    } else {
+                      totalOutflow += tx.amountUsdc;
+                      const bucket = spendCategories[bucketFor(tx.kind)];
+                      if (bucket) {
+                        bucket.total += tx.amountUsdc;
+                        bucket.count += 1;
+                      }
+
+                      const mName = tx.name || "Unknown Merchant";
+                      if (!merchantSpendMap[mName]) {
+                        merchantSpendMap[mName] = { name: mName, amount: 0, count: 0, pic: tx.pic };
+                      }
+                      merchantSpendMap[mName].amount += tx.amountUsdc;
+                      merchantSpendMap[mName].count += 1;
+                    }
+                  });
+
+                  const totalSpending = totalOutflow;
+                  const categoryEntries = Object.entries(spendCategories).filter(([, c]) => c.total > 0);
+                  const allCategoryEntries = Object.entries(spendCategories);
+                  const topMerchants = Object.values(merchantSpendMap).sort((a, b) => b.amount - a.amount).slice(0, 5);
+
+                  /* Monthly Trend calculation (last 6 months) */
+                  const monthData: Array<{ key: string; label: string; amount: number; isPeak?: boolean }> = [];
+                  const currDate = new Date();
+                  for (let i = 5; i >= 0; i--) {
+                    const d = new Date(currDate.getFullYear(), currDate.getMonth() - i, 1);
+                    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+                    const label = d.toLocaleDateString("en-US", { month: "short" });
+                    monthData.push({ key: monthKey, label, amount: 0 });
+                  }
+
+                  recentTransactions.forEach((tx) => {
+                    if (tx.incoming || tx.status === "FAILED") return;
+                    const d = new Date(tx.time);
+                    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+                    const match = monthData.find((m) => m.key === key);
+                    if (match) {
+                      match.amount += tx.amountUsdc;
+                    }
+                  });
+
+                  const maxMonthSpend = Math.max(1, ...monthData.map((m) => m.amount));
+                  let peakIndex = -1;
+                  let highestSpend = 0;
+                  monthData.forEach((m, idx) => {
+                    if (m.amount > highestSpend && m.amount > 0) {
+                      highestSpend = m.amount;
+                      peakIndex = idx;
+                    }
+                  });
+                  if (peakIndex >= 0) {
+                    monthData[peakIndex].isPeak = true;
+                  }
+
+                  const daysCount =
+                    spendDatePreset === "today" ? 1
+                    : spendDatePreset === "7days" ? 7
+                    : spendDatePreset === "30days" ? 30
+                    : spendDatePreset === "90days" ? 90
+                    : spendDatePreset === "1year" ? 365
+                    : 30;
+                  const avgDailySpend = totalSpending / (daysCount || 1);
+                  const netCashFlow = totalInflow - totalOutflow;
+
                   const money = (value: number) =>
                     `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-                  const exportSpendCsv = () => {
-                    if (spendTxList.length === 0) return;
-                    const headers = ["ID", "Title", "Type", "Category", "Amount (USDC)", "Status", "Date"];
-                    const rows = spendTxList.map((tx) => [
-                      tx.id,
-                      `"${tx.name.replace(/"/g, '""')}"`,
-                      tx.incoming ? "CREDIT" : "DEBIT",
-                      tx.kind,
-                      tx.amountUsdc.toFixed(2),
-                      tx.status,
-                      new Date(tx.time).toISOString(),
-                    ]);
-                  };
 
                   return (
                     <div className="space-y-6">
                       {/* Header */}
-                      <div className="flex items-center justify-between gap-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex items-center gap-3">
                           <button
+                            type="button"
                             onClick={() => setAccountSubView("menu")}
                             className="p-2 rounded-full hover:bg-black/5 text-black/60 hover:text-black transition-all"
+                            aria-label="Back to settings menu"
                           >
                             <ChevronLeft className="h-5 w-5" />
                           </button>
-                          <h2 className="text-base font-black uppercase tracking-wider text-black">Transaction History</h2>
+                          <div>
+                            <h2 className="text-base font-black uppercase tracking-wider text-black">Spend Analysis</h2>
+                            <p className="text-[10px] text-black/50">Comprehensive cash flow and categorical expenditure breakdown</p>
+                          </div>
                         </div>
                         <div className="flex items-center gap-2">
                           <button
@@ -5245,286 +5265,309 @@ export default function UserDashboard() {
                         </div>
                       </div>
 
-                      {/* ---- Hero: Total Spending ---- */}
-                      <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-6 sm:p-8 shadow-sm">
-                        <div className="flex items-center justify-between">
-                          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-black/50">Total spending</p>
-                          <div className="p-2 rounded-xl bg-black/5">
-                            <BarChart3 className="h-4 w-4 text-[#2775CA]" />
-                          </div>
-                        </div>
-                        <p className="mt-3 text-4xl sm:text-5xl font-extrabold tracking-tight text-black">
-                          {balanceVisible ? `$${totalSpending.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "••••"}
-                        </p>
-                        <div className="mt-2 flex items-center gap-2">
-                          {monthlySpendUsdc > 0 ? (
-                            <>
-                              <TrendingUp className="h-3.5 w-3.5 text-[#2775CA]" />
-                              <span className="text-[10px] font-bold text-[#2775CA]">
-                                {balanceVisible ? `$${monthlySpendUsdc.toFixed(2)}/mo recurring` : "••••/mo recurring"}
-                              </span>
-                            </>
-                          ) : (
-                            <span className="text-[10px] font-bold text-black/40">No active recurring spend</span>
-                          )}
-                        </div>
-
-                        {/* ---- Segmented color bar ---- */}
-                        {totalSpending > 0 && (
-                          <div className="mt-5 flex h-3 w-full overflow-hidden rounded-full gap-0.5">
-                            {categoryEntries.map(([key, cat]) => (
-                              <div
-                                key={key}
-                                className="h-full rounded-full transition-all duration-700"
-                                style={{
-                                  width: `${Math.max(4, (cat.total / totalSpending) * 100)}%`,
-                                  backgroundColor: cat.color,
-                                }}
-                                title={`${cat.label}: $${cat.total.toFixed(2)}`}
-                              />
-                            ))}
-                          </div>
-                        )}
-                        {totalSpending === 0 && (
-                          <div className="mt-5 flex h-3 w-full overflow-hidden rounded-full bg-black/5" />
-                        )}
-                      </div>
-
-                      {/* ---- Category cards ---- */}
-                      <div className="grid grid-cols-2 gap-3">
-                        {allCategoryEntries.map(([key, cat]) => (
-                          <div
-                            key={key}
-                            className="rounded-2xl p-4 border transition-all hover:scale-[1.02] active:scale-[0.98] shadow-sm"
-                            style={{ backgroundColor: cat.bgColor, borderColor: cat.borderColor }}
+                      {/* Period Presets Selector */}
+                      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                        {[
+                          { id: "30days", label: "Last 30 Days" },
+                          { id: "90days", label: "Last 90 Days" },
+                          { id: "1year", label: "Past Year" },
+                          { id: "all", label: "All Time" },
+                        ].map((tab) => (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setSpendDatePreset(tab.id)}
+                            className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${
+                              spendDatePreset === tab.id
+                                ? "bg-[#353935] text-white shadow-sm"
+                                : "bg-black/5 hover:bg-black/10 text-black/70"
+                            }`}
                           >
-                            <div className="flex items-center gap-2 mb-2">
-                              <span className="text-base">{cat.icon}</span>
-                              <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: cat.color }}>{cat.label}</span>
-                            </div>
-                            <p className="text-xl font-extrabold tracking-tight text-black">
-                              {balanceVisible ? `$${cat.total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "••••"}
-                            </p>
-                            {totalSpending > 0 && (
-                              <p className="text-[9px] font-bold text-black/50 mt-1">{((cat.total / totalSpending) * 100).toFixed(0)}% of total</p>
-                            )}
-                          </div>
+                            {tab.label}
+                          </button>
                         ))}
                       </div>
 
-                      {/* ---- Smart category banner ---- */}
-                      <div className="rounded-2xl border border-[#2775CA]/20 bg-[#2775CA]/5 p-4 flex items-start gap-3">
-                        <div className="p-2 rounded-xl bg-[#2775CA]/10 shrink-0">
-                          <Tag className="h-5 w-5 text-[#2775CA]" />
-                        </div>
-                        <div>
-                          <h4 className="text-xs font-black uppercase tracking-wider text-black">Smart category</h4>
-                          <p className="text-[10px] text-black/60 leading-relaxed mt-1">
-                            Transactions are categorized by type as they arrive. The totals above cover money
-                            going out only — payments you received are excluded, and are listed under the
-                            Received filter below.
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* ---- Search + filters ---- */}
-                      <div className="space-y-3">
-                        <div className="relative">
-                          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-black/40 pointer-events-none" />
-                          <input
-                            type="text"
-                            value={spendSearchQuery}
-                            onChange={(e) => setSpendSearchQuery(e.target.value)}
-                            placeholder="Search for any transaction"
-                            className="w-full rounded-2xl border border-black/15 bg-white pl-11 pr-4 py-3.5 text-xs text-black placeholder:text-black/35 focus:border-[#2775CA] focus:outline-none focus:ring-1 focus:ring-[#2775CA]/20 transition-all shadow-sm"
-                          />
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2.5 font-sans">
-                          {/* Category Filter Pill Dropdown */}
-                          <div className="relative inline-flex items-center">
-                            <div className="pointer-events-none absolute left-3 flex items-center text-black/40">
-                              <Filter className="h-3.5 w-3.5 text-[#2775CA]" />
-                            </div>
-                            <select
-                              value={spendCategory}
-                              onChange={(e) => setSpendCategory(e.target.value)}
-                              className="appearance-none rounded-xl border border-black/15 bg-white pl-9 pr-7 py-2 text-xs font-bold text-black focus:border-[#2775CA] focus:outline-none cursor-pointer shadow-sm"
-                            >
-                              <option value="all">All Categories 🈳</option>
-                              <option value="recurring">Subscriptions 🔄</option>
-                              <option value="one-time">One Time 💳</option>
-                              <option value="transfers">Transfers ↗️</option>
-                              <option value="withdrawals">Withdrawals 📦</option>
-                              <option value="sent">Sent (Debit)</option>
-                              <option value="received">Received (Credit)</option>
-                            </select>
-                            <ChevronDown className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-black/40" />
+                      {/* Skeleton State */}
+                      {isRefreshingBalances ? (
+                        <div className="space-y-6 animate-pulse">
+                          <div className="h-44 rounded-3xl bg-black/5 border border-black/10 p-6 space-y-4">
+                            <div className="h-4 w-28 rounded bg-black/10" />
+                            <div className="h-10 w-44 rounded-lg bg-black/10" />
+                            <div className="h-3 w-full rounded-full bg-black/10" />
                           </div>
-
-                          {/* Status Filter Dropdown */}
-                          <div className="relative inline-flex items-center">
-                            <select
-                              value={spendStatus}
-                              onChange={(e) => setSpendStatus(e.target.value)}
-                              className="appearance-none rounded-xl border border-black/15 bg-white pl-3 pr-7 py-2 text-xs font-bold text-black focus:border-[#2775CA] focus:outline-none cursor-pointer shadow-sm"
-                            >
-                              <option value="all">All Status ∨</option>
-                              <option value="COMPLETED">Completed</option>
-                              <option value="PENDING">Pending</option>
-                              <option value="FAILED">Failed</option>
-                            </select>
-                            <ChevronDown className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-black/40" />
-                          </div>
-
-                          {/* Date Preset Filter */}
-                          <select
-                            value={spendDatePreset}
-                            onChange={(e) => {
-                              setSpendDatePreset(e.target.value);
-                              if (e.target.value !== "custom") {
-                                setSpendStartDate("");
-                                setSpendEndDate("");
-                              }
-                            }}
-                            className="rounded-xl border border-black/15 bg-white px-3 py-2 text-xs font-bold text-black focus:border-[#2775CA] focus:outline-none cursor-pointer shadow-sm"
-                          >
-                            <option value="all">All Time</option>
-                            <option value="today">Today</option>
-                            <option value="7days">Last 7 Days</option>
-                            <option value="30days">Last 30 Days</option>
-                            <option value="custom">Custom Date Range…</option>
-                          </select>
-
-                          {spendFiltersActive && (
-                            <button
-                              onClick={() => {
-                                setSpendSearchQuery("");
-                                setSpendCategory("all");
-                                setSpendStatus("all");
-                                setSpendDatePreset("all");
-                                setSpendStartDate("");
-                                setSpendEndDate("");
-                                setSpendMonth("");
-                              }}
-                              className="rounded-xl bg-black/5 hover:bg-black/10 px-3 py-2 text-[11px] font-bold text-black/80 transition"
-                            >
-                              Clear filters
-                            </button>
-                          )}
-
-                          <span className="ml-auto font-mono text-[10px] font-semibold text-black/40">
-                            Showing {spendTxList.length} of {recentTransactions.length}
-                          </span>
-                        </div>
-
-                        {spendDatePreset === "custom" && (
-                          <div className="flex flex-wrap items-center gap-2 font-sans">
-                            <input
-                              type="date"
-                              value={spendStartDate}
-                              onChange={(e) => setSpendStartDate(e.target.value)}
-                              className="rounded-xl border border-black/15 bg-white px-3 py-2 text-xs text-black focus:border-[#2775CA] focus:outline-none shadow-sm"
-                            />
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-black/40">to</span>
-                            <input
-                              type="date"
-                              value={spendEndDate}
-                              onChange={(e) => setSpendEndDate(e.target.value)}
-                              className="rounded-xl border border-black/15 bg-white px-3 py-2 text-xs text-black focus:border-[#2775CA] focus:outline-none shadow-sm"
-                            />
-                          </div>
-                        )}
-                      </div>
-
-                      {/* ---- Month summary: In / Out for whatever is on screen ---- */}
-                      <div className="rounded-3xl border border-black/10 bg-white/80 p-5 shadow-sm backdrop-blur-md">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div className="flex items-center gap-3">
-                            <select
-                              value={spendMonth}
-                              onChange={(e) => setSpendMonth(e.target.value)}
-                              className="rounded-xl border border-black/15 bg-white px-3.5 py-2 text-base font-extrabold text-black focus:border-[#2775CA] focus:outline-none cursor-pointer shadow-sm"
-                            >
-                              <option value="">All months</option>
-                              {availableMonths.map((key) => (
-                                <option key={key} value={key}>
-                                  {monthLabel(key)}
-                                </option>
-                              ))}
-                            </select>
-                            <span className="rounded-full bg-[#7c3aed]/10 border border-[#7c3aed]/30 px-3 py-1 text-xs font-bold text-[#7c3aed] flex items-center gap-1.5">
-                              <span>🪙</span> Monthly Overview
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-6">
-                            <div>
-                              <span className="text-xs font-bold text-black/50">In</span>{" "}
-                              <span className="text-lg font-extrabold tracking-tight text-emerald-700">
-                                {balanceVisible ? money(monthIn) : "••••"}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-xs font-bold text-black/50">Out</span>{" "}
-                              <span className="text-lg font-extrabold tracking-tight text-black">
-                                {balanceVisible ? money(monthOut) : "••••"}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <p className="mt-3 text-[10px] leading-relaxed text-black/50">
-                          Totals cover the {spendTxList.length} transaction{spendTxList.length === 1 ? "" : "s"} listed
-                          below, excluding failed ones.
-                          {summaryHasRecurring
-                            ? " Subscriptions count at their per-period cap, so Out is an upper bound on recurring spend rather than an exact debit total."
-                            : ""}
-                        </p>
-                      </div>
-
-                      {/* ---- Transaction list ---- */}
-                      <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl shadow-sm overflow-hidden">
-                        {spendTxList.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center py-12 text-center">
-                            <DollarSign className="h-8 w-8 text-black/20 mb-3" />
-                            <p className="text-xs text-black/50">{spendFiltersActive ? "No matching transactions." : "No transactions yet."}</p>
-                          </div>
-                        ) : (
-                          <div className="divide-y divide-black/5">
-                            {spendTxList.map((tx) => (
-                              <div key={tx.id} className="flex items-center gap-3 px-5 py-4 hover:bg-black/[0.02] transition-colors">
-                                <div className="h-10 w-10 shrink-0 rounded-full bg-black/5 border border-black/10 flex items-center justify-center overflow-hidden">
-                                  {tx.pic ? (
-                                    <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
-                                  ) : (
-                                    <span className="text-sm font-black text-[#2775CA]">{(tx.name || "?").charAt(0).toUpperCase()}</span>
-                                  )}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="truncate text-sm font-bold text-black">{tx.name}</p>
-                                  <p className="truncate text-[10px] text-black/50">
-                                    {tx.detail} • {new Date(tx.time).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}
-                                  </p>
-                                </div>
-                                <div className="text-right shrink-0">
-                                  <span className={`text-sm font-extrabold ${tx.status === "FAILED" ? "text-red-500/60 line-through" : tx.incoming ? "text-emerald-700" : "text-black"}`}>
-                                    {balanceVisible ? tx.amountLabel : "••••"}
-                                  </span>
-                                  <span className="mt-0.5 flex items-center justify-end gap-1.5">
-                                    {tx.status !== "COMPLETED" && (
-                                      <span className={`text-[8px] font-bold uppercase tracking-wider ${tx.status === "PENDING" ? "text-amber-600" : "text-red-600"}`}>
-                                        {tx.status}
-                                      </span>
-                                    )}
-                                    <span className={`text-[8px] font-bold uppercase tracking-wider ${tx.kind === "recurring" ? "text-[#2775CA]" : "text-sky-600"}`}>
-                                      {tx.kind === "recurring" ? "Recurring" : "One-time"}
-                                    </span>
-                                  </span>
-                                </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            {[1, 2, 3, 4].map((i) => (
+                              <div key={i} className="h-28 rounded-2xl bg-black/5 border border-black/10 p-4 space-y-3">
+                                <div className="h-3 w-20 rounded bg-black/10" />
+                                <div className="h-6 w-24 rounded bg-black/10" />
                               </div>
                             ))}
                           </div>
-                        )}
-                      </div>
+                          <div className="h-56 rounded-3xl bg-black/5 border border-black/10 p-6 space-y-4">
+                            <div className="h-4 w-36 rounded bg-black/10" />
+                            <div className="h-36 w-full rounded bg-black/10" />
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          {/* Hero: Total Spending & Distribution */}
+                          <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-6 sm:p-8 shadow-sm">
+                            <div className="flex items-center justify-between">
+                              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-black/50">Total Outflow</p>
+                              <div className="p-2 rounded-xl bg-black/5">
+                                <BarChart3 className="h-4 w-4 text-[#2775CA]" />
+                              </div>
+                            </div>
+                            <p className="mt-3 text-4xl sm:text-5xl font-extrabold tracking-tight text-black">
+                              {balanceVisible ? money(totalSpending) : "••••"}
+                            </p>
+                            <div className="mt-2 flex flex-wrap items-center gap-3">
+                              {monthlySpendUsdc > 0 ? (
+                                <div className="inline-flex items-center gap-1.5 rounded-full bg-[#2775CA]/10 px-2.5 py-1 text-[10px] font-bold text-[#2775CA] border border-[#2775CA]/20">
+                                  <TrendingUp className="h-3.5 w-3.5" />
+                                  <span>{balanceVisible ? `${money(monthlySpendUsdc)}/mo active commitment` : "••••/mo active commitment"}</span>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] font-bold text-black/40">No active recurring commitments</span>
+                              )}
+                              <span className="text-[10px] font-mono text-black/45">
+                                {periodTxs.filter((t) => !t.incoming && t.status !== "FAILED").length} outgoing transactions
+                              </span>
+                            </div>
+
+                            {/* Segmented Category Distribution Bar */}
+                            {totalSpending > 0 ? (
+                              <div className="mt-5 space-y-2">
+                                <div className="flex h-3.5 w-full overflow-hidden rounded-full gap-0.5 bg-black/5 p-0.5">
+                                  {categoryEntries.map(([key, cat]) => (
+                                    <div
+                                      key={key}
+                                      className="h-full rounded-full transition-all duration-700"
+                                      style={{
+                                        width: `${Math.max(4, (cat.total / totalSpending) * 100)}%`,
+                                        backgroundColor: cat.color,
+                                      }}
+                                      title={`${cat.label}: ${money(cat.total)}`}
+                                    />
+                                  ))}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-3 pt-1 text-[9px] font-bold">
+                                  {categoryEntries.map(([key, cat]) => (
+                                    <div key={key} className="flex items-center gap-1.5 text-black/70">
+                                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: cat.color }} />
+                                      <span>{cat.label}</span>
+                                      <span className="font-mono text-black/40">({((cat.total / totalSpending) * 100).toFixed(0)}%)</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="mt-5 flex h-3.5 w-full overflow-hidden rounded-full bg-black/5" />
+                            )}
+                          </div>
+
+                          {/* Category Breakdown Cards */}
+                          <div className="grid grid-cols-2 gap-3">
+                            {allCategoryEntries.map(([key, cat]) => {
+                              const CategoryIcon = cat.Icon;
+                              const pct = totalSpending > 0 ? ((cat.total / totalSpending) * 100).toFixed(0) : "0";
+                              return (
+                                <div
+                                  key={key}
+                                  className="rounded-2xl p-4 border transition-all hover:scale-[1.01] shadow-sm"
+                                  style={{ backgroundColor: cat.bgColor, borderColor: cat.borderColor }}
+                                >
+                                  <div className="flex items-center justify-between gap-2 mb-2">
+                                    <div className="flex items-center gap-1.5">
+                                      <CategoryIcon className="h-4 w-4" style={{ color: cat.color }} />
+                                      <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: cat.color }}>
+                                        {cat.label}
+                                      </span>
+                                    </div>
+                                    <span className="text-[9px] font-mono font-bold text-black/50">
+                                      {cat.count} {cat.count === 1 ? "item" : "items"}
+                                    </span>
+                                  </div>
+                                  <p className="text-xl font-extrabold tracking-tight text-black">
+                                    {balanceVisible ? money(cat.total) : "••••"}
+                                  </p>
+                                  <div className="mt-2 flex items-center justify-between text-[9px] font-bold text-black/50">
+                                    <span>Share of spend</span>
+                                    <span className="font-mono text-black/80">{pct}%</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Monthly Spending Trend Bar Chart */}
+                          <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-7 shadow-sm space-y-4">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/70 flex items-center gap-2">
+                                  <BarChart3 className="h-4 w-4 text-[#2775CA]" /> Monthly Spending Trend
+                                </h3>
+                                <p className="text-[10px] text-black/50 mt-0.5">Historical outflow across recent billing cycles</p>
+                              </div>
+                              <span className="rounded-full bg-black/5 border border-black/10 px-2.5 py-1 text-[9px] font-mono font-bold text-black/60">
+                                6-Month Window
+                              </span>
+                            </div>
+
+                            <div className="pt-4 pb-2">
+                              <div className="flex items-end justify-between gap-2 sm:gap-4 h-40 pt-6 px-2">
+                                {monthData.map((m) => {
+                                  const heightPct = Math.max(8, Math.round((m.amount / maxMonthSpend) * 100));
+                                  return (
+                                    <div key={m.key} className="flex-1 flex flex-col items-center h-full justify-end group">
+                                      {/* Bar tooltip / amount */}
+                                      <span className="text-[9px] font-mono font-black text-black/60 mb-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        {balanceVisible ? `$${m.amount.toFixed(0)}` : "••••"}
+                                      </span>
+                                      {/* Bar */}
+                                      <div className="w-full max-w-[48px] bg-black/5 rounded-t-xl overflow-hidden flex items-end relative h-full">
+                                        <div
+                                          className={`w-full rounded-t-xl transition-all duration-700 ${
+                                            m.isPeak
+                                              ? "bg-[#2775CA] shadow-sm"
+                                              : m.amount > 0
+                                              ? "bg-black/30 group-hover:bg-[#2775CA]/70"
+                                              : "bg-black/10"
+                                          }`}
+                                          style={{ height: `${heightPct}%` }}
+                                        />
+                                        {m.isPeak && m.amount > 0 && (
+                                          <div className="absolute top-1 left-1/2 -translate-x-1/2 rounded bg-[#2775CA] px-1 py-0.2 text-[7px] font-black text-white uppercase tracking-wider">
+                                            Peak
+                                          </div>
+                                        )}
+                                      </div>
+                                      {/* Month Label */}
+                                      <span className="mt-2 text-[10px] font-bold uppercase tracking-wider text-black/60">
+                                        {m.label}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Cash Flow & Net Balance Breakdown */}
+                          <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-7 shadow-sm space-y-4">
+                            <div className="flex items-center justify-between">
+                              <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/70 flex items-center gap-2">
+                                <Activity className="h-4 w-4 text-[#2775CA]" /> Cash Flow Summary
+                              </h3>
+                              <span className={`rounded-full border px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${
+                                netCashFlow >= 0
+                                  ? "border-emerald-500/30 bg-emerald-50 text-emerald-700"
+                                  : "border-amber-500/30 bg-amber-50 text-amber-700"
+                              }`}>
+                                {netCashFlow >= 0 ? "Surplus" : "Net Outflow"}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-50/50 p-4">
+                                <span className="block text-[9px] font-black uppercase tracking-wider text-emerald-800/70">Total Inflow (Credits)</span>
+                                <p className="mt-1 text-lg font-extrabold text-emerald-700">
+                                  {balanceVisible ? money(totalInflow) : "••••"}
+                                </p>
+                              </div>
+                              <div className="rounded-2xl border border-red-500/20 bg-red-50/50 p-4">
+                                <span className="block text-[9px] font-black uppercase tracking-wider text-red-800/70">Total Outflow (Debits)</span>
+                                <p className="mt-1 text-lg font-extrabold text-red-700">
+                                  {balanceVisible ? money(totalOutflow) : "••••"}
+                                </p>
+                              </div>
+                              <div className="rounded-2xl border border-black/10 bg-black/[0.02] p-4">
+                                <span className="block text-[9px] font-black uppercase tracking-wider text-black/50">Net Movement</span>
+                                <p className={`mt-1 text-lg font-extrabold ${netCashFlow >= 0 ? "text-emerald-700" : "text-black"}`}>
+                                  {balanceVisible ? `${netCashFlow >= 0 ? "+" : ""}${money(netCashFlow)}` : "••••"}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Top Merchants / Destinations Outflow Leaderboard */}
+                          <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-7 shadow-sm space-y-4">
+                            <div className="flex items-center justify-between">
+                              <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/70 flex items-center gap-2">
+                                <Building2 className="h-4 w-4 text-[#2775CA]" /> Top Outflow Destinations
+                              </h3>
+                              <span className="text-[10px] font-mono text-black/45">By volume</span>
+                            </div>
+
+                            {topMerchants.length === 0 ? (
+                              <div className="flex h-28 flex-col items-center justify-center rounded-2xl border border-dashed border-black/10 bg-black/[0.02] text-center p-4">
+                                <CreditCard className="h-5 w-5 text-black/25 mb-1.5" />
+                                <p className="text-xs text-black/40">No outflow data recorded yet</p>
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                {topMerchants.map((merchant, rank) => {
+                                  const sharePct = totalSpending > 0 ? (merchant.amount / totalSpending) * 100 : 0;
+                                  return (
+                                    <div key={merchant.name} className="rounded-2xl border border-black/10 bg-white p-3.5 space-y-2 shadow-xs">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-black/5 border border-black/10 text-[10px] font-black text-[#2775CA]">
+                                            #{rank + 1}
+                                          </div>
+                                          <div className="min-w-0">
+                                            <p className="truncate text-xs font-bold text-black uppercase tracking-wider">{merchant.name}</p>
+                                            <p className="text-[9px] font-medium text-black/45">{merchant.count} {merchant.count === 1 ? "payment" : "payments"}</p>
+                                          </div>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                          <span className="text-xs font-black text-black">{balanceVisible ? money(merchant.amount) : "••••"}</span>
+                                          <span className="block text-[9px] font-mono text-black/40">{sharePct.toFixed(0)}%</span>
+                                        </div>
+                                      </div>
+                                      {/* Progress line */}
+                                      <div className="h-1.5 w-full rounded-full bg-black/5 overflow-hidden">
+                                        <div className="h-full rounded-full bg-[#2775CA]" style={{ width: `${Math.min(100, Math.max(4, sharePct))}%` }} />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Spending Insights & Runway */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="rounded-2xl border border-black/10 bg-white/80 p-4 space-y-1">
+                              <span className="text-[9px] font-black uppercase tracking-wider text-black/50">Average Daily Spend</span>
+                              <p className="text-lg font-extrabold text-black">
+                                {balanceVisible ? money(avgDailySpend) : "••••"} <span className="text-xs font-normal text-black/40">/ day</span>
+                              </p>
+                              <p className="text-[9px] text-black/45">Computed across selected time window</p>
+                            </div>
+                            <div className="rounded-2xl border border-black/10 bg-white/80 p-4 space-y-1">
+                              <span className="text-[9px] font-black uppercase tracking-wider text-black/50">Estimated 30D Run Rate</span>
+                              <p className="text-lg font-extrabold text-[#2775CA]">
+                                {balanceVisible ? money(monthlySpendUsdc + (avgDailySpend * 30)) : "••••"} <span className="text-xs font-normal text-black/40">/ mo</span>
+                              </p>
+                              <p className="text-[9px] text-black/45">Projected combined fixed &amp; variable burn</p>
+                            </div>
+                          </div>
+
+                          {/* Navigation Link to All Transactions */}
+                          <div className="pt-2">
+                            <button
+                              type="button"
+                              onClick={() => router.push("/dashboard/user/transactions")}
+                              className="w-full rounded-2xl border border-black/15 bg-white py-3.5 text-xs font-black uppercase tracking-[0.14em] text-black hover:bg-black/5 transition shadow-sm flex items-center justify-center gap-2"
+                            >
+                              <Activity className="h-4 w-4 text-[#2775CA]" />
+                              View Full Transaction History
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   );
                 })()}
@@ -6077,6 +6120,38 @@ export default function UserDashboard() {
                       )}
                     </div>
 
+                    {/* Transaction PIN Card (Coming Soon) */}
+                    <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-8 space-y-4 shadow-sm">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/60 flex items-center gap-2">
+                              <KeyRound className="h-4 w-4 text-[#2775CA]" /> Transaction PIN
+                            </h3>
+                            <span className="rounded-full border border-purple-500/30 bg-purple-500/15 px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-purple-700">
+                              Coming soon
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-black/50 leading-relaxed">
+                            Require a 6-digit security PIN to authorize high-value transfers, subscriptions, and vault withdrawals.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-black/10 bg-black/[0.02] p-4 flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <span className="block text-xs font-bold text-black/80">PIN Protection</span>
+                          <span className="block text-[10px] text-black/45">Prompt on outgoing payments</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600/80">In Development</span>
+                          <div className="h-5 w-9 rounded-full bg-black/10 p-0.5 cursor-not-allowed opacity-60">
+                            <div className="h-4 w-4 rounded-full bg-white shadow-sm" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Key export exists only for wallet providers that expose a recoverable key. */}
                     {userSettings?.walletBackup?.available && (
                       <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-8 space-y-5 shadow-sm">
@@ -6610,6 +6685,12 @@ export default function UserDashboard() {
 
       <VaultInfoModal open={vaultInfoOpen} onClose={() => setVaultInfoOpen(false)} />
 
+      <AccountHoldModal
+        isOpen={accountHoldModalOpen}
+        onClose={() => setAccountHoldModalOpen(false)}
+        onHoldChange={(onHold) => setIsAccountOnHold(onHold)}
+      />
+
       <AnimatePresence>
         {giftPlan && (
           <motion.div
@@ -6942,6 +7023,8 @@ export default function UserDashboard() {
           confirmLabel={confirmModal.confirmLabel}
           cancelLabel={confirmModal.cancelLabel}
           variant={confirmModal.variant}
+          requiredMatchText={confirmModal.requiredMatchText}
+          matchPlaceholder={confirmModal.matchPlaceholder}
           onConfirm={() => {
             const action = confirmModal.onConfirm;
             setConfirmModal(null);
@@ -6966,7 +7049,7 @@ export default function UserDashboard() {
         isOpen={qrScannerOpen}
         onClose={() => setQrScannerOpen(false)}
         onScan={handleScanQrResult}
-        title={qrTargetIndex !== null ? `Scan QR for Recipient #${qrTargetIndex + 1}` : "Scan Recipient QR Code"}
+        title={qrTargetIndex !== null ? `Scan QR for Recipient #${qrTargetIndex + 1}` : "Scan QR"}
       />
 
       {/* Single Send is a modal now; the Send tab body belongs to Batch Payouts. The routing
@@ -9353,7 +9436,7 @@ function SendFundsModal({
                   className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3 text-xs font-mono text-[#111827] focus:border-[#2775CA] focus:outline-none"
                 />
                 {onScanQr && (
-                  <button type="button" onClick={onScanQr} className="mt-2 inline-flex md:hidden items-center gap-2 rounded-full border border-black/15 bg-white px-3 py-1.5 text-[10px] font-bold text-black shadow-sm" aria-label="Scan recipient QR">
+                  <button type="button" onClick={onScanQr} className="mt-2 inline-flex md:hidden items-center gap-2 rounded-full border border-black/15 bg-white px-3 py-1.5 text-[10px] font-bold text-black shadow-sm" aria-label="Scan QR">
                     <QrCode className="h-3.5 w-3.5" /> Scan QR
                   </button>
                 )}

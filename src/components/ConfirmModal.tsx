@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertCircle, AlertTriangle, XCircle, Loader2 } from "@/components/icons";
 
@@ -13,6 +14,8 @@ interface ConfirmModalProps {
   onConfirm: () => void;
   onCancel: () => void;
   isLoading?: boolean;
+  requiredMatchText?: string;
+  matchPlaceholder?: string;
 }
 
 const variantConfig = {
@@ -52,9 +55,21 @@ export default function ConfirmModal({
   onConfirm,
   onCancel,
   isLoading = false,
+  requiredMatchText,
+  matchPlaceholder,
 }: ConfirmModalProps) {
   const config = variantConfig[variant];
   const Icon = config.icon;
+
+  const [inputMatch, setInputMatch] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setInputMatch("");
+    }
+  }, [open]);
+
+  const isMatchValid = !requiredMatchText || inputMatch.trim() === requiredMatchText;
 
   return (
     <AnimatePresence>
@@ -82,6 +97,23 @@ export default function ConfirmModal({
             <p id="confirm-modal-desc" className="text-xs leading-relaxed text-black/70 font-sans">
               {description}
             </p>
+
+            {requiredMatchText && (
+              <div className="space-y-1.5 pt-1">
+                <label className="block text-[10px] font-black uppercase tracking-wider text-black/60">
+                  Type <span className="font-mono text-red-600 font-extrabold">&ldquo;{requiredMatchText}&rdquo;</span> to confirm
+                </label>
+                <input
+                  type="text"
+                  value={inputMatch}
+                  onChange={(e) => setInputMatch(e.target.value)}
+                  placeholder={matchPlaceholder || `Type "${requiredMatchText}"`}
+                  className="w-full rounded-2xl border border-black/15 bg-white px-3.5 py-2.5 text-xs font-mono font-bold text-[#111827] focus:border-red-500 focus:outline-none shadow-sm"
+                  autoFocus
+                />
+              </div>
+            )}
+
             <div className="flex gap-2.5 pt-2">
               <button
                 type="button"
@@ -94,8 +126,8 @@ export default function ConfirmModal({
               <button
                 type="button"
                 onClick={onConfirm}
-                disabled={isLoading}
-                className={`flex-1 rounded-2xl py-2.5 text-xs font-black uppercase tracking-wider transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm ${config.confirmBg} ${config.confirmText}`}
+                disabled={isLoading || !isMatchValid}
+                className={`flex-1 rounded-2xl py-2.5 text-xs font-black uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 shadow-sm ${config.confirmBg} ${config.confirmText}`}
               >
                 {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 {confirmLabel}

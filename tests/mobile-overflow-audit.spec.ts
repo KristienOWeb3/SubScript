@@ -538,6 +538,7 @@ test.describe("mobile overflow audit", () => {
     expect(subscriptionsBox).not.toBeNull();
     expect(walletBox!.x).toBeGreaterThanOrEqual(sidebarBox!.x + sidebarBox!.width);
     expect(subscriptionsBox!.x).toBeGreaterThanOrEqual(walletBox!.x + walletBox!.width - 1);
+    await expect(desktopPage.getByTestId("wallet-actions").getByRole("button", { name: "Scan QR Code" })).toBeHidden();
     await desktopPage.screenshot({ path: testInfo.outputPath("desktop-user-home.png"), fullPage: true });
     await desktopContext.close();
 
@@ -579,7 +580,7 @@ test.describe("mobile overflow audit", () => {
     await sendButton.click();
     const sendDialog = mobilePage.getByRole("dialog", { name: "Send USDC" });
     await expect(sendDialog).toBeVisible();
-    await expect(sendDialog.getByRole("button", { name: "Scan recipient QR" })).toBeVisible();
+    await expect(sendDialog.getByRole("button", { name: "Scan QR" })).toBeVisible();
     await sendDialog.getByRole("button", { name: "Close send dialog" }).click();
 
     const summaryCards = mobilePage.getByTestId("home-summary-cards");
@@ -631,6 +632,14 @@ test.describe("mobile overflow audit", () => {
     await bottomNav.getByRole("button", { name: "Commit" }).click();
     await expect(mobilePage.getByRole("heading", { name: "Manage Commit" })).toBeVisible();
     await expect(mobilePage.getByRole("button", { name: "Commit to a service" })).toBeVisible();
+    const holdButton = mobilePage.getByRole("button", { name: "Manage account hold" });
+    await expect(holdButton).toBeVisible();
+    await holdButton.click();
+    await holdButton.click();
+    const holdModal = mobilePage.getByRole("heading", { name: "Account Hold" });
+    await expect(holdModal).toBeVisible();
+    await mobilePage.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(holdModal).toBeHidden();
     await expect(mobilePage.getByTestId("vault-carousel")).toHaveCSS("overflow-x", "auto");
     await expect(mobilePage.getByTestId("add-vault-card")).toBeVisible();
     await mobilePage.screenshot({ path: testInfo.outputPath("mobile-manage-commit.png"), fullPage: true });
