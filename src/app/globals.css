@@ -532,9 +532,76 @@ body {
   );
 }
 
-@keyframes subscript-shimmer {
+/* 60fps/120fps GPU Hardware Acceleration & Silky Transitions */
+.gpu-accelerated,
+.subscript-skeleton,
+.subscript-checkout,
+.liquid-glass,
+.glass-card,
+.subtle-motion-blur {
+  transform: translate3d(0, 0, 0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+/* Subtle Motion Blur Animation Utility (barely visible 0.5px-1.5px blur settling to 0px) */
+@keyframes subtle-motion-fade-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+    filter: blur(1.5px);
+  }
   100% {
-    transform: translateX(100%);
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    filter: blur(0px);
+  }
+}
+
+@keyframes subtle-motion-slide-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(16px, 0, 0);
+    filter: blur(1.5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    filter: blur(0px);
+  }
+}
+
+@keyframes subtle-motion-scale-up {
+  0% {
+    opacity: 0;
+    transform: scale3d(0.95, 0.95, 1) translate3d(0, 10px, 0);
+    filter: blur(1.5px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale3d(1, 1, 1) translate3d(0, 0, 0);
+    filter: blur(0px);
+  }
+}
+
+.subtle-motion-enter {
+  animation: subtle-motion-fade-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.subtle-motion-scale-enter {
+  animation: subtle-motion-scale-up 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.subtle-motion-slide-enter {
+  animation: subtle-motion-slide-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes subscript-shimmer {
+  0% {
+    transform: translate3d(-100%, 0, 0);
+  }
+  100% {
+    transform: translate3d(100%, 0, 0);
   }
 }
 
@@ -863,7 +930,8 @@ body {
   color: #fffff0;
 }
 
-.user-dashboard-redesign .wallet-actions button[aria-label="Send Out"] {
+.user-dashboard-redesign .wallet-actions button[aria-label="Send Out"],
+.user-dashboard-redesign .wallet-actions button[aria-label="Send"] {
   background: rgb(39 117 202 / 20%);
   color: #000000;
 }
@@ -1946,7 +2014,8 @@ body {
   color: var(--dk-ink);
 }
 
-[data-theme="dark"] .user-dashboard-redesign .wallet-actions button[aria-label="Send Out"] {
+[data-theme="dark"] .user-dashboard-redesign .wallet-actions button[aria-label="Send Out"],
+[data-theme="dark"] .user-dashboard-redesign .wallet-actions button[aria-label="Send"] {
   background: #2775ca;
   color: #ffffff;
 }

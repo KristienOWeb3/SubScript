@@ -1044,9 +1044,9 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                 {showCreateForm && (
                                                     <motion.div
                                                         key="create-form"
-                                                        initial={{ opacity: 0, height: 0 }}
-                                                        animate={{ opacity: 1, height: "auto" }}
-                                                        exit={{ opacity: 0, height: 0 }}
+                                                        initial={{ opacity: 0, height: 0, filter: "blur(1.5px)" }}
+                                                        animate={{ opacity: 1, height: "auto", filter: "blur(0px)" }}
+                                                        exit={{ opacity: 0, height: 0, filter: "blur(1.5px)" }}
                                                         transition={{ duration: 0.35 }}
                                                         className="overflow-hidden mb-6"
                                                     >
@@ -1152,9 +1152,9 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                     {formRecipients.map((recipient) => (
                                                                         <motion.div
                                                                             key={recipient.id}
-                                                                            initial={{ opacity: 0, x: -10 }}
-                                                                            animate={{ opacity: 1, x: 0 }}
-                                                                            exit={{ opacity: 0, x: 10 }}
+                                                                            initial={{ opacity: 0, x: -10, filter: "blur(1.2px)" }}
+                                                                            animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+                                                                            exit={{ opacity: 0, x: 10, filter: "blur(1.2px)" }}
                                                                             className="grid grid-cols-[minmax(0,1fr)_110px_36px] sm:grid-cols-[minmax(0,1fr)_160px_40px] gap-2 mb-2 items-center"
                                                                         >
                                                                             <input
@@ -1321,8 +1321,8 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                         return (
                                                             <motion.div
                                                                 key={campaign.id}
-                                                                initial={{ opacity: 0, y: 15 }}
-                                                                animate={{ opacity: 1, y: 0 }}
+                                                                initial={{ opacity: 0, y: 15, filter: "blur(1.5px)" }}
+                                                                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
                                                                 transition={{ delay: index * 0.05 }}
                                                                 className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl relative overflow-hidden mb-6"
                                                             >
@@ -1510,9 +1510,9 @@ function RecipientList({ recipients }: { recipients: PayrollCampaign["recipients
             <AnimatePresence>
                 {expanded && (
                     <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
+                        initial={{ opacity: 0, height: 0, filter: "blur(1.5px)" }}
+                        animate={{ opacity: 1, height: "auto", filter: "blur(0px)" }}
+                        exit={{ opacity: 0, height: 0, filter: "blur(1.5px)" }}
                         transition={{ duration: 0.25 }}
                         className="overflow-hidden"
                     >

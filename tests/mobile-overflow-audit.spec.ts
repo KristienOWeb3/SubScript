@@ -571,11 +571,12 @@ test.describe("mobile overflow audit", () => {
     await expect(walletSummary).toHaveCSS("text-align", "center");
 
     const walletActions = mobilePage.getByTestId("wallet-actions");
-    const walletActionLabels = await walletActions.getByRole("button").allTextContents();
-    expect(walletActionLabels).toEqual(["Deposit", "Send Out"]);
-    await expect(walletActions.locator("svg")).toHaveCount(0);
+    await expect(walletActions.getByRole("button", { name: "Deposit", exact: true })).toBeVisible();
+    const sendButton = walletActions.getByRole("button", { name: "Send", exact: true });
+    await expect(sendButton).toBeVisible();
+    await expect(walletActions.getByRole("button", { name: "Scan QR Code", exact: true })).toBeVisible();
 
-    await walletActions.getByRole("button", { name: "Send Out", exact: true }).click();
+    await sendButton.click();
     const sendDialog = mobilePage.getByRole("dialog", { name: "Send USDC" });
     await expect(sendDialog).toBeVisible();
     await expect(sendDialog.getByRole("button", { name: "Scan recipient QR" })).toBeVisible();

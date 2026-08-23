@@ -21,7 +21,7 @@ import {
 } from "@/components/icons";
 import { getDashboardUrl, getSafeRelativePath } from "@/utils/navigation";
 import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
-import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+import AuthSkeleton from "@/components/AuthSkeleton";
 import Script from "next/script";
 import { CIRCLE_GOOGLE_ENABLED } from "@/lib/featureFlags";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
@@ -188,7 +188,7 @@ export default function SignupPage() {
         try {
           window.turnstile.render(container, {
             sitekey: siteKey,
-            theme: "dark",
+            theme: "light",
             callback: (token: string) => setCaptchaToken(token),
             "expired-callback": () => setCaptchaToken(""),
             "error-callback": () => setCaptchaToken(""),
@@ -598,27 +598,25 @@ export default function SignupPage() {
 
   if (showRoleSelector) {
     return (
-      <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white flex items-center justify-center p-6 relative font-sans">
-        <AnimatedGradientBg />
-        
+      <div className="subscript-checkout min-h-screen bg-[#FFFFF0] text-black selection:bg-[#2775CA]/20 selection:text-black flex items-center justify-center p-4 sm:p-6 relative font-sans">
         <div className="relative z-10 w-full max-w-md">
           <div className="text-center mb-8">
-            <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
+            <h1 className="text-2xl font-extrabold text-[#111827] tracking-tight">
               {isCompleteRoleFlow
-                ? <>SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">almost there</span></>
-                : <>SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">onboarding</span></>
+                ? <>SubScript <span className="font-serif italic lowercase font-normal text-[#2775CA]">finish setup</span></>
+                : <>SubScript <span className="font-serif italic lowercase font-normal text-[#2775CA]">signup</span></>
               }
             </h1>
-            <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">
-              {isCompleteRoleFlow ? "One last step to complete your account" : "Decentralized Payment Protocol"}
+            <p className="text-xs text-[#1f62ab] font-bold uppercase tracking-widest mt-1">
+              {isCompleteRoleFlow ? "One last step to complete your account" : "Create your account"}
             </p>
           </div>
 
-          <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
+          <div className="rounded-3xl border border-black/15 bg-white p-6 sm:p-8 shadow-sm space-y-6 relative overflow-hidden">
             <div className="text-center space-y-1.5">
-              <h2 className="text-base font-bold uppercase tracking-wider text-white">Select Account Type</h2>
-              <p className="text-xs text-white/50 leading-relaxed">
-                Choose how you intend to interact with the SubScript protocol.
+              <h2 className="text-base font-bold uppercase tracking-wider text-[#111827]">Choose Account Type</h2>
+              <p className="text-xs text-black/60 leading-relaxed">
+                Select how you would like to use SubScript.
               </p>
             </div>
 
@@ -626,95 +624,92 @@ export default function SignupPage() {
               {/* User Account Option */}
               <button
                 onClick={() => persistRoleChoice("USER")}
-                className={`w-full p-5 border text-left rounded-2xl transition-all duration-300 relative overflow-hidden group ${
+                className={`w-full p-5 border text-left rounded-2xl transition-all duration-200 relative overflow-hidden group shadow-sm ${
                   selectedRole === "USER"
-                    ? "border-[#00d2b4] bg-[#00d2b4]/5 shadow-[0_0_20px_rgba(0,210,180,0.15)]"
-                    : "border-white/5 bg-white/[0.01] hover:border-[#00d2b4]/40 hover:bg-white/[0.02] hover:shadow-[0_0_15px_rgba(0,210,180,0.08)]"
+                    ? "border-[#2775CA] bg-[#2775CA]/[0.06] shadow-sm"
+                    : "border-black/10 bg-white hover:border-[#2775CA]/40 hover:bg-black/[0.02]"
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <div className={`p-2.5 rounded-xl border transition-colors ${
                     selectedRole === "USER"
-                      ? "bg-[#00d2b4]/10 border-[#00d2b4]/30 text-[#00d2b4]"
-                      : "bg-white/5 border-white/5 text-white/40 group-hover:text-[#00d2b4]"
+                      ? "bg-[#2775CA]/10 border-[#2775CA]/30 text-[#2775CA]"
+                      : "bg-black/5 border-black/5 text-black/40 group-hover:text-[#2775CA]"
                   }`}>
                     <User className="w-5 h-5" />
                   </div>
                   <div>
                     <h3 className={`font-bold text-sm uppercase tracking-wider transition-colors ${
-                      selectedRole === "USER" ? "text-[#00d2b4]" : "text-white"
+                      selectedRole === "USER" ? "text-[#2775CA]" : "text-[#111827]"
                     }`}>
-                      User Account
+                      Personal Account
                     </h3>
                   </div>
                 </div>
-                <p className="text-[11px] text-white/50 mt-3 leading-relaxed">
-                  Subscribe to web3 APIs, manage recurring allowance streams, view payment history, and connect with merchants.
+                <p className="text-xs text-black/60 mt-3 leading-relaxed">
+                  Subscribe to apps, manage recurring payment plans, send payments, and track personal spending.
                 </p>
               </button>
 
               {/* Enterprise Merchant Option */}
               <button
                 onClick={() => persistRoleChoice("ENTERPRISE")}
-                className={`w-full p-5 border text-left rounded-2xl transition-all duration-300 relative overflow-hidden group ${
+                className={`w-full p-5 border text-left rounded-2xl transition-all duration-200 relative overflow-hidden group shadow-sm ${
                   selectedRole === "ENTERPRISE"
-                    ? "border-[#00d2b4] bg-[#00d2b4]/5 shadow-[0_0_20px_rgba(0,210,180,0.15)]"
-                    : "border-white/5 bg-white/[0.01] hover:border-[#00d2b4]/40 hover:bg-white/[0.02] hover:shadow-[0_0_15px_rgba(0,210,180,0.08)]"
+                    ? "border-[#2775CA] bg-[#2775CA]/[0.06] shadow-sm"
+                    : "border-black/10 bg-white hover:border-[#2775CA]/40 hover:bg-black/[0.02]"
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <div className={`p-2.5 rounded-xl border transition-colors ${
                     selectedRole === "ENTERPRISE"
-                      ? "bg-[#00d2b4]/10 border-[#00d2b4]/30 text-[#00d2b4]"
-                      : "bg-white/5 border-white/5 text-white/40 group-hover:text-[#00d2b4]"
+                      ? "bg-[#2775CA]/10 border-[#2775CA]/30 text-[#2775CA]"
+                      : "bg-black/5 border-black/5 text-black/40 group-hover:text-[#2775CA]"
                   }`}>
                     <Building2 className="w-5 h-5" />
                   </div>
                   <div>
                     <h3 className={`font-bold text-sm uppercase tracking-wider transition-colors ${
-                      selectedRole === "ENTERPRISE" ? "text-[#00d2b4]" : "text-white"
+                      selectedRole === "ENTERPRISE" ? "text-[#2775CA]" : "text-[#111827]"
                     }`}>
-                      Enterprise Merchant
+                      Merchant Account
                     </h3>
-                    <span className="text-[9px] text-[#00d2b4] uppercase font-bold tracking-wider">
-                      {inviteOnlyNotice ? "Invite only" : "Merchant Dashboard"}
+                    <span className="text-[10px] text-[#1f62ab] uppercase font-bold tracking-wider">
+                      {inviteOnlyNotice ? "Invite only" : "Business & Developer"}
                     </span>
                   </div>
                 </div>
-                <p className="text-[11px] text-white/50 mt-3 leading-relaxed">
-                  Configure subscription tiers, generate hosted payment links, run automated payroll runs, and manage cashflow.
+                <p className="text-xs text-black/60 mt-3 leading-relaxed">
+                  Accept recurring subscriptions, create checkout links, automate payroll, and manage business revenue.
                 </p>
-                {/* Selectable either way — an approved business still has to come through this card,
-                    and we can't tell from here whether this visitor is one. The server decides. */}
                 {inviteOnlyNotice && (
-                  <p className="text-[10px] text-[#00d2b4]/80 mt-2.5 leading-relaxed">
-                    We approve merchants one at a time. Already approved? Sign up with the email we
-                    approved. Not yet? Request access below.
+                  <p className="text-xs text-[#1f62ab] mt-2.5 leading-relaxed font-medium">
+                    We review and approve merchants individually. Already approved? Sign up with your registered email.
                   </p>
                 )}
               </button>
             </div>
 
             {inviteOnlyNotice && (
-              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 space-y-2.5 text-left">
-                <p className="text-[11px] text-white/60 leading-relaxed">
-                  Need a merchant account? Tell us about your business and we&apos;ll email you an invite.
+              <div className="rounded-2xl border border-black/10 bg-black/[0.02] p-4 space-y-2.5 text-left">
+                <p className="text-xs text-black/70 leading-relaxed">
+                  Need a merchant account? Tell us about your business to receive an invite.
                 </p>
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                   <Link
                     href="/merchant-access"
-                    className="text-[11px] font-bold uppercase tracking-wider text-[#00d2b4] hover:text-[#00d2b4]/80 transition-colors"
+                    className="text-xs font-bold uppercase tracking-wider text-[#2775CA] hover:underline transition-colors"
                   >
                     Request merchant access
                   </Link>
-                  <span className="text-white/20">·</span>
+                  <span className="text-black/20">·</span>
                   <a
                     href={X_HANDLE_URL}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-[11px] font-bold uppercase tracking-wider text-white/50 hover:text-white transition-colors"
+                    className="text-xs font-bold uppercase tracking-wider text-black/50 hover:text-black transition-colors"
                   >
-                    Or DM us on X
+                    Or reach out on X
                   </a>
                 </div>
               </div>
@@ -722,49 +717,47 @@ export default function SignupPage() {
 
             {requiresEmailLinking && isExternalWalletSignup && (
               <div className="space-y-2 pt-2 text-left">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
-                  Email Address (for push notifications)
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-black/60">
+                  Email Address (for notifications)
                 </label>
                 <div className="relative">
                   <input
                     type="email"
-                    placeholder="name@domain.com"
+                    placeholder="you@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    className="subscript-input pr-10"
+                    className="w-full rounded-xl border border-black/15 bg-white px-3.5 py-3 text-xs text-[#111827] placeholder:text-black/40 focus:border-[#2775CA]/60 focus:outline-none pr-10 shadow-sm"
                   />
-                  <Mail className="absolute right-3.5 top-3.5 w-4 h-4 text-white/30" />
+                  <Mail className="absolute right-3.5 top-3.5 w-4 h-4 text-black/35" />
                 </div>
-                <p className="text-[9px] text-white/40 leading-relaxed">
-                  Enter your email address so you don&apos;t miss critical payment and billing push notifications.
+                <p className="text-[10px] text-black/50 leading-relaxed">
+                  Enter your email address to receive transaction confirmations and billing updates.
                 </p>
               </div>
             )}
 
             {roleError && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-400 flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+              <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-xs text-red-900 flex items-start gap-3" role="alert">
+                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-red-700" />
                 <div className="space-y-2">
                   <span className="leading-relaxed block">{roleError}</span>
-                  {/* Refused for want of an invite: point at the fix. Without this the user re-picks
-                      the same card and hits the same wall. */}
                   {merchantInviteBlocked && (
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <Link
                         href="/merchant-access"
-                        className="text-[11px] font-bold uppercase tracking-wider text-[#00d2b4] hover:text-[#00d2b4]/80 transition-colors"
+                        className="text-xs font-bold uppercase tracking-wider text-[#2775CA] hover:underline transition-colors"
                       >
                         Request merchant access
                       </Link>
-                      <span className="text-white/20">·</span>
+                      <span className="text-black/20">·</span>
                       <a
                         href={X_HANDLE_URL}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-[11px] font-bold uppercase tracking-wider text-white/50 hover:text-white transition-colors"
+                        className="text-xs font-bold uppercase tracking-wider text-black/50 hover:text-black transition-colors"
                       >
-                        DM us on X
+                        Reach out on X
                       </a>
                     </div>
                   )}
@@ -775,23 +768,21 @@ export default function SignupPage() {
             <button
               onClick={activeMerchantAddress ? handleRoleSelection : handleContinueToAuth}
               disabled={!selectedRole || roleLoading}
-              className={`w-full py-4 rounded-2xl flex items-center justify-center gap-2 transition-all font-bold text-xs uppercase tracking-wider text-black ${
-                !selectedRole
-                  ? "bg-white/10 text-white/40 cursor-not-allowed border border-white/5"
-                  : "bg-[#00d2b4] hover:bg-[#00d2b4]/85 shadow-[0_0_20px_rgba(0,210,180,0.2)]"
+              className={`w-full py-4 rounded-2xl flex items-center justify-center gap-2 transition-all font-bold text-xs uppercase tracking-wider shadow-sm ${
+                !selectedRole || roleLoading
+                  ? "bg-black/5 text-black/40 cursor-not-allowed border border-black/10"
+                  : "bg-[#2775CA] hover:bg-[#1f62ab] text-[#FFFFF0]"
               }`}
             >
-              {/* Pre-auth (no session yet) records the choice and moves to the auth method screen;
-                  post-auth it finalizes the account by registering the chosen role. */}
               {roleLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : (activeMerchantAddress ? "Complete Signup" : "Continue")}
               {!roleLoading && <ArrowRight className="w-4 h-4" />}
             </button>
 
-            <p className="text-center text-xs text-white/40 pt-1">
+            <p className="text-center text-xs text-black/60 pt-1">
               Already have an account?{" "}
               <button
                 onClick={goToSignIn}
-                className="text-[#00d2b4] hover:text-[#00d2b4]/80 font-semibold transition-colors"
+                className="text-[#2775CA] hover:underline font-semibold transition-colors"
               >
                 Sign In
               </button>
@@ -827,33 +818,27 @@ export default function SignupPage() {
   };
 
   if (checkingSession || isSigningOut) {
-    return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-[#00d2b4]" />
-      </div>
-    );
+    return <AuthSkeleton title="signup" subtitle="Create your account" />;
   }
 
   if (activeSession) {
     return (
-      <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white flex items-center justify-center p-4 sm:p-6 relative font-sans">
-        <AnimatedGradientBg />
-        
+      <div className="subscript-checkout min-h-screen bg-[#FFFFF0] text-black selection:bg-[#2775CA]/20 selection:text-black flex items-center justify-center p-4 sm:p-6 relative font-sans">
         <div className="relative z-10 w-full max-w-md">
           <div className="text-center mb-8">
-            <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
-              SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">signup</span>
+            <h1 className="text-2xl font-extrabold text-[#111827] tracking-tight">
+              SubScript <span className="font-serif italic lowercase font-normal text-[#2775CA]">signup</span>
             </h1>
-            <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Decentralized Payment Protocol</p>
+            <p className="text-xs text-[#1f62ab] font-bold uppercase tracking-widest mt-1">Create your account</p>
           </div>
 
-          <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
+          <div className="rounded-3xl border border-black/15 bg-white p-6 sm:p-8 shadow-sm space-y-6 relative overflow-hidden">
             <div className="text-center space-y-2">
-              <h2 className="text-base font-bold uppercase tracking-wider text-white">Active Session Found</h2>
-              <p className="text-xs text-white/50 leading-relaxed">
+              <h2 className="text-base font-bold uppercase tracking-wider text-[#111827]">You&apos;re Already Signed In</h2>
+              <p className="text-xs text-black/60 leading-relaxed">
                 You are currently signed in as:
               </p>
-              <div className="bg-white/5 border border-white/10 p-3 rounded-xl font-mono text-[11px] break-all text-[#00d2b4]">
+              <div className="bg-black/[0.03] border border-black/10 p-3.5 rounded-2xl font-mono text-xs break-all text-[#111827]">
                 {activeSession.email || activeSession.wallet}
               </div>
             </div>
@@ -861,7 +846,7 @@ export default function SignupPage() {
             <div className="space-y-3">
               <button
                 onClick={handleGoToDashboard}
-                className="w-full py-3.5 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2"
+                className="w-full py-4 bg-[#2775CA] hover:bg-[#1f62ab] text-[#FFFFF0] rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-sm"
               >
                 Go to Dashboard
                 <ArrowRight className="w-4 h-4" />
@@ -869,7 +854,7 @@ export default function SignupPage() {
 
               <button
                 onClick={handleLogout}
-                className="w-full py-3.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2"
+                className="w-full py-3.5 bg-white hover:bg-black/5 border border-black/15 text-[#111827] rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-sm"
               >
                 <LogOut className="w-4 h-4" />
                 Sign Out / Switch Account
@@ -882,22 +867,20 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white flex items-center justify-center p-4 sm:p-6 relative font-sans">
-      <AnimatedGradientBg />
-      
+    <div className="subscript-checkout min-h-screen bg-[#FFFFF0] text-black selection:bg-[#2775CA]/20 selection:text-black flex items-center justify-center p-4 sm:p-6 relative font-sans">
       <div className="relative z-10 w-full max-w-md">
         
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
-            SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">signup</span>
+          <h1 className="text-2xl font-extrabold text-[#111827] tracking-tight">
+            SubScript <span className="font-serif italic lowercase font-normal text-[#2775CA]">signup</span>
           </h1>
-          <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Decentralized Payment Protocol</p>
+          <p className="text-xs text-[#1f62ab] font-bold uppercase tracking-widest mt-1">Create your account</p>
         </div>
 
-        <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
+        <div className="rounded-3xl border border-black/15 bg-white p-6 sm:p-8 shadow-sm space-y-6 relative overflow-hidden">
           
           {/* Onboarding Progress Indicator */}
-          <div className="flex items-center justify-between px-2 pb-4 border-b border-white/5">
+          <div className="flex items-center justify-between px-1 pb-4 border-b border-black/10">
             {[{ step: 1, label: "Method" }, { step: 2, label: "Verify" }, { step: 3, label: "Access" }].map((s) => {
               const currentStep = authMethod === "select" ? 1 : (!otpSent && authMethod === "email" ? 2 : 3);
               const isCompleted = s.step < currentStep;
@@ -906,19 +889,19 @@ export default function SignupPage() {
                 <div key={s.step} className="flex items-center gap-2">
                   <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all duration-300 ${
                     isCompleted 
-                      ? "bg-[#00d2b4] text-black" 
+                      ? "bg-[#2775CA] text-[#FFFFF0]" 
                       : isActive 
-                        ? "bg-[#00d2b4]/25 text-[#00d2b4] border border-[#00d2b4]/40 shadow-[0_0_10px_rgba(0,210,180,0.2)]" 
-                        : "bg-white/5 text-white/30 border border-white/10"
+                        ? "bg-[#2775CA]/15 text-[#2775CA] border border-[#2775CA]/40 shadow-sm" 
+                        : "bg-black/5 text-black/40 border border-black/10"
                   }`}>
                     {isCompleted ? "✓" : s.step}
                   </div>
                   <span className={`text-[9px] uppercase font-bold tracking-wider hidden sm:inline ${
-                    isActive ? "text-[#00d2b4]" : isCompleted ? "text-white/80" : "text-white/30"
+                    isActive ? "text-[#2775CA]" : isCompleted ? "text-[#111827]" : "text-black/40"
                   }`}>
                     {s.label}
                   </span>
-                  {s.step < 3 && <div className="w-6 h-[1px] bg-white/10 hidden sm:block" />}
+                  {s.step < 3 && <div className="w-6 h-[1px] bg-black/10 hidden sm:block" />}
                 </div>
               );
             })}
@@ -926,69 +909,56 @@ export default function SignupPage() {
 
           {authMethod === "select" ? (
             <div className="space-y-4">
-              <p className="text-center text-xs text-white/50 leading-relaxed px-2">
-                Configure your payout wallet and secure your connection to the subscription system.
+              <p className="text-center text-xs text-black/60 leading-relaxed px-2">
+                Choose how you would like to create and secure your SubScript account.
               </p>
 
-              {/* Arrived through the merchant funnel while invite-only is on. Say so before they
-                  authenticate — finding out after verifying an email is a worse way to learn it. */}
+              {/* Merchant Invite Notice */}
               {inviteOnlyNotice && merchantSignupIntent && (
-                <div className="rounded-2xl border border-[#00d2b4]/25 bg-[#00d2b4]/[0.06] p-4 space-y-2 text-left">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-[#00d2b4]">
+                <div className="rounded-2xl border border-[#2775CA]/25 bg-[#2775CA]/[0.06] p-4 space-y-2 text-left">
+                  <p className="text-xs font-bold uppercase tracking-wider text-[#1f62ab]">
                     Merchant accounts are invite only
                   </p>
-                  <p className="text-[11px] text-white/60 leading-relaxed">
-                    We approve businesses one at a time. If we&apos;ve already approved you, sign up
-                    below with that email. If not, ask us first — signing up without an invite gets
-                    you a personal account.
+                  <p className="text-xs text-black/70 leading-relaxed">
+                    We review and approve merchant accounts individually. If we have already approved you, continue below with your registered email.
                   </p>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                     <Link
                       href="/merchant-access"
-                      className="text-[11px] font-bold uppercase tracking-wider text-[#00d2b4] hover:text-[#00d2b4]/80 transition-colors"
+                      className="text-xs font-bold uppercase tracking-wider text-[#2775CA] hover:underline transition-colors"
                     >
                       Request merchant access
                     </Link>
-                    <span className="text-white/20">·</span>
+                    <span className="text-black/20">·</span>
                     <a
                       href={X_HANDLE_URL}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-[11px] font-bold uppercase tracking-wider text-white/50 hover:text-white transition-colors"
+                      className="text-xs font-bold uppercase tracking-wider text-black/50 hover:text-black transition-colors"
                     >
-                      Or DM us on X
+                      Or reach out on X
                     </a>
                   </div>
                 </div>
               )}
-
-              <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 text-[10px] leading-relaxed text-emerald-300 flex items-start gap-2">
-                <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <span>
-                  <strong>Recommended</strong>
-                </span>
-              </div>
 
               <button
                 onClick={() => {
                   posthog.capture("signup_method_selected", { method: "email" });
                   setAuthMethod("email");
                 }}
-                className="w-full py-4 bg-white/5 hover:bg-white/10 border border-emerald-400/30 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-white shadow-[0_0_15px_rgba(52,211,153,0.05)]"
+                className="w-full py-4 bg-white hover:bg-black/[0.03] border border-black/15 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-[#111827] shadow-sm"
               >
-                <Mail className="w-4 h-4 text-[#ccff00]" />
-                Continue with Email Wallet (Recommended)
+                <Mail className="w-4 h-4 text-[#2775CA]" />
+                Continue with Email
               </button>
-              <p className="-mt-2 px-3 text-center text-[10px] leading-relaxed text-white/40">
+              <p className="-mt-2 px-3 text-center text-[10px] leading-relaxed text-black/50">
                 {merchantSignupIntent
-                  ? `Merchant accounts use email${googleAvailable ? " or Google" : ""} sign-in for security, recovery, and professional invoicing.`
-                  : "Email wallets use SubScript-managed recovery. Connect an external wallet for self-custody."}
+                  ? `Merchant accounts use email${googleAvailable ? " or Google" : ""} sign-in for security, recovery, and invoicing.`
+                  : "Email wallets feature simple recovery. Connect an external wallet for self-custody."}
               </p>
 
               {googleAvailable && (
-                /* The one auth path that can navigate away and remount this page, taking React
-                   state with it — so the chosen role is armed here, at the hand-off, and nowhere
-                   earlier. The write is bound to an attempt actually starting and expires with it. */
                 <div
                   onClick={() => {
                     posthog.capture("signup_method_selected", { method: "circle_google" });
@@ -999,63 +969,58 @@ export default function SignupPage() {
                 </div>
               )}
 
-              {/* External/self-custody wallets are for USERS only — merchant accounts must be
-                  email/embedded (server-recoverable) for a more professional, recoverable account.
-                  externalWalletEnabled additionally hides this when an operator pauses external
-                  wallets; the server refuses the flow either way. */}
               {!merchantSignupIntent && externalWalletEnabled && (
                 <>
-              <div className="relative py-2 flex items-center justify-center">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-white/5"></div>
-                </div>
-                <span className="relative px-3 bg-[#0a0a0c] text-[9px] font-bold text-white/30 uppercase tracking-widest">
-                  or use web3
-                </span>
-              </div>
+                  <div className="relative py-2 flex items-center justify-center">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-black/10"></div>
+                    </div>
+                    <span className="relative px-3 bg-white text-[9px] font-bold text-black/40 uppercase tracking-widest">
+                      or use web3
+                    </span>
+                  </div>
 
-              <button
-                onClick={() => {
-                  posthog.capture("signup_method_selected", { method: "wallet" });
-                  handleConnectWallet();
-                }}
-                disabled={isConnecting || siweLoading}
-                className="w-full py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/90 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-black shadow-[0_0_20px_rgba(0,210,180,0.15)]"
-              >
-                {isConnecting || siweLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Wallet className="w-4 h-4" />
-                )}
-                Connect Web3 Wallet
-              </button>
+                  <button
+                    onClick={() => {
+                      posthog.capture("signup_method_selected", { method: "wallet" });
+                      handleConnectWallet();
+                    }}
+                    disabled={isConnecting || siweLoading}
+                    className="w-full py-4 bg-[#2775CA] hover:bg-[#1f62ab] rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-[#FFFFF0] shadow-sm"
+                  >
+                    {isConnecting || siweLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Wallet className="w-4 h-4" />
+                    )}
+                    Connect Web3 Wallet
+                  </button>
                 </>
               )}
 
               {siweError && (
-                <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-400 flex items-start gap-3 mt-2">
-                  <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-xs text-red-900 flex items-start gap-3 mt-2" role="alert">
+                  <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-red-700" />
                   <span className="leading-relaxed">{siweError}</span>
                 </div>
               )}
 
               {walletSignupPrompt && address && (
-                <div className="bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-2xl p-4 text-xs text-white/70 space-y-4 mt-2">
+                <div className="rounded-2xl border border-[#2775CA]/25 bg-[#2775CA]/[0.06] p-4 text-xs text-black/80 space-y-4 mt-2">
                   <div className="flex items-start gap-3">
-                    <Wallet className="w-5 h-5 shrink-0 mt-0.5 text-[#00d2b4]" />
+                    <Wallet className="w-5 h-5 shrink-0 mt-0.5 text-[#1f62ab]" />
                     <div className="space-y-1">
-                      <p className="font-bold text-white uppercase tracking-wider">Wallet detected</p>
-                      <p className="leading-relaxed">
-                        No SubScript account exists for this wallet yet. Choose what you want to do next.
+                      <p className="font-bold text-[#111827] uppercase tracking-wider">Wallet connected</p>
+                      <p className="leading-relaxed text-black/70">
+                        No SubScript account exists for this wallet yet. Choose how you would like to proceed.
                       </p>
-                      <p className="font-mono text-[10px] text-white/40 break-all">{address}</p>
+                      <p className="font-mono text-[10px] text-black/50 break-all">{address}</p>
                     </div>
                   </div>
 
-                  {/* Cloudflare Turnstile for Wallet Signup */}
                   {isTurnstileConfigured && (
-                    <div className="space-y-2 border-t border-white/5 pt-3 flex flex-col items-center">
-                      <label className="block text-[9px] font-bold uppercase tracking-wider text-white/50 self-start">
+                    <div className="space-y-2 border-t border-black/10 pt-3 flex flex-col items-center">
+                      <label className="block text-[9px] font-bold uppercase tracking-wider text-black/60 self-start">
                         Security Verification
                       </label>
                       <div id="turnstile-wallet-signup" className="my-2"></div>
@@ -1067,7 +1032,7 @@ export default function SignupPage() {
                       type="button"
                       onClick={() => performSiwe(true)}
                       disabled={siweLoading || (isTurnstileConfigured && !captchaToken)}
-                      className="w-full py-3 bg-[#00d2b4] text-black rounded-xl font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-2"
+                      className="w-full py-3.5 bg-[#2775CA] hover:bg-[#1f62ab] text-[#FFFFF0] rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm transition disabled:opacity-50"
                     >
                       {siweLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create Account With This Wallet"}
                     </button>
@@ -1078,14 +1043,14 @@ export default function SignupPage() {
                           setWalletSignupPrompt(false);
                           setAuthMethod("email");
                         }}
-                        className="py-3 bg-white/5 border border-white/10 rounded-xl font-bold text-[10px] uppercase tracking-wider text-white"
+                        className="py-3 bg-white hover:bg-black/5 border border-black/15 rounded-xl font-bold text-xs uppercase tracking-wider text-[#111827] shadow-sm transition"
                       >
                         Use Email
                       </button>
                       <button
                         type="button"
                         onClick={goToSignIn}
-                        className="py-3 bg-white/5 border border-white/10 rounded-xl font-bold text-[10px] uppercase tracking-wider text-white"
+                        className="py-3 bg-white hover:bg-black/5 border border-black/15 rounded-xl font-bold text-xs uppercase tracking-wider text-[#111827] shadow-sm transition"
                       >
                         Sign In
                       </button>
@@ -1099,33 +1064,32 @@ export default function SignupPage() {
               {!otpSent ? (
                 <form onSubmit={handleSendOtp} className="space-y-4">
                   <div className="space-y-2">
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-black/60">
                       Email Address
                     </label>
                     <div className="relative">
                       <input
                         type="email"
-                        placeholder="name@domain.com"
+                        placeholder="you@example.com"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         required
-                        className="subscript-input pr-10"
+                        className="w-full rounded-xl border border-black/15 bg-white px-3.5 py-3 text-xs text-[#111827] placeholder:text-black/40 focus:border-[#2775CA]/60 focus:outline-none pr-10 shadow-sm"
                       />
-                      <Mail className="absolute right-3.5 top-3.5 w-4 h-4 text-white/30" />
+                      <Mail className="absolute right-3.5 top-3.5 w-4 h-4 text-black/35" />
                     </div>
 
-                    {/* Cloudflare Turnstile */}
                     {isTurnstileConfigured && (
                       <div className="space-y-2 pt-2 flex flex-col items-center">
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60 self-start">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-black/60 self-start">
                           Security Verification
                         </label>
                         <div id="turnstile-email-signup" className="my-2"></div>
                       </div>
                     )}
                     {otpError && (
-                      <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-400 flex items-start gap-3 mt-2">
-                        <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                      <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-xs text-red-900 flex items-start gap-3 mt-2" role="alert">
+                        <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-red-700" />
                         <span className="leading-relaxed">{otpError}</span>
                       </div>
                     )}
@@ -1135,14 +1099,14 @@ export default function SignupPage() {
                     <button
                       type="button"
                       onClick={() => setAuthMethod("select")}
-                      className="flex-1 py-3.5 bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl font-bold text-xs uppercase tracking-wider text-white transition"
+                      className="flex-1 py-3.5 bg-white hover:bg-black/5 border border-black/15 rounded-xl font-bold text-xs uppercase tracking-wider text-[#111827] transition shadow-sm"
                     >
                       Back
                     </button>
                     <button
                       type="submit"
                       disabled={otpLoading}
-                      className="flex-1 py-3.5 bg-[#00d2b4] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/95"
+                      className="flex-1 py-3.5 bg-[#2775CA] hover:bg-[#1f62ab] text-[#FFFFF0] font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-sm"
                     >
                       {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send Code"}
                     </button>
@@ -1151,30 +1115,30 @@ export default function SignupPage() {
               ) : (
                 <form onSubmit={handleVerifyOtp} className="space-y-4">
                   <div className="space-y-2">
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-black/60">
                       Verification Code
                     </label>
                     <div className="relative">
                       <input
                         type="text"
-                        placeholder="Enter 6-digit OTP code"
+                        placeholder="Enter 6-digit code"
                         value={otpCode}
                         onChange={(e) => setOtpCode(e.target.value)}
                         required
-                        className="subscript-input tracking-widest text-center text-sm font-mono"
+                        className="w-full rounded-xl border border-black/15 bg-white px-3.5 py-3 text-center font-mono text-sm tracking-widest text-[#111827] placeholder:text-black/40 focus:border-[#2775CA]/60 focus:outline-none shadow-sm"
                       />
-                      <Lock className="absolute right-3.5 top-3.5 w-4 h-4 text-white/30" />
+                      <Lock className="absolute right-3.5 top-3.5 w-4 h-4 text-black/35" />
                     </div>
                     {otpError && (
-                      <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-400 flex items-start gap-3 mt-2">
-                        <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                      <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-xs text-red-900 flex items-start gap-3 mt-2" role="alert">
+                        <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-red-700" />
                         <span className="leading-relaxed">{otpError}</span>
                       </div>
                     )}
                   </div>
 
                   {sandboxOtp && (
-                    <div className="bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-2xl p-4 text-xs text-[#00d2b4] flex items-center gap-3 shadow-[0_0_15px_rgba(0,210,180,0.1)]">
+                    <div className="rounded-2xl border border-[#2775CA]/25 bg-[#2775CA]/[0.06] p-4 text-xs text-[#1f62ab] flex items-center gap-3 shadow-sm">
                       <MailCheck className="w-5 h-5 shrink-0" />
                       <span className="font-mono">Development Code: {sandboxOtp}</span>
                     </div>
@@ -1184,14 +1148,14 @@ export default function SignupPage() {
                     <button
                       type="button"
                       onClick={() => setOtpSent(false)}
-                      className="flex-1 py-3.5 bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl font-bold text-xs uppercase tracking-wider text-white transition"
+                      className="flex-1 py-3.5 bg-white hover:bg-black/5 border border-black/15 rounded-xl font-bold text-xs uppercase tracking-wider text-[#111827] transition shadow-sm"
                     >
                       Back
                     </button>
                     <button
                       type="submit"
                       disabled={otpLoading}
-                      className="flex-1 py-3.5 bg-[#00d2b4] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/95"
+                      className="flex-1 py-3.5 bg-[#2775CA] hover:bg-[#1f62ab] text-[#FFFFF0] font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-sm"
                     >
                       {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Continue"}
                     </button>
@@ -1202,15 +1166,15 @@ export default function SignupPage() {
           )}
 
           <div className="text-center pt-2 space-y-4">
-            <p className="text-[10px] text-white/30 leading-relaxed">
-              By proceeding, you secure your connection to the stablecoin subscription system.
+            <p className="text-[11px] text-black/50 leading-relaxed">
+              By continuing, you agree to SubScript&apos;s terms of service and privacy policy.
             </p>
-            <div className="pt-2 border-t border-white/5">
-              <p className="text-xs text-white/40">
+            <div className="pt-2 border-t border-black/10">
+              <p className="text-xs text-black/60">
                 Already have an account?{" "}
                 <button 
                   onClick={goToSignIn} 
-                  className="text-[#00d2b4] font-bold hover:underline"
+                  className="text-[#2775CA] font-bold hover:underline"
                 >
                   Sign In
                 </button>

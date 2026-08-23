@@ -9,14 +9,14 @@ import {
   Mail, 
   Wallet, 
   AlertCircle, 
-  ArrowRight,
-  Lock,
-  MailCheck,
-  LogOut
+  ArrowRight, 
+  Lock, 
+  MailCheck, 
+  LogOut 
 } from "@/components/icons";
 import { getDashboardUrl, getSafeRelativePath } from "@/utils/navigation";
 import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
-import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+import AuthSkeleton from "@/components/AuthSkeleton";
 import { CIRCLE_GOOGLE_ENABLED } from "@/lib/featureFlags";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 import { usePlatformFlags } from "@/hooks/usePlatformFlags";
@@ -65,7 +65,7 @@ function SignInContent() {
 
     window.turnstile.render(container, {
       sitekey: siteKey,
-      theme: "dark",
+      theme: "light",
       callback: (token: string) => setCaptchaToken(token),
       "expired-callback": () => setCaptchaToken(""),
       "error-callback": () => setCaptchaToken(""),
@@ -215,7 +215,6 @@ function SignInContent() {
         return;
       }
 
-
       // Verify wallet ownership via SIWE
       const nonceRes = await fetch("/api/auth/nonce");
       const nonceData = await nonceRes.json();
@@ -238,12 +237,12 @@ function SignInContent() {
         setSiweError(verifyData.error || "Wallet signature verification failed.");
       }
     } catch (err: any) {
-      setSiweError(err?.message || "Error signing SIWE verification message.");
+      setSiweError(err?.message || "Error signing verification message.");
     } finally {
       setSiweLoading(false);
       setWalletAuthRequested(false);
     }
-  }, [isConnected, address, signMessageAsync, handleLoginSuccess, router, siweLoading]);
+  }, [isConnected, address, signMessageAsync, handleLoginSuccess, siweLoading]);
 
   useEffect(() => {
     if (walletAuthRequested && isConnected && address) {
@@ -271,33 +270,27 @@ function SignInContent() {
   };
 
   if (checkingSession || isSigningOut) {
-    return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-[#00d2b4]" />
-      </div>
-    );
+    return <AuthSkeleton title="signin" subtitle="Sign in to your account" />;
   }
 
   if (activeSession) {
     return (
-      <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white flex items-center justify-center p-4 sm:p-6 relative font-sans">
-        <AnimatedGradientBg />
-        
+      <div className="subscript-checkout min-h-screen bg-[#FFFFF0] text-black selection:bg-[#2775CA]/20 selection:text-black flex items-center justify-center p-4 sm:p-6 relative font-sans">
         <div className="relative z-10 w-full max-w-md">
           <div className="text-center mb-8">
-            <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
-              SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">signin</span>
+            <h1 className="text-2xl font-extrabold text-[#111827] tracking-tight">
+              SubScript <span className="font-serif italic lowercase font-normal text-[#2775CA]">signin</span>
             </h1>
-            <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Decentralized Payment Protocol</p>
+            <p className="text-xs text-[#1f62ab] font-bold uppercase tracking-widest mt-1">Welcome back</p>
           </div>
 
-          <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
+          <div className="rounded-3xl border border-black/15 bg-white p-6 sm:p-8 shadow-sm space-y-6 relative overflow-hidden">
             <div className="text-center space-y-2">
-              <h2 className="text-base font-bold uppercase tracking-wider text-white">Active Session Found</h2>
-              <p className="text-xs text-white/50 leading-relaxed">
+              <h2 className="text-base font-bold uppercase tracking-wider text-[#111827]">You&apos;re Already Signed In</h2>
+              <p className="text-xs text-black/60 leading-relaxed">
                 You are currently signed in as:
               </p>
-              <div className="bg-white/5 border border-white/10 p-3 rounded-xl font-mono text-[11px] break-all text-[#00d2b4]">
+              <div className="bg-black/[0.03] border border-black/10 p-3.5 rounded-2xl font-mono text-xs break-all text-[#111827]">
                 {activeSession.email || activeSession.wallet}
               </div>
             </div>
@@ -305,7 +298,7 @@ function SignInContent() {
             <div className="space-y-3">
               <button
                 onClick={handleGoToDashboard}
-                className="w-full py-3.5 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2"
+                className="w-full py-4 bg-[#2775CA] hover:bg-[#1f62ab] text-[#FFFFF0] rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-sm"
               >
                 Go to Dashboard
                 <ArrowRight className="w-4 h-4" />
@@ -313,7 +306,7 @@ function SignInContent() {
 
               <button
                 onClick={handleLogout}
-                className="w-full py-3.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2"
+                className="w-full py-3.5 bg-white hover:bg-black/5 border border-black/15 text-[#111827] rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-sm"
               >
                 <LogOut className="w-4 h-4" />
                 Sign Out / Switch Account
@@ -326,29 +319,27 @@ function SignInContent() {
   }
 
   return (
-    <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white flex items-center justify-center p-4 sm:p-6 relative font-sans">
-      <AnimatedGradientBg />
-      
+    <div className="subscript-checkout min-h-screen bg-[#FFFFF0] text-black selection:bg-[#2775CA]/20 selection:text-black flex items-center justify-center p-4 sm:p-6 relative font-sans">
       <div className="relative z-10 w-full max-w-md">
         
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
-            SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">signin</span>
+          <h1 className="text-2xl font-extrabold text-[#111827] tracking-tight">
+            SubScript <span className="font-serif italic lowercase font-normal text-[#2775CA]">signin</span>
           </h1>
-          <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Decentralized Payment Protocol</p>
+          <p className="text-xs text-[#1f62ab] font-bold uppercase tracking-widest mt-1">Sign in to your account</p>
         </div>
 
-        <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
+        <div className="rounded-3xl border border-black/15 bg-white p-6 sm:p-8 shadow-sm space-y-6 relative overflow-hidden">
           
-          <div className="flex items-center justify-between px-2 pb-4 border-b border-white/5">
-            <span className="text-[10px] uppercase font-extrabold tracking-widest text-[#00d2b4]">Authenticate</span>
-            <span className="text-[10px] uppercase font-extrabold tracking-widest text-white/40">Secure Sign In</span>
+          <div className="flex items-center justify-between px-1 pb-4 border-b border-black/10">
+            <span className="text-[10px] uppercase font-black tracking-widest text-[#1f62ab]">Sign In</span>
+            <span className="text-[10px] uppercase font-bold text-black/50 tracking-wider">Choose method</span>
           </div>
 
           {authMethod === "select" ? (
             <div className="space-y-4">
-              <p className="text-center text-xs text-white/50 leading-relaxed px-2">
-                Connect your registered payout wallet or email to access your SubScript dashboard.
+              <p className="text-center text-xs text-black/60 leading-relaxed px-2">
+                Sign in with your email or connected wallet to access your SubScript dashboard.
               </p>
 
               <button
@@ -356,15 +347,15 @@ function SignInContent() {
                   posthog.capture("signin_method_selected", { method: "email" });
                   setAuthMethod("email");
                 }}
-                className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-white"
+                className="w-full py-4 bg-white hover:bg-black/[0.03] border border-black/15 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-[#111827] shadow-sm"
               >
-                <Mail className="w-4 h-4 text-[#00d2b4]" />
+                <Mail className="w-4 h-4 text-[#2775CA]" />
                 Continue with Email
               </button>
 
               {googleAvailable && (
                 <div onClick={() => posthog.capture("signin_method_selected", { method: "circle_google" })}>
-                  <CircleGoogleWalletButton />
+                  <CircleGoogleWalletButton onSuccess={handleLoginSuccess} />
                 </div>
               )}
 
@@ -372,9 +363,9 @@ function SignInContent() {
                 <>
                   <div className="relative py-2 flex items-center justify-center">
                     <div className="absolute inset-0 flex items-center">
-                      <div className="w-full border-t border-white/5"></div>
+                      <div className="w-full border-t border-black/10"></div>
                     </div>
-                    <span className="relative px-3 bg-[#0a0a0c] text-[9px] font-bold text-white/30 uppercase tracking-widest">
+                    <span className="relative px-3 bg-white text-[9px] font-bold text-black/40 uppercase tracking-widest">
                       or use web3
                     </span>
                   </div>
@@ -385,7 +376,7 @@ function SignInContent() {
                       handleConnectWallet();
                     }}
                     disabled={isConnecting || siweLoading}
-                    className="w-full py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/90 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-black shadow-[0_0_20px_rgba(0,210,180,0.15)]"
+                    className="w-full py-4 bg-[#2775CA] hover:bg-[#1f62ab] rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-[#FFFFF0] shadow-sm"
                   >
                     {isConnecting || siweLoading ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -398,22 +389,22 @@ function SignInContent() {
               )}
 
               {siweError && (
-                <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-400 flex items-start gap-3 mt-2">
-                  <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-xs text-red-900 flex items-start gap-3 mt-2" role="alert">
+                  <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-red-700" />
                   <span className="leading-relaxed">{siweError}</span>
                 </div>
               )}
 
               {walletMissingAccount && address && (
-                <div className="bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-2xl p-4 text-xs text-white/70 space-y-4 mt-2">
+                <div className="rounded-2xl border border-[#2775CA]/25 bg-[#2775CA]/[0.06] p-4 text-xs text-black/80 space-y-4 mt-2">
                   <div className="flex items-start gap-3">
-                    <Wallet className="w-5 h-5 shrink-0 mt-0.5 text-[#00d2b4]" />
+                    <Wallet className="w-5 h-5 shrink-0 mt-0.5 text-[#1f62ab]" />
                     <div className="space-y-1">
-                      <p className="font-bold text-white uppercase tracking-wider">No account found</p>
-                      <p className="leading-relaxed">
-                        This wallet is connected, but it does not have a SubScript account yet. Choose your next step.
+                      <p className="font-bold text-[#111827] uppercase tracking-wider">No account found yet</p>
+                      <p className="leading-relaxed text-black/70">
+                        This wallet is connected, but it doesn&apos;t have a SubScript account yet. Would you like to create one?
                       </p>
-                      <p className="font-mono text-[10px] text-white/40 break-all">{address}</p>
+                      <p className="font-mono text-[10px] text-black/50 break-all">{address}</p>
                     </div>
                   </div>
 
@@ -421,7 +412,7 @@ function SignInContent() {
                     <button
                       type="button"
                       onClick={() => router.push(safeNext ? `/signup?next=${encodeURIComponent(safeNext)}` : "/signup")}
-                      className="py-3 bg-[#00d2b4] text-black rounded-xl font-bold text-[10px] uppercase tracking-wider"
+                      className="py-3 bg-[#2775CA] hover:bg-[#1f62ab] text-[#FFFFF0] rounded-xl font-bold text-[10px] uppercase tracking-wider shadow-sm transition"
                     >
                       Create Account
                     </button>
@@ -431,7 +422,7 @@ function SignInContent() {
                         setWalletMissingAccount(false);
                         setAuthMethod("email");
                       }}
-                      className="py-3 bg-white/5 border border-white/10 rounded-xl font-bold text-[10px] uppercase tracking-wider text-white"
+                      className="py-3 bg-white hover:bg-black/5 border border-black/15 rounded-xl font-bold text-[10px] uppercase tracking-wider text-[#111827] shadow-sm transition"
                     >
                       Use Email
                     </button>
@@ -444,31 +435,31 @@ function SignInContent() {
               {!otpSent ? (
                 <form onSubmit={handleSendOtp} className="space-y-4">
                   <div className="space-y-2">
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-black/60">
                       Registered Email
                     </label>
                     <div className="relative">
                       <input
                         type="email"
-                        placeholder="name@domain.com"
+                        placeholder="you@example.com"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         required
-                        className="subscript-input pr-10"
+                        className="w-full rounded-xl border border-black/15 bg-white px-3.5 py-3 text-xs text-[#111827] placeholder:text-black/40 focus:border-[#2775CA]/60 focus:outline-none pr-10 shadow-sm"
                       />
-                      <Mail className="absolute right-3.5 top-3.5 w-4 h-4 text-white/30" />
+                      <Mail className="absolute right-3.5 top-3.5 w-4 h-4 text-black/35" />
                     </div>
                     {isTurnstileConfigured && (
                       <div className="space-y-2 pt-2 flex flex-col items-center">
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60 self-start">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-black/60 self-start">
                           Security Verification
                         </label>
                         <div id="turnstile-email-signin" className="my-2"></div>
                       </div>
                     )}
                     {otpError && (
-                      <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-400 flex items-start gap-3 mt-2">
-                        <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                      <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-xs text-red-900 flex items-start gap-3 mt-2" role="alert">
+                        <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-red-700" />
                         <span className="leading-relaxed">{otpError}</span>
                       </div>
                     )}
@@ -478,14 +469,14 @@ function SignInContent() {
                     <button
                       type="button"
                       onClick={() => setAuthMethod("select")}
-                      className="flex-1 py-3.5 bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl font-bold text-xs uppercase tracking-wider text-white transition"
+                      className="flex-1 py-3.5 bg-white hover:bg-black/5 border border-black/15 rounded-xl font-bold text-xs uppercase tracking-wider text-[#111827] transition shadow-sm"
                     >
                       Back
                     </button>
                     <button
                       type="submit"
                       disabled={otpLoading || (isTurnstileConfigured && !captchaToken)}
-                      className="flex-1 py-3.5 bg-[#00d2b4] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/95"
+                      className="flex-1 py-3.5 bg-[#2775CA] hover:bg-[#1f62ab] text-[#FFFFF0] font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-sm"
                     >
                       {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send Code"}
                     </button>
@@ -494,30 +485,30 @@ function SignInContent() {
               ) : (
                 <form onSubmit={handleVerifyOtp} className="space-y-4">
                   <div className="space-y-2">
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-black/60">
                       Verification Code
                     </label>
                     <div className="relative">
                       <input
                         type="text"
-                        placeholder="Enter 6-digit OTP code"
+                        placeholder="Enter 6-digit code"
                         value={otpCode}
                         onChange={(e) => setOtpCode(e.target.value)}
                         required
-                        className="subscript-input tracking-widest text-center text-sm font-mono"
+                        className="w-full rounded-xl border border-black/15 bg-white px-3.5 py-3 text-center font-mono text-sm tracking-widest text-[#111827] placeholder:text-black/40 focus:border-[#2775CA]/60 focus:outline-none shadow-sm"
                       />
-                      <Lock className="absolute right-3.5 top-3.5 w-4 h-4 text-white/30" />
+                      <Lock className="absolute right-3.5 top-3.5 w-4 h-4 text-black/35" />
                     </div>
                     {otpError && (
-                      <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-400 flex items-start gap-3 mt-2">
-                        <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                      <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-xs text-red-900 flex items-start gap-3 mt-2" role="alert">
+                        <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-red-700" />
                         <span className="leading-relaxed">{otpError}</span>
                       </div>
                     )}
                   </div>
 
                   {sandboxOtp && (
-                    <div className="bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-2xl p-4 text-xs text-[#00d2b4] flex items-center gap-3 shadow-[0_0_15px_rgba(0,210,180,0.1)]">
+                    <div className="rounded-2xl border border-[#2775CA]/25 bg-[#2775CA]/[0.06] p-4 text-xs text-[#1f62ab] flex items-center gap-3 shadow-sm">
                       <MailCheck className="w-5 h-5 shrink-0" />
                       <span className="font-mono">Development Code: {sandboxOtp}</span>
                     </div>
@@ -527,14 +518,14 @@ function SignInContent() {
                     <button
                       type="button"
                       onClick={() => setOtpSent(false)}
-                      className="flex-1 py-3.5 bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl font-bold text-xs uppercase tracking-wider text-white transition"
+                      className="flex-1 py-3.5 bg-white hover:bg-black/5 border border-black/15 rounded-xl font-bold text-xs uppercase tracking-wider text-[#111827] transition shadow-sm"
                     >
                       Back
                     </button>
                     <button
                       type="submit"
                       disabled={otpLoading}
-                      className="flex-1 py-3.5 bg-[#00d2b4] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/95"
+                      className="flex-1 py-3.5 bg-[#2775CA] hover:bg-[#1f62ab] text-[#FFFFF0] font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-sm"
                     >
                       {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Sign In"}
                     </button>
@@ -544,12 +535,12 @@ function SignInContent() {
             </div>
           )}
 
-          <div className="text-center pt-4 border-t border-white/5">
-            <p className="text-xs text-white/40">
+          <div className="text-center pt-4 border-t border-black/10">
+            <p className="text-xs text-black/60">
               Don&apos;t have an account?{" "}
               <button 
-                onClick={() => router.push("/signup")} 
-                className="text-[#00d2b4] font-bold hover:underline"
+                onClick={() => router.push(safeNext ? `/signup?next=${encodeURIComponent(safeNext)}` : "/signup")} 
+                className="text-[#2775CA] font-bold hover:underline"
               >
                 Sign Up
               </button>
@@ -569,12 +560,9 @@ function SignInContent() {
 
 export default function SignInPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-black text-white flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-[#00d2b4]" />
-      </div>
-    }>
+    <Suspense fallback={<AuthSkeleton title="signin" subtitle="Sign in to your account" />}>
       <SignInContent />
     </Suspense>
   );
 }
+

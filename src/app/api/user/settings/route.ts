@@ -5,6 +5,7 @@ import { getAccountRole } from "@/lib/accounts/roles";
 import { uploadProfilePicture } from "@/lib/storage";
 import { pgMaybeOne } from "@/lib/serverPg";
 import { isSafeProfilePicValue, safeProfilePicOrNull } from "@/lib/profilePicSafety";
+import { getActiveWithdrawalHold } from "@/lib/admin/withdrawalHolds";
 
 
 const unsupportedUserSettings = new Set([
@@ -150,6 +151,23 @@ export async function GET(request: Request) {
                 };
             }
         }
+
+        const activeHold = await getActiveWithdrawalHold(
+            normalizedUser,
+            role === "ENTERPRISE" ? "MERCHANT" : "USER"
+        ).catch(() => null);
+
+        settings.accountHold = activeHold ? {
+            isHeld: true,
+            scope: activeHold.scope,
+            expiresAt: activeHold.expiresAt,
+            reason: activeHold.reason,
+        } : {
+            isHeld: false,
+            scope: null,
+            expiresAt: null,
+            reason: null,
+        };
 
         // Fetch last 50 receipts
         const receipts = await prisma.receipt.findMany({

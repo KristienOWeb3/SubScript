@@ -228,7 +228,7 @@ const userBottomTabs = [
   { id: "home", label: "Home", icon: Home },
   { id: "commit", label: "Commit", icon: Shield },
   { id: "links", label: "Links", icon: Link2 },
-  { id: "batch", label: "Send Out", icon: Send },
+  { id: "batch", label: "Send", icon: Send },
 ] as const;
 
 const userDesktopTabs = [
@@ -482,9 +482,13 @@ export default function UserDashboard() {
   const [dmRequestAmount, setDmRequestAmount] = useState("");
   const [dmRequestNote, setDmRequestNote] = useState("");
   const [dmRequestDuration, setDmRequestDuration] = useState<(typeof dmRequestDurationOptions)[number]["value"]>("24");
+  const [dmRequestBillingType, setDmRequestBillingType] = useState<"ONE_TIME" | "RECURRING">("ONE_TIME");
+  const [dmRequestInterval, setDmRequestInterval] = useState<"monthly" | "weekly" | "daily" | "yearly">("monthly");
   const [dmRequestStatus, setDmRequestStatus] = useState<string | null>(null);
   const [linkAmount, setLinkAmount] = useState("");
   const [linkMemo, setLinkMemo] = useState("");
+  const [linkBillingType, setLinkBillingType] = useState<"ONE_TIME" | "RECURRING">("ONE_TIME");
+  const [linkInterval, setLinkInterval] = useState<"monthly" | "weekly" | "daily" | "yearly">("monthly");
   const [linkLoading, setLinkLoading] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [linkResultUrl, setLinkResultUrl] = useState<string | null>(null);
@@ -1819,19 +1823,22 @@ export default function UserDashboard() {
         body: JSON.stringify({
           receiverAddress: selectedDmPeer,
           amountUsdc: dmRequestAmount,
-          title: "DM payment request",
-          description: dmRequestNote || "SubScript in-DM payment request",
+          title: dmRequestBillingType === "RECURRING" ? "Recurring Subscription" : "DM payment request",
+          description: dmRequestNote || (dmRequestBillingType === "RECURRING" ? "SubScript recurring subscription request" : "SubScript in-DM payment request"),
           expiresInHours: Number(dmRequestDuration),
+          billingType: dmRequestBillingType,
+          interval: dmRequestInterval,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send DM request");
 
-      setDmRequestStatus("Request sent inside this DM.");
+      setDmRequestStatus(dmRequestBillingType === "RECURRING" ? "Recurring subscription request sent." : "Request sent inside this DM.");
       setDmRequestOpen(false);
       setDmRequestAmount("");
       setDmRequestNote("");
       setDmRequestDuration("24");
+      setDmRequestBillingType("ONE_TIME");
       await loadDms();
     }).catch((err) => setDmRequestStatus(err.message));
   };
@@ -2201,10 +2208,21 @@ export default function UserDashboard() {
   };
 
   const handleScanQrResult = (scannedText: string) => {
-    /* Batch and single-send rows are address fields, so narrow the scan to an address. */
-    const address = parseScannedAddress(scannedText);
+    /* Check if the scan is a SubScript link (DM invite, payment link, subscribe link, receipt, etc.) */
+    const target = resolveScannedTarget(scannedText);
+    if (qrTargetIndex === null && target.kind === "link") {
+      setQrScannerOpen(false);
+      setSendFundsOpen(false);
+      setSendSingleModalOpen(false);
+      router.push(target.path);
+      return;
+    }
+
+    /* Otherwise, narrow to address or alias for recipient inputs */
+    const address = target.kind === "address" ? target.address : (target.kind === "text" ? target.value : parseScannedAddress(scannedText));
     if (qrTargetIndex === null) {
       setSingleRecipient(address);
+      setSendFundsRecipient(address);
     } else if (typeof qrTargetIndex === "number") {
       setBatchRows((rows) =>
         rows.map((row, idx) => (idx === qrTargetIndex ? { ...row, address } : row))
@@ -2228,8 +2246,10 @@ export default function UserDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amountUsdc: linkAmount,
-          title: linkMemo.trim() || "USDC payment",
-          description: linkMemo.trim() || "SubScript payment link.",
+          title: linkMemo.trim() || (linkBillingType === "RECURRING" ? "Recurring Subscription" : "USDC payment"),
+          description: linkMemo.trim() || (linkBillingType === "RECURRING" ? "SubScript recurring payment link." : "SubScript payment link."),
+          billingType: linkBillingType,
+          interval: linkInterval,
         }),
       });
       const data = await res.json();
@@ -3437,8 +3457,8 @@ export default function UserDashboard() {
                 the content area permanently blank. */}
             <motion.div
               key={activeTab}
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
+              initial={{ opacity: 0, y: 16, filter: "blur(1.5px)" }}
+              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
               transition={{ type: "spring", stiffness: 450, damping: 32 }}
               className={isActiveMobileDm ? "h-full min-h-0" : "min-h-0"}
             >
@@ -3484,23 +3504,37 @@ export default function UserDashboard() {
                         </p>
                       </div>
 
-                      <div data-testid="wallet-actions" className="wallet-actions flex w-full shrink-0 flex-row justify-center gap-2.5 md:w-auto md:flex-col">
+                      <div data-testid="wallet-actions" className="wallet-actions flex w-full shrink-0 flex-row justify-center gap-2 md:w-auto md:flex-col">
                         <button
                           type="button"
                           onClick={() => setReceiveOpen(true)}
-                          className="flex h-11 min-w-[130px] items-center justify-center gap-2 rounded-full border border-[#353935] bg-[#353935] px-5 text-[#FFFFF0] transition hover:bg-black active:scale-95 shadow-sm"
+                          className="flex h-11 min-w-[110px] items-center justify-center gap-2 rounded-full border border-[#353935] bg-[#353935] px-4 text-[#FFFFF0] transition hover:bg-black active:scale-95 shadow-sm"
                           aria-label="Deposit"
                         >
                           <span className="text-xs font-bold">Deposit</span>
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => { setSelectedDmPeer(null); setSendFundsOpen(true); }}
-                          className="flex h-11 min-w-[130px] items-center justify-center gap-2 rounded-full border border-[#2775CA] bg-[#2775CA] px-5 text-white transition hover:bg-[#1f62ab] active:scale-95 shadow-sm"
-                          aria-label="Send Out"
-                        >
-                          <span className="text-xs font-bold">Send Out</span>
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => { setSelectedDmPeer(null); setSendFundsOpen(true); }}
+                            className="flex h-11 flex-1 min-w-[110px] items-center justify-center gap-2 rounded-full border border-[#2775CA] bg-[#2775CA] px-4 text-white transition hover:bg-[#1f62ab] active:scale-95 shadow-sm"
+                            aria-label="Send"
+                          >
+                            <span className="text-xs font-bold">Send</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setQrTargetIndex(null);
+                              setQrScannerOpen(true);
+                            }}
+                            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-black/15 bg-white text-[#111827] hover:bg-black/5 active:scale-95 transition shadow-sm"
+                            aria-label="Scan QR Code"
+                            title="Scan SubScript QR code or link"
+                          >
+                            <QrCode className="h-4.5 w-4.5 text-[#2775CA]" />
+                          </button>
+                        </div>
                       </div>
                     </section>
 
@@ -3976,6 +4010,8 @@ export default function UserDashboard() {
                                 amount={dmRequestAmount}
                                 note={dmRequestNote}
                                 duration={dmRequestDuration}
+                                billingType={dmRequestBillingType}
+                                interval={dmRequestInterval}
                                 status={dmRequestStatus}
                                 loading={loadingAction === "create-dm-request"}
                                 onToggle={() => {
@@ -3986,6 +4022,8 @@ export default function UserDashboard() {
                                 onAmountChange={setDmRequestAmount}
                                 onNoteChange={setDmRequestNote}
                                 onDurationChange={setDmRequestDuration}
+                                onBillingTypeChange={setDmRequestBillingType}
+                                onIntervalChange={setDmRequestInterval}
                               />
                             </div>
                           )}
@@ -4015,9 +4053,9 @@ export default function UserDashboard() {
                         {selectedDmPeer ? (
                           <motion.div
                             key={selectedDmPeer}
-                            initial={{ opacity: 0, scale: 0.96, y: 12 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.96, y: -12 }}
+                            initial={{ opacity: 0, scale: 0.96, y: 12, filter: "blur(1.5px)" }}
+                            animate={{ opacity: 1, scale: 1, y: 0, filter: "blur(0px)" }}
+                            exit={{ opacity: 0, scale: 0.96, y: -12, filter: "blur(1.5px)" }}
                             transition={{ type: "spring", stiffness: 450, damping: 32 }}
                             className="flex flex-col h-full justify-between gap-5 overflow-hidden"
                           >
@@ -4185,6 +4223,8 @@ export default function UserDashboard() {
                                     amount={dmRequestAmount}
                                     note={dmRequestNote}
                                     duration={dmRequestDuration}
+                                    billingType={dmRequestBillingType}
+                                    interval={dmRequestInterval}
                                     status={dmRequestStatus}
                                     loading={loadingAction === "create-dm-request"}
                                     onToggle={() => {
@@ -4195,6 +4235,8 @@ export default function UserDashboard() {
                                     onAmountChange={setDmRequestAmount}
                                     onNoteChange={setDmRequestNote}
                                     onDurationChange={setDmRequestDuration}
+                                    onBillingTypeChange={setDmRequestBillingType}
+                                    onIntervalChange={setDmRequestInterval}
                                   />
                                 </div>
                               )}
@@ -4203,9 +4245,9 @@ export default function UserDashboard() {
                         ) : (
                           <motion.div
                             key="no-chat"
-                            initial={{ opacity: 0, scale: 0.98 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.98 }}
+                            initial={{ opacity: 0, scale: 0.98, filter: "blur(1.5px)" }}
+                            animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+                            exit={{ opacity: 0, scale: 0.98, filter: "blur(1.5px)" }}
                             className="flex flex-col items-center justify-center h-full text-center py-20 text-white/40 space-y-3"
                           >
                             <MessageSquare className="w-12 h-12 text-white/15 animate-pulse" />
@@ -4225,7 +4267,43 @@ export default function UserDashboard() {
                 <SectionTitle title="Payment Links" subtitle="Create a shareable link to receive USDC. Anyone who pays is auto-onboarded and a DM opens with them." />
 
                 <form onSubmit={handleCreateShareableLink} className="border border-black/10 bg-white/80 rounded-3xl p-5 sm:p-8 space-y-5 shadow-sm text-black">
-                  <Field label="USDC Amount">
+                  {/* Link Billing Type Toggle */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-[0.14em] text-black/60">Payment Type</label>
+                    <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-black/[0.04] border border-black/10">
+                      <button
+                        type="button"
+                        onClick={() => setLinkBillingType("ONE_TIME")}
+                        className={`py-2 px-3 rounded-xl text-xs font-bold transition ${linkBillingType === "ONE_TIME" ? "bg-white text-black shadow-sm" : "text-black/60 hover:text-black"}`}
+                      >
+                        One-Time
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLinkBillingType("RECURRING")}
+                        className={`py-2 px-3 rounded-xl text-xs font-bold transition ${linkBillingType === "RECURRING" ? "bg-[#2775CA] text-white shadow-sm" : "text-black/60 hover:text-black"}`}
+                      >
+                        Recurring
+                      </button>
+                    </div>
+                  </div>
+
+                  {linkBillingType === "RECURRING" && (
+                    <Field label="Billing Frequency">
+                      <select
+                        value={linkInterval}
+                        onChange={(event) => setLinkInterval(event.target.value as any)}
+                        className="subscript-input bg-white border border-black/15 text-[#111827]"
+                      >
+                        <option value="monthly">Monthly (every 30 days)</option>
+                        <option value="weekly">Weekly (every 7 days)</option>
+                        <option value="daily">Daily (every 24 hours)</option>
+                        <option value="yearly">Yearly (every 365 days)</option>
+                      </select>
+                    </Field>
+                  )}
+
+                  <Field label={linkBillingType === "RECURRING" ? "Recurring USDC Amount" : "USDC Amount"}>
                     <input
                       value={linkAmount}
                       onChange={(event) => setLinkAmount(event.target.value)}
@@ -4240,7 +4318,7 @@ export default function UserDashboard() {
                     <input
                       value={linkMemo}
                       onChange={(event) => setLinkMemo(event.target.value)}
-                      placeholder="e.g. Graphic design work, dinner split, coffee, monthly consulting..."
+                      placeholder={linkBillingType === "RECURRING" ? "e.g. Monthly newsletter, community membership, software retainer..." : "e.g. Graphic design work, dinner split, coffee..."}
                       className="subscript-input bg-white border border-black/15 text-[#111827]"
                       maxLength={120}
                     />
@@ -5919,10 +5997,45 @@ export default function UserDashboard() {
                       <h2 className="text-sm font-black uppercase tracking-wider text-black">Security & Keys</h2>
                     </div>
 
+                    {/* Account Standing / Hold Status Card */}
+                    <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-8 space-y-4 shadow-sm">
+                      <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/60 flex items-center gap-2">
+                        <Shield className="h-4 w-4 text-[#2775CA]" /> Account Status &amp; Standing
+                      </h3>
+                      
+                      {userSettings?.accountHold?.isHeld ? (
+                        <div className="rounded-2xl border border-red-500/30 bg-red-50 p-4 space-y-2">
+                          <div className="flex items-start gap-3">
+                            <AlertCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+                            <div className="space-y-1">
+                              <h4 className="text-xs font-bold text-red-950">Withdrawals On Hold</h4>
+                              <p className="text-xs text-red-800/90 leading-relaxed">
+                                Withdrawals from this account are temporarily restricted.
+                                {userSettings.accountHold.expiresAt ? ` This hold is scheduled to lift on ${new Date(userSettings.accountHold.expiresAt).toLocaleDateString()}.` : ""}
+                              </p>
+                              <p className="text-[11px] text-red-800/80 leading-relaxed pt-1">
+                                If you believe this is an error or have questions, please contact <a href="mailto:support@subscriptonarc.com" className="underline font-bold">support@subscriptonarc.com</a>.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-50 px-4 py-3 flex items-start gap-3">
+                          <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+                          <div>
+                            <h4 className="text-xs font-bold text-emerald-950">Good Standing</h4>
+                            <p className="text-[10px] text-emerald-800/80 leading-relaxed mt-0.5">
+                              Your account has no active withdrawal holds or security restrictions.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     {/* Wallet Security Card */}
                     <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-8 space-y-4 shadow-sm">
                       <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/60 flex items-center gap-2">
-                        <Wallet className="h-4 w-4 text-[#2775CA]" /> Wallet Security & Compatibility
+                        <Wallet className="h-4 w-4 text-[#2775CA]" /> Wallet Security &amp; Compatibility
                       </h3>
                       
                       {userSettings?.walletBackup ? (
@@ -6337,9 +6450,9 @@ export default function UserDashboard() {
             onClick={() => setAllTxOpen(false)}
           >
             <motion.div
-              initial={{ y: 28, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 28, opacity: 0 }}
+              initial={{ y: 28, opacity: 0, filter: "blur(1.5px)" }}
+              animate={{ y: 0, opacity: 1, filter: "blur(0px)" }}
+              exit={{ y: 28, opacity: 0, filter: "blur(1.5px)" }}
               transition={{ type: "spring", stiffness: 380, damping: 30 }}
               onClick={(event) => event.stopPropagation()}
               className="mx-auto mt-auto sm:my-auto flex w-full sm:max-w-lg h-[92dvh] sm:h-[80vh] flex-col liquid-glass border border-white/10 bg-[#060608]/95 backdrop-blur-xl rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden"
@@ -6507,9 +6620,9 @@ export default function UserDashboard() {
             onClick={() => giftRequestBusyPlanId === null && setGiftPlan(null)}
           >
             <motion.div
-              initial={{ scale: 0.94, y: 16, opacity: 0 }}
-              animate={{ scale: 1, y: 0, opacity: 1 }}
-              exit={{ scale: 0.96, opacity: 0 }}
+              initial={{ scale: 0.94, y: 16, opacity: 0, filter: "blur(1.5px)" }}
+              animate={{ scale: 1, y: 0, opacity: 1, filter: "blur(0px)" }}
+              exit={{ scale: 0.96, opacity: 0, filter: "blur(1.5px)" }}
               transition={{ type: "spring", stiffness: 450, damping: 32 }}
               onClick={(event) => event.stopPropagation()}
               role="dialog"
@@ -6720,9 +6833,9 @@ export default function UserDashboard() {
             onClick={() => !vaultActionBusy && setVaultActionOpen(false)}
           >
             <motion.form
-              initial={{ scale: 0.94, y: 16, opacity: 0 }}
-              animate={{ scale: 1, y: 0, opacity: 1 }}
-              exit={{ scale: 0.96, opacity: 0 }}
+              initial={{ scale: 0.94, y: 16, opacity: 0, filter: "blur(1.5px)" }}
+              animate={{ scale: 1, y: 0, opacity: 1, filter: "blur(0px)" }}
+              exit={{ scale: 0.96, opacity: 0, filter: "blur(1.5px)" }}
               transition={{ type: "spring", stiffness: 450, damping: 32 }}
               onClick={(event) => event.stopPropagation()}
               onSubmit={submitVaultAction}
@@ -6997,9 +7110,9 @@ function VaultInfoModal({ open, onClose }: { open: boolean; onClose: () => void 
           onClick={onClose}
         >
           <motion.div
-            initial={{ scale: 0.92, y: 16, opacity: 0 }}
-            animate={{ scale: 1, y: 0, opacity: 1 }}
-            exit={{ scale: 0.96, opacity: 0 }}
+            initial={{ scale: 0.92, y: 16, opacity: 0, filter: "blur(1.5px)" }}
+            animate={{ scale: 1, y: 0, opacity: 1, filter: "blur(0px)" }}
+            exit={{ scale: 0.96, opacity: 0, filter: "blur(1.5px)" }}
             transition={{ type: "spring", stiffness: 450, damping: 32 }}
             onClick={(event) => event.stopPropagation()}
             role="dialog"
@@ -7547,7 +7660,7 @@ function DmBubble({
       label: dm.messageType === "EXPIRY_WARNING"
         ? "Resubscribe"
         : dm.messageType === "SUBSCRIPTION_OFFER"
-          ? "Review plan"
+          ? "Review & Subscribe"
           : dm.messageType === "SPONSORED_PLAN_REQUEST"
             ? "Confirm & Pay"
             : "Confirm",
@@ -7650,8 +7763,8 @@ function DmBubble({
   if (isReactionMessage(dm.messageType)) {
     return (
       <motion.div
-        initial={{ scale: 0.5, opacity: 0, y: 8 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
+        initial={{ scale: 0.5, opacity: 0, y: 8, filter: "blur(1.2px)" }}
+        animate={{ scale: 1, opacity: 1, y: 0, filter: "blur(0px)" }}
         whileHover={{ scale: 1.04 }}
         whileTap={{ scale: 0.95 }}
         transition={{ type: "spring", stiffness: 450, damping: 32 }}
@@ -7685,8 +7798,8 @@ function DmBubble({
   if (dm.messageType === "SERVICE_PAUSED") {
     return (
       <motion.div
-        initial={{ scale: 0.95, opacity: 0, y: 10 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
+        initial={{ scale: 0.95, opacity: 0, y: 10, filter: "blur(1.2px)" }}
+        animate={{ scale: 1, opacity: 1, y: 0, filter: "blur(0px)" }}
         transition={bubbleSpring}
         className="w-full"
       >
@@ -7735,8 +7848,8 @@ function DmBubble({
 
   return (
     <motion.div
-      initial={{ scale: 0.82, opacity: 0, y: 14 }}
-      animate={{ scale: 1, opacity: 1, y: 0 }}
+      initial={{ scale: 0.82, opacity: 0, y: 14, filter: "blur(1.2px)" }}
+      animate={{ scale: 1, opacity: 1, y: 0, filter: "blur(0px)" }}
       whileHover={{ scale: 1.01 }}
       transition={bubbleSpring}
       style={{ transformOrigin: bubbleOrigin }}
@@ -7855,9 +7968,9 @@ function DmBubble({
               <AnimatePresence>
                 {actionMenuOpen && (
                   <motion.div
-                    initial={{ opacity: 0, y: -8, scale: 0.92 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -6, scale: 0.94 }}
+                    initial={{ opacity: 0, y: -8, scale: 0.92, filter: "blur(1.2px)" }}
+                    animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+                    exit={{ opacity: 0, y: -6, scale: 0.94, filter: "blur(1.2px)" }}
                     transition={{ type: "spring", stiffness: 450, damping: 32 }}
                     className={`dm-action-menu-grid ${incoming ? "origin-top-left" : "origin-top-right"}`}
                   >
@@ -7867,8 +7980,8 @@ function DmBubble({
                         return (
                           <motion.a
                             key={action.key}
-                            initial={{ opacity: 0, y: -4, scale: 0.94 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            initial={{ opacity: 0, y: -4, scale: 0.94, filter: "blur(1px)" }}
+                            animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
                             transition={{ type: "spring", stiffness: 450, damping: 32, delay: index * 0.025 }}
                             whileHover={{ scale: 1.03 }}
                             whileTap={{ scale: 0.97 }}
@@ -7884,8 +7997,8 @@ function DmBubble({
                       return (
                         <motion.button
                           key={action.key}
-                          initial={{ opacity: 0, y: -4, scale: 0.94 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          initial={{ opacity: 0, y: -4, scale: 0.94, filter: "blur(1px)" }}
+                          animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
                           transition={{ type: "spring", stiffness: 450, damping: 32, delay: index * 0.025 }}
                           whileHover={{ scale: 1.03 }}
                           whileTap={{ scale: 0.97 }}
@@ -8072,9 +8185,9 @@ function MerchantPlanManager({
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: 16, scale: 0.92, scaleY: 0.85 }}
-            animate={{ opacity: 1, y: 0, scale: 1, scaleY: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.95, scaleY: 0.9 }}
+            initial={{ opacity: 0, y: 16, scale: 0.92, scaleY: 0.85, filter: "blur(1.5px)" }}
+            animate={{ opacity: 1, y: 0, scale: 1, scaleY: 1, filter: "blur(0px)" }}
+            exit={{ opacity: 0, y: 8, scale: 0.95, scaleY: 0.9, filter: "blur(1.5px)" }}
             transition={{ type: "spring", stiffness: 420, damping: 30 }}
             style={{ transformOrigin: "top center" }}
             className="order-1 max-h-[min(48dvh,28rem)] space-y-3 overflow-y-auto overscroll-contain rounded-2xl border border-black/15 bg-[#FFFFF0] p-3 text-black shadow-lg"
@@ -8141,8 +8254,8 @@ function MerchantPlanManager({
                   return (
                     <motion.div
                       key={plan.id}
-                      initial={{ opacity: 0, y: 10, scale: 0.92 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      initial={{ opacity: 0, y: 10, scale: 0.92, filter: "blur(1.2px)" }}
+                      animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
                       transition={{ type: "spring", stiffness: 420, damping: 30, delay: index * 0.04 }}
                       whileHover={{ scale: 1.025, y: -2 }}
                       whileTap={{ scale: 0.98 }}
@@ -8239,6 +8352,8 @@ function DmRequestComposer({
   amount,
   note,
   duration,
+  billingType = "ONE_TIME",
+  interval = "monthly",
   status,
   loading,
   onToggle,
@@ -8246,11 +8361,15 @@ function DmRequestComposer({
   onAmountChange,
   onNoteChange,
   onDurationChange,
+  onBillingTypeChange,
+  onIntervalChange,
 }: {
   open: boolean;
   amount: string;
   note: string;
   duration: (typeof dmRequestDurationOptions)[number]["value"];
+  billingType?: "ONE_TIME" | "RECURRING";
+  interval?: "monthly" | "weekly" | "daily" | "yearly";
   status: string | null;
   loading: boolean;
   onToggle: () => void;
@@ -8258,6 +8377,8 @@ function DmRequestComposer({
   onAmountChange: (value: string) => void;
   onNoteChange: (value: string) => void;
   onDurationChange: (value: (typeof dmRequestDurationOptions)[number]["value"]) => void;
+  onBillingTypeChange?: (value: "ONE_TIME" | "RECURRING") => void;
+  onIntervalChange?: (value: "monthly" | "weekly" | "daily" | "yearly") => void;
 }) {
   return (
     <div className="space-y-3">
@@ -8265,16 +8386,37 @@ function DmRequestComposer({
         {open && (
           <motion.form
             key="dm-request-form"
-            initial={{ opacity: 0, y: 24, scaleY: 0.7, scaleX: 0.94 }}
-            animate={{ opacity: 1, y: 0, scaleY: 1, scaleX: 1 }}
-            exit={{ opacity: 0, y: 16, scaleY: 0.8, scaleX: 0.96 }}
+            initial={{ opacity: 0, y: 24, scaleY: 0.7, scaleX: 0.94, filter: "blur(1.5px)" }}
+            animate={{ opacity: 1, y: 0, scaleY: 1, scaleX: 1, filter: "blur(0px)" }}
+            exit={{ opacity: 0, y: 16, scaleY: 0.8, scaleX: 0.96, filter: "blur(1.5px)" }}
             transition={{ type: "spring", stiffness: 450, damping: 32 }}
             style={{ transformOrigin: "bottom center" }}
             onSubmit={onSubmit}
             className="max-h-[min(55dvh,30rem)] overflow-y-auto overscroll-contain rounded-[28px] border border-black/10 bg-white/95 p-4 shadow-xl backdrop-blur-xl text-black"
           >
+            {/* Request Type Selector */}
+            <div className="mb-3 space-y-1.5">
+              <label className="text-[10px] font-black uppercase tracking-[0.14em] text-black/60">Request Type</label>
+              <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-black/[0.04] border border-black/10">
+                <button
+                  type="button"
+                  onClick={() => onBillingTypeChange && onBillingTypeChange("ONE_TIME")}
+                  className={`py-1.5 px-3 rounded-xl text-xs font-bold transition ${billingType === "ONE_TIME" ? "bg-white text-black shadow-sm" : "text-black/60 hover:text-black"}`}
+                >
+                  One-Time
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onBillingTypeChange && onBillingTypeChange("RECURRING")}
+                  className={`py-1.5 px-3 rounded-xl text-xs font-bold transition ${billingType === "RECURRING" ? "bg-[#2775CA] text-white shadow-sm" : "text-black/60 hover:text-black"}`}
+                >
+                  Recurring
+                </button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Amount">
+              <Field label={billingType === "RECURRING" ? "Recurring USDC" : "Amount"}>
                 <input
                   value={amount}
                   onChange={(event) => onAmountChange(event.target.value)}
@@ -8284,24 +8426,39 @@ function DmRequestComposer({
                   required
                 />
               </Field>
-              <Field label="Valid for">
-                <select
-                  value={duration}
-                  onChange={(event) => onDurationChange(event.target.value as (typeof dmRequestDurationOptions)[number]["value"])}
-                  className="subscript-input bg-white border border-black/15 text-[#111827]"
-                >
-                  {dmRequestDurationOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </Field>
+              {billingType === "RECURRING" ? (
+                <Field label="Frequency">
+                  <select
+                    value={interval}
+                    onChange={(event) => onIntervalChange && onIntervalChange(event.target.value as any)}
+                    className="subscript-input bg-white border border-black/15 text-[#111827]"
+                  >
+                    <option value="monthly">Monthly (30d)</option>
+                    <option value="weekly">Weekly (7d)</option>
+                    <option value="daily">Daily (24h)</option>
+                    <option value="yearly">Yearly (365d)</option>
+                  </select>
+                </Field>
+              ) : (
+                <Field label="Valid for">
+                  <select
+                    value={duration}
+                    onChange={(event) => onDurationChange(event.target.value as (typeof dmRequestDurationOptions)[number]["value"])}
+                    className="subscript-input bg-white border border-black/15 text-[#111827]"
+                  >
+                    {dmRequestDurationOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
             </div>
             <div className="mt-3">
               <Field label="Memo">
                 <textarea
                   value={note}
                   onChange={(event) => onNoteChange(event.target.value)}
-                  placeholder="What is this request for?"
+                  placeholder={billingType === "RECURRING" ? "What is this recurring subscription for?" : "What is this request for?"}
                   rows={2}
                   className="subscript-input bg-white border border-black/15 text-[#111827] resize-none"
                 />
@@ -8687,7 +8844,7 @@ function DepositModal({
     <AnimatePresence>
       {open && userWallet && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 sm:p-5 backdrop-blur-md">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} role="dialog" aria-modal="true" aria-labelledby="deposit-dialog-title" className="relative flex flex-col max-h-[85vh] sm:max-h-[90vh] w-full max-w-sm overflow-hidden rounded-3xl border border-black/10 bg-[#FFFFF0] text-black p-5 sm:p-6 shadow-2xl" {...depositSwipe}>
+          <motion.div initial={{ scale: 0.92, y: 18, filter: "blur(1.5px)" }} animate={{ scale: 1, y: 0, filter: "blur(0px)" }} exit={{ scale: 0.92, y: 18, filter: "blur(1.5px)" }} transition={{ type: "spring", stiffness: 450, damping: 32 }} role="dialog" aria-modal="true" aria-labelledby="deposit-dialog-title" className="relative flex flex-col max-h-[85vh] sm:max-h-[90vh] w-full max-w-sm overflow-hidden rounded-3xl border border-black/10 bg-[#FFFFF0] text-black p-5 sm:p-6 shadow-2xl" {...depositSwipe}>
             {/* Header (Pinned) */}
             <div className="shrink-0 flex items-center justify-between mb-3 border-b border-black/10 pb-3">
               <h3 id="deposit-dialog-title" className="text-sm font-black uppercase tracking-wider text-[#111827]">
@@ -9162,7 +9319,7 @@ function SendFundsModal({
     <AnimatePresence>
       {open && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-5 backdrop-blur-md">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} role="dialog" aria-modal="true" aria-labelledby="send-funds-title" className="w-full max-w-sm border border-black/10 rounded-3xl p-6 shadow-2xl bg-[#FFFFF0] text-black relative overflow-hidden">
+          <motion.div initial={{ scale: 0.92, y: 18, filter: "blur(1.5px)" }} animate={{ scale: 1, y: 0, filter: "blur(0px)" }} exit={{ scale: 0.92, y: 18, filter: "blur(1.5px)" }} transition={{ type: "spring", stiffness: 450, damping: 32 }} role="dialog" aria-modal="true" aria-labelledby="send-funds-title" className="w-full max-w-sm border border-black/10 rounded-3xl p-6 shadow-2xl bg-[#FFFFF0] text-black relative overflow-hidden">
             <div className="flex items-center justify-between mb-4">
               <h3 id="send-funds-title" className="text-sm font-black uppercase tracking-wider text-[#111827]">Send USDC</h3>
               <button type="button" onClick={onClose} disabled={loading} aria-label="Close send dialog" className="flex h-9 w-9 items-center justify-center rounded-full bg-black/5 text-black/60 hover:bg-black/10 disabled:cursor-not-allowed disabled:opacity-30 transition-all"><X className="h-4 w-4" /></button>
@@ -9764,7 +9921,7 @@ function ConfigureVaultModal({
     <AnimatePresence>
       {open && editingVault && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-5 backdrop-blur-md">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm border border-black/10 rounded-3xl p-6 shadow-2xl bg-[#FFFFF0] text-black relative overflow-hidden text-left max-h-[90vh] overflow-y-auto">
+          <motion.div initial={{ scale: 0.92, y: 18, filter: "blur(1.5px)" }} animate={{ scale: 1, y: 0, filter: "blur(0px)" }} exit={{ scale: 0.92, y: 18, filter: "blur(1.5px)" }} transition={{ type: "spring", stiffness: 450, damping: 32 }} className="w-full max-w-sm border border-black/10 rounded-3xl p-6 shadow-2xl bg-[#FFFFF0] text-black relative overflow-hidden text-left max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-1">
               <h3 className="text-sm font-black uppercase tracking-wider text-[#111827]">Auto top-up</h3>
               <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-black/5 text-black/60 hover:bg-black/10 transition-all"><X className="h-4 w-4" /></button>
@@ -9946,7 +10103,7 @@ function TopupVaultModal({
     <AnimatePresence>
       {open && vault && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-5 backdrop-blur-md">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm border border-black/10 rounded-3xl p-6 shadow-2xl bg-[#FFFFF0] text-black relative overflow-hidden text-left">
+          <motion.div initial={{ scale: 0.92, y: 18, filter: "blur(1.5px)" }} animate={{ scale: 1, y: 0, filter: "blur(0px)" }} exit={{ scale: 0.92, y: 18, filter: "blur(1.5px)" }} transition={{ type: "spring", stiffness: 450, damping: 32 }} className="w-full max-w-sm border border-black/10 rounded-3xl p-6 shadow-2xl bg-[#FFFFF0] text-black relative overflow-hidden text-left">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-black uppercase tracking-wider text-[#111827]">Manual Deposit</h3>
               <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-black/5 text-black/60 hover:bg-black/10 transition-all"><X className="h-4 w-4" /></button>
