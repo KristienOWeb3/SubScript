@@ -84,6 +84,15 @@ function loadGasModule({ getProviderForWrite, executeWithFallback, sendTransacti
                 })),
             };
         }
+        if (specifier === "@/lib/platform/flags") {
+            return {
+                getPlatformFlags: async () => ({
+                    sponsorEmergencyStop: false,
+                    paymentsEnabled: true,
+                    withdrawalsEnabled: true,
+                }),
+            };
+        }
         throw new Error(`Unexpected import: ${specifier}`);
     }, testModule, testModule.exports);
     return testModule.exports;

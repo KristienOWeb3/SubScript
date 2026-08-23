@@ -202,7 +202,11 @@ async function runSponsorship(request: SponsoredGasRequest): Promise<SponsoredGa
     const wallet = request.wallet.toLowerCase();
 
     const flags = await getPlatformFlags().catch(() => null);
-    const isEmergencyStop = flags?.sponsorEmergencyStop ?? (process.env.SPONSOR_EMERGENCY_STOP === "true");
+    const isEmergencyStop = Boolean(
+        flags?.sponsorEmergencyStop ||
+        process.env.SPONSOR_EMERGENCY_STOP === "true" ||
+        process.env.SPONSOR_EMERGENCY_STOP === "1"
+    );
 
     if (isEmergencyStop) {
         console.error("[gas-sponsor] EMERGENCY STOP active — refusing sponsorship", { wallet, action: request.action });

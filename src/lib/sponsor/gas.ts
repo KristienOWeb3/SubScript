@@ -50,7 +50,11 @@ export type SponsorWalletStatus = {
  */
 export async function getSponsorWalletStatus(): Promise<SponsorWalletStatus> {
     const flags = await getPlatformFlags().catch(() => null);
-    const emergencyStop = flags?.sponsorEmergencyStop ?? (process.env.SPONSOR_EMERGENCY_STOP === "true");
+    const emergencyStop = Boolean(
+        flags?.sponsorEmergencyStop ||
+        process.env.SPONSOR_EMERGENCY_STOP === "true" ||
+        process.env.SPONSOR_EMERGENCY_STOP === "1"
+    );
     const topupUsdc = process.env.SPONSOR_GAS_TOPUP_USDC || "0.10";
     const key = process.env.SPONSOR_PRIVATE_KEY;
 
