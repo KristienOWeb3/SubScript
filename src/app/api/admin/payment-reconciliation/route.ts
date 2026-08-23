@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyAdminApiKey } from "@/lib/kyc";
+import { requireAdmin } from "@/lib/admin/guard";
+import { recordAdminAction } from "@/lib/admin/audit";
 import { pgMaybeOne, pgQuery } from "@/lib/serverPg";
 import { retryPaymentReconciliationEvent } from "@/lib/payments/reconciliationRetry";
 
@@ -22,10 +24,21 @@ type ReconciliationRow = {
     updated_at: Date | string;
 };
 
-export async function GET(request: Request) {
-    if (!verifyAdminApiKey(request.headers)) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+async function authenticateReconciliationRequest(request: Request) {
+    const isApiKey = verifyAdminApiKey(request.headers);
+    if (isApiKey) {
+        return { ok: true as const, isApiKey: true, actor: "api_key" };
     }
+    const adminAuth = await requireAdmin(request);
+    if (adminAuth.ok) {
+        return { ok: true as const, isApiKey: false, actor: adminAuth.admin.wallet };
+    }
+    return { ok: false as const, response: adminAuth.response };
+}
+
+export async function GET(request: Request) {
+    const auth = await authenticateReconciliationRequest(request);
+    if (!auth.ok) return auth.response;
 
     const searchParams = new URL(request.url).searchParams;
     const status = searchParams.get("status")?.toUpperCase() || null;
@@ -65,9 +78,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-    if (!verifyAdminApiKey(request.headers)) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const auth = await authenticateReconciliationRequest(request);
+    if (!auth.ok) return auth.response;
 
     const body = await request.json().catch(() => null);
     const id = typeof body?.id === "string" ? body.id : "";
@@ -115,6 +127,15 @@ export async function POST(request: Request) {
                     [id],
                 );
                 if (!resolved) throw new Error("Reconciliation event changed while the retry was running");
+                
+                await recordAdminAction({
+                    actor: auth.actor,
+                    action: "RECONCILIATION_RETRY",
+                    target: id,
+                    detail: { outcome: "RESOLVED", attemptCount: event.attempt_count + 1 },
+                    request,
+                });
+
                 return NextResponse.json({
                     success: true,
                     event: resolved,
@@ -134,6 +155,13 @@ export async function POST(request: Request) {
                     [id, message],
                 );
                 console.error("Payment reconciliation retry failed:", { id, error: retryError });
+                await recordAdminAction({
+                    actor: auth.actor,
+                    action: "RECONCILIATION_RETRY",
+                    target: id,
+                    detail: { outcome: "FAILED", error: message },
+                    request,
+                });
                 return NextResponse.json({ error: message }, { status: 500 });
             }
         }
@@ -152,6 +180,15 @@ export async function POST(request: Request) {
         if (!event) {
             return NextResponse.json({ error: "Reconciliation event not found" }, { status: 404 });
         }
+
+        await recordAdminAction({
+            actor: auth.actor,
+            action: "RECONCILIATION_RETRY",
+            target: id,
+            detail: { outcome: "MANUALLY_RESOLVED" },
+            request,
+        });
+
         return NextResponse.json({
             success: true,
             event,

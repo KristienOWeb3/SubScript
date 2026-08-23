@@ -22,6 +22,9 @@ export type PlatformFlags = {
     maintenanceMessage: string | null;
     externalWalletEnabled: boolean;
     merchantInviteOnlyEnabled: boolean;
+    sponsorEmergencyStop: boolean;
+    paymentsEnabled: boolean;
+    withdrawalsEnabled: boolean;
 };
 
 /* What an unreadable table means. Not a "safe default" in the abstract — a deliberate
@@ -36,6 +39,9 @@ export const FLAGS_FALLBACK: PlatformFlags = {
        Its consumer (isMerchantInviteOnlyEnforced in @/lib/merchants/accessGrants) also treats a
        thrown read as enforced, so the two agree. */
     merchantInviteOnlyEnabled: true,
+    sponsorEmergencyStop: false,
+    paymentsEnabled: true,
+    withdrawalsEnabled: true,
 };
 
 /* A MISSING singleton row is not the same failure as an unreadable table: the table answered, it
@@ -44,6 +50,9 @@ export const FLAGS_FALLBACK: PlatformFlags = {
 const FLAGS_UNSEEDED: PlatformFlags = {
     ...FLAGS_FALLBACK,
     merchantInviteOnlyEnabled: false,
+    sponsorEmergencyStop: false,
+    paymentsEnabled: true,
+    withdrawalsEnabled: true,
 };
 
 /* "This column does not exist yet" is not an incident either — it means the code is running ahead
@@ -72,16 +81,22 @@ export async function getPlatformFlags(): Promise<PlatformFlags> {
     if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.value;
 
     try {
-        const row = await prisma.platformFlag.findUnique({ where: { id: 1 } });
+        const row = await prisma.platformFlag.findUnique({ where: { id: 1 } }) as any;
         const value: PlatformFlags = row
             ? {
-                  googleSigninEnabled: row.googleSigninEnabled,
-                  maintenanceEnabled: row.maintenanceEnabled,
-                  maintenanceMessage: row.maintenanceMessage,
-                  externalWalletEnabled: row.externalWalletEnabled,
-                  merchantInviteOnlyEnabled: row.merchantInviteOnlyEnabled,
+                  googleSigninEnabled: row.googleSigninEnabled ?? true,
+                  maintenanceEnabled: row.maintenanceEnabled ?? false,
+                  maintenanceMessage: row.maintenanceMessage ?? null,
+                  externalWalletEnabled: row.externalWalletEnabled ?? true,
+                  merchantInviteOnlyEnabled: row.merchantInviteOnlyEnabled ?? false,
+                  sponsorEmergencyStop: row.sponsorEmergencyStop ?? (process.env.SPONSOR_EMERGENCY_STOP === "true"),
+                  paymentsEnabled: row.paymentsEnabled ?? true,
+                  withdrawalsEnabled: row.withdrawalsEnabled ?? true,
               }
-            : FLAGS_UNSEEDED;
+            : {
+                ...FLAGS_UNSEEDED,
+                sponsorEmergencyStop: process.env.SPONSOR_EMERGENCY_STOP === "true",
+            };
         cached = { value, at: Date.now() };
         return value;
     } catch (error) {
@@ -133,6 +148,9 @@ export async function mirrorPlatformFlags(flags: PlatformFlags): Promise<{ mirro
             maintenanceEnabled: flags.maintenanceEnabled,
             maintenanceMessage: flags.maintenanceMessage,
             externalWalletEnabled: flags.externalWalletEnabled,
+            sponsorEmergencyStop: flags.sponsorEmergencyStop,
+            paymentsEnabled: flags.paymentsEnabled,
+            withdrawalsEnabled: flags.withdrawalsEnabled,
         }));
         return { mirrored: true };
     } catch (error: any) {

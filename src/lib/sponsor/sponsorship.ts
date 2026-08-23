@@ -23,6 +23,7 @@ import {
     reconcileSponsorTransferByHash,
     submitPreparedSponsorTransfer,
 } from "@/lib/sponsor/gas";
+import { getPlatformFlags } from "@/lib/platform/flags";
 
 export type SponsorCustody = "CIRCLE_SCA" | "CIRCLE_EOA" | "LEGACY_EOA";
 
@@ -200,7 +201,10 @@ async function updateOperation(params: {
 async function runSponsorship(request: SponsoredGasRequest): Promise<SponsoredGasResult> {
     const wallet = request.wallet.toLowerCase();
 
-    if (process.env.SPONSOR_EMERGENCY_STOP === "true") {
+    const flags = await getPlatformFlags().catch(() => null);
+    const isEmergencyStop = flags?.sponsorEmergencyStop ?? (process.env.SPONSOR_EMERGENCY_STOP === "true");
+
+    if (isEmergencyStop) {
         console.error("[gas-sponsor] EMERGENCY STOP active — refusing sponsorship", { wallet, action: request.action });
         return { sponsored: false, reason: "emergency_stop" };
     }

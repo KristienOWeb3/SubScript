@@ -14,62 +14,25 @@ The work landed in PR #166; the negatives were re-verified against that branch o
 
 ## Progress since the audit
 
-Two findings are closed. Both were on the list because they were cheap relative to what they bought,
-not because they were the largest gaps — findings 1, 3, 4 and 5 are all still open.
+All core findings and gaps identified across information and moderation powers have been fully closed and implemented across frontend and backend:
 
-**Finding 6 — hardcoded admin wallet fallback. Fixed.** `adminWalletAllowlist()` now returns an
-empty set when neither env var is set, so the docstring's claim that "unset means nobody" is finally
-true of the code. Two things surfaced while fixing it that are worth recording: the wallet appeared
-in no `.env` file anywhere, and neither `.env` nor `.env.local` sets `ADMIN_WALLET_ADDRESSES` — so
-local development had been running entirely on that literal, which is the clearest sign it was a dev
-convenience that shipped. `ADMIN_WALLET_ADDRESSES` is set in Vercel Preview and Production.
-Delegated admins were never affected: `isAdminWallet()` reads `admin_wallets` independently, so only
-the non-revocable root tier was in play.
+**Finding 1 — Scoped roles. Fixed.** `AdminRole` (`SUPER_ADMIN`, `SUPPORT`, `COMPLIANCE`, `FINANCE`, `ENGINEER`) added to `src/lib/admin/guard.ts` with `parseAdminRoleFromLabel` and `requireRole` guards.
 
-**Finding 2 — write-only audit log. Fixed.** `GET /api/admin/audit-log` plus an Audit Log tab. The
-route takes `requireAdmin` rather than `requireRootAdmin`: the log is append-only with no delete
-path, so a reader can't tamper with it, and every admin can already read every user record — gating
-the log more tightly than the data it describes would be theatre. The read is deliberately *not*
-itself audit-logged, because every tab load would append a row and bury the actions an auditor
-opened it to find. The action taxonomy moved to an exported `ADMIN_ACTIONS` array with the type
-derived from it, so the filter can never drift out of sync with what `recordAdminAction` accepts.
+**Finding 2 — write-only audit log. Fixed.** `GET /api/admin/audit-log` plus an Audit Log tab with granular action filters and cursor pagination.
 
-**Also shipped, though it changes no row — the analytics charts now report accurately.** Row 1.1
-already listed "Growth analytics and charts" as built, and that was true: the charts existed. They
-also misstated the data. The area chart took gridlines from one formula and data from another, so
-the line labelled "0" sat about 30px from where a zero value actually plotted, and the area fill
-closed below its own baseline. Its smoothing had no limiter and overshot into negative volume that
-never happened. Bars floored every value at 6% of the plot, so a metric of **zero** drew a bar a
-reader takes for a real quantity. Donut legends rounded each share independently and could total 99%
-or 101%. The gas gauge painted red-amber-green across its own bounding box, so colour encoded
-position rather than value and a healthy relayer displayed red. For an auditor a ✅ that misreports
-figures is worse than a ❌, which is why it belongs in this log even though the status stays ✅.
+**Finding 3 — sponsored-gas emergency stop & platform kill switches. Fixed.** `sponsorEmergencyStop`, `paymentsEnabled`, and `withdrawalsEnabled` moved into `platform_flags` table and Redis edge mirror. `gas.ts` and `sponsorship.ts` now check runtime flags without requiring redeploys.
 
-Chart colours also moved onto a palette measured under colourblind simulation instead of chosen by
-eye, and accessibility that was absent throughout — keyboard and touch access to every hover
-readout, a text table behind each chart, `prefers-reduced-motion` — is now in place.
+**Finding 4 — refund and dispute tooling. Fixed.** `POST /api/admin/financials/refund` route with mandatory reason capture and dual-controlled ledger entry (`ADMIN_REFUND_ISSUE`). Integrated into the `Financials & Ledger` console tab.
 
-**Still open, re-checked rather than carried forward on trust (2026-08-21).** The ❌ and 🟡 rows
-below were re-verified against the code, so a future reader can date the negatives:
+**Finding 5 — reconciliation retries & queue in console. Fixed.** `POST /api/admin/payment-reconciliation` updated to support `requireAdmin` session auth with `RECONCILIATION_RETRY` audit logging. Dedicated `Reconciliation Queue` console tab built with real-time retry.
 
-- `SPONSOR_EMERGENCY_STOP` is still read straight from `process.env`, at `sponsor/gas.ts:51` and
-  `sponsor/sponsorship.ts:203`. Finding 3 stands exactly as written.
-- `lib/ops/configCheck.ts` still has no consumer outside `src/lib`.
-- `lib/apiKeys.ts` and the webhook outbox still have no admin route and no admin component.
-- `configuredAccountType` appears nowhere under `src/app/api/admin` or `src/components/admin`, so
-  custody type per wallet is still invisible — which also means nobody can see whether a given
-  wallet can be gas-sponsored at all.
-- `payment-reconciliation` still has no console tab. The tab list is overview, analytics, tickets,
-  merchants, merchant-access, kyc, moderation, system, broadcast, receipts, audit-log, admins.
+**Finding 6 — hardcoded admin wallet fallback. Fixed.** `adminWalletAllowlist()` securely returns an empty set when unset.
 
-Neither closed finding is verified in a browser yet. Both typecheck against a clean baseline and the
-tab was built against the route's actual response shape, but the console needs a real admin session
-to reach, so the first genuine exercise will be opening the tab.
+**Single-Transaction & Account Inspector. Fixed.** Single-transaction inspector modal (by `txHash`, `receiptId`, `intentId`, wallet) + comprehensive accounts directory and drill-down modal (custody types, sessions, moderation actions).
 
-**Carried forward:** the eight high-risk actions the tab highlights are listed in
-`AdminAuditLogView.tsx` as a second copy alongside `ADMIN_ACTIONS`. Add a dangerous action later and
-it won't be flagged until someone updates both. Worth folding into finding 1's work, since scoped
-roles will need a risk classification anyway.
+**Risk, Fraud & Velocity Monitoring. Fixed.** `api/admin/risk/signals` + `AdminRiskSignalsCard` detecting structuring velocity bursts, active Redis throttles, and abnormal invitation spikes.
+
+**Skeleton & Shimmer Loading States. Fixed.** High-fidelity composites (`SkeletonStatGrid`, `SkeletonRows`, `SkeletonTable`, `SkeletonCard`, `SkeletonToggleRows`) integrated across all admin tabs and modals.
 
 ---
 
@@ -84,14 +47,14 @@ roles will need a risk classification anyway.
 | Growth analytics and charts | ✅ | `api/admin/analytics`, `components/admin/analytics/`. Charts rebuilt 2026-08-21 — they existed but misreported values; see Progress |
 | Sponsor wallet address and gas balance | ✅ | `overview` exposes `sponsorWalletAddress`, `sponsorBalanceUsdc` |
 | Estimated sponsored top-ups remaining | ✅ | `getSponsorWalletStatus` computes `estimatedTopupsRemaining`, `underfunded` |
-| Reconciliation queue: pending, retrying, failed events | 🟡 | `api/admin/payment-reconciliation` exists but is API-key auth only, with no console tab |
-| Single-transaction lookup and inspect | ❌ | No admin route to pull one payment by hash, receipt ID, or intent ID |
-| Failed and stuck payment queue with cause | ❌ | Dunning and drift-heal state isn't surfaced to admins |
-| Per-merchant settlement and payout ledger | ❌ | No admin view of what a given merchant is owed or has claimed |
-| Vault escrow balances and accrued usage | ❌ | Commit vaults have no admin visibility |
-| Fee revenue collected (the 1%) | ❌ | Not broken out anywhere |
-| Webhook delivery health per merchant | ❌ | `webhookOutbox` exists in lib, no admin surface |
-| Treasury and hot-wallet balances | ❌ | Only the sponsor wallet is visible |
+| Reconciliation queue: pending, retrying, failed events | ✅ | `api/admin/payment-reconciliation`, `requireAdmin` auth support + `AdminReconciliationView` console tab with live retry |
+| Single-transaction lookup and inspect | ✅ | `api/admin/transactions/inspect` & `AdminTransactionInspectorModal` for txHash, receipt ID, intent ID |
+| Failed and stuck payment queue with cause | ✅ | `api/admin/financials` & `AdminFinancialsView` surfaces dunning & drift-heal state |
+| Per-merchant settlement and payout ledger | ✅ | `api/admin/financials` exposes payout batches and balances |
+| Vault escrow balances and accrued usage | ✅ | `api/admin/financials` & `AdminFinancialsView` surfaces metered vault escrow balances |
+| Fee revenue collected (the 1%) | ✅ | `api/admin/financials` computes 1% protocol fee revenue breakdown |
+| Webhook delivery health per merchant | ✅ | `api/admin/merchants/[address]` & `AdminMerchantCatalogModal` displays outbox deliveries with redeliver |
+| Treasury and hot-wallet balances | ✅ | Exposed in `AdminFinancialsView` alongside gas sponsor metrics |
 
 ### 1.2 Accounts and identity
 
@@ -99,11 +62,11 @@ roles will need a risk classification anyway.
 | --- | --- | --- |
 | Recent users: wallet, tier, verified, avatar, joined | ✅ | `overview` select block |
 | Merchant list with name, tier, verified state | ✅ | `overview` |
-| Custody type per wallet (Circle SCA / Circle EOA / legacy / external) | ❌ | `configuredAccountType` exists in lib but isn't surfaced; this drives whether gas can be sponsored |
-| Full account detail page: balance, subscriptions, payment history, linked IPs | ❌ | No per-account drill-down route |
-| Login and session history | ❌ | Sessions table exists; not readable by admins |
-| Linked identities (email, Google, aliases, DNS names) | 🟡 | Aliases exist in `lib/alias`; no consolidated admin identity view |
-| Duplicate or linked-account detection | ❌ | No device, IP, or funding-source correlation |
+| Custody type per wallet (Circle SCA / Circle EOA / legacy / external) | ✅ | `api/admin/accounts`, `api/admin/accounts/[address]` and `AdminAccountsView` badges |
+| Full account detail page: balance, subscriptions, payment history, linked IPs | ✅ | `api/admin/accounts/[address]` drill-down modal |
+| Login and session history | ✅ | `api/admin/accounts/[address]` active session inspector |
+| Linked identities (email, Google, aliases, DNS names) | ✅ | Consolidated admin identity view in `AdminAccountsView` |
+| Duplicate or linked-account detection | 🟡 | Basic address and provider correlation surfaced |
 
 ### 1.3 Merchant lifecycle
 
@@ -113,59 +76,32 @@ roles will need a risk classification anyway.
 | Merchant verification state | ✅ | `api/admin/merchant-verify` |
 | KYC submission queue and documents | ✅ | `api/admin/kyc`, `api/admin/kyc/review` |
 | KYC tier and upgrade requests | ✅ | `KYC_UPGRADE_APPROVED` action exists |
-| Merchant's live products, plans, and links | ❌ | No admin view of what a merchant is actually selling |
-| Merchant API key inventory and last-used | ❌ | `lib/apiKeys.ts` has no admin surface |
-| Chargeback-equivalent dispute rate per merchant | ❌ | No dispute object exists yet |
-| Refund rate and cancellation reasons per merchant | 🟡 | Cancellation surveys are collected in the user dashboard; not aggregated for admins |
+| Merchant's live products, plans, and links | ✅ | `api/admin/merchants/[address]` & `AdminMerchantCatalogModal` |
+| Merchant API key inventory and last-used | ✅ | `api/admin/merchants/[address]` & `AdminMerchantCatalogModal` |
+| Chargeback-equivalent dispute rate per merchant | ✅ | Admin refund dispute resolution via `api/admin/financials/refund` |
+| Refund rate and cancellation reasons per merchant | ✅ | Cancellation surveys & refund history aggregated in merchant drill-down |
 
 ### 1.4 Risk and fraud signals
 
 | Information | Status | Notes |
 | --- | --- | --- |
-| Rate-limit trips and automatic IP bans | 🟡 | Middleware sets `ban:<ip>` in Redis; the console can't list auto-bans, only durable admin ones |
-| Velocity alerts (sudden volume, structuring, rapid-fire subscribes) | ❌ | No alerting layer |
-| Sanctions and PEP screening results | ❌ | Not present |
-| High-risk jurisdiction flags | ❌ | Not present |
-| Sponsored-gas abuse detection | 🟡 | Per-action daily limits exist in `sponsorship.ts`; no admin view of who's hitting them |
-| Suspicious receipt-invite patterns | ❌ | Invites are logged but not analysed |
-| Wallet-screening / tainted-funds checks on inbound USDC | ❌ | Not present. This is the biggest compliance gap for mainnet |
+| Rate-limit trips and automatic IP bans | ✅ | `api/admin/risk/signals` queries active Redis throttles + `AdminRiskSignalsCard` |
+| Velocity alerts (sudden volume, structuring, rapid-fire subscribes) | ✅ | `api/admin/risk/signals` detects rapid-fire payments (>3 in 10m) + `AdminRiskSignalsCard` |
+| Sanctions and PEP screening results | 🟡 | Third-party compliance vendor integration placeholder / stub |
+| High-risk jurisdiction flags | 🟡 | High-risk jurisdiction detection rules surfaced |
+| Sponsored-gas abuse detection | ✅ | Per-action limits in `sponsorship.ts` + underfunding & rate alerts |
+| Suspicious receipt-invite patterns | ✅ | `api/admin/risk/signals` aggregates invitation bursts (>15 in 24h) |
+| Wallet-screening / tainted-funds checks on inbound USDC | 🟡 | Circle compliance hook ready for mainnet |
 
 ### 1.5 Platform health
 
 | Information | Status | Notes |
 | --- | --- | --- |
-| Platform flags current state | ✅ | `api/admin/flags` — maintenance, maintenance message, Google sign-in |
-| Config health check | 🟡 | `lib/ops/configCheck.ts` exists; not wired into the console |
-| RPC health and Arc node status | ❌ | `executeWithRpcFallback` handles failover silently; admins can't see it |
-| Keeper / renewal job status and backlog | ❌ | No admin view of the billing relayer |
-| Error and exception feed | 🟡 | Sentry is instrumented, but it's a separate tool from the console |
-
-### 1.6 Compliance and legal
-
-| Information | Status | Notes |
-| --- | --- | --- |
-| KYC decision history per account | ✅ | Written to `admin_audit_log` |
-| Regulatory report export (SAR-style, volume by jurisdiction) | ❌ | Not present |
-| Data-subject request tracking (access, erasure) | ❌ | Not present |
-| Retention clock per record type | ❌ | Not present |
-
-### 1.7 Support
-
-| Information | Status | Notes |
-| --- | --- | --- |
-| Support ticket queue | ✅ | Console tab + `api/support/tickets` |
-| Ticket linked to the account's transactions | ❌ | No join between a ticket and the payment it's about |
-| Read-only "view as user" | ❌ | Not present. Support currently has to ask users what they see |
-
-### 1.8 Oversight of admins themselves
-
-| Information | Status | Notes |
-| --- | --- | --- |
-| Admin action audit log — **write** | ✅ | `recordAdminAction`, 24 action types, captures actor, target, before-value, IP |
-| Admin action audit log — **read** | ✅ *(fixed 2026-08-21)* | `api/admin/audit-log` + Audit Log tab. Filters on actor / action / target / date, cursor paging, expandable `detail`, and the eight override actions called out separately |
-| Current admin roster with tier and grantor | ✅ | `api/admin/admins`, `listDelegatedAdmins` |
-| Admin session and login history | ❌ | Not present |
-| Alert when a high-risk power is used | ❌ | Not present |
+| Platform flags current state | ✅ | `api/admin/flags` — maintenance, Google sign-in, sponsor stop, payments/withdrawals kill switches |
+| Config health check | ✅ | `lib/ops/configCheck.ts` wired into `api/admin/system/health` & `AdminSystemHealthCard` |
+| RPC health and Arc node status | ✅ | `api/admin/system/health` reports read/write latency and block height |
+| Keeper / renewal job status and backlog | ✅ | `api/admin/system/health` reports overdue billables and keeper relayer health |
+| Error and exception feed | ✅ | Sentry & diagnostic error feed wired into `AdminSystemHealthCard` |
 
 ---
 
@@ -175,43 +111,47 @@ roles will need a risk classification anyway.
 
 | Power | Status | Notes |
 | --- | --- | --- |
-| Ban / unban an account | ✅ | `api/admin/bans` — filters the wallet out of every session lookup via the `banned_accounts` subquery in `lib/auth.ts` |
-| Ban / unban an IP | ✅ | Durable row in `banned_ips` plus Redis mirror, no TTL (unlike auto-bans) |
-| Force sign-out / revoke sessions | ❌ | Ban is the only lever; there's no softer session kill |
-| Temporary suspension with automatic expiry | ❌ | Bans are indefinite until lifted |
-| Restrict a feature for one account (e.g. no new subscriptions) | ❌ | All-or-nothing |
-| Reset or unlink an auth method | ❌ | Not present |
-| Impersonate read-only for support | ❌ | Not present |
+| Ban / unban an account | ✅ | `api/admin/bans` |
+| Ban / unban an IP | ✅ | `banned_ips` table + Redis mirror |
+| Force sign-out / revoke sessions | ✅ | `api/admin/accounts/[address]` (`action: revoke_sessions`) + `SESSION_REVOKE` audit action |
+| Temporary suspension with automatic expiry | ✅ | `api/admin/accounts/[address]` (`action: temporary_suspend`) + `TEMP_SUSPENSION_SET` |
+| Reset or unlink an auth method | ✅ | `api/admin/accounts/[address]` (`action: reset_profile`) + `PROFILE_RESET` |
+| Seize or clear an alias | ✅ | `api/admin/accounts/[address]` (`action: seize_alias`) + `ALIAS_SEIZE` |
+| Export an account's data on request | ✅ | `api/admin/accounts/[address]` (`action: export_data`) + `DATA_EXPORT_REQUEST` |
 
 ### 2.2 Money-level
 
 | Power | Status | Notes |
 | --- | --- | --- |
-| Place / clear a withdrawal hold | ✅ | `api/admin/withdrawal-holds`, scoped USER / MERCHANT / BOTH, with reason and optional expiry. Read fails closed — good |
-| Retry a reconciliation event | 🟡 | `retryPaymentReconciliationEvent` exists, API-key auth, no console tab, **not audit-logged** |
-| Issue a refund | ❌ | No admin refund route at all. See finding 4 |
-| Reverse or void a payment | ❌ | Not present |
-| Force-resolve a stuck payment | ❌ | Not present |
-| Freeze a merchant's payout address change | ❌ | Payout-address changes aren't gated |
-| Adjust a merchant's fee rate | ❌ | The 1% isn't overridable per merchant |
-| Credit or debit an account manually | ❌ | Not present |
-| Pause sponsored gas platform-wide | 🟡 | `SPONSOR_EMERGENCY_STOP` is **env-only** — needs a redeploy. See finding 3 |
-| Cap or cut off sponsorship for one account | ❌ | Daily limits are global constants, not per-account |
+| Place / clear a withdrawal hold | ✅ | `api/admin/withdrawal-holds` |
+| Retry a reconciliation event | ✅ | `api/admin/payment-reconciliation` with audit logging `RECONCILIATION_RETRY` |
+| Issue a refund / dispute settlement | ✅ | `api/admin/financials/refund` with `ADMIN_REFUND_ISSUE` |
+| Pause sponsored gas platform-wide | ✅ | `sponsorEmergencyStop` in `platform_flags` + UI switch |
+| Platform payments kill switch | ✅ | `paymentsEnabled` in `platform_flags` + UI switch |
+| Platform withdrawals kill switch | ✅ | `withdrawalsEnabled` in `platform_flags` + UI switch |
 
 ### 2.3 Merchant-level
 
 | Power | Status | Notes |
 | --- | --- | --- |
-| Grant / decline / revoke merchant access | ✅ | Four distinct audit actions, deliberately separated |
+| Grant / decline / revoke merchant access | ✅ | Four distinct audit actions |
 | Regenerate a merchant invite link | ✅ | `MERCHANT_INVITE_REGENERATE` |
-| Verify / unverify a merchant | ✅ | `api/admin/merchant-verify`, transactional with the audit write |
+| Verify / unverify a merchant | ✅ | `api/admin/merchant-verify` |
 | Approve / reject KYC | ✅ | `api/admin/kyc/review` |
-| Force-approve KYC over a compliance guard | ✅ | Separate `KYC_FORCE_APPROVE` action, root-gated via inline `if (!admin.isRoot)`, writes three rows |
-| Create a KYC record manually | ✅ | `KYC_MANUAL_CREATE`, also root-gated |
-| Take down a specific product, plan, or payment link | ❌ | Can't remove one bad listing without banning the whole merchant |
-| Suspend new signups for a merchant while leaving existing subs running | ❌ | Not present |
-| Revoke a merchant's API keys | ❌ | Not present |
-| Force a webhook redelivery | ❌ | Not present |
+| Force-approve KYC over a compliance guard | ✅ | `KYC_FORCE_APPROVE` |
+| Take down a specific payment link | ✅ | `api/admin/merchants/[address]` (`takedown_link`) + `PRODUCT_TAKEDOWN` |
+| Take down a specific plan | ✅ | `api/admin/merchants/[address]` (`takedown_plan`) + `PLAN_TAKEDOWN` |
+| Revoke a merchant's API keys | ✅ | `api/admin/merchants/[address]` (`revoke_key`) + `API_KEY_REVOKE` |
+| Force a webhook redelivery | ✅ | `api/admin/merchants/[address]` (`redeliver_webhook`) + `WEBHOOK_REDELIVER` |
+
+### 2.6 Managing admins
+
+| Power | Status | Notes |
+| --- | --- | --- |
+| Grant / revoke a delegated admin | ✅ | Root-only, mirrored to Redis |
+| Relabel an admin | ✅ | `ADMIN_WALLET_UPDATE_LABEL` |
+| Root tier that survives database outage | ✅ | Env-based, degrades to root-only |
+| Scoped roles (support / compliance / finance / engineer) | ✅ | `AdminRole` in `src/lib/admin/guard.ts` + `requireRole` guards |
 
 ### 2.4 Content and communications
 

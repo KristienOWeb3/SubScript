@@ -13,6 +13,7 @@ import {
     RefreshCw,
     ShieldAlert,
 } from "@/components/icons";
+import { SkeletonRows } from "@/components/ui/skeletons";
 
 /* Shape of a single row as served by GET /api/admin/audit-log. */
 export interface AuditLogRow {
@@ -382,9 +383,8 @@ export function AdminAuditLogView({ viewerWallet }: AdminAuditLogViewProps) {
                         </button>
                     </div>
                 ) : loading && rows.length === 0 ? (
-                    <div className="flex flex-col items-center gap-2 px-6 py-16 text-slate-400">
-                        <Loader2 className="h-5 w-5 animate-spin text-[#2775ca]" />
-                        <span className="text-xs font-semibold">Loading the log…</span>
+                    <div className="p-4">
+                        <SkeletonRows count={8} avatar={false} lines={2} label="Loading audit log entries..." />
                     </div>
                 ) : visibleRows.length === 0 ? (
                     <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">

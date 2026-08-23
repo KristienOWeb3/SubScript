@@ -4,6 +4,8 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
+import { getPlatformMasterViewingKey } from "@/lib/arc/memo";
+
 export async function GET(request: Request) {
     try {
         const walletAddress = await getSessionWallet(request.headers);
@@ -28,16 +30,20 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Database error" }, { status: 500 });
         }
 
+        const hasPlatformKey = !!getPlatformMasterViewingKey();
+
         if (!merchant) {
             return NextResponse.json({
                 shielded_payouts_enabled: false,
-                view_key_hash: null
+                view_key_hash: null,
+                platform_auditor_key_configured: hasPlatformKey,
             }, { status: 200 });
         }
 
         return NextResponse.json({
             shielded_payouts_enabled: !!merchant.shielded_payouts_enabled,
-            view_key_hash: merchant.view_key_hash
+            view_key_hash: merchant.view_key_hash,
+            platform_auditor_key_configured: hasPlatformKey,
         }, { status: 200 });
 
     } catch (err: any) {

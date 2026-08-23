@@ -17,6 +17,7 @@ import {
     Clock,
     X,
 } from "@/components/icons";
+import { SkeletonRows, SkeletonCard } from "@/components/ui/skeletons";
 import type { SupportTicket, SupportTicketMessage, SupportTicketStatus } from "@/lib/support/tickets";
 
 interface AdminSupportTicketsViewProps {
@@ -238,9 +239,8 @@ export function AdminSupportTicketsView({
                 <div className="lg:col-span-5 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm flex flex-col justify-between max-h-[640px] overflow-hidden">
                     <div className="overflow-y-auto space-y-2 pr-1 flex-1">
                         {loading && tickets.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center h-48 text-slate-400 gap-2">
-                                <Loader2 className="h-5 w-5 animate-spin text-[#2775ca]" />
-                                <span className="text-xs">Loading ticket queue…</span>
+                            <div className="p-2">
+                                <SkeletonRows count={4} avatar={false} lines={2} label="Loading support ticket queue..." />
                             </div>
                         ) : filteredTickets.length === 0 ? (
                             <div className="flex flex-col items-center justify-center h-48 text-slate-400 gap-2 text-center p-4">
@@ -358,8 +358,8 @@ export function AdminSupportTicketsView({
                             {/* Messages Container */}
                             <div className="flex-1 overflow-y-auto space-y-3.5 my-3 pr-1">
                                 {loadingMessages ? (
-                                    <div className="flex items-center justify-center h-48 text-slate-400">
-                                        <Loader2 className="h-5 w-5 animate-spin text-[#2775ca]" />
+                                    <div className="p-3">
+                                        <SkeletonRows count={3} avatar={true} lines={2} label="Loading conversation thread..." />
                                     </div>
                                 ) : (
                                     (selectedTicket.messages || []).map((msg) => {

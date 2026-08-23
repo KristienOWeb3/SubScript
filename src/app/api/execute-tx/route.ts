@@ -17,6 +17,7 @@ import { assertProviderRateLimit, ProviderRateLimitError } from "@/lib/providerR
 import { createDmAndNotify } from "@/lib/dms/notifications";
 import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
 import { assertAccountNotHalted, AccountHaltError } from "@/lib/accountHalt";
+import { bindTxToReceipt } from "@/lib/receipts/binding";
 
 /* Custody execution waits for on-chain confirmation (required for Circle SCA wallets,
    whose tx hash only exists once confirmed), so give the route enough headroom. */
@@ -562,6 +563,33 @@ export async function POST(request: Request) {
             });
             console.log(`[execute-tx] executed ${functionName} via ${custody.kind} custody: ${txHash}`);
 
+            let boundReceiptId: string | undefined;
+            try {
+                if (action === "transferUsdc" && args.to && args.amount) {
+                    const bound = await bindTxToReceipt(supabase, {
+                        txHash,
+                        payerAddress: wallet,
+                        merchantAddress: String(args.to),
+                        amountUsdc: args.amount,
+                        title: "USDC Transfer",
+                        isShielded: body.isShielded || false,
+                    });
+                    boundReceiptId = bound.receiptId;
+                } else if (action === "createPremiumSubscription" && args.merchant) {
+                    const bound = await bindTxToReceipt(supabase, {
+                        txHash,
+                        payerAddress: wallet,
+                        merchantAddress: String(args.merchant),
+                        amountUsdc: PREMIUM_PRICE,
+                        title: "Premium Pro Merchant Subscription",
+                        isShielded: body.isShielded || false,
+                    });
+                    boundReceiptId = bound.receiptId;
+                }
+            } catch (bindingErr) {
+                console.error(`[execute-tx] Non-fatal receipt binding error for tx ${txHash}:`, bindingErr);
+            }
+
             if (action === "withdraw") {
                 console.log(`[Withdrawal Executed] session: ${wallet}, txHash: ${txHash}, requestId: ${requestId}`);
                 await createDmAndNotify({
@@ -575,7 +603,7 @@ export async function POST(request: Request) {
                 }).catch((err) => console.error("Failed to record withdrawal DM:", err));
             }
 
-            return NextResponse.json({ success: true, txHash }, { status: 200 });
+            return NextResponse.json({ success: true, txHash, receiptId: boundReceiptId }, { status: 200 });
 
         } catch (err: any) {
             console.error("EVM execution error:", err);

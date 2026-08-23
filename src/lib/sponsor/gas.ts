@@ -11,6 +11,7 @@
  */
 import { ethers } from "ethers";
 import { executeWithRpcFallback, getRpcProviderForWrite } from "@/lib/payments/rpc";
+import { getPlatformFlags } from "@/lib/platform/flags";
 
 const SPONSOR_REUSE_WINDOW_MS = 30_000;
 const TOPUP_RECEIPT_ATTEMPTS = 15;
@@ -48,7 +49,8 @@ export type SponsorWalletStatus = {
  * the whole overview.
  */
 export async function getSponsorWalletStatus(): Promise<SponsorWalletStatus> {
-    const emergencyStop = process.env.SPONSOR_EMERGENCY_STOP === "true";
+    const flags = await getPlatformFlags().catch(() => null);
+    const emergencyStop = flags?.sponsorEmergencyStop ?? (process.env.SPONSOR_EMERGENCY_STOP === "true");
     const topupUsdc = process.env.SPONSOR_GAS_TOPUP_USDC || "0.10";
     const key = process.env.SPONSOR_PRIVATE_KEY;
 

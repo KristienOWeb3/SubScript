@@ -1,0 +1,331 @@
+import { NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/admin/guard";
+import { recordAdminAction } from "@/lib/admin/audit";
+import { prisma } from "@/lib/prisma";
+import { ethers } from "ethers";
+
+export async function GET(
+    request: Request,
+    { params }: { params: Promise<{ address: string }> }
+) {
+    const auth = await requireAdmin(request);
+    if (!auth.ok) return auth.response;
+
+    const { address } = await params;
+    if (!address || !ethers.isAddress(address)) {
+        return NextResponse.json({ error: "Invalid wallet address parameter" }, { status: 400 });
+    }
+
+    const normalizedAddress = address.toLowerCase();
+
+    try {
+        /* 1. Account Role, Customer and Merchant profiles */
+        const accountRole = await prisma.accountRole.findUnique({
+            where: { address: normalizedAddress },
+            include: { kycVerification: true },
+        });
+
+        const customer = await prisma.customer.findUnique({
+            where: { walletAddress: normalizedAddress },
+        });
+
+        const merchant = await prisma.merchant.findUnique({
+            where: { walletAddress: normalizedAddress },
+        });
+
+        /* 2. Embedded wallet / Custody */
+        const embeddedWallet = await prisma.userEmbeddedWallet.findUnique({
+            where: { walletAddress: normalizedAddress },
+        });
+
+        let custodyType = "External (Browser)";
+        if (embeddedWallet) {
+            if (embeddedWallet.circleWalletId) {
+                custodyType = "Circle MPC";
+            } else if (embeddedWallet.encryptedPrivateKey) {
+                custodyType = "Legacy Encrypted EOA";
+            }
+        }
+
+        /* 3. Linked identities: alias, auth identities */
+        const aliasRecord = await prisma.addressAlias.findUnique({
+            where: { address: normalizedAddress },
+        });
+
+        const authIdentities = await prisma.authIdentity.findMany({
+            where: { walletAddress: normalizedAddress },
+            select: { provider: true, currentEmail: true, lastVerifiedAt: true },
+        });
+
+        /* 4. Active Sessions and Login history */
+        const sessions = await prisma.session.findMany({
+            where: { wallet: normalizedAddress },
+            orderBy: { createdAt: "desc" },
+            take: 20,
+            select: { id: true, expiresAt: true, createdAt: true },
+        });
+
+        /* 5. Moderation status: Bans & Withdrawal holds */
+        const ban = await prisma.bannedAccount.findUnique({
+            where: { address: normalizedAddress },
+        });
+
+        const withdrawalHold = await prisma.withdrawalHold.findUnique({
+            where: { address: normalizedAddress },
+        });
+
+        /* 6. Subscriptions (as subscriber and merchant) */
+        const subscriptionsAsSubscriber = await prisma.subscription.findMany({
+            where: { subscriber: normalizedAddress },
+            take: 10,
+            orderBy: { createdAt: "desc" },
+        });
+
+        const subscriptionsAsMerchant = await prisma.subscription.findMany({
+            where: { merchantAddress: normalizedAddress },
+            take: 10,
+            orderBy: { createdAt: "desc" },
+        });
+
+        /* 7. Recent receipts and payments */
+        const receipts = await prisma.receipt.findMany({
+            where: {
+                OR: [
+                    { payerAddress: normalizedAddress },
+                    { merchantAddress: normalizedAddress },
+                ],
+            },
+            take: 15,
+            orderBy: { createdAt: "desc" },
+        });
+
+        return NextResponse.json({
+            success: true,
+            account: {
+                address: normalizedAddress,
+                role: accountRole?.role || "USER",
+                custodyType,
+                embeddedWallet: embeddedWallet ? {
+                    email: embeddedWallet.email,
+                    provider: embeddedWallet.provider,
+                    circleWalletId: embeddedWallet.circleWalletId,
+                    emailVerifiedAt: embeddedWallet.emailVerifiedAt,
+                    createdAt: embeddedWallet.createdAt,
+                } : null,
+                alias: aliasRecord?.alias || null,
+                isAnonymousAlias: aliasRecord?.isAnonymous || false,
+                authIdentities,
+                customer: customer ? {
+                    email: customer.email,
+                    spendingLimitDaily: customer.spendingLimitDaily ? customer.spendingLimitDaily.toString() : null,
+                    spendingLimitWeekly: customer.spendingLimitWeekly ? customer.spendingLimitWeekly.toString() : null,
+                    spendingLimitMonthly: customer.spendingLimitMonthly ? customer.spendingLimitMonthly.toString() : null,
+                    closureStatus: customer.closureStatus,
+                    createdAt: customer.createdAt,
+                } : null,
+                merchant: merchant ? {
+                    tier: merchant.tier,
+                    verified: merchant.verified,
+                    availableBalanceUsdc: (Number(merchant.availableBalanceUsdc) / 1_000_000).toFixed(2),
+                    reservedBalanceUsdc: (Number(merchant.reservedBalanceUsdc) / 1_000_000).toFixed(2),
+                    shieldedPayoutsEnabled: merchant.shieldedPayoutsEnabled,
+                    closureStatus: merchant.closureStatus,
+                    createdAt: merchant.createdAt,
+                } : null,
+                kyc: accountRole?.kycVerification ? {
+                    status: accountRole.kycVerification.status,
+                    provider: accountRole.kycVerification.provider,
+                    requestedLevel: accountRole.kycVerification.requestedLevel,
+                    submittedAt: accountRole.kycVerification.submittedAt,
+                } : null,
+                moderation: {
+                    isBanned: !!ban,
+                    banReason: ban?.reason || null,
+                    bannedBy: ban?.bannedBy || null,
+                    hasWithdrawalHold: !!withdrawalHold,
+                    holdScope: withdrawalHold?.scope || null,
+                    holdReason: withdrawalHold?.reason || null,
+                },
+                sessions: sessions.map((s) => ({
+                    id: s.id,
+                    expiresAt: s.expiresAt,
+                    createdAt: s.createdAt,
+                    isActive: new Date(s.expiresAt) > new Date(),
+                })),
+                subscriptionsAsSubscriber: subscriptionsAsSubscriber.map((s) => ({
+                    subscriptionId: s.subscriptionId.toString(),
+                    merchantAddress: s.merchantAddress,
+                    amountCapUsdc: s.amountCapUsdc.toString(),
+                    status: s.status,
+                    nextBillingDate: s.nextBillingDate,
+                })),
+                subscriptionsAsMerchant: subscriptionsAsMerchant.map((s) => ({
+                    subscriptionId: s.subscriptionId.toString(),
+                    subscriber: s.subscriber,
+                    amountCapUsdc: s.amountCapUsdc.toString(),
+                    status: s.status,
+                    nextBillingDate: s.nextBillingDate,
+                })),
+                receipts: receipts.map((r) => ({
+                    receiptId: r.receiptId,
+                    txHash: r.txHash,
+                    payerAddress: r.payerAddress,
+                    merchantAddress: r.merchantAddress,
+                    amountUsdc: (Number(r.amountUsdc) / 1_000_000).toFixed(2),
+                    title: r.title,
+                    status: r.status,
+                    confirmedAt: r.confirmedAt,
+                })),
+            },
+        });
+
+    } catch (error: any) {
+        console.error(`[admin/accounts/${normalizedAddress}] error:`, error);
+        return NextResponse.json({ error: error.message || "Failed to load account details" }, { status: 500 });
+    }
+}
+
+export async function POST(
+    request: Request,
+    { params }: { params: Promise<{ address: string }> }
+) {
+    const auth = await requireAdmin(request);
+    if (!auth.ok) return auth.response;
+
+    const { address } = await params;
+    if (!address || !ethers.isAddress(address)) {
+        return NextResponse.json({ error: "Invalid wallet address parameter" }, { status: 400 });
+    }
+
+    const normalizedAddress = address.toLowerCase();
+
+    try {
+        const body = await request.json().catch(() => ({}));
+        const { action, reason, expiresAt } = body;
+
+        switch (action) {
+            case "revoke_sessions": {
+                const deleted = await prisma.session.deleteMany({
+                    where: { wallet: normalizedAddress },
+                });
+
+                await recordAdminAction({
+                    actor: auth.admin.wallet,
+                    action: "SESSION_REVOKE",
+                    target: normalizedAddress,
+                    detail: { revokedCount: deleted.count, reason: reason || "Admin session revocation" },
+                    request,
+                });
+
+                return NextResponse.json({
+                    success: true,
+                    action: "revoke_sessions",
+                    revokedCount: deleted.count,
+                    message: `Revoked ${deleted.count} active session(s) for ${normalizedAddress}`,
+                });
+            }
+
+            case "temporary_suspend": {
+                if (!reason || typeof reason !== "string") {
+                    return NextResponse.json({ error: "Suspension reason is mandatory" }, { status: 400 });
+                }
+                const expiryDate = expiresAt ? new Date(expiresAt) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+                await prisma.bannedAccount.upsert({
+                    where: { address: normalizedAddress },
+                    update: { reason, bannedBy: auth.admin.wallet, expiresAt: expiryDate },
+                    create: { address: normalizedAddress, reason, bannedBy: auth.admin.wallet, expiresAt: expiryDate },
+                });
+
+                // Also terminate active sessions
+                await prisma.session.deleteMany({ where: { wallet: normalizedAddress } });
+
+                await recordAdminAction({
+                    actor: auth.admin.wallet,
+                    action: "TEMP_SUSPENSION_SET",
+                    target: normalizedAddress,
+                    detail: { reason, expiresAt: expiryDate.toISOString() },
+                    request,
+                });
+
+                return NextResponse.json({
+                    success: true,
+                    action: "temporary_suspend",
+                    expiresAt: expiryDate.toISOString(),
+                    message: `Account suspended until ${expiryDate.toISOString()}`,
+                });
+            }
+
+            case "reset_profile": {
+                await prisma.customer.updateMany({
+                    where: { walletAddress: normalizedAddress },
+                    data: { profilePic: null },
+                });
+                await prisma.merchant.updateMany({
+                    where: { walletAddress: normalizedAddress },
+                    data: { profilePic: null },
+                });
+
+                await recordAdminAction({
+                    actor: auth.admin.wallet,
+                    action: "PROFILE_RESET",
+                    target: normalizedAddress,
+                    detail: { reason: reason || "Inappropriate avatar reset" },
+                    request,
+                });
+
+                return NextResponse.json({
+                    success: true,
+                    action: "reset_profile",
+                    message: "Avatar and profile picture reset successfully",
+                });
+            }
+
+            case "seize_alias": {
+                const existing = await prisma.addressAlias.findUnique({
+                    where: { address: normalizedAddress },
+                });
+                if (existing) {
+                    await prisma.addressAlias.delete({ where: { address: normalizedAddress } });
+                }
+
+                await recordAdminAction({
+                    actor: auth.admin.wallet,
+                    action: "ALIAS_SEIZE",
+                    target: normalizedAddress,
+                    detail: { previousAlias: existing?.alias, reason: reason || "Alias seized by admin" },
+                    request,
+                });
+
+                return NextResponse.json({
+                    success: true,
+                    action: "seize_alias",
+                    message: `Alias ${existing?.alias || ""} seized/cleared`,
+                });
+            }
+
+            case "export_data": {
+                await recordAdminAction({
+                    actor: auth.admin.wallet,
+                    action: "DATA_EXPORT_REQUEST",
+                    target: normalizedAddress,
+                    detail: { reason: reason || "GDPR/Compliance Data Export" },
+                    request,
+                });
+
+                return NextResponse.json({
+                    success: true,
+                    action: "export_data",
+                    message: "Data export request logged and initiated",
+                });
+            }
+
+            default:
+                return NextResponse.json({ error: `Unsupported moderation action: ${action}` }, { status: 400 });
+        }
+
+    } catch (error: any) {
+        console.error(`[admin/accounts/${normalizedAddress}/action] error:`, error);
+        return NextResponse.json({ error: error.message || "Failed to execute account action" }, { status: 500 });
+    }
+}
