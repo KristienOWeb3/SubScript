@@ -17,12 +17,23 @@ import {
   TrendingUp,
   ArrowUpRight,
   User,
-  ArrowDownToLine
-} from "lucide-react";
-import AnimatedGradientBg from "@/components/DashboardSkeleton";
+  ArrowDownToLine,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  RefreshCw,
+  Eye,
+  EyeOff,
+  Activity,
+  Calendar,
+  X,
+  FileText,
+  Share2
+} from "@/components/icons";
 import FinancialStatusBadge from "@/components/FinancialStatusBadge";
-import { humanStatus, humanSubscriptionStatus } from "@/lib/transactionLabels";
+import { humanStatus, humanSubscriptionStatus, normalizeReceiptStatus } from "@/lib/transactionLabels";
 import { isOptimisticTxId, readOptimisticTxs, reconcileOptimisticTxs, type OptimisticTx } from "@/lib/optimisticTx";
+import { useTheme } from "@/hooks/useTheme";
 
 interface Subscription {
   subscriptionId: string;
@@ -59,18 +70,40 @@ interface DmMessage {
   createdAt: string;
 }
 
+interface SettingsReceipt {
+  receiptId: string;
+  txHash: string | null;
+  chainId: number | null;
+  payerAddress: string;
+  merchantAddress: string;
+  amountUsdc: string;
+  status: string;
+  createdAt: string;
+  memoNote: string | null;
+  direction: "sent" | "received";
+  counterpartyName: string | null;
+}
+
+function formatAddress(addr?: string | null) {
+  if (!addr) return "";
+  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+}
+
 export default function UserTransactionsPage() {
   const router = useRouter();
+  const { theme } = useTheme();
+  
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [dms, setDms] = useState<DmMessage[]>([]);
+  const [receipts, setReceipts] = useState<SettingsReceipt[]>([]);
   const [optimisticTxs, setOptimisticTxs] = useState<OptimisticTx[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [filter, setFilter] = useState<"all" | "recurring" | "one-time" | "transfers" | "withdrawals">("all");
-  /* Date range. "custom" reveals the two date inputs; the presets are relative to now so they
-     stay correct without a re-render. */
-  const [dateRange, setDateRange] = useState<"all" | "7d" | "30d" | "90d" | "custom">("all");
+  const [categoryFilter, setCategoryFilter] = useState<"all" | "recurring" | "one-time" | "transfers" | "withdrawals" | "sent" | "received">("all");
+  
+  /* Date range filter */
+  const [dateRange, setDateRange] = useState<"all" | "today" | "7d" | "30d" | "90d" | "custom">("all");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -149,21 +182,26 @@ export default function UserTransactionsPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [subRes, dmRes, sessionRes] = await Promise.all([
+      const [subRes, dmRes, sessionRes, settingsRes] = await Promise.all([
         fetch("/api/user/subscriptions"),
         fetch("/api/user/dms"),
         fetch("/api/auth/session"),
-        new Promise<void>((resolve) => window.setTimeout(resolve, 350))
+        fetch("/api/user/settings").catch(() => null),
+        new Promise<void>((resolve) => window.setTimeout(resolve, 300))
       ]);
       const subData = await subRes.json().catch(() => ({}));
       const dmData = await dmRes.json().catch(() => ({}));
       const sessionData = await sessionRes.json().catch(() => ({}));
+      const settingsData = settingsRes ? await settingsRes.json().catch(() => ({})) : {};
 
       if (!subRes.ok || !dmRes.ok || !sessionRes.ok) throw new Error("Transaction history is temporarily unavailable.");
 
       if (subData.success) setSubscriptions(subData.subscriptions);
       if (dmData.success) setDms(dmData.dms);
       if (sessionData.loggedIn && sessionData.wallet) setUserWallet(sessionData.wallet);
+      if (settingsData.success && Array.isArray(settingsData.receipts)) {
+        setReceipts(settingsData.receipts);
+      }
 
       const serverHashes: Array<string | null | undefined> = (dmData.success ? dmData.dms : []).map(
         (m: DmMessage) => m.txHash
@@ -207,7 +245,6 @@ export default function UserTransactionsPage() {
     return "year";
   };
 
-  /* Accurately normalize subscription amounts to monthly (/mo) rates */
   const getMonthlyRateUsdc = (amountCapUsdc: string, secondsStr: string) => {
     const rawUsd = Number(amountCapUsdc) / 1_000_000;
     const sec = Math.max(1, Number(secondsStr));
@@ -221,7 +258,96 @@ export default function UserTransactionsPage() {
     return sum + getMonthlyRateUsdc(s.amountCapUsdc, s.billingIntervalSeconds);
   }, 0);
 
+  // Map receipts by txHash for fast link resolution
+  const receiptByHash = new Map<string, SettingsReceipt>();
+  receipts.forEach((r) => {
+    if (r.txHash) receiptByHash.set(r.txHash.toLowerCase(), r);
+  });
+
+  // Map receipts by receiptId for direct resolution
+  const receiptById = new Map<string, SettingsReceipt>();
+  receipts.forEach((r) => {
+    if (r.receiptId) receiptById.set(r.receiptId, r);
+  });
+
+  // Track txHashes covered by DMs or optimistic txs to avoid duplicate rows
+  const mappedTxHashes = new Set<string>();
+
   // Build unified transactions array
+  const dmMappedTransactions = dms
+    .filter((m) => m.amountUsdc && (
+      ["DEBIT_SUCCESS", "PAYMENT", "PEER_PAYMENT", "PAYMENT_SUCCESS", "PEER_TRANSFER", "WITHDRAWAL"].includes(m.messageType) || 
+      m.status === "PAID"
+    ))
+    .map((m) => {
+      if (m.txHash) mappedTxHashes.add(m.txHash.toLowerCase());
+      const isWithdrawal = m.messageType === "WITHDRAWAL" || m.messageType === "WITHDRAW";
+      const isPeerTransfer = m.messageType === "PEER_TRANSFER" || m.messageType === "PEER_PAYMENT";
+      const isSettlementReceipt = m.messageType === "DEBIT_SUCCESS" || m.messageType === "PAYMENT_SUCCESS";
+      const incoming = isSettlementReceipt
+        ? false
+        : m.receiverAddress.toLowerCase() === userWallet?.toLowerCase() && !isWithdrawal;
+      const sign = incoming ? "+" : "-";
+      const counterpartyIsSender = isSettlementReceipt || incoming;
+
+      let kind: "one-time" | "transfers" | "withdrawals" = "one-time";
+      if (isWithdrawal) kind = "withdrawals";
+      else if (isPeerTransfer) kind = "transfers";
+
+      const isConfirmed = Boolean(m.txHash) || m.status === "PAID" || m.status === "CONFIRMED" || m.messageType === "PAYMENT_SUCCESS" || m.messageType === "DEBIT_SUCCESS";
+      const computedStatus = isConfirmed ? "CONFIRMED" : (m.status || "PENDING");
+
+      // Match receiptId if available
+      const matchingReceipt = m.txHash ? receiptByHash.get(m.txHash.toLowerCase()) : null;
+      const receiptId = matchingReceipt?.receiptId || null;
+
+      return {
+        id: `dm-${m.id}`,
+        kind,
+        name: isWithdrawal
+          ? "Sent from balance to wallet"
+          : counterpartyIsSender
+          ? (m.senderName || "Merchant")
+          : (m.receiverName || "Recipient"),
+        pic: counterpartyIsSender ? m.senderProfilePic : m.receiverProfilePic,
+        detail: isWithdrawal
+          ? "SubScript Balance Withdrawal"
+          : m.title || m.description || humanStatus(m.messageType),
+        amountUsdc: m.amountUsdc,
+        amountLabel: `${sign}$${formatUsdc(m.amountUsdc)}`,
+        localAmountLabel: `${sign}${getLocalValueLabel(m.amountUsdc)}`,
+        time: new Date(m.createdAt).getTime(),
+        incoming,
+        status: computedStatus,
+        txHash: m.txHash,
+        receiptId,
+      };
+    });
+
+  // Map additional standalone receipts from /api/user/settings not captured in DMs
+  const standaloneReceiptTransactions = receipts
+    .filter((r) => !r.txHash || !mappedTxHashes.has(r.txHash.toLowerCase()))
+    .map((r) => {
+      const incoming = r.direction === "received";
+      const sign = incoming ? "+" : "-";
+      const isConfirmed = normalizeReceiptStatus(r.status) === "CONFIRMED";
+      return {
+        id: `rcpt-${r.receiptId}`,
+        kind: "one-time" as const,
+        name: r.counterpartyName || formatAddress(incoming ? r.payerAddress : r.merchantAddress) || "SubScript Transaction",
+        pic: null as string | null,
+        detail: r.memoNote || (incoming ? "Received Payment" : "Payment Sent"),
+        amountUsdc: r.amountUsdc,
+        amountLabel: `${sign}$${formatUsdc(r.amountUsdc)}`,
+        localAmountLabel: `${sign}${getLocalValueLabel(r.amountUsdc)}`,
+        time: new Date(r.createdAt).getTime(),
+        incoming,
+        status: isConfirmed ? "CONFIRMED" : normalizeReceiptStatus(r.status),
+        txHash: r.txHash,
+        receiptId: r.receiptId,
+      };
+    });
+
   const allTransactions = [
     ...optimisticTxs.map((tx) => ({
       id: tx.id,
@@ -236,6 +362,7 @@ export default function UserTransactionsPage() {
       incoming: false,
       status: "PENDING",
       txHash: tx.txHash,
+      receiptId: null as string | null,
     })),
     ...subscriptions.map((s) => ({
       id: `sub-${s.subscriptionId}`,
@@ -250,77 +377,30 @@ export default function UserTransactionsPage() {
       incoming: false,
       status: s.status === "ACTIVE" ? "ACTIVE" : s.status,
       txHash: null as string | null,
+      receiptId: null as string | null,
     })),
-    ...dms
-      .filter((m) => m.amountUsdc && (
-        ["DEBIT_SUCCESS", "PAYMENT", "PEER_PAYMENT", "PAYMENT_SUCCESS", "PEER_TRANSFER", "WITHDRAWAL"].includes(m.messageType) || 
-        m.status === "PAID"
-      ))
-      .map((m) => {
-        const isWithdrawal = m.messageType === "WITHDRAWAL" || m.messageType === "WITHDRAW";
-        const isPeerTransfer = m.messageType === "PEER_TRANSFER" || m.messageType === "PEER_PAYMENT";
-        /* A receipt is not a payment TO you.
-         *
-         * DEBIT_SUCCESS / PAYMENT_SUCCESS are receipts the MERCHANT sends the payer after a
-         * checkout settles (see paymentLinkVerificationWorker: sender_address = merchant,
-         * receiver_address = payer). Reading direction off the DM envelope therefore made the
-         * viewer the receiver and rendered a payment they had just MADE as an incoming +$1.00
-         * credit, with the counterparty resolved to the wrong side of the row.
-         *
-         * These types are always money leaving the viewer, and the counterparty is always the DM
-         * sender — the merchant. Peer transfers keep envelope-based direction, because there the
-         * envelope genuinely encodes who paid whom. */
-        const isSettlementReceipt = m.messageType === "DEBIT_SUCCESS" || m.messageType === "PAYMENT_SUCCESS";
-        const incoming = isSettlementReceipt
-          ? false
-          : m.receiverAddress.toLowerCase() === userWallet?.toLowerCase() && !isWithdrawal;
-        const sign = incoming ? "+" : "-";
-        /* Whose name belongs on the row: the other party. For a receipt that is the sender even
-           though the viewer is also the receiver, which the incoming flag alone can't express. */
-        const counterpartyIsSender = isSettlementReceipt || incoming;
-
-        let kind: "one-time" | "transfers" | "withdrawals" = "one-time";
-        if (isWithdrawal) kind = "withdrawals";
-        else if (isPeerTransfer) kind = "transfers";
-
-        const isConfirmed = Boolean(m.txHash) || m.status === "PAID" || m.status === "CONFIRMED" || m.messageType === "PAYMENT_SUCCESS" || m.messageType === "DEBIT_SUCCESS";
-        const computedStatus = isConfirmed ? "CONFIRMED" : (m.status || "PENDING");
-
-        return {
-          id: `dm-${m.id}`,
-          kind,
-          name: isWithdrawal
-            ? "Sent from balance to wallet"
-            : counterpartyIsSender
-            ? (m.senderName || "Merchant")
-            : (m.receiverName || "Recipient"),
-          pic: counterpartyIsSender ? m.senderProfilePic : m.receiverProfilePic,
-          detail: isWithdrawal
-            ? "SubScript Balance Withdrawal"
-            : m.title || m.description || humanStatus(m.messageType),
-          amountUsdc: m.amountUsdc,
-          amountLabel: `${sign}$${formatUsdc(m.amountUsdc)}`,
-          localAmountLabel: `${sign}${getLocalValueLabel(m.amountUsdc)}`,
-          time: new Date(m.createdAt).getTime(),
-          incoming,
-          status: computedStatus,
-          txHash: m.txHash,
-        };
-      })
+    ...dmMappedTransactions,
+    ...standaloneReceiptTransactions,
   ].sort((a, b) => b.time - a.time);
 
-  /* Statuses actually present in the data, so the dropdown never offers a filter that
-     matches nothing. Sorted for a stable order across reloads. */
+  // Compute 30-day settled spend total
+  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const thirtyDaySpendUsdc = allTransactions
+    .filter((tx) => !tx.incoming && tx.status !== "FAILED" && tx.time >= thirtyDaysAgo)
+    .reduce((sum, tx) => sum + (Number(tx.amountUsdc || "0") / 1_000_000), 0);
+
   const availableStatuses = Array.from(new Set(allTransactions.map((tx) => tx.status).filter(Boolean))).sort();
 
-  /* Inclusive [start, end] bounds in epoch ms, or null for an open end. Custom dates come from
-     <input type="date"> as YYYY-MM-DD in local time; the end is pushed to 23:59:59.999 so
-     picking the same day for both bounds still matches that whole day. */
   const dateBounds = (() => {
     if (dateRange === "custom") {
       const start = customFrom ? new Date(`${customFrom}T00:00:00`).getTime() : null;
       const end = customTo ? new Date(`${customTo}T23:59:59.999`).getTime() : null;
       return { start: Number.isNaN(start as number) ? null : start, end: Number.isNaN(end as number) ? null : end };
+    }
+    if (dateRange === "today") {
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      return { start: todayStart.getTime(), end: null };
     }
     const days = dateRange === "7d" ? 7 : dateRange === "30d" ? 30 : dateRange === "90d" ? 90 : null;
     if (days === null) return { start: null, end: null };
@@ -328,10 +408,13 @@ export default function UserTransactionsPage() {
   })();
 
   const activeFilterCount =
-    (dateRange !== "all" ? 1 : 0) + (statusFilter !== "all" ? 1 : 0) + (filter !== "all" ? 1 : 0);
+    (dateRange !== "all" ? 1 : 0) + 
+    (statusFilter !== "all" ? 1 : 0) + 
+    (categoryFilter !== "all" ? 1 : 0) +
+    (searchQuery.trim() ? 1 : 0);
 
   const resetFilters = () => {
-    setFilter("all");
+    setCategoryFilter("all");
     setDateRange("all");
     setCustomFrom("");
     setCustomTo("");
@@ -340,10 +423,12 @@ export default function UserTransactionsPage() {
   };
 
   const filteredTransactions = allTransactions.filter((tx) => {
-    if (filter === "recurring" && tx.kind !== "recurring") return false;
-    if (filter === "one-time" && tx.kind !== "one-time") return false;
-    if (filter === "transfers" && tx.kind !== "transfers") return false;
-    if (filter === "withdrawals" && tx.kind !== "withdrawals") return false;
+    if (categoryFilter === "recurring" && tx.kind !== "recurring") return false;
+    if (categoryFilter === "one-time" && tx.kind !== "one-time") return false;
+    if (categoryFilter === "transfers" && tx.kind !== "transfers") return false;
+    if (categoryFilter === "withdrawals" && tx.kind !== "withdrawals") return false;
+    if (categoryFilter === "sent" && tx.incoming) return false;
+    if (categoryFilter === "received" && !tx.incoming) return false;
 
     if (statusFilter !== "all" && tx.status !== statusFilter) return false;
 
@@ -354,7 +439,9 @@ export default function UserTransactionsPage() {
       const q = searchQuery.toLowerCase();
       return (
         tx.name.toLowerCase().includes(q) ||
-        tx.detail.toLowerCase().includes(q)
+        tx.detail.toLowerCase().includes(q) ||
+        (tx.receiptId && tx.receiptId.toLowerCase().includes(q)) ||
+        (tx.txHash && tx.txHash.toLowerCase().includes(q))
       );
     }
     return true;
@@ -363,9 +450,9 @@ export default function UserTransactionsPage() {
   // Reset pagination when search/filters change
   useEffect(() => {
     setDisplayLimit(30);
-  }, [filter, dateRange, customFrom, customTo, statusFilter, searchQuery]);
+  }, [categoryFilter, dateRange, customFrom, customTo, statusFilter, searchQuery]);
 
-  // Infinite scroll observer for 30-item progressive skeleton loading
+  // Infinite scroll observer for 30-item progressive scroll loading
   useEffect(() => {
     const target = observerTargetRef.current;
     if (!target) return;
@@ -377,7 +464,7 @@ export default function UserTransactionsPage() {
           setTimeout(() => {
             setDisplayLimit((prev) => prev + 30);
             setLoadingMore(false);
-          }, 350);
+          }, 300);
         }
       },
       { threshold: 0.1, rootMargin: "150px" }
@@ -390,133 +477,148 @@ export default function UserTransactionsPage() {
   const visibleTransactions = filteredTransactions.slice(0, displayLimit);
 
   return (
-    <div className="relative min-h-screen bg-[#060608] text-white selection:bg-[#ccff00]/30 selection:text-white border-t-4 border-[#ccff00] font-sans">
-      <div className="relative z-10 max-w-4xl mx-auto px-4 py-8 sm:px-6">
+    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#090a0f] dark:text-white font-sans transition-colors duration-200">
+      <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8 space-y-6">
         
-        {/* Navigation & Header */}
-        <div className="flex items-center justify-between mb-8">
-          <Link
-            href="/dashboard/user"
-            className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-white/50 hover:text-[#ccff00] transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" /> Back to Dashboard
-          </Link>
-          <div className="text-right">
-            <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00] border border-[#ccff00]/20">
-              {detectedCurrency.code} Mode
+        {/* Top Header Navigation */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-black/10 dark:border-white/10">
+          <div className="flex items-center gap-3">
+            <Link
+              href="/dashboard/user"
+              className="p-2 rounded-2xl bg-white dark:bg-white/5 border border-black/10 dark:border-white/10 hover:border-[#2775CA] hover:text-[#2775CA] transition-all shadow-sm flex items-center justify-center text-slate-700 dark:text-slate-200"
+              title="Return to User Dashboard"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+            <div>
+              <h1 className="text-xl sm:text-2xl font-extrabold uppercase tracking-tight text-slate-900 dark:text-white">
+                Full Transaction History
+              </h1>
+              <p className="text-xs text-slate-500 dark:text-white/40 mt-0.5">
+                Complete financial activity, recurring commitments, and receipts ledger
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <span className="rounded-full bg-[#2775CA]/10 px-3.5 py-1 text-xs font-bold text-[#2775CA] border border-[#2775CA]/20">
+              {detectedCurrency.code} Rate Active
             </span>
+            <button
+              type="button"
+              onClick={loadData}
+              disabled={loading}
+              className="p-2 rounded-xl bg-white dark:bg-white/5 border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 transition-all disabled:opacity-50"
+              title="Refresh ledger data"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin text-[#2775CA]" : ""}`} />
+            </button>
           </div>
         </div>
 
-        {/* Page Title & Spend Overview */}
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="rounded-3xl border border-white/10 bg-black/40 p-4 shadow-xl backdrop-blur-xl sm:ml-auto sm:text-right">
-            <span className="text-[10px] font-black uppercase tracking-wider text-white/40">Monthly Commitment</span>
-            <div className="mt-0.5">
-              {loading ? (
-                <div className="h-8 w-28 rounded-lg bg-white/10 animate-pulse sm:ml-auto" />
-              ) : (
-                <p className="text-2xl font-black text-white">
-                  {balanceVisible ? `$${totalMonthlyCommitmentUsdc.toFixed(2)}` : "••••"} <span className="text-xs font-bold text-[#ccff00]">/mo</span>
+        {/* Spend Overview Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* 30D Spend */}
+          <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-black/40 p-5 shadow-sm backdrop-blur-md">
+            <div className="flex items-center justify-between text-slate-500 dark:text-white/40 mb-2">
+              <span className="text-[10px] font-black uppercase tracking-[0.14em]">30-Day Spend</span>
+              <TrendingUp className="h-4 w-4 text-[#2775CA]" />
+            </div>
+            {loading ? (
+              <div className="h-7 w-28 rounded-lg bg-black/10 dark:bg-white/10 animate-pulse" />
+            ) : (
+              <div>
+                <p className="text-2xl font-extrabold text-slate-900 dark:text-white">
+                  {balanceVisible ? `$${thirtyDaySpendUsdc.toFixed(2)}` : "••••"}
                 </p>
-              )}
+                <p className="text-[11px] font-semibold text-[#2775CA] mt-0.5">
+                  ≈ {detectedCurrency.symbol}{(thirtyDaySpendUsdc * exchangeRate).toFixed(0)} {detectedCurrency.code}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Monthly Subscriptions Commitment */}
+          <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-black/40 p-5 shadow-sm backdrop-blur-md">
+            <div className="flex items-center justify-between text-slate-500 dark:text-white/40 mb-2">
+              <span className="text-[10px] font-black uppercase tracking-[0.14em]">Monthly Subscriptions</span>
+              <CreditCard className="h-4 w-4 text-[#2775CA]" />
             </div>
+            {loading ? (
+              <div className="h-7 w-28 rounded-lg bg-black/10 dark:bg-white/10 animate-pulse" />
+            ) : (
+              <div>
+                <p className="text-2xl font-extrabold text-slate-900 dark:text-white">
+                  {balanceVisible ? `$${totalMonthlyCommitmentUsdc.toFixed(2)}` : "••••"} <span className="text-xs font-bold text-[#2775CA]">/mo</span>
+                </p>
+                <p className="text-[11px] font-semibold text-slate-500 dark:text-white/40 mt-0.5">
+                  {activeSubscriptions.length} active recurring stream{activeSubscriptions.length === 1 ? "" : "s"}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Total Transactions Ledger Count */}
+          <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-black/40 p-5 shadow-sm backdrop-blur-md">
+            <div className="flex items-center justify-between text-slate-500 dark:text-white/40 mb-2">
+              <span className="text-[10px] font-black uppercase tracking-[0.14em]">Total Activity</span>
+              <Activity className="h-4 w-4 text-[#2775CA]" />
+            </div>
+            {loading ? (
+              <div className="h-7 w-28 rounded-lg bg-black/10 dark:bg-white/10 animate-pulse" />
+            ) : (
+              <div>
+                <p className="text-2xl font-extrabold text-slate-900 dark:text-white">
+                  {allTransactions.length}
+                </p>
+                <p className="text-[11px] font-semibold text-slate-500 dark:text-white/40 mt-0.5">
+                  {filteredTransactions.length} matching current view
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Active Subscriptions Section */}
-        <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-[28px] p-6 shadow-2xl mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xs font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions</h2>
-            <span className="rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-2.5 py-0.5 text-[10px] font-bold text-[#ccff00]">
-              {loading ? "..." : `${activeSubscriptions.length} Active Streams`}
-            </span>
-          </div>
-
-          {loading ? (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {[1, 2].map((i) => (
-                <div key={i} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/40 p-3.5 animate-pulse">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-white/10" />
-                    <div className="space-y-1.5">
-                      <div className="h-3 w-28 rounded bg-white/10" />
-                      <div className="h-2 w-20 rounded bg-white/5" />
-                    </div>
-                  </div>
-                  <div className="space-y-1 text-right">
-                    <div className="h-3 w-14 rounded bg-white/10 ml-auto" />
-                    <div className="h-2 w-10 rounded bg-white/5 ml-auto" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : activeSubscriptions.length === 0 ? (
-            <div className="flex h-32 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center p-4">
-              <CreditCard className="mb-2 h-6 w-6 text-white/20" />
-              <p className="text-xs text-white/40">No active subscriptions</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {activeSubscriptions.map((s) => {
-                const monthlyUsd = getMonthlyRateUsdc(s.amountCapUsdc, s.billingIntervalSeconds);
-                return (
-                  <div key={s.subscriptionId} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/40 p-3.5 transition hover:border-white/20">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white/5">
-                        {s.merchantProfilePic ? (
-                          <img src={s.merchantProfilePic} alt={s.merchantName} className="h-full w-full object-cover" />
-                        ) : (
-                          <Building2 className="h-5 w-5 text-[#ccff00]" />
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-xs font-bold text-white uppercase tracking-wider">{s.merchantName}</p>
-                        <p className="text-[10px] font-medium text-white/40">
-                          ${formatUsdc(s.amountCapUsdc)} / {formatPlanPeriod(s.billingIntervalSeconds)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <span className="text-xs font-black text-[#ccff00]">${monthlyUsd.toFixed(2)}</span>
-                      <span className="block text-[9px] font-bold text-white/40">/mo normalized</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Search & Filter Controls */}
-        <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-[28px] p-6 shadow-2xl space-y-4 mb-6">
+        {/* Toolbar: Search & Interactive Filter Controls */}
+        <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-black/40 p-5 shadow-sm backdrop-blur-md space-y-4">
           <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-white/40" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by merchant name, plan, or payment memo..."
-              className="w-full pl-11 pr-4 py-3.5 rounded-2xl border border-white/5 bg-black/60 text-sm text-white placeholder-white/35 focus:border-[#ccff00]/50 focus:outline-none transition-colors"
+              placeholder="Search by counterparty name, receipt ID, transaction hash, or memo..."
+              className="w-full pl-11 pr-10 py-3 rounded-2xl border border-black/15 dark:border-white/15 bg-white dark:bg-black/60 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/35 focus:border-[#2775CA] focus:outline-none transition-colors"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:text-white/40 dark:hover:text-white text-xs"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             {[
               { id: "all", label: "All Activity" },
               { id: "recurring", label: "Subscriptions" },
-              { id: "one-time", label: "One-Time Payments" },
+              { id: "one-time", label: "One-Time" },
               { id: "transfers", label: "Transfers" },
               { id: "withdrawals", label: "Withdrawals" },
+              { id: "sent", label: "Sent" },
+              { id: "received", label: "Received" },
             ].map((tab) => (
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setFilter(tab.id as any)}
+                onClick={() => setCategoryFilter(tab.id as any)}
                 className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all ${
-                  filter === tab.id
-                    ? "bg-[#ccff00] text-black"
-                    : "bg-white/[0.06] text-white/50 hover:bg-white/10"
+                  categoryFilter === tab.id
+                    ? "bg-[#2775CA] text-white shadow-sm"
+                    : "bg-black/5 dark:bg-white/5 text-slate-600 dark:text-white/60 hover:bg-black/10 dark:hover:bg-white/10"
                 }`}
               >
                 {tab.label}
@@ -529,33 +631,35 @@ export default function UserTransactionsPage() {
               aria-expanded={showFilters}
               className={`ml-auto flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider transition-all ${
                 showFilters || activeFilterCount > 0
-                  ? "bg-[#ccff00]/15 text-[#ccff00] border border-[#ccff00]/30"
-                  : "bg-white/[0.06] text-white/50 hover:bg-white/10 border border-transparent"
+                  ? "bg-[#2775CA]/15 text-[#2775CA] border border-[#2775CA]/30"
+                  : "bg-black/5 dark:bg-white/5 text-slate-600 dark:text-white/60 hover:bg-black/10 dark:hover:bg-white/10 border border-transparent"
               }`}
             >
               <Sliders className="h-3 w-3" />
               Filters
               {activeFilterCount > 0 && (
-                <span className="ml-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-[#ccff00] px-1 text-[9px] font-black text-black">
+                <span className="ml-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-[#2775CA] px-1 text-[9px] font-black text-white">
                   {activeFilterCount}
                 </span>
               )}
             </button>
           </div>
 
+          {/* Advanced Collapsible Filters */}
           {showFilters && (
-            <div className="grid grid-cols-1 gap-4 rounded-2xl border border-white/5 bg-black/40 p-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-black/10 dark:border-white/10">
               <div className="space-y-2">
-                <label htmlFor="tx-date-range" className="block text-[9px] font-black uppercase tracking-[0.16em] text-white/45">
-                  Date
+                <label htmlFor="tx-date-range" className="block text-[9px] font-black uppercase tracking-[0.16em] text-slate-500 dark:text-white/45">
+                  Date Range
                 </label>
                 <select
                   id="tx-date-range"
                   value={dateRange}
                   onChange={(e) => setDateRange(e.target.value as any)}
-                  className="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2.5 text-xs font-bold text-white transition-colors focus:border-[#ccff00]/50 focus:outline-none"
+                  className="w-full rounded-xl border border-black/15 dark:border-white/15 bg-white dark:bg-black/60 px-3 py-2 text-xs font-bold text-slate-900 dark:text-white transition-colors focus:border-[#2775CA] focus:outline-none"
                 >
                   <option value="all">All time</option>
+                  <option value="today">Today</option>
                   <option value="7d">Last 7 days</option>
                   <option value="30d">Last 30 days</option>
                   <option value="90d">Last 90 days</option>
@@ -570,30 +674,30 @@ export default function UserTransactionsPage() {
                       max={customTo || undefined}
                       onChange={(e) => setCustomFrom(e.target.value)}
                       aria-label="From date"
-                      className="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2 text-[11px] font-bold text-white [color-scheme:dark] focus:border-[#ccff00]/50 focus:outline-none"
+                      className="w-full rounded-xl border border-black/15 dark:border-white/15 bg-white dark:bg-black/60 px-3 py-1.5 text-[11px] font-bold text-slate-900 dark:text-white focus:border-[#2775CA] focus:outline-none"
                     />
-                    <span className="text-[10px] font-black text-white/30">TO</span>
+                    <span className="text-[10px] font-black text-slate-400 dark:text-white/30">TO</span>
                     <input
                       type="date"
                       value={customTo}
                       min={customFrom || undefined}
                       onChange={(e) => setCustomTo(e.target.value)}
                       aria-label="To date"
-                      className="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2 text-[11px] font-bold text-white [color-scheme:dark] focus:border-[#ccff00]/50 focus:outline-none"
+                      className="w-full rounded-xl border border-black/15 dark:border-white/15 bg-white dark:bg-black/60 px-3 py-1.5 text-[11px] font-bold text-slate-900 dark:text-white focus:border-[#2775CA] focus:outline-none"
                     />
                   </div>
                 )}
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="tx-status" className="block text-[9px] font-black uppercase tracking-[0.16em] text-white/45">
+                <label htmlFor="tx-status" className="block text-[9px] font-black uppercase tracking-[0.16em] text-slate-500 dark:text-white/45">
                   Status
                 </label>
                 <select
                   id="tx-status"
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2.5 text-xs font-bold text-white transition-colors focus:border-[#ccff00]/50 focus:outline-none"
+                  className="w-full rounded-xl border border-black/15 dark:border-white/15 bg-white dark:bg-black/60 px-3 py-2 text-xs font-bold text-slate-900 dark:text-white transition-colors focus:border-[#2775CA] focus:outline-none"
                 >
                   <option value="all">Any status</option>
                   {availableStatuses.map((status) => (
@@ -608,51 +712,53 @@ export default function UserTransactionsPage() {
                 <button
                   type="button"
                   onClick={resetFilters}
-                  className="justify-self-start rounded-full bg-white/[0.06] px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-white/60 transition-colors hover:bg-white/10 hover:text-white sm:col-span-2"
+                  className="justify-self-start rounded-full bg-black/5 dark:bg-white/10 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-700 dark:text-white/70 transition-colors hover:bg-black/10 dark:hover:bg-white/20 sm:col-span-2"
                 >
-                  Clear all filters
+                  Reset all filters
                 </button>
               )}
             </div>
           )}
         </div>
 
-        {/* Transactions List */}
-        <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-[28px] p-6 sm:p-8 shadow-2xl min-h-[400px]">
+        {/* Transactions List Container */}
+        <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-black/40 p-5 sm:p-8 shadow-sm backdrop-blur-md min-h-[420px]">
           {loading ? (
-            <div className="divide-y divide-white/[0.06]">
+            <div className="divide-y divide-black/5 dark:divide-white/5">
               {[1, 2, 3, 4, 5, 6].map((i) => (
                 <div key={i} className="flex items-center justify-between py-4 first:pt-0 last:pb-0 animate-pulse">
                   <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-white/10 shrink-0" />
+                    <div className="h-10 w-10 rounded-xl bg-black/10 dark:bg-white/10 shrink-0" />
                     <div className="space-y-2">
-                      <div className="h-3.5 w-36 rounded bg-white/10" />
-                      <div className="h-2.5 w-52 rounded bg-white/5" />
+                      <div className="h-3.5 w-36 rounded bg-black/10 dark:bg-white/10" />
+                      <div className="h-2.5 w-52 rounded bg-black/5 dark:bg-white/5" />
                     </div>
                   </div>
                   <div className="space-y-2 text-right">
-                    <div className="h-3.5 w-20 rounded bg-white/10 ml-auto" />
-                    <div className="h-2.5 w-14 rounded bg-white/5 ml-auto" />
+                    <div className="h-3.5 w-20 rounded bg-black/10 dark:bg-white/10 ml-auto" />
+                    <div className="h-2.5 w-14 rounded bg-black/5 dark:bg-white/5 ml-auto" />
                   </div>
                 </div>
               ))}
             </div>
           ) : loadError ? (
-            <div className="flex h-64 flex-col items-center justify-center rounded-2xl border border-red-400/20 bg-red-400/[0.04] px-6 text-center" role="alert">
-              <CreditCard className="mb-3 h-8 w-8 text-red-300/70" />
-              <p className="text-sm font-bold text-white">History could not be loaded</p>
-              <p className="mt-2 max-w-sm text-xs leading-relaxed text-white/50">{loadError} This does not mean your transaction history is empty.</p>
-              <button type="button" onClick={loadData} className="mt-4 rounded-xl bg-white px-4 py-2.5 text-xs font-bold text-black">Retry</button>
+            <div className="flex h-64 flex-col items-center justify-center rounded-2xl border border-red-500/20 bg-red-500/5 px-6 text-center" role="alert">
+              <CreditCard className="mb-3 h-8 w-8 text-red-500/70" />
+              <p className="text-sm font-bold text-slate-900 dark:text-white">History could not be loaded</p>
+              <p className="mt-2 max-w-sm text-xs leading-relaxed text-slate-500 dark:text-white/50">{loadError}</p>
+              <button type="button" onClick={loadData} className="mt-4 rounded-xl bg-[#2775CA] px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#1f62ab] transition">
+                Retry loading
+              </button>
             </div>
           ) : filteredTransactions.length === 0 ? (
-            <div className="flex h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center">
-              <CreditCard className="mb-3 h-8 w-8 text-white/20" />
-              <p className="text-xs text-white/40">No transactions match your filters.</p>
-              {(activeFilterCount > 0 || searchQuery.trim()) && (
+            <div className="flex h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.02] text-center p-6">
+              <CreditCard className="mb-3 h-8 w-8 text-slate-400 dark:text-white/20" />
+              <p className="text-xs font-semibold text-slate-600 dark:text-white/50">No transactions match your active filters.</p>
+              {activeFilterCount > 0 && (
                 <button
                   type="button"
                   onClick={resetFilters}
-                  className="mt-3 rounded-full bg-white/[0.06] px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+                  className="mt-3 rounded-full bg-[#2775CA]/10 border border-[#2775CA]/20 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#2775CA] hover:bg-[#2775CA]/20 transition-colors"
                 >
                   Clear filters
                 </button>
@@ -660,82 +766,169 @@ export default function UserTransactionsPage() {
             </div>
           ) : (
             <div>
-              <div className="divide-y divide-white/[0.06]">
+              {/* Desktop Table View */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-left font-sans text-xs">
+                  <thead>
+                    <tr className="border-b border-black/10 dark:border-white/10 text-slate-500 dark:text-white/40 uppercase text-[9px] tracking-wider font-bold">
+                      <th className="pb-3">Payment / Counterparty</th>
+                      <th className="pb-3">Date &amp; Time</th>
+                      <th className="pb-3">Amount (USDC)</th>
+                      <th className="pb-3">Status</th>
+                      <th className="pb-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-black/5 dark:divide-white/5">
+                    {visibleTransactions.map((tx) => (
+                      <tr key={tx.id} className={`hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors ${isOptimisticTxId(tx.id) ? "animate-pulse opacity-80" : ""}`}>
+                        <td className="py-3.5 pr-4">
+                          <div className="flex items-center gap-3">
+                            <div className="h-9 w-9 shrink-0 rounded-xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 flex items-center justify-center overflow-hidden">
+                              {tx.pic ? (
+                                <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
+                              ) : tx.kind === "recurring" ? (
+                                <Shield className="h-4 w-4 text-[#2775CA]" />
+                              ) : tx.kind === "withdrawals" ? (
+                                <ArrowDownToLine className="h-4 w-4 text-amber-500" />
+                              ) : tx.kind === "transfers" ? (
+                                <User className="h-4 w-4 text-sky-500" />
+                              ) : (
+                                <CreditCard className="h-4 w-4 text-purple-500" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="truncate font-bold text-slate-900 dark:text-white">{tx.name}</p>
+                              <p className="truncate text-[10px] text-slate-500 dark:text-white/40 mt-0.5">{tx.detail}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3.5 whitespace-nowrap text-slate-600 dark:text-white/60 text-[11px]">
+                          {new Date(tx.time).toLocaleString()}
+                        </td>
+                        <td className="py-3.5 whitespace-nowrap font-mono">
+                          <span className={`block font-bold text-xs ${tx.incoming ? "text-emerald-600 dark:text-emerald-400" : "text-slate-900 dark:text-white"}`}>
+                            {balanceVisible ? tx.amountLabel : "••••"}
+                          </span>
+                          <span className="block text-[9px] text-slate-500 dark:text-white/40 mt-0.5">
+                            {balanceVisible ? tx.localAmountLabel : "••••"}
+                          </span>
+                        </td>
+                        <td className="py-3.5 whitespace-nowrap">
+                          <FinancialStatusBadge status={tx.status} />
+                        </td>
+                        <td className="py-3.5 text-right whitespace-nowrap">
+                          <div className="inline-flex items-center gap-3 text-[11px]">
+                            {tx.receiptId ? (
+                              <>
+                                <a
+                                  href={`/receipt/${tx.receiptId}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[#2775CA] hover:underline font-bold inline-flex items-center gap-1"
+                                >
+                                  <FileText className="h-3 w-3" /> Receipt
+                                </a>
+                                <a
+                                  href={`/receipt/${tx.receiptId}?invite=1`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-slate-500 dark:text-white/50 hover:text-[#2775CA] hover:underline font-medium inline-flex items-center gap-1"
+                                >
+                                  <Share2 className="h-3 w-3" /> Share
+                                </a>
+                              </>
+                            ) : (
+                              <span className="text-slate-400 dark:text-white/20">—</span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Card Stack View */}
+              <div className="block md:hidden space-y-3">
                 {visibleTransactions.map((tx) => (
                   <div
                     key={tx.id}
-                    className={`flex items-center justify-between py-4 first:pt-0 last:pb-0 ${
+                    className={`p-4 rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/20 space-y-3 ${
                       isOptimisticTxId(tx.id) ? "animate-pulse opacity-80" : ""
                     }`}
                   >
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="h-10 w-10 shrink-0 rounded-xl bg-white/[0.04] border border-white/5 flex items-center justify-center overflow-hidden">
-                        {tx.pic ? (
-                          <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
-                        ) : tx.kind === "recurring" ? (
-                          <Shield className="h-5 w-5 text-[#ccff00]/70" />
-                        ) : tx.kind === "withdrawals" ? (
-                          <ArrowDownToLine className="h-5 w-5 text-amber-400" />
-                        ) : tx.kind === "transfers" ? (
-                          <User className="h-5 w-5 text-sky-400" />
-                        ) : (
-                          <CreditCard className="h-5 w-5 text-purple-400/70" />
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="truncate text-xs font-black uppercase tracking-[0.1em] text-white">{tx.name}</p>
-                          {tx.status === "CONFIRMED" && (
-                            <span className="rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-emerald-400 border border-emerald-500/20">
-                              Confirmed
-                            </span>
-                          )}
-                          {tx.status === "PENDING" && (
-                            <span className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-amber-400 border border-amber-500/20">
-                              Pending
-                            </span>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="h-8 w-8 shrink-0 rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 flex items-center justify-center overflow-hidden">
+                          {tx.pic ? (
+                            <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
+                          ) : tx.kind === "recurring" ? (
+                            <Shield className="h-4 w-4 text-[#2775CA]" />
+                          ) : tx.kind === "withdrawals" ? (
+                            <ArrowDownToLine className="h-4 w-4 text-amber-500" />
+                          ) : (
+                            <CreditCard className="h-4 w-4 text-purple-500" />
                           )}
                         </div>
-                        <p className="truncate text-[10px] font-medium text-white/40 mt-0.5">
-                          {tx.detail} • {new Date(tx.time).toLocaleString()}
-                        </p>
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-bold text-slate-900 dark:text-white">{tx.name}</p>
+                          <p className="truncate text-[10px] text-slate-500 dark:text-white/40">{tx.detail}</p>
+                        </div>
+                      </div>
+                      <FinancialStatusBadge status={tx.status} />
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1 border-t border-black/5 dark:border-white/5 text-xs font-mono">
+                      <span className="text-[10px] text-slate-500 dark:text-white/40 font-sans">
+                        {new Date(tx.time).toLocaleDateString()}
+                      </span>
+                      <div className="text-right">
+                        <span className={`block font-bold ${tx.incoming ? "text-emerald-600 dark:text-emerald-400" : "text-slate-900 dark:text-white"}`}>
+                          {balanceVisible ? tx.amountLabel : "••••"}
+                        </span>
+                        <span className="block text-[9px] text-slate-500 dark:text-white/40">
+                          {balanceVisible ? tx.localAmountLabel : "••••"}
+                        </span>
                       </div>
                     </div>
-                    <div className="text-right shrink-0">
-                      <span className={`block text-xs font-black ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>
-                        {balanceVisible ? tx.amountLabel : "••••"}
-                      </span>
-                      <span className="block text-[9px] font-bold text-white/40 mt-0.5">
-                        {balanceVisible ? tx.localAmountLabel : "••••"}
-                      </span>
-                    </div>
+
+                    {tx.receiptId && (
+                      <div className="pt-2 flex items-center justify-end gap-3 border-t border-black/5 dark:border-white/5 text-[10px]">
+                        <a href={`/receipt/${tx.receiptId}`} target="_blank" rel="noopener noreferrer" className="text-[#2775CA] font-bold">
+                          View receipt
+                        </a>
+                        <a href={`/receipt/${tx.receiptId}?invite=1`} target="_blank" rel="noopener noreferrer" className="text-slate-500 dark:text-white/50">
+                          Share
+                        </a>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
 
-              {/* Progressive loading skeleton & sentinel */}
+              {/* Infinite Progressive Scroll Loading Sentinel */}
               {displayLimit < filteredTransactions.length && (
                 <div className="pt-4 space-y-3">
                   {loadingMore && (
                     <div className="space-y-3">
                       {[1, 2, 3].map((i) => (
-                        <div key={i} className="flex items-center justify-between py-3 border-t border-white/5 animate-pulse">
+                        <div key={i} className="flex items-center justify-between py-3 border-t border-black/5 dark:border-white/5 animate-pulse">
                           <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-xl bg-white/10" />
+                            <div className="h-9 w-9 rounded-xl bg-black/10 dark:bg-white/10" />
                             <div className="space-y-1.5">
-                              <div className="h-3 w-32 rounded bg-white/10" />
-                              <div className="h-2 w-48 rounded bg-white/5" />
+                              <div className="h-3 w-32 rounded bg-black/10 dark:bg-white/10" />
+                              <div className="h-2 w-48 rounded bg-black/5 dark:bg-white/5" />
                             </div>
                           </div>
                           <div className="space-y-1 text-right">
-                            <div className="h-3 w-16 rounded bg-white/10 ml-auto" />
-                            <div className="h-2 w-12 rounded bg-white/5 ml-auto" />
+                            <div className="h-3 w-16 rounded bg-black/10 dark:bg-white/10 ml-auto" />
+                            <div className="h-2 w-12 rounded bg-black/5 dark:bg-white/5 ml-auto" />
                           </div>
                         </div>
                       ))}
                     </div>
                   )}
-                  <div ref={observerTargetRef} className="h-4 w-full" />
+                  <div ref={observerTargetRef} className="h-4 w-full" aria-hidden="true" />
                 </div>
               )}
             </div>
