@@ -574,7 +574,7 @@ test.describe("mobile overflow audit", () => {
     await expect(walletActions.getByRole("button", { name: "Deposit", exact: true })).toBeVisible();
     const sendButton = walletActions.getByRole("button", { name: "Send", exact: true });
     await expect(sendButton).toBeVisible();
-    await expect(walletActions.getByRole("button", { name: "Scan SubScript QR code", exact: true })).toBeVisible();
+    await expect(walletActions.getByRole("button", { name: "Scan QR Code", exact: true })).toBeVisible();
 
     await sendButton.click();
     const sendDialog = mobilePage.getByRole("dialog", { name: "Send USDC" });
