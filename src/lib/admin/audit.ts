@@ -49,6 +49,23 @@ export const ADMIN_ACTIONS = [
     "KYC_FORCE_APPROVE",
     "KYC_MANUAL_CREATE",
     "KYC_UPGRADE_APPROVED",
+    /* Financial and operations moderation */
+    "RECONCILIATION_RETRY",
+    "EMERGENCY_STOP_SET",
+    "PAYMENTS_KILL_SWITCH_SET",
+    "WITHDRAWALS_KILL_SWITCH_SET",
+    "ADMIN_REFUND_ISSUE",
+    /* Account & merchant level actions */
+    "SESSION_REVOKE",
+    "TEMP_SUSPENSION_SET",
+    "TEMP_SUSPENSION_CLEARED",
+    "PRODUCT_TAKEDOWN",
+    "PLAN_TAKEDOWN",
+    "API_KEY_REVOKE",
+    "WEBHOOK_REDELIVER",
+    "PROFILE_RESET",
+    "ALIAS_SEIZE",
+    "DATA_EXPORT_REQUEST",
 ] as const;
 
 export type AdminAction = (typeof ADMIN_ACTIONS)[number];

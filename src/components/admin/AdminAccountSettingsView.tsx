@@ -15,6 +15,7 @@ import {
     User,
     Users,
 } from "@/components/icons";
+import { SkeletonRows } from "@/components/ui/skeletons";
 
 /* Account-level settings for a single wallet.
  *
@@ -572,9 +573,8 @@ export function AdminAccountSettingsView({ viewerWallet }: { viewerWallet: strin
                 )}
 
                 {loading && holds.length === 0 ? (
-                    <div className="flex h-32 flex-col items-center justify-center gap-2 text-slate-400">
-                        <Loader2 className="h-5 w-5 animate-spin text-[#2775ca]" />
-                        <span className="text-xs">Loading holds…</span>
+                    <div className="p-4">
+                        <SkeletonRows count={4} avatar={false} lines={2} label="Loading active withdrawal holds..." />
                     </div>
                 ) : holds.length === 0 && !listError ? (
                     <div className="flex h-32 flex-col items-center justify-center gap-2 p-4 text-center text-slate-400">

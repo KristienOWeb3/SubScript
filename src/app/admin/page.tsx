@@ -26,6 +26,10 @@ import {
   BarChart3,
   Sliders,
   MessageSquare,
+  DollarSign,
+  RefreshCcw,
+  UserCheck,
+  Eye,
 } from "@/components/icons";
 import {
   SkeletonCard,
@@ -53,6 +57,13 @@ import {
   KycSkeleton,
   HealthSkeleton,
 } from "@/components/admin/analytics/AnalyticsSkeletons";
+import { AdminFinancialsView } from "@/components/admin/AdminFinancialsView";
+import { AdminReconciliationView } from "@/components/admin/AdminReconciliationView";
+import { AdminAccountsView } from "@/components/admin/AdminAccountsView";
+import { AdminTransactionInspectorModal } from "@/components/admin/AdminTransactionInspectorModal";
+import { AdminMerchantCatalogModal } from "@/components/admin/AdminMerchantCatalogModal";
+import { AdminSystemHealthCard } from "@/components/admin/AdminSystemHealthCard";
+import { AdminRiskSignalsCard } from "@/components/admin/AdminRiskSignalsCard";
 
 type Merchant = {
   walletAddress: string;
@@ -249,6 +260,9 @@ const KYC_FORCE_CONFIRMATION = "FORCE APPROVE";
 type TabId =
   | "overview"
   | "analytics"
+  | "financials"
+  | "reconciliation"
+  | "accounts"
   | "tickets"
   | "merchants"
   | "merchant-access"
@@ -264,13 +278,16 @@ type TabId =
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "analytics", label: "Analytics" },
+  { id: "financials", label: "Financials & Ledger" },
+  { id: "reconciliation", label: "Reconciliation Queue" },
+  { id: "accounts", label: "Accounts & Identity" },
   { id: "tickets", label: "Support Tickets" },
   { id: "merchants", label: "Merchants" },
   { id: "merchant-access", label: "Merchant Access" },
   { id: "kyc", label: "KYC" },
   { id: "moderation", label: "Moderation" },
   { id: "account-settings", label: "Account settings" },
-  { id: "system", label: "System" },
+  { id: "system", label: "System & Health" },
   { id: "broadcast", label: "Broadcast" },
   { id: "receipts", label: "Receipts" },
   { id: "audit-log", label: "Audit Log" },
@@ -306,6 +323,9 @@ export default function AdminDashboardPage() {
   const [copiedMerchant, setCopiedMerchant] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [verifyBusy, setVerifyBusy] = useState<string | null>(null);
+
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [catalogMerchantAddress, setCatalogMerchantAddress] = useState<string | null>(null);
 
   const [banType, setBanType] = useState<"ACCOUNT" | "IP">("ACCOUNT");
   const [banTarget, setBanTarget] = useState("");
@@ -1064,13 +1084,16 @@ export default function AdminDashboardPage() {
   const adminSidebarItems: DashboardSidebarItem[] = [
     { id: "overview", label: "Overview", icon: Home },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
+    { id: "financials", label: "Financials & Ledger", icon: DollarSign },
+    { id: "reconciliation", label: "Reconciliation", icon: RefreshCcw },
+    { id: "accounts", label: "Accounts & Identity", icon: Users },
     { id: "tickets", label: "Support Tickets", icon: MessageSquare },
     { id: "merchants", label: "Merchants", icon: Building2 },
     { id: "merchant-access", label: "Merchant Access", icon: UserPlus },
     { id: "kyc", label: "KYC Compliance", icon: ShieldCheck },
     { id: "moderation", label: "Moderation & Bans", icon: ShieldAlert },
-    { id: "account-settings", label: "Account settings", icon: Users },
-    { id: "system", label: "System Flags", icon: Sliders },
+    { id: "account-settings", label: "Account settings", icon: UserCheck },
+    { id: "system", label: "System & Health", icon: Sliders },
     { id: "broadcast", label: "Broadcast", icon: Bell },
     { id: "receipts", label: "Receipts", icon: ReceiptText },
     { id: "admins", label: "Admin Access", icon: Shield },
@@ -1152,6 +1175,14 @@ export default function AdminDashboardPage() {
                   </span>
                   <button
                     type="button"
+                    onClick={() => setInspectorOpen(true)}
+                    className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/20 px-3 py-1.5 text-[10px] font-bold text-white transition hover:bg-white/30"
+                  >
+                    <Eye className="h-3 w-3" />
+                    Inspect Tx / Hash
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => {
                       if (tab === "admins") loadAdmins();
                       else if (tab === "analytics") loadAnalytics();
@@ -1219,6 +1250,12 @@ export default function AdminDashboardPage() {
           )
         )}
 
+        {tab === "financials" && <AdminFinancialsView />}
+
+        {tab === "reconciliation" && <AdminReconciliationView />}
+
+        {tab === "accounts" && <AdminAccountsView />}
+
         {tab === "tickets" && (
           <div className={`${CARD} space-y-4`}>
             <AdminSupportTicketsView
@@ -1283,7 +1320,13 @@ export default function AdminDashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredMerchants.length === 0 ? (
+                  {loading && merchants.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="p-4">
+                        <SkeletonRows count={5} avatar={true} lines={2} label="Loading verified merchants..." />
+                      </td>
+                    </tr>
+                  ) : filteredMerchants.length === 0 ? (
                     <tr>
                       <td
                         colSpan={5}
@@ -1352,7 +1395,14 @@ export default function AdminDashboardPage() {
                             </span>
                           )}
                         </td>
-                        <td className="py-3.5 px-3 text-right">
+                        <td className="py-3.5 px-3 text-right space-x-2">
+                          <button
+                            type="button"
+                            onClick={() => setCatalogMerchantAddress(merchant.walletAddress)}
+                            className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[10px] font-bold text-slate-700 hover:bg-slate-100 transition"
+                          >
+                            Catalog & API
+                          </button>
                           <button
                             type="button"
                             onClick={() =>
@@ -1824,6 +1874,7 @@ export default function AdminDashboardPage() {
 
         {tab === "moderation" && (
           <div className="space-y-6">
+            <AdminRiskSignalsCard />
             <div className={`${CARD}`}>
               <div className="flex items-center justify-between mb-4">
                 <span className={LABEL}>Security Access Control</span>
@@ -2473,6 +2524,7 @@ export default function AdminDashboardPage() {
 
         {tab === "system" && (
           <div className="space-y-6">
+            <AdminSystemHealthCard />
             {!flags ? (
               <>
                 <SkeletonToggleRows
@@ -3026,6 +3078,17 @@ export default function AdminDashboardPage() {
     </main>
   </div>
 </div>
+
+      <AdminTransactionInspectorModal
+        isOpen={inspectorOpen}
+        onClose={() => setInspectorOpen(false)}
+      />
+
+      <AdminMerchantCatalogModal
+        merchantAddress={catalogMerchantAddress}
+        isOpen={Boolean(catalogMerchantAddress)}
+        onClose={() => setCatalogMerchantAddress(null)}
+      />
 </div>
 );
 }

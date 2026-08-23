@@ -20,17 +20,41 @@ import { isAdminWallet } from "@/lib/admin/identity";
  * @/lib/admin/identity. requireAdmin admits both; requireRootAdmin admits only root.
  */
 
+import { prisma } from "@/lib/prisma";
+
+export type AdminRole = "SUPER_ADMIN" | "SUPPORT" | "COMPLIANCE" | "FINANCE" | "ENGINEER";
+
 export type AdminIdentity = {
     wallet: string;
     isRoot: boolean;
+    role: AdminRole;
 };
+
+export function parseAdminRoleFromLabel(label?: string | null): AdminRole {
+    if (!label) return "SUPER_ADMIN";
+    const upper = label.toUpperCase();
+    if (upper.includes("[SUPPORT]") || upper.startsWith("SUPPORT")) return "SUPPORT";
+    if (upper.includes("[COMPLIANCE]") || upper.startsWith("COMPLIANCE")) return "COMPLIANCE";
+    if (upper.includes("[FINANCE]") || upper.startsWith("FINANCE")) return "FINANCE";
+    if (upper.includes("[ENGINEER]") || upper.startsWith("ENGINEER")) return "ENGINEER";
+    return "SUPER_ADMIN";
+}
 
 export async function getAdminSession(headers: Headers): Promise<AdminIdentity | null> {
     try {
         const session = await getVerifiedSessionToken(headers);
         if (!session) return null;
         if (!(await isAdminWallet(session.wallet))) return null;
-        return { wallet: session.wallet, isRoot: isRootAdmin(session.wallet) };
+        const isRoot = isRootAdmin(session.wallet);
+        let role: AdminRole = isRoot ? "SUPER_ADMIN" : "SUPER_ADMIN";
+        if (!isRoot) {
+            const adminRecord = await prisma.adminWallet.findUnique({
+                where: { wallet: session.wallet.toLowerCase() },
+                select: { label: true },
+            }).catch(() => null);
+            role = parseAdminRoleFromLabel(adminRecord?.label);
+        }
+        return { wallet: session.wallet, isRoot, role };
     } catch (error) {
         console.error("[admin] getAdminSession error:", error);
         return null;
@@ -86,3 +110,26 @@ export async function requireRootAdmin(
     }
     return auth;
 }
+
+/**
+ * Guard for scoped roles. Root and SUPER_ADMIN have access to all actions.
+ */
+export async function requireRole(
+    request: Request,
+    allowedRoles: AdminRole[],
+): Promise<{ ok: true; admin: AdminIdentity } | { ok: false; response: NextResponse }> {
+    const auth = await requireAdmin(request);
+    if (!auth.ok) return auth;
+    if (auth.admin.isRoot || auth.admin.role === "SUPER_ADMIN") return auth;
+    if (!allowedRoles.includes(auth.admin.role)) {
+        return {
+            ok: false,
+            response: NextResponse.json(
+                { error: `Forbidden: This action requires one of the following roles: [${allowedRoles.join(", ")}]` },
+                { status: 403 },
+            ),
+        };
+    }
+    return auth;
+}
+

@@ -40,6 +40,9 @@ export async function POST(request: Request) {
         if (typeof body?.googleSigninEnabled === "boolean") data.googleSigninEnabled = body.googleSigninEnabled;
         if (typeof body?.externalWalletEnabled === "boolean") data.externalWalletEnabled = body.externalWalletEnabled;
         if (typeof body?.maintenanceEnabled === "boolean") data.maintenanceEnabled = body.maintenanceEnabled;
+        if (typeof body?.sponsorEmergencyStop === "boolean") data.sponsorEmergencyStop = body.sponsorEmergencyStop;
+        if (typeof body?.paymentsEnabled === "boolean") data.paymentsEnabled = body.paymentsEnabled;
+        if (typeof body?.withdrawalsEnabled === "boolean") data.withdrawalsEnabled = body.withdrawalsEnabled;
         if (typeof body?.maintenanceMessage === "string" || body?.maintenanceMessage === null) {
             data.maintenanceMessage = body.maintenanceMessage
                 ? String(body.maintenanceMessage).trim().slice(0, 300)
@@ -67,14 +70,17 @@ export async function POST(request: Request) {
             where: { id: 1 },
             update: data,
             create: { id: 1, ...data },
-        });
+        }) as any;
 
         const after: PlatformFlags = {
-            googleSigninEnabled: row.googleSigninEnabled,
-            maintenanceEnabled: row.maintenanceEnabled,
-            maintenanceMessage: row.maintenanceMessage,
-            externalWalletEnabled: row.externalWalletEnabled,
-            merchantInviteOnlyEnabled: row.merchantInviteOnlyEnabled,
+            googleSigninEnabled: row.googleSigninEnabled ?? true,
+            maintenanceEnabled: row.maintenanceEnabled ?? false,
+            maintenanceMessage: row.maintenanceMessage ?? null,
+            externalWalletEnabled: row.externalWalletEnabled ?? true,
+            merchantInviteOnlyEnabled: row.merchantInviteOnlyEnabled ?? false,
+            sponsorEmergencyStop: row.sponsorEmergencyStop ?? false,
+            paymentsEnabled: row.paymentsEnabled ?? true,
+            withdrawalsEnabled: row.withdrawalsEnabled ?? true,
         };
 
         /* Drop the local cache immediately so this instance reflects the change without

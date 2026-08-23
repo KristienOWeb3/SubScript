@@ -119,3 +119,78 @@ export function asHex(value: string): Hex {
     }
     return value as Hex;
 }
+
+/**
+ * Returns the configured Platform Master Viewing Key for platform-level auditability
+ * of Arc confidential / shielded transactions.
+ */
+export function getPlatformMasterViewingKey(): string | null {
+    const key = process.env.PLATFORM_MASTER_VIEW_KEY || process.env.NEXT_PUBLIC_PLATFORM_VIEW_KEY;
+    if (!key || !key.trim()) {
+        return null;
+    }
+    return key.trim();
+}
+
+export interface ConfidentialMemoInput {
+    receiptId: string;
+    merchantViewKeyHash?: string | null;
+    isShielded?: boolean;
+}
+
+/**
+ * Constructs a confidential memo payload combining the receipt ID with optional Arc privacy markers
+ * and merchant viewing key hashes for off-chain and platform-audited transaction tracking.
+ */
+export function buildConfidentialMemoPayload(input: ConfidentialMemoInput): string {
+    const { receiptId, merchantViewKeyHash, isShielded } = input;
+    if (!isReceiptId(receiptId)) {
+        throw new Error("Invalid receiptId format for confidential memo payload");
+    }
+    if (!isShielded) {
+        return receiptId;
+    }
+    const viewKeyRef = merchantViewKeyHash ? `:vk-${merchantViewKeyHash.slice(0, 10)}` : "";
+    return `arc-shielded:${receiptId}${viewKeyRef}`;
+}
+
+export interface ParsedConfidentialMemo {
+    receiptId: string | null;
+    isShielded: boolean;
+    merchantViewKeyHashRef: string | null;
+}
+
+/**
+ * Parses a memo string (standard or confidential) to extract the receipt ID and privacy metadata.
+ */
+export function parseConfidentialMemoPayload(memo: string | null | undefined): ParsedConfidentialMemo {
+    if (!memo || typeof memo !== "string") {
+        return { receiptId: null, isShielded: false, merchantViewKeyHashRef: null };
+    }
+    const trimmed = memo.trim();
+
+    if (/^rcpt-[0-9a-f]{32}$/.test(trimmed)) {
+        return { receiptId: trimmed, isShielded: false, merchantViewKeyHashRef: null };
+    }
+
+    if (trimmed.startsWith("arc-shielded:")) {
+        const payload = trimmed.replace("arc-shielded:", "");
+        const parts = payload.split(":vk-");
+        const receiptId = /^rcpt-[0-9a-f]{32}$/.test(parts[0]) ? parts[0] : null;
+        const merchantViewKeyHashRef = parts[1] || null;
+        return {
+            receiptId,
+            isShielded: true,
+            merchantViewKeyHashRef,
+        };
+    }
+
+    // Direct search for rcpt- pattern within raw string
+    const match = trimmed.match(/(rcpt-[0-9a-f]{32})/);
+    return {
+        receiptId: match ? match[1] : null,
+        isShielded: trimmed.includes("shielded") || trimmed.includes("arc-shielded"),
+        merchantViewKeyHashRef: null,
+    };
+}
+

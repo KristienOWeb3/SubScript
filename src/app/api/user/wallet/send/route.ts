@@ -18,6 +18,8 @@ import { sanitizeInput } from "@/utils/security";
 import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
 import { assertAccountNotHalted, AccountHaltError } from "@/lib/accountHalt";
 import { assertNotBlocked } from "@/lib/dms/blocks";
+import { createClient } from "@supabase/supabase-js";
+import { bindTxToReceipt } from "@/lib/receipts/binding";
 import { MAX_BATCH_RECIPIENTS } from "@/lib/payments/batchLimits";
 import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
 
@@ -315,7 +317,20 @@ export async function POST(request: Request) {
          */
         if (settledForReceipts.length > 0) {
             after(async () => {
+                const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+                const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+                const supabase = supabaseUrl && supabaseServiceKey ? createClient(supabaseUrl, supabaseServiceKey) : null;
+
                 for (const settled of settledForReceipts) {
+                    if (supabase) {
+                        await bindTxToReceipt(supabase, {
+                            txHash: settled.txHash,
+                            payerAddress: normalizedSender,
+                            merchantAddress: settled.receiver,
+                            amountUsdc: settled.amountMicros,
+                            title: "Wallet Transfer",
+                        }).catch((err) => console.error("Failed to bind transfer receipt:", err));
+                    }
                     await sendSettlementReceipts({
                         kind: "wallet_transfer",
                         amountUsdc: settled.amountMicros,
