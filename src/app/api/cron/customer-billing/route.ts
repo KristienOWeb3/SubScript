@@ -38,6 +38,7 @@ import { subscriptionWebhookData } from "@/lib/webhooks";
 import { pricingPhaseFor } from "@/lib/subscriptions/promotions";
 import { cancelFromEmbedded } from "@/lib/subscriptions/onchain";
 import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
+import { decideHaltedRenewal } from "@/lib/accountHalt";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
 import { sendAllowanceLowDm } from "@/lib/dms/lifecycle";
 import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
@@ -468,6 +469,44 @@ export async function POST(request: Request) {
                     await releaseBillingClaim();
                     results.push({ subId, subscriber, action: "NOT_DUE_ON_CHAIN", success: false });
                     continue;
+                }
+
+                /* The subscriber's own hold on outbound money. Checked after the due test and before
+                   any balance or allowance read, so a held account costs no chain calls.
+
+                   A hold does NOT automatically void this charge. min_commitment_until is the
+                   commitment window snapshotted at subscribe time and capped at one billing period by
+                   constraint, so a renewal inside it is money the subscriber already promised and it
+                   settles as normal. Outside that window there is nothing holding the charge open, so
+                   it is skipped and the merchant is told rather than left to infer a silent
+                   non-payment. See the Merchant Protection note in src/lib/accountHalt.ts.
+
+                   Deliberately does NOT touch status or downgrade_failures. A hold is not a funding
+                   failure and it is reversible, so dunning must not start counting and the row must
+                   stay chargeable: the next pass after the hold lifts settles normally. */
+                const haltDecision = await decideHaltedRenewal({
+                    subscriberAddress: subscriber,
+                    minCommitmentUntil: sub.min_commitment_until ? new Date(sub.min_commitment_until) : null,
+                });
+                if (haltDecision.halted && haltDecision.action === "break") {
+                    await releaseBillingClaim();
+                    await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.payment_failed", subscriptionWebhookData({
+                        subscriptionId: subId,
+                        status: "past_due",
+                        amountUsdcMicros: chargeAmount,
+                        subscriber,
+                        merchantAddress,
+                        reason: "The subscriber put their account on hold, so this renewal wasn't charged.",
+                        ...lifecycleBinding(sub),
+                    }), `customer-hold-skipped:${subId}:${sequenceId}`);
+                    results.push({ subId, subscriber, action: "SUBSCRIBER_ON_HOLD", success: false });
+                    continue;
+                }
+                if (haltDecision.halted) {
+                    console.log(
+                        `[customer-billing] sub ${subId}: subscriber on hold but inside its commitment window `
+                        + `until ${haltDecision.commitmentUntil.toISOString()} — charging`,
+                    );
                 }
 
                 /* Fail fast (no gas) if the subscriber can't pay THIS sequence's charge. A

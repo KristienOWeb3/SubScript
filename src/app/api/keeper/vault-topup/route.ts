@@ -22,6 +22,7 @@ import {
 import { SUBSCRIPT_VAULT_ADDRESS, SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
 import { getWalletCustody, deterministicIdempotencyKey } from "@/lib/custody";
 import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
+import { isAccountHalted } from "@/lib/accountHalt";
 import { withPgClient } from "@/lib/serverPg";
 import { createDmAndNotify } from "@/lib/dms/notifications";
 import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
@@ -136,6 +137,21 @@ async function topUpVault(vault: VaultRow, merchantName: string): Promise<{ id: 
     if (vault.disputed) {
         await recordFailure(vault, merchantName, "VAULT_DISPUTED", { disarm: true });
         return { id: vault.id, status: "skipped", code: "VAULT_DISPUTED" };
+    }
+
+    /* 2b. The account holder's own hold, checked here for the same reason the dispute check sits
+           here: cheapest and most definitive, before any chain read. An auto top-up is a fresh pull
+           out of the user's wallet against no service yet rendered, so it is exactly what a hold
+           exists to stop. Nothing about the Merchant Protection carve-out applies here, because no
+           merchant has delivered anything against this money.
+
+           Left ARMED rather than disarmed or deferred, and no failure code recorded. A hold is the
+           user's own reversible choice, not a broken mandate, so nothing should be written that
+           looks like one. Staying armed costs one indexed read plus one hold read per sweep and
+           means the refill resumes by itself the moment the hold lifts. isAccountHalted returns
+           true on a read failure, so a database incident skips too. */
+    if (await isAccountHalted(vault.userAddress)) {
+        return { id: vault.id, status: "skipped", code: "ACCOUNT_ON_HOLD" };
     }
 
     const amount = vault.topUpAmountUsdc;

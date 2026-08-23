@@ -8,6 +8,7 @@ Audit of what SubScript's platform admin console (`/admin`, `/api/admin/*`, `src
 
 **Audited** 2026-08-21. Rows marked ✅ *(fixed 2026-08-21)* were ❌ when this audit was written and
 have since been closed — see the Progress note below rather than assuming they were always there.
+The work landed in PR #166; the negatives were re-verified against that branch on the same date.
 
 ---
 
@@ -33,9 +34,37 @@ itself audit-logged, because every tab load would append a row and bury the acti
 opened it to find. The action taxonomy moved to an exported `ADMIN_ACTIONS` array with the type
 derived from it, so the filter can never drift out of sync with what `recordAdminAction` accepts.
 
-Neither is verified in a browser yet. Both typecheck against a clean baseline and the tab was built
-against the route's actual response shape, but the console needs a real admin session to reach, so
-the first genuine exercise will be opening the tab.
+**Also shipped, though it changes no row — the analytics charts now report accurately.** Row 1.1
+already listed "Growth analytics and charts" as built, and that was true: the charts existed. They
+also misstated the data. The area chart took gridlines from one formula and data from another, so
+the line labelled "0" sat about 30px from where a zero value actually plotted, and the area fill
+closed below its own baseline. Its smoothing had no limiter and overshot into negative volume that
+never happened. Bars floored every value at 6% of the plot, so a metric of **zero** drew a bar a
+reader takes for a real quantity. Donut legends rounded each share independently and could total 99%
+or 101%. The gas gauge painted red-amber-green across its own bounding box, so colour encoded
+position rather than value and a healthy relayer displayed red. For an auditor a ✅ that misreports
+figures is worse than a ❌, which is why it belongs in this log even though the status stays ✅.
+
+Chart colours also moved onto a palette measured under colourblind simulation instead of chosen by
+eye, and accessibility that was absent throughout — keyboard and touch access to every hover
+readout, a text table behind each chart, `prefers-reduced-motion` — is now in place.
+
+**Still open, re-checked rather than carried forward on trust (2026-08-21).** The ❌ and 🟡 rows
+below were re-verified against the code, so a future reader can date the negatives:
+
+- `SPONSOR_EMERGENCY_STOP` is still read straight from `process.env`, at `sponsor/gas.ts:51` and
+  `sponsor/sponsorship.ts:203`. Finding 3 stands exactly as written.
+- `lib/ops/configCheck.ts` still has no consumer outside `src/lib`.
+- `lib/apiKeys.ts` and the webhook outbox still have no admin route and no admin component.
+- `configuredAccountType` appears nowhere under `src/app/api/admin` or `src/components/admin`, so
+  custody type per wallet is still invisible — which also means nobody can see whether a given
+  wallet can be gas-sponsored at all.
+- `payment-reconciliation` still has no console tab. The tab list is overview, analytics, tickets,
+  merchants, merchant-access, kyc, moderation, system, broadcast, receipts, audit-log, admins.
+
+Neither closed finding is verified in a browser yet. Both typecheck against a clean baseline and the
+tab was built against the route's actual response shape, but the console needs a real admin session
+to reach, so the first genuine exercise will be opening the tab.
 
 **Carried forward:** the eight high-risk actions the tab highlights are listed in
 `AdminAuditLogView.tsx` as a second copy alongside `ADMIN_ACTIONS`. Add a dangerous action later and
@@ -52,7 +81,7 @@ roles will need a risk classification anyway.
 | --- | --- | --- |
 | Total USDC volume and transaction count | ✅ | `api/admin/overview` — `totalVolumeUsdc`, `totalVolumeCount` |
 | Daily volume and signup time series | ✅ | `overview` returns `{date, label, volume, users}` |
-| Growth analytics and charts | ✅ | `api/admin/analytics`, `components/admin/analytics/` |
+| Growth analytics and charts | ✅ | `api/admin/analytics`, `components/admin/analytics/`. Charts rebuilt 2026-08-21 — they existed but misreported values; see Progress |
 | Sponsor wallet address and gas balance | ✅ | `overview` exposes `sponsorWalletAddress`, `sponsorBalanceUsdc` |
 | Estimated sponsored top-ups remaining | ✅ | `getSponsorWalletStatus` computes `estimatedTopupsRemaining`, `underfunded` |
 | Reconciliation queue: pending, retrying, failed events | 🟡 | `api/admin/payment-reconciliation` exists but is API-key auth only, with no console tab |

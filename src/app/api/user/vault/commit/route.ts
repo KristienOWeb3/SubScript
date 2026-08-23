@@ -15,6 +15,7 @@ import { prisma } from "@/lib/prisma";
 import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
+import { haltGuard } from "@/lib/accountHalt";
 import crypto from "crypto";
 
 export const maxDuration = 120;
@@ -32,6 +33,11 @@ export async function POST(request: Request) {
         if (!roleCheck.ok) {
             return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
         }
+        /* Committing escrow is money leaving the wallet under a brand new authorization, so a hold
+           refuses it. Ahead of the email check and requireSponsoredGas: a held account should not
+           spend platform gas budget on a commit that policy will reject. */
+        const held = await haltGuard(wallet);
+        if (held) return held;
         const verifiedEmail = await getVerifiedAccountEmail(wallet);
         if (!verifiedEmail?.email) {
             return NextResponse.json(

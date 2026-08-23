@@ -46,6 +46,10 @@ function utilizationPercent(commit: UserCommit): number | null {
 const STATUS_STYLES: Record<string, string> = {
     ACTIVE: "border-[#ccff00]/30 bg-[#ccff00]/10 text-[#ccff00]",
     PAUSED: "border-amber-400/30 bg-amber-400/10 text-amber-300",
+    /* Only ever seen on a root commit (the account holder's own hold), so a sub-user row will not
+       carry it. Styled anyway so an unexpected value renders as a real badge rather than falling
+       through to the neutral default. */
+    HALTED: "border-amber-400/30 bg-amber-400/10 text-amber-300",
     REVOKED: "border-red-400/30 bg-red-400/10 text-red-300",
 };
 
@@ -64,6 +68,13 @@ export default function SubUserManager({ balanceVisible = true }: { balanceVisib
     const [creating, setCreating] = useState(false);
     const [createError, setCreateError] = useState<string | null>(null);
     const [lastInvite, setLastInvite] = useState<string | null>(null);
+    /* The result of a rotation. `wasClaimed` decides whether the panel tells the user to pass the new
+       ID on, and `delegateNotified` whether we already did. */
+    const [rotated, setRotated] = useState<{
+        commitId: string;
+        wasClaimed: boolean;
+        delegateNotified: boolean;
+    } | null>(null);
 
     const [editing, setEditing] = useState<UserCommit | null>(null);
     const [editLimit, setEditLimit] = useState("");
@@ -137,6 +148,54 @@ export default function SubUserManager({ balanceVisible = true }: { balanceVisib
             return;
         }
         void executeMutateStatus(target, action);
+    };
+
+    /* Issue a fresh Commit ID for one sub-user. Same cap, same spend history, new credential — the
+       answer to a leaked ID, where revoking would also throw away the ledger. */
+    const executeRotate = async (target: UserCommit) => {
+        setBusy({ commitId: target.commitId, action: "rotate" });
+        setError(null);
+        try {
+            const res = await fetch("/api/user/commit/sub-users/rotate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ commitId: target.commitId }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || "Could not issue a new ID");
+            setRotated({
+                commitId: data.commitId,
+                wasClaimed: Boolean(target.walletAddress),
+                delegateNotified: Boolean(data.delegateNotified),
+            });
+            setLastInvite(null);
+            await load();
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "Could not issue a new ID");
+        } finally {
+            setBusy(null);
+            setSubUserConfirm(null);
+        }
+    };
+
+    /* Same operation, two very different consequences, so the confirmation says which one this is.
+       An unclaimed invite has never been handed to anyone: rotating it just regenerates the invite.
+       A claimed one is a live person, and the new ID breaks whatever they pasted into a merchant's
+       platform the moment this returns. walletAddress is the only thing that tells the two apart. */
+    const rotate = (target: UserCommit) => {
+        const claimed = Boolean(target.walletAddress);
+        const who = target.displayName || "this sub-user";
+        setSubUserConfirm({
+            title: claimed ? "Replace their commit ID" : "Regenerate this invite",
+            message: claimed
+                ? `${who} is using this ID right now. A new one stops the old one working straight away, `
+                    + "so anywhere they've pasted it will start refusing them until they update it. Their cap and "
+                    + "spend history stay exactly as they are. Do this if the ID has leaked."
+                : `Nobody has claimed this invite yet, so no one loses access. ${who} gets a new code and the old `
+                    + "one stops working. Do this if you sent the old code somewhere you shouldn't have.",
+            confirmText: claimed ? "Replace ID" : "Regenerate",
+            onConfirm: () => void executeRotate(target),
+        });
     };
 
     const executeCreateSubUser = async (spendLimitUsdc: string | null) => {
@@ -289,6 +348,45 @@ export default function SubUserManager({ balanceVisible = true }: { balanceVisib
                 </div>
             )}
 
+            {rotated && (
+                <div className="mb-4 rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/5 p-3">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-[#ccff00]">New commit ID</p>
+                    <p className="mt-1 text-[11px] text-white/60">
+                        {rotated.wasClaimed
+                            ? "The old ID stopped working just now. Send them this one so they can get going again."
+                            : "The old code is dead. Share this one instead."}
+                    </p>
+                    {/* No email or DM goes out for a re-credentialed delegate yet, so the panel says so
+                        rather than letting the user assume we handled it.
+                        TODO(docs/email-audit.md): wire the missing notification and drop this line. */}
+                    {rotated.wasClaimed && (
+                        <p className="mt-1 text-[10px] text-amber-300/80">
+                            {rotated.delegateNotified
+                                ? "We put a notice in their dashboard. They won't get an email, so tell them too if it's urgent."
+                                : "We couldn't reach them, so you'll need to pass this on yourself."}
+                        </p>
+                    )}
+                    <div className="mt-2 flex items-center gap-2">
+                        <code className="flex-1 truncate rounded-lg border border-white/10 bg-black/40 px-2 py-1.5 font-mono text-[11px] text-white">{rotated.commitId}</code>
+                        <button
+                            type="button"
+                            onClick={() => { void navigator.clipboard.writeText(rotated.commitId).catch(() => {}); }}
+                            className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5 text-[9px] font-black uppercase tracking-wider text-white/70 transition hover:text-white"
+                        >
+                            Copy
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setRotated(null)}
+                            className="rounded-lg p-1.5 text-white/40 transition hover:text-white"
+                            aria-label="Dismiss new commit ID"
+                        >
+                            <X className="h-3.5 w-3.5" />
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {loading ? (
                 <div className="space-y-3 animate-pulse">
                     {Array.from({ length: 2 }).map((_, i) => (
@@ -350,9 +448,20 @@ export default function SubUserManager({ balanceVisible = true }: { balanceVisib
                                                     disabled={rowBusy}
                                                     className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-white/70 transition hover:text-white disabled:opacity-50"
                                                 >
-                                                    {rowBusy && busy?.action !== "revoke"
+                                                    {rowBusy && (busy?.action === "pause" || busy?.action === "resume")
                                                         ? "..."
                                                         : subUser.status === "PAUSED" ? "Resume" : "Pause"}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => rotate(subUser)}
+                                                    disabled={rowBusy}
+                                                    className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-white/70 transition hover:text-white disabled:opacity-50"
+                                                    title={subUser.walletAddress
+                                                        ? "Issue a new ID. Keeps their cap and history, and the old ID stops working now."
+                                                        : "Issue a new invite code. The old one stops working."}
+                                                >
+                                                    {rowBusy && busy?.action === "rotate" ? "..." : "New ID"}
                                                 </button>
                                                 <button
                                                     type="button"

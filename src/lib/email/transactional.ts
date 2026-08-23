@@ -7,6 +7,8 @@
  */
 
 import crypto from "crypto";
+import { pgMaybeOne } from "@/lib/serverPg";
+import { merchantDisplayName } from "@/lib/identityDisplay";
 import {
     formatUsdc,
     getWalletEmailPreference,
@@ -38,6 +40,12 @@ type PaymentReceipt = {
     merchantAddress: string;
     payerAddress: string;
     paymentTitle?: string | null;
+    /**
+     * The merchant's registered name, resolved from address_aliases by
+     * sendPaymentReceiptEmails. Never the merchant_name supplied with an individual checkout:
+     * that field is branding metadata and must not be able to name a different payee.
+     */
+    merchantName?: string | null;
     txHash: string;
 };
 
@@ -141,26 +149,52 @@ export async function sendWelcomeEmail(email: string, role: "USER" | "ENTERPRISE
 
 export async function sendPaymentReceiptEmail(receipt: PaymentReceipt) {
     const amount = formatUsdc(receipt.amountUsdc);
-    const title = receipt.paymentTitle ? htmlEscape(receipt.paymentTitle) : "SubScript payment";
-    const perspective = receipt.recipientKind === "payer" ? "Your payment is confirmed" : "You received a payment";
+    /* Who was paid, in words. Falls back to a shortened address rather than a full one: an
+       inbox is a place where a 42-character hex string is pure noise. */
+    const paidTo = receipt.merchantName?.trim()
+        || `${receipt.merchantAddress.slice(0, 6)}…${receipt.merchantAddress.slice(-4)}`;
+    /* Same subject the receipt page leads with, and the same fallback order, so the email and
+       the page agree on what this payment was. The receipt id is not in this chain. */
+    const subject = receipt.paymentTitle?.trim() || `Payment to ${paidTo}`;
+    const lead = receipt.recipientKind === "payer"
+        ? `Your payment to ${htmlEscape(paidTo)} went through.`
+        : "This payment has landed in your account.";
+    const emailSubject = receipt.recipientKind === "payer"
+        ? `Your receipt: ${subject}`
+        : `You got paid: ${subject}`;
     return sendTransactionalEmail({
         to: receipt.recipient,
         category: "transactional",
-        subject: `${perspective}: ${amount} USDC`,
-        text: `${perspective}. ${title}: ${amount} USDC. Receipt: ${receipt.receiptUrl}. Transaction: ${receipt.txHash}`,
+        subject: emailSubject,
+        text: `${subject}. ${amount} USDC. ${receipt.recipientKind === "payer" ? `Paid to ${paidTo}.` : "Paid into your account."} Open your receipt: ${receipt.receiptUrl} (reference ${receipt.receiptId})`,
         html: renderEmailLayout({
-            previewText: `${perspective}: ${amount} USDC`,
-            heading: perspective,
-            bodyHtml: `<p style="margin:0 0 16px">${title}</p>
-                <div style="margin:0 0 8px;padding:18px 20px;background:#f4f6f8;border-radius:14px">
+            previewText: `${subject} · ${amount} USDC`,
+            heading: subject,
+            bodyHtml: `<p style="margin:0 0 16px">${lead}</p>
+                <div style="margin:0 0 14px;padding:18px 20px;background:#f4f6f8;border-radius:14px">
                     <span style="font-size:28px;font-weight:800;color:#08090a">${amount}</span>
                     <span style="font-size:15px;font-weight:700;color:#00a892;margin-left:6px">USDC</span>
                 </div>
-                <p style="margin:0;color:#6b7280;font-size:12px">Receipt ${htmlEscape(receipt.receiptId)}</p>`,
-            cta: { label: "View private receipt", url: receipt.receiptUrl },
+                <p style="margin:0;color:#6b7280;font-size:12px">Reference ${htmlEscape(receipt.receiptId)} · keep it if you need to ask us about this payment</p>`,
+            cta: { label: "Open your receipt", url: receipt.receiptUrl },
         }),
         idempotencyKey: `payment-receipt:${receipt.recipientKind}:${receipt.txHash}:${receipt.recipient}`,
     });
+}
+
+/** The merchant's registered handle, or null when there is none or it is marked anonymous. */
+async function getMerchantAliasName(merchantAddress: string): Promise<string | null> {
+    try {
+        const row = await pgMaybeOne<{ alias: string | null; is_anonymous: boolean | null }>(
+            `select alias, is_anonymous from address_aliases where address = $1 limit 1`,
+            [merchantAddress.toLowerCase()]
+        );
+        if (!row?.alias || row.is_anonymous) return null;
+        return merchantDisplayName(row.alias);
+    } catch (error) {
+        console.error("Merchant name lookup failed", error instanceof Error ? error.message : "Unknown error");
+        return null;
+    }
 }
 
 export async function sendPaymentReceiptEmails(input: Omit<PaymentReceipt, "recipient" | "recipientKind">) {
@@ -176,6 +210,13 @@ export async function sendPaymentReceiptEmails(input: Omit<PaymentReceipt, "reci
         return;
     }
 
+    /* Resolved here rather than passed in by the caller, for the same reason the settlement
+       worker resolves it for the receipt DM: identity comes from the database, never from the
+       merchant_name a checkout submitted. An anonymous alias counts as no name, matching what
+       the UI does, so a merchant who hid their handle is not named by email either. A failed
+       lookup is not worth failing a receipt over — the email falls back to a short address. */
+    const merchantName = await getMerchantAliasName(input.merchantAddress);
+
     const recipients = [
         { preference: payer, recipientKind: "payer" as const },
         { preference: merchant, recipientKind: "merchant" as const },
@@ -188,6 +229,7 @@ export async function sendPaymentReceiptEmails(input: Omit<PaymentReceipt, "reci
         sentTo.add(email);
         await safelySendEmail(`payment receipt for ${recipientKind}`, () => sendPaymentReceiptEmail({
             ...input,
+            merchantName: input.merchantName ?? merchantName,
             recipient: email,
             recipientKind,
         }));

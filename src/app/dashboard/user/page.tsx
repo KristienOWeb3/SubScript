@@ -46,6 +46,7 @@ import DmRequestsModal from "@/components/dashboard/DmRequestsModal";
 import DmInviteManagerModal from "@/components/dashboard/DmInviteManagerModal";
 import BlockedUsersModal from "@/components/dashboard/BlockedUsersModal";
 import VaultShareManager from "@/components/VaultShareManager";
+import AccountHoldPanel from "@/components/dashboard/AccountHoldPanel";
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
 import { MerchantVerifiedTick } from "@/components/MerchantVerifiedBadge";
@@ -3698,6 +3699,9 @@ export default function UserDashboard() {
                   title="Manage Commit"
                   subtitle="Fund prepaid balances for metered services"
                 />
+
+                {/* Account-level, so it sits above the per-merchant vaults rather than inside one. */}
+                <AccountHoldPanel />
 
                 <section className="commit-vault-shell p-0 sm:rounded-3xl sm:border sm:border-black/35 sm:bg-[#2775CA]/20 sm:p-8">
                   <div className="mb-5 flex items-end justify-between gap-3">

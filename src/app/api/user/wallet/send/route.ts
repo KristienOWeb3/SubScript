@@ -16,6 +16,7 @@ import {
 } from "@/lib/commitId";
 import { sanitizeInput } from "@/utils/security";
 import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
+import { assertAccountNotHalted, AccountHaltError } from "@/lib/accountHalt";
 import { assertNotBlocked } from "@/lib/dms/blocks";
 import { MAX_BATCH_RECIPIENTS } from "@/lib/payments/batchLimits";
 import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
@@ -100,8 +101,16 @@ export async function POST(request: Request) {
             /* This route is a user-wallet outflow. For delegated sends the parent funding wallet
                is the account whose funds leave the chain, so the hold is keyed to that wallet. */
             await assertWithdrawalAllowed(fundingWallet, "USER");
+            /* The account holder's own brake, checked on the same wallet and for the same reason:
+               the funding account is the one whose money leaves. A delegated send is covered twice
+               over, because resolveSpendingAuthority above already refuses a halted parent — this
+               is the gate that runs before any gas is reserved. */
+            await assertAccountNotHalted(fundingWallet);
         } catch (holdError) {
             if (holdError instanceof WithdrawalHeldError) {
+                return NextResponse.json({ error: holdError.message }, { status: holdError.status });
+            }
+            if (holdError instanceof AccountHaltError) {
                 return NextResponse.json({ error: holdError.message }, { status: holdError.status });
             }
             throw holdError;

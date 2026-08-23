@@ -40,7 +40,7 @@
     "test:repo-docs": "node --test src/app/docs/__tests__/repo-docs-structure.test.mjs",
     "test:push": "node --test src/lib/__tests__/push-notifications.test.mjs",
     "security:secrets": "node scripts/check-secrets.mjs",
-    "test:security": "npx tsx --test \"src/lib/__tests__/delegated-spend-caps.test.mjs\" \"src/lib/ops/__tests__/*.test.mjs\" \"src/lib/sponsor/__tests__/*.test.mjs\" \"src/lib/subscriptions/__tests__/*.test.mjs\" \"src/lib/vault/__tests__/*.test.mjs\" \"src/lib/admin/__tests__/*.test.mjs\" \"src/lib/merchants/__tests__/*.test.mjs\" \"src/lib/email/__tests__/*.test.mjs\"",
+    "test:security": "npx tsx --test \"src/lib/__tests__/delegated-spend-caps.test.mjs\" \"src/lib/__tests__/commit-rotation-and-halt.test.mjs\" \"src/lib/ops/__tests__/*.test.mjs\" \"src/lib/sponsor/__tests__/*.test.mjs\" \"src/lib/subscriptions/__tests__/*.test.mjs\" \"src/lib/vault/__tests__/*.test.mjs\" \"src/lib/admin/__tests__/*.test.mjs\" \"src/lib/merchants/__tests__/*.test.mjs\" \"src/lib/email/__tests__/*.test.mjs\"",
     "test:email": "npx tsx --test \"src/lib/email/__tests__/*.test.mjs\"",
     "audit:production": "npm audit --omit=dev --audit-level=critical",
     "test:kyc": "npx tsx --test --test-isolation=none src/lib/kyc/__tests__/kyc.test.mjs",
