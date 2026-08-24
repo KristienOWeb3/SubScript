@@ -595,7 +595,19 @@ export default function UserDashboard() {
       return () => window.removeEventListener("storage", handleStorageChange);
     }
   }, []);
-  const [txFilter, setTxFilter] = useState<"all" | "recurring" | "one-time" | "transfers" | "withdrawals">("all");
+  const [txFilter, setTxFilter] = useState<"all" | "recurring" | "one-time" | "transfers" | "withdrawals" | "deposits">("all");
+  const [deposits, setDeposits] = useState<Array<{
+    id: string;
+    txHash: string;
+    fromAddress: string;
+    toAddress: string;
+    amountUsdc: string;
+    amountFormatted: string;
+    timestamp: number;
+    blockNumber: number;
+    status: string;
+    senderName: string | null;
+  }>>([]);
   const [allTxOpen, setAllTxOpen] = useState(false);
   const [allTxSearch, setAllTxSearch] = useState("");
   const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
@@ -909,13 +921,20 @@ export default function UserDashboard() {
   const loadUserSettings = async () => {
     setIsSettingsLoading(true);
     try {
-      const res = await fetch("/api/user/settings");
+      const [res, depositsRes] = await Promise.all([
+        fetch("/api/user/settings"),
+        fetch("/api/user/deposits").catch(() => null),
+      ]);
       const data = await res.json();
+      const depData = depositsRes ? await depositsRes.json().catch(() => ({})) : {};
       if (data.success) {
         setUserSettings(data.settings);
         setSettingsTransactions(data.receipts);
         if (data.settings.profilePic) setProfilePic(data.settings.profilePic);
         if (data.settings.alias) setRegisteredDomain(data.settings.alias);
+      }
+      if (depData.success && Array.isArray(depData.deposits)) {
+        setDeposits(depData.deposits);
       }
     } catch (err) {
       console.error("Failed to load user settings:", err);
@@ -1141,6 +1160,7 @@ export default function UserDashboard() {
              fresh ones. */
           loadSubscriptions().catch(console.error),
           loadDms().catch(console.error),
+          loadUserSettings().catch(console.error),
         ]),
         timeoutPromise,
       ]);
@@ -3004,8 +3024,11 @@ export default function UserDashboard() {
         <div className="relative z-10 min-w-0 flex-1 flex flex-col bg-[#FFFFF0] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[20px] md:border md:border-black/10 overflow-hidden">
           <div className="md:hidden fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
             <div className="flex w-full max-w-md items-center justify-between px-1 py-2 pointer-events-auto">
-              <div className="h-12 w-12 subscript-skeleton rounded-full" />
-              <div className="h-10 w-10 subscript-skeleton subscript-skeleton--faint rounded-full" />
+              <div className="flex items-center gap-2 rounded-full border border-black/15 bg-white/95 px-3 py-1.5 shadow-sm">
+                <div className="h-7 w-7 subscript-skeleton rounded-full shrink-0" />
+                <div className="h-3 w-20 subscript-skeleton rounded-full" />
+              </div>
+              <div className="h-10 w-10 subscript-skeleton rounded-full shrink-0" />
             </div>
           </div>
 
@@ -3021,13 +3044,20 @@ export default function UserDashboard() {
                 <div className="flex flex-col gap-4 min-w-0">
                   <div className="flex flex-col items-center justify-center gap-4 px-3 py-3 text-center md:flex-row md:justify-between md:rounded-[20px] md:border md:border-black/35 md:bg-[#2775CA]/20 md:px-6 md:py-[22px] md:text-left">
                     <div className="flex flex-col items-center gap-2 md:items-start">
-                      <div className="h-2.5 w-28 subscript-skeleton rounded-full" />
+                      <div className="flex items-center gap-2">
+                        <div className="h-2.5 w-24 subscript-skeleton rounded-full" />
+                        <div className="h-3.5 w-3.5 subscript-skeleton rounded-full" />
+                        <div className="h-3.5 w-3.5 subscript-skeleton rounded-full" />
+                      </div>
                       <div className="h-10 w-48 subscript-skeleton rounded-2xl" />
                       <div className="h-3 w-24 subscript-skeleton subscript-skeleton--faint rounded-full" />
                     </div>
-                    <div className="flex w-full items-center justify-center gap-2.5 md:w-auto md:flex-col">
-                      <div className="h-11 min-w-[130px] flex-1 subscript-skeleton rounded-full" />
-                      <div className="h-11 min-w-[130px] flex-1 subscript-skeleton rounded-full" />
+                    <div className="wallet-actions flex w-full shrink-0 flex-row justify-center gap-2 md:w-auto md:flex-col">
+                      <div className="h-11 min-w-[110px] flex-1 md:flex-none subscript-skeleton rounded-full" />
+                      <div className="flex flex-1 md:flex-none items-center gap-2">
+                        <div className="h-11 min-w-[110px] flex-1 subscript-skeleton rounded-full" />
+                        <div className="flex md:hidden h-11 w-11 shrink-0 subscript-skeleton rounded-full" />
+                      </div>
                     </div>
                   </div>
                   <div className="grid grid-cols-[42fr_58fr] gap-3.5">
@@ -3043,8 +3073,8 @@ export default function UserDashboard() {
                       <div className="space-y-2.5">
                         <div className="h-2.5 w-20 subscript-skeleton rounded-full" />
                         <div className="flex gap-3">
-                          <div className="h-6 w-20 subscript-skeleton rounded-lg" />
-                          <div className="h-6 w-20 subscript-skeleton rounded-lg" />
+                          <div className="h-6 w-16 subscript-skeleton rounded-lg" />
+                          <div className="h-6 w-16 subscript-skeleton rounded-lg" />
                         </div>
                       </div>
                       <div className="h-2.5 w-24 subscript-skeleton rounded-full" />
@@ -3082,8 +3112,8 @@ export default function UserDashboard() {
                   <div className="h-4 w-16 subscript-skeleton rounded-full" />
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {[1, 2, 3, 4, 5].map((i) => (
-                    <div key={i} className="h-7 w-20 subscript-skeleton rounded-full" />
+                  {["All", "Subscriptions", "One Time", "Transfers", "Withdrawals", "Deposits"].map((tab) => (
+                    <div key={tab} className="h-7 w-20 subscript-skeleton rounded-full" />
                   ))}
                 </div>
                 <div className="mt-4 divide-y divide-black/5">
@@ -3108,14 +3138,14 @@ export default function UserDashboard() {
         </div>
 
         {/* Mobile Bottom Bar Skeleton */}
-          <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3 md:hidden">
-            <div className="flex flex-1 items-center justify-around rounded-full border border-black/15 bg-[#2775CA]/20 px-3 py-[1.1rem] backdrop-blur-2xl">
-              {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="h-6 w-6 subscript-skeleton rounded-full" />
-              ))}
-            </div>
-            <div className="h-[3.3rem] w-[3.3rem] shrink-0 rounded-full subscript-skeleton" />
+        <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3 md:hidden">
+          <div className="flex flex-1 items-center justify-around rounded-full border border-black/15 bg-[#2775CA]/20 px-3 py-[1.1rem] backdrop-blur-2xl">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-6 w-6 subscript-skeleton rounded-full" />
+            ))}
           </div>
+          <div className="h-[3.3rem] w-[3.3rem] shrink-0 rounded-full subscript-skeleton" />
+        </div>
       </div>
     );
   }
@@ -3274,10 +3304,33 @@ export default function UserDashboard() {
           incoming,
         };
       }),
+    ...deposits
+      .filter((d) => !dms.some((dm) => dm.txHash && dm.txHash.toLowerCase() === d.txHash.toLowerCase()))
+      .map((d) => {
+        const usdVal = Number(d.amountUsdc) / 1_000_000;
+        const localVal = usdVal * exchangeRate;
+        const localLabel = `${detectedCurrency.symbol}${formatHeadlineAmount(localVal)}`;
+        return {
+          id: `dep-${d.txHash}`,
+          kind: "transfers" as const,
+          name: d.senderName ? `Deposit from @${d.senderName}` : `Deposit from ${formatAddress(d.fromAddress)}`,
+          pic: null as string | null,
+          detail: "USDC Deposit • Arc Network",
+          amountLabel: `+$${formatUsdc(d.amountUsdc)}`,
+          localAmountLabel: `+${localLabel}`,
+          amountUsdc: usdVal,
+          status: "CONFIRMED",
+          time: d.timestamp,
+          incoming: true,
+          txHash: d.txHash,
+        };
+      }),
   ].sort((a, b) => b.time - a.time);
-  const filteredTransactions = recentTransactions.filter(
-    (t) => txFilter === "all" || t.kind === txFilter,
-  );
+  const filteredTransactions = recentTransactions.filter((t) => {
+    if (txFilter === "all") return true;
+    if (txFilter === "deposits") return t.incoming && t.detail.toLowerCase().includes("deposit");
+    return t.kind === txFilter;
+  });
 
 
 
@@ -3706,7 +3759,7 @@ export default function UserDashboard() {
                   </div>
 
                   <div className="dashboard-filter-scroll mt-4 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                    {([["all", "All"], ["recurring", "Subscriptions"], ["one-time", "One Time"], ["transfers", "Transfers"], ["withdrawals", "Withdrawals"]] as const).map(([value, label]) => (
+                    {([["all", "All"], ["recurring", "Subscriptions"], ["one-time", "One Time"], ["transfers", "Transfers"], ["withdrawals", "Withdrawals"], ["deposits", "Deposits"]] as const).map(([value, label]) => (
                       <button
                         key={value}
                         type="button"
@@ -5853,7 +5906,27 @@ export default function UserDashboard() {
                 {accountSubView === "transactions" && (loading || dataViewLoading === "transactions" ? (
                   <SettingsTransactionsSkeleton />
                 ) : (() => {
-                  const filteredSettingsTx = settingsTransactions.filter((tx) => {
+                  const combinedSettingsTx = [
+                    ...settingsTransactions,
+                    ...deposits
+                      .filter((d) => !settingsTransactions.some((r) => r.txHash && r.txHash.toLowerCase() === d.txHash.toLowerCase()))
+                      .map((d) => ({
+                        receiptId: `dep-${d.txHash}`,
+                        txHash: d.txHash,
+                        payerAddress: d.fromAddress,
+                        merchantAddress: d.toAddress,
+                        counterpartyName: d.senderName ? `@${d.senderName}` : formatAddress(d.fromAddress),
+                        memoNote: "USDC Deposit • Arc Network",
+                        amountUsdc: d.amountUsdc,
+                        direction: "received" as const,
+                        status: "COMPLETED",
+                        createdAt: new Date(d.timestamp).toISOString(),
+                        paymentLinkId: null,
+                        isExternalDeposit: true,
+                      })),
+                  ];
+
+                  const filteredSettingsTx = combinedSettingsTx.filter((tx) => {
                     if (settingsTxSearch.trim()) {
                       const q = settingsTxSearch.trim().toLowerCase();
                       const matchId = (tx.receiptId || "").toLowerCase().includes(q);
@@ -5872,7 +5945,8 @@ export default function UserDashboard() {
                       const isSub = memo.includes("sub") || memo.includes("plan") || memo.includes("recurring") || !!tx.paymentLinkId;
                       const isTransfer = memo.includes("transfer") || memo.includes("peer");
                       const isWithdrawal = memo.includes("withdraw") || memo.includes("balance to wallet");
-                      const isOneTime = !isSub && !isTransfer && !isWithdrawal;
+                      const isDeposit = memo.includes("deposit") || tx.isExternalDeposit;
+                      const isOneTime = !isSub && !isTransfer && !isWithdrawal && !isDeposit;
 
                       if (settingsTxCategory === "subscriptions") {
                         if (!isSub) return false;
@@ -5882,6 +5956,8 @@ export default function UserDashboard() {
                         if (!isTransfer) return false;
                       } else if (settingsTxCategory === "withdrawals") {
                         if (!isWithdrawal) return false;
+                      } else if (settingsTxCategory === "deposits") {
+                        if (!isDeposit) return false;
                       } else if (settingsTxCategory === "sent") {
                         if (tx.direction !== "sent") return false;
                       } else if (settingsTxCategory === "received") {
@@ -5983,6 +6059,7 @@ export default function UserDashboard() {
                               <option value="one-time">One Time</option>
                               <option value="transfers">Transfers</option>
                               <option value="withdrawals">Withdrawals</option>
+                              <option value="deposits">Deposits</option>
                               <option value="sent">Sent (Debit)</option>
                               <option value="received">Received (Credit)</option>
                             </select>
@@ -6101,24 +6178,38 @@ export default function UserDashboard() {
                                     </td>
                                     <td className="py-4 text-right">
                                       <div className="inline-flex items-center gap-3">
-                                        <a
-                                          href={`/receipt/${tx.receiptId}`}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="text-[#2775CA] hover:underline inline-flex items-center gap-1 font-semibold"
-                                          title="Open this receipt in a new tab"
-                                        >
-                                          View receipt
-                                        </a>
-                                        <a
-                                          href={`/receipt/${tx.receiptId}?invite=1`}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="text-black/60 hover:text-[#2775CA] hover:underline inline-flex items-center gap-1"
-                                          title="Grant another address permission to view this private receipt"
-                                        >
-                                          Share
-                                        </a>
+                                        {tx.isExternalDeposit ? (
+                                          <a
+                                            href={`https://testnet.arcscan.app/tx/${tx.txHash}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-[#2775CA] hover:underline inline-flex items-center gap-1 font-semibold"
+                                            title="View deposit on Arcscan Explorer"
+                                          >
+                                            <ExternalLink className="h-3 w-3" /> Explorer
+                                          </a>
+                                        ) : (
+                                          <>
+                                            <a
+                                              href={`/receipt/${tx.receiptId}`}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="text-[#2775CA] hover:underline inline-flex items-center gap-1 font-semibold"
+                                              title="Open this receipt in a new tab"
+                                            >
+                                              View receipt
+                                            </a>
+                                            <a
+                                              href={`/receipt/${tx.receiptId}?invite=1`}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="text-black/60 hover:text-[#2775CA] hover:underline inline-flex items-center gap-1"
+                                              title="Grant another address permission to view this private receipt"
+                                            >
+                                              Share
+                                            </a>
+                                          </>
+                                        )}
                                       </div>
                                     </td>
                                   </tr>
@@ -6155,8 +6246,21 @@ export default function UserDashboard() {
                                     <span className="font-bold text-black">${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC</span>
                                   </div>
                                   <div className="pt-2 flex items-center justify-end gap-3 border-t border-black/10 text-[10px]">
-                                    <a href={`/receipt/${tx.receiptId}`} target="_blank" rel="noopener noreferrer" className="text-[#2775CA] font-semibold">View receipt</a>
-                                    <a href={`/receipt/${tx.receiptId}?invite=1`} target="_blank" rel="noopener noreferrer" className="text-black/60">Share</a>
+                                    {tx.isExternalDeposit ? (
+                                      <a
+                                        href={`https://testnet.arcscan.app/tx/${tx.txHash}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-[#2775CA] font-semibold inline-flex items-center gap-1"
+                                      >
+                                        <ExternalLink className="h-3 w-3" /> View on Explorer
+                                      </a>
+                                    ) : (
+                                      <>
+                                        <a href={`/receipt/${tx.receiptId}`} target="_blank" rel="noopener noreferrer" className="text-[#2775CA] font-semibold">View receipt</a>
+                                        <a href={`/receipt/${tx.receiptId}?invite=1`} target="_blank" rel="noopener noreferrer" className="text-black/60">Share</a>
+                                      </>
+                                    )}
                                   </div>
                                 </div>
                               );

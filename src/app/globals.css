@@ -49,6 +49,20 @@
   color: #0f172a;
 }
 
+/* Explicitly preserve crisp white text on dark buttons, active tabs, and primary colored elements */
+.admin-workspace button[class*="bg-[#0f172a]"],
+.admin-workspace button[class*="bg-[#2775ca]"],
+.admin-workspace button[class*="bg-black"],
+.admin-workspace button[class*="bg-slate-900"],
+.admin-workspace [class*="bg-[#0f172a]"],
+.admin-workspace [class*="bg-[#2775ca]"],
+.admin-workspace [class*="bg-[#0f172a]"] [class*="text-white"],
+.admin-workspace [class*="bg-[#2775ca]"] [class*="text-white"],
+.admin-workspace [class*="!text-white"],
+.admin-workspace .subscript-primary-button {
+  color: #ffffff !important;
+}
+
 .admin-workspace [class~="text-white/80"],
 .admin-workspace [class~="text-white/70"],
 .admin-workspace [class~="text-white/60"] {

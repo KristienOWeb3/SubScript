@@ -256,6 +256,105 @@ export async function POST(
                 });
             }
 
+            case "permanent_ban": {
+                if (!reason || typeof reason !== "string") {
+                    return NextResponse.json({ error: "Ban reason is mandatory" }, { status: 400 });
+                }
+
+                await prisma.bannedAccount.upsert({
+                    where: { address: normalizedAddress },
+                    update: { reason, bannedBy: auth.admin.wallet, expiresAt: null },
+                    create: { address: normalizedAddress, reason, bannedBy: auth.admin.wallet, expiresAt: null },
+                });
+
+                // Terminate all active sessions
+                await prisma.session.deleteMany({ where: { wallet: normalizedAddress } });
+
+                await recordAdminAction({
+                    actor: auth.admin.wallet,
+                    action: "BAN_ACCOUNT",
+                    target: normalizedAddress,
+                    detail: { reason, permanent: true },
+                    request,
+                });
+
+                return NextResponse.json({
+                    success: true,
+                    action: "permanent_ban",
+                    message: `Account ${normalizedAddress} permanently banned`,
+                });
+            }
+
+            case "lift_ban": {
+                const existing = await prisma.bannedAccount.findUnique({
+                    where: { address: normalizedAddress },
+                });
+                if (existing) {
+                    await prisma.bannedAccount.delete({ where: { address: normalizedAddress } });
+                }
+
+                await recordAdminAction({
+                    actor: auth.admin.wallet,
+                    action: "UNBAN_ACCOUNT",
+                    target: normalizedAddress,
+                    detail: { reason: reason || "Administrative unban" },
+                    request,
+                });
+
+                return NextResponse.json({
+                    success: true,
+                    action: "lift_ban",
+                    message: `Ban lifted for account ${normalizedAddress}`,
+                });
+            }
+
+            case "set_withdrawal_hold": {
+                const scope = body.scope || "BOTH";
+                await prisma.withdrawalHold.upsert({
+                    where: { address: normalizedAddress },
+                    update: { reason: reason || "Administrative Hold", scope, placedBy: auth.admin.wallet },
+                    create: { address: normalizedAddress, reason: reason || "Administrative Hold", scope, placedBy: auth.admin.wallet },
+                });
+
+                await recordAdminAction({
+                    actor: auth.admin.wallet,
+                    action: "WITHDRAWAL_HOLD_SET",
+                    target: normalizedAddress,
+                    detail: { scope, reason: reason || "Administrative Hold" },
+                    request,
+                });
+
+                return NextResponse.json({
+                    success: true,
+                    action: "set_withdrawal_hold",
+                    scope,
+                    message: `Withdrawal hold placed on ${normalizedAddress}`,
+                });
+            }
+
+            case "lift_withdrawal_hold": {
+                const existing = await prisma.withdrawalHold.findUnique({
+                    where: { address: normalizedAddress },
+                });
+                if (existing) {
+                    await prisma.withdrawalHold.delete({ where: { address: normalizedAddress } });
+                }
+
+                await recordAdminAction({
+                    actor: auth.admin.wallet,
+                    action: "WITHDRAWAL_HOLD_CLEARED",
+                    target: normalizedAddress,
+                    detail: { reason: reason || "Administrative hold released" },
+                    request,
+                });
+
+                return NextResponse.json({
+                    success: true,
+                    action: "lift_withdrawal_hold",
+                    message: `Withdrawal hold lifted for ${normalizedAddress}`,
+                });
+            }
+
             case "reset_profile": {
                 await prisma.customer.updateMany({
                     where: { walletAddress: normalizedAddress },
@@ -305,6 +404,72 @@ export async function POST(
             }
 
             case "export_data": {
+                const [
+                    role,
+                    customer,
+                    merchant,
+                    embeddedWallet,
+                    alias,
+                    authIdentities,
+                    subscriptions,
+                    receipts,
+                    dms,
+                ] = await Promise.all([
+                    prisma.accountRole.findUnique({ where: { address: normalizedAddress } }),
+                    prisma.customer.findUnique({ where: { walletAddress: normalizedAddress } }),
+                    prisma.merchant.findUnique({ where: { walletAddress: normalizedAddress } }),
+                    prisma.userEmbeddedWallet.findUnique({ where: { walletAddress: normalizedAddress } }),
+                    prisma.addressAlias.findUnique({ where: { address: normalizedAddress } }),
+                    prisma.authIdentity.findMany({ where: { walletAddress: normalizedAddress } }),
+                    prisma.subscription.findMany({
+                        where: { OR: [{ subscriber: normalizedAddress }, { merchantAddress: normalizedAddress }] },
+                    }),
+                    prisma.receipt.findMany({
+                        where: { OR: [{ payerAddress: normalizedAddress }, { merchantAddress: normalizedAddress }] },
+                    }),
+                    prisma.subscriptDm.findMany({
+                        where: { OR: [{ senderAddress: normalizedAddress }, { receiverAddress: normalizedAddress }] },
+                    }),
+                ]);
+
+                const exportBundle = {
+                    walletAddress: normalizedAddress,
+                    exportedAt: new Date().toISOString(),
+                    exportedBy: auth.admin.wallet,
+                    accountRole: role,
+                    customer,
+                    merchant: merchant ? {
+                        ...merchant,
+                        availableBalanceUsdc: (Number(merchant.availableBalanceUsdc) / 1_000_000).toFixed(2),
+                        reservedBalanceUsdc: (Number(merchant.reservedBalanceUsdc) / 1_000_000).toFixed(2),
+                    } : null,
+                    embeddedWallet: embeddedWallet ? {
+                        email: embeddedWallet.email,
+                        provider: embeddedWallet.provider,
+                        circleWalletId: embeddedWallet.circleWalletId,
+                        createdAt: embeddedWallet.createdAt,
+                    } : null,
+                    alias,
+                    authIdentities,
+                    subscriptions: subscriptions.map((s: any) => ({
+                        subscriptionId: s.subscriptionId.toString(),
+                        merchantAddress: s.merchantAddress,
+                        subscriber: s.subscriber,
+                        amountCapUsdc: s.amountCapUsdc.toString(),
+                        status: s.status,
+                        createdAt: s.createdAt,
+                    })),
+                    receipts: receipts.map((r: any) => ({
+                        receiptId: r.receiptId,
+                        txHash: r.txHash,
+                        amountUsdc: (Number(r.amountUsdc) / 1_000_000).toFixed(2),
+                        title: r.title,
+                        status: r.status,
+                        createdAt: r.createdAt,
+                    })),
+                    directMessagesCount: dms.length,
+                };
+
                 await recordAdminAction({
                     actor: auth.admin.wallet,
                     action: "DATA_EXPORT_REQUEST",
@@ -316,7 +481,9 @@ export async function POST(
                 return NextResponse.json({
                     success: true,
                     action: "export_data",
-                    message: "Data export request logged and initiated",
+                    exportBundle,
+                    filename: `subscript-gdpr-export-${normalizedAddress}.json`,
+                    message: "Data export compiled successfully",
                 });
             }
 

@@ -235,11 +235,16 @@ export function AdminFinancialsView() {
             Issue Admin Refund
           </button>
           <button
-            onClick={loadFinancials}
-            className="flex items-center gap-1.5 rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-xs font-semibold text-[#0f172a] shadow-sm hover:bg-[#f8fafc]"
+            type="button"
+            onClick={async () => {
+              await loadFinancials();
+              setActionNotice("✅ Settlement ledger refreshed successfully.");
+            }}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-xs font-semibold text-[#0f172a] shadow-sm hover:bg-[#f8fafc] disabled:opacity-50 transition-all"
           >
-            <RefreshCw className="h-3.5 w-3.5" />
-            Refresh
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin text-[#2775ca]" : ""}`} />
+            <span>{loading ? "Refreshing..." : "Refresh"}</span>
           </button>
         </div>
       </div>
@@ -391,44 +396,48 @@ export function AdminFinancialsView() {
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#e2e8f0] pb-2">
         <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={() => setActiveTab("escrows")}
             className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
               activeTab === "escrows"
-                ? "bg-[#0f172a] text-white"
+                ? "bg-[#0f172a] !text-white shadow-sm"
                 : "bg-[#f1f5f9] text-[#64748b] hover:text-[#0f172a]"
             }`}
           >
             Metered Escrows ({data?.vaults.length || 0})
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab("payouts")}
             className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
               activeTab === "payouts"
-                ? "bg-[#0f172a] text-white"
+                ? "bg-[#0f172a] !text-white shadow-sm"
                 : "bg-[#f1f5f9] text-[#64748b] hover:text-[#0f172a]"
             }`}
           >
             Merchant Payouts ({data?.payoutBatches.length || 0})
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab("refunds")}
             className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
               activeTab === "refunds"
-                ? "bg-[#0f172a] text-white"
+                ? "bg-[#0f172a] !text-white shadow-sm"
                 : "bg-[#f1f5f9] text-[#64748b] hover:text-[#0f172a]"
             }`}
           >
             Refund Ledger ({data?.refunds.length || 0})
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab("exceptions")}
             className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
               activeTab === "exceptions"
-                ? "bg-[#0f172a] text-white"
+                ? "bg-[#0f172a] !text-white shadow-sm"
                 : "bg-[#f1f5f9] text-[#64748b] hover:text-[#0f172a]"
             }`}
           >
-            Exceptions & Dunning ({((data?.summary.stuckPaymentsCount || 0) + (data?.summary.dunningFailuresCount || 0))}
+            Exceptions & Dunning ({((data?.summary.stuckPaymentsCount || 0) + (data?.summary.dunningFailuresCount || 0))})
           </button>
         </div>
 

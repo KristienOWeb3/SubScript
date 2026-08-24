@@ -29,19 +29,18 @@ export function SubscriptionsView({ analytics }: SubscriptionsViewProps) {
   // Donut chart segments for status
   const statusSegments: DonutSegment[] = useMemo(() => {
     const statusCounts = subs?.byStatus || {};
-    const active = statusCounts.ACTIVE || subs?.activeTotal || 0;
+    const totalActive = statusCounts.ACTIVE || subs?.activeTotal || 0;
+    const cancelling = subs?.cancellingAtPeriodEnd || 0;
+    const activeRenewing = Math.max(0, totalActive - cancelling);
     const cancelled = statusCounts.CANCELLED || 0;
     const pastDue = statusCounts.PAST_DUE || 0;
     const paused = statusCounts.PAUSED || 0;
     const trialing = statusCounts.TRIALING || 0;
 
-    /* Billing states are status, so they map to the status ramp instead of loose hex. The old set
-       put Cancelling (#f59e0b) next to Past due (#ef4444), a pair measuring ΔE 14.4 in normal
-       vision against a floor of 15, and paired Active (#10b981) with Trialing (#00d2b4) at ΔE 8.6
-       so one ring carried two near-identical greens. */
+    /* Billing states are status, so they map to the status ramp instead of loose hex. */
     return [
-      { label: "Active", value: active, color: CHART_STATUS.good },
-      { label: "Cancelling", value: subs?.cancellingAtPeriodEnd || 0, color: CHART_STATUS.warning },
+      { label: "Active (Renewing)", value: activeRenewing, color: CHART_STATUS.good },
+      { label: "Cancelling at period end", value: cancelling, color: CHART_STATUS.warning },
       { label: "Past due", value: pastDue, color: CHART_STATUS.critical },
       { label: "Paused", value: paused, color: CHART_STATUS.paused },
       { label: "Trialing", value: trialing, color: CHART_STATUS.info },

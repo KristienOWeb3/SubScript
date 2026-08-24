@@ -36,15 +36,12 @@ export async function POST(request: Request) {
         const body = await request.json().catch(() => ({}));
         const before = await getPlatformFlags();
 
-        const data: Record<string, unknown> = { updatedBy: auth.admin.wallet, updatedAt: new Date() };
-        if (typeof body?.googleSigninEnabled === "boolean") data.googleSigninEnabled = body.googleSigninEnabled;
-        if (typeof body?.externalWalletEnabled === "boolean") data.externalWalletEnabled = body.externalWalletEnabled;
-        if (typeof body?.maintenanceEnabled === "boolean") data.maintenanceEnabled = body.maintenanceEnabled;
-        if (typeof body?.sponsorEmergencyStop === "boolean") data.sponsorEmergencyStop = body.sponsorEmergencyStop;
-        if (typeof body?.paymentsEnabled === "boolean") data.paymentsEnabled = body.paymentsEnabled;
-        if (typeof body?.withdrawalsEnabled === "boolean") data.withdrawalsEnabled = body.withdrawalsEnabled;
+        const dbData: Record<string, any> = { updatedBy: auth.admin.wallet, updatedAt: new Date() };
+        if (typeof body?.googleSigninEnabled === "boolean") dbData.googleSigninEnabled = body.googleSigninEnabled;
+        if (typeof body?.externalWalletEnabled === "boolean") dbData.externalWalletEnabled = body.externalWalletEnabled;
+        if (typeof body?.maintenanceEnabled === "boolean") dbData.maintenanceEnabled = body.maintenanceEnabled;
         if (typeof body?.maintenanceMessage === "string" || body?.maintenanceMessage === null) {
-            data.maintenanceMessage = body.maintenanceMessage
+            dbData.maintenanceMessage = body.maintenanceMessage
                 ? String(body.maintenanceMessage).trim().slice(0, 300)
                 : null;
         }
@@ -59,28 +56,32 @@ export async function POST(request: Request) {
                     { status: 403 },
                 );
             }
-            data.merchantInviteOnlyEnabled = body.merchantInviteOnlyEnabled;
+            dbData.merchantInviteOnlyEnabled = body.merchantInviteOnlyEnabled;
         }
 
-        if (Object.keys(data).length === 2) {
+        const hasRuntimeFlag = typeof body?.sponsorEmergencyStop === "boolean" ||
+            typeof body?.paymentsEnabled === "boolean" ||
+            typeof body?.withdrawalsEnabled === "boolean";
+
+        if (Object.keys(dbData).length === 2 && !hasRuntimeFlag) {
             return NextResponse.json({ error: "No flag changes supplied" }, { status: 400 });
         }
 
         const row = await prisma.platformFlag.upsert({
             where: { id: 1 },
-            update: data,
-            create: { id: 1, ...data },
+            update: dbData,
+            create: { id: 1, ...dbData },
         }) as any;
 
         const after: PlatformFlags = {
-            googleSigninEnabled: row.googleSigninEnabled ?? true,
-            maintenanceEnabled: row.maintenanceEnabled ?? false,
-            maintenanceMessage: row.maintenanceMessage ?? null,
-            externalWalletEnabled: row.externalWalletEnabled ?? true,
-            merchantInviteOnlyEnabled: row.merchantInviteOnlyEnabled ?? false,
-            sponsorEmergencyStop: row.sponsorEmergencyStop ?? false,
-            paymentsEnabled: row.paymentsEnabled ?? true,
-            withdrawalsEnabled: row.withdrawalsEnabled ?? true,
+            googleSigninEnabled: row.googleSigninEnabled ?? (body?.googleSigninEnabled ?? before.googleSigninEnabled),
+            maintenanceEnabled: row.maintenanceEnabled ?? (body?.maintenanceEnabled ?? before.maintenanceEnabled),
+            maintenanceMessage: row.maintenanceMessage ?? (body?.maintenanceMessage ?? before.maintenanceMessage),
+            externalWalletEnabled: row.externalWalletEnabled ?? (body?.externalWalletEnabled ?? before.externalWalletEnabled),
+            merchantInviteOnlyEnabled: row.merchantInviteOnlyEnabled ?? (body?.merchantInviteOnlyEnabled ?? before.merchantInviteOnlyEnabled),
+            sponsorEmergencyStop: typeof body?.sponsorEmergencyStop === "boolean" ? body.sponsorEmergencyStop : before.sponsorEmergencyStop,
+            paymentsEnabled: typeof body?.paymentsEnabled === "boolean" ? body.paymentsEnabled : before.paymentsEnabled,
+            withdrawalsEnabled: typeof body?.withdrawalsEnabled === "boolean" ? body.withdrawalsEnabled : before.withdrawalsEnabled,
         };
 
         /* Drop the local cache immediately so this instance reflects the change without
