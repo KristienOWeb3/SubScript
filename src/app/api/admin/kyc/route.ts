@@ -7,7 +7,7 @@ import {
 } from "@/lib/kyc";
 import { prisma } from "@/lib/prisma";
 import { jsonOk } from "@/lib/http/json";
-import { requireAdmin } from "@/lib/admin/guard";
+import { requireScope } from "@/lib/admin/guard";
 import { recordAdminAction, requestIp } from "@/lib/admin/audit";
 import { runAdminQueriesSequentially } from "@/lib/admin/db";
 
@@ -29,7 +29,7 @@ class KycAdminRouteError extends Error {
 }
 
 export async function GET(request: Request) {
-    const auth = await requireAdmin(request);
+    const auth = await requireScope(request, "compliance");
     if (!auth.ok) return auth.response;
 
     try {
@@ -54,7 +54,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-    const auth = await requireAdmin(request);
+    const auth = await requireScope(request, "compliance");
     if (!auth.ok) return auth.response;
 
     try {

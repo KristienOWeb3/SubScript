@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyAdminApiKey } from "@/lib/kyc";
-import { requireAdmin } from "@/lib/admin/guard";
+import { requireScope } from "@/lib/admin/guard";
 import { recordAdminAction } from "@/lib/admin/audit";
 import { pgMaybeOne, pgQuery } from "@/lib/serverPg";
 import { retryPaymentReconciliationEvent } from "@/lib/payments/reconciliationRetry";
@@ -27,7 +27,7 @@ type ReconciliationRow = {
 export async function GET(request: Request) {
     const isApiKey = verifyAdminApiKey(request.headers);
     if (!isApiKey) {
-        const adminAuth = await requireAdmin(request);
+        const adminAuth = await requireScope(request, "engineering");
         if (!adminAuth.ok) return adminAuth.response;
     }
 
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
     const isApiKey = verifyAdminApiKey(request.headers);
     let actor = "api_key";
     if (!isApiKey) {
-        const adminAuth = await requireAdmin(request);
+        const adminAuth = await requireScope(request, "engineering");
         if (!adminAuth.ok) return adminAuth.response;
         actor = adminAuth.admin.wallet;
     }

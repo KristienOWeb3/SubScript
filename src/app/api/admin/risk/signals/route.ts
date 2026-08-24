@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/guard";
+import { requireScope } from "@/lib/admin/guard";
 import { prisma } from "@/lib/prisma";
 import { pgQuery } from "@/lib/serverPg";
 
 export async function GET(request: Request) {
-    const auth = await requireAdmin(request);
+    const auth = await requireScope(request, "risk");
     if (!auth.ok) return auth.response;
 
     try {

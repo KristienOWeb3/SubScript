@@ -118,7 +118,11 @@ test("all human KYC admin routes require an attributable wallet session", () => 
   const legacy = source("src/app/api/admin/kyc/route.ts");
   const review = source("src/app/api/admin/kyc/review/route.ts");
 
-  assert.match(legacy, /requireAdmin\(request\)/g);
+  /* A session guard, not the literal requireAdmin: these routes now gate on the `compliance`
+     scope, and requireScope calls requireAdmin internally, so attributability is preserved while
+     the audience is narrowed. The assertion that matters is that an API key cannot reach them. */
+  assert.match(legacy, /await require(Admin|Scope)\(request/);
+  assert.match(legacy, /requireScope\(request, "compliance"\)/);
   assert.doesNotMatch(legacy, /verifyAdminApiKey/);
   assert.match(legacy, /actorId:\s*auth\.admin\.wallet/);
   assert.match(legacy, /actor:\s*auth\.admin\.wallet/);

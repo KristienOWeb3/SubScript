@@ -10,6 +10,15 @@ import { prisma } from "@/lib/prisma";
  * Two flags invert this — google sign-in (see isGoogleSigninEnabled) and invite-only merchant
  * signup (see merchantInviteOnlyEnabled in FLAGS_FALLBACK).
  *
+ * THE OPERATIONAL BREAKERS ARE NOT HERE. Withdrawals, hosted payments, premium checkout,
+ * reconciliation, and the sponsored-gas emergency stop live in system_settings — see
+ * @/lib/platform/systemSettings. This file once carried `sponsorEmergencyStop`,
+ * `paymentsEnabled`, and `withdrawalsEnabled` as fields with no backing columns: they were
+ * read off the row through an `as any` cast, resolved to undefined, and fell through to
+ * `?? true`. The admin route never persisted them and nothing ever read them back, so the
+ * console's kill switches were decoys. Do not re-add a money breaker here; it belongs in the
+ * table whose switches are already enforced, with a fail-closed reader.
+ *
  * Cached for 10s in module scope. Serverless instances are reused (Fluid Compute), so this
  * collapses per-request reads without making a toggle feel broken: worst case an operator
  * waits 10 seconds for a pause to take hold everywhere, which is well inside the window
@@ -22,9 +31,6 @@ export type PlatformFlags = {
     maintenanceMessage: string | null;
     externalWalletEnabled: boolean;
     merchantInviteOnlyEnabled: boolean;
-    sponsorEmergencyStop: boolean;
-    paymentsEnabled: boolean;
-    withdrawalsEnabled: boolean;
 };
 
 /* What an unreadable table means. Not a "safe default" in the abstract — a deliberate
@@ -39,9 +45,6 @@ export const FLAGS_FALLBACK: PlatformFlags = {
        Its consumer (isMerchantInviteOnlyEnforced in @/lib/merchants/accessGrants) also treats a
        thrown read as enforced, so the two agree. */
     merchantInviteOnlyEnabled: true,
-    sponsorEmergencyStop: false,
-    paymentsEnabled: true,
-    withdrawalsEnabled: true,
 };
 
 /* A MISSING singleton row is not the same failure as an unreadable table: the table answered, it
@@ -50,9 +53,6 @@ export const FLAGS_FALLBACK: PlatformFlags = {
 const FLAGS_UNSEEDED: PlatformFlags = {
     ...FLAGS_FALLBACK,
     merchantInviteOnlyEnabled: false,
-    sponsorEmergencyStop: false,
-    paymentsEnabled: true,
-    withdrawalsEnabled: true,
 };
 
 /* "This column does not exist yet" is not an incident either — it means the code is running ahead
@@ -81,7 +81,9 @@ export async function getPlatformFlags(): Promise<PlatformFlags> {
     if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.value;
 
     try {
-        const row = await prisma.platformFlag.findUnique({ where: { id: 1 } }) as any;
+        /* Typed, not `as any`. The cast this used to carry existed only to hide three fields
+           that had no columns, which is precisely how they stayed broken. */
+        const row = await prisma.platformFlag.findUnique({ where: { id: 1 } });
         const value: PlatformFlags = row
             ? {
                   googleSigninEnabled: row.googleSigninEnabled ?? true,
@@ -89,14 +91,8 @@ export async function getPlatformFlags(): Promise<PlatformFlags> {
                   maintenanceMessage: row.maintenanceMessage ?? null,
                   externalWalletEnabled: row.externalWalletEnabled ?? true,
                   merchantInviteOnlyEnabled: row.merchantInviteOnlyEnabled ?? false,
-                  sponsorEmergencyStop: row.sponsorEmergencyStop ?? (process.env.SPONSOR_EMERGENCY_STOP === "true"),
-                  paymentsEnabled: row.paymentsEnabled ?? true,
-                  withdrawalsEnabled: row.withdrawalsEnabled ?? true,
               }
-            : {
-                ...FLAGS_UNSEEDED,
-                sponsorEmergencyStop: process.env.SPONSOR_EMERGENCY_STOP === "true",
-            };
+            : FLAGS_UNSEEDED;
         cached = { value, at: Date.now() };
         return value;
     } catch (error) {
@@ -148,9 +144,6 @@ export async function mirrorPlatformFlags(flags: PlatformFlags): Promise<{ mirro
             maintenanceEnabled: flags.maintenanceEnabled,
             maintenanceMessage: flags.maintenanceMessage,
             externalWalletEnabled: flags.externalWalletEnabled,
-            sponsorEmergencyStop: flags.sponsorEmergencyStop,
-            paymentsEnabled: flags.paymentsEnabled,
-            withdrawalsEnabled: flags.withdrawalsEnabled,
         }));
         return { mirrored: true };
     } catch (error: any) {

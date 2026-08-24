@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/admin/guard";
+import { requireScope } from "@/lib/admin/guard";
 import { ADMIN_ACTIONS, isAdminAction } from "@/lib/admin/audit";
 import { jsonOk } from "@/lib/http/json";
 
@@ -13,12 +13,17 @@ import { jsonOk } from "@/lib/http/json";
  * incident "who turned this off, and what was it before" is the whole point of having kept the
  * before-value, and that answer was sitting in a table with no way in.
  *
- * WHY requireAdmin AND NOT requireRootAdmin. The log is append-only: there is no update or delete
- * path anywhere in the codebase, so a reader cannot tamper with what it reads. And every admin can
- * already read every user record through the rest of this console, so gating the log more tightly
- * than the data it describes would be theatre — it would hide the record of an action from the
- * same people who are trusted to take the action. Consistent with the rest of /api/admin, where
- * reads take requireAdmin and only the dangerous WRITES are root-gated (see requireRootAdmin).
+ * WHY THE `compliance` SCOPE AND NOT ANY ADMIN. This gate used to be bare requireAdmin, and the
+ * reasoning written here was sound at the time: every admin could already read every user record
+ * through the rest of this console, so gating the log more tightly than the data it describes
+ * would have been theatre. Scoped admins broke that premise — a `read` or `support` admin no
+ * longer sees the data this log describes, and the log spans every scope at once, naming who
+ * banned whom and which KYC decisions were overridden. Reading it is an oversight function, so it
+ * sits with compliance. Root holds every scope and is unaffected.
+ *
+ * Still NOT requireRootAdmin: the log is append-only, with no update or delete path anywhere in
+ * the codebase, so a reader cannot tamper with what it reads. Consistent with the rest of
+ * /api/admin, where only the dangerous WRITES are root-gated (see requireRootAdmin).
  *
  * THIS READ IS DELIBERATELY NOT AUDIT-LOGGED. Every load of the console tab would append a row,
  * and the log would fill with the act of reading the log — burying the actions an auditor opened
@@ -49,7 +54,7 @@ function parseBoundary(raw: string, endOfDay: boolean): Date | null {
 }
 
 export async function GET(request: Request) {
-    const auth = await requireAdmin(request);
+    const auth = await requireScope(request, "compliance");
     if (!auth.ok) return auth.response;
 
     try {

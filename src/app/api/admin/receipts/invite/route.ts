@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/admin/guard";
+import { requireScope } from "@/lib/admin/guard";
 import { recordAdminAction } from "@/lib/admin/audit";
 import { isReceiptId } from "@/lib/arc/memo";
 
@@ -19,7 +19,7 @@ import { isReceiptId } from "@/lib/arc/memo";
  */
 
 export async function POST(request: Request) {
-    const auth = await requireAdmin(request);
+    const auth = await requireScope(request, "compliance");
     if (!auth.ok) return auth.response;
 
     try {

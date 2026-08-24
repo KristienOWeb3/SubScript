@@ -106,6 +106,13 @@ type AdminEntry = {
   alias?: string | null;
   grantedBy?: string;
   createdAt?: string;
+  /* Delegated only. Root holds every scope implicitly, so the API omits these for that tier. */
+  scopes?: string[];
+  grantReason?: string | null;
+  expiresAt?: string | null;
+  expired?: boolean;
+  /* Backfilled wide when scoping landed — badged so it gets narrowed on purpose. */
+  legacyFullScope?: boolean;
 };
 
 type Analytics = {
@@ -338,6 +345,12 @@ export default function AdminDashboardPage() {
   const [adminsLoading, setAdminsLoading] = useState(false);
   const [newAdminWallet, setNewAdminWallet] = useState("");
   const [newAdminLabel, setNewAdminLabel] = useState("");
+  /* No default. The API refuses a grant with no scopes, so an operator has to say what this
+     person may do rather than inheriting whatever the old model handed out. */
+  const [newAdminScopes, setNewAdminScopes] = useState<string[]>([]);
+  const [newAdminReason, setNewAdminReason] = useState("");
+  const [availableScopes, setAvailableScopes] = useState<string[]>([]);
+  const [scopeBusyWallet, setScopeBusyWallet] = useState<string | null>(null);
   const [adminBusy, setAdminBusy] = useState(false);
   const [editingAdminWallet, setEditingAdminWallet] = useState<string | null>(null);
   const [editAdminAliasValue, setEditAdminAliasValue] = useState("");
@@ -440,6 +453,8 @@ export default function AdminDashboardPage() {
       if (!res.ok) throw new Error(json.error || "Failed to load admins");
       setAdmins([...(json.root || []), ...(json.delegated || [])]);
       setViewerIsRoot(Boolean(json.viewerIsRoot));
+      /* Server-supplied so the picker cannot offer a scope the validator would drop. */
+      if (Array.isArray(json.availableScopes)) setAvailableScopes(json.availableScopes);
     } catch (err: any) {
       setError(err.message || "Failed to load admins");
     } finally {
@@ -995,6 +1010,39 @@ export default function AdminDashboardPage() {
     }
   };
 
+  /* Narrow or widen an existing grant, one scope at a time.
+   *
+   * Sends the whole resulting array rather than a delta: the API replaces the set, because a
+   * merge-only endpoint could never take a scope away — and taking scopes away from the
+   * backfilled-wide rows is the entire point of shipping this control. */
+  const handleToggleAdminScope = async (admin: AdminEntry, scope: string) => {
+    const current = admin.scopes || [];
+    const next = current.includes(scope)
+      ? current.filter((s) => s !== scope)
+      : [...current, scope];
+    if (next.length === 0) {
+      setError("An admin needs at least one scope. Revoke them instead if they should have none.");
+      return;
+    }
+    setScopeBusyWallet(admin.wallet);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/admin/admins", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet: admin.wallet, scopes: next }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Could not update scopes");
+      await loadAdmins();
+    } catch (err: any) {
+      setError(err.message || "Could not update scopes");
+    } finally {
+      setScopeBusyWallet(null);
+    }
+  };
+
   const handleGrantAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAdminWallet.trim()) return;
@@ -1008,6 +1056,8 @@ export default function AdminDashboardPage() {
         body: JSON.stringify({
           wallet: newAdminWallet.trim(),
           label: newAdminLabel.trim() || undefined,
+          scopes: newAdminScopes,
+          grantReason: newAdminReason.trim() || undefined,
         }),
       });
       const json = await res.json();
@@ -1016,6 +1066,8 @@ export default function AdminDashboardPage() {
       if (json.warning) setNotice(json.warning);
       setNewAdminWallet("");
       setNewAdminLabel("");
+      setNewAdminScopes([]);
+      setNewAdminReason("");
       await loadAdmins();
     } catch (err: any) {
       setError(err.message || "Failed to grant admin access");
@@ -2907,36 +2959,82 @@ export default function AdminDashboardPage() {
               </p>
 
               {viewerIsRoot ? (
-                <form
-                  onSubmit={handleGrantAdmin}
-                  className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center"
-                >
-                  <input
-                    type="text"
-                    value={newAdminWallet}
-                    onChange={(e) => setNewAdminWallet(e.target.value)}
-                    placeholder="0x... wallet address"
-                    className={`${INPUT} sm:flex-1`}
-                  />
-                  <input
-                    type="text"
-                    value={newAdminLabel}
-                    onChange={(e) => setNewAdminLabel(e.target.value)}
-                    placeholder="Alias (optional)"
-                    className={`${INPUT} sm:w-48`}
-                  />
-                  <button
-                    type="submit"
-                    disabled={adminBusy || !newAdminWallet.trim()}
-                    className="flex items-center justify-center gap-2 rounded-xl bg-[#2775ca] px-4 py-2 text-xs font-black uppercase tracking-wider text-white transition hover:bg-[#1d5fb0] disabled:opacity-40 shadow-sm"
-                  >
-                    {adminBusy ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <UserPlus className="h-4 w-4" />
-                    )}
-                    Grant
-                  </button>
+                <form onSubmit={handleGrantAdmin} className="mt-4 space-y-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <input
+                      type="text"
+                      value={newAdminWallet}
+                      onChange={(e) => setNewAdminWallet(e.target.value)}
+                      placeholder="0x... wallet address"
+                      className={`${INPUT} sm:flex-1`}
+                    />
+                    <input
+                      type="text"
+                      value={newAdminLabel}
+                      onChange={(e) => setNewAdminLabel(e.target.value)}
+                      placeholder="Alias (optional)"
+                      className={`${INPUT} sm:w-48`}
+                    />
+                  </div>
+
+                  {/* Scopes are required. The submit stays disabled until one is picked, because a
+                      grant with no scopes is refused server-side anyway and a silent default is
+                      how every admin ended up with full powers in the first place. */}
+                  <div>
+                    <p className="text-[11px] font-bold text-[#0f172a]">
+                      What may this admin do?
+                    </p>
+                    <p className="text-[11px] text-[#475569]">
+                      Pick the narrowest set that lets them do their job. You can widen it later.
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {availableScopes.map((scope) => {
+                        const selected = newAdminScopes.includes(scope);
+                        return (
+                          <button
+                            key={scope}
+                            type="button"
+                            onClick={() =>
+                              setNewAdminScopes((prev) =>
+                                prev.includes(scope)
+                                  ? prev.filter((s) => s !== scope)
+                                  : [...prev, scope],
+                              )
+                            }
+                            className={`rounded-full border px-3 py-1 text-[11px] font-bold transition ${
+                              selected
+                                ? "border-[#2775ca] bg-[#2775ca] text-white"
+                                : "border-slate-300 bg-white text-[#475569] hover:border-[#2775ca]"
+                            }`}
+                          >
+                            {scope}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <input
+                      type="text"
+                      value={newAdminReason}
+                      onChange={(e) => setNewAdminReason(e.target.value)}
+                      placeholder="Why do they need access? (optional, but future you will want it)"
+                      className={`${INPUT} sm:flex-1`}
+                    />
+                    <button
+                      type="submit"
+                      disabled={adminBusy || !newAdminWallet.trim() || newAdminScopes.length === 0}
+                      className="flex items-center justify-center gap-2 rounded-xl bg-[#2775ca] px-4 py-2 text-xs font-black uppercase tracking-wider text-white transition hover:bg-[#1d5fb0] disabled:opacity-40 shadow-sm"
+                    >
+                      {adminBusy ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <UserPlus className="h-4 w-4" />
+                      )}
+                      Grant
+                    </button>
+                  </div>
                 </form>
               ) : (
                 <p className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-[11px] text-[#475569]">
@@ -3052,11 +3150,73 @@ export default function AdminDashboardPage() {
                                   ? `${a.grantedBy.slice(0, 10)}…`
                                   : "unknown"}
                               </span>
+                              {a.expiresAt && (
+                                <>
+                                  <span>·</span>
+                                  <span>
+                                    {a.expired ? "Expired" : "Expires"}{" "}
+                                    {new Date(a.expiresAt).toLocaleDateString()}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Scopes. Root can click a chip to grant or take it away; everyone else
+                              sees the same set read-only, because knowing what a colleague can do
+                              is not sensitive but changing it is. */}
+                          {a.tier === "delegated" && (
+                            <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                              {availableScopes.map((scope) => {
+                                const held = (a.scopes || []).includes(scope);
+                                if (!viewerIsRoot && !held) return null;
+                                const busy = scopeBusyWallet === a.wallet;
+                                return (
+                                  <button
+                                    key={scope}
+                                    type="button"
+                                    disabled={!viewerIsRoot || busy}
+                                    onClick={() => handleToggleAdminScope(a, scope)}
+                                    title={
+                                      viewerIsRoot
+                                        ? held
+                                          ? `Remove "${scope}"`
+                                          : `Grant "${scope}"`
+                                        : undefined
+                                    }
+                                    className={`rounded px-1.5 py-0.5 text-[9px] font-bold border transition disabled:opacity-50 ${
+                                      held
+                                        ? "border-[#2775ca]/30 bg-[#2775ca]/10 text-[#2775ca]"
+                                        : "border-slate-200 bg-white text-slate-400 hover:border-[#2775ca]"
+                                    } ${viewerIsRoot ? "cursor-pointer" : "cursor-default"}`}
+                                  >
+                                    {scope}
+                                  </button>
+                                );
+                              })}
+                              {a.grantReason && (
+                                <span className="ml-1 text-[10px] italic text-[#475569]">
+                                  {a.grantReason}
+                                </span>
+                              )}
                             </div>
                           )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
+                        {a.tier === "delegated" && a.legacyFullScope && (
+                          <span
+                            className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[9px] font-bold text-amber-800"
+                            title="Granted before scopes existed, so it was backfilled with everything except governance. Narrow it to what they actually need."
+                          >
+                            needs narrowing
+                          </span>
+                        )}
+                        {a.tier === "delegated" && a.expired && (
+                          <span className="rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-600">
+                            expired
+                          </span>
+                        )}
                         <span
                           className={`rounded-full px-2 py-0.5 text-[9px] font-bold border ${
                             a.tier === "root"

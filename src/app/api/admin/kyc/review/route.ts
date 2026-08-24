@@ -1,7 +1,7 @@
 import { runAdminQueriesSequentially, withAdminDbRetry } from "@/lib/admin/db";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/admin/guard";
+import { requireScope } from "@/lib/admin/guard";
 import { recordAdminAction, requestIp } from "@/lib/admin/audit";
 import { jsonOk } from "@/lib/http/json";
 import {
@@ -141,7 +141,7 @@ const LIST_SELECT = {
 } as const;
 
 export async function GET(request: Request) {
-    const auth = await requireAdmin(request);
+    const auth = await requireScope(request, "compliance");
     if (!auth.ok) return auth.response;
 
     try {
@@ -230,7 +230,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-    const auth = await requireAdmin(request);
+    const auth = await requireScope(request, "compliance");
     if (!auth.ok) return auth.response;
 
     try {

@@ -1,14 +1,40 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/guard";
+import { requireAdmin, requireScope } from "@/lib/admin/guard";
 import { recordAdminAction } from "@/lib/admin/audit";
 import { prisma } from "@/lib/prisma";
 import { ethers } from "ethers";
+import { hasScope, type AdminScope } from "@/lib/admin/scopes";
+
+/* Which scope each moderation action needs.
+ *
+ * Per action rather than per route, because this one endpoint spans three audiences: freezing
+ * withdrawals is a money decision, exporting somebody's data is a compliance obligation, and
+ * the rest is day-to-day support work. Gating the whole POST at the loosest of the three would
+ * hand every support admin the other two.
+ *
+ * An action missing from this map is refused rather than defaulted — see the lookup below. A
+ * new case added to the switch without a scope should fail closed, not inherit `support`.
+ */
+const SCOPE_BY_ACTION: Record<string, AdminScope> = {
+    revoke_sessions: "support",
+    temporary_suspend: "support",
+    permanent_ban: "support",
+    lift_ban: "support",
+    reset_profile: "support",
+    seize_alias: "support",
+    /* Money: same scope as the withdrawal-holds route, which is the other way to reach these. */
+    set_withdrawal_hold: "finance",
+    lift_withdrawal_hold: "finance",
+    /* Handing over everything an account holds is a subject-access request, not moderation. */
+    export_data: "compliance",
+};
 
 export async function GET(
     request: Request,
     { params }: { params: Promise<{ address: string }> }
 ) {
-    const auth = await requireAdmin(request);
+    /* Reading an account is the console's baseline. The WRITES below are scoped per action. */
+    const auth = await requireScope(request, "read");
     if (!auth.ok) return auth.response;
 
     const { address } = await params;
@@ -189,6 +215,9 @@ export async function POST(
     request: Request,
     { params }: { params: Promise<{ address: string }> }
 ) {
+    /* requireAdmin first so a non-admin still gets the 404 non-disclosure answer. The scope
+       check cannot happen here: the action is in the body, so it runs once we know what is
+       being asked (below). */
     const auth = await requireAdmin(request);
     if (!auth.ok) return auth.response;
 
@@ -202,6 +231,21 @@ export async function POST(
     try {
         const body = await request.json().catch(() => ({}));
         const { action, reason, expiresAt } = body;
+
+        /* No scope entry means refused, which is also how an unrecognised action is rejected —
+           the switch's default below would answer the same 400. Keeping the check here means a
+           case added to that switch without a SCOPE_BY_ACTION entry fails closed instead of
+           quietly inheriting whoever could reach the route. */
+        const requiredScope = typeof action === "string" ? SCOPE_BY_ACTION[action] : undefined;
+        if (!requiredScope) {
+            return NextResponse.json({ error: `Unsupported moderation action: ${action}` }, { status: 400 });
+        }
+        if (!hasScope(auth.admin.scopes, requiredScope)) {
+            return NextResponse.json(
+                { error: `Forbidden: this action requires the "${requiredScope}" admin scope.` },
+                { status: 403 },
+            );
+        }
 
         switch (action) {
             case "revoke_sessions": {

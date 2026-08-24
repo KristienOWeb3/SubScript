@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/guard";
+import { requireScope } from "@/lib/admin/guard";
 import { checkRuntimeConfig } from "@/lib/ops/configCheck";
 import { executeWithRpcFallback, getRpcProviderForWrite } from "@/lib/payments/rpc";
 import { getPlatformFlags } from "@/lib/platform/flags";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: Request) {
-    const auth = await requireAdmin(request);
+    const auth = await requireScope(request, "engineering");
     if (!auth.ok) return auth.response;
 
     try {

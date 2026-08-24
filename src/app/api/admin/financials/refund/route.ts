@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { requireRole } from "@/lib/admin/guard";
+import { requireScope } from "@/lib/admin/guard";
 import { recordAdminAction } from "@/lib/admin/audit";
 import { prisma } from "@/lib/prisma";
 import { ethers } from "ethers";
 
 export async function POST(request: Request) {
-    const auth = await requireRole(request, ["SUPER_ADMIN", "FINANCE"]);
+    const auth = await requireScope(request, "finance");
     if (!auth.ok) return auth.response;
 
     try {
