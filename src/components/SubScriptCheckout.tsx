@@ -102,19 +102,23 @@ export default function SubScriptCheckout({
       setArcBalance(arcBal);
 
       const required = Number(amountCap);
-      if (arcBal < required) {
-        const sepoliaUSDC = CCTP_CONFIG[11155111].usdc;
-        const sepoliaBalRaw = await sepoliaClient.readContract({
-          address: sepoliaUSDC,
-          abi: ERC20_ABI,
-          functionName: "balanceOf",
-          args: [userWallet as `0x${string}`],
-        });
-        const sepoliaBal = Number(formatUnits(sepoliaBalRaw, 6));
-        setSepoliaBalance(sepoliaBal);
+      if (arcBal < required && activeArcChain.id === ARC_TESTNET_CHAIN_ID) {
+        const sepoliaConfig = CCTP_CONFIG[11155111];
+        if (sepoliaConfig?.usdc) {
+          const sepoliaBalRaw = await sepoliaClient.readContract({
+            address: sepoliaConfig.usdc,
+            abi: ERC20_ABI,
+            functionName: "balanceOf",
+            args: [userWallet as `0x${string}`],
+          });
+          const sepoliaBal = Number(formatUnits(sepoliaBalRaw, 6));
+          setSepoliaBalance(sepoliaBal);
 
-        if (arcBal + sepoliaBal >= required) {
-          setShowCctpOption(true);
+          if (arcBal + sepoliaBal >= required) {
+            setShowCctpOption(true);
+          } else {
+            setShowCctpOption(false);
+          }
         } else {
           setShowCctpOption(false);
         }

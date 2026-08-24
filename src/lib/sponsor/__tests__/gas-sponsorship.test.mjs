@@ -93,6 +93,16 @@ function loadGasModule({ getProviderForWrite, executeWithFallback, sendTransacti
                 }),
             };
         }
+        if (specifier === "@/lib/platform/systemSettings") {
+            return {
+                /* The sponsor stop moved from platform_flags to system_settings. Mirrors the real
+                   contract rather than hardcoding false: the database half is absent under test,
+                   and the env var is still the lever that works when Postgres does not. */
+                isSponsorEmergencyStopped: async () =>
+                    process.env.SPONSOR_EMERGENCY_STOP === "true" ||
+                    process.env.SPONSOR_EMERGENCY_STOP === "1",
+            };
+        }
         throw new Error(`Unexpected import: ${specifier}`);
     }, testModule, testModule.exports);
     return testModule.exports;

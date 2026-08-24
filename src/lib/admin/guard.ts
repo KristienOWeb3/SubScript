@@ -21,40 +21,51 @@ import { isAdminWallet } from "@/lib/admin/identity";
  */
 
 import { prisma } from "@/lib/prisma";
-
-export type AdminRole = "SUPER_ADMIN" | "SUPPORT" | "COMPLIANCE" | "FINANCE" | "ENGINEER";
+import {
+    allScopes,
+    hasScope,
+    scopesForDelegatedAdmin,
+    LEAST_PRIVILEGE_SCOPE,
+    type AdminScope,
+} from "@/lib/admin/scopes";
 
 export type AdminIdentity = {
     wallet: string;
     isRoot: boolean;
-    role: AdminRole;
+    /* Everything this session may do. Root holds every scope; a delegated admin holds what
+       its admin_wallets row grants, floored at `read`. See @/lib/admin/scopes. */
+    scopes: AdminScope[];
 };
-
-export function parseAdminRoleFromLabel(label?: string | null): AdminRole {
-    if (!label) return "SUPER_ADMIN";
-    const upper = label.toUpperCase();
-    if (upper.includes("[SUPPORT]") || upper.startsWith("SUPPORT")) return "SUPPORT";
-    if (upper.includes("[COMPLIANCE]") || upper.startsWith("COMPLIANCE")) return "COMPLIANCE";
-    if (upper.includes("[FINANCE]") || upper.startsWith("FINANCE")) return "FINANCE";
-    if (upper.includes("[ENGINEER]") || upper.startsWith("ENGINEER")) return "ENGINEER";
-    return "SUPER_ADMIN";
-}
 
 export async function getAdminSession(headers: Headers): Promise<AdminIdentity | null> {
     try {
         const session = await getVerifiedSessionToken(headers);
         if (!session) return null;
         if (!(await isAdminWallet(session.wallet))) return null;
+
         const isRoot = isRootAdmin(session.wallet);
-        let role: AdminRole = isRoot ? "SUPER_ADMIN" : "SUPER_ADMIN";
-        if (!isRoot) {
-            const adminRecord = await prisma.adminWallet.findUnique({
+        if (isRoot) return { wallet: session.wallet, isRoot: true, scopes: allScopes() };
+
+        /* Delegated. A failed read degrades to the least privilege rather than to full access:
+           isAdminWallet() above already proved this wallet is an admin, so the console must
+           still open, but nothing beyond `read` should be assumed from a row we could not
+           read. This is the inversion of the previous behaviour, where an unrecognised label
+           resolved to SUPER_ADMIN. */
+        const adminRecord = await prisma.adminWallet
+            .findUnique({
                 where: { wallet: session.wallet.toLowerCase() },
-                select: { label: true },
-            }).catch(() => null);
-            role = parseAdminRoleFromLabel(adminRecord?.label);
-        }
-        return { wallet: session.wallet, isRoot, role };
+                select: { scopes: true },
+            })
+            .catch((error) => {
+                console.error("[admin] scope lookup failed, degrading to least privilege:", error);
+                return null;
+            });
+
+        return {
+            wallet: session.wallet,
+            isRoot: false,
+            scopes: adminRecord ? scopesForDelegatedAdmin(adminRecord.scopes) : [LEAST_PRIVILEGE_SCOPE],
+        };
     } catch (error) {
         console.error("[admin] getAdminSession error:", error);
         return null;
@@ -112,20 +123,51 @@ export async function requireRootAdmin(
 }
 
 /**
- * Guard for scoped roles. Root and SUPER_ADMIN have access to all actions.
+ * Guard for a specific capability. Root and any admin holding `scope` pass.
+ *
+ * Answers 403, not 404, unlike requireAdmin: the caller is already known to be an admin, so
+ * there is nothing left to conceal and a 404 here would read as a bug. Same reasoning as
+ * requireRootAdmin above.
+ *
+ * Every /api/admin route should call this or requireRootAdmin rather than bare requireAdmin.
+ * A route gated only by requireAdmin is open to every admin including the `read`-only tier,
+ * which is how a support hire ended up able to decide KYC — see the header of
+ * @/lib/admin/scopes.
  */
-export async function requireRole(
+export async function requireScope(
     request: Request,
-    allowedRoles: AdminRole[],
+    scope: AdminScope,
 ): Promise<{ ok: true; admin: AdminIdentity } | { ok: false; response: NextResponse }> {
     const auth = await requireAdmin(request);
     if (!auth.ok) return auth;
-    if (auth.admin.isRoot || auth.admin.role === "SUPER_ADMIN") return auth;
-    if (!allowedRoles.includes(auth.admin.role)) {
+    if (!hasScope(auth.admin.scopes, scope)) {
         return {
             ok: false,
             response: NextResponse.json(
-                { error: `Forbidden: This action requires one of the following roles: [${allowedRoles.join(", ")}]` },
+                { error: `Forbidden: this action requires the "${scope}" admin scope.` },
+                { status: 403 },
+            ),
+        };
+    }
+    return auth;
+}
+
+/**
+ * Guard for an action reachable through more than one capability — a transaction lookup that
+ * support, compliance, and finance all legitimately need, for instance. Passing when the admin
+ * holds ANY of `scopes` keeps routes from having to be duplicated per audience.
+ */
+export async function requireAnyScope(
+    request: Request,
+    scopes: AdminScope[],
+): Promise<{ ok: true; admin: AdminIdentity } | { ok: false; response: NextResponse }> {
+    const auth = await requireAdmin(request);
+    if (!auth.ok) return auth;
+    if (!scopes.some((scope) => hasScope(auth.admin.scopes, scope))) {
+        return {
+            ok: false,
+            response: NextResponse.json(
+                { error: `Forbidden: this action requires one of these admin scopes: ${scopes.join(", ")}.` },
                 { status: 403 },
             ),
         };

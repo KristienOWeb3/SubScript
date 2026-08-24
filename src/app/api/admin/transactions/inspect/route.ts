@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/guard";
+import { requireScope } from "@/lib/admin/guard";
 import { prisma } from "@/lib/prisma";
 import { parseConfidentialMemoPayload } from "@/lib/arc/memo";
 
 export async function GET(request: Request) {
-    const auth = await requireAdmin(request);
+    const auth = await requireScope(request, "read");
     if (!auth.ok) return auth.response;
 
     const url = new URL(request.url);

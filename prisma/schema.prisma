@@ -118,7 +118,7 @@ model PaymentLink {
   linkKind             String               @default("MERCHANT") @map("link_kind")
   sandboxMode          Boolean              @default(false) @map("sandbox_mode")
   simulationOnly       Boolean              @default(false) @map("simulation_only")
-  settlementChainId    BigInt               @default(5042002) @map("settlement_chain_id")
+  settlementChainId    BigInt               @map("settlement_chain_id")
   creationFingerprint  Json?                @map("creation_fingerprint")
   deletedAt            DateTime?            @map("deleted_at")
   createdAt            DateTime             @default(now()) @map("created_at")
@@ -321,7 +321,7 @@ model PaymentSession {
   merchant            Merchant  @relation(fields: [merchantAddress], references: [walletAddress], onDelete: Cascade)
   txHash              String?   @unique @map("tx_hash")
   amountExpected      BigInt    @default(10000000) @map("amount_expected")
-  chainId             Int       @default(5042002) @map("chain_id")
+  chainId             Int       @map("chain_id")
   status              String    @default("PENDING") @map("status")
   processingBy        String?   @map("processing_by")
   processingStartedAt DateTime? @map("processing_started_at")
@@ -838,6 +838,11 @@ model MeteredVault {
   lastSyncedBlock   BigInt?  @map("last_synced_block")
   // Settlement environment isolation: a TEST api key may only touch TEST vaults on Arc testnet.
   environment       String   @default("TEST")
+  // Keep the default. It is HALF OF A DB-ENFORCED INVARIANT, not an oversight: the
+  // metered_vaults_environment_chain_check constraint requires environment = 'TEST' AND
+  // settlement_chain_id = 5042002 together, and settlement_chain_id is part of the vault's
+  // UNIQUE identity. Removing it breaks api-key-mode-isolation.test.mjs, which locks this line
+  // on purpose. Unlike PaymentLink/PaymentSession, this column is not a stray testnet default.
   settlementChainId BigInt   @default(5042002) @map("settlement_chain_id")
   disputed          Boolean  @default(false)
   // User-initiated cancellation of the metered service. Once set, further usage stops
@@ -1158,12 +1163,32 @@ model WithdrawalHold {
   @@map("withdrawal_holds")
 }
 
+/// The delegated admin roster. Root admins are env-configured and never appear here — see
+/// @/lib/admin/allowlist for why that tier stays outside the database.
+///
+/// Columns below `createdAt` were added by
+/// supabase/migrations/20260822120000_admin_scoped_roles_and_governance.sql. Never read
+/// `scopes` directly: go through scopesForDelegatedAdmin() in @/lib/admin/scopes so the
+/// least-privilege floor applies to an empty array, and never read the roster without
+/// applying `expiresAt` — isAdminWallet() and mirrorDelegatedAdmins() both filter on it, and
+/// a reader that forgets leaves a lapsed grant working.
 model AdminWallet {
   wallet    String   @id @map("wallet")
   label     String?  @map("label")
   grantedBy String   @map("granted_by")
   createdAt DateTime @default(now()) @map("created_at")
+  /// Closed vocabulary, validated only in @/lib/admin/scopes — the column deliberately
+  /// carries no CHECK constraint. Empty means least privilege, not no access.
+  scopes    String[] @map("scopes")
+  /// NULL = permanent, matching BannedAccount and WithdrawalHold.
+  expiresAt DateTime? @map("expires_at")
+  /// Why this person has console access. Distinct from `label`, which is a display name.
+  grantReason String? @map("grant_reason")
+  /// True for rows backfilled wide when scoping landed. Informational: the console badges
+  /// them so an operator narrows them deliberately rather than discovering it in an incident.
+  legacyFullScope Boolean @default(false) @map("legacy_full_scope")
 
+  @@index([expiresAt])
   @@map("admin_wallets")
 }
 

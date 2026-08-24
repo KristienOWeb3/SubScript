@@ -18,19 +18,46 @@ export type AdminTier = "root" | "delegated";
 
 const REDIS_ADMIN_SET_KEY = "admin:wallets";
 
+/* A grant is live when it has no expiry or the expiry is still in the future.
+ *
+ * Applied at read time rather than by a sweeper job, matching getActiveWithdrawalHold: a
+ * lapsed grant stops working the moment it lapses, with no scheduled work to fall behind.
+ * The row stays as an audit record of who had access and when. EVERY reader of this table
+ * must apply it — a reader that forgets leaves an expired admin fully working, and the
+ * console would show the grant as expired while the session kept passing.
+ */
+function liveGrantWhere() {
+    return { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] };
+}
+
 export async function listDelegatedAdmins(): Promise<
-    Array<{ wallet: string; label: string | null; grantedBy: string; createdAt: Date }>
+    Array<{
+        wallet: string;
+        label: string | null;
+        grantedBy: string;
+        createdAt: Date;
+        scopes: string[];
+        expiresAt: Date | null;
+        grantReason: string | null;
+        legacyFullScope: boolean;
+    }>
 > {
+    /* Unfiltered on purpose, unlike the gates below: the console has to render expired grants
+       so an operator can see and clean up what lapsed. Callers decide how to display them. */
     const rows = await prisma.adminWallet.findMany({ orderBy: { createdAt: "desc" } });
     return rows.map((row) => ({
         wallet: row.wallet,
         label: row.label,
         grantedBy: row.grantedBy,
         createdAt: row.createdAt,
+        scopes: row.scopes,
+        expiresAt: row.expiresAt,
+        grantReason: row.grantReason,
+        legacyFullScope: row.legacyFullScope,
     }));
 }
 
-/** True for root admins and for wallets in admin_wallets. */
+/** True for root admins and for wallets holding a LIVE (unexpired) admin_wallets grant. */
 export async function isAdminWallet(address: string | null | undefined): Promise<boolean> {
     if (!address) return false;
     const wallet = address.trim().toLowerCase();
@@ -39,7 +66,10 @@ export async function isAdminWallet(address: string | null | undefined): Promise
     if (isRootAdmin(wallet)) return true;
 
     try {
-        const row = await prisma.adminWallet.findUnique({ where: { wallet } });
+        const row = await prisma.adminWallet.findFirst({
+            where: { wallet, ...liveGrantWhere() },
+            select: { wallet: true },
+        });
         return Boolean(row);
     } catch (error) {
         /* Root-only degradation, deliberately. See the posture note above. */
@@ -64,6 +94,14 @@ export async function adminTierOf(address: string | null | undefined): Promise<A
  * or revoke. Best-effort by design: callers surface a warning when it fails rather than
  * rolling back a committed grant, because a stale mirror only delays a DELEGATED admin —
  * root admins are unaffected and can always retry.
+ *
+ * Expired grants are EXCLUDED. The edge gate has no clock on the grant itself — it only asks
+ * whether the wallet is in this set — so a mirror that carried lapsed wallets would let an
+ * expired admin through middleware even though isAdminWallet() refuses them. Because the
+ * mirror is only rewritten on grant/revoke, a grant that lapses between rewrites stays in the
+ * set until the next one; requireAdmin still rejects it at the route, which is the layer that
+ * matters for /api/admin (middleware's admin gate never runs for /api/* at all — see
+ * the header of @/lib/admin/guard).
  */
 export async function mirrorDelegatedAdmins(): Promise<{ mirrored: boolean; error?: string }> {
     const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -73,8 +111,12 @@ export async function mirrorDelegatedAdmins(): Promise<{ mirrored: boolean; erro
     try {
         const { Redis } = await import("@upstash/redis");
         const redis = new Redis({ url, token });
-        const wallets = (await prisma.adminWallet.findMany({ select: { wallet: true } }))
-            .map((row) => row.wallet.toLowerCase());
+        const wallets = (
+            await prisma.adminWallet.findMany({
+                where: liveGrantWhere(),
+                select: { wallet: true },
+            })
+        ).map((row) => row.wallet.toLowerCase());
 
         await redis.del(REDIS_ADMIN_SET_KEY);
         if (wallets.length > 0) {

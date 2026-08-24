@@ -1,7 +1,7 @@
 import { runAdminQueriesSequentially } from "@/lib/admin/db";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/admin/guard";
+import { requireScope } from "@/lib/admin/guard";
 import { getSponsorWalletStatus } from "@/lib/sponsor/gas";
 import { jsonOk } from "@/lib/http/json";
 
@@ -39,7 +39,7 @@ function toBigInt(value: unknown): bigint {
 }
 
 export async function GET(request: Request) {
-    const auth = await requireAdmin(request);
+    const auth = await requireScope(request, "read");
     if (!auth.ok) return auth.response;
 
     try {

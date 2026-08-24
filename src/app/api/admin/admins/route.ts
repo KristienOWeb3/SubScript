@@ -1,20 +1,29 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin, requireRootAdmin } from "@/lib/admin/guard";
+import { requireRootAdmin, requireScope } from "@/lib/admin/guard";
 import { listDelegatedAdmins, listRootAdmins, mirrorDelegatedAdmins } from "@/lib/admin/identity";
 import { recordAdminAction } from "@/lib/admin/audit";
+import { ADMIN_SCOPES, normalizeScopes, scopesForDelegatedAdmin } from "@/lib/admin/scopes";
 
 /* Admin access management.
  *
- * GET is readable by any admin (delegated admins should be able to see who else has
- * access — concealing that from a colleague buys nothing). POST/DELETE are root-only:
- * see requireRootAdmin in @/lib/admin/guard for why the grant power stays in env.
+ * GET needs the `governance` scope: the roster names every wallet with console access and what
+ * each of them may do, which is a map of the platform's own attack surface. POST/DELETE stay
+ * root-only — see requireRootAdmin in @/lib/admin/guard for why the grant power stays in env.
+ *
+ * Scopes are assigned HERE and only here. They used to be inferred from the display label by
+ * pattern-matching it (parseAdminRoleFromLabel), which meant relabelling an admin silently
+ * changed their authority and any label that did not match a known prefix resolved to full
+ * access. Authority is now an explicit field.
  */
 
 const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 
 export async function GET(request: Request) {
-    const auth = await requireAdmin(request);
+    /* The roster names every wallet holding console access and what each may do — a map of
+       the platform's own attack surface. Root holds `governance`; the grant, revoke, and
+       relabel writes below stay requireRootAdmin. */
+    const auth = await requireScope(request, "governance");
     if (!auth.ok) return auth.response;
 
     try {
@@ -58,7 +67,18 @@ export async function GET(request: Request) {
                 tier: "delegated" as const,
                 adminHandle: formatAdminHandle(entry.wallet, entry.label, false),
                 alias: aliasMap.get(entry.wallet.toLowerCase()) || null,
+                scopes: scopesForDelegatedAdmin(entry.scopes),
+                grantReason: entry.grantReason,
+                expiresAt: entry.expiresAt?.toISOString() ?? null,
+                /* Reported so the console can show a lapsed grant as inactive rather than
+                   hiding it — listDelegatedAdmins deliberately does not filter these out. */
+                expired: Boolean(entry.expiresAt && entry.expiresAt <= new Date()),
+                /* Backfilled wide when scoping landed. Badged in the console so an operator
+                   narrows these deliberately rather than finding out during an incident. */
+                legacyFullScope: entry.legacyFullScope,
             })),
+            /* The vocabulary, so the console's scope picker cannot drift from the validator. */
+            availableScopes: ADMIN_SCOPES,
             viewerIsRoot: auth.admin.isRoot,
         });
     } catch (error) {
@@ -75,6 +95,7 @@ export async function POST(request: Request) {
         const body = await request.json().catch(() => ({}));
         const rawWallet = typeof body?.wallet === "string" ? body.wallet.trim() : "";
         const label = typeof body?.label === "string" ? body.label.trim().slice(0, 120) : null;
+        const grantReason = typeof body?.grantReason === "string" ? body.grantReason.trim().slice(0, 500) : null;
 
         if (!ADDRESS_PATTERN.test(rawWallet)) {
             return NextResponse.json(
@@ -83,6 +104,32 @@ export async function POST(request: Request) {
             );
         }
         const wallet = rawWallet.toLowerCase();
+
+        /* Scopes are REQUIRED on a new grant, and no default is supplied. The old code had no
+           scope concept at all, so every grant was effectively unlimited; quietly defaulting to
+           anything here would repeat that in a quieter way. An operator has to say what this
+           person may do. */
+        const scopes = normalizeScopes(body?.scopes);
+        if (scopes.length === 0) {
+            return NextResponse.json(
+                { error: `Choose at least one scope for this admin. Valid scopes: ${ADMIN_SCOPES.join(", ")}.` },
+                { status: 400 },
+            );
+        }
+
+        /* NULL means permanent, matching the column. An expiry in the past would create a grant
+           that is dead on arrival and read as a bug, so it is refused rather than stored. */
+        let expiresAt: Date | null = null;
+        if (body?.expiresAt !== undefined && body?.expiresAt !== null && body?.expiresAt !== "") {
+            const parsed = new Date(body.expiresAt);
+            if (Number.isNaN(parsed.getTime())) {
+                return NextResponse.json({ error: "expiresAt is not a valid date." }, { status: 400 });
+            }
+            if (parsed <= new Date()) {
+                return NextResponse.json({ error: "expiresAt must be in the future." }, { status: 400 });
+            }
+            expiresAt = parsed;
+        }
 
         /* Granting a wallet that is already root is a no-op that would look like it
            worked and then appear un-revocable in the UI. Say so instead. */
@@ -95,8 +142,25 @@ export async function POST(request: Request) {
 
         await prisma.adminWallet.upsert({
             where: { wallet },
-            update: { label: label || undefined },
-            create: { wallet, label: label || null, grantedBy: auth.admin.wallet },
+            /* An explicit re-grant replaces the scope set rather than merging into it: merging
+               would make narrowing someone impossible through this endpoint. legacyFullScope is
+               cleared because the grant is no longer a backfill guess. */
+            update: {
+                label: label || undefined,
+                scopes,
+                expiresAt,
+                grantReason: grantReason || undefined,
+                legacyFullScope: false,
+            },
+            create: {
+                wallet,
+                label: label || null,
+                grantedBy: auth.admin.wallet,
+                scopes,
+                expiresAt,
+                grantReason: grantReason || null,
+                legacyFullScope: false,
+            },
         });
 
         const mirror = await mirrorDelegatedAdmins();
@@ -104,7 +168,13 @@ export async function POST(request: Request) {
             actor: auth.admin.wallet,
             action: "ADMIN_WALLET_GRANT",
             target: wallet,
-            detail: { label, mirrored: mirror.mirrored },
+            detail: {
+                label,
+                scopes,
+                grantReason,
+                expiresAt: expiresAt?.toISOString() ?? null,
+                mirrored: mirror.mirrored,
+            },
             request,
         });
 
@@ -131,7 +201,8 @@ export async function PATCH(request: Request) {
     try {
         const body = await request.json().catch(() => ({}));
         const rawWallet = typeof body?.wallet === "string" ? body.wallet.trim() : "";
-        const label = typeof body?.label === "string" ? body.label.trim().slice(0, 120) || null : null;
+        const hasLabel = typeof body?.label === "string";
+        const label = hasLabel ? body.label.trim().slice(0, 120) || null : null;
 
         if (!ADDRESS_PATTERN.test(rawWallet)) {
             return NextResponse.json(
@@ -144,15 +215,56 @@ export async function PATCH(request: Request) {
         /* Root admins are configured in env — there is no DB row to update. */
         if (listRootAdmins().includes(wallet)) {
             return NextResponse.json(
-                { error: "Root admin labels cannot be managed here." },
+                { error: "Root admin access cannot be managed here." },
                 { status: 400 },
             );
+        }
+
+        /* Scopes are optional on a PATCH, so relabelling does not silently reset authority —
+           which is the failure mode this whole change exists to remove. Narrowing a legacy
+           wide grant is the main reason to send them. */
+        const scopes = body?.scopes === undefined ? null : normalizeScopes(body.scopes);
+        if (scopes !== null && scopes.length === 0) {
+            return NextResponse.json(
+                { error: `Choose at least one scope. Valid scopes: ${ADMIN_SCOPES.join(", ")}.` },
+                { status: 400 },
+            );
+        }
+
+        /* Explicit null clears the expiry (makes the grant permanent); an omitted field leaves
+           it alone. The two have to be distinguishable or an expiry could never be lifted. */
+        let expiresAt: Date | null | undefined;
+        if (body?.expiresAt === null || body?.expiresAt === "") {
+            expiresAt = null;
+        } else if (body?.expiresAt !== undefined) {
+            const parsed = new Date(body.expiresAt);
+            if (Number.isNaN(parsed.getTime())) {
+                return NextResponse.json({ error: "expiresAt is not a valid date." }, { status: 400 });
+            }
+            if (parsed <= new Date()) {
+                return NextResponse.json({ error: "expiresAt must be in the future." }, { status: 400 });
+            }
+            expiresAt = parsed;
+        }
+
+        const grantReason =
+            typeof body?.grantReason === "string" ? body.grantReason.trim().slice(0, 500) || null : undefined;
+
+        if (!hasLabel && scopes === null && expiresAt === undefined && grantReason === undefined) {
+            return NextResponse.json({ error: "No admin changes supplied." }, { status: 400 });
         }
 
         try {
             await prisma.adminWallet.update({
                 where: { wallet },
-                data: { label },
+                data: {
+                    ...(hasLabel ? { label } : {}),
+                    /* Narrowing a backfilled grant is exactly what legacy_full_scope was flagging,
+                       so setting scopes explicitly clears the badge. */
+                    ...(scopes !== null ? { scopes, legacyFullScope: false } : {}),
+                    ...(expiresAt !== undefined ? { expiresAt } : {}),
+                    ...(grantReason !== undefined ? { grantReason } : {}),
+                },
             });
         } catch (e: unknown) {
             if (
@@ -169,11 +281,25 @@ export async function PATCH(request: Request) {
             throw e;
         }
 
+        /* Scope and expiry changes alter who can reach the edge gate, so the mirror has to be
+           rewritten — a narrowed or expired grant left in the Redis set would still pass
+           middleware. A relabel alone does not affect membership, so it skips the rewrite. */
+        const mirror =
+            scopes !== null || expiresAt !== undefined
+                ? await mirrorDelegatedAdmins()
+                : { mirrored: true as const, error: undefined };
+
         await recordAdminAction({
             actor: auth.admin.wallet,
             action: "ADMIN_WALLET_UPDATE_LABEL",
             target: wallet,
-            detail: { label },
+            detail: {
+                ...(hasLabel ? { label } : {}),
+                ...(scopes !== null ? { scopes } : {}),
+                ...(expiresAt !== undefined ? { expiresAt: expiresAt?.toISOString() ?? null } : {}),
+                ...(grantReason !== undefined ? { grantReason } : {}),
+                mirrored: mirror.mirrored,
+            },
             request,
         });
 

@@ -36,19 +36,100 @@ type HealthData = {
     overdueSubscriptionsCount: number;
     status: "healthy" | "backlogged";
   };
-  platformFlags: {
-    sponsorEmergencyStop: boolean;
-    paymentsEnabled: boolean;
-    withdrawalsEnabled: boolean;
-  };
 };
+
+/* The operational breakers, from api/admin/system/settings.
+ *
+ * These used to be read from the health route's platformFlags and written to api/admin/flags.
+ * Neither end was real: platform_flags had no columns for them, so the values were always the
+ * fallbacks and the writes went nowhere a reader could see. They now live in system_settings,
+ * which is the table their enforcement was already wired to. */
+type SystemSettings = {
+  withdrawalsEnabled: boolean;
+  hostedPaymentsEnabled: boolean;
+  checkoutEnabled: boolean;
+  reconciliationEnabled: boolean;
+  sponsorEmergencyStop: boolean;
+  updatedAt: string | null;
+  updatedBy: string | null;
+};
+
+type SettingsField = keyof Omit<SystemSettings, "updatedAt" | "updatedBy">;
+
+type SettingsData = {
+  settings: SystemSettings;
+  /* Sent by the route rather than written here, so what the console claims a switch does cannot
+     drift from what the server actually enforces. */
+  enforcement: Record<SettingsField, string>;
+};
+
+/* One row per switch. `dangerousWhenOn` marks the emergency stop, where ON is the alarming
+   state — every other switch is the reverse, and colouring them all the same way is how an
+   operator misreads a console during an incident. */
+const SWITCHES: Array<{
+  field: SettingsField;
+  title: string;
+  dangerousWhenOn?: boolean;
+  onLabel: string;
+  offLabel: string;
+}> = [
+  {
+    field: "sponsorEmergencyStop",
+    title: "Sponsored gas emergency stop",
+    dangerousWhenOn: true,
+    onLabel: "Stopped",
+    offLabel: "Running",
+  },
+  {
+    field: "withdrawalsEnabled",
+    title: "Withdrawals",
+    onLabel: "Allowed",
+    offLabel: "Blocked",
+  },
+  {
+    field: "hostedPaymentsEnabled",
+    title: "Hosted checkout payments",
+    onLabel: "Allowed",
+    offLabel: "Blocked",
+  },
+  {
+    field: "checkoutEnabled",
+    title: "Premium checkout",
+    onLabel: "Allowed",
+    offLabel: "Blocked",
+  },
+  {
+    field: "reconciliationEnabled",
+    title: "Payment reconciliation",
+    onLabel: "Running",
+    offLabel: "Paused",
+  },
+];
 
 export function AdminSystemHealthCard() {
   const [data, setData] = useState<HealthData | null>(null);
+  const [settingsData, setSettingsData] = useState<SettingsData | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [updatingFlag, setUpdatingFlag] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  /* Kept separate from loadHealth, and its failure is shown rather than swallowed. A breaker
+     panel that renders "everything on" when it could not read the row is worse than an empty
+     one — it is the same failure the switches themselves used to have. */
+  const loadSettings = useCallback(async () => {
+    setSettingsError(null);
+    try {
+      const res = await fetch("/api/admin/system/settings");
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Could not read the operational breakers");
+      setSettingsData(json);
+    } catch (err: any) {
+      setSettingsData(null);
+      setSettingsError(err.message);
+    }
+  }, []);
 
   const loadHealth = useCallback(async () => {
     setLoading(true);
@@ -67,23 +148,26 @@ export function AdminSystemHealthCard() {
 
   useEffect(() => {
     loadHealth();
-  }, [loadHealth]);
+    loadSettings();
+  }, [loadHealth, loadSettings]);
 
-  const handleToggleFlag = async (flagName: string, currentValue: boolean) => {
-    setUpdatingFlag(flagName);
+  const handleToggleSetting = async (field: SettingsField, currentValue: boolean) => {
+    setUpdatingFlag(field);
     setNotice(null);
     try {
-      const res = await fetch("/api/admin/flags", {
+      const res = await fetch("/api/admin/system/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [flagName]: !currentValue }),
+        body: JSON.stringify({ [field]: !currentValue }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to update platform flag");
-      setNotice(`✅ Updated ${flagName} to ${!currentValue ? "ON" : "OFF"}`);
-      loadHealth();
+      if (!res.ok) throw new Error(json.error || "Could not update that switch");
+      /* Re-read rather than trusting the response body. The old toggle rendered the value it had
+         just sent, which is why a switch that never persisted still looked like it worked. */
+      await loadSettings();
+      setNotice(`Saved. ${json.changed?.length ? "" : "No change — it was already set that way."}`.trim());
     } catch (err: any) {
-      setNotice(`❌ Error: ${err.message}`);
+      setNotice(`Couldn't save that: ${err.message}`);
     } finally {
       setUpdatingFlag(null);
     }
@@ -93,7 +177,7 @@ export function AdminSystemHealthCard() {
     return (
       <div className="space-y-6">
         <SkeletonStatGrid count={3} columns={3} label="Loading system telemetry..." />
-        <SkeletonToggleRows count={3} label="Loading emergency switches..." />
+        <SkeletonToggleRows count={5} label="Loading operational breakers…" />
       </div>
     );
   }
@@ -233,88 +317,62 @@ export function AdminSystemHealthCard() {
           </div>
         )}
 
+        {settingsError && (
+          <div className="rounded-lg bg-red-50 border border-red-200 p-2.5 text-xs text-red-800">
+            <span className="font-bold">Couldn&apos;t read the breakers.</span> {settingsError} — treat the
+            states below as unknown until this clears.
+          </div>
+        )}
+
         <div className="divide-y divide-gray-100 text-xs">
-          {/* Gas Sponsor Emergency Stop */}
-          <div className="flex items-center justify-between py-3">
-            <div>
-              <p className="font-bold text-gray-900">Gas Sponsor Emergency Stop</p>
-              <p className="text-gray-500 text-[11px]">
-                Instantly halts all automated native gas top-ups from the SubScript sponsor wallet.
-              </p>
-            </div>
-            <button
-              onClick={() => handleToggleFlag("sponsorEmergencyStop", data?.platformFlags.sponsorEmergencyStop ?? false)}
-              disabled={updatingFlag === "sponsorEmergencyStop"}
-              className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
-                data?.platformFlags.sponsorEmergencyStop
-                  ? "bg-red-600 text-white hover:bg-red-700"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
-            >
-              {updatingFlag === "sponsorEmergencyStop" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : data?.platformFlags.sponsorEmergencyStop ? (
-                "STOP ACTIVE (PAUSED)"
-              ) : (
-                "NORMAL (RUNNING)"
-              )}
-            </button>
-          </div>
+          {SWITCHES.map((entry) => {
+            const value = settingsData?.settings[entry.field];
+            const busy = updatingFlag === entry.field;
+            /* Unknown while the read is failing or in flight: an operator must be able to tell
+               "off" apart from "we don't know". */
+            const known = typeof value === "boolean";
+            const alarming = known && (entry.dangerousWhenOn ? value : !value);
 
-          {/* Payments Kill Switch */}
-          <div className="flex items-center justify-between py-3">
-            <div>
-              <p className="font-bold text-gray-900">Platform Payments Kill Switch</p>
-              <p className="text-gray-500 text-[11px]">
-                Controls whether new checkouts, subscription charges, and transfers are admitted platform-wide.
-              </p>
-            </div>
-            <button
-              onClick={() => handleToggleFlag("paymentsEnabled", data?.platformFlags.paymentsEnabled ?? true)}
-              disabled={updatingFlag === "paymentsEnabled"}
-              className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
-                data?.platformFlags.paymentsEnabled
-                  ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
-                  : "bg-red-600 text-white hover:bg-red-700"
-              }`}
-            >
-              {updatingFlag === "paymentsEnabled" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : data?.platformFlags.paymentsEnabled ? (
-                "PAYMENTS ENABLED"
-              ) : (
-                "PAYMENTS BLOCKED"
-              )}
-            </button>
-          </div>
-
-          {/* Withdrawals Kill Switch */}
-          <div className="flex items-center justify-between py-3">
-            <div>
-              <p className="font-bold text-gray-900">Platform Withdrawals Kill Switch</p>
-              <p className="text-gray-500 text-[11px]">
-                Controls whether merchant balance sweeps and customer withdrawals are admitted.
-              </p>
-            </div>
-            <button
-              onClick={() => handleToggleFlag("withdrawalsEnabled", data?.platformFlags.withdrawalsEnabled ?? true)}
-              disabled={updatingFlag === "withdrawalsEnabled"}
-              className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
-                data?.platformFlags.withdrawalsEnabled
-                  ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
-                  : "bg-red-600 text-white hover:bg-red-700"
-              }`}
-            >
-              {updatingFlag === "withdrawalsEnabled" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : data?.platformFlags.withdrawalsEnabled ? (
-                "WITHDRAWALS ENABLED"
-              ) : (
-                "WITHDRAWALS BLOCKED"
-              )}
-            </button>
-          </div>
+            return (
+              <div key={entry.field} className="flex items-center justify-between gap-4 py-3">
+                <div>
+                  <p className="font-bold text-gray-900">{entry.title}</p>
+                  <p className="text-gray-500 text-[11px]">
+                    {settingsData?.enforcement?.[entry.field] ?? "Loading what this stops…"}
+                  </p>
+                </div>
+                <button
+                  onClick={() => known && handleToggleSetting(entry.field, value)}
+                  disabled={busy || !known}
+                  className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors disabled:opacity-60 ${
+                    !known
+                      ? "bg-gray-100 text-gray-500"
+                      : alarming
+                        ? "bg-red-600 text-white hover:bg-red-700"
+                        : "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                  }`}
+                >
+                  {busy ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : !known ? (
+                    "Unknown"
+                  ) : value ? (
+                    entry.onLabel
+                  ) : (
+                    entry.offLabel
+                  )}
+                </button>
+              </div>
+            );
+          })}
         </div>
+
+        {settingsData?.settings.updatedAt && (
+          <p className="text-[11px] text-gray-500">
+            Last changed {new Date(settingsData.settings.updatedAt).toLocaleString()}
+            {settingsData.settings.updatedBy ? ` by ${settingsData.settings.updatedBy}` : ""}.
+          </p>
+        )}
       </div>
     </div>
   );

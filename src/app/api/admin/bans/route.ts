@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/admin/guard";
+import { requireScope } from "@/lib/admin/guard";
 import { isAdminWallet } from "@/lib/admin/identity";
 import { recordAdminAction } from "@/lib/admin/audit";
 import { setIpBanInRedis, clearIpBanInRedis } from "@/lib/admin/ipBans";
 
 export async function POST(request: Request) {
   try {
-    const auth = await requireAdmin(request);
+    const auth = await requireScope(request, "support");
     if (!auth.ok) return auth.response;
 
     const body = await request.json().catch(() => null);

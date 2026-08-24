@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/guard";
+import { requireScope } from "@/lib/admin/guard";
 import { recordAdminAction } from "@/lib/admin/audit";
 import { prisma } from "@/lib/prisma";
 import { ethers } from "ethers";
@@ -8,7 +8,7 @@ export async function GET(
     request: Request,
     { params }: { params: Promise<{ address: string }> }
 ) {
-    const auth = await requireAdmin(request);
+    const auth = await requireScope(request, "support");
     if (!auth.ok) return auth.response;
 
     const { address } = await params;
@@ -128,7 +128,7 @@ export async function POST(
     request: Request,
     { params }: { params: Promise<{ address: string }> }
 ) {
-    const auth = await requireAdmin(request);
+    const auth = await requireScope(request, "support");
     if (!auth.ok) return auth.response;
 
     const { address } = await params;

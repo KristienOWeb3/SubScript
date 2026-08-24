@@ -1,7 +1,7 @@
 import { runAdminQueriesSequentially } from "@/lib/admin/db";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin, requireRootAdmin } from "@/lib/admin/guard";
+import { requireScope, requireRootAdmin } from "@/lib/admin/guard";
 import { recordAdminAction } from "@/lib/admin/audit";
 import { sendPushToWallet } from "@/lib/push";
 import { jsonOk } from "@/lib/http/json";
@@ -24,7 +24,7 @@ const NOTIFY_CHUNK = 500;
 type Audience = "users" | "merchants" | "both";
 
 export async function GET(request: Request) {
-    const auth = await requireAdmin(request);
+    const auth = await requireScope(request, "read");
     if (!auth.ok) return auth.response;
 
     const broadcasts = await prisma.adminBroadcast.findMany({
@@ -37,7 +37,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-    const auth = await requireAdmin(request);
+    /* Creating a broadcast messages every account on the platform, so it sits with support
+       rather than with `read`. Deleting one stays root-only (see DELETE below). */
+    const auth = await requireScope(request, "support");
     if (!auth.ok) return auth.response;
 
     try {

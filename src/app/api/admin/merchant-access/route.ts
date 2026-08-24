@@ -1,7 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withPgClient } from "@/lib/serverPg";
-import { requireAdmin } from "@/lib/admin/guard";
+import { requireScope } from "@/lib/admin/guard";
 import { recordAdminAction } from "@/lib/admin/audit";
 import { normalizeAccountEmail } from "@/lib/auth/accountEmail";
 import { isProd } from "@/lib/contracts/constants";
@@ -35,7 +35,7 @@ function inviteUrl(token: string) {
 }
 
 export async function GET(request: Request) {
-    const auth = await requireAdmin(request);
+    const auth = await requireScope(request, "support");
     if (!auth.ok) return auth.response;
 
     try {
@@ -98,7 +98,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-    const auth = await requireAdmin(request);
+    const auth = await requireScope(request, "support");
     if (!auth.ok) return auth.response;
 
     try {

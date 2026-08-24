@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/admin/guard";
+import { requireScope } from "@/lib/admin/guard";
 import { recordAdminAction } from "@/lib/admin/audit";
 import {
     getPlatformFlags,
@@ -10,7 +10,7 @@ import {
 } from "@/lib/platform/flags";
 
 export async function GET(request: Request) {
-    const auth = await requireAdmin(request);
+    const auth = await requireScope(request, "engineering");
     if (!auth.ok) return auth.response;
 
     try {
@@ -29,7 +29,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-    const auth = await requireAdmin(request);
+    const auth = await requireScope(request, "engineering");
     if (!auth.ok) return auth.response;
 
     try {
@@ -59,11 +59,11 @@ export async function POST(request: Request) {
             dbData.merchantInviteOnlyEnabled = body.merchantInviteOnlyEnabled;
         }
 
-        const hasRuntimeFlag = typeof body?.sponsorEmergencyStop === "boolean" ||
-            typeof body?.paymentsEnabled === "boolean" ||
-            typeof body?.withdrawalsEnabled === "boolean";
-
-        if (Object.keys(dbData).length === 2 && !hasRuntimeFlag) {
+        /* Two keys means only updatedBy/updatedAt were set, so nothing was actually supplied.
+           This used to also admit three "runtime flags" that were never written to any column
+           and never read by anything — see the header of @/lib/platform/flags. The operational
+           breakers now live at api/admin/system/settings. */
+        if (Object.keys(dbData).length === 2) {
             return NextResponse.json({ error: "No flag changes supplied" }, { status: 400 });
         }
 
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
             where: { id: 1 },
             update: dbData,
             create: { id: 1, ...dbData },
-        }) as any;
+        });
 
         const after: PlatformFlags = {
             googleSigninEnabled: row.googleSigninEnabled ?? (body?.googleSigninEnabled ?? before.googleSigninEnabled),
@@ -79,9 +79,6 @@ export async function POST(request: Request) {
             maintenanceMessage: row.maintenanceMessage ?? (body?.maintenanceMessage ?? before.maintenanceMessage),
             externalWalletEnabled: row.externalWalletEnabled ?? (body?.externalWalletEnabled ?? before.externalWalletEnabled),
             merchantInviteOnlyEnabled: row.merchantInviteOnlyEnabled ?? (body?.merchantInviteOnlyEnabled ?? before.merchantInviteOnlyEnabled),
-            sponsorEmergencyStop: typeof body?.sponsorEmergencyStop === "boolean" ? body.sponsorEmergencyStop : before.sponsorEmergencyStop,
-            paymentsEnabled: typeof body?.paymentsEnabled === "boolean" ? body.paymentsEnabled : before.paymentsEnabled,
-            withdrawalsEnabled: typeof body?.withdrawalsEnabled === "boolean" ? body.withdrawalsEnabled : before.withdrawalsEnabled,
         };
 
         /* Drop the local cache immediately so this instance reflects the change without
