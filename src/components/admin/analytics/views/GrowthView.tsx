@@ -26,14 +26,13 @@ export function GrowthView({ analytics }: GrowthViewProps) {
   const growth = analytics?.growth;
 
   const roleSegments: DonutSegment[] = useMemo(() => {
-    const users = growth?.usersRoleUser || 0;
-    const enterprise = growth?.usersRoleEnterprise || 0;
-    /* Identity, not status: these two slices say WHICH KIND of account, so they take categorical
-       slots rather than the status ramp. The old teal here was #00d2b4, which measures 1.88:1
-       against the white card and never cleared the 3:1 a data mark needs. */
+    const total = growth?.usersTotal || 0;
+    const enterprise = growth?.usersRoleEnterprise ?? (growth?.merchantsTotal || 0);
+    const users = growth?.usersRoleUser ?? Math.max(0, total - enterprise);
+
     return [
-      { label: "Individual users", value: users, color: CHART_CATEGORICAL[0] },
-      { label: "Enterprise / merchants", value: enterprise, color: CHART_CATEGORICAL[1] },
+      { label: "Individual Users", value: users, color: CHART_CATEGORICAL[0] },
+      { label: "Enterprise & Merchants", value: enterprise, color: CHART_CATEGORICAL[1] },
     ].filter((s) => s.value > 0);
   }, [growth]);
 

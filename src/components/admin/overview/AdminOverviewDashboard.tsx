@@ -224,7 +224,7 @@ export function AdminOverviewDashboard({
           title="Commerce activity breakdown"
           subtitle="Relative transaction frequency across payment rails"
           centerLabel="Activity"
-          centerValue={`${(analyticsData?.volume?.paymentCount ?? 0) + (analyticsData?.volume?.checkoutCount ?? 0)} txs`}
+          centerValue={`${(analyticsData?.volume?.paymentCount ?? 0) + (analyticsData?.volume?.checkoutCount ?? 0) + (activeSubs ?? 0)} txs`}
           emptyMessage="Nothing has moved yet. The rail split shows up here after the first payment."
         />
       </div>

@@ -19,16 +19,45 @@ export async function GET(request: Request) {
 
     try {
         const [delegated, root] = [await listDelegatedAdmins(), listRootAdmins()];
+        const allWallets = [...root, ...delegated.map((d) => d.wallet.toLowerCase())];
+        const aliases = await prisma.addressAlias.findMany({
+            where: { address: { in: allWallets } },
+            select: { address: true, alias: true },
+        });
+        const aliasMap = new Map(aliases.map((a) => [a.address.toLowerCase(), a.alias]));
+
+        const formatAdminHandle = (wallet: string, label?: string | null, isRoot?: boolean) => {
+            if (label && label.trim()) {
+                const clean = label.trim().replace(/^@/, "").replace(/\.admin$/i, "");
+                return `${clean.charAt(0).toUpperCase() + clean.slice(1)}.admin`;
+            }
+            const alias = aliasMap.get(wallet.toLowerCase());
+            if (alias && alias.trim()) {
+                const clean = alias.trim().replace(/^@/, "").replace(/\.admin$/i, "");
+                return `${clean.charAt(0).toUpperCase() + clean.slice(1)}.admin`;
+            }
+            if (isRoot) return "Chuks.admin";
+            const short = wallet.slice(2, 6).toUpperCase();
+            return `Admin${short}.admin`;
+        };
+
         return NextResponse.json({
             /* Root wallets are reported so the console can render them as
                non-revocable rather than pretending they do not exist. */
-            root: root.map((wallet) => ({ wallet, tier: "root" as const })),
+            root: root.map((wallet) => ({
+                wallet,
+                tier: "root" as const,
+                adminHandle: formatAdminHandle(wallet, null, true),
+                alias: aliasMap.get(wallet.toLowerCase()) || null,
+            })),
             delegated: delegated.map((entry) => ({
                 wallet: entry.wallet,
                 label: entry.label,
                 grantedBy: entry.grantedBy,
                 createdAt: entry.createdAt.toISOString(),
                 tier: "delegated" as const,
+                adminHandle: formatAdminHandle(entry.wallet, entry.label, false),
+                alias: aliasMap.get(entry.wallet.toLowerCase()) || null,
             })),
             viewerIsRoot: auth.admin.isRoot,
         });

@@ -47,9 +47,9 @@ interface RateLimitRecord {
 const ticketCreationTimestamps = new Map<string, number[]>();
 const messageTimestamps = new Map<string, number[]>();
 
-// Rate limits
-const MAX_TICKETS_PER_10_MIN = 3;
-const TICKET_CREATION_WINDOW_MS = 10 * 60 * 1000;
+// Rate limits: Maximum 2 support tickets per 24 hours
+const MAX_TICKETS_PER_24_HOURS = 2;
+const TICKET_CREATION_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const MAX_MESSAGES_PER_10_SEC = 5;
 const MESSAGE_WINDOW_MS = 10 * 1000;
@@ -117,13 +117,13 @@ export async function ensureSupportTables() {
  * Check if a user/merchant is rate-limited from creating a new ticket.
  * Rules:
  * 1. Cannot have more than 1 active (OPEN / CLAIMED) ticket at a time.
- * 2. Cannot open more than 3 tickets in 10 minutes.
+ * 2. Rate-limited to max 2 support tickets per 24 hours per wallet.
  */
 export async function checkTicketCreationRateLimit(wallet: string): Promise<{ allowed: boolean; reason?: string }> {
     await ensureSupportTables();
     const cleanWallet = wallet.toLowerCase();
 
-    // 1. Check for active tickets
+    // 1. Check for active tickets currently in progress
     const activeTicket = await pgMaybeOne<{ id: string; status: string }>(
         `SELECT id, status FROM support_tickets WHERE LOWER(creator_wallet) = $1 AND status IN ('OPEN', 'CLAIMED') LIMIT 1`,
         [cleanWallet]
@@ -136,17 +136,37 @@ export async function checkTicketCreationRateLimit(wallet: string): Promise<{ al
         };
     }
 
-    // 2. Check sliding window
+    // 2. Enforce 2 tickets max per 24 hours in database
+    try {
+        const result = await pgMaybeOne<{ count: string | number }>(
+            `SELECT COUNT(*)::int AS count 
+             FROM support_tickets 
+             WHERE LOWER(creator_wallet) = $1 
+               AND created_at >= NOW() - INTERVAL '24 HOURS'`,
+            [cleanWallet]
+        );
+
+        const recentDbCount = Number(result?.count || 0);
+        if (recentDbCount >= MAX_TICKETS_PER_24_HOURS) {
+            return {
+                allowed: false,
+                reason: "You have reached the maximum limit of 2 support tickets per 24 hours. Please wait before opening another ticket.",
+            };
+        }
+    } catch (dbErr) {
+        console.warn("[support/tickets] DB rate limit query failed, falling back to memory:", dbErr);
+    }
+
+    // 3. Memory sliding window check (backup fallback)
     const now = Date.now();
     const history = (ticketCreationTimestamps.get(cleanWallet) || []).filter(
         (t) => now - t < TICKET_CREATION_WINDOW_MS
     );
 
-    if (history.length >= MAX_TICKETS_PER_10_MIN) {
-        const remainingSec = Math.ceil((TICKET_CREATION_WINDOW_MS - (now - history[0])) / 1000);
+    if (history.length >= MAX_TICKETS_PER_24_HOURS) {
         return {
             allowed: false,
-            reason: `Too many tickets opened recently. Please wait ${remainingSec} seconds before opening another ticket.`,
+            reason: "You have reached the maximum limit of 2 support tickets per 24 hours. Please wait before opening another ticket.",
         };
     }
 

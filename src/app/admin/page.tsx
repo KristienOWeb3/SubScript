@@ -102,6 +102,8 @@ type AdminEntry = {
   wallet: string;
   tier: "root" | "delegated";
   label?: string | null;
+  adminHandle?: string;
+  alias?: string | null;
   grantedBy?: string;
   createdAt?: string;
 };
@@ -1099,9 +1101,14 @@ export default function AdminDashboardPage() {
     { id: "admins", label: "Admin Access", icon: Shield },
   ];
 
-  const adminSidebarFooterItems: DashboardSidebarItem[] = [
-    { id: "docs", label: "Documentation", icon: FileText, href: "/support", newTab: true },
-  ];
+  const adminSidebarFooterItems: DashboardSidebarItem[] = [];
+
+  const currentAdminEntry = admins.find(
+    (a) => viewerWallet && a.wallet.toLowerCase() === viewerWallet.toLowerCase()
+  );
+  const viewerAdminHandle =
+    currentAdminEntry?.adminHandle ||
+    (viewerIsRoot ? "Chuks.admin" : "Admin.admin");
 
   /* min-h-screen + a light background on mobile, and both are load-bearing.
    *
@@ -1129,9 +1136,9 @@ export default function AdminDashboardPage() {
           activeId={tab}
           onSelect={(id) => setTab(id as TabId)}
           identity={{
-            label: viewerIsRoot ? "root.subscript.admin" : "admin.subscriptonarc.com",
+            label: viewerAdminHandle,
             avatarUrl: null,
-            fallback: viewerIsRoot ? "R" : "A",
+            fallback: viewerAdminHandle.charAt(0).toUpperCase(),
             onClick: () => setTab("admins"),
             title: "Arc Protocol Authority",
           }}
@@ -2964,7 +2971,10 @@ export default function AdminDashboardPage() {
                         />
                         <div className="min-w-0 flex-1">
                           <p className="font-mono font-bold text-[#0f172a] truncate">
-                            {a.wallet}
+                            {a.adminHandle || (a.tier === "root" ? "Chuks.admin" : (a.label ? `${a.label}.admin` : "Admin.admin"))}
+                          </p>
+                          <p className="font-mono text-[10px] text-[#64748b] truncate">
+                            {a.wallet} {a.tier === "root" && "• Root authority"}
                           </p>
                           {a.tier === "root" ? (
                             <p className="text-[10px] text-[#64748b]">

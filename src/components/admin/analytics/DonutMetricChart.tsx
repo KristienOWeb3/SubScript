@@ -137,7 +137,7 @@ export function DonutMetricChart({
                     ? `${seg.label} (${ordinals[idx]})`
                     : seg.label,
             percent: percents[idx],
-            dashLength: Math.max(1, lengths[idx] - GAP),
+            dashLength: nonZeroCount === 1 ? circumference : Math.max(1, lengths[idx] - GAP),
             dashOffset: -starts[idx],
             isEmpty: safeValues[idx] <= 0,
         }));
@@ -238,12 +238,12 @@ export function DonutMetricChart({
                             here keeps a screen reader from hearing every figure twice. */}
                         <div
                             aria-hidden="true"
-                            className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center"
+                            className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center px-3"
                         >
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748b]">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748b] truncate max-w-[110px]">
                                 {activeSegment ? activeSegment.displayLabel : centerLabel}
                             </span>
-                            <span className="text-lg font-black text-[#0f172a]">
+                            <span className="text-base sm:text-lg font-black text-[#0f172a] truncate max-w-[120px]">
                                 {activeSegment
                                     ? `${activeSegment.value.toLocaleString()} (${activeSegment.percent}%)`
                                     : centerValue ?? total.toLocaleString()}

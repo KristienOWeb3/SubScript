@@ -89,6 +89,11 @@ function formatAddress(addr?: string | null) {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }
 
+function getExplorerTxUrl(txHash?: string | null) {
+  if (!txHash) return "#";
+  return `https://arcscan.app/tx/${txHash}`;
+}
+
 export default function UserTransactionsPage() {
   const router = useRouter();
   const { theme } = useTheme();
@@ -100,7 +105,7 @@ export default function UserTransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<"all" | "recurring" | "one-time" | "transfers" | "withdrawals" | "sent" | "received">("all");
+  const [categoryFilter, setCategoryFilter] = useState<"all" | "deposits" | "recurring" | "one-time" | "transfers" | "withdrawals" | "sent" | "received">("all");
   
   /* Date range filter */
   const [dateRange, setDateRange] = useState<"all" | "today" | "7d" | "30d" | "90d" | "custom">("all");
@@ -178,21 +183,36 @@ export default function UserTransactionsPage() {
     fetchGeoCurrencyAndRate();
   }, []);
 
+  const [deposits, setDeposits] = useState<Array<{
+    id: string;
+    txHash: string;
+    fromAddress: string;
+    toAddress: string;
+    amountUsdc: string;
+    amountFormatted: string;
+    timestamp: number;
+    blockNumber: number;
+    status: string;
+    senderName: string | null;
+  }>>([]);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const [subRes, dmRes, sessionRes, settingsRes] = await Promise.all([
+      const [subRes, dmRes, sessionRes, settingsRes, depositsRes] = await Promise.all([
         fetch("/api/user/subscriptions"),
         fetch("/api/user/dms"),
         fetch("/api/auth/session"),
         fetch("/api/user/settings").catch(() => null),
+        fetch("/api/user/deposits").catch(() => null),
         new Promise<void>((resolve) => window.setTimeout(resolve, 300))
       ]);
       const subData = await subRes.json().catch(() => ({}));
       const dmData = await dmRes.json().catch(() => ({}));
       const sessionData = await sessionRes.json().catch(() => ({}));
       const settingsData = settingsRes ? await settingsRes.json().catch(() => ({})) : {};
+      const depositsData = depositsRes ? await depositsRes.json().catch(() => ({})) : {};
 
       if (!subRes.ok || !dmRes.ok || !sessionRes.ok) throw new Error("Transaction history is temporarily unavailable.");
 
@@ -201,6 +221,9 @@ export default function UserTransactionsPage() {
       if (sessionData.loggedIn && sessionData.wallet) setUserWallet(sessionData.wallet);
       if (settingsData.success && Array.isArray(settingsData.receipts)) {
         setReceipts(settingsData.receipts);
+      }
+      if (depositsData.success && Array.isArray(depositsData.deposits)) {
+        setDeposits(depositsData.deposits);
       }
 
       const serverHashes: Array<string | null | undefined> = (dmData.success ? dmData.dms : []).map(
@@ -347,6 +370,27 @@ export default function UserTransactionsPage() {
         receiptId: r.receiptId,
       };
     });
+  // Map external Arc USDC deposits not captured in DMs or receipts
+  const depositTransactions = deposits
+    .filter((d) => !mappedTxHashes.has(d.txHash.toLowerCase()))
+    .map((d) => {
+      mappedTxHashes.add(d.txHash.toLowerCase());
+      return {
+        id: `dep-${d.txHash}`,
+        kind: "transfers" as const,
+        name: d.senderName ? `Deposit from @${d.senderName}` : `Deposit from ${formatAddress(d.fromAddress)}`,
+        pic: null as string | null,
+        detail: "USDC Deposit • Arc Network",
+        amountUsdc: d.amountUsdc,
+        amountLabel: `+$${formatUsdc(d.amountUsdc)}`,
+        localAmountLabel: `+${getLocalValueLabel(d.amountUsdc)}`,
+        time: d.timestamp,
+        incoming: true,
+        status: "CONFIRMED",
+        txHash: d.txHash,
+        receiptId: null as string | null,
+      };
+    });
 
   const allTransactions = [
     ...optimisticTxs.map((tx) => ({
@@ -381,6 +425,7 @@ export default function UserTransactionsPage() {
     })),
     ...dmMappedTransactions,
     ...standaloneReceiptTransactions,
+    ...depositTransactions,
   ].sort((a, b) => b.time - a.time);
 
   // Compute 30-day settled spend total
@@ -427,6 +472,7 @@ export default function UserTransactionsPage() {
     if (categoryFilter === "one-time" && tx.kind !== "one-time") return false;
     if (categoryFilter === "transfers" && tx.kind !== "transfers") return false;
     if (categoryFilter === "withdrawals" && tx.kind !== "withdrawals") return false;
+    if (categoryFilter === "deposits" && (!tx.incoming || !tx.detail.toLowerCase().includes("deposit"))) return false;
     if (categoryFilter === "sent" && tx.incoming) return false;
     if (categoryFilter === "received" && !tx.incoming) return false;
 
@@ -608,6 +654,7 @@ export default function UserTransactionsPage() {
               { id: "one-time", label: "One-Time" },
               { id: "transfers", label: "Transfers" },
               { id: "withdrawals", label: "Withdrawals" },
+              { id: "deposits", label: "Deposits" },
               { id: "sent", label: "Sent" },
               { id: "received", label: "Received" },
             ].map((tab) => (
@@ -790,6 +837,8 @@ export default function UserTransactionsPage() {
                                 <Shield className="h-4 w-4 text-[#2775CA]" />
                               ) : tx.kind === "withdrawals" ? (
                                 <ArrowDownToLine className="h-4 w-4 text-amber-500" />
+                              ) : tx.detail.toLowerCase().includes("deposit") ? (
+                                <ArrowDownToLine className="h-4 w-4 text-emerald-500" />
                               ) : tx.kind === "transfers" ? (
                                 <User className="h-4 w-4 text-sky-500" />
                               ) : (
@@ -837,6 +886,15 @@ export default function UserTransactionsPage() {
                                   <Share2 className="h-3 w-3" /> Share
                                 </a>
                               </>
+                            ) : tx.txHash ? (
+                              <a
+                                href={getExplorerTxUrl(tx.txHash)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[#2775CA] hover:underline font-bold inline-flex items-center gap-1"
+                              >
+                                <ExternalLink className="h-3 w-3" /> Explorer
+                              </a>
                             ) : (
                               <span className="text-slate-400 dark:text-white/20">—</span>
                             )}
@@ -866,6 +924,8 @@ export default function UserTransactionsPage() {
                             <Shield className="h-4 w-4 text-[#2775CA]" />
                           ) : tx.kind === "withdrawals" ? (
                             <ArrowDownToLine className="h-4 w-4 text-amber-500" />
+                          ) : tx.detail.toLowerCase().includes("deposit") ? (
+                            <ArrowDownToLine className="h-4 w-4 text-emerald-500" />
                           ) : (
                             <CreditCard className="h-4 w-4 text-purple-500" />
                           )}
@@ -892,7 +952,7 @@ export default function UserTransactionsPage() {
                       </div>
                     </div>
 
-                    {tx.receiptId && (
+                    {tx.receiptId ? (
                       <div className="pt-2 flex items-center justify-end gap-3 border-t border-black/5 dark:border-white/5 text-[10px]">
                         <a href={`/receipt/${tx.receiptId}`} target="_blank" rel="noopener noreferrer" className="text-[#2775CA] font-bold">
                           View receipt
@@ -901,7 +961,13 @@ export default function UserTransactionsPage() {
                           Share
                         </a>
                       </div>
-                    )}
+                    ) : tx.txHash ? (
+                      <div className="pt-2 flex items-center justify-end gap-3 border-t border-black/5 dark:border-white/5 text-[10px]">
+                        <a href={getExplorerTxUrl(tx.txHash)} target="_blank" rel="noopener noreferrer" className="text-[#2775CA] font-bold inline-flex items-center gap-1">
+                          <ExternalLink className="h-3 w-3" /> View on Explorer
+                        </a>
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>
