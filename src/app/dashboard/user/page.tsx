@@ -124,6 +124,12 @@ import { recordOptimisticTx } from "@/lib/optimisticTx";
 
 const comingSoonUserSettings = new Set(["emailEnabled", "securityShieldEnabled", "securityMultiSigEnabled"]);
 
+function getExplorerTxUrl(txHash?: string | null) {
+  if (!txHash) return "#";
+  const base = activeArcChain.blockExplorers?.default?.url || "https://arcscan.app";
+  return `${base}/tx/${txHash}`;
+}
+
 const ERC20_BALANCE_ABI = [
   { type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] },
 ] as const;
@@ -6180,7 +6186,7 @@ export default function UserDashboard() {
                                       <div className="inline-flex items-center gap-3">
                                         {tx.isExternalDeposit ? (
                                           <a
-                                            href={`https://testnet.arcscan.app/tx/${tx.txHash}`}
+                                            href={getExplorerTxUrl(tx.txHash)}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="text-[#2775CA] hover:underline inline-flex items-center gap-1 font-semibold"
@@ -6248,7 +6254,7 @@ export default function UserDashboard() {
                                   <div className="pt-2 flex items-center justify-end gap-3 border-t border-black/10 text-[10px]">
                                     {tx.isExternalDeposit ? (
                                       <a
-                                        href={`https://testnet.arcscan.app/tx/${tx.txHash}`}
+                                        href={getExplorerTxUrl(tx.txHash)}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="text-[#2775CA] font-semibold inline-flex items-center gap-1"

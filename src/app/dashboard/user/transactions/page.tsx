@@ -89,6 +89,11 @@ function formatAddress(addr?: string | null) {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }
 
+function getExplorerTxUrl(txHash?: string | null) {
+  if (!txHash) return "#";
+  return `https://arcscan.app/tx/${txHash}`;
+}
+
 export default function UserTransactionsPage() {
   const router = useRouter();
   const { theme } = useTheme();
@@ -883,7 +888,7 @@ export default function UserTransactionsPage() {
                               </>
                             ) : tx.txHash ? (
                               <a
-                                href={`https://testnet.arcscan.app/tx/${tx.txHash}`}
+                                href={getExplorerTxUrl(tx.txHash)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-[#2775CA] hover:underline font-bold inline-flex items-center gap-1"
@@ -958,7 +963,7 @@ export default function UserTransactionsPage() {
                       </div>
                     ) : tx.txHash ? (
                       <div className="pt-2 flex items-center justify-end gap-3 border-t border-black/5 dark:border-white/5 text-[10px]">
-                        <a href={`https://testnet.arcscan.app/tx/${tx.txHash}`} target="_blank" rel="noopener noreferrer" className="text-[#2775CA] font-bold inline-flex items-center gap-1">
+                        <a href={getExplorerTxUrl(tx.txHash)} target="_blank" rel="noopener noreferrer" className="text-[#2775CA] font-bold inline-flex items-center gap-1">
                           <ExternalLink className="h-3 w-3" /> View on Explorer
                         </a>
                       </div>
