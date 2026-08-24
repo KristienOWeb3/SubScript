@@ -220,6 +220,65 @@ blocker.
 
 ---
 
+## 1.6 Known code gaps that bite at cutover
+
+Audited 2026-08-24. These are not env vars — each needs a migration or a code change, and none of
+them fail loudly on their own.
+
+- [ ] ⚠️ **The `5042002` column DEFAULTs are still in Postgres.** `PaymentLink.settlementChainId` and
+      `PaymentSession.chainId` no longer carry a Prisma `@default`, which forces app inserts to name
+      the chain — but **removing a Prisma default does not alter the database.**
+      `payment_sessions.chain_id` (`20260529120000_init.sql:34`) and two `settlement_chain_id` columns
+      (`20260716124545_enable_testnet_key_settlement.sql:12,16`,
+      `20260717030000_api_key_mode_isolation.sql:46`) are all still `NOT NULL DEFAULT 5042002`. Every
+      Supabase-client insert that omits the column — and there are several across
+      `api/payment-links/*` and `api/premium/checkout` — will still stamp **testnet** on mainnet data.
+      Dropping the DEFAULT is the fix, but because the columns are `NOT NULL` that converts a silent
+      wrong value into a hard insert error. **Audit those insert sites first**, then drop the defaults
+      in the cutover migration.
+- [ ] ⚠️ **`MeteredVault.settlementChainId` keeps its default deliberately — do not "fix" it.** The
+      `metered_vaults_environment_chain_check` constraint requires `environment = 'TEST'` and
+      `settlement_chain_id = 5042002` *together*, and the column is part of the vault's UNIQUE
+      identity. `api-key-mode-isolation.test.mjs:79` locks the schema line on purpose. Mainnet vaults
+      need a `LIVE`/`5042001` arm added to that CHECK, not the default removed.
+- [ ] ⚠️ **`subscriptions.contract_address` DEFAULT is pinned to the testnet PSA.**
+      `20260810140000_subscriptions_contract_binding.sql:128` sets
+      `DEFAULT '0x59df2224e7f9dced25f3aaee9fff939f92f5f4d2'`. Subscriptions are keyed
+      `(contract_address, subscription_id)`, so a mainnet PSA deploy **must** update that DEFAULT in
+      the same change — otherwise new mainnet subscriptions are written against the testnet contract
+      and collide with existing ids. PSA redeploys also restart subscription ids at 1, which has
+      already produced false "canceled on-chain" webhooks twice. Re-run the keeper-scoping test and
+      sweep for unscoped call sites after changing it.
+- [ ] ⚠️ **`subscription_billing_claims` is keyed on bare `subscription_id`.** Two PSA generations
+      therefore contend for one claim row. Known gap, currently comment-only. Fix before running two
+      contract generations concurrently — which a mainnet deploy alongside a live testnet is.
+- [ ] ⚠️ **`ARC_CCTP_DOMAIN_ID` is a guess for mainnet.** `constants.ts` sets `26` with a comment
+      reading `TBD_MAINNET_DOMAIN (using 26)`. Confirm Arc's mainnet CCTP domain before enabling any
+      cross-chain funding path.
+- [ ] 🧪 **CCTP must stay on V2 end to end.** Arc is V2-only (its transmitter is MessageTransmitterV2),
+      so `CCTP_CONFIG[1].tokenMessenger` must be **TokenMessengerV2**
+      `0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d`, per Circle's EVM contract reference. It was briefly
+      set to the V1 TokenMessenger `0xBd3fa81B58Ba92a82136038B25aDec7066af3155`, which would burn into
+      a contract whose messages Arc never receives. The constant now carries a comment saying so.
+
+### Already closed — do not re-litigate
+
+- ✅ **`NEXT_PUBLIC_ARC_MEMO_CONTRACT_ADDRESS` and `NEXT_PUBLIC_ARC_MESSAGE_TRANSMITTER_ADDRESS` are
+  fail-closed.** Both are in `MAINNET_REQUIRED_ENV` and `ADDRESS_ENV` (`src/lib/network/registry.ts`),
+  the transmitter gained an env override, and `network-registry.test.mjs` covers them.
+- ✅ **The unguarded `CCTP_CONFIG[11155111]` read in checkout is fixed.**
+  `SubScriptCheckout.tsx` now optional-chains the lookup and gates the whole branch on
+  `activeArcChain.id === ARC_TESTNET_CHAIN_ID`, with an explicit consistency assertion before any
+  burn. The `PublicPayClient` lookup is safe because `isCctpChain` requires
+  `chainId === cctpOriginChainId`, which is always a key of the active config.
+- ✅ **RLS is enabled on `fiat_funding_intents` and `fiat_funding_events`**, with server-only policies
+  (`20260703000000_create_fiat_funding_intents.sql:97-112`). Earlier notes calling this open are stale.
+- ✅ **The sponsored-gas emergency stop is a real runtime switch**, in `system_settings` and read by
+  `gas.ts` / `sponsorship.ts`. It still needs the mainnet sponsor wallet funded and budget caps set
+  (`SPONSOR_WALLET_DAILY_LIMIT`, `SPONSOR_ACTION_DAILY_LIMIT`, `SPONSOR_GLOBAL_DAILY_BUDGET_USDC`).
+
+---
+
 ## 2. Cron / keeper activation
 
 | Cron | How it runs | You must |

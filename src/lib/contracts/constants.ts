@@ -90,7 +90,12 @@ export const ARC_MAINNET = {
 export const CCTP_CONFIG: Record<number, { tokenMessenger: `0x${string}`; usdc: `0x${string}`; name: string; domain: number }> = isProd
   ? {
       1: {
-        tokenMessenger: "0xbd3fa81b58ba92a82136038b25adec7066af3155",
+        /* TokenMessengerV2 on Ethereum mainnet, per Circle's EVM contract reference
+           (developers.circle.com/cctp/evm-smart-contracts, verified 2026-08-24). MUST be V2:
+           Arc is V2-only — its transmitter is MessageTransmitterV2 — so a burn routed through the
+           V1 TokenMessenger (0xBd3fa81B58Ba92a82136038B25aDec7066af3155) produces a message Arc
+           will never receive. This was briefly set to that V1 address; do not "fix" it back. */
+        tokenMessenger: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
         usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
         name: "Ethereum Mainnet",
         domain: 0,

@@ -838,6 +838,11 @@ model MeteredVault {
   lastSyncedBlock   BigInt?  @map("last_synced_block")
   // Settlement environment isolation: a TEST api key may only touch TEST vaults on Arc testnet.
   environment       String   @default("TEST")
+  // Keep the default. It is HALF OF A DB-ENFORCED INVARIANT, not an oversight: the
+  // metered_vaults_environment_chain_check constraint requires environment = 'TEST' AND
+  // settlement_chain_id = 5042002 together, and settlement_chain_id is part of the vault's
+  // UNIQUE identity. Removing it breaks api-key-mode-isolation.test.mjs, which locks this line
+  // on purpose. Unlike PaymentLink/PaymentSession, this column is not a stray testnet default.
   settlementChainId BigInt   @default(5042002) @map("settlement_chain_id")
   disputed          Boolean  @default(false)
   // User-initiated cancellation of the metered service. Once set, further usage stops
