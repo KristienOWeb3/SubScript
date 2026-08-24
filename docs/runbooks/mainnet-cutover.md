@@ -8,15 +8,16 @@ testnet, so nothing changes until you set these.
 
 ---
 
-## 0. Pre-flight (do these first)
+## 0. Pre-flight & Long-Lead Readiness (do these first)
 
-- [ ] **Contracts deployed on Arc mainnet.** The cutover only *points the app* at contracts — they must
-      already exist on mainnet. Deploy with the scripts in `scripts/` (`deploy-standard*.js`,
-      `deploy.js`, etc.) and record every deployed address.
-- [ ] You have the production secrets ready (DB, Supabase, admin wallet key, webhook/keeper secrets).
-- [ ] The admin wallet (`PRIVATE_KEY`) is **funded with gas on Arc mainnet** — it signs keeper txs
-      (`executePayment`, tier changes) and pays their gas.
-- [ ] You've run the integration smoke against a non-prod URL at least once (see §5).
+- [ ] **Arc Mainnet Availability:** Track `status.arc.io` and Circle's official announcements. Arc mainnet chain ID, RPC endpoints, and canonical USDC contract addresses must be officially published before production deployment.
+- [ ] **Smart Contract Security Audit:** Production upgradeable & immutable contracts (Router, SubScriptPSA, Vault) must undergo a comprehensive external security audit before pointing real mainnet USDC at them.
+- [ ] **Multi-sig Safe Ownership:** Router & Vault owner on mainnet must be a Gnosis Safe multi-sig (not a raw EOA). Signers, threshold, and unpause/pause/UUPS upgrade procedures must be rehearsed on testnet using `scripts/transfer-contract-ownership.mjs`.
+- [ ] **Circle Production Account & Wallet Set:** Generate production `CIRCLE_API_KEY`, `CIRCLE_ENTITY_SECRET`, and recovery ciphertext. Production embedded user wallets do not migrate from sandbox (`CIRCLE_ARC_BLOCKCHAIN` flips from `ARC-TESTNET` to `ARC`).
+- [ ] **AML / KYC & Compliance:** Onboard licensed identity verification provider with cryptographically signed webhooks and sanctions/PEP screening for live fiat on-ramp paths.
+- [ ] **PSA Router Decision:** `SubScriptPSA.stableFXRouter` is immutable. Ensure final StableFX or Permit2 escrow router addresses are locked before deploying PSA bytecode.
+- [ ] **Admin Wallet Gas & Funding:** Admin keeper wallet (`PRIVATE_KEY`) and Sponsor gas wallet (`SPONSOR_PRIVATE_KEY`) are funded with real gas/USDC on Arc mainnet.
+- [ ] **Production Secrets Ready:** Production Supabase DB, service role key, webhook secrets, and cron bearer tokens set in Vercel.
 
 ---
 
@@ -33,11 +34,21 @@ testnet, so nothing changes until you set these.
 
 > **Mainnet is fail-closed.** With `NEXT_PUBLIC_ENVIRONMENT=mainnet`, financial routes call
 > `assertFinancialNetworkReady()` (`src/lib/network/registry.ts`) and **refuse to serve** until
-> every one of these is explicitly set and well-formed: the four contract addresses below,
-> `NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS`, `NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID` (=5042001),
-> `NEXT_PUBLIC_USDC_ADDRESS`, `NEXT_PUBLIC_ARC_RPC_PRIMARY` (https), `TREASURY_ADDRESS`, and
-> `CIRCLE_ARC_BLOCKCHAIN=ARC`. There is **no silent fallback to a testnet address in mainnet
-> mode.** On testnet, unset values keep the testnet defaults as before.
+> every one of these is explicitly set and well-formed:
+> - `NEXT_PUBLIC_SUBSCRIPT_ROUTER_ADDRESS`
+> - `NEXT_PUBLIC_STANDARD_CONTRACT_ADDRESS`
+> - `NEXT_PUBLIC_CONFIDENTIAL_CONTRACT_ADDRESS`
+> - `NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS`
+> - `NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID` (=5042001)
+> - `NEXT_PUBLIC_PREMIUM_PAYMENT_RECIPIENT_ADDRESS`
+> - `NEXT_PUBLIC_ARC_MEMO_CONTRACT_ADDRESS`
+> - `NEXT_PUBLIC_ARC_MESSAGE_TRANSMITTER_ADDRESS`
+> - `NEXT_PUBLIC_USDC_ADDRESS`
+> - `NEXT_PUBLIC_ARC_RPC_PRIMARY` (https)
+> - `TREASURY_ADDRESS`
+> - `CIRCLE_ARC_BLOCKCHAIN=ARC`
+>
+> There is **no silent fallback to a testnet address in mainnet mode.** On testnet, unset values keep the testnet defaults as before.
 >
 > After setting them, also verify on-chain reality: each contract address must contain bytecode
 > on Arc mainnet, and the Router's owner/treasury and the PSA/Vault token addresses must match
@@ -56,8 +67,10 @@ testnet, so nothing changes until you set these.
 | `NEXT_PUBLIC_SUBSCRIPT_ROUTER_ADDRESS` | SubScriptRouter |
 | `NEXT_PUBLIC_STANDARD_CONTRACT_ADDRESS` | SubScriptPSA (standard) |
 | `NEXT_PUBLIC_CONFIDENTIAL_CONTRACT_ADDRESS` | Confidential contract |
+| `NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS` | SubScriptVault proxy |
 | `NEXT_PUBLIC_PREMIUM_PAYMENT_RECIPIENT_ADDRESS` | Premium treasury recipient |
-| `NEXT_PUBLIC_ARC_MEMO_CONTRACT_ADDRESS` | Arc memo (receipts) |
+| `NEXT_PUBLIC_ARC_MEMO_CONTRACT_ADDRESS` | Arc memo contract (receipts) |
+| `NEXT_PUBLIC_ARC_MESSAGE_TRANSMITTER_ADDRESS` | Arc CCTP Message Transmitter |
 | `NEXT_PUBLIC_USDC_ADDRESS` | USDC token |
 
 ### Server secrets (required in production)
@@ -124,9 +137,7 @@ npm run integration:smoke
 - [ ] 🧪 First scheduled keeper run (03:00 UTC) succeeds — check Vercel logs for `/api/cron/customer-billing`.
 - [ ] 🧪 Premium billing + reconcile external schedules are firing.
 - [ ] 🧪 A merchant receives a signed webhook for a real event.
-- [ ] ✅ Ran `docs/runbooks/null_api_key_plaintext_after_hash_rollout.sql` and dropped `secret_key_plain`.
-- [ ] 🧪 `payment_sessions.chain_id` is being written as the mainnet chain id (the Prisma column
-      **default is still `5042002`** — verify the money path sets it explicitly).
+- [ ] 🧪 Verified that `payment_sessions.chain_id` and `payment_links.settlement_chain_id` reflect the active runtime chain ID (`5042001` on mainnet) with no hardcoded fallback.
 
 ---
 

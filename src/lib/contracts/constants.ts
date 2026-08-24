@@ -37,7 +37,7 @@ export const SUBSCRIPT_VAULT_CHAIN_ID = Number(
 );
 
 export const ARC_MEMO_CONTRACT_ADDRESS = envAddress(process.env.NEXT_PUBLIC_ARC_MEMO_CONTRACT_ADDRESS, "0x5294E9927c3306DcBaDb03fe70b92e01cCede505");
-export const ARC_MESSAGE_TRANSMITTER_ADDRESS = "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275" as const;
+export const ARC_MESSAGE_TRANSMITTER_ADDRESS = envAddress(process.env.NEXT_PUBLIC_ARC_MESSAGE_TRANSMITTER_ADDRESS || process.env.ARC_MESSAGE_TRANSMITTER_ADDRESS, "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275");
 
 export const ARC_TESTNET = {
   id: ARC_TESTNET_CHAIN_ID,
@@ -90,7 +90,7 @@ export const ARC_MAINNET = {
 export const CCTP_CONFIG: Record<number, { tokenMessenger: `0x${string}`; usdc: `0x${string}`; name: string; domain: number }> = isProd
   ? {
       1: {
-        tokenMessenger: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+        tokenMessenger: "0xbd3fa81b58ba92a82136038b25adec7066af3155",
         usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
         name: "Ethereum Mainnet",
         domain: 0,
