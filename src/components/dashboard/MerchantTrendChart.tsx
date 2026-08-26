@@ -1,18 +1,8 @@
 "use client";
 
-/* Two-series line + area chart for the merchant Transactions Overview.
- *
- * This replaces a 12-column grouped bar chart that could only ever show a calendar year, and only
- * in month buckets. Bars also made an empty period ambiguous: a month with no settlements had to
- * draw either nothing (reading as missing data) or a stub (reading as a small real figure). A line
- * over a gap-filled series says "flat at zero" unambiguously.
- *
- * The geometry is the same approach as AreaTrendChart in src/components/admin/analytics/AdminCharts.tsx
- * — Catmull-Rom control points for the curve, nearest-index hit testing off the mouse x, and a
- * tooltip that flips below a high point and edge-aligns near the sides. That component is not
- * imported directly for two reasons: it hardcodes the admin palette, and its <linearGradient> ids
- * are document-global, so a second instance would silently pick up the first one's fill. The ids
- * here are suffixed per instance.
+/* High-fidelity two-series trend chart for the merchant Transactions Overview.
+ * Aligned with the AreaTrendChart styling (crisp dashed gridlines, refined linear gradients,
+ * responsive coordinates, and floating tooltip).
  */
 
 import React, { useId, useMemo, useState } from "react";
@@ -60,18 +50,16 @@ function curveThrough(points: Array<{ x: number; y: number }>) {
 
 const VIEW_WIDTH = 640;
 const VIEW_HEIGHT = 240;
-const PAD_LEFT = 46;
-const PAD_RIGHT = 12;
-const PAD_TOP = 14;
-const PAD_BOTTOM = 26;
+const PAD_LEFT = 48;
+const PAD_RIGHT = 14;
+const PAD_TOP = 16;
+const PAD_BOTTOM = 28;
 
 export default function MerchantTrendChart({
     points,
     isDark = false,
     grossColor = "#8AB4DB",
-    /* #111827, matching the merchant light theme's ink after it aligned onto the user dashboard's
-       surfaces. Was the old dusty-green #082824. */
-    netColor = "#111827",
+    netColor = "#082824",
 }: {
     points: TrendPoint[];
     isDark?: boolean;
@@ -79,18 +67,12 @@ export default function MerchantTrendChart({
     netColor?: string;
 }) {
     const [hoverIndex, setHoverIndex] = useState<number | null>(null);
-    /* SVG gradient and clip ids have to be unique per mounted instance — they resolve against the
-       whole document, not the subtree. useId gives a stable, hydration-safe suffix. */
     const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
 
-    /* Strokes and gridlines are SVG attributes, so the theme CSS layers cannot reach them — hence
-       the prop rather than a class. Only the light branches moved when merchant light mode adopted
-       the user dashboard's surfaces: neutral rgba instead of tinted green, and a white dot ring now
-       that cards are white rather than cream. Every isDark branch is untouched. */
     const netStroke = isDark ? "#7fd8c9" : netColor;
-    const gridColor = isDark ? "rgba(255,255,255,0.1)" : "rgba(17,24,39,0.08)";
-    const zeroColor = isDark ? "rgba(255,255,255,0.18)" : "rgba(17,24,39,0.16)";
-    const axisText = isDark ? "rgba(244,244,245,0.5)" : "rgba(17,24,39,0.45)";
+    const gridColor = isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.07)";
+    const zeroColor = isDark ? "rgba(255,255,255,0.18)" : "rgba(15,23,42,0.15)";
+    const axisText = isDark ? "rgba(244,244,245,0.5)" : "#64748b";
     const dotRing = isDark ? "#1f2023" : "#ffffff";
 
     const { grossPoints, netPoints, ticks } = useMemo(() => {
@@ -98,8 +80,6 @@ export default function MerchantTrendChart({
         const net = points.map((p) => microsToUsdc(p.netUsdcMicros));
         const peak = Math.max(1, ...gross, ...net);
 
-        /* Round the top of the scale up to a friendly step so the gridline labels are readable
-           numbers rather than whatever the peak happened to be. */
         const magnitude = Math.pow(10, Math.floor(Math.log10(peak)));
         const step = Math.ceil(peak / magnitude / 4) * magnitude || 1;
         const top = step * 4;
@@ -156,15 +136,10 @@ export default function MerchantTrendChart({
     const activeGross = hoverIndex !== null ? grossPoints[hoverIndex] : null;
     const activeNet = hoverIndex !== null ? netPoints[hoverIndex] : null;
 
-    /* Label density: always the first and last, then every nth in between so a 90-day range does
-       not overprint itself. */
     const labelStep = Math.max(1, Math.ceil(points.length / 6));
 
     return (
-        <div className="relative mt-4 w-full select-none">
-            {/* Deliberately not overflow-hidden — this is the tooltip's positioning parent, and
-                clipping here is what made the admin chart's readout vanish on a spike. The tooltip
-                clamps itself instead. */}
+        <div className="relative mt-3 w-full select-none rounded-2xl bg-white/40 border border-black/5 p-3 shadow-inner">
             <svg
                 viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
                 className="w-full overflow-visible"
@@ -176,8 +151,9 @@ export default function MerchantTrendChart({
             >
                 <defs>
                     <linearGradient id={`merchantTrendFill${uid}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={grossColor} stopOpacity={isDark ? 0.34 : 0.28} />
-                        <stop offset="100%" stopColor={grossColor} stopOpacity="0" />
+                        <stop offset="0%" stopColor={grossColor} stopOpacity={isDark ? 0.35 : 0.32} />
+                        <stop offset="90%" stopColor={grossColor} stopOpacity={0.02} />
+                        <stop offset="100%" stopColor={grossColor} stopOpacity={0} />
                     </linearGradient>
                 </defs>
 
@@ -194,11 +170,11 @@ export default function MerchantTrendChart({
                         />
                         <text
                             x={PAD_LEFT - 8}
-                            y={tick.y + 3}
+                            y={tick.y + 3.5}
                             textAnchor="end"
-                            fontSize="9"
+                            fontSize="9.5"
                             fill={axisText}
-                            className="font-mono"
+                            className="font-mono font-medium"
                         >
                             ${formatTick(tick.value)}
                         </text>
@@ -211,7 +187,7 @@ export default function MerchantTrendChart({
                     fill="none"
                     stroke={netStroke}
                     strokeWidth="2"
-                    strokeDasharray="5 4"
+                    strokeDasharray="4 3"
                     strokeLinecap="round"
                 />
                 <path
@@ -231,7 +207,7 @@ export default function MerchantTrendChart({
                             x2={activeGross.x}
                             y2={VIEW_HEIGHT - PAD_BOTTOM}
                             stroke={zeroColor}
-                            strokeWidth="1"
+                            strokeWidth="1.5"
                             strokeDasharray="2 2"
                         />
                         {activeNet && (
@@ -250,9 +226,10 @@ export default function MerchantTrendChart({
                             x={grossPoints[index].x}
                             y={VIEW_HEIGHT - 8}
                             textAnchor={index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"}
-                            fontSize="9"
-                            fill={hoverIndex === index ? (isDark ? "#f4f4f5" : "#111827") : axisText}
+                            fontSize="9.5"
+                            fill={hoverIndex === index ? (isDark ? "#f4f4f5" : "#082824") : axisText}
                             fontWeight={hoverIndex === index ? 700 : 500}
+                            className="font-medium"
                         >
                             {point.label}
                         </text>
@@ -260,8 +237,7 @@ export default function MerchantTrendChart({
                 })}
             </svg>
 
-            {/* Tooltip. Flips below the point when the point sits high in the plot — which is what a
-                spike does — and stops centring near the edges so the box always stays in the card. */}
+            {/* Floating Tooltip */}
             {active && activeGross && (() => {
                 const xRatio = activeGross.x / VIEW_WIDTH;
                 const yRatio = activeGross.y / VIEW_HEIGHT;
@@ -269,8 +245,7 @@ export default function MerchantTrendChart({
                 const xShift = xRatio < 0.2 ? "0%" : xRatio > 0.8 ? "-100%" : "-50%";
                 return (
                     <div
-                        data-merchant-dark="true"
-                        className="pointer-events-none absolute z-30 whitespace-nowrap rounded-xl bg-[#082824] px-3 py-2 text-[11px] shadow-xl"
+                        className="pointer-events-none absolute z-30 whitespace-nowrap rounded-xl bg-[#082824] px-3.5 py-2 text-[11px] shadow-xl text-white border border-white/10"
                         style={{
                             left: `${Math.min(Math.max(xRatio * 100, 1), 99)}%`,
                             top: `${yRatio * 100}%`,
@@ -279,14 +254,14 @@ export default function MerchantTrendChart({
                     >
                         <p className="mb-1 border-b border-white/10 pb-1 font-bold text-white/90">{active.label}</p>
                         <div className="space-y-0.5 text-[10px]">
-                            <p className="font-semibold" style={{ color: grossColor }}>
+                            <p className="font-semibold text-[#8AB4DB]">
                                 Gross: ${formatUsdc(microsToUsdc(active.grossUsdcMicros))} USDC
                             </p>
                             <p className="font-semibold text-emerald-300">
                                 Net: ${formatUsdc(microsToUsdc(active.netUsdcMicros))} USDC
                             </p>
                             <p className="text-white/60">
-                                {active.transactionCount} txn{active.transactionCount === 1 ? "" : "s"}
+                                {active.transactionCount} transaction{active.transactionCount === 1 ? "" : "s"}
                             </p>
                         </div>
                     </div>

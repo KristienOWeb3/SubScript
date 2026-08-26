@@ -200,10 +200,6 @@ export default function NotificationBell({
             {/* Header */}
             <div className="notification-panel-header flex items-center justify-between gap-3 border-b border-black/10 px-5 py-4 shrink-0 bg-white/70 backdrop-blur-xl">
                 <div className="flex items-center gap-2.5">
-                    <div
-                        className="w-2 h-2 rounded-full shadow-[0_0_10px_var(--nb-accent)]"
-                        style={{ backgroundColor: accent }}
-                    />
                     <h3 className="text-base font-extrabold tracking-tight text-[#111827]">
                         Notifications
                     </h3>

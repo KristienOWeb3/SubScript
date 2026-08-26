@@ -99,6 +99,9 @@ export default function BlockedUsersModal({
 
             {/* Modal Box */}
             <motion.div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="blocked-users-title"
                 initial={{ opacity: 0, scale: 0.95, y: 15 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 15 }}
@@ -112,7 +115,7 @@ export default function BlockedUsersModal({
                             <UserX className="h-4 w-4" />
                         </div>
                         <div>
-                            <h2 className="text-sm font-black uppercase tracking-tight text-[#111827]">Blocked Contacts</h2>
+                            <h2 id="blocked-users-title" className="text-sm font-black uppercase tracking-tight text-[#111827]">Blocked Contacts</h2>
                             <p className="text-[11px] text-black/55">Accounts blocked from messaging and sends</p>
                         </div>
                     </div>
@@ -126,8 +129,8 @@ export default function BlockedUsersModal({
                 </div>
 
                 {/* Explanation Banner */}
-                <div className="mx-6 mt-4 flex items-start gap-2.5 rounded-2xl border border-black/5 bg-white/60 p-3 text-[11px] text-black/65 leading-relaxed">
-                    <Info className="h-4 w-4 shrink-0 text-black/40 mt-0.5" />
+                <div className="mx-6 mt-4 flex items-start gap-2.5 rounded-2xl border border-black/5 bg-white/60 p-3 text-[11px] text-black/65 dark:text-white/65 leading-relaxed">
+                    <Info className="h-4 w-4 shrink-0 text-black/40 dark:text-white/40 mt-0.5" />
                     <span>
                         Unblocking removes send and message restrictions. To reopen a DM thread, a new invite connection request must be accepted.
                     </span>
@@ -135,8 +138,8 @@ export default function BlockedUsersModal({
 
                 {/* Error Banner */}
                 {error && (
-                    <div className="mx-6 mt-3 rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-[11px] text-rose-700 flex items-center gap-2">
-                        <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
+                    <div className="mx-6 mt-3 rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-[11px] text-rose-700 dark:text-rose-300 flex items-center gap-2">
+                        <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
                         <span>{error}</span>
                     </div>
                 )}
