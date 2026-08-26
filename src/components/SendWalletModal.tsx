@@ -92,6 +92,9 @@ export default function SendWalletModal({
         <AnimatePresence>
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
                 <motion.div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="send-usdc-title"
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
@@ -104,7 +107,7 @@ export default function SendWalletModal({
                                 <Send className="w-4 h-4" />
                             </div>
                             <div>
-                                <h3 className="text-base font-bold text-[#082824]">Send Out USDC</h3>
+                                <h3 id="send-usdc-title" className="text-base font-bold text-[#082824]">Send Out USDC</h3>
                                 <p className="text-xs text-black/50">Transfer funds from your connected wallet</p>
                             </div>
                         </div>
@@ -224,14 +227,14 @@ export default function SendWalletModal({
                             </div>
 
                             {/* Gas Sponsorship Info */}
-                            <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-800">
+                            <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-800 dark:text-emerald-300">
                                 <ShieldCheck className="w-4 h-4 shrink-0" />
                                 <span>Network gas fees are sponsored by SubScript on Arc.</span>
                             </div>
 
                             {/* Error Message */}
                             {errorMsg && (
-                                <p className="text-xs text-red-600 bg-red-500/10 border border-red-500/20 p-3 rounded-xl">
+                                <p className="text-xs text-red-700 dark:text-red-300 bg-red-500/10 border border-red-500/20 p-3 rounded-xl">
                                     {errorMsg}
                                 </p>
                             )}

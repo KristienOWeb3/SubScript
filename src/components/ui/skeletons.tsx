@@ -127,16 +127,16 @@ export function SkeletonCard({
     return (
         <Region
             label={label}
-            className={`rounded-3xl border border-white/10 bg-black/40 p-6 backdrop-blur-xl ${className}`}
+            className={`rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 shadow-sm dark:border-white/10 dark:bg-black/40 ${className}`}
         >
             <div className="space-y-3">
-                <SkeletonLine width="35%" height={9} faint />
-                {headline && <Skeleton width="55%" height={34} />}
+                <SkeletonLine width="35%" height={12} faint />
+                {headline && <Skeleton width="55%" height={36} className="rounded-2xl" />}
                 {Array.from({ length: lines }, (_, i) => (
                     <SkeletonLine
                         key={i}
                         width={SECONDARY_WIDTHS[i % SECONDARY_WIDTHS.length]}
-                        height={9}
+                        height={10}
                         faint
                     />
                 ))}
@@ -168,10 +168,10 @@ export function SkeletonStatGrid({
                 {Array.from({ length: count }, (_, i) => (
                     <div
                         key={i}
-                        className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 space-y-2.5"
+                        className="rounded-2xl border border-black/10 bg-white/80 dark:border-white/10 dark:bg-white/[0.02] p-4 space-y-2.5 shadow-sm"
                     >
-                        <SkeletonLine width="52%" height={8} faint />
-                        <Skeleton width="68%" height={24} />
+                        <SkeletonLine width="52%" height={10} faint />
+                        <Skeleton width="68%" height={26} className="rounded-xl" />
                     </div>
                 ))}
             </div>
@@ -189,22 +189,22 @@ export function SkeletonTable({
     return (
         <Region
             label={label}
-            className={`overflow-hidden rounded-2xl border border-white/10 bg-black/20 ${className}`}
+            className={`overflow-hidden rounded-[28px] border border-black/10 bg-white/90 dark:border-white/10 dark:bg-black/20 shadow-sm ${className}`}
         >
             <div>
-                <div className="flex gap-4 border-b border-white/10 px-5 py-3.5">
+                <div className="flex gap-4 border-b border-black/10 dark:border-white/10 px-5 py-3.5 bg-black/[0.02]">
                     {Array.from({ length: columns }, (_, c) => (
-                        <SkeletonLine key={c} width={c === 0 ? "28%" : "16%"} height={8} faint />
+                        <SkeletonLine key={c} width={c === 0 ? "28%" : "16%"} height={10} faint />
                     ))}
                 </div>
-                <div className="divide-y divide-white/[0.05]">
+                <div className="divide-y divide-black/10 dark:divide-white/[0.05]">
                     {Array.from({ length: rows }, (_, r) => (
                         <div key={r} className="flex gap-4 px-5 py-4">
                             {Array.from({ length: columns }, (_, c) => (
                                 <SkeletonLine
                                     key={c}
                                     width={c === 0 ? PRIMARY_WIDTHS[r % PRIMARY_WIDTHS.length] : "14%"}
-                                    height={10}
+                                    height={12}
                                 />
                             ))}
                         </div>
@@ -227,13 +227,13 @@ export function SkeletonToggleRows({
                 {Array.from({ length: count }, (_, i) => (
                     <div
                         key={i}
-                        className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-4"
+                        className="flex items-center justify-between gap-4 rounded-2xl border border-black/10 bg-white/90 dark:border-white/10 dark:bg-white/[0.02] p-4 shadow-sm"
                     >
                         <div className="min-w-0 flex-1 space-y-2">
-                            <SkeletonLine width={PRIMARY_WIDTHS[i % PRIMARY_WIDTHS.length]} height={10} />
+                            <SkeletonLine width={PRIMARY_WIDTHS[i % PRIMARY_WIDTHS.length]} height={12} />
                             <SkeletonLine
                                 width={SECONDARY_WIDTHS[i % SECONDARY_WIDTHS.length]}
-                                height={8}
+                                height={10}
                                 faint
                             />
                         </div>
@@ -255,23 +255,23 @@ export function SkeletonPage({ label = "Loading page…", className = "" }: Busy
         <Region label={label} className={className}>
             <div className="mx-auto w-full max-w-2xl space-y-5 px-5 py-12">
                 <div className="space-y-3">
-                    <Skeleton width="45%" height={28} />
-                    <SkeletonLine width="70%" height={10} faint />
+                    <Skeleton width="45%" height={32} />
+                    <SkeletonLine width="70%" height={12} faint />
                 </div>
-                <div className="space-y-4 rounded-3xl border border-white/10 bg-black/40 p-6 backdrop-blur-xl">
+                <div className="space-y-4 rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 shadow-sm dark:border-white/10 dark:bg-black/40">
                     <div className="flex items-center gap-3">
                         <Skeleton circle width={44} height={44} className="shrink-0" />
                         <div className="min-w-0 flex-1 space-y-2">
-                            <SkeletonLine width="52%" height={11} />
-                            <SkeletonLine width="34%" height={8} faint />
+                            <SkeletonLine width="52%" height={12} />
+                            <SkeletonLine width="34%" height={10} faint />
                         </div>
                     </div>
-                    <div className="space-y-2.5 border-t border-white/5 pt-4">
-                        <SkeletonLine width="88%" height={10} />
-                        <SkeletonLine width="76%" height={10} />
+                    <div className="space-y-2.5 border-t border-black/10 pt-4">
+                        <SkeletonLine width="88%" height={12} />
+                        <SkeletonLine width="76%" height={12} />
                         <SkeletonLine width="60%" height={10} faint />
                     </div>
-                    <Skeleton width="100%" height={44} />
+                    <Skeleton width="100%" height={48} className="rounded-full" />
                 </div>
             </div>
         </Region>

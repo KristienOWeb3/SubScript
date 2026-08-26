@@ -110,6 +110,9 @@ export default function WithdrawModal({
 
                     {/* Modal container */}
                     <motion.div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="withdraw-dialog-title"
                         initial={{ opacity: 0, scale: 0.95, y: 15 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 15 }}

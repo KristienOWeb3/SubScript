@@ -6,6 +6,10 @@
 @import "tailwindcss";
 @config "../../tailwind.config.js";
 
+html {
+  font-size: 120%;
+}
+
 @layer components {
   .koboyo-icon {
     display: inline-block;
@@ -1077,7 +1081,13 @@ body {
   --merchant-action: #8ab4db;
   --merchant-gray: #d9d9d9;
   --merchant-ink: #082824;
+  background-color: #353935;
   color-scheme: light;
+}
+
+:root:not([data-theme="dark"]) .merchant-dashboard-workspace {
+  background-color: #fffff0;
+  color: #082824;
 }
 
 .merchant-dashboard-root,
@@ -1096,22 +1106,29 @@ body {
   display: none;
 }
 
-.merchant-dashboard-workspace .text-white:not([data-merchant-dark="true"] *):not([data-merchant-dark="true"]):not([class*="bg-[#082824]"] *):not([class*="bg-[#082824]"]):not([class*="bg-black"] *):not([class*="bg-black"]):not([class*="bg-[#111111]"] *):not([class*="bg-[#111111]"]),
-.merchant-dashboard-workspace [class~="text-white"]:not([data-merchant-dark="true"] *):not([data-merchant-dark="true"]):not([class*="bg-[#082824]"] *):not([class*="bg-[#082824]"]):not([class*="bg-black"] *):not([class*="bg-black"]):not([class*="bg-[#111111]"] *):not([class*="bg-[#111111]"]),
-.merchant-dashboard-workspace [class~="text-white/90"]:not([data-merchant-dark="true"] *):not([data-merchant-dark="true"]):not([class*="bg-[#082824]"] *):not([class*="bg-[#082824]"]):not([class*="bg-black"] *):not([class*="bg-black"]),
-.merchant-dashboard-workspace [class~="text-white/80"]:not([data-merchant-dark="true"] *):not([data-merchant-dark="true"]):not([class*="bg-[#082824]"] *):not([class*="bg-[#082824]"]):not([class*="bg-black"] *):not([class*="bg-black"]),
-.merchant-dashboard-workspace [class~="text-white/70"]:not([data-merchant-dark="true"] *):not([data-merchant-dark="true"]):not([class*="bg-[#082824]"] *):not([class*="bg-[#082824]"]):not([class*="bg-black"] *):not([class*="bg-black"]) {
-  color: #000000;
+.merchant-dashboard-workspace .text-white:not([data-merchant-dark="true"] *):not([data-merchant-dark="true"]):not([class*="bg-[#082824]"] *):not([class*="bg-[#082824]"]):not([class*="bg-[#000000]"] *):not([class*="bg-[#000000]"]):not([class*="bg-[#5B9BD5]"] *):not([class*="bg-[#5B9BD5]"]):not([class*="bg-black"] *):not([class*="bg-black"]):not([class*="bg-[#111111]"] *):not([class*="bg-[#111111]"]),
+.merchant-dashboard-workspace [class~="text-white"]:not([data-merchant-dark="true"] *):not([data-merchant-dark="true"]):not([class*="bg-[#082824]"] *):not([class*="bg-[#082824]"]):not([class*="bg-[#000000]"] *):not([class*="bg-[#000000]"]):not([class*="bg-[#5B9BD5]"] *):not([class*="bg-[#5B9BD5]"]):not([class*="bg-black"] *):not([class*="bg-black"]):not([class*="bg-[#111111]"] *):not([class*="bg-[#111111]"]),
+.merchant-dashboard-workspace [class~="text-white/90"]:not([data-merchant-dark="true"] *):not([data-merchant-dark="true"]):not([class*="bg-[#082824]"] *):not([class*="bg-[#082824]"]):not([class*="bg-[#000000]"] *):not([class*="bg-[#000000]"]):not([class*="bg-[#5B9BD5]"] *):not([class*="bg-[#5B9BD5]"]):not([class*="bg-black"] *):not([class*="bg-black"]),
+.merchant-dashboard-workspace [class~="text-white/80"]:not([data-merchant-dark="true"] *):not([data-merchant-dark="true"]):not([class*="bg-[#082824]"] *):not([class*="bg-[#082824]"]):not([class*="bg-[#000000]"] *):not([class*="bg-[#000000]"]):not([class*="bg-[#5B9BD5]"] *):not([class*="bg-[#5B9BD5]"]):not([class*="bg-black"] *):not([class*="bg-black"]),
+.merchant-dashboard-workspace [class~="text-white/70"]:not([data-merchant-dark="true"] *):not([data-merchant-dark="true"]):not([class*="bg-[#082824]"] *):not([class*="bg-[#082824]"]):not([class*="bg-[#000000]"] *):not([class*="bg-[#000000]"]):not([class*="bg-[#5B9BD5]"] *):not([class*="bg-[#5B9BD5]"]):not([class*="bg-black"] *):not([class*="bg-black"]) {
+  color: #082824;
 }
 
 .merchant-dashboard-workspace [class~="bg-[#082824]"],
 .merchant-dashboard-workspace [class~="bg-[#082824]"] *,
 .merchant-dashboard-workspace [class*="bg-[#082824]"],
 .merchant-dashboard-workspace [class*="bg-[#082824]"] *,
+.merchant-dashboard-workspace [class~="bg-[#000000]"],
+.merchant-dashboard-workspace [class~="bg-[#000000]"] *,
+.merchant-dashboard-workspace [class~="bg-[#5B9BD5]"],
+.merchant-dashboard-workspace [class~="bg-[#5B9BD5]"] *,
+.merchant-dashboard-workspace [class~="bg-black"],
+.merchant-dashboard-workspace [class~="bg-black"] *,
 .merchant-dashboard-workspace [data-merchant-dark="true"],
-.merchant-dashboard-workspace [data-merchant-dark="true"] *,
 .merchant-dashboard-workspace [class*="bg-[#111111]"] *,
-.merchant-dashboard-workspace [class*="bg-black/80"] * {
+.merchant-dashboard-workspace [class*="bg-black/80"] *,
+.merchant-dashboard-workspace .merchant-timeframe-active,
+.merchant-dashboard-workspace .merchant-timeframe-active * {
   color: #ffffff !important;
 }
 
@@ -1311,7 +1328,7 @@ body {
    targets on a phone would be a straight regression. */
 @media (min-width: 768px) {
   .merchant-dashboard-workspace > main {
-    zoom: 0.8;
+    zoom: 0.9;
   }
 }
 
@@ -1515,137 +1532,106 @@ body {
   --dk-raised: #27272a;
   --dk-selected: #2b2d31;
   --dk-ink: #f4f4f5;
-  --dk-ink-2: rgba(244, 244, 245, 0.74);
-  --dk-ink-3: rgba(244, 244, 245, 0.56);
-  --dk-ink-4: rgba(244, 244, 245, 0.42);
+  --dk-ink-2: rgba(244, 244, 245, 0.78);
+  --dk-ink-3: rgba(244, 244, 245, 0.60);
+  --dk-ink-4: rgba(244, 244, 245, 0.45);
   --dk-line: rgba(255, 255, 255, 0.1);
   --dk-line-2: rgba(255, 255, 255, 0.18);
   --dk-field: #1a1b1e;
 }
 
 /* ------------------------------------------------------------------- shells
-   Two things about the selectors in this section.
- *
-   The `i` flag: attribute matching is case-sensitive by default, so `bg-[#0C3933]` silently missed
-   the `bg-[#0c3933]` the source actually writes. Colour hexes get written both ways across this
-   codebase and the cascade should not depend on which.
- *
-   `~=` rather than `*=`: `~=` matches a whole space-separated class, `*=` matches any substring of
-   the class attribute — and `bg-[#D4E3E8]` is a substring of `hover:bg-[#D4E3E8]`. With `*=` a
-   button whose *hover* colour happened to be mapped here got that mapping painted onto its resting
-   state, and hovering then did nothing because the base rule carried !important. There are 127
-   hover-variant uses of tokens in this layer, so that was not a corner case. Verified first that no
-   mapped token is ever written with a responsive prefix, which is the one thing `~=` would miss.
-   Hover states are handled explicitly further down instead. */
-[data-theme="dark"] .merchant-dashboard-root,
+   Two things about the selectors in this section:
+   1. The `i` flag: attribute matching is case-sensitive by default, so `bg-[#0C3933]` silently missed
+      the `bg-[#0c3933]` the source actually writes.
+   2. `~=` rather than `*=`: `~=` matches a whole space-separated class, `*=` matches any substring of
+      the class attribute — avoiding accidentally matching hover classes. */
 [data-theme="dark"] .user-dashboard-redesign,
-[data-theme="dark"] .user-dashboard-loading {
+[data-theme="dark"] .user-dashboard-loading,
+[data-theme="dark"] .merchant-dashboard-root {
   background-color: var(--dk-shell) !important;
   color: var(--dk-ink) !important;
   color-scheme: dark !important;
 }
 
-[data-theme="dark"] .merchant-dashboard-workspace,
-[data-theme="dark"] .user-dashboard-content {
+[data-theme="dark"] .user-dashboard-content,
+[data-theme="dark"] .merchant-dashboard-workspace {
   background-color: var(--dk-canvas) !important;
   color: var(--dk-ink) !important;
+  border-color: var(--dk-line) !important;
 }
 
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#FFFFF0]" i],
+/* Cream panels -> Dark Card surfaces */
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-[#FFFFF0]" i],
-[data-theme="dark"] .user-dashboard-loading [class~="bg-[#FFFFF0]" i] {
-  background-color: var(--dk-shell) !important;
+[data-theme="dark"] .user-dashboard-loading [class~="bg-[#FFFFF0]" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-[#FFFFF0]" i],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#FFFFF0]" i],
+[data-theme="dark"] .merchant-dashboard-workspace .liquid-glass {
+  background-color: var(--dk-card) !important;
 }
 
-/* Translucent creams. Unlike the brand accents, a partly-transparent cream over a dark canvas is
-   still a light panel, so these have to move too — the vault's "Cycle started" block is
-   bg-[#FFFFF0]/80 and sat white under light ink, which is the white-on-white it produced. Listed
-   as exact tokens (rather than a bg-[#FFFFF0]/ substring) so a future hover: variant cannot claim
-   the resting state; verified none exists today. */
+/* Translucent creams */
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-[#FFFFF0]/90" i],
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-[#FFFFF0]/80" i],
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-[#FFFFF0]/55" i],
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-[#FFFFF0]/45" i],
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-[#FFFFF0]/35" i],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#FFFFF0]/90" i],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#FFFFF0]/80" i],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#FFFFF0]/55" i],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#FFFFF0]/45" i],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#FFFFF0]/35" i] {
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-[#FFFFF0]/90" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-[#FFFFF0]/80" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-[#FFFFF0]/55" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-[#FFFFF0]/45" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-[#FFFFF0]/35" i] {
   background-color: var(--dk-card) !important;
 }
 
-/* The sticky blur strip behind the mobile header. Its light rule pins a 96% cream with
-   !important and no theme gate, so in dark mode a bright band sat across the top of the
-   dashboard over dark content. Mirrors that selector's shape to win on specificity. */
-[data-theme="dark"] .user-dashboard-content > [aria-hidden="true"][class*="top-0"] {
+/* Sticky blur strip */
+[data-theme="dark"] .user-dashboard-content > [aria-hidden="true"][class*="top-0"],
+[data-theme="dark"] .merchant-dashboard-workspace > [aria-hidden="true"][class*="top-0"] {
   background-color: rgb(17 17 17 / 92%) !important;
 }
 
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#D4E3E8]" i] {
-  background-color: var(--dk-canvas) !important;
-}
-
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#C6D8DE]" i] {
-  background-color: var(--dk-raised) !important;
-}
-
-/* The light-blue action fills in the user tree: the vault carousel's Refresh Usage and
-   Commit to a service buttons, and the "The Rest" chip. They are light chrome, not brand
-   accents, so they move to a raised dark surface and let their text lighten with the
-   foreground rules below. Left in place they were a light fill under light ink. */
+/* Pastel blue action fills & stat card tiles */
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-[#D5E3EE]" i],
-[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#c2d7e6]" i] {
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#c2d7e6]" i],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#D4E3E8]" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-[#D4E3E8]" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-[#D4E3E8]/50" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-[#D4E3E8]/40" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-[#D4E3E8]/30" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-[#D4E3E8]/20" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-[#D4E3E8]/10" i],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#D4E3E8]" i] {
   background-color: var(--dk-raised) !important;
   border-color: var(--dk-line-2) !important;
 }
 
-/* The referral link readout is a div rather than an input, so the form-field rules further
-   down never reached it — a near-white box under light ink. Same treatment as a field,
-   because that is what it is. */
-[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#f8fafc]" i] {
+/* Readouts and subtle grey cards */
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#f8fafc]" i],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#f1f5f9]" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-[#f8fafc]" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-[#f1f5f9]" i] {
   background-color: var(--dk-field) !important;
   border-color: var(--dk-line-2) !important;
 }
 
-/* bg-white splits in two here, and lumping them together was wrong in both directions.
- *
-   The near-opaque values are light panels the redesign added — those become the dark card. The low
-   alphas are dark-native tints from the original design: a faint white lift on a dark surface is
-   already exactly right, and painting them as an opaque card flattened the whole card hierarchy
-   into one tone. They still need a rule, because the light layer above repaints them cream and
-   would otherwise win on specificity over Tailwind's own utility.
- *
-   Token-exact for the same reason as the fills above: there are 25 `hover:bg-white/10` uses, and a
-   substring match gave every one of them a permanent base panel. */
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-white"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/95"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/90"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/80"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/70"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/60"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/40"],
+/* White panels */
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-white"],
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-white/95"],
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-white/90"],
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-white/80"],
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-white/70"],
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-white/60"],
-[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/40"] {
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-white"],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-white/95"],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-white/90"],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-white/80"],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-white/70"],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-white/60"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-white"] {
   background-color: var(--dk-card) !important;
 }
 
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/20"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/15"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/10"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/5"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/[0.08]"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/[0.06]"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/[0.05]"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/[0.04]"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/[0.03]"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/[0.02]"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-white/[0.01]"],
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/40"],
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-white/20"],
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-white/15"],
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-white/10"],
@@ -1656,149 +1642,109 @@ body {
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-white/[0.04]"],
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-white/[0.03]"],
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-white/[0.02]"],
-[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/[0.01]"] {
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-white/[0.01]"],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-white/40"],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-white/20"],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-white/15"],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-white/10"],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-white/5"],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-white/[0.08]"],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-white/[0.06]"],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-white/[0.05]"],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-white/[0.04]"],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-white/[0.03]"],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-white/[0.02]"],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-white/[0.01]"] {
   background-color: rgba(255, 255, 255, 0.06) !important;
 }
 
-/* The selected nav row reads as selected by sitting lighter than the sidebar here,
-   rather than darker as it does in light mode. Its text is already white. */
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#082824]" i] {
-  background-color: var(--dk-selected) !important;
-}
-
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#0C3933]" i] {
-  background-color: var(--dk-raised) !important;
-}
-
-/* -------------------------------------------------------------- hover states
-   Now that the base fills match whole tokens only, a mapped hover colour falls through to its
-   literal Tailwind value. For the brand accents that is right — #00d2b4, #ccff00, #2775CA and the
-   blue ramp are all still legible over a dark surface, and the accent guard below keeps dark text
-   on the light ones.
- *
-   These are the ones where it is not right: light chrome (#D4E3E8, #f8fafc …) would flash a pale
-   panel over a dark canvas, and the dark chrome (#082824, #353935) is so close to the canvas that
-   the hover reads as no feedback at all. Both become the same subtle lift. */
-[data-theme="dark"] .merchant-dashboard-root [class*="hover:bg-[#D4E3E8]" i]:hover,
-[data-theme="dark"] .merchant-dashboard-root [class*="hover:bg-[#C6D8DE]" i]:hover,
-[data-theme="dark"] .merchant-dashboard-root [class*="hover:bg-[#082824]" i]:hover,
-[data-theme="dark"] .merchant-dashboard-root [class*="hover:bg-[#0C3933]" i]:hover,
-[data-theme="dark"] .merchant-dashboard-root [class*="hover:bg-[#FFFFF0]" i]:hover,
+/* -------------------------------------------------------------- hover states */
 [data-theme="dark"] .user-dashboard-redesign [class*="hover:bg-[#D4E3E8]" i]:hover,
 [data-theme="dark"] .user-dashboard-redesign [class*="hover:bg-[#f8fafc]" i]:hover,
 [data-theme="dark"] .user-dashboard-redesign [class*="hover:bg-[#f1f5f9]" i]:hover,
 [data-theme="dark"] .user-dashboard-redesign [class*="hover:bg-[#c2d7e6]" i]:hover,
 [data-theme="dark"] .user-dashboard-redesign [class*="hover:bg-[#353935]" i]:hover,
-[data-theme="dark"] .user-dashboard-redesign [class*="hover:bg-[#FFFFF0]" i]:hover {
+[data-theme="dark"] .user-dashboard-redesign [class*="hover:bg-[#FFFFF0]" i]:hover,
+[data-theme="dark"] .merchant-dashboard-workspace [class*="hover:bg-[#D4E3E8]" i]:hover,
+[data-theme="dark"] .merchant-dashboard-workspace [class*="hover:bg-[#f8fafc]" i]:hover,
+[data-theme="dark"] .merchant-dashboard-workspace [class*="hover:bg-[#f1f5f9]" i]:hover,
+[data-theme="dark"] .merchant-dashboard-workspace [class*="hover:bg-[#c2d7e6]" i]:hover,
+[data-theme="dark"] .merchant-dashboard-workspace [class*="hover:bg-[#353935]" i]:hover,
+[data-theme="dark"] .merchant-dashboard-workspace [class*="hover:bg-[#FFFFF0]" i]:hover {
   background-color: rgba(255, 255, 255, 0.12) !important;
 }
 
-/* The alpha tints get the same treatment. A hover:bg-black/5 is a darkening designed for a cream
-   card; over a dark canvas the equivalent is a lightening, and the literal value would be no
-   visible feedback at all. */
-[data-theme="dark"] .merchant-dashboard-root [class*="hover:bg-black/" i]:hover,
-[data-theme="dark"] .merchant-dashboard-root [class*="hover:bg-white/" i]:hover,
 [data-theme="dark"] .user-dashboard-redesign [class*="hover:bg-black/" i]:hover,
-[data-theme="dark"] .user-dashboard-redesign [class*="hover:bg-white/" i]:hover {
+[data-theme="dark"] .user-dashboard-redesign [class*="hover:bg-white/" i]:hover,
+[data-theme="dark"] .merchant-dashboard-workspace [class*="hover:bg-black/" i]:hover,
+[data-theme="dark"] .merchant-dashboard-workspace [class*="hover:bg-white/" i]:hover {
   background-color: rgba(255, 255, 255, 0.12) !important;
-}
-
-/* Selected rows keep their own hover so the group-hover fill does not lift a row that is
-   already the selected one. */
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#082824]" i]:hover {
-  background-color: var(--dk-selected) !important;
 }
 
 /* --------------------------------------------------------------- foreground */
-/* text-[#111827] is the user dashboard's hardcoded near-black ink — 40 uses, including
-   every SectionTitle heading, which is why "Manage Commit" and its siblings rendered
-   dark-on-dark. It is the same intent as text-black, so it joins that group. Excluded
-   inside the Appearance swatches, which are pictures of the themes and keep their literal
-   colours (see the theme-previews block at the foot of this layer). */
-[data-theme="dark"] .merchant-dashboard-root [class~="text-black"],
-[data-theme="dark"] .merchant-dashboard-root [class*="text-[#082824]" i],
 [data-theme="dark"] .user-dashboard-redesign [class~="text-black"],
-[data-theme="dark"] .user-dashboard-redesign [class*="text-[#111827]" i] {
+[data-theme="dark"] .user-dashboard-redesign [class*="text-[#111827]" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="text-black"],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-[#111827]" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-[#082824]" i],
+[data-theme="dark"] .merchant-dashboard-root [class*="text-[#082824]" i] {
   color: var(--dk-ink) !important;
 }
 
-[data-theme="dark"] .merchant-dashboard-root [class*="text-black/8"],
-[data-theme="dark"] .merchant-dashboard-root [class*="text-black/7"],
+[data-theme="dark"] .user-dashboard-redesign [class*="text-black/9"],
 [data-theme="dark"] .user-dashboard-redesign [class*="text-black/8"],
-[data-theme="dark"] .user-dashboard-redesign [class*="text-black/7"] {
+[data-theme="dark"] .user-dashboard-redesign [class*="text-black/7"],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-black/9"],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-black/8"],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-black/7"] {
   color: var(--dk-ink-2) !important;
 }
 
-[data-theme="dark"] .merchant-dashboard-root [class*="text-black/6"],
-[data-theme="dark"] .merchant-dashboard-root [class*="text-black/5"],
 [data-theme="dark"] .user-dashboard-redesign [class*="text-black/6"],
-[data-theme="dark"] .user-dashboard-redesign [class*="text-black/5"] {
+[data-theme="dark"] .user-dashboard-redesign [class*="text-black/5"],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-black/6"],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-black/5"] {
   color: var(--dk-ink-3) !important;
 }
 
-[data-theme="dark"] .merchant-dashboard-root [class*="text-black/4"],
-[data-theme="dark"] .merchant-dashboard-root [class*="text-black/3"],
-[data-theme="dark"] .merchant-dashboard-root [class*="text-black/2"],
 [data-theme="dark"] .user-dashboard-redesign [class*="text-black/4"],
 [data-theme="dark"] .user-dashboard-redesign [class*="text-black/3"],
-[data-theme="dark"] .user-dashboard-redesign [class*="text-black/2"] {
+[data-theme="dark"] .user-dashboard-redesign [class*="text-black/2"],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-black/4"],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-black/3"],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-black/2"] {
   color: var(--dk-ink-4) !important;
 }
 
-/* Let the dark-native white text render as designed again. */
-[data-theme="dark"] .merchant-dashboard-workspace [class~="text-white"],
-[data-theme="dark"] .merchant-dashboard-root [class~="text-white"] {
-  color: #ffffff !important;
-}
-
-[data-theme="dark"] .merchant-dashboard-workspace [class*="text-white/9"],
-[data-theme="dark"] .merchant-dashboard-workspace [class*="text-white/8"],
-[data-theme="dark"] .merchant-dashboard-workspace [class*="text-white/7"] {
-  color: rgba(255, 255, 255, 0.8) !important;
-}
-
-[data-theme="dark"] .merchant-dashboard-workspace [class*="text-white/6"],
-[data-theme="dark"] .merchant-dashboard-workspace [class*="text-white/5"] {
-  color: rgba(255, 255, 255, 0.62) !important;
-}
-
-[data-theme="dark"] .merchant-dashboard-workspace [class*="text-white/4"],
-[data-theme="dark"] .merchant-dashboard-workspace [class*="text-white/3"] {
-  color: rgba(255, 255, 255, 0.46) !important;
-}
-
-/* The user dashboard's blanket "every text-white goes black" rule carries four
-   :not() chains, so this mirrors that selector exactly and adds the theme gate to
-   land one step above it. */
+/* White text restoration in dark mode */
 [data-theme="dark"] .user-dashboard-content .text-white:not([data-dm-bubble="dark"] *):not([data-dm-dark="true"] *):not([data-dm-bubble="dark"]):not([data-dm-dark="true"]),
 [data-theme="dark"] .user-dashboard-content [class*="text-white/"]:not([data-dm-bubble="dark"] *):not([data-dm-dark="true"] *):not([data-dm-bubble="dark"]):not([data-dm-dark="true"]),
+[data-theme="dark"] .merchant-dashboard-workspace .text-white,
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-white/"],
 [data-theme="dark"] .user-dashboard-redesign [role="dialog"] .text-white,
-[data-theme="dark"] .user-dashboard-redesign [role="dialog"] [class*="text-white/"] {
+[data-theme="dark"] .user-dashboard-redesign [role="dialog"] [class*="text-white/"],
+[data-theme="dark"] .merchant-dashboard-root [role="dialog"] .text-white,
+[data-theme="dark"] .merchant-dashboard-root [role="dialog"] [class*="text-white/"] {
   color: rgba(255, 255, 255, 0.88) !important;
 }
 
 [data-theme="dark"] .user-dashboard-content [class*="text-[#ccff00]"]:not([data-dm-bubble="dark"] *),
-[data-theme="dark"] .user-dashboard-redesign [role="dialog"] [class*="text-[#ccff00]"] {
+[data-theme="dark"] .user-dashboard-redesign [role="dialog"] [class*="text-[#ccff00]"],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-[#ccff00]"] {
   color: #ccff00 !important;
 }
 
-[data-theme="dark"] .user-dashboard-content [class*="text-emerald"]:not([data-dm-bubble="dark"] *) {
+[data-theme="dark"] .user-dashboard-content [class*="text-emerald"]:not([data-dm-bubble="dark"] *),
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-emerald"] {
   color: #6ee7b7 !important;
 }
 
-[data-theme="dark"] .user-dashboard-content [class*="text-sky"]:not([data-dm-bubble="dark"] *) {
+[data-theme="dark"] .user-dashboard-content [class*="text-sky"]:not([data-dm-bubble="dark"] *),
+[data-theme="dark"] .merchant-dashboard-workspace [class*="text-sky"] {
   color: #7dd3fc !important;
 }
 
 /* ------------------------------------------------------ surfaces and borders */
-/* Only the low-alpha tints invert. Those are the light chrome — a faint darkening on a cream or
-   white card — so on a dark canvas the equivalent is a faint lightening.
-
-   The high-alpha blacks are a different thing entirely: bg-black/80 and bg-black/85 are modal
-   scrims, and /20../60 are surfaces from the original dark design. Inverting those would leave
-   overlays undimmed with the page showing straight through, so they are listed separately below
-   and kept dark. Exact-token ~= matching rather than *= is what keeps bg-black/5 from also
-   catching bg-black/50. */
 [data-theme="dark"] .merchant-dashboard-root [class~="bg-black/5"],
 [data-theme="dark"] .merchant-dashboard-root [class~="bg-black/10"],
 [data-theme="dark"] .merchant-dashboard-root [class~="bg-black/15"],
@@ -1820,8 +1766,6 @@ body {
   background-color: rgba(255, 255, 255, 0.06) !important;
 }
 
-/* Scrims and dark-design surfaces stay dark. The user dashboard's light layer repaints every
-   bg-black/* as a blue tint, which would leave a modal overlay barely tinted in dark mode. */
 [data-theme="dark"] .user-dashboard-content [class~="bg-black/20"],
 [data-theme="dark"] .user-dashboard-content [class~="bg-black/25"],
 [data-theme="dark"] .user-dashboard-content [class~="bg-black/30"],
@@ -1830,55 +1774,24 @@ body {
 [data-theme="dark"] .user-dashboard-content [class~="bg-black/45"],
 [data-theme="dark"] .user-dashboard-content [class~="bg-black/60"],
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-black/80"],
-[data-theme="dark"] .user-dashboard-redesign [class~="bg-black/85"] {
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-black/85"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/80"],
+[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/85"] {
   background-color: rgba(0, 0, 0, 0.72) !important;
 }
 
-/* The merchant tree needs the opposite treatment for the same tokens, because its light layer
-   repaints bg-black/30../60 *cream* (see the .merchant-dashboard-workspace group above) rather
-   than tinting them blue. Left unmapped, a bg-black/60 came out as a cream surface on a dark
-   canvas — which is why the mobile loading skeleton's bottom nav pill was the one light thing on
-   screen, and why the API-keys, offramp and checkout bg-black/40 panels stayed light too.
-
-   Two exclusions, both cases where the token is not a surface:
-
-   `inset-0` is how every scrim in this tree is written — the session-alert overlay (bg-black/85,
-   already out of range), the plan-QR modal (bg-black/60), the card busy-overlay (bg-black/40) and
-   the mobile More sheet (bg-black/25). Lightening those to 6% white would leave the page showing
-   straight through an overlay that exists to dim it.
-
-   The toggle knobs are a bg-black/30 dot sitting on a bg-black/10 track, and bg-black/10 is
-   already in the low-alpha group above — so sweeping the knob to the same 6% white would make the
-   switch a featureless pill. They get a solid knob below instead. */
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/20"]:not([class*="inset-0"]),
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/25"]:not([class*="inset-0"]),
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/30"]:not([class*="inset-0"]):not([class~="pointer-events-none"]),
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/35"]:not([class*="inset-0"]),
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/40"]:not([class*="inset-0"]),
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/50"]:not([class*="inset-0"]),
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/60"]:not([class*="inset-0"]) {
-  background-color: rgba(255, 255, 255, 0.06) !important;
-}
-
-/* Switch knobs. Solid rather than translucent so the knob still reads against its track. */
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-black/30"][class~="pointer-events-none"][class~="rounded-full"] {
-  background-color: var(--dk-ink-3) !important;
-}
-
-[data-theme="dark"] .merchant-dashboard-root [class*="border-black/"],
-[data-theme="dark"] .merchant-dashboard-workspace [class*="border-white/"],
 [data-theme="dark"] .user-dashboard-redesign [class*="border-black/"],
 [data-theme="dark"] .user-dashboard-content [class*="border-white/"],
-[data-theme="dark"] .user-dashboard-redesign [role="dialog"] [class*="border-white/"] {
+[data-theme="dark"] .user-dashboard-redesign [role="dialog"] [class*="border-white/"],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="border-black/"],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="border-white/"],
+[data-theme="dark"] .merchant-dashboard-root [class*="border-black/"] {
   border-color: var(--dk-line) !important;
 }
 
-[data-theme="dark"] .merchant-dashboard-root [class*="border-[#082824]" i] {
-  border-color: var(--dk-line-2) !important;
-}
-
-[data-theme="dark"] .merchant-dashboard-root [class*="divide-black/"],
-[data-theme="dark"] .user-dashboard-redesign [class*="divide-black/"] {
+[data-theme="dark"] .user-dashboard-redesign [class*="divide-black/"],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="divide-black/"],
+[data-theme="dark"] .merchant-dashboard-workspace tbody tr {
   border-color: var(--dk-line) !important;
 }
 
@@ -1892,69 +1805,161 @@ body {
   background-color: rgba(39, 117, 202, 0.18) !important;
 }
 
-/* ---------------------------------------------------------- light accent fills
-   These keep their colour in dark mode because they are brand accents, which means the text on
-   them has to stay dark. Without this guard the foreground rules above would lighten that text
-   into the fill and it would disappear.
-
-   `~=` is what excludes the translucent variants, and it does it more cleanly than the
-   `:not([class*="bg-[#8AB4DB]/"])` chain this used to carry: a 45% light blue over a dark canvas is
-   a *dark* surface, so forcing dark text onto it would recreate the very black-on-black problem
-   this block exists to prevent. Matching whole tokens only means bg-[#8AB4DB]/45 never matches in
-   the first place, and it keeps hover variants from claiming the resting state. */
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#8AB4DB]" i],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#8AB4DB]" i] [class~="text-black"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#8AB4DB]" i] [class*="text-black/"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#8AB4DB]" i] [class~="text-[#082824]" i],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#7AA7D0]" i],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#7AA7D0]" i] [class~="text-black"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#7AA7D0]" i] [class*="text-black/"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#7AA7D0]" i] [class~="text-[#082824]" i],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#EFE2AC]" i],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#EFE2AC]" i] [class~="text-black"],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#EFE2AC]" i] [class~="text-[#082824]" i],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#00d2b4]" i],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#00d2b4]" i] [class~="text-black"],
+/* ---------------------------------------------------------- light accent fills */
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-[#ccff00]" i],
 [data-theme="dark"] .user-dashboard-redesign [class~="bg-[#ccff00]" i] [class~="text-black"],
-[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#ccff00]" i] [class~="text-[#111827]" i] {
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#ccff00]" i] [class~="text-[#111827]" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-[#ccff00]" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-[#ccff00]" i] [class~="text-black"] {
   color: #111111 !important;
 }
 
-/* Restore the lime fill that the light layer repaints charcoal, now that dark text
-   on it is guaranteed by the guard above. */
 [data-theme="dark"] .user-dashboard-content [class~="bg-[#ccff00]" i]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-[data-theme="dark"] .user-dashboard-redesign [role="dialog"] [class~="bg-[#ccff00]" i] {
+[data-theme="dark"] .user-dashboard-redesign [role="dialog"] [class~="bg-[#ccff00]" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-[#ccff00]" i] {
   background-color: #ccff00 !important;
 }
 
 /* --------------------------------------------------------------- form fields */
-[data-theme="dark"] .merchant-dashboard-workspace input,
-[data-theme="dark"] .merchant-dashboard-workspace textarea,
-[data-theme="dark"] .merchant-dashboard-workspace select,
 [data-theme="dark"] .user-dashboard-redesign .subscript-input,
 [data-theme="dark"] .user-dashboard-redesign input,
 [data-theme="dark"] .user-dashboard-redesign textarea,
-[data-theme="dark"] .user-dashboard-redesign select {
+[data-theme="dark"] .user-dashboard-redesign select,
+[data-theme="dark"] .merchant-dashboard-workspace input,
+[data-theme="dark"] .merchant-dashboard-workspace textarea,
+[data-theme="dark"] .merchant-dashboard-workspace select,
+[data-theme="dark"] .merchant-dashboard-root [role="dialog"] input,
+[data-theme="dark"] .merchant-dashboard-root [role="dialog"] textarea,
+[data-theme="dark"] .merchant-dashboard-root [role="dialog"] select {
   color: var(--dk-ink) !important;
   background-color: var(--dk-field) !important;
   border-color: var(--dk-line-2) !important;
+  color-scheme: dark !important;
 }
 
-[data-theme="dark"] .merchant-dashboard-workspace input::placeholder,
-[data-theme="dark"] .merchant-dashboard-workspace textarea::placeholder,
 [data-theme="dark"] .user-dashboard-redesign .subscript-input::placeholder,
 [data-theme="dark"] .user-dashboard-redesign input::placeholder,
-[data-theme="dark"] .user-dashboard-redesign textarea::placeholder {
+[data-theme="dark"] .user-dashboard-redesign textarea::placeholder,
+[data-theme="dark"] .merchant-dashboard-workspace input::placeholder,
+[data-theme="dark"] .merchant-dashboard-workspace textarea::placeholder {
   color: var(--dk-ink-4) !important;
 }
 
 [data-theme="dark"] .user-dashboard-redesign .subscript-input:focus,
 [data-theme="dark"] .user-dashboard-redesign input:focus,
 [data-theme="dark"] .user-dashboard-redesign textarea:focus,
-[data-theme="dark"] .user-dashboard-redesign select:focus {
-  border-color: #2775ca !important;
+[data-theme="dark"] .user-dashboard-redesign select:focus,
+[data-theme="dark"] .merchant-dashboard-workspace input:focus,
+[data-theme="dark"] .merchant-dashboard-workspace textarea:focus,
+[data-theme="dark"] .merchant-dashboard-workspace select:focus {
+  border-color: #8AB4DB !important;
   background-color: var(--dk-field) !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-workspace select option,
+[data-theme="dark"] .user-dashboard-redesign select option {
+  background-color: #1f2023 !important;
+  color: #ffffff !important;
+}
+
+/* -------------------------------------------------------------- Action Buttons Contrast */
+[data-theme="dark"] .merchant-dashboard-workspace button[class~="bg-[#000000]"][class*="text-white"],
+[data-theme="dark"] .merchant-dashboard-workspace button[class~="bg-black"][class*="text-white"],
+[data-theme="dark"] .merchant-dashboard-workspace a[class~="bg-[#000000]"][class*="text-white"],
+[data-theme="dark"] .merchant-dashboard-workspace a[class~="bg-black"][class*="text-white"] {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  font-weight: 700 !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-workspace button[class~="bg-[#000000]"][class*="text-white"]:hover,
+[data-theme="dark"] .merchant-dashboard-workspace button[class~="bg-black"][class*="text-white"]:hover,
+[data-theme="dark"] .merchant-dashboard-workspace a[class~="bg-[#000000]"][class*="text-white"]:hover,
+[data-theme="dark"] .merchant-dashboard-workspace a[class~="bg-black"][class*="text-white"]:hover {
+  background-color: rgba(255, 255, 255, 0.88) !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-workspace button[class*="bg-white"]:not(.merchant-timeframe-active):not(.merchant-timeframe-idle),
+[data-theme="dark"] .merchant-dashboard-workspace [class*="rounded-full"][class*="border"][class*="bg-white"]:not(.merchant-timeframe-track):not(.merchant-timeframe-active) {
+  background-color: var(--dk-raised) !important;
+  border-color: var(--dk-line-2) !important;
+  color: var(--dk-ink) !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-workspace button[class*="bg-white"]:not(.merchant-timeframe-active):not(.merchant-timeframe-idle):hover,
+[data-theme="dark"] .merchant-dashboard-workspace [class*="rounded-full"][class*="border"][class*="bg-white"]:not(.merchant-timeframe-track):not(.merchant-timeframe-active):hover {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+/* -------------------------------------------------------------- Merchant Timeframe Selector Contrast */
+:root:not([data-theme="dark"]) .merchant-timeframe-track {
+  background-color: rgba(255, 255, 255, 0.75) !important;
+  border: 1px solid rgba(0, 0, 0, 0.12) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+}
+
+[data-theme="dark"] .merchant-timeframe-track {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35) !important;
+}
+
+:root:not([data-theme="dark"]) .merchant-timeframe-active {
+  background-color: #082824 !important;
+  color: #ffffff !important;
+  border: 1px solid #082824 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25) !important;
+  font-weight: 800 !important;
+}
+
+:root:not([data-theme="dark"]) .merchant-timeframe-active * {
+  color: #ffffff !important;
+}
+
+:root:not([data-theme="dark"]) .merchant-timeframe-active:hover {
+  background-color: #0c3933 !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .merchant-timeframe-active {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border: 1px solid #ffffff !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5) !important;
+  font-weight: 800 !important;
+}
+
+[data-theme="dark"] .merchant-timeframe-active * {
+  color: #000000 !important;
+}
+
+[data-theme="dark"] .merchant-timeframe-active:hover {
+  background-color: #f4f4f5 !important;
+  color: #000000 !important;
+}
+
+:root:not([data-theme="dark"]) .merchant-timeframe-idle {
+  background-color: transparent !important;
+  color: #082824 !important;
+  border: 1px solid transparent !important;
+  font-weight: 700 !important;
+}
+
+:root:not([data-theme="dark"]) .merchant-timeframe-idle:hover {
+  background-color: rgba(8, 40, 36, 0.1) !important;
+  color: #082824 !important;
+}
+
+[data-theme="dark"] .merchant-timeframe-idle {
+  background-color: transparent !important;
+  color: rgba(255, 255, 255, 0.75) !important;
+  border: 1px solid transparent !important;
+  font-weight: 700 !important;
+}
+
+[data-theme="dark"] .merchant-timeframe-idle:hover {
+  background-color: rgba(255, 255, 255, 0.18) !important;
+  color: #ffffff !important;
 }
 
 /* -------------------------------------------------------------- DM action bar */
@@ -1989,26 +1994,26 @@ body {
 }
 
 /* ------------------------------------------------------------------ overlays */
+[data-theme="dark"] [role="dialog"],
+[data-theme="dark"] [role="alertdialog"],
+[data-theme="dark"] .user-dashboard-redesign [role="dialog"],
 [data-theme="dark"] .merchant-dashboard-root [role="dialog"],
-[data-theme="dark"] .merchant-dashboard-root [role="alertdialog"],
-[data-theme="dark"] .user-dashboard-redesign [role="dialog"] {
+[data-theme="dark"] .merchant-dashboard-root [role="alertdialog"] {
   background-color: var(--dk-card) !important;
   color: var(--dk-ink) !important;
   border-color: var(--dk-line-2) !important;
   color-scheme: dark !important;
 }
 
-[data-theme="dark"] .merchant-dashboard-root [role="dialog"] input,
-[data-theme="dark"] .merchant-dashboard-root [role="dialog"] textarea,
-[data-theme="dark"] .merchant-dashboard-root [role="dialog"] select {
-  background: var(--dk-field) !important;
+[data-theme="dark"] [role="dialog"] [class~="text-white"],
+[data-theme="dark"] [role="dialog"] [class^="text-white/"],
+[data-theme="dark"] [role="dialog"] [class*=" text-white/"],
+[data-theme="dark"] [role="alertdialog"] [class~="text-white"],
+[data-theme="dark"] .merchant-dashboard-root [role="dialog"] [class~="text-white"],
+[data-theme="dark"] .merchant-dashboard-root [role="dialog"] [class^="text-white/"],
+[data-theme="dark"] .merchant-dashboard-root [role="dialog"] [class*=" text-white/"],
+[data-theme="dark"] .merchant-dashboard-root [role="alertdialog"] [class~="text-white"] {
   color: var(--dk-ink) !important;
-  border-color: var(--dk-line-2) !important;
-  color-scheme: dark !important;
-}
-
-[data-theme="dark"] .merchant-dashboard-workspace .liquid-glass {
-  background: var(--dk-card) !important;
 }
 
 /* -------------------------------------------------------------- chrome pieces */
@@ -2034,28 +2039,62 @@ body {
   color: #ffffff;
 }
 
-[data-theme="dark"] .merchant-light-bell button {
-  color: var(--dk-ink);
-  background: rgba(255, 255, 255, 0.08);
-  border-color: var(--dk-line);
+/* -------------------------------------------------------------- Merchant Rail */
+[data-theme="dark"] .merchant-rail,
+[data-theme="dark"] .merchant-rail .merchant-rail-skeleton {
+  background-color: var(--dk-shell) !important;
+  border-color: var(--dk-line) !important;
+  color: var(--dk-ink-2) !important;
 }
 
-[data-theme="dark"] .merchant-dashboard-root footer {
-  color: var(--dk-ink-3);
-  border-color: var(--dk-line);
+[data-theme="dark"] .merchant-rail [class*="text-[#082824]" i] {
+  color: var(--dk-ink) !important;
 }
 
-[data-theme="dark"] .merchant-dashboard-root footer a:hover {
-  color: var(--dk-ink);
+[data-theme="dark"] .merchant-rail [class*="text-black/"] {
+  color: var(--dk-ink-3) !important;
 }
 
-/* Skeletons: the light layers tune these for cream surfaces. The `color` is reset alongside the
-   background because the light rule pins it to #000000 !important — harmless for an empty bar, but
-   it would swallow anything a skeleton ever wrapped. */
-[data-theme="dark"] .merchant-dashboard-workspace .subscript-skeleton,
+[data-theme="dark"] .merchant-rail [class~="bg-[#D4E3E8]"] {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  color: var(--dk-ink) !important;
+}
+
+[data-theme="dark"] .merchant-rail [class~="bg-[#D4E3E8]"]:hover,
+[data-theme="dark"] .merchant-rail [class*="hover:bg-[#D4E3E8]"]:hover {
+  background-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+[data-theme="dark"] .merchant-rail button[class*="bg-[#082824]"],
+[data-theme="dark"] .merchant-rail a[class*="bg-[#082824]"] {
+  background-color: var(--dk-selected) !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .merchant-rail button[class*="bg-[#082824]"] .koboyo-icon,
+[data-theme="dark"] .merchant-rail a[class*="bg-[#082824]"] .koboyo-icon {
+  background-color: #ffffff !important;
+}
+
+[data-theme="dark"] .merchant-rail-menu {
+  background-color: var(--dk-card) !important;
+  border-color: var(--dk-line-2) !important;
+  color: var(--dk-ink) !important;
+}
+
+/* -------------------------------------------------------------- Code Blocks */
+[data-theme="dark"] .merchant-dashboard-workspace pre,
+[data-theme="dark"] .merchant-dashboard-workspace code {
+  background-color: #141518 !important;
+  color: #e2e8f0 !important;
+  border-color: var(--dk-line) !important;
+}
+
+/* -------------------------------------------------------------- Skeletons */
 [data-theme="dark"] .user-dashboard-redesign .subscript-skeleton,
 [data-theme="dark"] .user-dashboard-loading .subscript-skeleton,
-[data-theme="dark"] .user-dashboard-loading .subscript-skeleton--faint {
+[data-theme="dark"] .user-dashboard-loading .subscript-skeleton--faint,
+[data-theme="dark"] .merchant-dashboard-workspace .subscript-skeleton {
   background-color: rgba(255, 255, 255, 0.1) !important;
   border-color: var(--dk-line) !important;
   color: var(--dk-ink) !important;
@@ -2068,6 +2107,16 @@ body {
 
 [data-theme="dark"] .user-dashboard-loading [class*="bg-black/"] {
   background-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* -------------------------------------------------------------- Footer */
+[data-theme="dark"] .merchant-dashboard-root footer {
+  color: var(--dk-ink-4) !important;
+  border-color: var(--dk-line) !important;
+}
+
+[data-theme="dark"] .merchant-dashboard-root footer a:hover {
+  color: var(--dk-ink) !important;
 }
 
 /* -------------------------------------------------- user dashboard loading shell
@@ -2308,5 +2357,46 @@ body {
   .subscript-receipt a[href]::after {
     content: "";
   }
+}
+
+@keyframes figureShimmerSweep {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+.animate-number-shimmer {
+  position: relative;
+  display: inline-block;
+  background: linear-gradient(
+    90deg,
+    #082824 0%,
+    #082824 25%,
+    #2775CA 50%,
+    #082824 75%,
+    #082824 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: figureShimmerSweep 1.2s infinite linear;
+  will-change: background-position;
+}
+
+[data-theme="dark"] .animate-number-shimmer {
+  background: linear-gradient(
+    90deg,
+    #f4f4f5 0%,
+    #f4f4f5 25%,
+    #8ab4db 50%,
+    #f4f4f5 75%,
+    #f4f4f5 100%
+  ) !important;
+  background-size: 200% 100% !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
 }
 

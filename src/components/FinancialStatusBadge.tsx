@@ -19,16 +19,16 @@ export function financialStatusMeta(status?: string | null) {
 export default function FinancialStatusBadge({ status }: { status?: string | null }) {
   const meta = financialStatusMeta(status);
   const styles = {
-    success: "border-emerald-400/25 bg-emerald-400/10 text-emerald-300",
-    failure: "border-red-400/25 bg-red-400/10 text-red-300",
-    pending: "border-amber-400/25 bg-amber-400/10 text-amber-200",
-    neutral: "border-white/15 bg-white/5 text-white/60",
+    success: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 dark:border-emerald-400/25",
+    failure: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300 dark:border-red-400/25",
+    pending: "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-200 dark:border-amber-400/25",
+    neutral: "border-slate-300 bg-slate-100 text-slate-700 dark:border-white/15 dark:bg-white/5 dark:text-white/70",
   }[meta.tone];
   const dot = {
-    success: "bg-emerald-300",
-    failure: "bg-red-300",
-    pending: "bg-amber-200",
-    neutral: "bg-white/50",
+    success: "bg-emerald-600 dark:bg-emerald-300",
+    failure: "bg-red-600 dark:bg-red-300",
+    pending: "bg-amber-600 dark:bg-amber-200",
+    neutral: "bg-slate-500 dark:bg-white/60",
   }[meta.tone];
 
   return (

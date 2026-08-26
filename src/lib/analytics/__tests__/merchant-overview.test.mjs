@@ -4,7 +4,7 @@ import {
     buildOverviewMonths,
     netAfterProtocolFee,
     rankPlanOverview,
-} from "../merchantOverview";
+} from "../merchantOverview.ts";
 
 test("calculates the protocol fee per settlement with integer rounding", () => {
     assert.equal(netAfterProtocolFee(1_000_000n), 990_000n);
@@ -44,6 +44,24 @@ test("ranks active plans by renewing subscriber count and name", () => {
         ],
     );
     assert.deepEqual(ranked.map((plan) => plan.id), ["b", "c", "a", "e"]);
+});
+
+test("includes direct and unassigned subscriptions in ranked plan overview", () => {
+    const ranked = rankPlanOverview(
+        [
+            { id: "a", name: "Starter" },
+            { id: "b", name: "Pro" },
+        ],
+        [
+            { planId: "a", count: 2n },
+            { planId: "b", count: 10n },
+        ],
+        5,
+        5,
+    );
+    assert.deepEqual(ranked.map((plan) => plan.id), ["b", "legacy_direct", "a"]);
+    assert.equal(ranked[1].name, "Direct & Custom Subscriptions");
+    assert.equal(ranked[1].activeSubscriberCount, 5);
 });
 const fs = await import("node:fs");
 const path = await import("node:path");
