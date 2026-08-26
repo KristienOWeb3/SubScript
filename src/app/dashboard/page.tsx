@@ -71,7 +71,7 @@ const STANDARD_ABI = STANDARD_SUBSCRIPT_ABI;
 
 const tabs = [
     { id: "overview", label: "Overview", icon: SquaresFour },
-    { id: "payment-links", label: "Payments & Plans", icon: Sliders },
+    { id: "payment-links", label: "Payments", icon: Sliders },
     { id: "payroll", label: "Payroll", icon: Building2 },
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "checkout", label: "Checkout Setup", icon: Code2 },

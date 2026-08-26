@@ -199,8 +199,8 @@ export default function DashboardHeader({
     return (
         <>
             {/* Floating Minimal Dashboard Header */}
-            <div className="fixed top-5 left-0 right-0 z-40 px-4 sm:px-6 flex justify-center pointer-events-none">
-                <header className={`w-full max-w-5xl liquid-glass rounded-full px-5 sm:px-6 py-3 pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] ${scrolled ? "bg-black/50 backdrop-blur-xl" : "bg-black/30 backdrop-blur-lg"}`}>
+            <div className="fixed top-5 left-0 right-0 z-40 px-2 sm:px-6 flex justify-center pointer-events-none">
+                <header className={`w-full max-w-5xl liquid-glass rounded-full px-3 sm:px-6 py-2.5 sm:py-3 pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] ${scrolled ? "bg-black/50 backdrop-blur-xl" : "bg-black/30 backdrop-blur-lg"}`}>
                     
                     {/* Mobile Header Layout (Strictly blueprint aligned) */}
                     <div className="flex sm:hidden items-center justify-between w-full">
@@ -217,12 +217,12 @@ export default function DashboardHeader({
 
                         {/* Disconnect + Address/Domain Name + PFP (Right) */}
                         {isConnected && address ? (
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1 min-w-0">
                                 <NotificationBell audience="MERCHANT" accent="#00d2b4" />
                                 {isAdmin && (
                                     <Link
                                         href="/admin"
-                                        className="px-2.5 py-1 rounded-full border border-purple-500/40 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 text-[9px] font-bold uppercase tracking-wider transition"
+                                        className="px-2 py-0.5 rounded-full border border-purple-500/40 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 text-[9px] font-bold uppercase tracking-wider transition shrink-0"
                                     >
                                         Admin
                                     </Link>
@@ -230,7 +230,7 @@ export default function DashboardHeader({
                                 {/* Disconnect Wallet Icon */}
                                 <button
                                     onClick={handleDisconnect}
-                                    className="p-2 text-white/40 hover:text-red-400 bg-white/[0.02] hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 rounded-full transition-all"
+                                    className="p-1.5 text-white/40 hover:text-red-400 bg-white/[0.02] hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 rounded-full transition-all shrink-0"
                                     title="Disconnect wallet"
                                 >
                                     <PlugZap className="w-3.5 h-3.5" />
@@ -238,13 +238,13 @@ export default function DashboardHeader({
                                 {/* Address/Domain pill */}
                                 <button
                                     onClick={handleDnsClick}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white/[0.04] border border-white/5 rounded-full hover:bg-white/[0.06] transition-all group"
+                                    className="flex items-center gap-1 px-2.5 py-1.5 bg-white/[0.04] border border-white/5 rounded-full hover:bg-white/[0.06] transition-all group shrink-0"
                                     title="Click to manage domain alias"
                                 >
                                     <div className="w-4 h-4 bg-[#00d2b4]/10 rounded-full flex items-center justify-center">
                                         <Wallet className="w-2 h-2 text-[#00d2b4]" />
                                     </div>
-                                    <span className="text-[10px] font-mono font-semibold text-white/70 group-hover:text-white/90 transition-colors max-w-[100px] truncate">
+                                    <span className="text-[10px] font-mono font-semibold text-white/70 group-hover:text-white/90 transition-colors max-w-[65px] xs:max-w-[100px] truncate">
                                         {merchantAlias || shortAddress}
                                     </span>
                                     {isVerified && (
@@ -254,7 +254,7 @@ export default function DashboardHeader({
                                 {/* PFP Icon */}
                                 <button
                                     onClick={onProfileClick}
-                                    className="w-7 h-7 rounded-full border border-white/10 overflow-hidden bg-gradient-to-tr from-[#00d2b4]/20 to-purple-500/20 flex items-center justify-center text-[#00d2b4] shrink-0 ml-1 shadow-[0_0_8px_rgba(0,210,180,0.15)] hover:scale-105 active:scale-95 transition-all focus:outline-none"
+                                    className="w-7 h-7 rounded-full border border-white/10 overflow-hidden bg-gradient-to-tr from-[#00d2b4]/20 to-purple-500/20 flex items-center justify-center text-[#00d2b4] shrink-0 shadow-[0_0_8px_rgba(0,210,180,0.15)] hover:scale-105 active:scale-95 transition-all focus:outline-none"
                                 >
                                     {profilePic ? (
                                         <img src={profilePic} alt="PFP" className="w-full h-full object-cover" />

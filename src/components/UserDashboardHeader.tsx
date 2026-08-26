@@ -46,9 +46,9 @@ export default function UserDashboardHeader({
 
     return (
         <>
-            {/* Floating Minimal User Dashboard Header */}
-            <div className="fixed top-5 left-0 right-0 z-40 px-4 sm:px-6 flex justify-center pointer-events-none">
-                <header className={`w-full max-w-5xl liquid-glass rounded-full px-5 sm:px-6 py-3 pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] ${scrolled ? "bg-black/50 backdrop-blur-xl" : "bg-black/30 backdrop-blur-lg"}`}>
+            {/* Floating Minimal Dashboard Header */}
+            <div className="fixed top-5 left-0 right-0 z-40 px-2 sm:px-6 flex justify-center pointer-events-none">
+                <header className={`w-full max-w-5xl liquid-glass rounded-full px-3 sm:px-6 py-2.5 sm:py-3 pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] ${scrolled ? "bg-black/50 backdrop-blur-xl" : "bg-black/30 backdrop-blur-lg"}`}>
                     
                     {/* Mobile Header Layout */}
                     <div className="flex lg:hidden items-center justify-between w-full">
@@ -65,25 +65,25 @@ export default function UserDashboardHeader({
 
                         {/* Actions (Right) */}
                         {userWallet ? (
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1 min-w-0">
                                 <NotificationBell audience="USER" accent="#ccff00" />
                                 {/* Address/Domain pill */}
                                 <button
                                     onClick={() => onTabChange("dns")}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white/[0.04] border border-white/5 rounded-full hover:bg-white/[0.06] transition-all group"
+                                    className="flex items-center gap-1 px-2.5 py-1.5 bg-white/[0.04] border border-white/5 rounded-full hover:bg-white/[0.06] transition-all group shrink-0"
                                     title="Click to manage DNS alias"
                                 >
                                     <div className="w-4 h-4 bg-[#ccff00]/10 rounded-full flex items-center justify-center">
                                         <Wallet className="w-2 h-2 text-[#ccff00]" />
                                     </div>
-                                    <span className="text-[10px] font-mono font-semibold text-white/70 group-hover:text-white/90 transition-colors max-w-[100px] truncate">
+                                    <span className="text-[10px] font-mono font-semibold text-white/70 group-hover:text-white/90 transition-colors max-w-[65px] xs:max-w-[100px] truncate">
                                         {registeredDomain || shortAddress}
                                     </span>
                                 </button>
                                 {/* PFP Icon */}
                                 <button
                                     onClick={() => onTabChange("dns")}
-                                    className="w-7 h-7 rounded-full border border-white/10 overflow-hidden bg-gradient-to-tr from-[#ccff00]/20 to-purple-500/20 flex items-center justify-center text-[#ccff00] shrink-0 ml-1 shadow-[0_0_8px_rgba(204,255,0,0.15)] hover:scale-105 active:scale-95 transition-all focus:outline-none"
+                                    className="w-7 h-7 rounded-full border border-white/10 overflow-hidden bg-gradient-to-tr from-[#ccff00]/20 to-purple-500/20 flex items-center justify-center text-[#ccff00] shrink-0 shadow-[0_0_8px_rgba(204,255,0,0.15)] hover:scale-105 active:scale-95 transition-all focus:outline-none"
                                 >
                                     {profilePic ? (
                                         <img src={profilePic} alt="PFP" className="w-full h-full object-cover" />
