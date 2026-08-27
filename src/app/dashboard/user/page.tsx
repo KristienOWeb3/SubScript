@@ -1828,7 +1828,10 @@ export default function UserDashboard() {
       const res = await fetch(subscribeEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ checkoutSessionId: subscribeReviewDm.paymentLinkId }),
+        body: JSON.stringify({
+          planId: subscribeReviewDm.paymentLinkId,
+          checkoutSessionId: subscribeReviewDm.paymentLinkId,
+        }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
