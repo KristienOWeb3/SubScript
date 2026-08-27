@@ -23,6 +23,7 @@ import ConfirmModal from "@/components/ConfirmModal";
 import DurationPicker from "@/components/DurationPicker";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
 import SupportChatModal from "@/components/support/SupportChatModal";
+import SharePlanModal from "@/components/SharePlanModal";
 import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useReadContract, useSignMessage } from "wagmi";
 import { injected } from "wagmi/connectors";
 import {
@@ -284,12 +285,9 @@ export default function DashboardPage() {
     const [webhooksPage, setWebhooksPage] = useState(0);
 
     const [premiumSubId, setPremiumSubId] = useState<number | null>(null);
+    const [sharingPlan, setSharingPlan] = useState<MerchantPlan | null>(null);
     const handleSharePlan = (plan: MerchantPlan) => {
-        const url = buildSubscribeUrl(plan.id, typeof window !== "undefined" ? window.location.origin : undefined);
-        if (navigator.clipboard) {
-            navigator.clipboard.writeText(url).catch(() => {});
-            handleCopy(url, `Subscribe link for ${plan.name}`);
-        }
+        setSharingPlan(plan);
     };
     const [isCancellingPremium, setIsCancellingPremium] = useState(false);
     const [cancelAtPeriodEnd, setCancelAtPeriodEnd] = useState(false);
@@ -6246,6 +6244,12 @@ Please complete the following implementation tasks:
                     onCancel={confirmModal.onCancel ?? (() => setConfirmModal(null))}
                 />
             )}
+            <SharePlanModal
+                isOpen={sharingPlan !== null}
+                onClose={() => setSharingPlan(null)}
+                plan={sharingPlan}
+                subscribeUrl={sharingPlan ? buildSubscribeUrl(sharingPlan.id, typeof window !== "undefined" ? window.location.origin : undefined) : ""}
+            />
             {/* High-fidelity glassmorphic toast notification for settlement confirmation */}
                             {showToast && (
                                 <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass border border-emerald-500/30 bg-black/60 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-[0_8px_32px_0_rgba(0,210,180,0.2)]">
