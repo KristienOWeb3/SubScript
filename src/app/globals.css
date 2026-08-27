@@ -1329,7 +1329,7 @@ body {
    inside the existing breakpoint tier rather than promoting the layout to the next one.
 
    The rail is a sibling of the workspace, so this does not touch it — MerchantDashboardNav is
-   hand-tuned to match (see the sizing note there).
+   hand-tuned to match (see the sizing note there). */
 
 /* ---------------------------------------------------------------------------
    MERCHANT LIGHT MODE → USER DASHBOARD SURFACES
