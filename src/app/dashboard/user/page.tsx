@@ -4048,7 +4048,7 @@ export default function UserDashboard() {
                 }`}
               >
                 {isMobile ? (
-                  <div className="flex min-h-0 flex-1 flex-col justify-between overflow-hidden w-full">
+                  <div className="flex min-h-0 flex-1 flex-col justify-between overflow-hidden w-full dm-content-zoom">
                     {!selectedDmPeer ? (
                       <div className="w-full space-y-4 pb-20">
                         <DmThreadSelect
@@ -4190,7 +4190,7 @@ export default function UserDashboard() {
                   /* Desktop Split Multi-Column DM Layout */
                   <div className="flex flex-1 flex-row gap-5 h-full min-h-0 overflow-hidden items-stretch w-full">
                     {/* List of opened DMs (middle column in blueprint) */}
-                    <div className="w-[280px] lg:w-[340px] border-r border-black/5 dark:border-white/5 pr-4 lg:pr-5 flex flex-col overflow-y-auto will-change-transform translate-z-0 space-y-4 shrink-0">
+                    <div className="w-[280px] lg:w-[340px] border-r border-black/5 dark:border-white/5 pr-4 lg:pr-5 flex flex-col overflow-y-auto will-change-transform translate-z-0 space-y-4 shrink-0 dm-content-zoom">
                       <DmThreadSelect
                         threads={dmThreads}
                         onSelect={(peerAddress) => setSelectedDmPeer(peerAddress)}
@@ -4203,7 +4203,7 @@ export default function UserDashboard() {
                     </div>
 
                     {/* Active thread message bubble display (right column in blueprint) */}
-                    <div className="flex-1 flex flex-col overflow-hidden liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-6 min-h-0 justify-between">
+                    <div className="flex-1 flex flex-col overflow-hidden liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 min-h-0 justify-between">
                       <AnimatePresence mode="wait">
                         {selectedDmPeer ? (
                           <motion.div
@@ -4212,7 +4212,7 @@ export default function UserDashboard() {
                             animate={{ opacity: 1, scale: 1, y: 0, filter: "blur(0px)" }}
                             exit={{ opacity: 0, scale: 0.96, y: -12, filter: "blur(1.5px)" }}
                             transition={{ type: "spring", stiffness: 450, damping: 32 }}
-                            className="flex flex-col h-full justify-between gap-5 overflow-hidden"
+                            className="flex flex-col h-full justify-between gap-4 overflow-hidden dm-content-zoom"
                           >
                             {/* Desktop Chat Pane Header */}
                             <div

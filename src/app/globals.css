@@ -1315,8 +1315,10 @@ body {
    The rail is a sibling of the workspace, so this does not touch it — MerchantDashboardNav is
    hand-tuned to match (see the sizing note there).
 
-   Nothing position: fixed lives inside <main>. The session-consent alert sits between the workspace
-   and <main> as a sibling, and all seven modals render after the workspace closes, so no fixed
+.dm-content-zoom {
+  zoom: 0.8;
+}
+
 /* ---------------------------------------------------------------------------
    MERCHANT LIGHT MODE → USER DASHBOARD SURFACES
 
