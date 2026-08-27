@@ -110,7 +110,7 @@ export default function SignupPage() {
   const { connect, connectors, isPending: isConnecting } = useConnect();
   const { signMessageAsync } = useSignMessage();
   const { externalWalletEnabled, googleSigninEnabled, merchantInviteOnlyEnabled, loaded: platformFlagsLoaded } = usePlatformFlags();
-  const googleAvailable = CIRCLE_GOOGLE_ENABLED && platformFlagsLoaded && googleSigninEnabled;
+  const googleAvailable = CIRCLE_GOOGLE_ENABLED && (!platformFlagsLoaded || googleSigninEnabled !== false);
 
   const [authMethod, setAuthMethod] = useState<"select" | "email">("select");
   const [activeMerchantAddress, setActiveMerchantAddress] = useState<string | null>(null);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { 
   Loader2, 
@@ -11,6 +11,7 @@ import {
 } from "@/components/icons";
 import { getDashboardUrl, getSafeRelativePath } from "@/utils/navigation";
 import AuthSkeleton from "@/components/AuthSkeleton";
+import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
 
 function LoginChoiceContent() {
   const router = useRouter();
@@ -48,6 +49,21 @@ function LoginChoiceContent() {
     const params = new URLSearchParams(searchParams?.toString() || "");
     router.push(path + (params.toString() ? "?" + params.toString() : ""));
   };
+
+  const handleLoginSuccess = useCallback((data: { success: boolean; wallet: string; role?: string | null }) => {
+    if (safeNext && data.role === "USER") {
+      window.location.href = safeNext;
+      return;
+    }
+    if (data.role) {
+      window.location.href = getDashboardUrl(data.role as any, "/dashboard");
+    } else {
+      const params = new URLSearchParams();
+      params.set("completeRole", "1");
+      if (safeNext) params.set("next", safeNext);
+      window.location.href = `/signup?${params.toString()}`;
+    }
+  }, [safeNext]);
 
   const handleLogout = async () => {
     setIsSigningOut(true);
@@ -136,6 +152,18 @@ function LoginChoiceContent() {
           </div>
 
           <div className="space-y-4">
+            {/* Continue with Google direct sign in */}
+            <CircleGoogleWalletButton onSuccess={handleLoginSuccess} />
+
+            <div className="relative py-1 flex items-center justify-center">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-black/10"></div>
+              </div>
+              <span className="relative px-3 bg-white text-[9px] font-bold text-black/40 uppercase tracking-widest">
+                or choose an option
+              </span>
+            </div>
+
             {/* Sign In Option */}
             <button
               onClick={() => handleChoice("/signin")}
