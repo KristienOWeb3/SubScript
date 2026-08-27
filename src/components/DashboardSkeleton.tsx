@@ -13,67 +13,67 @@ export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps)
         switch (activeTab) {
             case "overview":
                 return (
-                    <div className="space-y-4 sm:space-y-6 font-sans">
+                    <div className="max-w-[1340px] mx-auto space-y-4 sm:space-y-5 pb-20 text-black md:pb-6 text-sm font-sans">
                         {/* Top 4 Stat Cards */}
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 sm:gap-5">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 sm:gap-5">
                             {[1, 2, 3, 4].map((i) => (
                                 <div
                                     key={i}
-                                    className="rounded-[28px] bg-[#D4E3E8] p-5 sm:p-6 border border-black/5 min-h-[200px] flex flex-col justify-between shadow-sm"
+                                    className="rounded-[28px] bg-[#D4E3E8] p-5 sm:p-6 border border-black/5 min-h-[220px] flex flex-col justify-between shadow-sm"
                                 >
                                     <div className="flex items-center justify-between">
                                         <Skeleton className="h-4 w-28 rounded-full" />
                                         <Skeleton className="h-5 w-16 rounded-full" />
                                     </div>
-                                    <div className="space-y-2">
-                                        <Skeleton className="h-8 sm:h-9 w-40 rounded-xl" />
-                                        <Skeleton className="h-3 w-32 rounded-full" />
+                                    <div className="space-y-2 mt-2">
+                                        <Skeleton className="h-8 sm:h-9 w-36 rounded-xl" />
+                                        <Skeleton className="h-3 w-40 rounded-full" />
                                     </div>
-                                    <div className="pt-1">
-                                        <Skeleton className="h-9 w-28 rounded-full" />
+                                    <div className="mt-4 pt-1">
+                                        <Skeleton className="h-8 w-28 rounded-full" />
                                     </div>
                                 </div>
                             ))}
                         </div>
 
-                        {/* Middle Row: Chart & Plans Ranking */}
-                        <div className="grid grid-cols-1 gap-4 sm:gap-5 xl:grid-cols-12">
+                        {/* Middle Row: Live Transactions Overview Chart & Plans Ranking */}
+                        <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-12">
                             {/* Chart Card */}
-                            <div className="xl:col-span-8 rounded-[28px] bg-[#D4E3E8] p-5 sm:p-6 border border-black/5 min-h-[380px] flex flex-col justify-between shadow-sm">
+                            <div className="lg:col-span-8 rounded-[28px] bg-[#D4E3E8] p-5 sm:p-6 border border-black/5 min-h-[360px] flex flex-col justify-between shadow-sm">
                                 <div className="flex items-center justify-between pb-3 border-b border-black/10">
                                     <div className="space-y-2">
                                         <Skeleton className="h-6 w-48 rounded-xl" />
                                         <Skeleton className="h-3.5 w-36 rounded-full" />
                                     </div>
                                     <div className="flex gap-2">
-                                        <Skeleton className="h-7 w-16 rounded-full" />
-                                        <Skeleton className="h-7 w-16 rounded-full" />
+                                        <Skeleton className="h-6 w-16 rounded-full" />
+                                        <Skeleton className="h-6 w-16 rounded-full" />
                                     </div>
                                 </div>
-                                <div className="my-4 h-[240px] rounded-2xl bg-white/40 subscript-skeleton" />
+                                <div className="my-4 h-[220px] rounded-2xl bg-white/40 subscript-skeleton" />
                             </div>
 
                             {/* Plans Ranking Card */}
-                            <div className="xl:col-span-4 rounded-[28px] bg-[#D4E3E8] p-5 sm:p-6 border border-black/5 min-h-[380px] flex flex-col justify-between shadow-sm">
+                            <div className="lg:col-span-4 rounded-[28px] bg-[#D4E3E8] p-5 sm:p-6 border border-black/5 min-h-[360px] flex flex-col justify-between shadow-sm">
                                 <div className="flex items-center justify-between pb-3 border-b border-black/10">
                                     <Skeleton className="h-6 w-36 rounded-xl" />
                                     <Skeleton circle className="w-6 h-6" />
                                 </div>
                                 <div className="space-y-3 my-3">
-                                    {[1, 2, 3, 4].map((i) => (
+                                    {[1, 2, 3].map((i) => (
                                         <div
                                             key={i}
                                             className="flex items-center justify-between p-3.5 rounded-2xl bg-white/60"
                                         >
                                             <div className="flex items-center gap-2.5">
-                                                <Skeleton circle className="w-6 h-6" />
+                                                <Skeleton circle className="w-5 h-5" />
                                                 <Skeleton className="h-4 w-28 rounded-full" />
                                             </div>
-                                            <Skeleton className="h-4 w-10 rounded-full" />
+                                            <Skeleton className="h-4 w-6 rounded-full" />
                                         </div>
                                     ))}
                                 </div>
-                                <Skeleton className="h-4 w-32 rounded-full mt-2" />
+                                <Skeleton className="h-3.5 w-32 rounded-full mt-2" />
                             </div>
                         </div>
 
