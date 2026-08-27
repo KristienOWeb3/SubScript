@@ -1326,10 +1326,12 @@ body {
 
    Desktop only. Mobile is already a single column at a comfortable scale, and shrinking tap
    targets on a phone would be a straight regression. */
-@media (min-width: 768px) {
-  .merchant-dashboard-workspace > main {
-    zoom: 0.9;
-  }
+.merchant-dashboard-workspace > main,
+.user-dashboard-content > main,
+.user-dashboard-redesign > main,
+.admin-workspace,
+.admin-topography > main {
+  zoom: 0.8;
 }
 
 /* ---------------------------------------------------------------------------
@@ -1726,6 +1728,15 @@ body {
 [data-theme="dark"] .merchant-dashboard-root [role="dialog"] .text-white,
 [data-theme="dark"] .merchant-dashboard-root [role="dialog"] [class*="text-white/"] {
   color: rgba(255, 255, 255, 0.88) !important;
+}
+
+/* Maintain dark text on light accent action buttons in dark mode */
+[data-theme="dark"] .merchant-dashboard-workspace button[class*="bg-[#8AB4DB]"],
+[data-theme="dark"] .merchant-dashboard-workspace button[class*="bg-[#8ab4db]" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="bg-[#8AB4DB]"] [class*="text-[#082824]" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="bg-[#8ab4db]" i] [class*="text-[#082824]" i],
+[data-theme="dark"] .merchant-dashboard-workspace [class*="bg-[#00d2b4]" i] {
+  color: #082824 !important;
 }
 
 [data-theme="dark"] .user-dashboard-content [class*="text-[#ccff00]"]:not([data-dm-bubble="dark"] *),

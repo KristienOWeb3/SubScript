@@ -381,15 +381,6 @@ export default function MerchantDashboardNav({
                 </div>
             </aside>
 
-            {/* Top Right Mobile Bell */}
-            <div className="fixed right-4 top-4 z-40 md:hidden">
-                <NotificationBell
-                    audience="MERCHANT"
-                    accent="#082824"
-                    className="merchant-light-bell"
-                />
-            </div>
-
             {/* Mobile Bottom Navigation */}
             {mobileEnabled && (
                 <nav

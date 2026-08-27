@@ -62,59 +62,41 @@ function RetractableTimeframePicker({
 
     return (
         <div ref={containerRef} role="group" aria-label="Earnings timeframe" className="relative inline-flex items-center">
-            <motion.div
-                layout
-                transition={{ type: "spring", stiffness: 450, damping: 30 }}
-                className="merchant-timeframe-track inline-flex items-center rounded-full p-0.5"
-            >
-                <AnimatePresence initial={false} mode="wait">
-                    {!expanded ? (
-                        <motion.button
-                            key="retracted"
-                            type="button"
-                            onClick={() => setExpanded(true)}
-                            initial={{ opacity: 0, scale: 0.92 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.92 }}
-                            transition={{ duration: 0.12 }}
-                            className="merchant-timeframe-active inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[9px] font-bold shadow-sm transition"
-                            title="Click to extend timeframe selector"
-                            aria-expanded={false}
-                        >
-                            <span>{selectedOption.label}</span>
-                            <ChevronDown className="h-2.5 w-2.5" />
-                        </motion.button>
-                    ) : (
-                        <motion.div
-                            key="extended"
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            transition={{ duration: 0.12 }}
-                            className="inline-flex items-center gap-0.5"
-                        >
-                            {RANGE_OPTIONS.map((option) => {
-                                const isSelected = selectedRange === option.id;
-                                return (
-                                    <button
-                                        key={option.id}
-                                        type="button"
-                                        aria-pressed={isSelected ? "true" : "false"}
-                                        onClick={() => {
-                                            onSelectRange(option.id);
-                                            setExpanded(false);
-                                        }}
-                                        className={`rounded-full px-1.5 py-0.5 text-[8.5px] font-bold uppercase tracking-wider transition ${
-                                            isSelected
-                                                ? "merchant-timeframe-active"
-                                                : "merchant-timeframe-idle"
-                                        }`}
-                                    >{option.label}</button>
-                                );
-                            })}
-                        </motion.div>
-                    )}
-                </AnimatePresence>
+            <div className="merchant-timeframe-track inline-flex items-center rounded-full p-0.5 transition-colors">
+                {!expanded ? (
+                    <button
+                        type="button"
+                        onClick={() => setExpanded(true)}
+                        className="merchant-timeframe-active inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[9px] font-bold shadow-sm transition-colors"
+                        title="Click to extend timeframe selector"
+                        aria-expanded={false}
+                    >
+                        <span>{selectedOption.label}</span>
+                        <ChevronDown className="h-2.5 w-2.5" />
+                    </button>
+                ) : (
+                    <div className="inline-flex items-center gap-0.5">
+                        {RANGE_OPTIONS.map((option) => {
+                            const isSelected = selectedRange === option.id;
+                            return (
+                                <button
+                                    key={option.id}
+                                    type="button"
+                                    aria-pressed={isSelected ? "true" : "false"}
+                                    onClick={() => {
+                                        onSelectRange(option.id);
+                                        setExpanded(false);
+                                    }}
+                                    className={`rounded-full px-1.5 py-0.5 text-[8.5px] font-bold uppercase tracking-wider transition-colors ${
+                                        isSelected
+                                            ? "merchant-timeframe-active"
+                                            : "merchant-timeframe-idle"
+                                    }`}
+                                >{option.label}</button>
+                            );
+                        })}
+                    </div>
+                )}
                 {/* Accessible hidden group for testing & assistive tech */}
                 <div className="sr-only" aria-hidden="true">
                     {RANGE_OPTIONS.map((option) => (
@@ -127,7 +109,7 @@ function RetractableTimeframePicker({
                         >{option.label}</button>
                     ))}
                 </div>
-            </motion.div>
+            </div>
         </div>
     );
 }
@@ -164,7 +146,7 @@ function OverviewCard({
 }) {
     return (
         <section
-            className={`rounded-[28px] p-5 sm:p-6 shadow-sm transition-all bg-[#D4E3E8] text-[#082824] border border-black/5 ${className}`}
+            className={`rounded-[28px] p-5 sm:p-6 shadow-sm transition-all bg-[#FFFFF0] dark:bg-[#1f2023] text-[#082824] dark:text-white border border-black/10 dark:border-white/10 ${className}`}
         >
             {children}
         </section>
@@ -390,7 +372,7 @@ export default function MerchantOverview({
                         <button
                             onClick={onWithdraw}
                             disabled={walletBalance <= 0}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#A3C8D9] border border-[#2775CA]/30 hover:bg-[#92bbce] px-6 py-2 text-xs font-bold text-[#082824] transition disabled:opacity-40 shadow-sm"
+                            className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#8AB4DB] hover:bg-[#7aa7d0] dark:bg-white/10 dark:text-white dark:hover:bg-white/20 border border-black/10 dark:border-white/15 px-6 py-2 text-xs font-bold text-[#082824] transition disabled:opacity-40 shadow-sm"
                         >
                             Withdraw
                         </button>
@@ -435,7 +417,7 @@ export default function MerchantOverview({
                         <button
                             onClick={onWithdraw}
                             disabled={vaultBalance <= 0}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#A3C8D9] border border-[#2775CA]/30 hover:bg-[#92bbce] px-6 py-2 text-xs font-bold text-[#082824] transition disabled:opacity-40 shadow-sm"
+                            className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#8AB4DB] hover:bg-[#7aa7d0] dark:bg-white/10 dark:text-white dark:hover:bg-white/20 border border-black/10 dark:border-white/15 px-6 py-2 text-xs font-bold text-[#082824] transition disabled:opacity-40 shadow-sm"
                         >
                             Claim
                         </button>

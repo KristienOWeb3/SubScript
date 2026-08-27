@@ -1032,7 +1032,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
 
                                                 <button
                                                     onClick={() => setShowCreateForm((prev) => !prev)}
-                                                    className="px-6 py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/80 text-black rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-[0_0_20px_rgba(0,210,180,0.15)] font-sans"
+                                                    className="px-6 py-3 bg-[#000000] text-white hover:bg-black/85 dark:bg-white dark:text-black dark:hover:bg-zinc-200 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-md font-sans"
                                                 >
                                                     {showCreateForm ? <Plus size={16} className="rotate-45 transition-transform duration-200" /> : <Plus size={16} />}
                                                     {showCreateForm ? "Cancel" : "New Campaign"}
@@ -1220,15 +1220,14 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                         ? "Permit2 Signed"
                                                                         : "Sign Permit2 Approval"}
                                                                 </button>
-
                                                                 <button
                                                                     type="button"
                                                                     onClick={handleCreateCampaign}
                                                                     disabled={isSubmitting || !permit2Sig}
-                                                                    className="px-6 py-2.5 bg-[#00d2b4] hover:bg-[#00d2b4]/80 disabled:opacity-50 disabled:cursor-not-allowed text-black text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-2"
+                                                                    className="px-6 py-2.5 bg-[#000000] text-white hover:bg-black/85 dark:bg-white dark:text-black dark:hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 shadow-sm"
                                                                 >
                                                                     {isSubmitting ? (
-                                                                        <Loader2 size={12} className="animate-spin text-black" />
+                                                                        <Loader2 size={12} className="animate-spin" />
                                                                     ) : (
                                                                         <CheckCircle size={12} />
                                                                     )}
@@ -1248,19 +1247,10 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                             key={`skel-${n}`}
                                                             className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl relative overflow-hidden"
                                                         >
-                                                            <div className="flex justify-between items-start gap-4">
-                                                                <div className="flex-1 space-y-3">
-                                                                    <Skeleton className="h-5 w-48" />
-                                                                    <div className="flex gap-6">
-                                                                        <Skeleton className="h-4 w-24" />
-                                                                        <Skeleton className="h-4 w-32" />
-                                                                        <Skeleton className="h-4 w-20" />
-                                                                    </div>
-                                                                </div>
-                                                                <div className="flex gap-2">
-                                                                    <Skeleton className="h-9 w-20" />
-                                                                    <Skeleton className="h-9 w-9" />
-                                                                </div>
+                                                            <div className="h-6 w-48 bg-white/10 rounded-lg animate-pulse mb-4" />
+                                                            <div className="space-y-2">
+                                                                <div className="h-4 w-full bg-white/5 rounded animate-pulse" />
+                                                                <div className="h-4 w-3/4 bg-white/5 rounded animate-pulse" />
                                                             </div>
                                                         </div>
                                                     ))}
@@ -1284,9 +1274,9 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                 </div>
                                             )}
 
-                                            {/* Empty display */}
+                                            {/* Empty State */}
                                             {!pageIsLoading && !loadError && campaigns.length === 0 && (
-                                                <div className="liquid-glass border border-white/5 rounded-3xl p-10 text-center max-w-lg mx-auto space-y-6 shadow-2xl relative overflow-hidden">
+                                                <div className="liquid-glass border border-white/5 rounded-3xl p-12 text-center space-y-6 max-w-lg mx-auto bg-black/40">
                                                     <Calendar size={40} className="text-white/20 mx-auto" />
                                                     <div className="space-y-2">
                                                         <h3 className="text-sm font-bold text-white uppercase tracking-wider">No Payroll Campaigns</h3>
@@ -1297,7 +1287,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                     {!showCreateForm && (
                                                         <button
                                                             onClick={() => setShowCreateForm(true)}
-                                                            className="px-6 py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/80 text-black rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-[0_0_20px_rgba(0,210,180,0.15)] mx-auto font-sans"
+                                                            className="px-6 py-3 bg-[#000000] text-white hover:bg-black/85 dark:bg-white dark:text-black dark:hover:bg-zinc-200 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-md mx-auto font-sans"
                                                         >
                                                             <Plus size={16} />
                                                             Create Campaign

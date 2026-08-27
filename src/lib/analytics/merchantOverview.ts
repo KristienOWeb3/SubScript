@@ -342,7 +342,7 @@ export function rankPlanOverview(
     if (unassignedCount > 0) {
         result.push({
             id: "legacy_direct",
-            name: "Direct & Custom Subscriptions",
+            name: "API Plans",
             activeSubscriberCount: unassignedCount,
         });
     }
