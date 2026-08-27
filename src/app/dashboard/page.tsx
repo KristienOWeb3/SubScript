@@ -43,6 +43,7 @@ import {
     ShieldCheck, Save, SquaresFour, MessageSquare, HelpCircle, Send, Terminal, Bell, Search, ChevronLeft, ArrowLeft
 } from "@/components/icons";
 import { useTheme } from "@/hooks/useTheme";
+import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 import { QRCode } from "react-qrcode-logo";
 import type { MerchantAnalyticsSummary, MerchantSubscriptionDetail } from "@/lib/analytics/merchantSubscriptions";
 import { PayrollContent } from "@/app/dashboard/payroll/PayrollContent";
@@ -727,6 +728,7 @@ export default function DashboardPage() {
         }
     };
     const [subTab, setSubTab] = useState<"subscriptions" | "one-time" | "commit">("subscriptions");
+    const paymentSubTabsSwipe = useSwipeTabs(["subscriptions", "one-time", "commit"] as const, subTab, setSubTab);
     const [vaults, setVaults] = useState<any[]>([]);
     const [isVaultsLoading, setIsVaultsLoading] = useState(false);
     const [claimableAmount, setClaimableAmount] = useState("0");
@@ -4552,7 +4554,7 @@ Please complete the following implementation tasks:
  
              case "payment-links":
                 return (
-                    <div className="space-y-6">
+                    <div className="space-y-6" {...paymentSubTabsSwipe}>
                         <motion.div
                             key={subTab}
                             initial={{ opacity: 0, y: 6 }}
@@ -5305,7 +5307,7 @@ Please complete the following implementation tasks:
                                             className={`px-6 py-2.5 border border-black/15 bg-white rounded-full text-xs sm:text-sm font-bold text-[#082824] hover:bg-black/5 transition-all flex items-center gap-2 shadow-sm ${isRolling ? "opacity-50" : ""}`}
                                         >
                                             {isRolling ? <RefreshCw className="w-4 h-4 animate-spin text-black" /> : <RotateCw className="w-4 h-4 text-black" />}
-                                            Roll Credentials
+                                            Roll
                                         </button>
                                     </div>
                                 </div>
