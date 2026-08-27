@@ -3518,7 +3518,11 @@ export default function UserDashboard() {
         )}
 
         {/* The wireframe's 14px top slit + 28px inner radius, with a refined translucent surface. */}
-        <div className={`user-dashboard-content relative z-10 min-w-0 flex-1 bg-[#FFFFF0] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[20px] md:border md:border-black/10 ${isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : "h-[100dvh] overflow-y-auto overscroll-y-contain md:h-auto md:overflow-y-auto"}`}>
+        <div className={`user-dashboard-content relative z-10 min-w-0 flex-1 bg-[#FFFFF0] md:mt-[14px] md:rounded-tl-[20px] md:border md:border-black/10 flex flex-col ${
+          activeTab === "inbox" || isActiveMobileDm
+            ? "h-[100dvh] md:h-[calc(100vh-14px)] min-h-0 overflow-hidden"
+            : "h-[100dvh] md:h-[calc(100vh-14px)] overflow-y-auto overscroll-y-contain md:overflow-y-auto"
+        }`}>
           <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-0 z-30 h-32 bg-[#FFFFF0]/90 backdrop-blur-3xl saturate-150 [mask-image:linear-gradient(to_bottom,black_0%,black_35%,transparent_100%)] md:hidden" />
           {/* Mobile headers (only shown on small screens) */}
           {isMobile && (
@@ -3553,10 +3557,10 @@ export default function UserDashboard() {
           )}
 
       {/* Main Grid View Container */}
-      <main className={`mx-auto max-w-7xl px-5 lg:px-8 pt-24 lg:pt-8 lg:pb-12 ${
-        isActiveMobileDm
-          ? "h-full overflow-hidden pb-0"
-          : "pb-[calc(8rem+env(safe-area-inset-bottom))]"
+      <main className={`w-full flex flex-col ${
+        activeTab === "inbox"
+          ? "flex-1 h-full min-h-0 max-w-none p-3 lg:p-6 overflow-hidden"
+          : "mx-auto max-w-7xl px-5 lg:px-8 pt-24 lg:pt-8 lg:pb-12 " + (isActiveMobileDm ? "h-full overflow-hidden pb-0" : "pb-[calc(8rem+env(safe-area-inset-bottom))]")
       }`}>
         {/* Title Header (Desktop only — hidden on inbox so the chat frame fills the viewport) */}
         {!isMobile && activeTab !== "inbox" && (
@@ -3572,12 +3576,16 @@ export default function UserDashboard() {
           </div>
         )}
 
-        <div className={`grid grid-cols-1 gap-8 items-start ${
-          isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : ""
+        <div className={`grid grid-cols-1 items-start ${
+          activeTab === "inbox" || isActiveMobileDm
+            ? "h-full min-h-0 flex-1 flex flex-col overflow-hidden gap-0"
+            : "gap-8"
         }`}>
           {/* Right main view content */}
           <div className={`col-span-1 ${
-            isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : "min-h-[500px]"
+            activeTab === "inbox" || isActiveMobileDm
+              ? "h-full min-h-0 flex-1 flex flex-col overflow-hidden"
+              : "min-h-[500px]"
           }`}>
             {/* Keyed enter-only animation — deliberately NO AnimatePresence/exit here. Gating the
                 incoming tab on the outgoing tab's exit spring (mode="wait") dropped the presence
@@ -3588,7 +3596,7 @@ export default function UserDashboard() {
               initial={{ opacity: 0, y: 16, filter: "blur(1.5px)" }}
               animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
               transition={{ type: "spring", stiffness: 450, damping: 32 }}
-              className={isActiveMobileDm ? "h-full min-h-0" : "min-h-0"}
+              className={activeTab === "inbox" || isActiveMobileDm ? "h-full min-h-0 flex-1 flex flex-col overflow-hidden" : "min-h-0"}
             >
             {activeTab === "home" && (
               /* Wireframe layout: a 46fr/54fr two-column grid (left stack + tall panel) with a
@@ -4035,7 +4043,7 @@ export default function UserDashboard() {
 
             {activeTab === "inbox" && (
               <section
-                className={`mx-auto flex w-full max-w-[430px] min-h-0 flex-col gap-5 md:h-[calc(100dvh-104px)] md:max-w-none md:flex-row ${
+                className={`mx-auto flex w-full max-w-[430px] min-h-0 flex-1 flex-col gap-5 md:h-full md:max-w-none md:flex-row overflow-hidden ${
                   isActiveMobileDm ? "h-full overflow-hidden" : ""
                 }`}
               >
@@ -4180,9 +4188,9 @@ export default function UserDashboard() {
                   </div>
                 ) : (
                   /* Desktop Split Multi-Column DM Layout */
-                  <div className="flex flex-1 flex-row gap-5 h-full overflow-hidden items-stretch">
+                  <div className="flex flex-1 flex-row gap-5 h-full min-h-0 overflow-hidden items-stretch w-full">
                     {/* List of opened DMs (middle column in blueprint) */}
-                    <div className="w-[280px] lg:w-[340px] border-r border-white/5 pr-4 lg:pr-5 flex flex-col overflow-y-auto will-change-transform translate-z-0 space-y-4 shrink-0">
+                    <div className="w-[280px] lg:w-[340px] border-r border-black/5 dark:border-white/5 pr-4 lg:pr-5 flex flex-col overflow-y-auto will-change-transform translate-z-0 space-y-4 shrink-0">
                       <DmThreadSelect
                         threads={dmThreads}
                         onSelect={(peerAddress) => setSelectedDmPeer(peerAddress)}
@@ -4195,7 +4203,7 @@ export default function UserDashboard() {
                     </div>
 
                     {/* Active thread message bubble display (right column in blueprint) */}
-                    <div className="flex-1 flex flex-col overflow-hidden rounded-[28px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 min-h-0 justify-between shadow-sm">
+                    <div className="flex-1 flex flex-col overflow-hidden liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-6 min-h-0 justify-between">
                       <AnimatePresence mode="wait">
                         {selectedDmPeer ? (
                           <motion.div
@@ -4209,13 +4217,13 @@ export default function UserDashboard() {
                             {/* Desktop Chat Pane Header */}
                             <div
                               data-testid="desktop-dm-header"
-                              className="sticky top-0 z-20 flex shrink-0 items-center justify-between border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] px-4 py-3 rounded-2xl shadow-sm mb-3"
+                              className="sticky top-0 z-20 flex shrink-0 items-center justify-between border border-white/10 bg-black/40 px-4 py-3 rounded-2xl backdrop-blur-xl shadow-xl mb-3"
                             >
                               <div className="flex items-center gap-3">
                                 <Avatar profilePic={activeThread?.peerProfilePic || null} name={activeThreadLabel} />
                                 <div>
                                   <div className="flex items-center gap-1.5">
-                                    <h4 className="text-sm font-bold uppercase tracking-wider text-[#082824] dark:text-white">
+                                    <h4 className="text-sm font-black uppercase tracking-wider text-white">
                                       {activeThreadLabel}
                                     </h4>
                                     {isActiveDmMerchant && (
@@ -4245,7 +4253,7 @@ export default function UserDashboard() {
                                 <button
                                   type="button"
                                   onClick={() => setSelectedDmPeer(null)}
-                                  className="md:hidden p-2 text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-full transition-all shrink-0 animate-fade-in"
+                                  className="md:hidden p-2 text-white/60 hover:text-white bg-white/[0.02] border border-white/5 rounded-full transition-all shrink-0 animate-fade-in"
                                 >
                                   <ArrowLeft className="h-4 w-4" />
                                 </button>
@@ -4254,7 +4262,7 @@ export default function UserDashboard() {
                                   <button
                                     type="button"
                                     onClick={() => selectedDmPeer && handleUnblockPeer(selectedDmPeer)}
-                                    className="px-3.5 py-1.5 bg-black/10 dark:bg-white/10 border border-black/20 dark:border-white/20 text-black dark:text-white font-bold text-[10px] rounded-full hover:bg-black/20 dark:hover:bg-white/20 transition active:scale-95 shrink-0"
+                                    className="px-3.5 py-1.5 bg-white/10 border border-white/20 text-white font-bold text-[10px] rounded-full hover:bg-white/20 transition active:scale-95 shrink-0"
                                   >
                                     Unblock
                                   </button>
@@ -4264,7 +4272,7 @@ export default function UserDashboard() {
                                       <button
                                         type="button"
                                         onClick={() => selectedDmPeer && handleBlockPeer(selectedDmPeer)}
-                                        className="p-2 text-black/40 dark:text-white/40 hover:text-rose-600 dark:hover:text-rose-400 bg-black/5 dark:bg-white/5 hover:bg-rose-500/10 border border-black/10 dark:border-white/10 rounded-full transition-all shrink-0"
+                                        className="p-2 text-white/40 hover:text-rose-400 bg-white/[0.02] hover:bg-rose-500/10 border border-white/5 rounded-full transition-all shrink-0"
                                         title="Block user"
                                       >
                                         <UserX className="h-4 w-4" />
@@ -4358,10 +4366,10 @@ export default function UserDashboard() {
                             {/* Bottom Action Footer for Desktop */}
                             <div
                               data-testid="desktop-dm-action-footer"
-                              className="sticky bottom-0 z-20 shrink-0 rounded-2xl border border-black/10 bg-[#FFFFF0] p-3 backdrop-blur-xl shadow-md mt-3 text-black"
+                              className="sticky bottom-0 z-20 shrink-0 rounded-2xl border border-white/10 bg-black/40 p-3 backdrop-blur-xl shadow-xl mt-3 text-white"
                             >
                               {isCurrentPeerBlocked ? (
-                                <p className="text-center text-[11px] text-black/50 py-2">
+                                <p className="text-center text-[11px] text-white/40 py-2">
                                   Messaging is disabled for blocked contacts.
                                 </p>
                               ) : isActiveDmMerchant ? (
@@ -4410,11 +4418,11 @@ export default function UserDashboard() {
                             initial={{ opacity: 0, scale: 0.98, filter: "blur(1.5px)" }}
                             animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
                             exit={{ opacity: 0, scale: 0.98, filter: "blur(1.5px)" }}
-                            className="flex flex-col items-center justify-center h-full text-center py-20 text-black/50 dark:text-white/40 space-y-3"
+                            className="flex flex-col items-center justify-center h-full text-center py-20 text-white/40 space-y-3"
                           >
-                            <MessageSquare className="w-12 h-12 text-black/20 dark:text-white/15" />
-                            <h3 className="text-sm font-bold uppercase tracking-wider text-[#082824] dark:text-white">Select a Chat to continue</h3>
-                            <p className="text-xs max-w-xs leading-relaxed text-black/60 dark:text-white/45">Choose a merchant or user thread from the list on the left to view receipts, approve payment requests, or view transaction status.</p>
+                            <MessageSquare className="w-12 h-12 text-white/15 animate-pulse" />
+                            <h3 className="text-sm font-black uppercase tracking-wider text-white/60">Select a Chat to continue</h3>
+                            <p className="text-xs max-w-xs leading-relaxed text-white/45">Choose a merchant or user thread from the list on the left to view receipts, approve payment requests, or view transaction status.</p>
                           </motion.div>
                         )}
                       </AnimatePresence>

@@ -1326,12 +1326,17 @@ body {
 
    Desktop only. Mobile is already a single column at a comfortable scale, and shrinking tap
    targets on a phone would be a straight regression. */
-.merchant-dashboard-workspace > main,
-.user-dashboard-content > main,
-.user-dashboard-redesign > main,
-.admin-workspace,
-.admin-topography > main {
-  zoom: 0.8;
+@media (min-width: 1024px) {
+  .merchant-dashboard-workspace > main,
+  .user-dashboard-content > main,
+  .user-dashboard-redesign > main,
+  .admin-workspace,
+  .admin-topography > main {
+    zoom: 0.8;
+    width: 125% !important;
+    max-width: 125% !important;
+    min-height: 125% !important;
+  }
 }
 
 /* ---------------------------------------------------------------------------
