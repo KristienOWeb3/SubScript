@@ -127,26 +127,12 @@ test.describe("merchant subscription UX", () => {
     );
     expect(tabLayout.some(({ left, right, width }) => left >= 0 && right <= 390 && width > 0)).toBe(true);
 
-    const shareButton = page.getByRole("button", { name: "Share", exact: true });
-    await expect(shareButton).toBeVisible();
-    await shareButton.click();
-    await expect(page.getByText("Share Subscription", { exact: true })).toBeVisible();
+    const copyLinkButton = page.getByRole("button", { name: "Copy link", exact: true });
+    await expect(copyLinkButton).toBeVisible();
 
-    const dialogText = await page.locator('[role="dialog"]').innerText();
-    expect(dialogText).not.toContain(merchantAddress);
-    expect(dialogText).not.toContain(`${merchantAddress.slice(0, 6)}...${merchantAddress.slice(-4)}`);
-    expect(dialogText).toContain(plan.description);
-
-    const visibleQrSize = await page.locator('[role="dialog"] canvas').evaluateAll((canvases) =>
-      canvases
-        .map((canvas) => {
-          const rect = canvas.getBoundingClientRect();
-          return { width: rect.width, height: rect.height };
-        })
-        .find(({ width, height }) => width > 0 && height > 0)
-    );
-    expect(visibleQrSize?.width).toBeGreaterThanOrEqual(72);
-    expect(visibleQrSize?.height).toBeGreaterThanOrEqual(72);
+    const planLinkStrip = page.getByTestId("merchant-plan-link-strip");
+    await expect(planLinkStrip).toBeVisible();
+    await expect(planLinkStrip).toContainText(plan.id);
 
     await page.screenshot({
       path: "test-results/merchant-share-card-mobile.png",

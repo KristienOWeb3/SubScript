@@ -36,7 +36,7 @@ function SignInContent() {
   /* Hides the web3 button when an operator pauses external wallets. Cosmetic only —
      /api/auth/verify-signature refuses the flow regardless. */
   const { externalWalletEnabled, googleSigninEnabled, loaded: platformFlagsLoaded } = usePlatformFlags();
-  const googleAvailable = CIRCLE_GOOGLE_ENABLED && platformFlagsLoaded && googleSigninEnabled;
+  const googleAvailable = CIRCLE_GOOGLE_ENABLED && (!platformFlagsLoaded || googleSigninEnabled !== false);
 
   const [authMethod, setAuthMethod] = useState<"select" | "email">("select");
   const [email, setEmail] = useState(initialEmail);

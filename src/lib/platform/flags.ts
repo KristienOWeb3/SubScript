@@ -111,15 +111,15 @@ export async function getPlatformFlags(): Promise<PlatformFlags> {
  * does not.
  */
 export async function isGoogleSigninEnabled(): Promise<boolean> {
-    if (process.env.NEXT_PUBLIC_CIRCLE_GOOGLE_ENABLED !== "true") return false;
+    if (process.env.NEXT_PUBLIC_CIRCLE_GOOGLE_ENABLED === "false") return false;
     try {
         const row = await prisma.platformFlag.findUnique({
             where: { id: 1 },
             select: { googleSigninEnabled: true },
         });
-        return row?.googleSigninEnabled ?? false;
+        return row?.googleSigninEnabled ?? true;
     } catch {
-        return false;
+        return true;
     }
 }
 

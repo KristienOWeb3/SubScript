@@ -17,7 +17,7 @@ export async function GET() {
     return NextResponse.json(
         {
             googleSigninEnabled:
-                flags.googleSigninEnabled && process.env.NEXT_PUBLIC_CIRCLE_GOOGLE_ENABLED === "true",
+                flags.googleSigninEnabled !== false && process.env.NEXT_PUBLIC_CIRCLE_GOOGLE_ENABLED !== "false",
             externalWalletEnabled: flags.externalWalletEnabled,
             merchantInviteOnlyEnabled: flags.merchantInviteOnlyEnabled,
         },

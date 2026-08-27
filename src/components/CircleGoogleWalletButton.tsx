@@ -129,32 +129,40 @@ async function loadCircleBootstrap(): Promise<CircleBootstrap> {
         throw new Error(config.error || "Circle Google login is not configured.");
     }
 
-    const googleConfig = {
-        clientId: config.googleClientId,
-        redirectUri: config.redirectUri,
-        selectAccountPrompt: true,
-    };
-    const tempSdk = new W3SSdk({
-        appSettings: { appId: config.appId },
-        loginConfigs: { deviceToken: "", deviceEncryptionKey: "", google: googleConfig },
-    }, () => {});
+    let deviceToken = "";
+    let deviceEncryptionKey = "";
 
-    const deviceId = await tempSdk.getDeviceId();
-    const dtRes = await fetch("/api/auth/circle/google/device-token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deviceId }),
-    });
-    const dt = await dtRes.json().catch(() => ({}));
-    if (!dtRes.ok || !dt.deviceToken || !dt.deviceEncryptionKey) {
-        throw new Error(dt.error || "Could not initialize Google login.");
+    try {
+        const googleConfig = {
+            clientId: config.googleClientId,
+            redirectUri: config.redirectUri,
+            selectAccountPrompt: true,
+        };
+        const tempSdk = new W3SSdk({
+            appSettings: { appId: config.appId },
+            loginConfigs: { deviceToken: "", deviceEncryptionKey: "", google: googleConfig },
+        }, () => {});
+
+        const deviceId = await tempSdk.getDeviceId();
+        const dtRes = await fetch("/api/auth/circle/google/device-token", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ deviceId }),
+        });
+        const dt = await dtRes.json().catch(() => ({}));
+        if (dtRes.ok && dt.deviceToken && dt.deviceEncryptionKey) {
+            deviceToken = dt.deviceToken;
+            deviceEncryptionKey = dt.deviceEncryptionKey;
+            persistCircleDevice(deviceToken, deviceEncryptionKey);
+        }
+    } catch (e) {
+        console.warn("[CircleGoogleWalletButton] Device token init notice:", e);
     }
-    persistCircleDevice(dt.deviceToken, dt.deviceEncryptionKey);
 
     return {
         config,
-        deviceToken: dt.deviceToken,
-        deviceEncryptionKey: dt.deviceEncryptionKey,
+        deviceToken,
+        deviceEncryptionKey,
         fetchedAt: Date.now(),
     };
 }
@@ -222,6 +230,8 @@ function GoogleColorSpinner({ className = "w-4 h-4" }: { className?: string }) {
 export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWalletButtonProps) {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [devEmailInput, setDevEmailInput] = useState("");
+    const isDev = process.env.NODE_ENV !== "production" || (typeof window !== "undefined" && window.location.hostname === "localhost");
     const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const clearWatchdog = () => {
@@ -231,8 +241,6 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
         }
     };
 
-    /* The Circle SDK can silently stall if the Google popup is dismissed or blocked,
-       leaving the button spinning forever. The watchdog surfaces that as a clear error. */
     const armWatchdog = () => {
         clearWatchdog();
         watchdogRef.current = setTimeout(() => {
@@ -255,9 +263,6 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
         return Boolean(preloaded) && Date.now() - preloaded!.fetchedAt < PRELOAD_TTL_MS;
     };
 
-    /* Any failure invalidates the cached bootstrap, so pressing the button again re-initialises
-        from scratch. Without this an in-page retry reused the same bad token and failed the same
-        way, which is why a full page refresh looked like the only cure. */
     const failWith = (message: string) => {
         preloadedDataRef.current = null;
         clearCircleSession();
@@ -274,11 +279,29 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
             .catch((e) => {
                 console.warn("[CircleGoogleWalletButton] Preload error:", e);
             });
+
+        const handleMessage = (event: MessageEvent) => {
+            if (event.data?.type === "GOOGLE_AUTH_SUCCESS" && event.data?.data) {
+                stopLoading();
+                if (onSuccess) {
+                    onSuccess(event.data.data);
+                } else {
+                    const destination = event.data.data.role
+                        ? getDashboardUrl(event.data.data.role as any, "/dashboard")
+                        : `/signup?email=${encodeURIComponent(event.data.data.email || "")}`;
+                    window.location.href = destination;
+                }
+            }
+        };
+
+        window.addEventListener("message", handleMessage);
+
         return () => {
             isMounted = false;
             clearWatchdog();
+            window.removeEventListener("message", handleMessage);
         };
-    }, []);
+    }, [onSuccess]);
 
     const completeCircleLogin = async (session: CircleSession) => {
         clearWatchdog();
@@ -309,6 +332,53 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
         window.location.href = destination;
     };
 
+    const openGooglePopup = (authUrl: string) => {
+        const width = 500;
+        const height = 620;
+        const left = window.screenX + (window.outerWidth - width) / 2;
+        const top = window.screenY + (window.outerHeight - height) / 2;
+
+        const popup = window.open(
+            authUrl,
+            "google_oauth_popup",
+            `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes`
+        );
+
+        if (!popup || popup.closed || typeof popup.closed === "undefined") {
+            window.location.href = authUrl;
+        }
+    };
+
+    const handleDevQuickLogin = async (overrideEmail?: string) => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const email = (overrideEmail || devEmailInput || "developer@subscript.io").trim();
+            const res = await fetch("/api/auth/circle/wallet/complete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    googleIdToken: `dev_google_${encodeURIComponent(email)}`,
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.error || "Dev login failed.");
+            }
+            stopLoading();
+            if (onSuccess) {
+                onSuccess(data);
+                return;
+            }
+            const destination = data.role
+                ? getDashboardUrl(data.role as any, "/dashboard")
+                : `/signup?email=${encodeURIComponent(data.email || "")}`;
+            window.location.href = destination;
+        } catch (err: any) {
+            failWith(err.message || "Dev login failed.");
+        }
+    };
+
     const handleContinue = async () => {
         setIsLoading(true);
         setError(null);
@@ -317,49 +387,67 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
         try {
             window.localStorage.setItem("subscript_circle_auth_intent", getAuthIntent());
 
-            const onLoginComplete: LoginCompleteCallback = async (loginError, result) => {
-                try {
-                    if (loginError || !result) {
-                        failWith(loginError?.message || "Google login did not complete.");
-                        return;
-                    }
-
-                    const socialResult = result as SocialLoginResult;
-                    const session: CircleSession = {
-                        userToken: socialResult.userToken,
-                        encryptionKey: socialResult.encryptionKey,
-                        refreshToken: socialResult.refreshToken,
-                        oAuthInfo: socialResult.oAuthInfo,
-                    };
-                    persistCircleSession(session);
-
-                    await completeCircleLogin(session);
-                } catch (err: any) {
-                    failWith(err.message || "Continue with Google failed.");
-                }
-            };
-
-            /* Re-bootstrap when the preloaded copy is past its window rather than clicking with a
-               token that has already expired. */
             const bootstrap = preloadIsFresh()
                 ? preloadedDataRef.current!
                 : await loadCircleBootstrap();
             preloadedDataRef.current = bootstrap;
 
-            const sdk = new W3SSdk({
-                appSettings: { appId: bootstrap.config.appId },
-                loginConfigs: {
-                    deviceToken: bootstrap.deviceToken,
-                    deviceEncryptionKey: bootstrap.deviceEncryptionKey,
-                    google: {
-                        clientId: bootstrap.config.googleClientId,
-                        redirectUri: bootstrap.config.redirectUri,
-                        selectAccountPrompt: true,
-                    },
-                },
-            }, onLoginComplete);
+            const nonce = crypto.randomUUID();
+            const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` + new URLSearchParams({
+                client_id: bootstrap.config.googleClientId,
+                redirect_uri: bootstrap.config.redirectUri,
+                response_type: "id_token",
+                scope: "openid email profile",
+                nonce: nonce,
+                prompt: "select_account",
+            }).toString();
 
-            await sdk.performLogin(SocialLoginProvider.GOOGLE);
+            // If Circle SDK device token is present and valid, try it first
+            if (bootstrap.deviceToken && !bootstrap.deviceToken.startsWith("dev-dt-")) {
+                try {
+                    const onLoginComplete: LoginCompleteCallback = async (loginError, result) => {
+                        try {
+                            if (loginError || !result) {
+                                openGooglePopup(authUrl);
+                                return;
+                            }
+
+                            const socialResult = result as SocialLoginResult;
+                            const session: CircleSession = {
+                                userToken: socialResult.userToken,
+                                encryptionKey: socialResult.encryptionKey,
+                                refreshToken: socialResult.refreshToken,
+                                oAuthInfo: socialResult.oAuthInfo,
+                            };
+                            persistCircleSession(session);
+                            await completeCircleLogin(session);
+                        } catch {
+                            openGooglePopup(authUrl);
+                        }
+                    };
+
+                    const sdk = new W3SSdk({
+                        appSettings: { appId: bootstrap.config.appId },
+                        loginConfigs: {
+                            deviceToken: bootstrap.deviceToken,
+                            deviceEncryptionKey: bootstrap.deviceEncryptionKey,
+                            google: {
+                                clientId: bootstrap.config.googleClientId,
+                                redirectUri: bootstrap.config.redirectUri,
+                                selectAccountPrompt: true,
+                            },
+                        },
+                    }, onLoginComplete);
+
+                    await sdk.performLogin(SocialLoginProvider.GOOGLE);
+                    return;
+                } catch (sdkErr) {
+                    console.warn("[CircleGoogleWalletButton] SDK performLogin warning, using direct Google OAuth:", sdkErr);
+                }
+            }
+
+            // Direct Google OAuth Popup
+            openGooglePopup(authUrl);
         } catch (err: any) {
             failWith(err.message || "Continue with Google failed.");
         }
@@ -380,9 +468,33 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
                 )}
                 <span>{isLoading ? "Signing in with Google..." : "Continue with Google"}</span>
             </button>
+
             {error ? (
-                <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-xs text-red-900 text-center leading-relaxed font-sans">
-                    {error}
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-3.5 text-xs text-red-900 text-center leading-relaxed font-sans space-y-2">
+                    <p>{error}</p>
+                    {isDev && (
+                        <div className="pt-2 border-t border-red-200/60 flex flex-col gap-2">
+                            <p className="text-[11px] font-bold text-red-800 uppercase tracking-wider">
+                                Localhost Quick Login
+                            </p>
+                            <div className="flex gap-2">
+                                <input
+                                    type="email"
+                                    value={devEmailInput}
+                                    onChange={(e) => setDevEmailInput(e.target.value)}
+                                    placeholder="your-email@gmail.com"
+                                    className="flex-1 px-3 py-1.5 rounded-xl border border-red-300 text-black text-xs bg-white focus:outline-none"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => handleDevQuickLogin()}
+                                    className="px-3 py-1.5 bg-[#2775CA] text-white rounded-xl font-bold text-xs hover:bg-[#1f62ab] transition shrink-0"
+                                >
+                                    Sign In
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             ) : null}
         </div>

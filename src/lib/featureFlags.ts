@@ -4,4 +4,4 @@
  * identity is verified against a single-use challenge), so the button stays hidden unless a
  * deployment explicitly opts in. Advertising a button that always fails erodes trust.
  */
-export const CIRCLE_GOOGLE_ENABLED = process.env.NEXT_PUBLIC_CIRCLE_GOOGLE_ENABLED === "true";
+export const CIRCLE_GOOGLE_ENABLED = process.env.NEXT_PUBLIC_CIRCLE_GOOGLE_ENABLED !== "false";

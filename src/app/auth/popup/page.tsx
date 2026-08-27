@@ -151,16 +151,16 @@ function PopupContent() {
             }
         };
 
-        const completeCircleLogin = async (session: CircleSession, googleIdToken: string | null) => {
+        const completeCircleLogin = async (session: CircleSession | null, googleIdToken: string | null) => {
             clearVerifyWatchdog();
             const completeRes = await fetch("/api/auth/circle/wallet/complete", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    circleAuth: {
+                    circleAuth: session ? {
                         userToken: session.userToken,
                         oAuthInfo: session.oAuthInfo,
-                    },
+                    } : undefined,
                     googleIdToken,
                 }),
             });
@@ -176,6 +176,14 @@ function PopupContent() {
                 ? getDashboardUrl(completed.role as any, "/dashboard")
                 : `/signup?email=${encodeURIComponent(completed.email || "")}`;
 
+            if (window.opener && !window.opener.closed) {
+                try {
+                    window.opener.postMessage({ type: "GOOGLE_AUTH_SUCCESS", data: completed }, window.location.origin);
+                    setTimeout(() => window.close(), 300);
+                    return;
+                } catch {}
+            }
+
             window.location.href = destination;
         };
 
@@ -188,71 +196,11 @@ function PopupContent() {
                 const hashParams = new URLSearchParams(window.location.hash.slice(1));
                 const googleIdToken = hashParams.get("id_token");
 
-                const configRes = await fetch("/api/auth/circle/google/config", { cache: "no-store" });
-                const config: CircleGoogleConfig & { error?: string } = await configRes.json();
-                if (!configRes.ok) {
-                    throw new Error(config.error || "Circle Google login is not configured.");
+                if (!googleIdToken) {
+                    throw new Error("No Google ID token was found in the callback. Please try again.");
                 }
 
-                const deviceToken = cookieString("circle_device_token");
-                const deviceEncryptionKey = cookieString("circle_device_encryption_key");
-                if (!deviceToken || !deviceEncryptionKey) {
-                    throw new Error("Your Google login session expired. Please try Continue with Google again.");
-                }
-
-                const onLoginComplete: LoginCompleteCallback = async (loginError, result) => {
-                    try {
-                        if (cancelled) return;
-                        clearVerifyWatchdog();
-
-                        if (loginError || !result) {
-                            clearCircleLoginState();
-                            setStep("error");
-                            setError(loginError?.message || "Google login did not complete.");
-                            return;
-                        }
-
-                        const socialResult = result as SocialLoginResult;
-                        const session: CircleSession = {
-                            userToken: socialResult.userToken,
-                            encryptionKey: socialResult.encryptionKey,
-                            refreshToken: socialResult.refreshToken,
-                            oAuthInfo: socialResult.oAuthInfo,
-                        };
-                        persistCircleSession(session);
-
-                        /* Google verifies the email; the account is a server-managed embedded wallet
-                           (same model as email/OTP, one account per email). Skip Circle's PIN wallet
-                           challenge — sdk.execute() was the step that threw "Error encrypting data"
-                           and created a separate account. */
-                        await completeCircleLogin(session, googleIdToken);
-                    } catch (err: any) {
-                        setStep("error");
-                        setError(err.message || "Continue with Google failed.");
-                    }
-                };
-
-                const loginConfigs: LoginConfigs = {
-                    deviceToken,
-                    deviceEncryptionKey,
-                    google: {
-                        clientId: config.googleClientId,
-                        redirectUri: config.redirectUri,
-                        selectAccountPrompt: true,
-                    },
-                };
-
-                verifyWatchdog = setTimeout(() => {
-                    if (cancelled) return;
-                    clearCircleLoginState();
-                    setStep("error");
-                    setError("Circle took too long to verify your Google account. Please try again.");
-                }, CIRCLE_VERIFY_TIMEOUT_MS);
-
-                const sdk = new W3SSdk({
-                    appSettings: { appId: config.appId },
-                    loginConfigs,
-                }, onLoginComplete);
+                await completeCircleLogin(null, googleIdToken);
             } catch (err: any) {
                 clearVerifyWatchdog();
                 setStep("error");
