@@ -4195,7 +4195,7 @@ export default function UserDashboard() {
                     </div>
 
                     {/* Active thread message bubble display (right column in blueprint) */}
-                    <div className="flex-1 flex flex-col overflow-hidden liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-6 min-h-0 justify-between">
+                    <div className="flex-1 flex flex-col overflow-hidden rounded-[28px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 min-h-0 justify-between shadow-sm">
                       <AnimatePresence mode="wait">
                         {selectedDmPeer ? (
                           <motion.div
@@ -4209,13 +4209,13 @@ export default function UserDashboard() {
                             {/* Desktop Chat Pane Header */}
                             <div
                               data-testid="desktop-dm-header"
-                              className="sticky top-0 z-20 flex shrink-0 items-center justify-between border border-white/10 bg-black/40 px-4 py-3 rounded-2xl backdrop-blur-xl shadow-xl mb-3"
+                              className="sticky top-0 z-20 flex shrink-0 items-center justify-between border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] px-4 py-3 rounded-2xl shadow-sm mb-3"
                             >
                               <div className="flex items-center gap-3">
                                 <Avatar profilePic={activeThread?.peerProfilePic || null} name={activeThreadLabel} />
                                 <div>
                                   <div className="flex items-center gap-1.5">
-                                    <h4 className="text-sm font-black uppercase tracking-wider text-white">
+                                    <h4 className="text-sm font-bold uppercase tracking-wider text-[#082824] dark:text-white">
                                       {activeThreadLabel}
                                     </h4>
                                     {isActiveDmMerchant && (
@@ -4245,7 +4245,7 @@ export default function UserDashboard() {
                                 <button
                                   type="button"
                                   onClick={() => setSelectedDmPeer(null)}
-                                  className="md:hidden p-2 text-white/60 hover:text-white bg-white/[0.02] border border-white/5 rounded-full transition-all shrink-0 animate-fade-in"
+                                  className="md:hidden p-2 text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-full transition-all shrink-0 animate-fade-in"
                                 >
                                   <ArrowLeft className="h-4 w-4" />
                                 </button>
@@ -4254,7 +4254,7 @@ export default function UserDashboard() {
                                   <button
                                     type="button"
                                     onClick={() => selectedDmPeer && handleUnblockPeer(selectedDmPeer)}
-                                    className="px-3.5 py-1.5 bg-white/10 border border-white/20 text-white font-bold text-[10px] rounded-full hover:bg-white/20 transition active:scale-95 shrink-0"
+                                    className="px-3.5 py-1.5 bg-black/10 dark:bg-white/10 border border-black/20 dark:border-white/20 text-black dark:text-white font-bold text-[10px] rounded-full hover:bg-black/20 dark:hover:bg-white/20 transition active:scale-95 shrink-0"
                                   >
                                     Unblock
                                   </button>
@@ -4264,7 +4264,7 @@ export default function UserDashboard() {
                                       <button
                                         type="button"
                                         onClick={() => selectedDmPeer && handleBlockPeer(selectedDmPeer)}
-                                        className="p-2 text-white/40 hover:text-rose-400 bg-white/[0.02] hover:bg-rose-500/10 border border-white/5 rounded-full transition-all shrink-0"
+                                        className="p-2 text-black/40 dark:text-white/40 hover:text-rose-600 dark:hover:text-rose-400 bg-black/5 dark:bg-white/5 hover:bg-rose-500/10 border border-black/10 dark:border-white/10 rounded-full transition-all shrink-0"
                                         title="Block user"
                                       >
                                         <UserX className="h-4 w-4" />
@@ -4410,11 +4410,11 @@ export default function UserDashboard() {
                             initial={{ opacity: 0, scale: 0.98, filter: "blur(1.5px)" }}
                             animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
                             exit={{ opacity: 0, scale: 0.98, filter: "blur(1.5px)" }}
-                            className="flex flex-col items-center justify-center h-full text-center py-20 text-white/40 space-y-3"
+                            className="flex flex-col items-center justify-center h-full text-center py-20 text-black/50 dark:text-white/40 space-y-3"
                           >
-                            <MessageSquare className="w-12 h-12 text-white/15 animate-pulse" />
-                            <h3 className="text-sm font-black uppercase tracking-wider text-white/60">Select a Chat to continue</h3>
-                            <p className="text-xs max-w-xs leading-relaxed text-white/45">Choose a merchant or user thread from the list on the left to view receipts, approve payment requests, or view transaction status.</p>
+                            <MessageSquare className="w-12 h-12 text-black/20 dark:text-white/15" />
+                            <h3 className="text-sm font-bold uppercase tracking-wider text-[#082824] dark:text-white">Select a Chat to continue</h3>
+                            <p className="text-xs max-w-xs leading-relaxed text-black/60 dark:text-white/45">Choose a merchant or user thread from the list on the left to view receipts, approve payment requests, or view transaction status.</p>
                           </motion.div>
                         )}
                       </AnimatePresence>
