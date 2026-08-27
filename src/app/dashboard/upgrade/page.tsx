@@ -523,9 +523,7 @@ export default function UpgradePage() {
     }
 
     return (
-        <div className="min-h-screen bg-[#0a0a0c] text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#d4a853]">
-            <AnimatedGradientBg variant="dashboard" />
-            
+        <div className="min-h-screen bg-[#FFFFF0] dark:bg-[#111111] text-[#082824] dark:text-white selection:bg-[#8AB4DB]/30 font-sans">
             <div className="relative z-10">
                 <DashboardHeader 
                     embeddedWallet={embeddedWallet}
@@ -538,109 +536,107 @@ export default function UpgradePage() {
                     onBackToOverview={() => router.push("/merchant")}
                 />
 
-                <main className="max-w-4xl mx-auto px-6 pt-28 pb-12">
+                <main className="max-w-4xl mx-auto px-6 pt-24 pb-16">
                     <div className="mb-8 flex items-center justify-between">
                         <Link 
                             href="/merchant"
-                            className="flex items-center gap-2 text-xs text-white/50 hover:text-white transition-all font-mono uppercase tracking-wider"
+                            className="flex items-center gap-2 text-xs font-bold text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white transition-all font-sans"
                         >
                             <ChevronLeft className="w-4 h-4" />
-                            Back to Control Center
+                            Back to Merchant Dashboard
                         </Link>
                     </div>
 
-                    <div className="text-center mb-12">
-                        <h1 className="text-4xl font-extrabold text-white uppercase tracking-tight mb-3">
-                            SubScript Premium <span className="font-serif italic lowercase font-normal text-[#d4a853]">subscription</span>
+                    <div className="text-center mb-10">
+                        <h1 className="text-3xl sm:text-4xl font-extrabold text-[#082824] dark:text-white tracking-tight mb-2">
+                            SubScript Premium
                         </h1>
-                        <p className="text-sm text-white/50 max-w-xl mx-auto leading-relaxed">
-                            Upgrade your SubScript merchant node to activate payout rerouting, priority keeper execution, and advanced automation.
+                        <p className="text-xs sm:text-sm text-black/60 dark:text-white/60 max-w-xl mx-auto leading-relaxed">
+                            Upgrade your SubScript merchant account to activate fund rerouting, priority keeper execution, and advanced developer capabilities.
                         </p>
                     </div>
 
                     {sessionAlert ? (
-                        <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
-                            <div className="p-4 rounded-3xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-300">
-                                <AlertTriangle className="w-10 h-10" />
+                        <div className="rounded-[28px] border border-amber-500/20 bg-amber-50/50 dark:bg-amber-950/20 p-6 sm:p-8 shadow-sm flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
+                            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300">
+                                <AlertTriangle className="w-8 h-8" />
                             </div>
                             <div className="space-y-2">
-                                <h2 className="text-lg font-bold text-white uppercase tracking-wider">Merchant Session Required</h2>
-                                <p className="text-xs text-white/60 max-w-md leading-relaxed">
+                                <h2 className="text-base font-bold text-amber-950 dark:text-amber-100 uppercase tracking-wider">Merchant Session Required</h2>
+                                <p className="text-xs text-amber-800 dark:text-amber-200/70 max-w-md leading-relaxed">
                                     {sessionAlert}
                                 </p>
                             </div>
                         </div>
                     ) : isAuthLoading ? (
                         <div className="max-w-2xl mx-auto space-y-6 animate-pulse py-8">
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-8 space-y-4 bg-black/40">
-                                <div className="h-6 w-48 rounded bg-white/15" />
-                                <div className="h-4 w-64 rounded bg-white/10" />
-                                <div className="h-28 rounded-2xl bg-white/5" />
+                            <div className="rounded-[28px] border border-black/10 dark:border-white/10 p-8 space-y-4 bg-white/60 dark:bg-white/5">
+                                <div className="h-6 w-48 rounded bg-black/10 dark:bg-white/15" />
+                                <div className="h-4 w-64 rounded bg-black/5 dark:bg-white/10" />
+                                <div className="h-28 rounded-2xl bg-black/5 dark:bg-white/5" />
                             </div>
                         </div>
                     ) : !isConnected ? (
-                        <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
-                            <div className="p-4 rounded-3xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-300">
-                                <AlertTriangle className="w-10 h-10" />
+                        <div className="rounded-[28px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 sm:p-8 shadow-sm flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
+                            <div className="p-4 rounded-2xl bg-black/5 dark:bg-white/10 text-[#082824] dark:text-white">
+                                <AlertTriangle className="w-8 h-8" />
                             </div>
                             <div className="space-y-2">
-                                <h2 className="text-lg font-bold text-white uppercase tracking-wider">Wallet Connection Required</h2>
-                                <p className="text-xs text-white/60 max-w-md leading-relaxed">
+                                <h2 className="text-lg font-bold text-[#082824] dark:text-white tracking-tight">Wallet Connection Required</h2>
+                                <p className="text-xs text-black/60 dark:text-white/60 max-w-md leading-relaxed">
                                     Sign in with your merchant email wallet or connect your merchant wallet to verify subscription status and initiate the secure USDC checkout contract call.
                                 </p>
                             </div>
                             <button
                                 onClick={handleConnect}
-                                className="px-8 py-3 bg-yellow-300 hover:bg-yellow-200 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-[0_0_20px_rgba(234,179,8,0.2)]"
+                                className="px-8 py-3 bg-[#000000] hover:bg-black/85 dark:bg-white dark:text-black text-white rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-sm"
                             >
                                 Connect Wallet
                             </button>
                         </div>
                     ) : isLoadingTier ? (
                         <div className="max-w-2xl mx-auto space-y-6 animate-pulse py-8">
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-8 space-y-4 bg-black/40">
-                                <div className="h-6 w-48 rounded bg-white/15" />
-                                <div className="h-4 w-64 rounded bg-white/10" />
-                                <div className="h-28 rounded-2xl bg-white/5" />
+                            <div className="rounded-[28px] border border-black/10 dark:border-white/10 p-8 space-y-4 bg-white/60 dark:bg-white/5">
+                                <div className="h-6 w-48 rounded bg-black/10 dark:bg-white/15" />
+                                <div className="h-4 w-64 rounded bg-black/5 dark:bg-white/10" />
+                                <div className="h-28 rounded-2xl bg-black/5 dark:bg-white/5" />
                             </div>
                         </div>
                     ) : isPremium ? (
                         /* Active Premium Status Panel */
                         <div className="max-w-2xl mx-auto space-y-6">
-                            <div className="liquid-glass border border-[#d4a853]/30 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden bg-gradient-to-b from-[#d4a853]/[0.03] to-transparent">
-                                <div className="absolute top-0 right-0 w-32 h-32 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-[#d4a853]/10 via-transparent to-transparent pointer-events-none" />
-
+                            <div className="rounded-[28px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 sm:p-8 shadow-sm relative overflow-hidden">
                                 <div className="flex items-center gap-3 mb-6">
-                                    <div className="p-3 bg-[#d4a853]/15 border border-[#d4a853]/30 text-[#d4a853] rounded-2xl">
+                                    <div className="p-3 bg-[#EFE2AC] border border-black/10 text-[#082824] rounded-2xl">
                                         <Crown className="w-6 h-6" />
                                     </div>
                                     <div>
-                                        <span className="text-[9px] font-extrabold px-2.5 py-0.5 rounded-full bg-[#d4a853]/15 text-[#d4a853] border border-[#d4a853]/30 uppercase tracking-wider font-mono">
+                                        <span className="text-[9px] font-extrabold px-2.5 py-0.5 rounded-full bg-[#EFE2AC] text-[#082824] border border-black/10 uppercase tracking-wider font-mono">
                                             Active Subscriber
                                         </span>
-                                        <h3 className="text-xl font-extrabold text-white uppercase tracking-tight mt-1">
-                                            SubScript Premium Plan
+                                        <h3 className="text-xl font-extrabold text-[#082824] dark:text-white tracking-tight mt-1">
+                                            SubScript Premium Pro
                                         </h3>
                                     </div>
                                 </div>
 
-                                <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-5 space-y-3 font-mono text-xs mb-6">
+                                <div className="bg-black/[0.02] dark:bg-white/[0.04] border border-black/10 dark:border-white/10 rounded-2xl p-5 space-y-3 font-mono text-xs mb-6 text-black/80 dark:text-white/80">
                                     <div className="flex justify-between">
-                                        <span className="text-white/40">Subscription Status</span>
-                                        <span className="text-[#d4a853] font-bold uppercase">{dbSubscriptionStatus || "Active"}</span>
+                                        <span className="text-black/50 dark:text-white/40">Subscription Status</span>
+                                        <span className="text-emerald-600 dark:text-emerald-400 font-bold uppercase">{dbSubscriptionStatus || "Active"}</span>
                                     </div>
                                     {premiumSubId && (
                                         <div className="flex justify-between">
-                                            <span className="text-white/40">Subscription ID</span>
-                                            <span className="text-white font-bold">#{premiumSubId}</span>
+                                            <span className="text-black/50 dark:text-white/40">Subscription ID</span>
+                                            <span className="text-black dark:text-white font-bold">#{premiumSubId}</span>
                                         </div>
                                     )}
                                     {currentPeriodEnd && (
                                         <div className="flex justify-between">
-                                            <span className="text-white/40">
+                                            <span className="text-black/50 dark:text-white/40">
                                                 {cancelAtPeriodEnd ? "Expiration Date" : "Next Billing Date"}
                                             </span>
-                                            <span className="text-white font-bold">
+                                            <span className="text-black dark:text-white font-bold">
                                                 {new Date(currentPeriodEnd).toLocaleDateString()}
                                             </span>
                                         </div>
@@ -648,11 +644,11 @@ export default function UpgradePage() {
                                 </div>
 
                                 {cancelAtPeriodEnd ? (
-                                    <div className="p-4 bg-yellow-500/5 border border-yellow-500/20 rounded-2xl mb-6 flex items-start gap-3">
-                                        <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
+                                    <div className="p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-700/30 rounded-2xl mb-6 flex items-start gap-3">
+                                        <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
                                         <div>
-                                            <p className="text-xs font-bold text-white uppercase tracking-wider">Cancellation Scheduled</p>
-                                            <p className="text-[10px] text-white/50 leading-relaxed mt-1">
+                                            <p className="text-xs font-bold text-amber-950 dark:text-amber-200 uppercase tracking-wider">Cancellation Scheduled</p>
+                                            <p className="text-[10px] text-amber-800 dark:text-amber-300/70 leading-relaxed mt-1">
                                                 You have requested to cancel your subscription. Premium benefits will remain active until the end of your billing cycle on {currentPeriodEnd ? new Date(currentPeriodEnd).toLocaleDateString() : "N/A"}.
                                             </p>
                                         </div>
@@ -662,7 +658,7 @@ export default function UpgradePage() {
                                         <button
                                             onClick={handleCancelSubscription}
                                             disabled={isCancelling}
-                                            className="px-6 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-bold uppercase tracking-wider rounded-xl transition-all disabled:opacity-50 flex items-center gap-2"
+                                            className="px-6 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-700 dark:text-red-400 border border-red-500/20 text-xs font-bold uppercase tracking-wider rounded-full transition-all disabled:opacity-50 flex items-center gap-2"
                                         >
                                             {isCancelling ? (
                                                 <><Loader2 className="w-4 h-4 animate-spin" /> Processing...</>
@@ -674,7 +670,7 @@ export default function UpgradePage() {
                                 )}
 
                                 {cancellationError && (
-                                    <div className="mt-4 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-300 text-xs font-mono break-all">
+                                    <div className="mt-4 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-700 dark:text-red-300 text-xs font-mono break-all">
                                         {cancellationError}
                                     </div>
                                 )}
@@ -683,24 +679,22 @@ export default function UpgradePage() {
                     ) : (
                         /* Pricing Card UI for Free Merchants */
                         <div className="max-w-md mx-auto space-y-6">
-                            <div className="liquid-glass border-2 border-[#d4a853]/40 rounded-[32px] p-6 sm:p-8 shadow-[0_8px_30px_rgb(212,168,83,0.1)] relative overflow-hidden bg-gradient-to-b from-[#d4a853]/[0.02] to-transparent">
-                                <div className="absolute top-0 right-0 w-48 h-48 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-[#d4a853]/10 via-transparent to-transparent pointer-events-none" />
-
+                            <div className="rounded-[28px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 sm:p-8 shadow-sm relative overflow-hidden text-[#082824] dark:text-white">
                                 <div className="text-center mb-6">
-                                    <span className="text-[9px] font-extrabold px-3 py-1 rounded-full bg-[#d4a853]/15 text-[#d4a853] border border-[#d4a853]/30 uppercase tracking-widest font-mono">
+                                    <span className="text-[10px] font-extrabold px-3 py-1 rounded-full bg-[#8AB4DB]/20 text-[#082824] dark:text-[#8AB4DB] border border-[#8AB4DB]/30 uppercase tracking-widest font-mono">
                                         SubScript Premium
                                     </span>
-                                    <h2 className="text-2xl font-extrabold text-white uppercase tracking-tight mt-4">
+                                    <h2 className="text-2xl font-extrabold text-[#082824] dark:text-white tracking-tight mt-4">
                                         Premium Pro
                                     </h2>
                                     <div className="flex items-baseline justify-center gap-1 mt-4">
-                                        <span className="text-5xl font-extrabold text-white tracking-tight">10</span>
-                                        <span className="text-lg font-bold text-white/60 uppercase font-mono">USDC</span>
-                                        <span className="text-xs text-white/40 font-mono">/ month</span>
+                                        <span className="text-5xl font-extrabold text-[#082824] dark:text-white tracking-tight">10</span>
+                                        <span className="text-lg font-bold text-black/60 dark:text-white/60 uppercase font-mono">USDC</span>
+                                        <span className="text-xs text-black/40 dark:text-white/40 font-mono">/ month</span>
                                     </div>
                                 </div>
 
-                                <div className="space-y-4 py-6 border-t border-b border-white/5 mb-8">
+                                <div className="space-y-4 py-6 border-t border-b border-black/10 dark:border-white/10 mb-8">
                                     {[
                                         { title: "Opt-In Privacy Controls", desc: "Use Arc privacy-aware disclosure policies to limit who can view sensitive billing and settlement details." },
                                         { title: "Automated Cold-Storage Rerouting", desc: "Instantly sweep merchant revenue to secure cold storage, hardware, or multisig wallets." },
@@ -708,12 +702,12 @@ export default function UpgradePage() {
                                         { title: "Full Webhooks & API Keys", desc: "Generate publishing keys and audit the complete HTTP payload stream." }
                                     ].map((f, i) => (
                                         <div key={i} className="flex gap-3 items-start">
-                                            <div className="p-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mt-0.5 flex-shrink-0">
+                                            <div className="p-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 mt-0.5 flex-shrink-0">
                                                 <Check className="w-3.5 h-3.5" />
                                             </div>
                                             <div>
-                                                <h4 className="text-xs font-bold text-white uppercase tracking-wider">{f.title}</h4>
-                                                <p className="text-[10px] text-white/50 leading-relaxed mt-0.5">{f.desc}</p>
+                                                <h4 className="text-xs font-bold text-[#082824] dark:text-white tracking-wider">{f.title}</h4>
+                                                <p className="text-[10px] text-black/60 dark:text-white/50 leading-relaxed mt-0.5">{f.desc}</p>
                                             </div>
                                         </div>
                                     ))}
@@ -723,7 +717,7 @@ export default function UpgradePage() {
                                     {checkoutState === "idle" && (
                                         <button
                                             onClick={handleUpgrade}
-                                            className="w-full py-4 bg-gradient-to-r from-[#d4a853] via-[#e2be72] to-[#c49240] text-black font-extrabold rounded-2xl text-xs uppercase tracking-wider hover:brightness-105 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-[0_4px_25px_rgba(212,168,83,0.2)]"
+                                            className="w-full py-3.5 bg-[#000000] hover:bg-black/85 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-white font-bold rounded-full text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-sm"
                                         >
                                             <Crown className="w-4 h-4" />
                                             Activate Premium Pro
@@ -731,26 +725,26 @@ export default function UpgradePage() {
                                     )}
 
                                     {checkoutState !== "idle" && checkoutState !== "success" && checkoutState !== "error" && (
-                                        <div className="w-full p-5 bg-white/[0.02] border border-white/5 rounded-2xl text-center space-y-3">
-                                            <div className="flex items-center justify-center gap-3 text-xs text-[#d4a853] font-semibold uppercase tracking-wider">
+                                        <div className="w-full p-5 bg-black/[0.02] dark:bg-white/[0.02] border border-black/10 dark:border-white/10 rounded-2xl text-center space-y-3">
+                                            <div className="flex items-center justify-center gap-3 text-xs text-[#082824] dark:text-[#8AB4DB] font-semibold uppercase tracking-wider">
                                                 <Loader2 className="w-4 h-4 animate-spin" />
                                                 <span>{checkoutState}</span>
                                             </div>
-                                            <p className="text-[10px] text-white/50 font-mono leading-relaxed">{checkoutStatus}</p>
+                                            <p className="text-[10px] text-black/50 dark:text-white/50 font-mono leading-relaxed">{checkoutStatus}</p>
                                         </div>
                                     )}
 
                                     {checkoutState === "success" && (
                                         <div className="w-full p-5 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl text-center space-y-3">
-                                            <div className="flex items-center justify-center gap-2 text-xs text-emerald-400 font-bold uppercase tracking-wider">
+                                            <div className="flex items-center justify-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider">
                                                 <Check className="w-4 h-4" />
                                                 <span>Subscription Active</span>
                                             </div>
-                                            <p className="text-[10px] text-white/60">
+                                            <p className="text-[10px] text-black/70 dark:text-white/60">
                                                 Premium tier upgraded and recorded successfully on the blockchain and database.
                                             </p>
                                             {successTxHash && (
-                                                <div className="pt-2 border-t border-white/5 text-[9px] font-mono text-white/40 break-all text-left">
+                                                <div className="pt-2 border-t border-black/5 dark:border-white/5 text-[9px] font-mono text-black/40 dark:text-white/40 break-all text-left">
                                                     Tx Hash: {successTxHash}
                                                 </div>
                                             )}
@@ -759,28 +753,25 @@ export default function UpgradePage() {
 
                                     {checkoutState === "error" && (
                                         <div className="w-full p-5 bg-red-500/5 border border-red-500/20 rounded-2xl text-center space-y-4">
-                                            <div className="flex items-center justify-center gap-2 text-xs text-red-400 font-bold uppercase tracking-wider">
+                                            <div className="flex items-center justify-center gap-2 text-xs text-red-600 dark:text-red-400 font-bold uppercase tracking-wider">
                                                 <XCircle className="w-4 h-4" />
                                                 <span>{submittedTxHash ? "Verification Incomplete" : "Transaction Failed"}</span>
                                             </div>
-                                            <div className="p-3 bg-red-500/10 border border-red-500/10 rounded-xl text-red-300 text-[10px] font-mono break-all text-left leading-relaxed">
+                                            <div className="p-3 bg-red-500/10 border border-red-500/10 rounded-xl text-red-700 dark:text-red-300 text-[10px] font-mono break-all text-left leading-relaxed">
                                                 {checkoutError}
                                             </div>
                                             {submittedTxHash ? (
-                                                /* A payment transaction was already submitted on-chain. Re-running the
-                                                   checkout would charge the wallet a second time — only re-verification
-                                                   of the existing transaction is allowed from here. */
                                                 <>
-                                                    <div className="p-3 bg-yellow-500/5 border border-yellow-500/20 rounded-xl text-yellow-200/80 text-[10px] leading-relaxed text-left">
+                                                    <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-800 dark:text-amber-200/80 text-[10px] leading-relaxed text-left">
                                                         Your payment transaction was already submitted on-chain and will not be charged again.
                                                         If verification keeps failing, premium is activated automatically once the payment is reconciled.
                                                     </div>
-                                                    <div className="text-[9px] font-mono text-white/40 break-all text-left">
+                                                    <div className="text-[9px] font-mono text-black/40 dark:text-white/40 break-all text-left">
                                                         Tx Hash: {submittedTxHash}
                                                     </div>
                                                     <button
                                                         onClick={() => syncAndRedirect(submittedTxHash)}
-                                                        className="w-full py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all"
+                                                        className="w-full py-3 bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/20 text-[#082824] dark:text-white rounded-full text-xs font-bold uppercase tracking-wider transition-all"
                                                     >
                                                         Retry Verification
                                                     </button>
@@ -788,7 +779,7 @@ export default function UpgradePage() {
                                             ) : (
                                                 <button
                                                     onClick={() => setCheckoutState("idle")}
-                                                    className="w-full py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all"
+                                                    className="w-full py-3 bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/20 text-[#082824] dark:text-white rounded-full text-xs font-bold uppercase tracking-wider transition-all"
                                                 >
                                                     Retry Checkout
                                                 </button>

@@ -60,7 +60,7 @@ test("includes direct and unassigned subscriptions in ranked plan overview", () 
         5,
     );
     assert.deepEqual(ranked.map((plan) => plan.id), ["b", "legacy_direct", "a"]);
-    assert.equal(ranked[1].name, "Direct & Custom Subscriptions");
+    assert.equal(ranked[1].name, "API Plans");
     assert.equal(ranked[1].activeSubscriberCount, 5);
 });
 const fs = await import("node:fs");

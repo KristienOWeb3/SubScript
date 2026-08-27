@@ -5978,16 +5978,6 @@ Please complete the following implementation tasks:
                     isPremium={isPremium}
                     isLoading={Boolean(isLoading)}
                 />
-                {/* Mobile Top Profile Icon */}
-                <MobileProfileButton
-                    identityLabel={sidebarIdentityLabel}
-                    avatarUrl={userSettings?.profilePic || null}
-                    isLoading={Boolean(isLoading)}
-                    onOpenSettings={() => {
-                        setMerchantSubView("menu");
-                        setActiveTab("settings");
-                    }}
-                />
                 <div className="merchant-dashboard-workspace relative min-w-0 flex-1 overflow-y-auto bg-[#FFFFF0] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[28px] md:border md:border-black/10">
             {/* Session Consent Alerts Overlay */}
             {sessionAlert && (
@@ -6032,17 +6022,28 @@ Please complete the following implementation tasks:
             {/* Dashboard Content */}
             <main className="mx-auto max-w-[1600px] px-4 pb-12 pt-6 sm:px-7 md:pt-8">
                 {/* Top Workspace Header */}
-                <div className="mb-6 flex items-center justify-between">
-                    <div>
-                        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#082824]">
+                <div className="mb-6 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className="md:hidden shrink-0">
+                            <MobileProfileButton
+                                identityLabel={sidebarIdentityLabel}
+                                avatarUrl={userSettings?.profilePic || null}
+                                isLoading={Boolean(isLoading)}
+                                onOpenSettings={() => {
+                                    setMerchantSubView("menu");
+                                    setActiveTab("settings");
+                                }}
+                            />
+                        </div>
+                        <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight text-[#082824] truncate">
                             Merchant Dashboard
                         </h1>
                     </div>
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2.5 shrink-0">
                         <button
                             onClick={() => setActiveTab("premium")}
                             title="Premium"
-                            className="flex h-9 w-9 items-center justify-center rounded-full bg-[#D4E3E8] text-[#082824] hover:brightness-95 transition shadow-sm border border-black/5"
+                            className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FFFFF0] dark:bg-[#1f2023] text-[#082824] dark:text-white hover:brightness-95 transition shadow-sm border border-black/10 dark:border-white/10"
                         >
                             <DiamondIcon className="h-4 w-4" />
                         </button>
@@ -6623,14 +6624,14 @@ function MobileProfileButton({
 
     if (isLoading) {
         return (
-            <div className="fixed left-4 top-4 z-40 md:hidden" aria-hidden="true">
-                <div className="subscript-skeleton h-10 w-10 rounded-full" />
+            <div className="relative" aria-hidden="true">
+                <div className="subscript-skeleton h-9 w-9 rounded-full" />
             </div>
         );
     }
 
     return (
-        <div className="fixed left-4 top-4 z-40 md:hidden">
+        <div className="relative">
             <button
                 type="button"
                 onClick={() => {
@@ -6641,24 +6642,24 @@ function MobileProfileButton({
                     setExpanded(false);
                     onOpenSettings();
                 }}
-                className={`flex h-10 items-center gap-2 overflow-hidden rounded-full border border-black/10 bg-[#FFFFF0] text-black shadow-md transition-all duration-300 ${
-                    expanded ? "max-w-[calc(100vw-8rem)] pl-0 pr-3" : "w-10 justify-center"
+                className={`flex h-9 items-center gap-2 overflow-hidden rounded-full border border-black/10 bg-[#FFFFF0] dark:bg-[#1f2023] text-black dark:text-white shadow-sm transition-all duration-300 ${
+                    expanded ? "max-w-[calc(100vw-8rem)] pl-0 pr-3" : "w-9 justify-center"
                 }`}
                 aria-label={expanded ? "Open account settings" : "Show account"}
                 aria-expanded={expanded}
                 title={expanded ? "Open account settings" : identityLabel}
             >
-                <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full">
+                <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full">
                     {avatarUrl ? (
                         <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
                     ) : (
-                        <span className="font-mono text-xs font-bold text-[#082824]">
+                        <span className="font-mono text-xs font-bold text-[#082824] dark:text-white">
                             {identityLabel.slice(0, 1).toUpperCase()}
                         </span>
                     )}
                 </span>
                 {expanded && (
-                    <span className="truncate text-[11px] font-semibold text-[#082824]">{identityLabel}</span>
+                    <span className="truncate text-[11px] font-semibold text-[#082824] dark:text-white">{identityLabel}</span>
                 )}
             </button>
         </div>
