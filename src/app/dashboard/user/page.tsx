@@ -557,6 +557,7 @@ export default function UserDashboard() {
   const [subscribeReviewBusy, setSubscribeReviewBusy] = useState(false);
   const [subscribeReviewError, setSubscribeReviewError] = useState<string | null>(null);
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+  const [readDmIds, setReadDmIds] = useState<Set<string>>(new Set());
   const [threadPlans, setThreadPlans] = useState<MerchantPlan[]>([]);
   const [plansMerchantAddress, setPlansMerchantAddress] = useState<string | null>(null);
 
@@ -1345,6 +1346,49 @@ export default function UserDashboard() {
       setSelectedDmPeer(getDmPeerAddress(focusedDm, userWallet).toLowerCase());
     }
   }, [dms, focusIntentId, selectedDmPeer, userWallet]);
+
+  useEffect(() => {
+    if (!userWallet || typeof window === "undefined") return;
+    try {
+      const stored = localStorage.getItem(`subscript_read_dms_${userWallet.toLowerCase()}`);
+      if (stored) {
+        setReadDmIds(new Set(JSON.parse(stored)));
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [userWallet]);
+
+  useEffect(() => {
+    if (!selectedDmPeer || !userWallet || dms.length === 0) return;
+    const threadDms = dms.filter(
+      (dm) => getDmPeerAddress(dm, userWallet).toLowerCase() === selectedDmPeer.toLowerCase()
+    );
+    if (threadDms.length === 0) return;
+    const ids = threadDms.map((dm) => dm.id);
+    setReadDmIds((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (!next.has(id)) {
+          next.add(id);
+          changed = true;
+        }
+      }
+      if (changed) {
+        try {
+          localStorage.setItem(
+            `subscript_read_dms_${userWallet.toLowerCase()}`,
+            JSON.stringify(Array.from(next))
+          );
+        } catch {
+          // ignore
+        }
+        return next;
+      }
+      return prev;
+    });
+  }, [selectedDmPeer, userWallet, dms]);
 
   useEffect(() => {
     setDmRequestOpen(false);
@@ -2817,7 +2861,8 @@ export default function UserDashboard() {
   const isActionableDm = (dm: DmMessage) =>
     dm.status === "PENDING" &&
     dm.receiverAddress.toLowerCase() === userWallet?.toLowerCase() &&
-    ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
+    ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER"].includes(dm.messageType) &&
+    !readDmIds.has(dm.id);
   const pendingDmCount = dms.filter(isActionableDm).length + pendingRequestsCount;
   const dmThreads = Array.from(dms.reduce((threads, dm) => {
     const peerAddress = getDmPeerAddress(dm, userWallet).toLowerCase();
@@ -3000,18 +3045,18 @@ export default function UserDashboard() {
         <div className="relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0">
         {/* Desktop Sidebar Skeleton — mirrors UserDesktopSidebar: profile pill, 6 half-rounded
             nav pills that bleed into the content panel, promo card, then two footer links. */}
-        <aside className="hidden md:flex h-full max-h-screen w-20 lg:w-64 shrink-0 flex-col justify-between overflow-y-auto bg-[#353935] p-4 lg:p-5">
-          <div className="space-y-6">
-            <div className="flex items-center justify-center lg:justify-start gap-2.5 rounded-full lg:px-2 lg:py-1.5">
-              <div className="h-6 w-6 shrink-0 subscript-skeleton rounded-full" />
-              <div className="hidden lg:block h-2.5 w-20 subscript-skeleton rounded-full" />
+        <aside className="hidden md:flex h-full max-h-screen w-16 lg:w-52 shrink-0 flex-col justify-between overflow-y-auto bg-[#353935] p-2.5 lg:p-3.5">
+          <div className="space-y-4">
+            <div className="flex items-center justify-center lg:justify-start gap-2 rounded-full lg:px-2 lg:py-1">
+              <div className="h-5 w-5 shrink-0 subscript-skeleton rounded-full" />
+              <div className="hidden lg:block h-2 w-16 subscript-skeleton rounded-full" />
             </div>
 
-            <nav className="space-y-1.5">
+            <nav className="space-y-1">
               {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="w-full flex items-center justify-center lg:justify-start gap-3 px-3.5 py-3 lg:px-4 rounded-full lg:rounded-l-full lg:rounded-r-none">
+                <div key={i} className="w-full flex items-center justify-center lg:justify-start gap-2.5 px-3 py-2 lg:px-3.5 rounded-full lg:rounded-l-full lg:rounded-r-none">
                   <div className="h-4 w-4 subscript-skeleton rounded-md shrink-0" />
-                  <div className="hidden lg:block h-2.5 w-24 subscript-skeleton rounded-full" />
+                  <div className="hidden lg:block h-2 w-20 subscript-skeleton rounded-full" />
                 </div>
               ))}
             </nav>
@@ -3559,7 +3604,7 @@ export default function UserDashboard() {
       {/* Main Grid View Container */}
       <main className={`w-full flex flex-col ${
         activeTab === "inbox"
-          ? "flex-1 h-full min-h-0 max-w-none p-3 lg:p-6 overflow-hidden"
+          ? (isMobile ? "flex-1 h-full min-h-0 max-w-none px-3 overflow-hidden" : "flex-1 h-full min-h-0 max-w-none p-3 lg:p-6 overflow-hidden")
           : "mx-auto max-w-7xl px-5 lg:px-8 pt-24 lg:pt-8 lg:pb-12 " + (isActiveMobileDm ? "h-full overflow-hidden pb-0" : "pb-[calc(8rem+env(safe-area-inset-bottom))]")
       }`}>
         {/* Title Header (Desktop only — hidden on inbox so the chat frame fills the viewport) */}
@@ -4048,9 +4093,9 @@ export default function UserDashboard() {
                 }`}
               >
                 {isMobile ? (
-                  <div className="flex min-h-0 flex-1 flex-col justify-between overflow-hidden w-full dm-content-zoom">
+                  <div className="flex min-h-0 flex-1 flex-col justify-between overflow-hidden w-full">
                     {!selectedDmPeer ? (
-                      <div className="w-full space-y-4 pb-20">
+                      <div className="w-full space-y-4 pt-24 pb-32 overflow-y-auto">
                         <DmThreadSelect
                           threads={dmThreads}
                           onSelect={(peerAddress) => setSelectedDmPeer(peerAddress)}
@@ -4062,7 +4107,7 @@ export default function UserDashboard() {
                         />
                       </div>
                     ) : (
-                      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+                      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden pt-20">
                         <div
                           ref={attachDmScroller}
                           onScroll={handleDmScroll}
@@ -4190,7 +4235,7 @@ export default function UserDashboard() {
                   /* Desktop Split Multi-Column DM Layout */
                   <div className="flex flex-1 flex-row gap-5 h-full min-h-0 overflow-hidden items-stretch w-full">
                     {/* List of opened DMs (middle column in blueprint) */}
-                    <div className="w-[280px] lg:w-[340px] border-r border-black/5 dark:border-white/5 pr-4 lg:pr-5 flex flex-col overflow-y-auto will-change-transform translate-z-0 space-y-4 shrink-0 dm-content-zoom">
+                    <div className="w-[280px] lg:w-[340px] border-r border-black/5 dark:border-white/5 pr-4 lg:pr-5 flex flex-col overflow-y-auto will-change-transform translate-z-0 space-y-3 shrink-0">
                       <DmThreadSelect
                         threads={dmThreads}
                         onSelect={(peerAddress) => setSelectedDmPeer(peerAddress)}
@@ -4203,7 +4248,7 @@ export default function UserDashboard() {
                     </div>
 
                     {/* Active thread message bubble display (right column in blueprint) */}
-                    <div className="flex-1 flex flex-col overflow-hidden liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 min-h-0 justify-between">
+                    <div className="flex-1 flex flex-col overflow-hidden liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-4 min-h-0 justify-between">
                       <AnimatePresence mode="wait">
                         {selectedDmPeer ? (
                           <motion.div
@@ -4212,22 +4257,22 @@ export default function UserDashboard() {
                             animate={{ opacity: 1, scale: 1, y: 0, filter: "blur(0px)" }}
                             exit={{ opacity: 0, scale: 0.96, y: -12, filter: "blur(1.5px)" }}
                             transition={{ type: "spring", stiffness: 450, damping: 32 }}
-                            className="flex flex-col h-full justify-between gap-4 overflow-hidden dm-content-zoom"
+                            className="flex flex-col h-full justify-between overflow-hidden"
                           >
                             {/* Desktop Chat Pane Header */}
                             <div
                               data-testid="desktop-dm-header"
-                              className="sticky top-0 z-20 flex shrink-0 items-center justify-between border border-white/10 bg-black/40 px-4 py-3 rounded-2xl backdrop-blur-xl shadow-xl mb-3"
+                              className="flex shrink-0 items-center justify-between border border-white/10 bg-black/40 px-4 py-2.5 rounded-2xl backdrop-blur-xl shadow-xl mb-2"
                             >
                               <div className="flex items-center gap-3">
                                 <Avatar profilePic={activeThread?.peerProfilePic || null} name={activeThreadLabel} />
                                 <div>
                                   <div className="flex items-center gap-1.5">
-                                    <h4 className="text-sm font-black uppercase tracking-wider text-white">
+                                    <h4 className="text-xs font-black uppercase tracking-wider text-white">
                                       {activeThreadLabel}
                                     </h4>
                                     {isActiveDmMerchant && (
-                                      <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
                                     )}
                                   </div>
                                   {/* Recurring subscription indicator — pulsing dot + label */}
@@ -4240,7 +4285,7 @@ export default function UserDashboard() {
                                         )}
                                         <span className={`relative inline-flex h-2 w-2 rounded-full ${activeThreadSubscription.cancelAtPeriodEnd ? "bg-amber-400" : "bg-emerald-400"}`} />
                                       </span>
-                                      <span className={`text-[9px] font-black uppercase tracking-[0.12em] ${activeThreadSubscription.cancelAtPeriodEnd ? "text-amber-400" : "text-emerald-400"}`}>
+                                      <span className={`text-[8px] font-black uppercase tracking-[0.12em] ${activeThreadSubscription.cancelAtPeriodEnd ? "text-amber-400" : "text-emerald-400"}`}>
                                         {activeThreadSubscription.cancelAtPeriodEnd ? "Cancelling" : "Recurring active"}
                                       </span>
                                     </div>
@@ -4262,7 +4307,7 @@ export default function UserDashboard() {
                                   <button
                                     type="button"
                                     onClick={() => selectedDmPeer && handleUnblockPeer(selectedDmPeer)}
-                                    className="px-3.5 py-1.5 bg-white/10 border border-white/20 text-white font-bold text-[10px] rounded-full hover:bg-white/20 transition active:scale-95 shrink-0"
+                                    className="px-3 py-1 bg-white/10 border border-white/20 text-white font-bold text-[9px] rounded-full hover:bg-white/20 transition active:scale-95 shrink-0"
                                   >
                                     Unblock
                                   </button>
@@ -4272,10 +4317,10 @@ export default function UserDashboard() {
                                       <button
                                         type="button"
                                         onClick={() => selectedDmPeer && handleBlockPeer(selectedDmPeer)}
-                                        className="p-2 text-white/40 hover:text-rose-400 bg-white/[0.02] hover:bg-rose-500/10 border border-white/5 rounded-full transition-all shrink-0"
+                                        className="p-1.5 text-white/40 hover:text-rose-400 bg-white/[0.02] hover:bg-rose-500/10 border border-white/5 rounded-full transition-all shrink-0"
                                         title="Block user"
                                       >
-                                        <UserX className="h-4 w-4" />
+                                        <UserX className="h-3.5 w-3.5" />
                                       </button>
                                     )}
                                     {!isActiveDmMerchant && (
@@ -4285,7 +4330,7 @@ export default function UserDashboard() {
                                           setSendFundsRecipient(activeThreadLabel || selectedDmPeer);
                                           setSendFundsOpen(true);
                                         }}
-                                        className="px-3.5 py-1.5 bg-[#ccff00] text-black border border-black/20 font-black uppercase tracking-wider text-[10px] rounded-full hover:bg-[#b8e600] transition shadow-sm active:scale-95 shrink-0"
+                                        className="px-3 py-1 bg-[#ccff00] text-black border border-black/20 font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#b8e600] transition shadow-sm active:scale-95 shrink-0"
                                       >
                                         Send Funds
                                       </button>
@@ -4296,18 +4341,18 @@ export default function UserDashboard() {
                             </div>
 
                             {/* Message bubbles pane */}
-                            <div ref={attachDmScroller} onScroll={handleDmScroll} className="min-h-0 flex-1 overflow-y-auto overscroll-contain will-change-transform translate-z-0 pr-1 space-y-4">
-                              <div className="mx-auto w-fit max-w-full rounded-full border border-[#2775CA]/20 bg-[#2775CA]/10 px-5 py-2 text-center text-[10px] font-black uppercase tracking-[0.16em] text-[#2775CA] backdrop-blur-md shadow-sm mt-2">
+                            <div ref={attachDmScroller} onScroll={handleDmScroll} className="min-h-0 flex-1 overflow-y-auto overscroll-contain will-change-transform translate-z-0 pr-1 space-y-3 py-2">
+                              <div className="mx-auto w-fit max-w-full rounded-full border border-[#2775CA]/20 bg-[#2775CA]/10 px-4 py-1.5 text-center text-[9px] font-black uppercase tracking-[0.14em] text-[#2775CA] backdrop-blur-md shadow-sm">
                                 {isActiveDmMerchant
                                   ? "Updates from this merchant — you can't reply here"
                                   : "Direct peer-to-peer system messages only"}
                               </div>
-                              <div className="mx-auto w-fit rounded-full border border-black/10 bg-black/5 backdrop-blur-md px-5 py-1 text-[10px] font-bold text-black/60">
+                              <div className="mx-auto w-fit rounded-full border border-black/10 bg-black/5 backdrop-blur-md px-4 py-0.5 text-[9px] font-bold text-black/60">
                                 {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                               </div>
 
                               {isCurrentPeerBlocked && (
-                                <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-3.5 flex items-center justify-between gap-3 text-xs text-rose-700">
+                                <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-3 flex items-center justify-between gap-3 text-xs text-rose-700">
                                   <div className="flex items-center gap-2">
                                     <UserX className="h-4 w-4 shrink-0 text-rose-600" />
                                     <span>Contact blocked. Messaging and sends disabled.</span>
@@ -4323,13 +4368,13 @@ export default function UserDashboard() {
                               )}
 
                               {selectedThreadDms.length === 0 && !isCurrentPeerBlocked && (
-                                <div className="py-16 flex flex-col items-center justify-center rounded-2xl border border-dashed border-black/15 bg-black/[0.02] text-center p-6 space-y-3">
-                                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#2775CA]/10 border border-[#2775CA]/20 text-[#2775CA]">
-                                    <MessageSquare className="h-6 w-6" />
+                                <div className="py-12 flex flex-col items-center justify-center rounded-2xl border border-dashed border-black/15 bg-black/[0.02] text-center p-6 space-y-3">
+                                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#2775CA]/10 border border-[#2775CA]/20 text-[#2775CA]">
+                                    <MessageSquare className="h-5 w-5" />
                                   </div>
                                   <div className="space-y-1">
-                                    <h3 className="text-sm font-bold text-[#111827]">Connection Established</h3>
-                                    <p className="text-xs text-black/60 max-w-sm">
+                                    <h3 className="text-xs font-bold text-[#111827]">Connection Established</h3>
+                                    <p className="text-[11px] text-black/60 max-w-sm">
                                       You and {activeThreadLabel} are connected. Send funds or request a payment below to start transacting.
                                     </p>
                                   </div>
@@ -4366,7 +4411,7 @@ export default function UserDashboard() {
                             {/* Bottom Action Footer for Desktop */}
                             <div
                               data-testid="desktop-dm-action-footer"
-                              className="sticky bottom-0 z-20 shrink-0 rounded-2xl border border-white/10 bg-black/40 p-3 backdrop-blur-xl shadow-xl mt-3 text-white"
+                              className="shrink-0 mt-2 text-white w-full"
                             >
                               {isCurrentPeerBlocked ? (
                                 <p className="text-center text-[11px] text-white/40 py-2">
@@ -5442,7 +5487,7 @@ export default function UserDashboard() {
                       ) : (
                         <>
                           {/* Hero: Total Spending & Distribution */}
-                          <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-6 sm:p-8 shadow-sm">
+                          <div data-spend-card className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-6 sm:p-8 shadow-sm">
                             <div className="flex items-center justify-between">
                               <p className="text-[10px] font-black uppercase tracking-[0.16em] text-black/50">Total Outflow</p>
                               <div className="p-2 rounded-xl bg-black/5">
@@ -5505,8 +5550,8 @@ export default function UserDashboard() {
                               return (
                                 <div
                                   key={key}
-                                  className="rounded-2xl p-4 border transition-all hover:scale-[1.01] shadow-sm"
-                                  style={{ backgroundColor: cat.bgColor, borderColor: cat.borderColor }}
+                                  data-spend-category
+                                  className="rounded-2xl p-4 border border-black/10 bg-black/[0.02] transition-all hover:scale-[1.01] shadow-sm"
                                 >
                                   <div className="flex items-center justify-between gap-2 mb-2">
                                     <div className="flex items-center gap-1.5">
@@ -5519,7 +5564,7 @@ export default function UserDashboard() {
                                       {cat.count} {cat.count === 1 ? "item" : "items"}
                                     </span>
                                   </div>
-                                  <p className="text-xl font-extrabold tracking-tight text-black">
+                                  <p className="text-xl font-extrabold tracking-tight text-black spend-category-value">
                                     {balanceVisible ? money(cat.total) : "••••"}
                                   </p>
                                   <div className="mt-2 flex items-center justify-between text-[9px] font-bold text-black/50">
@@ -5532,7 +5577,7 @@ export default function UserDashboard() {
                           </div>
 
                           {/* Monthly Spending Trend — bar on mobile, area graph on desktop */}
-                          <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-7 shadow-sm space-y-4">
+                          <div data-spend-card data-spend-chart className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-7 shadow-sm space-y-4">
                             <div className="flex items-center justify-between">
                               <div>
                                 <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/70 flex items-center gap-2">
@@ -5802,34 +5847,34 @@ export default function UserDashboard() {
                           </div>
 
                           {/* Cash Flow & Net Balance Breakdown */}
-                          <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-7 shadow-sm space-y-4">
+                          <div data-spend-card className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-7 shadow-sm space-y-4">
                             <div className="flex items-center justify-between">
                               <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/70 flex items-center gap-2">
                                 <Activity className="h-4 w-4 text-[#2775CA]" /> Cash Flow Summary
                               </h3>
                               <span className={`rounded-full border px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${
                                 netCashFlow >= 0
-                                  ? "border-emerald-500/30 bg-emerald-50 text-emerald-700"
-                                  : "border-amber-500/30 bg-amber-50 text-amber-700"
+                                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
+                                  : "border-amber-500/30 bg-amber-500/10 text-amber-700"
                               }`}>
                                 {netCashFlow >= 0 ? "Surplus" : "Net Outflow"}
                               </span>
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-50/50 p-4">
+                              <div data-spend-inflow className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
                                 <span className="block text-[9px] font-black uppercase tracking-wider text-emerald-800/70">Total Inflow (Credits)</span>
                                 <p className="mt-1 text-lg font-extrabold text-emerald-700">
                                   {balanceVisible ? money(totalInflow) : "••••"}
                                 </p>
                               </div>
-                              <div className="rounded-2xl border border-red-500/20 bg-red-50/50 p-4">
+                              <div data-spend-outflow className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
                                 <span className="block text-[9px] font-black uppercase tracking-wider text-red-800/70">Total Outflow (Debits)</span>
                                 <p className="mt-1 text-lg font-extrabold text-red-700">
                                   {balanceVisible ? money(totalOutflow) : "••••"}
                                 </p>
                               </div>
-                              <div className="rounded-2xl border border-black/10 bg-black/[0.02] p-4">
+                              <div data-spend-net className="rounded-2xl border border-black/10 bg-black/[0.02] p-4">
                                 <span className="block text-[9px] font-black uppercase tracking-wider text-black/50">Net Movement</span>
                                 <p className={`mt-1 text-lg font-extrabold ${netCashFlow >= 0 ? "text-emerald-700" : "text-black"}`}>
                                   {balanceVisible ? `${netCashFlow >= 0 ? "+" : ""}${money(netCashFlow)}` : "••••"}
@@ -5839,7 +5884,7 @@ export default function UserDashboard() {
                           </div>
 
                           {/* Top Merchants / Destinations Outflow Leaderboard */}
-                          <div className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-7 shadow-sm space-y-4">
+                          <div data-spend-card className="border border-black/10 bg-white/80 backdrop-blur-md rounded-3xl p-5 sm:p-7 shadow-sm space-y-4">
                             <div className="flex items-center justify-between">
                               <h3 className="text-xs font-black uppercase tracking-[0.16em] text-black/70 flex items-center gap-2">
                                 <Building2 className="h-4 w-4 text-[#2775CA]" /> Top Outflow Destinations
@@ -5857,7 +5902,7 @@ export default function UserDashboard() {
                                 {topMerchants.map((merchant, rank) => {
                                   const sharePct = totalSpending > 0 ? (merchant.amount / totalSpending) * 100 : 0;
                                   return (
-                                    <div key={merchant.name} className="rounded-2xl border border-black/10 bg-white p-3.5 space-y-2 shadow-xs">
+                                    <div key={merchant.name} data-spend-card className="rounded-2xl border border-black/10 bg-white p-3.5 space-y-2 shadow-xs">
                                       <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-2.5 min-w-0">
                                           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-black/5 border border-black/10 text-[10px] font-black text-[#2775CA]">
@@ -5886,14 +5931,14 @@ export default function UserDashboard() {
 
                           {/* Spending Insights & Runway */}
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div className="rounded-2xl border border-black/10 bg-white/80 p-4 space-y-1">
+                            <div data-spend-card className="rounded-2xl border border-black/10 bg-white/80 p-4 space-y-1">
                               <span className="text-[9px] font-black uppercase tracking-wider text-black/50">Average Daily Spend</span>
                               <p className="text-lg font-extrabold text-black">
                                 {balanceVisible ? money(avgDailySpend) : "••••"} <span className="text-xs font-normal text-black/40">/ day</span>
                               </p>
                               <p className="text-[9px] text-black/45">Computed across selected time window</p>
                             </div>
-                            <div className="rounded-2xl border border-black/10 bg-white/80 p-4 space-y-1">
+                            <div data-spend-card className="rounded-2xl border border-black/10 bg-white/80 p-4 space-y-1">
                               <span className="text-[9px] font-black uppercase tracking-wider text-black/50">Estimated 30D Run Rate</span>
                               <p className="text-lg font-extrabold text-[#2775CA]">
                                 {balanceVisible ? money(monthlySpendUsdc + (avgDailySpend * 30)) : "••••"} <span className="text-xs font-normal text-black/40">/ mo</span>
@@ -5906,6 +5951,7 @@ export default function UserDashboard() {
                           <div className="pt-2">
                             <button
                               type="button"
+                              data-spend-card
                               onClick={() => router.push("/dashboard/user/transactions")}
                               className="w-full rounded-2xl border border-black/15 bg-white py-3.5 text-xs font-black uppercase tracking-[0.14em] text-black hover:bg-black/5 transition shadow-sm flex items-center justify-center gap-2"
                             >
@@ -7945,28 +7991,28 @@ function DmThreadSelect({
   onOpenBlocked?: () => void;
 }) {
   return (
-    <div className="space-y-4">
-      <div className="border border-black/10 bg-white/80 rounded-3xl p-5 shadow-sm relative space-y-4 text-black">
+    <div className="space-y-3">
+      <div className="border border-black/10 bg-white/80 rounded-2xl p-4 shadow-sm relative space-y-2.5 text-black">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#2775CA]">SubScript DMs</p>
-          <h1 className="mt-1 text-xl font-black uppercase tracking-tight text-[#111827]">Payment Threads</h1>
+          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#2775CA]">SubScript DMs</p>
+          <h1 className="mt-0.5 text-base font-black uppercase tracking-tight text-[#111827]">Payment Threads</h1>
         </div>
-        <p className="text-[11px] leading-relaxed text-black/60">
+        <p className="text-[10px] font-medium leading-relaxed text-[#4b5563]">
           Receipts, peer payments, and connection requests.
         </p>
 
         {/* Action Toolbar */}
-        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-black/10">
+        <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-black/10">
           {onOpenRequests && (
             <button
               type="button"
               onClick={onOpenRequests}
-              className="relative flex items-center gap-1.5 rounded-full border border-black/15 bg-white hover:bg-black/5 px-3 py-1.5 text-[10px] font-bold text-black transition-all active:scale-95 shadow-sm"
+              className="relative flex items-center gap-1 rounded-full border border-black/15 bg-white hover:bg-black/5 px-2.5 py-1 text-[9px] font-bold text-black transition-all active:scale-95 shadow-sm"
             >
-              <Inbox className="h-3.5 w-3.5 text-[#2775CA]" />
+              <Inbox className="h-3 w-3 text-[#2775CA]" />
               <span>Requests</span>
               {pendingRequestsCount > 0 && (
-                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#2775CA] px-1 text-[9px] font-black text-white">
+                <span className="flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[#2775CA] px-1 text-[8px] font-black text-white">
                   {pendingRequestsCount}
                 </span>
               )}
@@ -7977,9 +8023,9 @@ function DmThreadSelect({
             <button
               type="button"
               onClick={onOpenInvite}
-              className="flex items-center gap-1.5 rounded-full border border-black/15 bg-white hover:bg-black/5 px-3 py-1.5 text-[10px] font-bold text-black transition-all active:scale-95 shadow-sm"
+              className="flex items-center gap-1 rounded-full border border-black/15 bg-white hover:bg-black/5 px-2.5 py-1 text-[9px] font-bold text-black transition-all active:scale-95 shadow-sm"
             >
-              <Link2 className="h-3.5 w-3.5 text-black/60" />
+              <Link2 className="h-3 w-3 text-black/60" />
               <span>My Invite</span>
             </button>
           )}
@@ -7988,31 +8034,31 @@ function DmThreadSelect({
             <button
               type="button"
               onClick={onOpenBlocked}
-              className="flex items-center gap-1.5 rounded-full border border-black/15 bg-white hover:bg-rose-50 px-2.5 py-1.5 text-[10px] font-bold text-black/60 hover:text-rose-600 transition-all active:scale-95 ml-auto shadow-sm"
+              className="flex items-center gap-1 rounded-full border border-black/15 bg-white hover:bg-rose-50 px-2 py-1 text-[9px] font-bold text-black/60 hover:text-rose-600 transition-all active:scale-95 ml-auto shadow-sm"
               title="Blocked contacts"
             >
-              <UserX className="h-3.5 w-3.5" />
+              <UserX className="h-3 w-3" />
             </button>
           )}
         </div>
       </div>
 
       {threads.length === 0 ? (
-        <div className="mt-6 flex flex-col items-center justify-center rounded-[28px] border border-dashed border-black/15 bg-black/[0.02] p-8 text-center space-y-2 text-black">
-          <Mail className="h-8 w-8 text-black/30" />
-          <p className="text-xs text-black/60">No conversations or connections yet.</p>
+        <div className="mt-4 flex flex-col items-center justify-center rounded-2xl border border-dashed border-black/15 bg-black/[0.02] p-6 text-center space-y-1.5 text-black">
+          <Mail className="h-6 w-6 text-black/30" />
+          <p className="text-[11px] text-black/60">No conversations or connections yet.</p>
           {onOpenInvite && (
             <button
               type="button"
               onClick={onOpenInvite}
-              className="mt-2 text-[10px] font-bold text-[#2775CA] hover:underline"
+              className="mt-1 text-[9px] font-bold text-[#2775CA] hover:underline"
             >
               Share your invite link
             </button>
           )}
         </div>
       ) : (
-        <div className="space-y-2.5">
+        <div className="space-y-2">
           {threads.map((thread) => {
             const isSelected = thread.peerAddress.toLowerCase() === selectedPeerAddress?.toLowerCase();
             const peerLabel = formatPeerDisplayName(thread.peerName, thread.peerAddress);
@@ -8034,7 +8080,7 @@ function DmThreadSelect({
                 transition={{ type: "spring", stiffness: 450, damping: 32 }}
                 type="button"
                 onClick={() => onSelect(thread.peerAddress)}
-                className={`flex w-full items-center gap-3.5 rounded-2xl border p-3.5 text-left shadow-sm transition-colors duration-200 ${
+                className={`flex w-full items-center gap-2.5 rounded-xl border p-2.5 text-left shadow-sm transition-colors duration-200 ${
                   isSelected
                     ? "border-[#2775CA] bg-[#2775CA]/10 text-black"
                     : "border-black/10 bg-white/80 hover:bg-white text-black"
@@ -8362,14 +8408,14 @@ function DmBubble({
       <div className={`max-w-[85%] sm:max-w-[75%] ${incoming ? "items-start" : "items-end"} flex flex-col gap-1.5 min-w-0`}>
         <div 
           data-dm-bubble={incoming ? "dark" : "sent"}
-          className={`px-5 py-4 shadow-md select-none transition-all duration-200 w-full break-words [word-break:break-word] overflow-hidden ${
+          className={`px-4 py-3 shadow-md select-none transition-all duration-200 w-full break-words [word-break:break-word] overflow-hidden ${
             incoming 
-              ? `${focused ? "border-[#2775CA] bg-[#18181b]" : "border-black/20 bg-[#18181b] backdrop-blur-xl text-white"} rounded-[22px] rounded-bl-[4px] border shadow-xl` 
-              : "bg-gradient-to-br from-[#00b2ff] to-[#007aff] text-white rounded-[22px] rounded-br-[4px] border-none shadow-[0_4px_16px_rgba(0,122,255,0.2)]"
+              ? `${focused ? "border-[#2775CA] bg-[#18181b]" : "border-black/20 bg-[#18181b] backdrop-blur-xl text-white"} rounded-[18px] rounded-bl-[4px] border shadow-xl` 
+              : "bg-gradient-to-br from-[#00b2ff] to-[#007aff] text-white rounded-[18px] rounded-br-[4px] border-none shadow-[0_4px_16px_rgba(0,122,255,0.2)]"
           }`}
         >
           <p 
-            className={`mb-2 text-[9px] font-black uppercase tracking-[0.16em] ${
+            className={`mb-1.5 text-[8px] font-black uppercase tracking-[0.16em] ${
               incoming ? "text-[#38bdf8]" : "text-white/80"
             }`}
           >
@@ -8377,40 +8423,40 @@ function DmBubble({
           </p>
           
           {isRequest ? (
-            <div className="space-y-3 font-sans text-xs">
+            <div className="space-y-2 font-sans text-xs">
               <h4 
-                className={`text-sm font-black uppercase tracking-wider border-b pb-2 ${
+                className={`text-xs font-black uppercase tracking-wider border-b pb-1.5 ${
                   incoming ? "text-white border-white/5" : "text-white border-white/10"
                 }`}
               >
                 {displayTitle || "Payment Details"}
               </h4>
-              <div className="grid grid-cols-2 gap-2 text-[10px]">
+              <div className="grid grid-cols-2 gap-2 text-[9px]">
                 <div>
-                  <span className={`block uppercase tracking-widest text-[8px] ${incoming ? "text-white/40" : "text-white/60"}`}>Plan / Purpose</span>
+                  <span className={`block uppercase tracking-widest text-[7px] ${incoming ? "text-white/40" : "text-white/60"}`}>Plan / Purpose</span>
                   <span className="font-bold text-white">{displayTitle?.split(" requested")[0] || "Services / Payout"}</span>
                 </div>
                 <div>
-                  <span className={`block uppercase tracking-widest text-[8px] ${incoming ? "text-white/40" : "text-white/60"}`}>Merchant / Sender</span>
+                  <span className={`block uppercase tracking-widest text-[7px] ${incoming ? "text-white/40" : "text-white/60"}`}>Merchant / Sender</span>
                   <span className="font-bold text-white truncate block">{voiceLabel}</span>
                 </div>
               </div>
               
               {displayDescription && (
                 <div 
-                  className={`rounded-xl p-3 border mt-2 ${
+                  className={`rounded-lg p-2 border mt-1.5 ${
                     incoming ? "bg-black/25 border-white/5" : "bg-black/15 border-white/10"
                   }`}
                 >
-                  <span className={`block uppercase tracking-widest text-[8px] mb-1 ${incoming ? "text-white/40" : "text-white/60"}`}>Details</span>
-                  <p className="text-white/90 text-[10px] leading-relaxed whitespace-pre-wrap break-words [word-break:break-word]">{displayDescription}</p>
+                  <span className={`block uppercase tracking-widest text-[7px] mb-0.5 ${incoming ? "text-white/40" : "text-white/60"}`}>Details</span>
+                  <p className="text-white/90 text-[9px] leading-relaxed whitespace-pre-wrap break-words [word-break:break-word]">{displayDescription}</p>
                 </div>
               )}
             </div>
           ) : (
             <>
-              <h3 className="text-base font-black uppercase leading-snug text-white break-words [word-break:break-word]">{displayTitle || "SubScript message"}</h3>
-              <div className="mt-3 space-y-1.5">
+              <h3 className="text-xs font-black uppercase leading-snug text-white break-words [word-break:break-word]">{displayTitle || "SubScript message"}</h3>
+              <div className="mt-2 space-y-1">
                 {lines.length > 0 ? lines.map((line) => {
                   /* Receipt references read as noise in a chat bubble — show a same-origin
                      "View receipt" action and never trust a host stored in legacy DM text. */
@@ -8422,9 +8468,9 @@ function DmBubble({
                         href={receiptHref}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className={`inline-flex items-center gap-1.5 text-xs font-bold underline underline-offset-2 ${incoming ? "text-[#ccff00]" : "text-white"}`}
+                        className={`inline-flex items-center gap-1 text-[10px] font-bold underline underline-offset-2 ${incoming ? "text-[#ccff00]" : "text-white"}`}
                       >
-                        View receipt <ExternalLink className="h-3 w-3" />
+                        View receipt <ExternalLink className="h-2.5 w-2.5" />
                       </a>
                     );
                   }
@@ -8433,23 +8479,23 @@ function DmBubble({
                      line is simply dropped rather than linked to an external explorer. */
                   if (/^transaction\b/i.test(line)) return null;
                   return (
-                    <p key={line} className={`text-xs leading-relaxed break-words [word-break:break-word] ${incoming ? "text-white/70" : "text-white/90"}`}>{line}</p>
+                    <p key={line} className={`text-[10px] leading-relaxed break-words [word-break:break-word] ${incoming ? "text-white/70" : "text-white/90"}`}>{line}</p>
                   );
-                }) : <p className={`text-xs leading-relaxed break-words [word-break:break-word] ${incoming ? "text-white/70" : "text-white/90"}`}>System-generated SubScript payment update.</p>}
+                }) : <p className={`text-[10px] leading-relaxed break-words [word-break:break-word] ${incoming ? "text-white/70" : "text-white/90"}`}>System-generated SubScript payment update.</p>}
               </div>
             </>
           )}
 
-          <div className="mt-4 flex items-center justify-between gap-4">
+          <div className="mt-2.5 flex items-center justify-between gap-3">
             <span 
-              className={`rounded-full px-3 py-0.5 text-[9px] font-bold ${
+              className={`rounded-full px-2 py-0.5 text-[8px] font-bold ${
                 incoming ? "bg-white/5 text-white/40" : "bg-black/15 text-white/70"
               }`}
             >
               {new Date(dm.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
             </span>
             {dm.amountUsdc && (
-              <span className={`text-xs font-black ${incoming ? "text-[#ccff00]" : "text-white"}`}>
+              <span className={`text-[10px] font-black ${incoming ? "text-[#ccff00]" : "text-white"}`}>
                 {formatUsdc(dm.amountUsdc)} USDC
               </span>
             )}
@@ -9013,7 +9059,7 @@ function DmRequestComposer({
         type="button"
         onClick={onToggle}
         disabled={loading}
-        className={`relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full border py-3 text-center text-xs font-black uppercase tracking-[0.16em] shadow-md backdrop-blur-lg transition-all ${
+        className={`relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full border py-2 text-center text-[11px] font-black uppercase tracking-[0.16em] shadow-sm backdrop-blur-lg transition-all ${
           open
             ? "border-[#2775CA]/40 bg-[#2775CA]/15 text-[#2775CA]"
             : "border-black/15 bg-white text-black hover:bg-black/5"
@@ -10241,7 +10287,11 @@ function MeteredVaultRow({
               type="button"
               onClick={() => !reclaimBusy && onReclaim(vault)}
               disabled={reclaimBusy}
-              className={`rounded-2xl border px-3 py-2 text-[10px] font-black uppercase tracking-wider transition shadow-sm ${reclaimBusy ? "cursor-not-allowed border-black/10 bg-black/10 text-black/30" : "bg-amber-400/20 border-amber-400/40 text-amber-800 hover:bg-amber-400/30"}`}
+              className={`rounded-2xl border px-3.5 py-2 text-[10px] font-black uppercase tracking-wider transition shadow-sm ${
+                reclaimBusy
+                  ? "cursor-not-allowed border-black/10 bg-black/10 text-black/30"
+                  : "border-black/15 bg-white/90 hover:bg-black/5 text-[#111827] hover:border-black/25 active:scale-95"
+              }`}
             >
               {reclaimBusy ? <>Reclaiming<LoadingDots /></> : "Reclaim escrow"}
             </button>

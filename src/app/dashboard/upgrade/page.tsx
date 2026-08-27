@@ -607,11 +607,11 @@ export default function UpgradePage() {
                         <div className="max-w-2xl mx-auto space-y-6">
                             <div className="rounded-[28px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 sm:p-8 shadow-sm relative overflow-hidden">
                                 <div className="flex items-center gap-3 mb-6">
-                                    <div className="p-3 bg-[#EFE2AC] border border-black/10 text-[#082824] rounded-2xl">
+                                    <div className="p-3 bg-amber-500/10 dark:bg-amber-400/15 border border-amber-500/20 dark:border-amber-400/30 text-amber-700 dark:text-amber-300 rounded-2xl">
                                         <Crown className="w-6 h-6" />
                                     </div>
                                     <div>
-                                        <span className="text-[9px] font-extrabold px-2.5 py-0.5 rounded-full bg-[#EFE2AC] text-[#082824] border border-black/10 uppercase tracking-wider font-mono">
+                                        <span className="text-[9px] font-extrabold px-2.5 py-0.5 rounded-full bg-amber-500/10 dark:bg-amber-400/15 text-amber-700 dark:text-amber-300 border border-amber-500/20 dark:border-amber-400/30 uppercase tracking-wider font-mono">
                                             Active Subscriber
                                         </span>
                                         <h3 className="text-xl font-extrabold text-[#082824] dark:text-white tracking-tight mt-1">

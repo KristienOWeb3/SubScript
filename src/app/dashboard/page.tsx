@@ -23,7 +23,6 @@ import ConfirmModal from "@/components/ConfirmModal";
 import DurationPicker from "@/components/DurationPicker";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
 import SupportChatModal from "@/components/support/SupportChatModal";
-import SharePlanModal from "@/components/SharePlanModal";
 import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useReadContract, useSignMessage } from "wagmi";
 import { injected } from "wagmi/connectors";
 import {
@@ -197,24 +196,6 @@ const comingSoonMerchantSettings = new Set([
     "securityMultiSigEnabled",
 ]);
 
-function DiamondIcon({ className = "" }: { className?: string }) {
-    return (
-        <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={className}
-        >
-            <path d="M6 3h12l4 6-10 12L2 9z" />
-            <path d="M11 3 8 9l4 12 4-12-3-6" />
-            <path d="M2 9h20" />
-        </svg>
-    );
-}
-
 export default function DashboardPage() {
     const router = useRouter();
     const [isMounted, setIsMounted] = useState(false);
@@ -285,10 +266,6 @@ export default function DashboardPage() {
     const [webhooksPage, setWebhooksPage] = useState(0);
 
     const [premiumSubId, setPremiumSubId] = useState<number | null>(null);
-    const [sharingPlan, setSharingPlan] = useState<MerchantPlan | null>(null);
-    const handleSharePlan = (plan: MerchantPlan) => {
-        setSharingPlan(plan);
-    };
     const [isCancellingPremium, setIsCancellingPremium] = useState(false);
     const [cancelAtPeriodEnd, setCancelAtPeriodEnd] = useState(false);
     const [currentPeriodEnd, setCurrentPeriodEnd] = useState<string | null>(null);
@@ -2531,14 +2508,14 @@ Please complete the following implementation tasks:
 
     const renderPremiumLock = (tabLabel: string) => {
         return (
-            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-10 flex flex-col items-center justify-center text-center gap-6 min-h-[400px] text-black">
-                <div className="p-5 rounded-full bg-[#EFE2AC] text-[#082824]">
+            <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-10 flex flex-col items-center justify-center text-center gap-6 min-h-[400px] text-black dark:text-white">
+                <div className="p-5 rounded-full bg-amber-500/10 dark:bg-amber-400/15 text-amber-700 dark:text-amber-300 border border-amber-500/20 dark:border-amber-400/30">
                     <Crown className="w-10 h-10" />
                 </div>
                 <div className="space-y-3 max-w-md">
-                    <h2 className="text-xl font-semibold text-black">Premium Pro Feature Locked</h2>
-                    <p className="text-xs text-black/60 leading-relaxed font-sans">
-                        Access to <span className="font-semibold text-black">{tabLabel}</span> requires an active SubScript Premium subscription. Upgrade to unlock keys, private checkout generation, and webhook event streaming.
+                    <h2 className="text-xl font-semibold text-black dark:text-white">Premium Pro Feature Locked</h2>
+                    <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed font-sans">
+                        Access to <span className="font-semibold text-black dark:text-white">{tabLabel}</span> requires an active SubScript Premium subscription. Upgrade to unlock keys, private checkout generation, and webhook event streaming.
                     </p>
                 </div>
                 <button
@@ -2649,8 +2626,8 @@ Please complete the following implementation tasks:
                                         }}
                                         className={`px-4 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all ${
                                             linkDurationMinutes === 1440 && linkMaxUses === "1"
-                                                ? "border-[#082824] bg-[#082824] text-white shadow-sm"
-                                                : "border-black/10 bg-black/5 text-black/70 hover:bg-black/10 hover:text-black"
+                                                ? "border-[#082824] bg-[#082824] text-white shadow-sm dark:border-white/30 dark:bg-white dark:text-[#082824]"
+                                                : "border-black/10 bg-black/5 text-black/70 hover:bg-black/10 hover:text-black dark:border-white/10 dark:bg-white/10 dark:text-white/75 dark:hover:bg-white/15 dark:hover:text-white"
                                         }`}
                                     >
                                         One-Time 24H
@@ -2663,8 +2640,8 @@ Please complete the following implementation tasks:
                                         }}
                                         className={`px-4 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all ${
                                             linkDurationMinutes === 7 * 24 * 60 && linkMaxUses !== "1"
-                                                ? "border-[#082824] bg-[#082824] text-white shadow-sm"
-                                                : "border-black/10 bg-black/5 text-black/70 hover:bg-black/10 hover:text-black"
+                                                ? "border-[#082824] bg-[#082824] text-white shadow-sm dark:border-white/30 dark:bg-white dark:text-[#082824]"
+                                                : "border-black/10 bg-black/5 text-black/70 hover:bg-black/10 hover:text-black dark:border-white/10 dark:bg-white/10 dark:text-white/75 dark:hover:bg-white/15 dark:hover:text-white"
                                         }`}
                                     >
                                         Reusable 7D
@@ -2677,8 +2654,8 @@ Please complete the following implementation tasks:
                                         }}
                                         className={`px-4 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all ${
                                             linkDurationMinutes === 0
-                                                ? "border-[#082824] bg-[#082824] text-white shadow-sm"
-                                                : "border-black/10 bg-black/5 text-black/70 hover:bg-black/10 hover:text-black"
+                                                ? "border-[#082824] bg-[#082824] text-white shadow-sm dark:border-white/30 dark:bg-white dark:text-[#082824]"
+                                                : "border-black/10 bg-black/5 text-black/70 hover:bg-black/10 hover:text-black dark:border-white/10 dark:bg-white/10 dark:text-white/75 dark:hover:bg-white/15 dark:hover:text-white"
                                         }`}
                                     >
                                         No Expiry
@@ -2809,10 +2786,10 @@ Please complete the following implementation tasks:
                 </div>
 
                 {/* Existing Payment Links List */}
-                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
+                <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 text-black dark:text-white space-y-6 shadow-sm">
                     <div>
-                        <h2 className="text-xl font-bold sm:text-2xl text-[#082824] mb-2">Payment Links</h2>
-                        <p className="text-sm sm:text-base text-black/70 font-sans leading-relaxed">
+                        <h2 className="text-lg font-bold sm:text-xl text-[#082824] dark:text-white mb-1.5">Payment Links</h2>
+                        <p className="text-xs sm:text-sm text-black/70 dark:text-white/70 font-sans leading-relaxed">
                             Your payment links in one place. Share them with customers or check their status.
                         </p>
                     </div>
@@ -2837,24 +2814,24 @@ Please complete the following implementation tasks:
                                 ))}
                             </div>
                         ) : paymentLinks.length === 0 ? (
-                            <div className="text-center py-12 border border-black/10 rounded-2xl bg-black/[0.02]">
-                                <p className="text-black/50 text-sm font-sans">No payment links created yet.</p>
+                            <div className="text-center py-12 border border-black/10 dark:border-white/10 rounded-2xl bg-black/[0.02] dark:bg-white/[0.02]">
+                                <p className="text-black/50 dark:text-white/50 text-xs font-sans">No payment links created yet.</p>
                             </div>
                         ) : (
                             <>
                             <div className="overflow-x-auto">
-                                <table className="w-full border-collapse font-sans text-sm">
+                                <table className="w-full border-collapse font-sans text-xs">
                                     <thead>
-                                        <tr className="border-b border-black/10 text-xs uppercase tracking-wider text-black/60 text-left font-sans">
-                                            <th className="pb-3 pr-4 font-bold">Title</th>
-                                            <th className="pb-3 px-4 font-bold">Amount</th>
-                                            <th className="pb-3 px-4 font-bold hidden md:table-cell">Reference</th>
-                                            <th className="pb-3 px-4 font-bold hidden sm:table-cell">Expiration</th>
-                                            <th className="pb-3 px-4 font-bold">Status</th>
-                                            <th className="pb-3 pl-4 font-bold text-right">Actions</th>
+                                        <tr className="border-b border-black/10 dark:border-white/10 text-[10px] uppercase tracking-wider text-black/60 dark:text-white/60 text-left font-sans">
+                                            <th className="pb-3 pr-3 font-bold w-[28%] min-w-[170px]">Title</th>
+                                            <th className="pb-3 px-3 font-bold whitespace-nowrap">Amount</th>
+                                            <th className="pb-3 px-3 font-bold hidden md:table-cell">Reference</th>
+                                            <th className="pb-3 px-3 font-bold hidden sm:table-cell whitespace-nowrap">Expiration</th>
+                                            <th className="pb-3 px-3 font-bold">Status</th>
+                                            <th className="pb-3 pl-3 font-bold text-right">Actions</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-black/5 font-sans">
+                                    <tbody className="divide-y divide-black/5 dark:divide-white/5 font-sans">
                                     {(() => {
                                         const linksPageSize = 5;
                                         const paginatedLinks = paymentLinks.slice(linksPage * linksPageSize, (linksPage + 1) * linksPageSize);
@@ -2871,47 +2848,51 @@ Please complete the following implementation tasks:
 
                                             return (
                                                 <Fragment key={link.id}>
-                                                    <tr className="hover:bg-black/[0.02] transition-colors">
-                                                        <td className="py-4 pr-4">
-                                                            <div className="font-bold text-[#082824] text-sm sm:text-base">{link.title}</div>
+                                                    <tr className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
+                                                        <td className="py-3.5 pr-3 align-middle">
+                                                            <div className="font-bold text-[#082824] dark:text-white text-xs sm:text-[13px] leading-tight truncate max-w-[190px] sm:max-w-[260px] md:max-w-[300px]" title={link.title}>
+                                                                {link.title}
+                                                            </div>
                                                             {link.description && (
-                                                                <div className="text-xs text-black/60 line-clamp-1">{link.description}</div>
+                                                                <div className="text-[10px] text-black/60 dark:text-white/60 truncate max-w-[190px] sm:max-w-[260px] mt-0.5" title={link.description}>
+                                                                    {link.description}
+                                                                </div>
                                                             )}
                                                             {link.max_uses != null && (
-                                                                <div className="text-xs text-black/40 font-mono mt-1">
+                                                                <div className="text-[9px] text-black/40 dark:text-white/40 font-mono mt-0.5">
                                                                     Uses: {link.use_count || 0}/{link.max_uses}
                                                                 </div>
                                                             )}
                                                         </td>
-                                                        <td className="py-4 px-4 font-mono font-bold text-[#082824] text-sm sm:text-base">
+                                                        <td className="py-3.5 px-3 font-mono font-bold text-[#082824] dark:text-white text-xs sm:text-[13px] whitespace-nowrap align-middle">
                                                             ${(Number(link.amount_usdc) / 1000000).toFixed(2)} USDC
                                                         </td>
-                                                        <td className="py-4 px-4 text-black/70 font-mono hidden md:table-cell text-xs sm:text-sm">
-                                                            {link.external_reference || "-"}
+                                                        <td className="py-3.5 px-3 text-black/70 dark:text-white/70 font-mono hidden md:table-cell text-[11px] truncate max-w-[130px] align-middle" title={link.external_reference || ""}>
+                                                            {link.external_reference || "—"}
                                                         </td>
-                                                        <td className="py-4 px-4 text-black/60 hidden sm:table-cell text-xs sm:text-sm">
-                                                            {link.expires_at ? new Date(link.expires_at).toLocaleString() : "Never"}
+                                                        <td className="py-3.5 px-3 text-black/60 dark:text-white/60 hidden sm:table-cell text-[11px] whitespace-nowrap align-middle">
+                                                            {link.expires_at ? new Date(link.expires_at).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }) : "Never"}
                                                         </td>
-                                                        <td className="py-4 px-4">
-                                                            <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase border ${
+                                                        <td className="py-3.5 px-3 align-middle">
+                                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border whitespace-nowrap ${
                                                                 status === "Active"
-                                                                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700"
+                                                                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30"
                                                                     : status === "Expired"
-                                                                        ? "bg-amber-500/10 border-amber-500/20 text-amber-700"
-                                                                        : "bg-black/5 border-black/10 text-black/50"
+                                                                        ? "bg-amber-500/10 border-amber-500/20 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300 dark:border-amber-400/30"
+                                                                        : "bg-black/5 border-black/10 text-black/50 dark:bg-white/10 dark:text-white/50 dark:border-white/10"
                                                             }`}>
                                                                 {status}
                                                             </span>
                                                         </td>
-                                                        <td className="py-4 pl-4 text-right">
-                                                            <div className="flex gap-2 justify-end items-center font-sans">
+                                                        <td className="py-3.5 pl-3 text-right align-middle">
+                                                            <div className="flex gap-1.5 justify-end items-center font-sans">
                                                                 <button
                                                                     onClick={() => handleCopyLink(link.id, link.checkoutUrl)}
-                                                                    className="p-2 md:px-4 md:py-2 rounded-xl bg-[#D4E3E8] hover:bg-[#D4E3E8]/80 border border-black/10 text-[#082824] text-xs font-bold transition-all flex items-center gap-1.5"
+                                                                    className="h-7 px-2.5 rounded-lg bg-[#D4E3E8] hover:bg-[#c6d8de] dark:bg-white/10 dark:hover:bg-white/20 border border-black/10 dark:border-white/10 text-[#082824] dark:text-white text-[10px] font-bold transition-all flex items-center gap-1 shrink-0"
                                                                     title={linkCopyFeedback[link.id] ? "Copied!" : "Copy Link"}
                                                                 >
-                                                                    {linkCopyFeedback[link.id] ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                                                                    <span className="hidden md:inline">{linkCopyFeedback[link.id] ? "Copied!" : "Copy Link"}</span>
+                                                                    {linkCopyFeedback[link.id] ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                                                                    <span className="hidden sm:inline">{linkCopyFeedback[link.id] ? "Copied!" : "Copy Link"}</span>
                                                                 </button>
                                                                 <button
                                                                     onClick={() => {
@@ -2919,44 +2900,42 @@ Please complete the following implementation tasks:
                                                                         setActiveQrCodeLink(url);
                                                                         setActiveQrCodeTitle(link.title);
                                                                     }}
-                                                                    className="p-2 rounded-xl bg-black/5 hover:bg-black/10 border border-black/10 text-black/80 hover:text-black transition-all flex items-center justify-center"
+                                                                    className="h-7 w-7 rounded-lg bg-black/5 hover:bg-black/10 dark:bg-white/10 dark:hover:bg-white/20 border border-black/10 dark:border-white/10 text-black/80 dark:text-white/80 transition-all flex items-center justify-center shrink-0"
                                                                     title="Show QR Code"
                                                                 >
-                                                                    <QrCode className="w-4 h-4" />
+                                                                    <QrCode className="w-3.5 h-3.5" />
                                                                 </button>
                                                                 <button
                                                                     onClick={() => {
                                                                         setExpandedLinkId(expandedLinkId === link.id ? null : link.id);
                                                                     }}
-                                                                    className={`p-2 rounded-xl border transition-all flex items-center justify-center ${
+                                                                    className={`h-7 w-7 rounded-lg border transition-all flex items-center justify-center shrink-0 ${
                                                                         expandedLinkId === link.id
-                                                                            ? "bg-[#D4E3E8] border-black/20 text-[#082824]"
-                                                                            : "bg-black/5 hover:bg-black/10 border border-black/10 text-black/80 hover:text-black"
+                                                                            ? "bg-[#D4E3E8] dark:bg-white/20 border-black/20 dark:border-white/20 text-[#082824] dark:text-white"
+                                                                            : "bg-black/5 hover:bg-black/10 dark:bg-white/10 dark:hover:bg-white/20 border border-black/10 dark:border-white/10 text-black/80 dark:text-white/80"
                                                                     }`}
                                                                     title="Show Payments Stats"
                                                                 >
-                                                                    <BarChart3 className="w-4 h-4" />
+                                                                    <BarChart3 className="w-3.5 h-3.5" />
                                                                 </button>
                                                                 <button
                                                                     onClick={() => handleToggleLinkActive(link.id, link.active)}
-                                                                    className={`p-2 md:px-4 md:py-2 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 ${
+                                                                    className={`h-7 px-2.5 rounded-lg border text-[10px] font-bold transition-all flex items-center gap-1 shrink-0 ${
                                                                         link.active
-                                                                            ? "bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20 text-amber-700"
-                                                                            : "bg-[#D4E3E8] hover:bg-[#D4E3E8]/80 border border-black/10 text-[#082824]"
+                                                                            ? "bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20 dark:border-amber-400/30 text-amber-700 dark:text-amber-300"
+                                                                            : "bg-[#D4E3E8] hover:bg-[#c6d8de] dark:bg-white/10 dark:hover:bg-white/20 border border-black/10 dark:border-white/10 text-[#082824] dark:text-white"
                                                                     }`}
                                                                     title={link.active ? "Deactivate" : "Activate"}
                                                                 >
-                                                                    {link.active ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                                                                    <span className="hidden md:inline">{link.active ? "Deactivate" : "Activate"}</span>
+                                                                    {link.active ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                                                                    <span className="hidden sm:inline">{link.active ? "Deactivate" : "Activate"}</span>
                                                                 </button>
-                                                                <div className="w-[1px] h-4 bg-black/10 mx-1" />
                                                                 <button
                                                                     onClick={() => handleDeleteLink(link.id)}
-                                                                    className="p-2 md:px-4 md:py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-600 text-xs font-bold transition-all flex items-center gap-1.5"
+                                                                    className="h-7 w-7 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-600 dark:text-red-400 transition-all flex items-center justify-center shrink-0"
                                                                     title="Delete Link"
                                                                 >
-                                                                    <Trash2 className="w-4 h-4" />
-                                                                    <span className="hidden md:inline">Delete</span>
+                                                                    <Trash2 className="w-3.5 h-3.5" />
                                                                 </button>
                                                             </div>
                                                         </td>
@@ -3232,7 +3211,7 @@ Please complete the following implementation tasks:
                         ) : (
                             <div className="space-y-3">
                                 {activePlans.map((plan) => (
-                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} onShare={handleSharePlan} promotion={promotionsByPlan.get(plan.id) ?? null} onPromotionsChanged={fetchMerchantPlans} />
+                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} promotion={promotionsByPlan.get(plan.id) ?? null} onPromotionsChanged={fetchMerchantPlans} />
                                 ))}
                             </div>
                         )}
@@ -3250,7 +3229,7 @@ Please complete the following implementation tasks:
                         ) : (
                             <div className="space-y-3">
                                 {inactivePlans.map((plan) => (
-                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} onShare={handleSharePlan} promotion={promotionsByPlan.get(plan.id) ?? null} onPromotionsChanged={fetchMerchantPlans} />
+                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} promotion={promotionsByPlan.get(plan.id) ?? null} onPromotionsChanged={fetchMerchantPlans} />
                                 ))}
                             </div>
                         )}
@@ -3344,7 +3323,7 @@ Please complete the following implementation tasks:
                                     </div>
                                     <div>
                                         <span className="block text-sm sm:text-base font-bold text-[#082824] tracking-wide">Profile &amp; Branding</span>
-                                        <span className="block text-xs sm:text-sm text-black/60 mt-0.5">Logo, alias, payout destination, and exit survey</span>
+                                        <span className="block text-xs sm:text-sm text-black/60 mt-0.5">Logo, alias, payout destination, and cancellation feedback</span>
                                     </div>
                                 </div>
                                 <ChevronRight className="h-5 w-5 text-black/30 group-hover:text-black/70 group-hover:translate-x-0.5 transition-all" />
@@ -3568,7 +3547,7 @@ Please complete the following implementation tasks:
                 {/* 3. PROFILE & BRANDING SUBVIEW */}
                 {merchantSubView === "profile" && (
                     <div className="space-y-6">
-                        {renderBackHeader("Profile & Branding", "Manage your merchant logo, identity, and exit survey.")}
+                        {renderBackHeader("Profile & Branding", "Manage your merchant logo, identity, and cancellation feedback question.")}
 
                         <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
                             <div className="flex flex-col md:flex-row items-start md:items-center gap-6 pb-6 border-b border-black/10">
@@ -3625,13 +3604,13 @@ Please complete the following implementation tasks:
                                 {payoutDestinationError && <p className="text-[10px] text-red-500" role="alert">{payoutDestinationError}</p>}
                             </div>
 
-                            {/* Exit Survey Question */}
+                            {/* Cancellation Feedback Question */}
                             <div className="space-y-3 pt-4 border-t border-black/10">
                                 <h3 className="text-xs font-semibold text-black flex items-center gap-2">
-                                    <MessageSquare className="w-4 h-4 text-[#082824]" /> Customer Exit Survey Prompt
+                                    <MessageSquare className="w-4 h-4 text-[#082824]" /> Cancellation Feedback Question
                                 </h3>
                                 <p className="text-[11px] text-black/60">
-                                    Ask cancelling customers your own question. Leave blank to use the default prompt.
+                                    Ask cancelling customers your own question to understand why they left. Leave blank to use the default message.
                                 </p>
                                 <textarea
                                     value={churnQuestionDraft}
@@ -3649,7 +3628,7 @@ Please complete the following implementation tasks:
                                         disabled={savingSettingsField === "churnSurveyQuestion" || (churnQuestionDraft.trim() === (userSettings?.churnSurveyQuestion || ""))}
                                         className="px-5 py-2 text-xs font-semibold rounded-full bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                                     >
-                                        {savingSettingsField === "churnSurveyQuestion" ? "Saving..." : "Save question"}
+                                        {savingSettingsField === "churnSurveyQuestion" ? "Saving..." : "Save Question"}
                                     </button>
                                 </div>
                             </div>
@@ -3680,10 +3659,10 @@ Please complete the following implementation tasks:
                                     </span>
                                 </div>
                             ) : dnsConfirmPending ? (
-                                <div className="p-5 rounded-2xl border border-black/10 bg-[#EFE2AC] space-y-4">
+                                <div className="p-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 dark:bg-amber-400/10 dark:border-amber-400/30 space-y-4">
                                     <div>
-                                        <p className="text-[9px] uppercase tracking-wider font-semibold text-black/60">Confirm DNS name</p>
-                                        <h4 className="font-mono text-lg font-bold text-[#082824] mt-1">{dnsConfirmPending}</h4>
+                                        <p className="text-[9px] uppercase tracking-wider font-semibold text-black/60 dark:text-white/60">Confirm DNS name</p>
+                                        <h4 className="font-mono text-lg font-bold text-[#082824] dark:text-white mt-1">{dnsConfirmPending}</h4>
                                     </div>
                                     <p className="text-[10px] leading-relaxed text-black/70">
                                         This is locked for <strong>365 days</strong> once registered. Make sure it&apos;s right.
@@ -4656,25 +4635,25 @@ Please complete the following implementation tasks:
                 return (
                     <div className="space-y-8 text-black">
                         {/* Tier Status Card */}
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 shadow-sm">
+                        <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 sm:p-8 shadow-sm">
                             <div className="flex items-start gap-4">
-                                <div className="p-3 rounded-2xl bg-[#EFE2AC] text-[#082824] border border-black/10">
+                                <div className="p-3 rounded-2xl bg-amber-500/10 dark:bg-amber-400/15 text-amber-700 dark:text-amber-300 border border-amber-500/20 dark:border-amber-400/30">
                                     <Crown className="w-8 h-8" />
                                 </div>
                                 <div className="flex-1">
                                     <div className="flex items-center gap-3 mb-1">
-                                        <h2 className="text-xl font-bold text-black tracking-tight">
+                                        <h2 className="text-xl font-bold text-[#082824] dark:text-white tracking-tight">
                                             {isPremium ? "Premium Active" : "Standard Tier"}
                                         </h2>
                                         <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
                                             isPremium 
-                                                ? "bg-[#EFE2AC] text-[#082824] border border-black/15" 
-                                                : "bg-black/5 text-black/60 border border-black/10"
+                                                ? "bg-amber-500/10 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300 border border-amber-500/20 dark:border-amber-400/30" 
+                                                : "bg-black/5 text-black/60 dark:bg-white/10 dark:text-white/60 border border-black/10 dark:border-white/10"
                                         }`}>
                                             Tier {merchantTier}
                                         </span>
                                     </div>
-                                    <p className="text-xs text-black/60 leading-relaxed">
+                                    <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed">
                                         {isPremium 
                                             ? "You have full access to payout rerouting, priority keeper execution, advanced analytics, and multi-wallet support." 
                                             : "Upgrade to Premium Pro to unlock payout rerouting, priority execution, advanced analytics, and more."
@@ -4906,18 +4885,18 @@ Please complete the following implementation tasks:
                                     </div>
 
                                     {/* Manual Keeper Execution Control */}
-                                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm space-y-6">
-                                        <h3 className="text-sm font-semibold text-black flex items-center gap-2">
-                                            <PlugZap className="w-4 h-4 text-[#082824]" />
+                                    <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 shadow-sm space-y-6">
+                                        <h3 className="text-sm font-semibold text-[#082824] dark:text-white flex items-center gap-2">
+                                            <PlugZap className="w-4 h-4 text-[#082824] dark:text-emerald-400" />
                                             Keeper Force Execution
                                         </h3>
-                                        <p className="text-xs text-black/60 leading-relaxed font-sans">
+                                        <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed font-sans">
                                             Force the SubScript protocol keepers to check and execute any due subscription payments for your wallet immediately on-chain, bypassing the standard scheduler loop.
                                         </p>
-                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-[#D4E3E8]/40 border border-black/10 rounded-2xl p-5">
+                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-[#D4E3E8]/40 dark:bg-white/[0.04] border border-black/10 dark:border-white/10 rounded-2xl p-5">
                                             <div>
-                                                <p className="text-[10px] text-black/50 uppercase font-bold tracking-widest leading-none mb-1">Status</p>
-                                                <p className="text-xs font-semibold text-black/80">Schedule: Idle (60s cycles)</p>
+                                                <p className="text-[10px] text-black/50 dark:text-white/50 uppercase font-bold tracking-widest leading-none mb-1">Status</p>
+                                                <p className="text-xs font-semibold text-black/80 dark:text-white/80">Schedule: Idle (60s cycles)</p>
                                             </div>
                                             <button
                                                 onClick={handleTriggerKeeper}
@@ -4929,30 +4908,37 @@ Please complete the following implementation tasks:
                                             </button>
                                         </div>
                                         {keeperStatus && (
-                                            <p className="text-emerald-700 text-xs font-semibold">{keeperStatus}</p>
+                                            <p className="text-emerald-700 dark:text-emerald-400 text-xs font-semibold">{keeperStatus}</p>
                                         )}
                                         {keeperError && (
-                                            <p className="text-red-600 text-xs font-mono break-all">{keeperError}</p>
+                                            <p className="text-red-600 dark:text-red-400 text-xs font-mono break-all">{keeperError}</p>
                                         )}
                                     </div>
 
                                     {/* Subscription Cancellation Control */}
-                                    <div className="rounded-[34px] border border-red-500/20 bg-red-50/50 p-6 shadow-sm space-y-6">
-                                        <h3 className="text-sm font-semibold text-red-900 flex items-center gap-2">
-                                            <ShieldAlert className="w-4 h-4 text-red-600" />
-                                            {cancelAtPeriodEnd ? "Subscription Scheduled to End" : "Cancel Subscription"}
+                                    <div className={`rounded-[34px] border p-6 shadow-sm space-y-6 ${
+                                        cancelAtPeriodEnd 
+                                            ? "border-amber-500/30 bg-amber-500/[0.05] dark:bg-amber-500/[0.08]" 
+                                            : "border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023]"
+                                    }`}>
+                                        <h3 className={`text-sm font-semibold flex items-center gap-2 ${
+                                            cancelAtPeriodEnd ? "text-amber-700 dark:text-amber-300" : "text-[#082824] dark:text-white"
+                                        }`}>
+                                            <ShieldAlert className={`w-4 h-4 ${cancelAtPeriodEnd ? "text-amber-600 dark:text-amber-400" : "text-black/60 dark:text-white/60"}`} />
+                                            {cancelAtPeriodEnd ? "Subscription Scheduled to End" : "Subscription Management"}
                                         </h3>
-                                        <p className="text-xs text-red-800/80 leading-relaxed font-sans">
+                                        <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed font-sans">
                                             {cancelAtPeriodEnd 
                                                 ? `Your Premium subscription will remain active until ${currentPeriodEnd ? new Date(currentPeriodEnd).toLocaleDateString() : "the end of the current period"}. You can resume anytime before that date.`
                                                 : "Cancel your active SubScript Premium subscription. Your Premium benefits will remain active until the end of your current billing period."
                                             }
                                         </p>
-                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-white/80 border border-red-200 rounded-2xl p-5">
+                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-black/[0.02] dark:bg-white/[0.04] border border-black/10 dark:border-white/10 rounded-2xl p-5">
                                             <div>
-                                                <p className="text-[10px] text-red-700 uppercase font-bold tracking-widest leading-none mb-1">Billing Status</p>
-                                                <p className="text-xs font-semibold text-red-950">
-                                                     {cancelAtPeriodEnd ? "Pending Cancellation" : "Active (Renews monthly)"}
+                                                <p className="text-[10px] text-black/50 dark:text-white/50 uppercase font-bold tracking-widest leading-none mb-1">Billing Status</p>
+                                                <p className="text-xs font-semibold text-[#082824] dark:text-white flex items-center gap-1.5">
+                                                    {!cancelAtPeriodEnd && <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block shrink-0" />}
+                                                    {cancelAtPeriodEnd ? "Pending Cancellation" : "Active (Renews monthly)"}
                                                 </p>
                                             </div>
                                             {cancelAtPeriodEnd ? (
@@ -4968,7 +4954,7 @@ Please complete the following implementation tasks:
                                                 <button
                                                     onClick={handleCancelPremium}
                                                     disabled={isCancellingPremium || !isPremium}
-                                                    className="px-6 py-3 bg-red-600 text-white font-semibold rounded-full text-xs hover:bg-red-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                                    className="px-5 py-2.5 border border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-300 hover:bg-red-500/15 rounded-full text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                                 >
                                                     {isCancellingPremium ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5" />}
                                                     Cancel Premium Pro
@@ -4985,15 +4971,15 @@ Please complete the following implementation tasks:
                                             { icon: Webhook, title: "Advanced Webhooks", desc: "Full webhook event stream with payload inspection and replay capability.", active: true },
                                             { icon: Key, title: "Full API Access", desc: "Publishable and secret API keys for backend SDK integration.", active: true },
                                         ].map((feature, idx) => (
-                                            <div key={idx} className="rounded-2xl border border-black/10 bg-[#D4E3E8]/40 p-5 flex items-start gap-3">
-                                                <div className="p-2 bg-[#EFE2AC] border border-black/10 text-[#082824] rounded-xl flex-shrink-0">
+                                            <div key={idx} className="rounded-2xl border border-black/10 dark:border-white/10 bg-[#D4E3E8]/40 dark:bg-white/[0.04] p-5 flex items-start gap-3">
+                                                <div className="p-2 bg-amber-500/10 dark:bg-amber-400/15 border border-amber-500/20 dark:border-amber-400/30 text-amber-700 dark:text-amber-300 rounded-xl flex-shrink-0">
                                                     <feature.icon className="w-4 h-4" />
                                                 </div>
                                                 <div>
-                                                    <p className="text-xs font-semibold text-black mb-0.5">{feature.title}</p>
-                                                    <p className="text-[10px] text-black/60 leading-relaxed font-sans">{feature.desc}</p>
+                                                    <p className="text-xs font-semibold text-black dark:text-white mb-0.5">{feature.title}</p>
+                                                    <p className="text-[10px] text-black/60 dark:text-white/60 leading-relaxed font-sans">{feature.desc}</p>
                                                 </div>
-                                                <span className="ml-auto text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 flex-shrink-0">Active</span>
+                                                <span className="ml-auto text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 border border-emerald-500/20 dark:border-emerald-500/30 flex-shrink-0">Active</span>
                                             </div>
                                         ))}
                                     </div>
@@ -5001,19 +4987,19 @@ Please complete the following implementation tasks:
 
                                 <div className="md:col-span-1 space-y-6">
                                     {/* Billing Summary Card */}
-                                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-4 shadow-sm">
-                                        <h4 className="text-[10px] text-black/50 uppercase font-semibold tracking-widest text-center">Subscription Billing</h4>
-                                        <div className="space-y-3 font-mono text-[10px] text-black/70">
-                                            <div className="flex justify-between border-b border-black/10 pb-2">
+                                    <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 text-black dark:text-white space-y-4 shadow-sm">
+                                        <h4 className="text-[10px] text-black/50 dark:text-white/50 uppercase font-semibold tracking-widest text-center">Subscription Billing</h4>
+                                        <div className="space-y-3 font-mono text-[10px] text-black/70 dark:text-white/70">
+                                            <div className="flex justify-between border-b border-black/10 dark:border-white/10 pb-2">
                                                 <span>Tier:</span>
-                                                <span className="text-[#082824] font-bold">PREMIUM PRO</span>
+                                                <span className="text-amber-700 dark:text-amber-300 font-bold">PREMIUM PRO</span>
                                             </div>
-                                            <div className="flex justify-between border-b border-black/10 pb-2">
+                                            <div className="flex justify-between border-b border-black/10 dark:border-white/10 pb-2">
                                                 <span>Price:</span>
                                                 <span>10 USDC / mo</span>
                                             </div>
                                             {currentPeriodEnd && (
-                                                <div className="flex justify-between border-b border-black/10 pb-2">
+                                                <div className="flex justify-between border-b border-black/10 dark:border-white/10 pb-2">
                                                     <span>{cancelAtPeriodEnd ? "Expires:" : "Next Renewal:"}</span>
                                                     <span>{new Date(currentPeriodEnd).toLocaleDateString()}</span>
                                                 </div>
@@ -5073,18 +5059,18 @@ Please complete the following implementation tasks:
                         {/* Quick Jump Developer Portal & Merchant Operations */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
                             {/* Merchant KYC / Verification Status */}
-                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm space-y-4">
+                            <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 shadow-sm space-y-4">
                                 <div className="flex items-center justify-between">
-                                    <h4 className="text-xs font-semibold text-black flex items-center gap-2">
-                                        <Shield className="w-4 h-4 text-[#082824]" /> Business Verification
+                                    <h4 className="text-xs font-semibold text-[#082824] dark:text-white flex items-center gap-2">
+                                        <Shield className="w-4 h-4 text-[#082824] dark:text-emerald-400" /> Business Verification
                                     </h4>
                                     {userSettings.verified ? (
-                                        <span className="px-2.5 py-1 text-[9px] font-bold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">Verified</span>
+                                        <span className="px-2.5 py-1 text-[9px] font-bold rounded-full bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 border border-emerald-500/20 dark:border-emerald-500/30">Verified</span>
                                     ) : (
-                                        <span className="px-2.5 py-1 text-[9px] font-bold rounded-full bg-amber-100 text-amber-800 border border-amber-300">Unverified</span>
+                                        <span className="px-2.5 py-1 text-[9px] font-bold rounded-full bg-amber-500/10 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300 border border-amber-500/20 dark:border-amber-400/30">Unverified</span>
                                     )}
                                 </div>
-                                <p className="text-xs text-black/60 leading-relaxed font-sans">
+                                <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed font-sans">
                                     {userSettings.verified
                                         ? "Your merchant account is verified. Checkout links will display a verified trust badge to customers."
                                         : "Complete business verification to gain verified status and remove checkout warnings."}
@@ -5092,11 +5078,11 @@ Please complete the following implementation tasks:
                             </div>
 
                             {/* Developer Portal Quick Jump */}
-                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm space-y-4">
-                                <h4 className="text-xs font-semibold text-black flex items-center gap-2">
-                                    <Terminal className="w-4 h-4 text-[#082824]" /> Developer Quick-Jump
+                            <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 shadow-sm space-y-4">
+                                <h4 className="text-xs font-semibold text-[#082824] dark:text-white flex items-center gap-2">
+                                    <Terminal className="w-4 h-4 text-[#082824] dark:text-sky-400" /> Developer Quick-Jump
                                 </h4>
-                                <p className="text-xs text-black/60 leading-relaxed font-sans">Access backend API keys, webhooks outbox, and SDK documentation.</p>
+                                <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed font-sans">Access backend API keys, webhooks outbox, and SDK documentation.</p>
                                 <div className="flex items-center gap-2">
                                     <button
                                         onClick={() => setActiveTab("apikeys")}
@@ -5106,30 +5092,30 @@ Please complete the following implementation tasks:
                                     </button>
                                     <button
                                         onClick={() => setActiveTab("webhooks")}
-                                        className="flex-1 py-2.5 bg-white border border-black/15 hover:bg-black/5 text-black rounded-full text-xs font-semibold transition flex items-center justify-center gap-1.5"
+                                        className="flex-1 py-2.5 bg-white dark:bg-white/10 border border-black/15 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/15 text-black dark:text-white rounded-full text-xs font-semibold transition flex items-center justify-center gap-1.5"
                                     >
-                                        <Webhook className="w-3.5 h-3.5 text-[#082824]" /> Webhooks
+                                        <Webhook className="w-3.5 h-3.5 text-[#082824] dark:text-white" /> Webhooks
                                     </button>
                                 </div>
                             </div>
 
                             {/* Notification Preferences */}
-                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm space-y-4">
-                                <h4 className="text-xs font-semibold text-black flex items-center gap-2">
-                                    <Bell className="w-4 h-4 text-[#082824]" /> Notification Toggles
+                            <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 shadow-sm space-y-4">
+                                <h4 className="text-xs font-semibold text-[#082824] dark:text-white flex items-center gap-2">
+                                    <Bell className="w-4 h-4 text-[#082824] dark:text-amber-400" /> Notification Toggles
                                 </h4>
-                                <div className="space-y-2 text-xs text-black/70 font-sans">
-                                    <label className="flex items-center justify-between p-2 rounded-xl bg-[#D4E3E8]/40 border border-black/10 cursor-pointer">
+                                <div className="space-y-2 text-xs text-black/70 dark:text-white/70 font-sans">
+                                    <label className="flex items-center justify-between p-2 rounded-xl bg-[#D4E3E8]/40 dark:bg-white/[0.04] border border-black/10 dark:border-white/10 cursor-pointer">
                                         <span>New Subscriptions</span>
-                                        <input type="checkbox" defaultChecked className="accent-[#082824] w-4 h-4" />
+                                        <input type="checkbox" defaultChecked className="accent-[#082824] dark:accent-[#00d2b4] w-4 h-4" />
                                     </label>
-                                    <label className="flex items-center justify-between p-2 rounded-xl bg-[#D4E3E8]/40 border border-black/10 cursor-pointer">
+                                    <label className="flex items-center justify-between p-2 rounded-xl bg-[#D4E3E8]/40 dark:bg-white/[0.04] border border-black/10 dark:border-white/10 cursor-pointer">
                                         <span>Successful Payments</span>
-                                        <input type="checkbox" defaultChecked className="accent-[#082824] w-4 h-4" />
+                                        <input type="checkbox" defaultChecked className="accent-[#082824] dark:accent-[#00d2b4] w-4 h-4" />
                                     </label>
-                                    <label className="flex items-center justify-between p-2 rounded-xl bg-[#D4E3E8]/40 border border-black/10 cursor-pointer">
+                                    <label className="flex items-center justify-between p-2 rounded-xl bg-[#D4E3E8]/40 dark:bg-white/[0.04] border border-black/10 dark:border-white/10 cursor-pointer">
                                         <span>Failed Renewals</span>
-                                        <input type="checkbox" defaultChecked className="accent-[#082824] w-4 h-4" />
+                                        <input type="checkbox" defaultChecked className="accent-[#082824] dark:accent-[#00d2b4] w-4 h-4" />
                                     </label>
                                 </div>
                             </div>
@@ -6045,7 +6031,7 @@ Please complete the following implementation tasks:
                             title="Premium"
                             className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FFFFF0] dark:bg-[#1f2023] text-[#082824] dark:text-white hover:brightness-95 transition shadow-sm border border-black/10 dark:border-white/10"
                         >
-                            <DiamondIcon className="h-4 w-4" />
+                            <Crown className="h-4 w-4 text-amber-500 dark:text-amber-400" />
                         </button>
                         <div className="relative">
                             <NotificationBell audience="MERCHANT" accent="#082824" className="merchant-light-bell" />
@@ -6245,12 +6231,6 @@ Please complete the following implementation tasks:
                     onCancel={confirmModal.onCancel ?? (() => setConfirmModal(null))}
                 />
             )}
-            <SharePlanModal
-                isOpen={sharingPlan !== null}
-                onClose={() => setSharingPlan(null)}
-                plan={sharingPlan}
-                subscribeUrl={sharingPlan ? buildSubscribeUrl(sharingPlan.id, typeof window !== "undefined" ? window.location.origin : undefined) : ""}
-            />
             {/* High-fidelity glassmorphic toast notification for settlement confirmation */}
                             {showToast && (
                                 <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass border border-emerald-500/30 bg-black/60 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-[0_8px_32px_0_rgba(0,210,180,0.2)]">
@@ -6268,14 +6248,12 @@ function MerchantPlanRow({
     plan,
     busy,
     onToggle,
-    onShare,
     promotion = null,
     onPromotionsChanged,
 }: {
     plan: MerchantPlan;
     busy: boolean;
     onToggle: (plan: MerchantPlan) => void;
-    onShare: (plan: MerchantPlan) => void;
     promotion?: PlanPromotion | null;
     onPromotionsChanged?: () => void;
 }) {
@@ -6308,8 +6286,8 @@ function MerchantPlanRow({
                     disabled={busy}
                     className={`inline-flex w-full shrink-0 items-center justify-center rounded-xl border px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition disabled:opacity-50 sm:w-auto ${
                         plan.active
-                            ? "border-red-400/20 bg-red-500/10 text-red-200 hover:bg-red-500/15"
-                            : "border-[#00d2b4]/20 bg-[#00d2b4]/10 text-[#00d2b4] hover:bg-[#00d2b4]/15"
+                            ? "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-300 hover:bg-red-500/15"
+                            : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-[#00d2b4] hover:bg-emerald-500/15"
                     }`}
                 >
                     {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : plan.active ? "Deactivate" : "Reactivate"}
@@ -6335,28 +6313,17 @@ function MerchantPlanRow({
             )}
 
             {plan.active && !plan.targetSubscriber && (
-                <div data-testid="merchant-plan-link-strip" className="mt-3 grid min-w-0 gap-2 overflow-hidden rounded-xl border border-white/5 bg-black/30 p-2 sm:flex sm:items-center sm:px-3 sm:py-2">
-                    <span className="block min-w-0 max-w-full truncate border-b border-white/5 pb-1.5 font-mono text-[10px] text-white/45 sm:flex-1 sm:border-none sm:pb-0">{subscribeUrl}</span>
-                    <div className="grid w-full min-w-0 grid-cols-2 gap-2 pt-1 sm:flex sm:w-auto sm:items-center sm:justify-end sm:pt-0">
-                        <button
-                            type="button"
-                            onClick={handleCopy}
-                            className="flex min-w-0 items-center justify-center gap-1.5 rounded-lg border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider text-[#00d2b4] transition hover:bg-[#00d2b4]/20 sm:flex-none sm:shrink-0 sm:px-3"
-                            title={copied ? "Copied!" : "Copy subscribe link"}
-                        >
-                            {copied ? <Check className="h-3 w-3 shrink-0" /> : <Copy className="h-3 w-3 shrink-0" />}
-                            <span className="truncate">{copied ? "Copied" : "Copy link"}</span>
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => onShare(plan)}
-                            className="flex min-w-0 items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider text-white/80 transition hover:bg-white/10 hover:text-white sm:flex-none sm:shrink-0 sm:px-3"
-                            title="Create sharing poster card"
-                        >
-                            <Share2 className="h-3 w-3 shrink-0" />
-                            <span className="truncate">Share</span>
-                        </button>
-                    </div>
+                <div data-testid="merchant-plan-link-strip" className="mt-3 flex min-w-0 items-center justify-between gap-2 overflow-hidden rounded-xl border border-white/5 bg-black/30 px-3 py-2">
+                    <span className="block min-w-0 flex-1 truncate font-mono text-[10px] text-white/45">{subscribeUrl}</span>
+                    <button
+                        type="button"
+                        onClick={handleCopy}
+                        className="flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-[#00d2b4] transition hover:bg-[#00d2b4]/20"
+                        title={copied ? "Copied!" : "Copy subscribe link"}
+                    >
+                        {copied ? <Check className="h-3 w-3 shrink-0" /> : <Copy className="h-3 w-3 shrink-0" />}
+                        <span>{copied ? "Copied" : "Copy link"}</span>
+                    </button>
                 </div>
             )}
 
@@ -6484,21 +6451,21 @@ function PlanPromotionPanel({
             {!editing && promotion && (
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
-                        <p className="text-[9px] font-black uppercase tracking-[0.14em] text-amber-300/70">
+                        <p className="text-[9px] font-black uppercase tracking-[0.14em] text-amber-800 dark:text-amber-300">
                             Promotion · {promotion.active ? "Live" : "Off"} · {promotion.redemptionCount}{promotion.maxRedemptions ? `/${promotion.maxRedemptions}` : ""} redeemed
                         </p>
-                        <p className="mt-0.5 truncate text-[11px] font-bold text-white/80">{promotion.name}: {summaryLabel}, then {formatPlanAmount(plan.amountUsdc)} USDC / {cadence}</p>
+                        <p className="mt-0.5 truncate text-[11px] font-bold text-[#082824] dark:text-white/80">{promotion.name}: {summaryLabel}, then {formatPlanAmount(plan.amountUsdc)} USDC / {cadence}</p>
                         {promotion.expiresAt && (
-                            <p className="text-[9px] text-white/35">Offer ends {new Date(promotion.expiresAt).toLocaleDateString()}</p>
+                            <p className="text-[9px] text-black/50 dark:text-white/35">Offer ends {new Date(promotion.expiresAt).toLocaleDateString()}</p>
                         )}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                         <button type="button" onClick={() => setEditing(true)} disabled={saving}
-                            className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider text-white/70 transition hover:text-white disabled:opacity-50">
+                            className="rounded-lg border border-black/15 dark:border-white/10 bg-black/5 dark:bg-white/5 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider text-[#082824] dark:text-white/70 transition hover:bg-black/10 dark:hover:text-white disabled:opacity-50">
                             Edit
                         </button>
                         <button type="button" onClick={toggleActive} disabled={saving}
-                            className={`rounded-lg border px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition disabled:opacity-50 ${promotion.active ? "border-red-400/20 bg-red-500/10 text-red-200 hover:bg-red-500/15" : "border-[#00d2b4]/20 bg-[#00d2b4]/10 text-[#00d2b4] hover:bg-[#00d2b4]/15"}`}>
+                            className={`rounded-lg border px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition disabled:opacity-50 ${promotion.active ? "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-300 hover:bg-red-500/15" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-[#00d2b4] hover:bg-emerald-500/15"}`}>
                             {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : promotion.active ? "Turn off" : "Turn on"}
                         </button>
                     </div>
@@ -6506,8 +6473,11 @@ function PlanPromotionPanel({
             )}
 
             {!editing && !promotion && plan.active && (
-                <button type="button" onClick={() => setEditing(true)}
-                    className="w-full rounded-lg border border-dashed border-amber-300/20 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-amber-200/70 transition hover:border-amber-300/40 hover:text-amber-200">
+                <button
+                    type="button"
+                    onClick={() => setEditing(true)}
+                    className="w-full rounded-xl border border-dashed border-amber-600/30 dark:border-amber-400/30 bg-amber-500/[0.04] dark:bg-amber-400/[0.06] px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300 transition hover:border-amber-600/60 dark:hover:border-amber-400/60 hover:bg-amber-500/[0.08] dark:hover:bg-amber-400/[0.1] shadow-xs"
+                >
                     + Add introductory offer (discount or free trial)
                 </button>
             )}

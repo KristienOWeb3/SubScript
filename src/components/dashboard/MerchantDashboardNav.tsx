@@ -23,16 +23,8 @@ import {
     X,
     CreditCard,
     Zap,
+    Crown,
 } from "@/components/icons";
-
-function DiamondIcon({ className = "" }: { className?: string }) {
-    return (
-        <svg className={className} viewBox="0 0 32 32" fill="none" aria-hidden="true">
-            <path d="M7 6h18l4 7-13 15L3 13l4-7Z" stroke="currentColor" strokeWidth="1.5" />
-            <path d="m7 6 9 22M25 6 16 28M3 13h26M11 6l-3 7" stroke="currentColor" strokeWidth="1" />
-        </svg>
-    );
-}
 
 const paymentIds = new Set([
     "payment-links",
@@ -82,7 +74,7 @@ export default function MerchantDashboardNav({
     const isDeveloperActive = developerIds.has(activeId);
 
     const baseRow =
-        "flex w-full items-center gap-2.5 rounded-full px-3.5 sm:px-4 py-2.5 text-left text-[13px] font-semibold transition-all duration-200 whitespace-nowrap";
+        "flex w-full items-center gap-2 rounded-full px-3.5 py-2.5 text-left text-xs font-semibold transition-all duration-200 whitespace-nowrap";
     const selectedRow =
         "bg-[#FFFFF0] text-[#082824] shadow-md font-bold [&_.koboyo-icon]:bg-[#082824]";
     const rowClass = (active: boolean) =>
@@ -90,7 +82,7 @@ export default function MerchantDashboardNav({
             active ? selectedRow : "text-white/80 hover:bg-white/10 hover:text-white"
         }`;
     const childClass = (active: boolean) =>
-        `flex w-full items-center gap-2 rounded-full px-3.5 sm:px-4 py-2 pl-7 text-left text-[12px] font-medium transition-all duration-200 whitespace-nowrap ${
+        `flex w-full items-center gap-1.5 rounded-full px-3 py-1.5 pl-6 text-left text-[11px] font-medium transition-all duration-200 whitespace-nowrap ${
             active ? selectedRow : "text-white/70 hover:bg-white/10 hover:text-white"
         }`;
 
@@ -98,7 +90,7 @@ export default function MerchantDashboardNav({
         <>
             <aside
                 aria-busy={isLoading}
-                className="merchant-rail relative hidden h-full w-[clamp(240px,18vw,300px)] shrink-0 flex-col overflow-y-auto overscroll-contain bg-[#353935] px-4 sm:px-5 pb-6 pt-7 text-white md:flex [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                className="merchant-rail relative hidden h-full w-[clamp(230px,17.3vw,288px)] shrink-0 flex-col overflow-y-auto overscroll-contain bg-[#353935] px-3.5 sm:px-4 pb-5 pt-6 text-white md:flex [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             >
                 {isLoading && (
                     <div
@@ -156,7 +148,7 @@ export default function MerchantDashboardNav({
                                 aria-label="Open Premium"
                                 title={isPremium ? "Premium Pro Active" : "Open Premium"}
                             >
-                                <DiamondIcon className="h-4 w-4" />
+                                <Crown className="h-4 w-4" />
                             </button>
                         </div>
                     </div>
@@ -224,7 +216,7 @@ export default function MerchantDashboardNav({
                                     }}
                                     className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-white/90 hover:bg-white/10 transition"
                                 >
-                                    <DiamondIcon className="h-4 w-4 text-white/70" /> Premium Pro Plan
+                                    <Crown className="h-4 w-4 text-amber-400" /> Premium Pro Plan
                                 </button>
                                 <Link
                                     href="/support"
@@ -384,7 +376,7 @@ export default function MerchantDashboardNav({
             {/* Mobile Bottom Navigation */}
             {mobileEnabled && (
                 <nav
-                    className="fixed bottom-3 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-lg -translate-x-1/2 items-center justify-around rounded-full bg-[#353935] px-2 py-2 shadow-[0_10px_40px_rgba(8,40,36,0.25)] border border-white/10 md:hidden"
+                    className="merchant-bottom-nav fixed bottom-3 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-lg -translate-x-1/2 items-center justify-around rounded-full bg-[#353935] px-2 py-2 shadow-[0_10px_40px_rgba(8,40,36,0.25)] border border-white/10 md:hidden"
                     aria-label="Merchant mobile navigation"
                 >
                     {[
@@ -404,7 +396,7 @@ export default function MerchantDashboardNav({
                                 className={`flex min-w-0 flex-col items-center gap-1 rounded-full px-3 py-1.5 text-[10px] transition ${
                                     active
                                         ? "bg-[#FFFFF0] text-[#082824] shadow-sm font-bold"
-                                        : "text-white/70"
+                                        : "text-white/70 hover:text-white"
                                 }`}
                             >
                                 <Icon className="h-4 w-4" />
@@ -414,7 +406,7 @@ export default function MerchantDashboardNav({
                     })}
                     <button
                         onClick={() => setMoreOpen(true)}
-                        className="flex flex-col items-center gap-1 rounded-full px-3 py-1.5 text-[10px] text-white/70"
+                        className="flex flex-col items-center gap-1 rounded-full px-3 py-1.5 text-[10px] text-white/70 hover:text-white"
                     >
                         <Menu className="h-4 w-4" /> More
                     </button>
@@ -428,7 +420,7 @@ export default function MerchantDashboardNav({
                     onClick={() => setMoreOpen(false)}
                 >
                     <div
-                        className="absolute bottom-3 left-3 right-3 rounded-[30px] bg-[#353935] border border-white/15 p-5 text-white shadow-2xl"
+                        className="merchant-more-sheet absolute bottom-3 left-3 right-3 rounded-[30px] bg-[#353935] border border-white/15 p-5 text-white shadow-2xl"
                         onClick={(event) => event.stopPropagation()}
                     >
                         <div className="mb-4 flex items-center justify-between">
@@ -466,7 +458,7 @@ export default function MerchantDashboardNav({
                                 }}
                                 className={childClass(activeId === "premium")}
                             >
-                                <DiamondIcon className="h-4 w-4" /> Premium
+                                <Crown className="h-4 w-4" /> Premium
                             </button>
                             <button
                                 onClick={() => {

@@ -99,17 +99,17 @@ export default function DashboardSidebar({
         const Icon = item.icon;
         const isActive = !item.href && activeId === item.id;
         const sizing = isCollapsed
-            ? "py-3 px-2 text-xs"
+            ? "py-2.5 px-1.5 text-xs"
             : compact
-            ? "py-2.5 px-3.5 lg:px-4 text-xs"
-            : "py-3 px-3.5 lg:px-4 text-xs";
+            ? "py-2.5 px-3 lg:px-3.5 text-xs"
+            : "py-2.5 px-3 lg:px-3.5 text-xs";
         const className = `${rowBase} ${sizing} ${isActive ? activeRow : idleRow}`;
         const style = item.accent ? ({ "--sb-accent": item.accent } as CSSProperties) : undefined;
 
         const body: ReactNode = (
             <>
                 <Icon
-                    className={`h-4.5 w-4.5 shrink-0 ${
+                    className={`h-4 w-4 shrink-0 ${
                         isActive
                             ? "text-[#353935]"
                             : "text-white/70 group-hover:text-white"
@@ -130,7 +130,7 @@ export default function DashboardSidebar({
                         className={`${
                             isCollapsed
                                 ? "absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[8px] font-bold"
-                                : "ml-auto flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[9px] font-bold"
+                                : "ml-auto flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-[9px] font-bold"
                         } ${isActive ? "bg-[color:var(--sb-accent)] text-black" : "bg-red-500 text-white"}`}
                     >
                         {item.badgeCount > 9 ? "9+" : item.badgeCount}
@@ -173,31 +173,31 @@ export default function DashboardSidebar({
         <aside
             aria-busy={isLoading}
             style={{ "--sb-accent": accent, "--sb-panel": panelColor } as AccentStyle}
-            className={`hidden md:flex h-full max-h-screen shrink-0 flex-col justify-between overflow-y-auto overscroll-contain bg-[#353935] p-3 lg:p-4 text-white/90 transition-all duration-300 ease-in-out [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${className} ${
-                isCollapsed ? "w-[72px]" : "w-20 lg:w-64"
+            className={`hidden md:flex h-full max-h-screen shrink-0 flex-col justify-between overflow-y-auto overscroll-contain bg-[#353935] p-2.5 lg:p-3.5 text-white/90 transition-all duration-300 ease-in-out [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${className} ${
+                isCollapsed ? "w-14" : "w-16 lg:w-52"
             }`}
         >
-            <div className="space-y-5">
+            <div className="space-y-4">
                 {/* Header: Identity pill + Retract/Expand Toggle */}
-                <div className={`flex items-center gap-2 ${isCollapsed ? "flex-col justify-center" : "justify-between"}`}>
+                <div className={`flex items-center gap-1.5 ${isCollapsed ? "flex-col justify-center" : "justify-between"}`}>
                     {isLoading ? (
                         <div
-                            className={`inline-flex max-w-full items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.08] p-1.5 ${isCollapsed ? "justify-center" : "px-2.5 py-1.5"}`}
+                            className={`inline-flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] p-1 ${isCollapsed ? "justify-center" : "px-2 py-1"}`}
                             aria-hidden="true"
                         >
-                            <div className="h-6 w-6 shrink-0 rounded-full subscript-skeleton" />
-                            {!isCollapsed && <div className="hidden h-2.5 w-24 rounded-full subscript-skeleton lg:block" />}
+                            <div className="h-5 w-5 shrink-0 rounded-full subscript-skeleton" />
+                            {!isCollapsed && <div className="hidden h-2 w-20 rounded-full subscript-skeleton lg:block" />}
                         </div>
                     ) : (
                         <button
                             type="button"
                             onClick={identity.onClick}
-                            className={`inline-flex max-w-full items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.08] text-white p-1.5 text-left shadow-sm transition hover:border-white/25 hover:bg-white/[0.14] ${
-                                isCollapsed ? "justify-center" : "px-2.5 py-1.5"
+                            className={`inline-flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] text-white p-1 text-left shadow-sm transition hover:border-white/25 hover:bg-white/[0.14] ${
+                                isCollapsed ? "justify-center" : "px-2 py-1"
                             }`}
                             title={identity.title || identity.label}
                         >
-                            <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/20 text-white text-[11px] font-bold">
+                            <div className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/20 text-white text-[10px] font-bold">
                                 {identity.avatarUrl ? (
                                     /* eslint-disable-next-line @next/next/no-img-element */
                                     <img src={identity.avatarUrl} alt="" className="h-full w-full object-cover" />
@@ -206,7 +206,7 @@ export default function DashboardSidebar({
                                 )}
                             </div>
                             {!isCollapsed && (
-                                <span className="hidden truncate font-mono text-[11px] font-bold text-white lg:inline max-w-[120px]">
+                                <span className="hidden truncate font-mono text-[10px] font-bold text-white lg:inline max-w-[100px]">
                                     {identity.label}
                                 </span>
                             )}
@@ -219,27 +219,27 @@ export default function DashboardSidebar({
                         onClick={toggleCollapse}
                         aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                         title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                        className="p-1.5 rounded-full border border-white/10 bg-white/[0.04] text-white/50 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all"
+                        className="p-1 rounded-full border border-white/10 bg-white/[0.04] text-white/50 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all"
                     >
                         {isCollapsed ? (
-                            <ChevronRight className="h-3.5 w-3.5" />
+                            <ChevronRight className="h-3 w-3" />
                         ) : (
-                            <ChevronLeft className="h-3.5 w-3.5" />
+                            <ChevronLeft className="h-3 w-3" />
                         )}
                     </button>
                 </div>
 
-                <nav className="space-y-1.5" aria-label={ariaLabel}>
+                <nav className="space-y-1" aria-label={ariaLabel}>
                     {isLoading
                         ? Array.from({ length: Math.max(5, Math.min(items.length, 8)) }).map((_, index) => (
                             <div
                                 key={index}
-                                className={`flex items-center ${isCollapsed ? "justify-center px-2" : "gap-3 px-3.5 lg:px-4"} py-3`}
+                                className={`flex items-center ${isCollapsed ? "justify-center px-1.5" : "gap-2.5 px-3 lg:px-3.5"} py-2`}
                                 aria-hidden="true"
                             >
-                                <div className="h-4.5 w-4.5 shrink-0 rounded-md subscript-skeleton subscript-skeleton--faint" />
+                                <div className="h-4 w-4 shrink-0 rounded-md subscript-skeleton subscript-skeleton--faint" />
                                 {!isCollapsed && (
-                                    <div className={`hidden h-2.5 rounded-full subscript-skeleton lg:block ${index % 3 === 0 ? "w-32" : index % 2 === 0 ? "w-24" : "w-28"}`} />
+                                    <div className={`hidden h-2 rounded-full subscript-skeleton lg:block ${index % 3 === 0 ? "w-28" : index % 2 === 0 ? "w-20" : "w-24"}`} />
                                 )}
                             </div>
                         ))

@@ -606,8 +606,8 @@ export default function MerchantOverview({
                         onClick={() => setSelectedPlanFilter("ALL")}
                         className={`rounded-full px-4 py-1.5 text-xs font-bold transition shadow-sm ${
                             selectedPlanFilter === "ALL"
-                                ? "bg-[#000000] text-white"
-                                : "bg-[#5B9BD5] hover:bg-[#4a8cc7] text-white"
+                                ? "bg-[#082824] text-white dark:bg-white dark:text-[#082824]"
+                                : "bg-black/5 text-black/70 hover:bg-black/10 hover:text-black dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/20 border border-black/10 dark:border-white/10"
                         }`}
                     >
                         All Plans
@@ -619,8 +619,8 @@ export default function MerchantOverview({
                             onClick={() => setSelectedPlanFilter(plan.id)}
                             className={`rounded-full px-4 py-1.5 text-xs font-bold transition shadow-sm ${
                                 selectedPlanFilter === plan.id
-                                    ? "bg-[#000000] text-white"
-                                    : "bg-[#5B9BD5] hover:bg-[#4a8cc7] text-white"
+                                    ? "bg-[#082824] text-white dark:bg-white dark:text-[#082824]"
+                                    : "bg-black/5 text-black/70 hover:bg-black/10 hover:text-black dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/20 border border-black/10 dark:border-white/10"
                             }`}
                         >
                             {plan.name}
@@ -677,8 +677,8 @@ export default function MerchantOverview({
                                                 {row.nextBilling}
                                             </td>
                                             <td className="py-3">
-                                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800">
-                                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 dark:border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                                                     Active
                                                 </span>
                                             </td>
@@ -693,13 +693,13 @@ export default function MerchantOverview({
                             {filteredRows.map((row) => (
                                 <div
                                     key={row.id}
-                                    className="p-3 rounded-2xl bg-white/70 border border-black/5 space-y-2"
+                                    className="p-3 rounded-2xl bg-white/70 dark:bg-white/[0.04] border border-black/5 dark:border-white/10 space-y-2"
                                 >
                                     <div className="flex items-center justify-between">
-                                        <span className="font-mono text-xs font-bold text-[#082824]">
+                                        <span className="font-mono text-xs font-bold text-[#082824] dark:text-white">
                                             {row.shortSubAddress || row.displayAddress}
                                         </span>
-                                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold text-emerald-800">
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 dark:border-emerald-500/30 px-2 py-0.5 text-[9px] font-bold text-emerald-700 dark:text-emerald-300">
                                             Active
                                         </span>
                                     </div>

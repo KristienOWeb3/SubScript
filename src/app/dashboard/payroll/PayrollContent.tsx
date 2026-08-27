@@ -1032,7 +1032,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
 
                                                 <button
                                                     onClick={() => setShowCreateForm((prev) => !prev)}
-                                                    className="px-6 py-3 bg-[#000000] text-white hover:bg-black/85 dark:bg-white dark:text-black dark:hover:bg-zinc-200 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-md font-sans"
+                                                    className="px-6 py-3 bg-[#082824] text-white hover:bg-black dark:bg-white dark:text-[#082824] dark:hover:bg-zinc-200 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-md font-sans"
                                                 >
                                                     {showCreateForm ? <Plus size={16} className="rotate-45 transition-transform duration-200" /> : <Plus size={16} />}
                                                     {showCreateForm ? "Cancel" : "New Campaign"}
@@ -1224,7 +1224,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                     type="button"
                                                                     onClick={handleCreateCampaign}
                                                                     disabled={isSubmitting || !permit2Sig}
-                                                                    className="px-6 py-2.5 bg-[#000000] text-white hover:bg-black/85 dark:bg-white dark:text-black dark:hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 shadow-sm"
+                                                                    className="px-6 py-2.5 bg-[#082824] text-white hover:bg-black dark:bg-white dark:text-[#082824] dark:hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 shadow-sm"
                                                                 >
                                                                     {isSubmitting ? (
                                                                         <Loader2 size={12} className="animate-spin" />
@@ -1244,7 +1244,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                 <div className="space-y-6">
                                                     {[1, 2, 3].map((n) => (
                                                         <div
-                                                            key={`skel-${n}`}
+                                                             key={`skel-${n}`}
                                                             className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl relative overflow-hidden"
                                                         >
                                                             <div className="h-6 w-48 bg-white/10 rounded-lg animate-pulse mb-4" />
@@ -1276,18 +1276,18 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
 
                                             {/* Empty State */}
                                             {!pageIsLoading && !loadError && campaigns.length === 0 && (
-                                                <div className="liquid-glass border border-white/5 rounded-3xl p-12 text-center space-y-6 max-w-lg mx-auto bg-black/40">
-                                                    <Calendar size={40} className="text-white/20 mx-auto" />
+                                                <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-black/40 p-12 text-center space-y-6 max-w-lg mx-auto shadow-sm">
+                                                    <Calendar size={40} className="text-black/30 dark:text-white/20 mx-auto" />
                                                     <div className="space-y-2">
-                                                        <h3 className="text-sm font-bold text-white uppercase tracking-wider">No Payroll Campaigns</h3>
-                                                        <p className="text-xs text-white/50 max-w-xs mx-auto leading-relaxed font-sans">
+                                                        <h3 className="text-sm font-bold text-[#082824] dark:text-white uppercase tracking-wider">No Payroll Campaigns</h3>
+                                                        <p className="text-xs text-black/60 dark:text-white/50 max-w-xs mx-auto leading-relaxed font-sans">
                                                             Create your first campaign to start automating salary payments.
                                                         </p>
                                                     </div>
                                                     {!showCreateForm && (
                                                         <button
                                                             onClick={() => setShowCreateForm(true)}
-                                                            className="px-6 py-3 bg-[#000000] text-white hover:bg-black/85 dark:bg-white dark:text-black dark:hover:bg-zinc-200 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-md mx-auto font-sans"
+                                                            className="px-6 py-3 bg-[#082824] text-white hover:bg-black dark:bg-white dark:text-[#082824] dark:hover:bg-zinc-200 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-md mx-auto font-sans"
                                                         >
                                                             <Plus size={16} />
                                                             Create Campaign

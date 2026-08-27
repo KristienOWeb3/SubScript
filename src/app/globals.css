@@ -7,7 +7,7 @@
 @config "../../tailwind.config.js";
 
 html {
-  font-size: 120%;
+  font-size: 108%;
 }
 
 @layer components {
@@ -908,7 +908,7 @@ body {
 .user-dashboard-redesign [role="dialog"] [class~="bg-[#ccff00]" i],
 .user-dashboard-redesign [role="dialog"] [class~="bg-[#ccff00]" i] [class~="text-black"],
 .user-dashboard-redesign [role="dialog"] [class~="bg-[#ccff00]" i] [class~="text-[#111827]" i] {
-  color: #ffffff !important;
+  color: #000000 !important;
 }
 
 .user-dashboard-content [class*="border-white/"],
@@ -1118,6 +1118,10 @@ body {
 .merchant-dashboard-workspace [class~="bg-[#082824]"] *,
 .merchant-dashboard-workspace [class*="bg-[#082824]"],
 .merchant-dashboard-workspace [class*="bg-[#082824]"] *,
+.merchant-dashboard-workspace [class~="bg-[#353935]"],
+.merchant-dashboard-workspace [class~="bg-[#353935]"] *,
+.merchant-dashboard-workspace [class*="bg-[#353935]"],
+.merchant-dashboard-workspace [class*="bg-[#353935]"] *,
 .merchant-dashboard-workspace [class~="bg-[#000000]"],
 .merchant-dashboard-workspace [class~="bg-[#000000]"] *,
 .merchant-dashboard-workspace [class~="bg-[#5B9BD5]"],
@@ -1129,6 +1133,18 @@ body {
 .merchant-dashboard-workspace [class*="bg-black/80"] *,
 .merchant-dashboard-workspace .merchant-timeframe-active,
 .merchant-dashboard-workspace .merchant-timeframe-active * {
+  color: #ffffff !important;
+}
+
+:root:not([data-theme="dark"]) .merchant-dashboard-workspace [class~="bg-[#082824]"],
+:root:not([data-theme="dark"]) .merchant-dashboard-workspace [class*="bg-[#082824]"] {
+  background-color: #082824 !important;
+  color: #ffffff !important;
+}
+
+:root:not([data-theme="dark"]) .merchant-dashboard-workspace [class~="bg-[#353935]"],
+:root:not([data-theme="dark"]) .merchant-dashboard-workspace [class*="bg-[#353935]"] {
+  background-color: #353935 !important;
   color: #ffffff !important;
 }
 
@@ -1314,10 +1330,6 @@ body {
 
    The rail is a sibling of the workspace, so this does not touch it — MerchantDashboardNav is
    hand-tuned to match (see the sizing note there).
-
-.dm-content-zoom {
-  zoom: 0.64;
-}
 
 /* ---------------------------------------------------------------------------
    MERCHANT LIGHT MODE → USER DASHBOARD SURFACES
@@ -1549,12 +1561,34 @@ body {
 }
 
 /* Cream panels -> Dark Card surfaces */
-[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#FFFFF0]" i],
-[data-theme="dark"] .user-dashboard-loading [class~="bg-[#FFFFF0]" i],
-[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-[#FFFFF0]" i],
-[data-theme="dark"] .merchant-dashboard-root [class~="bg-[#FFFFF0]" i],
-[data-theme="dark"] .merchant-dashboard-workspace .liquid-glass {
+[data-theme="dark"] .user-dashboard-redesign [class~="bg-[#FFFFF0]" i]:not(aside *):not(aside),
+[data-theme="dark"] .user-dashboard-loading [class~="bg-[#FFFFF0]" i]:not(aside *):not(aside),
+[data-theme="dark"] .merchant-dashboard-workspace [class~="bg-[#FFFFF0]" i]:not(.merchant-bottom-nav *):not(.merchant-bottom-nav):not(.merchant-more-sheet *):not(.merchant-more-sheet),
+[data-theme="dark"] .merchant-dashboard-workspace .liquid-glass:not(.merchant-bottom-nav):not(.merchant-more-sheet) {
   background-color: var(--dk-card) !important;
+}
+
+/* Sidebar & Mobile Bottom Nav active tab pill — always glowing ivory with crisp dark text in all themes */
+aside [class~="bg-[#FFFFF0]"],
+.merchant-rail [class~="bg-[#FFFFF0]"],
+.merchant-bottom-nav [class~="bg-[#FFFFF0]"],
+.merchant-more-sheet [class~="bg-[#FFFFF0]"],
+[data-theme="dark"] aside [class~="bg-[#FFFFF0]"],
+[data-theme="dark"] .merchant-rail [class~="bg-[#FFFFF0]"],
+[data-theme="dark"] .merchant-bottom-nav [class~="bg-[#FFFFF0]"],
+[data-theme="dark"] .merchant-more-sheet [class~="bg-[#FFFFF0]"] {
+  background-color: #FFFFF0 !important;
+  color: #082824 !important;
+}
+aside [class~="bg-[#FFFFF0]"] *,
+.merchant-rail [class~="bg-[#FFFFF0]"] *,
+.merchant-bottom-nav [class~="bg-[#FFFFF0]"] *,
+.merchant-more-sheet [class~="bg-[#FFFFF0]"] *,
+[data-theme="dark"] aside [class~="bg-[#FFFFF0]"] *,
+[data-theme="dark"] .merchant-rail [class~="bg-[#FFFFF0]"] *,
+[data-theme="dark"] .merchant-bottom-nav [class~="bg-[#FFFFF0]"] *,
+[data-theme="dark"] .merchant-more-sheet [class~="bg-[#FFFFF0]"] * {
+  color: #082824 !important;
 }
 
 /* Translucent creams */
@@ -1895,9 +1929,9 @@ body {
 }
 
 [data-theme="dark"] .merchant-timeframe-track {
-  background-color: rgba(255, 255, 255, 0.08) !important;
-  border: 1px solid rgba(255, 255, 255, 0.18) !important;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35) !important;
+  background-color: rgba(255, 255, 255, 0.07) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3) !important;
 }
 
 :root:not([data-theme="dark"]) .merchant-timeframe-active {
@@ -1918,20 +1952,20 @@ body {
 }
 
 [data-theme="dark"] .merchant-timeframe-active {
-  background-color: #ffffff !important;
-  color: #000000 !important;
-  border: 1px solid #ffffff !important;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5) !important;
+  background-color: rgba(255, 255, 255, 0.18) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.28) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
   font-weight: 800 !important;
 }
 
 [data-theme="dark"] .merchant-timeframe-active * {
-  color: #000000 !important;
+  color: #ffffff !important;
 }
 
 [data-theme="dark"] .merchant-timeframe-active:hover {
-  background-color: #f4f4f5 !important;
-  color: #000000 !important;
+  background-color: rgba(255, 255, 255, 0.25) !important;
+  color: #ffffff !important;
 }
 
 :root:not([data-theme="dark"]) .merchant-timeframe-idle {
@@ -1948,13 +1982,13 @@ body {
 
 [data-theme="dark"] .merchant-timeframe-idle {
   background-color: transparent !important;
-  color: rgba(255, 255, 255, 0.75) !important;
+  color: rgba(255, 255, 255, 0.65) !important;
   border: 1px solid transparent !important;
-  font-weight: 700 !important;
+  font-weight: 600 !important;
 }
 
 [data-theme="dark"] .merchant-timeframe-idle:hover {
-  background-color: rgba(255, 255, 255, 0.18) !important;
+  background-color: rgba(255, 255, 255, 0.12) !important;
   color: #ffffff !important;
 }
 
@@ -2395,4 +2429,63 @@ body {
   -webkit-background-clip: text !important;
   -webkit-text-fill-color: transparent !important;
 }
+
+/* -------------------------------------------------------------- Spend Analysis Dark Mode */
+[data-theme="dark"] [data-spend-card] {
+  background-color: var(--dk-card) !important;
+  border-color: var(--dk-line-2) !important;
+}
+
+[data-theme="dark"] [data-spend-category] {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="dark"] [data-spend-category] .spend-category-value,
+[data-theme="dark"] [data-spend-category] [class*="text-black"] {
+  color: var(--dk-ink) !important;
+}
+
+[data-theme="dark"] [data-spend-inflow] {
+  background-color: rgba(16, 185, 129, 0.12) !important;
+  border-color: rgba(16, 185, 129, 0.25) !important;
+}
+
+[data-theme="dark"] [data-spend-inflow] span,
+[data-theme="dark"] [data-spend-inflow] p {
+  color: #6ee7b7 !important;
+}
+
+[data-theme="dark"] [data-spend-outflow] {
+  background-color: rgba(239, 68, 68, 0.12) !important;
+  border-color: rgba(239, 68, 68, 0.25) !important;
+}
+
+[data-theme="dark"] [data-spend-outflow] span,
+[data-theme="dark"] [data-spend-outflow] p {
+  color: #fca5a5 !important;
+}
+
+[data-theme="dark"] [data-spend-net] {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="dark"] [data-spend-net] span,
+[data-theme="dark"] [data-spend-net] p {
+  color: var(--dk-ink) !important;
+}
+
+[data-theme="dark"] [data-spend-chart] text {
+  fill: rgba(255, 255, 255, 0.5) !important;
+}
+
+[data-theme="dark"] [data-spend-chart] line {
+  stroke: rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-theme="dark"] [data-spend-chart] circle {
+  fill: #18181b !important;
+}
+
 
