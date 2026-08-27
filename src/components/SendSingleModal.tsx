@@ -182,8 +182,8 @@ export default function SendSingleModal({
                                 <div
                                     className={`flex items-center justify-between rounded-2xl border p-4 text-xs transition-all duration-300 ${
                                         resolved.address
-                                            ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-900"
-                                            : "border-red-500/20 bg-red-500/10 text-red-700"
+                                            ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-900 dark:text-emerald-200"
+                                            : "border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-300"
                                     }`}
                                 >
                                     <div className="flex min-w-0 items-center gap-3">
@@ -207,7 +207,7 @@ export default function SendSingleModal({
                                                 </>
                                             ) : (
                                                 <>
-                                                    <p className="text-[9px] font-bold uppercase tracking-wider text-red-700">Resolution Error</p>
+                                                    <p className="text-[9px] font-bold uppercase tracking-wider text-red-700 dark:text-red-300">Resolution Error</p>
                                                     <p className="mt-0.5 text-[10px] text-black/60">
                                                         Could not find address alias matching &quot;{resolved.alias}&quot;
                                                     </p>
@@ -246,8 +246,8 @@ export default function SendSingleModal({
                                 <p
                                     className={`rounded-2xl border p-3 text-[11px] leading-relaxed ${
                                         status.startsWith("Success")
-                                            ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700"
-                                            : "border-red-500/20 bg-red-500/10 text-red-700"
+                                            ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                                            : "border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-300"
                                     }`}
                                 >
                                     {status}
@@ -255,7 +255,7 @@ export default function SendSingleModal({
                             )}
 
                             {selfSend && (
-                                <div className="rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-[11px] leading-relaxed text-red-700">
+                                <div className="rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-[11px] leading-relaxed text-red-700 dark:text-red-300">
                                     This is your connected wallet address. Enter another recipient before sending.
                                 </div>
                             )}

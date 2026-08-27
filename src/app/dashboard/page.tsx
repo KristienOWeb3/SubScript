@@ -7,7 +7,9 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import MerchantDashboardNav from "@/components/dashboard/MerchantDashboardNav";
 import MerchantOverview from "@/components/dashboard/MerchantOverview";
+import NotificationBell from "@/components/dashboard/NotificationBell";
 import DashboardSkeleton from "@/components/DashboardSkeleton";
+import Skeleton from "@/components/ui/Skeleton";
 import { SkeletonCard, SkeletonRows, SkeletonStatGrid } from "@/components/ui/skeletons";
 import { getDashboardUrl } from "@/utils/navigation";
 import { buildCheckoutUrl, buildSubscribeUrl } from "@/lib/checkoutUrl";
@@ -19,9 +21,9 @@ import QrScannerModal from "@/components/QrScannerModal";
 import { resolveScannedTarget } from "@/lib/qr/scanTargets";
 import ConfirmModal from "@/components/ConfirmModal";
 import DurationPicker from "@/components/DurationPicker";
-import SharePlanModal from "@/components/SharePlanModal";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
 import SupportChatModal from "@/components/support/SupportChatModal";
+import SharePlanModal from "@/components/SharePlanModal";
 import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useReadContract, useSignMessage } from "wagmi";
 import { injected } from "wagmi/connectors";
 import {
@@ -42,8 +44,8 @@ import {
     ShieldCheck, Save, SquaresFour, MessageSquare, HelpCircle, Send, Terminal, Bell, Search, ChevronLeft, ArrowLeft
 } from "@/components/icons";
 import { useTheme } from "@/hooks/useTheme";
+import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 import { QRCode } from "react-qrcode-logo";
-import AnalyticsDashboard from "@/components/AnalyticsDashboard";
 import type { MerchantAnalyticsSummary, MerchantSubscriptionDetail } from "@/lib/analytics/merchantSubscriptions";
 import { PayrollContent } from "@/app/dashboard/payroll/PayrollContent";
 
@@ -55,7 +57,6 @@ import {
     CONFIDENTIAL_CONTRACT_ADDRESS
 } from "@/lib/contracts/constants";
 import { STANDARD_SUBSCRIPT_ABI, SUBSCRIPT_ROUTER_ABI, USDC_ERC20_ABI, CONFIDENTIAL_CONTRACT_ABI } from "@/lib/contracts/abis";
-import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 import FinancialStatusBadge from "@/components/FinancialStatusBadge";
 
 const TEST_PUBLISHABLE_KEY = "pk_test_51Px9800Z7Z4M19XQY1R93B";
@@ -72,8 +73,7 @@ const STANDARD_ABI = STANDARD_SUBSCRIPT_ABI;
 
 const tabs = [
     { id: "overview", label: "Overview", icon: SquaresFour },
-    { id: "payment-links", label: "Payments & Plans", icon: Sliders },
-    { id: "analytics", label: "Analytics", icon: BarChart3 },
+    { id: "payment-links", label: "Payments", icon: Sliders },
     { id: "payroll", label: "Payroll", icon: Building2 },
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "checkout", label: "Checkout Setup", icon: Code2 },
@@ -83,7 +83,7 @@ const tabs = [
 ] as const;
 
 
-type TabId = "overview" | "premium" | "analytics" | "payment-links" | "plans" | "apikeys" | "checkout" | "webhooks" | "settings" | "payroll" | "offramp";
+type TabId = "overview" | "premium" | "payment-links" | "plans" | "apikeys" | "checkout" | "webhooks" | "settings" | "payroll" | "offramp";
 
 type MerchantSubView =
     | "menu"
@@ -189,9 +189,6 @@ const shortenHash = (value: string | undefined) => {
     return `${value.slice(0, 8)}...${value.slice(-6)}`;
 };
 
-const settlementTimeframes = ["24H", "1W", "1M", "3M", "6M", "1Y"] as const;
-
-
 const comingSoonMerchantSettings = new Set([
     "pushEnabled",
     "emailEnabled",
@@ -199,6 +196,24 @@ const comingSoonMerchantSettings = new Set([
     "disputeAlertsEnabled",
     "securityMultiSigEnabled",
 ]);
+
+function DiamondIcon({ className = "" }: { className?: string }) {
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={className}
+        >
+            <path d="M6 3h12l4 6-10 12L2 9z" />
+            <path d="M11 3 8 9l4 12 4-12-3-6" />
+            <path d="M2 9h20" />
+        </svg>
+    );
+}
 
 export default function DashboardPage() {
     const router = useRouter();
@@ -271,6 +286,9 @@ export default function DashboardPage() {
 
     const [premiumSubId, setPremiumSubId] = useState<number | null>(null);
     const [sharingPlan, setSharingPlan] = useState<MerchantPlan | null>(null);
+    const handleSharePlan = (plan: MerchantPlan) => {
+        setSharingPlan(plan);
+    };
     const [isCancellingPremium, setIsCancellingPremium] = useState(false);
     const [cancelAtPeriodEnd, setCancelAtPeriodEnd] = useState(false);
     const [currentPeriodEnd, setCurrentPeriodEnd] = useState<string | null>(null);
@@ -708,16 +726,7 @@ export default function DashboardPage() {
         }
     };
     const [subTab, setSubTab] = useState<"subscriptions" | "one-time" | "commit">("subscriptions");
-    /* Thumb-swipe or mouse-drag across the Payments & Subscriptions sub-tabs; taps still work. */
-    const paymentSwipe = useSwipeTabs(["subscriptions", "one-time", "commit"] as const, subTab, setSubTab);
-    const [prevSubTab, setPrevSubTab] = useState<"subscriptions" | "one-time" | "commit">("subscriptions");
-    if (subTab !== prevSubTab) {
-        setPrevSubTab(subTab);
-    }
-    const subTabsList = ["subscriptions", "one-time", "commit"] as const;
-    const subTabIndex = subTabsList.indexOf(subTab);
-    const prevSubTabIndex = subTabsList.indexOf(prevSubTab);
-    const subTabDirection = subTabIndex >= prevSubTabIndex ? 1 : -1;
+    const paymentSubTabsSwipe = useSwipeTabs(["subscriptions", "one-time", "commit"] as const, subTab, setSubTab);
     const [vaults, setVaults] = useState<any[]>([]);
     const [isVaultsLoading, setIsVaultsLoading] = useState(false);
     const [claimableAmount, setClaimableAmount] = useState("0");
@@ -2567,33 +2576,33 @@ Please complete the following implementation tasks:
         return (
             <div className="space-y-8">
                 {/* Create Payment Link Form */}
-                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
                     <div>
-                        <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                            <Link2 className={`w-4 h-4 ${primaryColorText}`} />
+                        <h2 className="text-xl font-bold sm:text-2xl text-[#082824] mb-2 flex items-center gap-2.5">
+                            <Link2 className="w-5 h-5 text-[#082824]" />
                             Create Hosted Payment Link
                         </h2>
-                        <p className="text-[11px] text-white/40 font-sans">
+                        <p className="text-sm sm:text-base text-black/70 font-sans leading-relaxed">
                             Generate direct checkout links for individual purchases. Customers will pay USDC on the Arc Network.
                         </p>
                     </div>
 
-                    <form onSubmit={handleCreatePaymentLink} className="space-y-4 font-sans text-xs">
+                    <form onSubmit={handleCreatePaymentLink} className="space-y-5 font-sans text-sm sm:text-base">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1">
-                                <label className="text-black/60 font-semibold text-[10px] tracking-wide">Product Title *</label>
+                            <div className="space-y-1.5">
+                                <label className="text-[#082824] font-bold text-xs sm:text-sm tracking-wide">Product Title *</label>
                                 <input
                                     type="text"
                                     placeholder="e.g. Pro Membership Key"
                                     value={linkTitle}
                                     onChange={(e) => setLinkTitle(e.target.value)}
                                     required
-                                    className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors"
+                                    className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3.5 text-black text-sm sm:text-base transition-colors focus:border-[#8AB4DB] focus:outline-none"
                                 />
                             </div>
 
-                            <div className="space-y-1">
-                                <label className="text-black/60 font-semibold text-[10px] tracking-wide">USDC Amount *</label>
+                            <div className="space-y-1.5">
+                                <label className="text-[#082824] font-bold text-xs sm:text-sm tracking-wide">USDC Amount *</label>
                                 <input
                                     type="number"
                                     step="0.01"
@@ -2602,19 +2611,19 @@ Please complete the following implementation tasks:
                                     value={linkAmountUsdc}
                                     onChange={(e) => setLinkAmountUsdc(e.target.value)}
                                     required
-                                    className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors"
+                                    className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3.5 text-black text-sm sm:text-base transition-colors focus:border-[#8AB4DB] focus:outline-none"
                                 />
                             </div>
                         </div>
 
-                        <div className="space-y-1">
-                            <label className="text-black/60 font-semibold text-[10px] tracking-wide">Description</label>
+                        <div className="space-y-1.5">
+                            <label className="text-[#082824] font-bold text-xs sm:text-sm tracking-wide">Description</label>
                             <textarea
                                 placeholder="Describe what the customer gets with this payment link..."
                                 value={linkDescription}
                                 onChange={(e) => setLinkDescription(e.target.value)}
                                 rows={3}
-                                className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors"
+                                className="w-full resize-none rounded-2xl border border-black/15 bg-white px-4 py-3.5 text-black text-sm sm:text-base transition-colors focus:border-[#8AB4DB] focus:outline-none"
                             />
                         </div>
 
@@ -2622,9 +2631,9 @@ Please complete the following implementation tasks:
                             <button
                                 type="button"
                                 onClick={() => setShowLinkAdvanced(!showLinkAdvanced)}
-                                className="text-[11px] text-black/60 hover:text-black flex items-center gap-1.5 font-medium transition-colors"
+                                className="text-xs sm:text-sm text-black/70 hover:text-black flex items-center gap-1.5 font-bold transition-colors"
                             >
-                                <Sliders className="w-3.5 h-3.5" />
+                                <Sliders className="w-4 h-4" />
                                 {showLinkAdvanced ? "Hide Advanced Options" : "Show Advanced Options"}
                             </button>
                         </div>
@@ -2638,7 +2647,11 @@ Please complete the following implementation tasks:
                                             setLinkDurationMinutes(1440);
                                             setLinkMaxUses("1");
                                         }}
-                                        className="px-3 py-2 rounded-xl border border-black/10 bg-[#D4E3E8] text-[#082824] text-[10px] font-semibold hover:bg-[#D4E3E8]/80 transition-colors"
+                                        className={`px-4 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all ${
+                                            linkDurationMinutes === 1440 && linkMaxUses === "1"
+                                                ? "border-[#082824] bg-[#082824] text-white shadow-sm"
+                                                : "border-black/10 bg-black/5 text-black/70 hover:bg-black/10 hover:text-black"
+                                        }`}
                                     >
                                         One-Time 24H
                                     </button>
@@ -2648,7 +2661,11 @@ Please complete the following implementation tasks:
                                             setLinkDurationMinutes(7 * 24 * 60);
                                             setLinkMaxUses("");
                                         }}
-                                        className="px-3 py-2 rounded-xl border border-black/10 bg-black/5 text-black/70 text-[10px] font-semibold hover:bg-black/10 hover:text-black transition-colors"
+                                        className={`px-4 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all ${
+                                            linkDurationMinutes === 7 * 24 * 60 && linkMaxUses !== "1"
+                                                ? "border-[#082824] bg-[#082824] text-white shadow-sm"
+                                                : "border-black/10 bg-black/5 text-black/70 hover:bg-black/10 hover:text-black"
+                                        }`}
                                     >
                                         Reusable 7D
                                     </button>
@@ -2658,70 +2675,74 @@ Please complete the following implementation tasks:
                                             setLinkDurationMinutes(0);
                                             setLinkMaxUses("");
                                         }}
-                                        className="px-3 py-2 rounded-xl border border-black/10 bg-black/5 text-black/70 text-[10px] font-semibold hover:bg-black/10 hover:text-black transition-colors"
+                                        className={`px-4 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all ${
+                                            linkDurationMinutes === 0
+                                                ? "border-[#082824] bg-[#082824] text-white shadow-sm"
+                                                : "border-black/10 bg-black/5 text-black/70 hover:bg-black/10 hover:text-black"
+                                        }`}
                                     >
                                         No Expiry
                                     </button>
                                 </div>
-                                <div className="space-y-1 col-span-2">
-                                    <label className="text-black/60 font-semibold text-[10px] tracking-wide">Expiration Window</label>
+                                <div className="space-y-1.5 col-span-2">
+                                    <label className="text-[#082824] font-bold text-xs sm:text-sm tracking-wide">Expiration Window</label>
                                     <DurationPicker
                                         value={linkDurationMinutes}
                                         onChange={(mins) => setLinkDurationMinutes(mins)}
                                     />
-                                    <p className="text-[10px] text-black/40">Set duration to 00:00 for a link that does not expire automatically.</p>
+                                    <p className="text-xs text-black/50">Set duration to 00:00 for a link that does not expire automatically.</p>
                                 </div>
 
-                                <div className="space-y-1 col-span-2">
-                                    <label className="text-black/60 font-semibold text-[10px] tracking-wide">External Reference (Optional)</label>
+                                <div className="space-y-1.5 col-span-2">
+                                    <label className="text-[#082824] font-bold text-xs sm:text-sm tracking-wide">External Reference (Optional)</label>
                                     <input
                                         type="text"
                                         placeholder="e.g. internal-sku-102"
                                         value={linkExternalReference}
                                         onChange={(e) => setLinkExternalReference(e.target.value)}
-                                        className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors"
+                                        className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3.5 text-black text-sm sm:text-base transition-colors focus:border-[#8AB4DB] focus:outline-none"
                                     />
                                 </div>
 
-                                <div className="col-span-2 space-y-3 rounded-2xl border border-black/10 bg-black/[0.02] p-4">
-                                    <p className="text-[10px] font-semibold text-black/60">
-                                        Invoice details <span className="normal-case text-black/40">(optional, turns this link into an invoice; shown on the checkout page)</span>
+                                <div className="col-span-2 space-y-3 rounded-2xl border border-black/10 bg-black/[0.02] p-5">
+                                    <p className="text-xs sm:text-sm font-bold text-[#082824]">
+                                        Invoice details <span className="font-normal text-black/50">(optional, turns this link into an invoice; shown on the checkout page)</span>
                                     </p>
                                     <div className="grid gap-3 sm:grid-cols-3">
-                                        <div className="space-y-1">
-                                            <label className="text-black/60 font-semibold text-[10px] tracking-wide">Invoice Number</label>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[#082824] font-bold text-xs sm:text-sm tracking-wide">Invoice Number</label>
                                             <input
                                                 type="text"
                                                 placeholder="INV-2026-001"
                                                 value={linkInvoiceNumber}
                                                 onChange={(e) => setLinkInvoiceNumber(e.target.value.slice(0, 64))}
-                                                className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors"
+                                                className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3 text-black text-sm transition-colors focus:border-[#8AB4DB] focus:outline-none"
                                             />
                                         </div>
-                                        <div className="space-y-1">
-                                            <label className="text-black/60 font-semibold text-[10px] tracking-wide">Due Date</label>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[#082824] font-bold text-xs sm:text-sm tracking-wide">Due Date</label>
                                             <input
                                                 type="date"
                                                 value={linkDueDate}
                                                 onChange={(e) => setLinkDueDate(e.target.value)}
-                                                className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors [color-scheme:light]"
+                                                className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3 text-black text-sm transition-colors focus:border-[#8AB4DB] focus:outline-none [color-scheme:light]"
                                             />
                                         </div>
-                                        <div className="space-y-1">
-                                            <label className="text-black/60 font-semibold text-[10px] tracking-wide">Payer Email</label>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[#082824] font-bold text-xs sm:text-sm tracking-wide">Payer Email</label>
                                             <input
                                                 type="email"
                                                 placeholder="billing@client.com"
                                                 value={linkPayerEmail}
                                                 onChange={(e) => setLinkPayerEmail(e.target.value)}
-                                                className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors"
+                                                className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3 text-black text-sm transition-colors focus:border-[#8AB4DB] focus:outline-none"
                                             />
                                         </div>
                                     </div>
                                 </div>
 
-                                <div className="space-y-1 col-span-2">
-                                    <label className="text-black/60 font-semibold text-[10px] tracking-wide">Maximum Uses</label>
+                                <div className="space-y-1.5 col-span-2">
+                                    <label className="text-[#082824] font-bold text-xs sm:text-sm tracking-wide">Maximum Uses</label>
                                     <input
                                         type="number"
                                         min="1"
@@ -2729,24 +2750,24 @@ Please complete the following implementation tasks:
                                         placeholder="Unlimited"
                                         value={linkMaxUses}
                                         onChange={(e) => setLinkMaxUses(e.target.value)}
-                                        className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors"
+                                        className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3.5 text-black text-sm sm:text-base transition-colors focus:border-[#8AB4DB] focus:outline-none"
                                     />
-                                    <p className="text-[10px] text-black/40">Use 1 for one-time checkout links. Leave blank for unlimited reusable links.</p>
+                                    <p className="text-xs text-black/50">Use 1 for one-time checkout links. Leave blank for unlimited reusable links.</p>
                                 </div>
                             </div>
                         )}
 
                         {linkError && (
-                            <p className="text-red-500 text-[10px] font-mono font-semibold">{linkError}</p>
+                            <p className="text-red-500 text-xs sm:text-sm font-bold">{linkError}</p>
                         )}
                         {linkSuccess && (
                             <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-5 space-y-4 font-sans text-left text-black">
-                                <p className="text-emerald-700 text-xs font-semibold">
+                                <p className="text-emerald-700 text-sm font-bold">
                                     Payment link created
                                 </p>
                                 {createdLinkInfo && (
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-black/10 rounded-xl p-3">
-                                        <span className="text-[11px] font-mono text-black/80 truncate max-w-[190px] xs:max-w-[240px] sm:max-w-none flex-1">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-black/10 rounded-2xl p-3.5">
+                                        <span className="text-xs sm:text-sm font-mono text-black/80 truncate max-w-[190px] xs:max-w-[240px] sm:max-w-none flex-1">
                                             {createdLinkInfo.checkoutUrl}
                                         </span>
                                         <div className="flex items-center gap-2 flex-shrink-0">
@@ -2756,15 +2777,15 @@ Please complete the following implementation tasks:
                                                     setActiveQrCodeLink(createdLinkInfo.checkoutUrl);
                                                     setActiveQrCodeTitle(createdLinkInfo.title);
                                                 }}
-                                                className="p-2 rounded-lg bg-black/5 hover:bg-black/10 border border-black/10 text-black/80 hover:text-black transition-all flex items-center justify-center"
+                                                className="p-2.5 rounded-xl bg-black/5 hover:bg-black/10 border border-black/10 text-black/80 hover:text-black transition-all flex items-center justify-center"
                                                 title="Show QR Code"
                                             >
-                                                <QrCode className="w-3.5 h-3.5" />
+                                                <QrCode className="w-4 h-4" />
                                             </button>
                                             <button
                                                 type="button"
                                                 onClick={() => handleCopyLink(createdLinkInfo.id, createdLinkInfo.checkoutUrl)}
-                                                className="px-3 py-1.5 rounded-lg bg-[#D4E3E8] hover:bg-[#D4E3E8]/80 border border-black/10 text-[#082824] text-[10px] font-semibold transition-all"
+                                                className="px-4 py-2 rounded-xl bg-[#D4E3E8] hover:bg-[#D4E3E8]/80 border border-black/10 text-[#082824] text-xs sm:text-sm font-bold transition-all"
                                             >
                                                 {linkCopyFeedback[createdLinkInfo.id] ? "Copied!" : "Copy Link"}
                                             </button>
@@ -2778,9 +2799,9 @@ Please complete the following implementation tasks:
                             <button
                                 type="submit"
                                 disabled={isCreatingLink || !linkTitle || !linkAmountUsdc}
-                                className="px-6 py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] disabled:opacity-50 text-[#082824] text-xs font-semibold rounded-full transition-all flex items-center gap-2 font-sans"
+                                className="px-8 py-3.5 bg-[#000000] hover:bg-black/85 disabled:opacity-50 text-white text-sm sm:text-base font-bold rounded-full transition-all flex items-center gap-2 font-sans shadow-sm"
                             >
-                                <Link2 className="w-3.5 h-3.5" />
+                                <Link2 className="w-4 h-4" />
                                 {isCreatingLink ? "Creating..." : "Create Link"}
                             </button>
                         </div>
@@ -2788,43 +2809,43 @@ Please complete the following implementation tasks:
                 </div>
 
                 {/* Existing Payment Links List */}
-                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
+                <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
                     <div>
-                        <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2">Payment Links</h2>
-                        <p className="text-[11px] text-white/40 font-sans">
+                        <h2 className="text-xl font-bold sm:text-2xl text-[#082824] mb-2">Payment Links</h2>
+                        <p className="text-sm sm:text-base text-black/70 font-sans leading-relaxed">
                             Your payment links in one place. Share them with customers or check their status.
                         </p>
                     </div>
 
                     <div className="relative">
                         {isLinksLoading && paymentLinks.length > 0 && (
-                            <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex items-center justify-center rounded-2xl z-20">
-                                <Loader2 className="w-6 h-6 animate-spin text-[#00d2b4]" />
+                            <div className="absolute inset-0 bg-black/10 backdrop-blur-[1px] flex items-center justify-center rounded-2xl z-20">
+                                <Loader2 className="w-6 h-6 animate-spin text-[#082824]" />
                             </div>
                         )}
                         {isLinksLoading && paymentLinks.length === 0 ? (
                             <div className="space-y-3 py-3 animate-pulse">
                                 {Array.from({ length: 3 }).map((_, i) => (
-                                    <div key={i} className="flex justify-between items-center bg-white/[0.02] border border-white/5 rounded-2xl p-4">
+                                    <div key={i} className="flex justify-between items-center bg-black/5 border border-black/5 rounded-2xl p-4">
                                         <div className="space-y-1.5">
-                                            <div className="h-3.5 w-32 rounded bg-white/15" />
-                                            <div className="h-2.5 w-20 rounded bg-white/10" />
+                                            <div className="h-4 w-32 rounded bg-black/15" />
+                                            <div className="h-3 w-20 rounded bg-black/10" />
                                         </div>
-                                        <div className="h-4 w-16 rounded bg-white/15" />
-                                        <div className="h-6 w-20 rounded-xl bg-white/10" />
+                                        <div className="h-4 w-16 rounded bg-black/15" />
+                                        <div className="h-6 w-20 rounded-xl bg-black/10" />
                                     </div>
                                 ))}
                             </div>
                         ) : paymentLinks.length === 0 ? (
-                            <div className="text-center py-12 border border-white/5 rounded-2xl bg-white/[0.01]">
-                                <p className="text-white/40 text-xs font-sans">No payment links created yet.</p>
+                            <div className="text-center py-12 border border-black/10 rounded-2xl bg-black/[0.02]">
+                                <p className="text-black/50 text-sm font-sans">No payment links created yet.</p>
                             </div>
                         ) : (
                             <>
                             <div className="overflow-x-auto">
-                                <table className="w-full border-collapse font-sans text-xs">
+                                <table className="w-full border-collapse font-sans text-sm">
                                     <thead>
-                                        <tr className="border-b border-white/5 text-[9px] uppercase tracking-wider text-white/40 text-left font-sans">
+                                        <tr className="border-b border-black/10 text-xs uppercase tracking-wider text-black/60 text-left font-sans">
                                             <th className="pb-3 pr-4 font-bold">Title</th>
                                             <th className="pb-3 px-4 font-bold">Amount</th>
                                             <th className="pb-3 px-4 font-bold hidden md:table-cell">Reference</th>
@@ -2833,7 +2854,7 @@ Please complete the following implementation tasks:
                                             <th className="pb-3 pl-4 font-bold text-right">Actions</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-white/5 font-sans">
+                                    <tbody className="divide-y divide-black/5 font-sans">
                                     {(() => {
                                         const linksPageSize = 5;
                                         const paginatedLinks = paymentLinks.slice(linksPage * linksPageSize, (linksPage + 1) * linksPageSize);
@@ -2844,35 +2865,35 @@ Please complete the following implementation tasks:
                                                 ? "Inactive" 
                                                 : isExhausted
                                                     ? "Exhausted"
-                                                : isExpired 
-                                                    ? "Expired" 
-                                                    : "Active";
+                                                    : isExpired 
+                                                        ? "Expired" 
+                                                        : "Active";
 
                                             return (
                                                 <Fragment key={link.id}>
-                                                    <tr className="hover:bg-white/[0.01] transition-colors">
+                                                    <tr className="hover:bg-black/[0.02] transition-colors">
                                                         <td className="py-4 pr-4">
-                                                            <div className="font-bold text-white">{link.title}</div>
+                                                            <div className="font-bold text-[#082824] text-sm sm:text-base">{link.title}</div>
                                                             {link.description && (
-                                                                <div className="text-[10px] text-white/40 line-clamp-1">{link.description}</div>
+                                                                <div className="text-xs text-black/60 line-clamp-1">{link.description}</div>
                                                             )}
                                                             {link.max_uses != null && (
-                                                                <div className="text-[9px] text-white/30 font-mono mt-1">
+                                                                <div className="text-xs text-black/40 font-mono mt-1">
                                                                     Uses: {link.use_count || 0}/{link.max_uses}
                                                                 </div>
                                                             )}
                                                         </td>
-                                                        <td className="py-4 px-4 font-mono font-semibold text-[#082824]">
+                                                        <td className="py-4 px-4 font-mono font-bold text-[#082824] text-sm sm:text-base">
                                                             ${(Number(link.amount_usdc) / 1000000).toFixed(2)} USDC
                                                         </td>
-                                                        <td className="py-4 px-4 text-black/60 font-mono hidden md:table-cell">
+                                                        <td className="py-4 px-4 text-black/70 font-mono hidden md:table-cell text-xs sm:text-sm">
                                                             {link.external_reference || "-"}
                                                         </td>
-                                                        <td className="py-4 px-4 text-black/50 hidden sm:table-cell">
+                                                        <td className="py-4 px-4 text-black/60 hidden sm:table-cell text-xs sm:text-sm">
                                                             {link.expires_at ? new Date(link.expires_at).toLocaleString() : "Never"}
                                                         </td>
                                                         <td className="py-4 px-4">
-                                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border ${
+                                                            <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase border ${
                                                                 status === "Active"
                                                                     ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700"
                                                                     : status === "Expired"
@@ -2886,10 +2907,10 @@ Please complete the following implementation tasks:
                                                             <div className="flex gap-2 justify-end items-center font-sans">
                                                                 <button
                                                                     onClick={() => handleCopyLink(link.id, link.checkoutUrl)}
-                                                                    className="p-2 md:px-4 md:py-2 rounded-xl bg-[#D4E3E8] hover:bg-[#D4E3E8]/80 border border-black/10 text-[#082824] text-[10px] font-semibold transition-all flex items-center gap-1.5"
+                                                                    className="p-2 md:px-4 md:py-2 rounded-xl bg-[#D4E3E8] hover:bg-[#D4E3E8]/80 border border-black/10 text-[#082824] text-xs font-bold transition-all flex items-center gap-1.5"
                                                                     title={linkCopyFeedback[link.id] ? "Copied!" : "Copy Link"}
                                                                 >
-                                                                    {linkCopyFeedback[link.id] ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                                                                    {linkCopyFeedback[link.id] ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                                                                     <span className="hidden md:inline">{linkCopyFeedback[link.id] ? "Copied!" : "Copy Link"}</span>
                                                                 </button>
                                                                 <button
@@ -2901,7 +2922,7 @@ Please complete the following implementation tasks:
                                                                     className="p-2 rounded-xl bg-black/5 hover:bg-black/10 border border-black/10 text-black/80 hover:text-black transition-all flex items-center justify-center"
                                                                     title="Show QR Code"
                                                                 >
-                                                                    <QrCode className="w-3.5 h-3.5" />
+                                                                    <QrCode className="w-4 h-4" />
                                                                 </button>
                                                                 <button
                                                                     onClick={() => {
@@ -2914,27 +2935,27 @@ Please complete the following implementation tasks:
                                                                     }`}
                                                                     title="Show Payments Stats"
                                                                 >
-                                                                    <BarChart3 className="w-3.5 h-3.5" />
+                                                                    <BarChart3 className="w-4 h-4" />
                                                                 </button>
                                                                 <button
                                                                     onClick={() => handleToggleLinkActive(link.id, link.active)}
-                                                                    className={`p-2 md:px-4 md:py-2 rounded-xl border text-[10px] font-semibold transition-all flex items-center gap-1.5 ${
+                                                                    className={`p-2 md:px-4 md:py-2 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 ${
                                                                         link.active
                                                                             ? "bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20 text-amber-700"
                                                                             : "bg-[#D4E3E8] hover:bg-[#D4E3E8]/80 border border-black/10 text-[#082824]"
                                                                     }`}
                                                                     title={link.active ? "Deactivate" : "Activate"}
                                                                 >
-                                                                    {link.active ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                                                                    {link.active ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                                                                     <span className="hidden md:inline">{link.active ? "Deactivate" : "Activate"}</span>
                                                                 </button>
                                                                 <div className="w-[1px] h-4 bg-black/10 mx-1" />
                                                                 <button
                                                                     onClick={() => handleDeleteLink(link.id)}
-                                                                    className="p-2 md:px-4 md:py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-600 text-[10px] font-semibold transition-all flex items-center gap-1.5"
+                                                                    className="p-2 md:px-4 md:py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-600 text-xs font-bold transition-all flex items-center gap-1.5"
                                                                     title="Delete Link"
                                                                 >
-                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                    <Trash2 className="w-4 h-4" />
                                                                     <span className="hidden md:inline">Delete</span>
                                                                 </button>
                                                             </div>
@@ -3094,12 +3115,12 @@ Please complete the following implementation tasks:
                 <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6">
                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                         <div>
-                            <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
-                                <Sliders className="w-4 h-4 text-[#082824]" />
+                            <h2 className="text-xl font-bold sm:text-2xl text-[#082824] mb-2 flex items-center gap-2.5">
+                                <Sliders className="w-5 h-5 text-[#082824]" />
                                 Create Subscription Plan
                             </h2>
-                            <p className="text-[11px] text-black/60 font-sans">
-                                Publish named recurring USDC plans. Share each plan's subscribe link with customers, with no website needed.
+                            <p className="text-sm sm:text-base text-black/70 font-sans leading-relaxed">
+                                Publish named recurring USDC plans. Share each plan&apos;s subscribe link with customers, with no website needed.
                                 The same plans power your API keys and webhooks later, so you scale without rebuilding.
                             </p>
                         </div>
@@ -3107,26 +3128,26 @@ Please complete the following implementation tasks:
                             type="button"
                             onClick={fetchMerchantPlans}
                             disabled={isPlansLoading}
-                            className="rounded-xl border border-black/10 bg-black/5 px-4 py-2 text-[10px] font-semibold text-black/70 transition hover:border-black/20 hover:text-black disabled:opacity-50"
+                            className="rounded-full border border-black/10 bg-black/5 px-5 py-2.5 text-xs sm:text-sm font-bold text-black/80 transition hover:border-black/20 hover:text-black disabled:opacity-50 shrink-0"
                         >
-                            {isPlansLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Refresh"}
+                            {isPlansLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Refresh"}
                         </button>
                     </div>
 
-                    <form onSubmit={handleCreatePlan} className="space-y-4 font-sans text-xs">
+                    <form onSubmit={handleCreatePlan} className="space-y-5 font-sans text-sm sm:text-base">
                         <div className="grid gap-4 md:grid-cols-[1.3fr_0.8fr_0.8fr] md:items-end">
-                            <div className="space-y-1">
-                                <label className="text-black/60 font-semibold text-[10px] tracking-wide">Plan Name</label>
+                            <div className="space-y-1.5">
+                                <label className="text-[#082824] font-bold text-xs sm:text-sm tracking-wide">Plan Name</label>
                                 <input
                                     type="text"
                                     value={planName}
                                     onChange={(event) => setPlanName(event.target.value)}
                                     placeholder="Pro API Access"
-                                    className="w-full rounded-xl border border-black/15 bg-white px-4 py-3 text-black transition-colors focus:border-[#8AB4DB] focus:outline-none"
+                                    className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3.5 text-black text-sm sm:text-base transition-colors focus:border-[#8AB4DB] focus:outline-none"
                                 />
                             </div>
-                            <div className="space-y-1">
-                                <label className="text-black/60 font-semibold text-[10px] tracking-wide">USDC Amount</label>
+                            <div className="space-y-1.5">
+                                <label className="text-[#082824] font-bold text-xs sm:text-sm tracking-wide">USDC Amount</label>
                                 <input
                                     type="number"
                                     step="0.01"
@@ -3134,28 +3155,28 @@ Please complete the following implementation tasks:
                                     value={planAmountUsdc}
                                     onChange={(event) => setPlanAmountUsdc(event.target.value)}
                                     placeholder="29.00"
-                                    className="w-full rounded-xl border border-black/15 bg-white px-4 py-3 text-black transition-colors focus:border-[#8AB4DB] focus:outline-none"
+                                    className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3.5 text-black text-sm sm:text-base transition-colors focus:border-[#8AB4DB] focus:outline-none"
                                 />
                             </div>
-                            <div className="space-y-1">
-                                <label className="text-black/60 font-semibold text-[10px] tracking-wide">Period Days</label>
+                            <div className="space-y-1.5">
+                                <label className="text-[#082824] font-bold text-xs sm:text-sm tracking-wide">Period Days</label>
                                 <input
                                     type="number"
                                     min="1"
                                     max="366"
                                     value={planPeriodDays}
                                     onChange={(event) => setPlanPeriodDays(event.target.value)}
-                                    className="w-full rounded-xl border border-black/15 bg-white px-4 py-3 text-black transition-colors focus:border-[#8AB4DB] focus:outline-none"
+                                    className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3.5 text-black text-sm sm:text-base transition-colors focus:border-[#8AB4DB] focus:outline-none"
                                 />
                             </div>
                         </div>
 
-                        <div className="space-y-1">
+                        <div className="space-y-1.5">
                             <div className="flex items-center justify-between">
-                                <label className="text-black/60 font-semibold text-[10px] tracking-wide">
-                                    Description <span className="normal-case text-black/40">(optional, shown to subscribers)</span>
+                                <label className="text-[#082824] font-bold text-xs sm:text-sm tracking-wide">
+                                    Description <span className="font-normal text-black/50">(optional, shown to subscribers)</span>
                                 </label>
-                                <span className={`text-[9px] font-bold ${planDescription.length >= PLAN_DESCRIPTION_MAX ? "text-amber-500" : "text-black/40"}`}>
+                                <span className={`text-xs font-bold ${planDescription.length >= PLAN_DESCRIPTION_MAX ? "text-amber-500" : "text-black/50"}`}>
                                     {planDescription.length}/{PLAN_DESCRIPTION_MAX}
                                 </span>
                             </div>
@@ -3165,13 +3186,13 @@ Please complete the following implementation tasks:
                                 rows={3}
                                 maxLength={PLAN_DESCRIPTION_MAX}
                                 placeholder="What's included (features, usage limits, support level, billing terms…)"
-                                className="w-full resize-none rounded-xl border border-black/15 bg-white px-4 py-3 text-black transition-colors focus:border-[#8AB4DB] focus:outline-none"
+                                className="w-full resize-none rounded-2xl border border-black/15 bg-white px-4 py-3.5 text-black text-sm sm:text-base transition-colors focus:border-[#8AB4DB] focus:outline-none"
                             />
                         </div>
 
-                        <div className="space-y-1">
-                            <label className="text-black/60 font-semibold text-[10px] tracking-wide">
-                                Details Link <span className="normal-case text-black/40">(optional, &ldquo;view more&rdquo;)</span>
+                        <div className="space-y-1.5">
+                            <label className="text-[#082824] font-bold text-xs sm:text-sm tracking-wide">
+                                Details Link <span className="font-normal text-black/50">(optional, &ldquo;view more&rdquo;)</span>
                             </label>
                             <input
                                 type="url"
@@ -3179,39 +3200,39 @@ Please complete the following implementation tasks:
                                 value={planDetailsUrl}
                                 onChange={(event) => setPlanDetailsUrl(event.target.value)}
                                 placeholder="https://yoursite.com/plans/pro"
-                                className="w-full rounded-xl border border-black/15 bg-white px-4 py-3 text-black transition-colors focus:border-[#8AB4DB] focus:outline-none"
+                                className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3.5 text-black text-sm sm:text-base transition-colors focus:border-[#8AB4DB] focus:outline-none"
                             />
                         </div>
 
-                        <div className="flex justify-end">
+                        <div className="flex justify-end pt-2">
                             <button
                                 type="submit"
                                 disabled={isPlansLoading}
-                                className="rounded-full bg-[#8AB4DB] px-6 py-3 text-xs font-semibold text-[#082824] transition hover:bg-[#7aa7d0] disabled:opacity-50"
+                                className="rounded-full bg-[#000000] px-8 py-3.5 text-sm sm:text-base font-bold text-white transition hover:bg-black/85 disabled:opacity-50 shadow-sm"
                             >
-                                {isPlansLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create"}
+                                {isPlansLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Create"}
                             </button>
                         </div>
                     </form>
 
-                    {planError && <p className="text-[10px] font-bold text-red-500">{planError}</p>}
-                    {planSuccess && <p className="text-[10px] font-bold text-emerald-600">{planSuccess}</p>}
+                    {planError && <p className="text-xs sm:text-sm font-bold text-red-500">{planError}</p>}
+                    {planSuccess && <p className="text-xs sm:text-sm font-bold text-emerald-600">{planSuccess}</p>}
                 </div>
 
                 <div className="grid gap-5 md:grid-cols-2">
                     <div className="rounded-[34px] min-w-0 overflow-hidden border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black space-y-4">
                         <div className="flex items-center justify-between">
-                            <h3 className="text-xs font-semibold text-black/80">Active Plans</h3>
-                            <span className="rounded-full border border-black/10 bg-[#D4E3E8] px-3 py-1 text-[10px] font-semibold text-[#082824]">{activePlans.length}</span>
+                            <h3 className="text-sm sm:text-base font-bold text-[#082824]">Active Plans</h3>
+                            <span className="rounded-full border border-black/10 bg-[#D4E3E8] px-3.5 py-1 text-xs font-bold text-[#082824]">{activePlans.length}</span>
                         </div>
                         {activePlans.length === 0 ? (
-                            <div className="rounded-2xl border border-dashed border-black/10 p-6 sm:p-8 text-center text-xs text-black/40">
+                            <div className="rounded-2xl border border-dashed border-black/10 p-6 sm:p-8 text-center text-xs sm:text-sm text-black/50">
                                 No active plans yet. Create one above to get a shareable subscribe link.
                             </div>
                         ) : (
                             <div className="space-y-3">
                                 {activePlans.map((plan) => (
-                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} onShare={setSharingPlan} promotion={promotionsByPlan.get(plan.id) ?? null} onPromotionsChanged={fetchMerchantPlans} />
+                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} onShare={handleSharePlan} promotion={promotionsByPlan.get(plan.id) ?? null} onPromotionsChanged={fetchMerchantPlans} />
                                 ))}
                             </div>
                         )}
@@ -3219,8 +3240,8 @@ Please complete the following implementation tasks:
 
                     <div className="rounded-[34px] min-w-0 overflow-hidden border border-black/10 bg-[#FFFFF0] p-4 sm:p-6 text-black space-y-4">
                         <div className="flex items-center justify-between">
-                            <h3 className="text-xs font-semibold text-black/80">Inactive Plans</h3>
-                            <span className="rounded-full border border-black/10 bg-black/5 px-3 py-1 text-[10px] font-semibold text-black/60">{inactivePlans.length}</span>
+                            <h3 className="text-sm sm:text-base font-bold text-[#082824]">Inactive Plans</h3>
+                            <span className="rounded-full border border-black/10 bg-black/5 px-3.5 py-1 text-xs font-bold text-black/70">{inactivePlans.length}</span>
                         </div>
                         {inactivePlans.length === 0 ? (
                             <div className="rounded-2xl border border-dashed border-white/10 p-6 sm:p-8 text-center text-xs text-white/40">
@@ -3229,7 +3250,7 @@ Please complete the following implementation tasks:
                         ) : (
                             <div className="space-y-3">
                                 {inactivePlans.map((plan) => (
-                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} onShare={setSharingPlan} promotion={promotionsByPlan.get(plan.id) ?? null} onPromotionsChanged={fetchMerchantPlans} />
+                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} onShare={handleSharePlan} promotion={promotionsByPlan.get(plan.id) ?? null} onPromotionsChanged={fetchMerchantPlans} />
                                 ))}
                             </div>
                         )}
@@ -3242,9 +3263,25 @@ Please complete the following implementation tasks:
     const renderSettingsTab = () => {
         if (!userSettings) {
             return (
-                <div className="space-y-6 max-w-3xl mx-auto">
-                    <SkeletonCard label="Loading help and support" lines={3} headline={false} />
-                    <SkeletonCard label="Loading profile settings" lines={4} headline={false} />
+                <div className="w-full max-w-5xl space-y-8 font-sans text-black">
+                    <div className="space-y-2">
+                        <Skeleton className="h-7 sm:h-8 w-60 rounded-xl" />
+                        <Skeleton className="h-4 w-80 max-w-full rounded-full" />
+                    </div>
+                    <div className="border border-black/10 bg-[#FFFFF0] rounded-[34px] p-4 space-y-2 shadow-sm">
+                        {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                            <div key={i} className="p-4 rounded-2xl flex items-center justify-between subscript-skeleton">
+                                <div className="flex items-center gap-3.5">
+                                    <div className="w-11 h-11 rounded-2xl bg-[#082824]/10" />
+                                    <div className="space-y-1.5">
+                                        <div className="h-4 w-36 rounded-full bg-[#082824]/20" />
+                                        <div className="h-3 w-56 rounded-full bg-black/10" />
+                                    </div>
+                                </div>
+                                <div className="w-5 h-5 rounded-full bg-black/10" />
+                            </div>
+                        ))}
+                    </div>
                 </div>
             );
         }
@@ -3255,43 +3292,43 @@ Please complete the following implementation tasks:
                     <button
                         type="button"
                         onClick={() => setMerchantSubView("menu")}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-white px-3.5 py-1.5 text-xs font-semibold text-black/70 hover:bg-black/5 hover:text-black transition shadow-sm"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-white px-4 py-2 text-xs sm:text-sm font-bold text-[#082824] hover:bg-black/5 transition shadow-sm"
                     >
                         <ChevronLeft className="h-4 w-4" /> Back to Settings
                     </button>
-                    <h2 className="text-base font-bold text-[#082824] uppercase tracking-wider">{title}</h2>
+                    <h2 className="text-lg font-bold text-[#082824] uppercase tracking-wider">{title}</h2>
                 </div>
-                {subtitle && <p className="text-xs text-black/55 mt-1 ml-1">{subtitle}</p>}
+                {subtitle && <p className="text-xs sm:text-sm text-black/60 mt-1 ml-1">{subtitle}</p>}
             </div>
         );
 
         return (
-            <div className="space-y-6 max-w-3xl mx-auto font-sans text-black">
+            <div className="w-full max-w-5xl space-y-8 font-sans text-black">
                 {/* 1. MAIN SETTINGS MENU HUB */}
                 {merchantSubView === "menu" && (
                     <div className="space-y-6">
                         <div>
                             <h1 className="text-xl font-bold text-[#082824] sm:text-2xl">Merchant Settings</h1>
-                            <p className="text-xs text-black/60 mt-1">Manage your business profile, theme, DNS namespace, and payouts.</p>
+                            <p className="text-sm sm:text-base text-black/70 mt-1">Manage your business profile, theme, DNS namespace, and payouts.</p>
                         </div>
 
                         {/* Settings Menu Options List */}
-                        <div className="border border-black/10 bg-white/90 backdrop-blur-md rounded-3xl p-3 space-y-1 shadow-sm">
+                        <div className="border border-black/10 bg-[#FFFFF0] rounded-[34px] p-4 space-y-2 shadow-sm">
                             {isAdmin && (
                                 <Link
                                     href="/admin"
-                                    className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
+                                    className="w-full text-left p-4 hover:bg-black/[0.03] rounded-2xl flex items-center justify-between transition-all group"
                                 >
-                                    <div className="flex items-center gap-3">
-                                        <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-600">
-                                            <Shield className="h-4 w-4" />
+                                    <div className="flex items-center gap-3.5">
+                                        <div className="p-3 rounded-2xl bg-purple-500/10 text-purple-600">
+                                            <Shield className="h-5 w-5" />
                                         </div>
                                         <div>
-                                            <span className="block text-xs font-bold text-black uppercase tracking-wide">Admin Console</span>
-                                            <span className="block text-[10px] text-black/50 mt-0.5">Platform controls, analytics and moderation</span>
+                                            <span className="block text-sm sm:text-base font-bold text-[#082824] tracking-wide">Admin Console</span>
+                                            <span className="block text-xs sm:text-sm text-black/60 mt-0.5">Platform controls, analytics and moderation</span>
                                         </div>
                                     </div>
-                                    <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                                    <ChevronRight className="h-5 w-5 text-black/30 group-hover:text-black/70 group-hover:translate-x-0.5 transition-all" />
                                 </Link>
                             )}
 
@@ -3299,162 +3336,162 @@ Please complete the following implementation tasks:
                             <button
                                 type="button"
                                 onClick={() => setMerchantSubView("profile")}
-                                className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
+                                className="w-full text-left p-4 hover:bg-black/[0.03] rounded-2xl flex items-center justify-between transition-all group"
                             >
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2.5 rounded-xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
-                                        <User className="h-4 w-4" />
+                                <div className="flex items-center gap-3.5">
+                                    <div className="p-3 rounded-2xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
+                                        <User className="h-5 w-5" />
                                     </div>
                                     <div>
-                                        <span className="block text-xs font-bold text-black uppercase tracking-wide">Profile &amp; Branding</span>
-                                        <span className="block text-[10px] text-black/50 mt-0.5">Logo, alias, payout destination, and exit survey</span>
+                                        <span className="block text-sm sm:text-base font-bold text-[#082824] tracking-wide">Profile &amp; Branding</span>
+                                        <span className="block text-xs sm:text-sm text-black/60 mt-0.5">Logo, alias, payout destination, and exit survey</span>
                                     </div>
                                 </div>
-                                <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                                <ChevronRight className="h-5 w-5 text-black/30 group-hover:text-black/70 group-hover:translate-x-0.5 transition-all" />
                             </button>
 
                             {/* Appearance & Theme */}
                             <button
                                 type="button"
                                 onClick={() => setMerchantSubView("appearance")}
-                                className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
+                                className="w-full text-left p-4 hover:bg-black/[0.03] rounded-2xl flex items-center justify-between transition-all group"
                             >
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2.5 rounded-xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
-                                        <Sliders className="h-4 w-4" />
+                                <div className="flex items-center gap-3.5">
+                                    <div className="p-3 rounded-2xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
+                                        <Sliders className="h-5 w-5" />
                                     </div>
                                     <div>
-                                        <span className="block text-xs font-bold text-black uppercase tracking-wide">Appearance &amp; Theme</span>
-                                        <span className="block text-[10px] text-black/50 mt-0.5">Switch between Light, Dark, and System mode</span>
+                                        <span className="block text-sm sm:text-base font-bold text-[#082824] tracking-wide">Appearance &amp; Theme</span>
+                                        <span className="block text-xs sm:text-sm text-black/60 mt-0.5">Switch between Light, Dark, and System mode</span>
                                     </div>
                                 </div>
-                                <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                                <ChevronRight className="h-5 w-5 text-black/30 group-hover:text-black/70 group-hover:translate-x-0.5 transition-all" />
                             </button>
 
                             {/* SubScript DNS */}
                             <button
                                 type="button"
                                 onClick={() => setMerchantSubView("dns")}
-                                className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
+                                className="w-full text-left p-4 hover:bg-black/[0.03] rounded-2xl flex items-center justify-between transition-all group"
                             >
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2.5 rounded-xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
-                                        <Globe className="h-4 w-4" />
+                                <div className="flex items-center gap-3.5">
+                                    <div className="p-3 rounded-2xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
+                                        <Globe className="h-5 w-5" />
                                     </div>
                                     <div>
-                                        <span className="block text-xs font-bold text-black uppercase tracking-wide">SubScript DNS</span>
-                                        <span className="block text-[10px] text-black/50 mt-0.5">Register your business namespace (.hq / .biz)</span>
+                                        <span className="block text-sm sm:text-base font-bold text-[#082824] tracking-wide">SubScript DNS</span>
+                                        <span className="block text-xs sm:text-sm text-black/60 mt-0.5">Register your business namespace (.hq / .biz)</span>
                                     </div>
                                 </div>
-                                <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                                <ChevronRight className="h-5 w-5 text-black/30 group-hover:text-black/70 group-hover:translate-x-0.5 transition-all" />
                             </button>
 
                             {/* KYC Verification & Plan */}
                             <button
                                 type="button"
                                 onClick={() => setMerchantSubView("kyc")}
-                                className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
+                                className="w-full text-left p-4 hover:bg-black/[0.03] rounded-2xl flex items-center justify-between transition-all group"
                             >
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2.5 rounded-xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
-                                        <ShieldCheck className="h-4 w-4" />
+                                <div className="flex items-center gap-3.5">
+                                    <div className="p-3 rounded-2xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
+                                        <ShieldCheck className="h-5 w-5" />
                                     </div>
                                     <div>
-                                        <span className="block text-xs font-bold text-black uppercase tracking-wide">KYC Verification &amp; Tier</span>
-                                        <span className="block text-[10px] text-black/50 mt-0.5">Business trust badge and verification status</span>
+                                        <span className="block text-sm sm:text-base font-bold text-[#082824] tracking-wide">KYC Verification &amp; Tier</span>
+                                        <span className="block text-xs sm:text-sm text-black/60 mt-0.5">Business trust badge and verification status</span>
                                     </div>
                                 </div>
-                                <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                                <ChevronRight className="h-5 w-5 text-black/30 group-hover:text-black/70 group-hover:translate-x-0.5 transition-all" />
                             </button>
 
                             {/* Failed-Renewal Policy (Dunning) */}
                             <button
                                 type="button"
                                 onClick={() => setMerchantSubView("dunning")}
-                                className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
+                                className="w-full text-left p-4 hover:bg-black/[0.03] rounded-2xl flex items-center justify-between transition-all group"
                             >
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2.5 rounded-xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
-                                        <ArrowRightLeft className="h-4 w-4" />
+                                <div className="flex items-center gap-3.5">
+                                    <div className="p-3 rounded-2xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
+                                        <ArrowRightLeft className="h-5 w-5" />
                                     </div>
                                     <div>
-                                        <span className="block text-xs font-bold text-black uppercase tracking-wide">Failed-Renewal Policy</span>
-                                        <span className="block text-[10px] text-black/50 mt-0.5">Configure automated retry attempts (dunning)</span>
+                                        <span className="block text-sm sm:text-base font-bold text-[#082824] tracking-wide">Failed-Renewal Policy</span>
+                                        <span className="block text-xs sm:text-sm text-black/60 mt-0.5">Configure automated retry attempts (dunning)</span>
                                     </div>
                                 </div>
-                                <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                                <ChevronRight className="h-5 w-5 text-black/30 group-hover:text-black/70 group-hover:translate-x-0.5 transition-all" />
                             </button>
 
                             {/* Transactions & Receipt History */}
                             <button
                                 type="button"
                                 onClick={() => setMerchantSubView("transactions")}
-                                className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
+                                className="w-full text-left p-4 hover:bg-black/[0.03] rounded-2xl flex items-center justify-between transition-all group"
                             >
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2.5 rounded-xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
-                                        <Activity className="h-4 w-4" />
+                                <div className="flex items-center gap-3.5">
+                                    <div className="p-3 rounded-2xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
+                                        <Activity className="h-5 w-5" />
                                     </div>
                                     <div>
-                                        <span className="block text-xs font-bold text-black uppercase tracking-wide">Transaction Logs</span>
-                                        <span className="block text-[10px] text-black/50 mt-0.5">Filter and search payment receipt records</span>
+                                        <span className="block text-sm sm:text-base font-bold text-[#082824] tracking-wide">Transaction Logs</span>
+                                        <span className="block text-xs sm:text-sm text-black/60 mt-0.5">Filter and search payment receipt records</span>
                                     </div>
                                 </div>
-                                <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                                <ChevronRight className="h-5 w-5 text-black/30 group-hover:text-black/70 group-hover:translate-x-0.5 transition-all" />
                             </button>
 
                             {/* Notifications & Alerts */}
                             <button
                                 type="button"
                                 onClick={() => setMerchantSubView("notifications")}
-                                className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
+                                className="w-full text-left p-4 hover:bg-black/[0.03] rounded-2xl flex items-center justify-between transition-all group"
                             >
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2.5 rounded-xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
-                                        <Bell className="h-4 w-4" />
+                                <div className="flex items-center gap-3.5">
+                                    <div className="p-3 rounded-2xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
+                                        <Bell className="h-5 w-5" />
                                     </div>
                                     <div>
-                                        <span className="block text-xs font-bold text-black uppercase tracking-wide">Notifications &amp; Alerts</span>
-                                        <span className="block text-[10px] text-black/50 mt-0.5">Push, email, and payout alert preferences</span>
+                                        <span className="block text-sm sm:text-base font-bold text-[#082824] tracking-wide">Notifications &amp; Alerts</span>
+                                        <span className="block text-xs sm:text-sm text-black/60 mt-0.5">Push, email, and payout alert preferences</span>
                                     </div>
                                 </div>
-                                <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                                <ChevronRight className="h-5 w-5 text-black/30 group-hover:text-black/70 group-hover:translate-x-0.5 transition-all" />
                             </button>
 
                             {/* Security & Backup */}
                             <button
                                 type="button"
                                 onClick={() => setMerchantSubView("security")}
-                                className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
+                                className="w-full text-left p-4 hover:bg-black/[0.03] rounded-2xl flex items-center justify-between transition-all group"
                             >
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2.5 rounded-xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
-                                        <Lock className="h-4 w-4" />
+                                <div className="flex items-center gap-3.5">
+                                    <div className="p-3 rounded-2xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
+                                        <Lock className="h-5 w-5" />
                                     </div>
                                     <div>
-                                        <span className="block text-xs font-bold text-black uppercase tracking-wide">Security &amp; Wallet Recovery</span>
-                                        <span className="block text-[10px] text-black/50 mt-0.5">Export merchant private key and multi-sig</span>
+                                        <span className="block text-sm sm:text-base font-bold text-[#082824] tracking-wide">Security &amp; Wallet Recovery</span>
+                                        <span className="block text-xs sm:text-sm text-black/60 mt-0.5">Export merchant private key and multi-sig</span>
                                     </div>
                                 </div>
-                                <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                                <ChevronRight className="h-5 w-5 text-black/30 group-hover:text-black/70 group-hover:translate-x-0.5 transition-all" />
                             </button>
 
                             {/* Help & Support */}
                             <button
                                 type="button"
                                 onClick={() => setMerchantSubView("support")}
-                                className="w-full text-left p-4 hover:bg-black/[0.04] rounded-2xl flex items-center justify-between transition-all group"
+                                className="w-full text-left p-4 hover:bg-black/[0.03] rounded-2xl flex items-center justify-between transition-all group"
                             >
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2.5 rounded-xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
-                                        <HelpCircle className="h-4 w-4" />
+                                <div className="flex items-center gap-3.5">
+                                    <div className="p-3 rounded-2xl bg-black/5 text-[#082824] group-hover:bg-[#082824] group-hover:text-white transition-all">
+                                        <HelpCircle className="h-5 w-5" />
                                     </div>
                                     <div>
-                                        <span className="block text-xs font-bold text-black uppercase tracking-wide">Help &amp; Support</span>
-                                        <span className="block text-[10px] text-black/50 mt-0.5">Integration docs, contact team, compliance</span>
+                                        <span className="block text-sm sm:text-base font-bold text-[#082824] tracking-wide">Help &amp; Support</span>
+                                        <span className="block text-xs sm:text-sm text-black/60 mt-0.5">Integration docs, contact team, compliance</span>
                                     </div>
                                 </div>
-                                <ChevronRight className="h-4 w-4 text-black/30 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                                <ChevronRight className="h-5 w-5 text-black/30 group-hover:text-black/70 group-hover:translate-x-0.5 transition-all" />
                             </button>
                         </div>
                     </div>
@@ -4339,61 +4376,7 @@ Please complete the following implementation tasks:
 
         // Developer tools (API keys, checkout, webhooks) remain accessible to standard and premium merchants alike.
 
-        const renderSubTabs = () => {
-            const tabsConfig = [
-                { id: "subscriptions", label: "Subscriptions", icon: Sliders },
-                { id: "one-time", label: "One-Time Payments", icon: Link2 },
-                { id: "commit", label: "Vault Commits", icon: ShieldCheck }
-            ];
 
-            return (
-                <div className="relative grid grid-cols-3 sm:flex sm:items-center gap-1 border-b border-white/5 pb-0 mb-8 w-full">
-                    {tabsConfig.map((tab) => {
-                        const isActive = subTab === tab.id;
-                        const Icon = tab.icon;
-                        return (
-                            <button
-                                key={tab.id}
-                                type="button"
-                                onClick={() => setSubTab(tab.id as any)}
-                                className="group relative flex min-w-0 items-center justify-center sm:justify-start pb-3 pt-2 px-2 sm:px-4 cursor-pointer select-none transition-all duration-300 ease-out focus:outline-none"
-                            >
-                                <div className="flex items-center">
-                                    <Icon 
-                                        className={`w-4 h-4 transition-colors duration-300 ${
-                                            isActive ? "text-[#00d2b4]" : "text-white/40 group-hover:text-white/80"
-                                        }`} 
-                                    />
-                                    <div 
-                                        className={`max-w-[110px] opacity-100 ml-1.5 transition-all duration-300 ease-out overflow-hidden flex items-center ${
-                                            isActive 
-                                                ? "sm:max-w-[150px] sm:opacity-100 sm:ml-2"
-                                                : "sm:max-w-0 sm:opacity-0 sm:ml-0"
-                                        }`}
-                                    >
-                                        <span className={`text-[10px] font-extrabold uppercase tracking-wider whitespace-nowrap ${
-                                            isActive ? "text-white" : "text-white/40"
-                                        }`}>
-                                            <span className="hidden sm:inline">{tab.label}</span>
-                                            <span className="inline sm:hidden">
-                                                {tab.id === "subscriptions" ? "Plans" : tab.id === "one-time" ? "One-Time" : "Commits"}
-                                            </span>
-                                        </span>
-                                    </div>
-                                </div>
-                                {/* Underline Indicator */}
-                                {isActive && (
-                                    <motion.div 
-                                        layoutId="merchantActiveSubTabUnderline"
-                                        className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#00d2b4]" 
-                                    />
-                                )}
-                            </button>
-                        );
-                    })}
-                </div>
-            );
-        };
 
         const renderCommitTab = () => {
             if (!isPremium) {
@@ -4403,14 +4386,14 @@ Please complete the following implementation tasks:
             return (
                 <div className="space-y-8 font-sans">
                     {/* Vault Config Form and Claim Settlement */}
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
                         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                             <div>
-                                <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                                    <ShieldCheck className="w-4 h-4 text-[#00d2b4]" />
+                                <h2 className="text-xl font-bold sm:text-2xl text-[#082824] mb-2 flex items-center gap-2.5">
+                                    <ShieldCheck className="w-5 h-5 text-[#082824]" />
                                     Customer Deposits
                                 </h2>
-                                <p className="text-[11px] text-white/40">
+                                <p className="text-sm sm:text-base text-black/70 font-sans leading-relaxed">
                                     Manage customer deposits, withdraw earnings, and check balances.
                                 </p>
                             </div>
@@ -4421,20 +4404,20 @@ Please complete the following implementation tasks:
                                     fetchVaults();
                                 }}
                                 disabled={isVaultOpsLoading || isVaultsLoading}
-                                className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-white/55 transition hover:border-[#00d2b4]/30 hover:text-white disabled:opacity-50 flex items-center gap-1.5"
+                                className="rounded-full border border-black/10 bg-black/5 hover:bg-black/10 px-5 py-2.5 text-xs sm:text-sm font-bold text-[#082824] transition-all flex items-center gap-2 shadow-sm disabled:opacity-50"
                             >
-                                <RefreshCw className={`w-3.5 h-3.5 ${(isVaultOpsLoading || isVaultsLoading) ? "animate-spin" : ""}`} />
+                                <RefreshCw className={`w-4 h-4 ${(isVaultOpsLoading || isVaultsLoading) ? "animate-spin" : ""}`} />
                                 Refresh
                             </button>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             {/* Claim Settled Funds card */}
-                            <div className="rounded-2xl border border-white/5 bg-black/20 p-5 flex flex-col justify-between gap-4">
+                            <div className="rounded-[28px] border border-black/10 bg-[#D4E3E8] p-6 flex flex-col justify-between gap-4">
                                 <div>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Ready to Withdraw</p>
-                                    <p className="text-3xl font-black text-white mt-2">${formatUsdcMicros(claimableAmount)}</p>
-                                    <p className="text-[9px] text-white/35 mt-1">
+                                    <p className="text-xs sm:text-sm font-bold uppercase tracking-wider text-[#082824]/70">Ready to Withdraw</p>
+                                    <p className="text-3xl sm:text-4xl font-black text-[#082824] mt-2">${formatUsdcMicros(claimableAmount)}</p>
+                                    <p className="text-xs text-[#082824]/70 mt-1">
                                         Earnings become available to withdraw after each billing cycle completes.
                                     </p>
                                 </div>
@@ -4442,41 +4425,41 @@ Please complete the following implementation tasks:
                                     type="button"
                                     onClick={handleClaimVaultFunds}
                                     disabled={isClaimingVault || isVaultOpsLoading || microsToNumber(claimableAmount) <= 0}
-                                    className="w-full py-2 bg-white/[0.08] border border-white/10 hover:bg-white/[0.12] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                                    className="w-full py-3.5 bg-[#000000] hover:bg-black/85 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-full text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-sm"
                                 >
-                                    {isClaimingVault ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowUpRight className="w-3.5 h-3.5 text-[#00d2b4]" />}
+                                    {isClaimingVault ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUpRight className="w-4 h-4 text-white" />}
                                     Withdraw Earnings
                                 </button>
                             </div>
 
                             {/* Usage Test Key */}
-                            <div className="rounded-2xl border border-white/5 bg-black/20 p-5 space-y-4">
+                            <div className="rounded-[28px] border border-black/10 bg-white p-6 space-y-4">
                                 <div>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">API Key for Testing</p>
-                                    <p className="text-[9px] text-white/35 mt-1">
+                                    <p className="text-xs sm:text-sm font-bold uppercase tracking-wider text-[#082824]">API Key for Testing</p>
+                                    <p className="text-xs text-black/60 mt-1">
                                         Paste your secret API key here to test sending usage charges.
                                     </p>
                                 </div>
                                 <label className="block space-y-1.5">
-                                    <span className="text-[9px] font-bold uppercase tracking-wider text-white/40">Secret key</span>
+                                    <span className="text-xs sm:text-sm font-bold text-[#082824]">Secret key</span>
                                     <input
                                         type="password"
                                         value={usageSecretKey}
                                         onChange={(e) => setUsageSecretKey(e.target.value)}
                                         autoComplete="off"
-                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-[#00d2b4] transition text-xs font-mono"
+                                        className="w-full bg-[#FFFFF0] border border-black/15 rounded-2xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition text-sm sm:text-base font-mono"
                                         placeholder="sk_test_..."
                                     />
                                 </label>
-                                <p className="text-[9px] text-white/30">
+                                <p className="text-xs text-black/50">
                                     Keys are only shown once when created. This test field is not saved to the server.
                                 </p>
                             </div>
                         </div>
 
                         {vaultOpsStatus && (
-                            <p className={`text-[10px] font-bold tracking-wide ${
-                                vaultOpsStatus.type === "success" ? "text-emerald-400" : "text-red-400"
+                            <p className={`text-xs sm:text-sm font-bold tracking-wide ${
+                                vaultOpsStatus.type === "success" ? "text-emerald-700" : "text-red-600"
                             }`}>
                                 {vaultOpsStatus.text}
                             </p>
@@ -4484,10 +4467,10 @@ Please complete the following implementation tasks:
                     </div>
 
                     {/* Customer Vaults list */}
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
                         <div>
-                            <h3 className="text-xs font-bold uppercase tracking-wider text-white">Active Customer Deposits</h3>
-                            <p className="text-[10px] text-white/40">
+                            <h2 className="text-xl font-bold sm:text-2xl text-[#082824] mb-2">Active Customer Deposits</h2>
+                            <p className="text-sm sm:text-base text-black/70 font-sans leading-relaxed">
                                 Live view of customer deposits and current usage. Rows are identified by
                                 reference, or by the email a customer gave you at checkout — their wallet
                                 stays private.
@@ -4497,30 +4480,30 @@ Please complete the following implementation tasks:
                         {isVaultsLoading ? (
                             <div className="space-y-3 animate-pulse">
                                 {Array.from({ length: 2 }).map((_, i) => (
-                                    <div key={i} className="rounded-2xl border border-white/5 bg-black/30 p-4 space-y-3">
+                                    <div key={i} className="rounded-2xl border border-black/10 bg-black/5 p-5 space-y-3">
                                         <div className="flex justify-between items-center">
-                                            <div className="h-4 w-36 rounded bg-white/15" />
-                                            <div className="h-4 w-16 rounded bg-white/10" />
+                                            <div className="h-5 w-36 rounded bg-black/15" />
+                                            <div className="h-5 w-16 rounded bg-black/10" />
                                         </div>
-                                        <div className="h-2 w-full rounded-full bg-white/10" />
+                                        <div className="h-2.5 w-full rounded-full bg-black/10" />
                                         <div className="flex justify-between">
-                                            <div className="h-3 w-20 rounded bg-white/10" />
-                                            <div className="h-3 w-24 rounded bg-white/15" />
+                                            <div className="h-4 w-20 rounded bg-black/10" />
+                                            <div className="h-4 w-24 rounded bg-black/15" />
                                         </div>
                                     </div>
                                 ))}
                             </div>
                         ) : vaultsError ? (
-                            <div className="flex h-24 flex-col items-center justify-center rounded-2xl border border-dashed border-red-500/20 bg-red-500/[0.03] text-center p-4">
-                                <p className="text-xs text-red-300/80">{vaultsError}</p>
+                            <div className="flex h-28 flex-col items-center justify-center rounded-2xl border border-dashed border-red-500/20 bg-red-500/[0.03] text-center p-4">
+                                <p className="text-sm font-bold text-red-600">{vaultsError}</p>
                             </div>
                         ) : vaults.length === 0 ? (
-                            <div className="flex h-24 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center p-4">
-                                <p className="text-xs text-white/45">No customer deposits yet. When customers deposit funds, they&apos;ll appear here.</p>
+                            <div className="flex h-28 flex-col items-center justify-center rounded-2xl border border-dashed border-black/10 bg-black/[0.02] text-center p-4">
+                                <p className="text-sm text-black/60">No customer deposits yet. When customers deposit funds, they&apos;ll appear here.</p>
                             </div>
                         ) : (
                             <div className="space-y-4">
-                                <div className="grid grid-cols-1 gap-3">
+                                <div className="grid grid-cols-1 gap-4">
                                     {vaults.map((vault) => (
                                         <LocalCustomerVaultRow
                                             key={vault.id}
@@ -4569,64 +4552,60 @@ Please complete the following implementation tasks:
  
              case "payment-links":
                 return (
-                    <div className="space-y-6 overflow-hidden" {...paymentSwipe}>
-                        {renderSubTabs()}
-                        <div className="overflow-hidden w-full relative">
-                            <AnimatePresence mode="wait" initial={false} custom={subTabDirection}>
-                                <motion.div
-                                    key={subTab}
-                                    custom={subTabDirection}
-                                    variants={{
-                                        enter: (dir: number) => ({
-                                            x: dir > 0 ? "100%" : "-100%",
-                                            opacity: 0,
-                                            filter: "blur(1.5px)",
-                                        }),
-                                        center: {
-                                            x: 0,
-                                            opacity: 1,
-                                            filter: "blur(0px)",
-                                        },
-                                        exit: (dir: number) => ({
-                                            x: dir < 0 ? "100%" : "-100%",
-                                            opacity: 0,
-                                            filter: "blur(1.5px)",
-                                        }),
-                                    }}
-                                    initial="enter"
-                                    animate="center"
-                                    exit="exit"
-                                    transition={{
-                                        x: { type: "spring", stiffness: 300, damping: 30 },
-                                        opacity: { duration: 0.2 },
-                                    }}
-                                    className="w-full"
+                    <div className="space-y-6" {...paymentSubTabsSwipe}>
+                        <div className="flex items-center gap-2 border-b border-black/10 pb-3">
+                            <button
+                                type="button"
+                                onClick={() => setSubTab("subscriptions")}
+                                className={`rounded-full px-4 py-2 text-xs font-bold transition-all ${
+                                    subTab === "subscriptions"
+                                        ? "bg-[#082824] text-white shadow-sm"
+                                        : "bg-black/5 text-black/60 hover:bg-black/10"
+                                }`}
+                            >
+                                Plans
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setSubTab("one-time")}
+                                className={`rounded-full px-4 py-2 text-xs font-bold transition-all ${
+                                    subTab === "one-time"
+                                        ? "bg-[#082824] text-white shadow-sm"
+                                        : "bg-black/5 text-black/60 hover:bg-black/10"
+                                }`}
+                            >
+                                One-Time Links
+                            </button>
+                            {isPremium && (
+                                <button
+                                    type="button"
+                                    onClick={() => setSubTab("commit")}
+                                    className={`rounded-full px-4 py-2 text-xs font-bold transition-all ${
+                                        subTab === "commit"
+                                            ? "bg-[#082824] text-white shadow-sm"
+                                            : "bg-black/5 text-black/60 hover:bg-black/10"
+                                    }`}
                                 >
-                                    {subTab === "subscriptions" && renderPlansTab()}
-                                    {subTab === "one-time" && renderPaymentLinksTab()}
-                                    {subTab === "commit" && renderCommitTab()}
-                                </motion.div>
-                            </AnimatePresence>
+                                    Vault
+                                </button>
+                            )}
                         </div>
+                        <motion.div
+                            key={subTab}
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.18, ease: "easeOut" }}
+                            className="w-full"
+                        >
+                            {subTab === "subscriptions" && renderPlansTab()}
+                            {subTab === "one-time" && renderPaymentLinksTab()}
+                            {subTab === "commit" && renderCommitTab()}
+                        </motion.div>
                     </div>
                 );
 
             case "plans":
                 return renderPlansTab();
-
-            case "analytics":
-                return (
-                    <AnalyticsDashboard
-                        isPremium={isPremium}
-                        setActiveTab={setActiveTab}
-                        walletBalance={walletBalance}
-                        vaultBalance={vaultBalance}
-                        ledgers={ledgers}
-                        analytics={merchantAnalytics}
-                        onRetryCharge={handleRetryCharge}
-                        merchantAddress={address || ""}
-                    />
-                );
 
             case "payroll":
                 return <PayrollContent embedded />;
@@ -4646,6 +4625,7 @@ Please complete the following implementation tasks:
                         onRefresh={handleManualRefreshBalances}
                         onSend={() => setIsSendWalletOpen(true)}
                         onReceive={() => setIsDepositOpen(true)}
+                        onDeposit={() => setIsDepositOpen(true)}
                         onWithdraw={() => setIsWithdrawOpen(true)}
                         onScanQr={() => setIsQrScannerOpen(true)}
                         onViewPlans={() => { setActiveTab("payment-links"); setSubTab("subscriptions"); }}
@@ -5163,16 +5143,16 @@ Please complete the following implementation tasks:
                     return (
                         <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-sm text-black font-sans">
                             <Shield className="w-10 h-10 mx-auto text-[#082824]" />
-                            <h2 className="text-lg font-semibold text-black">Verify Wallet Ownership</h2>
-                            <p className="text-xs text-black/60 leading-relaxed max-w-xs mx-auto">
+                            <h2 className="text-xl font-bold text-[#082824]">Verify Wallet Ownership</h2>
+                            <p className="text-xs sm:text-sm text-black/60 leading-relaxed max-w-xs mx-auto">
                                 To protect your API credentials and webhook endpoints, please sign a secure message using your connected wallet.
                             </p>
                             <button
                                 onClick={handleBackendLogin}
                                 disabled={isLoggingIn}
-                                className="w-full py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-full text-xs font-semibold flex items-center justify-center gap-2 transition-all"
+                                className="w-full py-3.5 bg-[#000000] hover:bg-black/85 text-white rounded-full text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-sm"
                             >
-                                {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-[#082824]" /> : <Shield className="w-4 h-4" />}
+                                {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <Shield className="w-4 h-4" />}
                                 Authenticate Developer Portal
                             </button>
                         </div>
@@ -5182,23 +5162,17 @@ Please complete the following implementation tasks:
                 const activeKey = apiKeys.find(k => !k.revoked) || null;
                 const activePublishableKey = activeKey ? activeKey.publishableKey : "";
                 const activeSecretKey = activeKey ? activeKey.secretKeyPlain : "";
-                /* Secrets are hashed at rest: only secret_key_hash and an "sk_test_1234...2345" hint
-                   are stored, so GET /api/keys can never return a usable key and always reports
-                   secretKeyAvailable: false. It is true only for a key minted in this session.
-                   This flag was returned by the API but never read here, so the hint was rendered
-                   behind the same dots-and-eye affordance as a real secret — revealing it produced a
-                   fingerprint, and Copy silently put that unusable string on the clipboard. */
                 const activeSecretAvailable = Boolean(activeKey?.secretKeyAvailable && activeSecretKey);
 
                 return (
-                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-black space-y-8">
-                        <div className="flex justify-between items-start">
+                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-black space-y-8 shadow-sm font-sans">
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                             <div>
-                                <h2 className="text-lg font-semibold text-black mb-2 flex items-center gap-2">
+                                <h2 className="text-xl font-bold sm:text-2xl text-[#082824] mb-2 flex items-center gap-2.5">
                                     <Key className="w-5 h-5 text-[#082824]" />
                                     API Credentials
                                 </h2>
-                                <p className="text-xs text-black/60 font-sans leading-relaxed">
+                                <p className="text-sm sm:text-base text-black/70 font-sans leading-relaxed">
                                     Use these keys to authenticate your backend with the SubScript SDK.
                                     API credentials are secure and persisted in the database.
                                 </p>
@@ -5206,7 +5180,7 @@ Please complete the following implementation tasks:
                             {sessionWallet && (
                                 <button
                                     onClick={handleLogout}
-                                    className="px-3.5 py-1.5 border border-black/15 hover:bg-red-500/10 hover:text-red-600 hover:border-red-500/20 rounded-full text-[10px] font-semibold font-sans transition-all"
+                                    className="px-4 py-2 border border-black/15 hover:bg-red-500/10 hover:text-red-600 hover:border-red-500/20 rounded-full text-xs font-bold font-sans transition-all shrink-0"
                                 >
                                     Log Out Developer Portal
                                 </button>
@@ -5214,32 +5188,38 @@ Please complete the following implementation tasks:
                         </div>
 
                         {apiKeySetupStatus && (
-                            <p role="status" className="rounded-2xl border border-black/10 bg-black/[0.03] px-4 py-3 text-[10px] leading-relaxed text-black/70">
+                            <p role="status" className="rounded-2xl border border-black/10 bg-black/[0.03] px-4 py-3 text-xs sm:text-sm leading-relaxed text-black/70 font-sans">
                                 {apiKeySetupStatus}
                             </p>
                         )}
 
                         {isKeysLoading ? (
-                            <div className="border border-black/10 rounded-2xl p-6 sm:p-8 bg-black/[0.02] space-y-4 font-sans animate-pulse">
-                                <div className="w-8 h-8 rounded-full bg-black/15 mx-auto" />
-                                <div className="space-y-2 max-w-sm mx-auto">
-                                    <div className="h-3.5 w-44 rounded bg-black/15 mx-auto" />
-                                    <div className="h-2.5 w-full rounded bg-black/10" />
+                            <div className="space-y-6 font-sans">
+                                <div className="bg-[#D4E3E8]/50 border border-black/10 rounded-[28px] p-6 space-y-3 subscript-skeleton">
+                                    <div className="h-4 w-32 rounded-full bg-[#082824]/20" />
+                                    <div className="h-12 w-full rounded-2xl bg-white" />
                                 </div>
-                                <div className="h-11 w-full max-w-xl mx-auto rounded-xl bg-black/[0.06]" />
+                                <div className="bg-[#D4E3E8]/50 border border-black/10 rounded-[28px] p-6 space-y-3 subscript-skeleton">
+                                    <div className="flex items-center gap-2">
+                                        <div className="h-4 w-24 rounded-full bg-[#082824]/20" />
+                                        <div className="h-5 w-14 rounded-full bg-yellow-500/20" />
+                                    </div>
+                                    <div className="h-12 w-full rounded-2xl bg-white" />
+                                    <div className="h-3.5 w-72 rounded-full bg-black/10" />
+                                </div>
                             </div>
                         ) : !activeKey ? (
-                            <div className="border border-black/10 rounded-2xl p-6 sm:p-8 text-center bg-black/[0.02] space-y-4 font-sans">
-                                <Key className="w-8 h-8 mx-auto text-black/20" />
+                            <div className="border border-black/10 rounded-3xl p-6 sm:p-8 text-center bg-black/[0.02] space-y-5 font-sans">
+                                <Key className="w-10 h-10 mx-auto text-[#082824]/40" />
                                 <div className="space-y-1">
-                                    <p className="text-xs font-semibold text-black">No Active API Credentials</p>
-                                    <p className="text-[10px] text-black/50 leading-relaxed">
+                                    <p className="text-base sm:text-lg font-bold text-[#082824]">No Active API Credentials</p>
+                                    <p className="text-xs sm:text-sm text-black/60 leading-relaxed max-w-md mx-auto">
                                         Generate credentials and optionally register the webhook receiver that belongs to this integration.
                                     </p>
                                 </div>
                                 <div className="mx-auto w-full max-w-xl space-y-2 text-left">
-                                    <label htmlFor="api-key-webhook-url" className="block text-[10px] font-semibold text-black/60">
-                                        Webhook URL <span className="font-normal normal-case text-black/40">(recommended)</span>
+                                    <label htmlFor="api-key-webhook-url" className="block text-xs sm:text-sm font-bold text-[#082824]">
+                                        Webhook URL <span className="font-normal normal-case text-black/50">(recommended)</span>
                                     </label>
                                     <input
                                         id="api-key-webhook-url"
@@ -5247,16 +5227,16 @@ Please complete the following implementation tasks:
                                         value={apiKeyWebhookUrl}
                                         onChange={(event) => setApiKeyWebhookUrl(event.target.value)}
                                         placeholder="https://your-app.example/api/subscript/webhook"
-                                        className="w-full rounded-xl border border-black/15 bg-white px-4 py-3 text-xs text-black outline-none transition-colors focus:border-[#8AB4DB]"
+                                        className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3.5 text-sm sm:text-base text-black outline-none transition-colors focus:border-[#8AB4DB]"
                                     />
-                                    <p className="text-[10px] leading-relaxed text-black/50">
+                                    <p className="text-xs leading-relaxed text-black/50">
                                         SubScript creates the endpoint with your API key so payment and subscription events are observable immediately.
                                     </p>
                                 </div>
                                 <button
                                     onClick={handleRollKeys}
                                     disabled={isRolling}
-                                    className="px-6 py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-full text-xs font-semibold flex items-center gap-2 mx-auto transition-all"
+                                    className="px-8 py-3.5 bg-[#000000] hover:bg-black/85 text-white rounded-full text-sm sm:text-base font-bold flex items-center gap-2 mx-auto transition-all shadow-sm disabled:opacity-50"
                                 >
                                     {isRolling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
                                     Generate API Keys
@@ -5265,18 +5245,19 @@ Please complete the following implementation tasks:
                         ) : (
                             <div className="space-y-6">
                                 {/* Publishable Key */}
-                                <div className="bg-[#D4E3E8]/50 border border-black/10 rounded-2xl p-5 font-sans">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className="text-[10px] text-black/60 font-semibold uppercase tracking-wider font-mono">Publishable Key</span>
+                                <div className="bg-[#D4E3E8]/50 border border-black/10 rounded-[28px] p-6 font-sans space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs sm:text-sm text-[#082824] font-bold uppercase tracking-wider font-mono">Publishable Key</span>
                                         {copiedText === "Publishable Key" && (
-                                            <span className="text-[10px] text-[#082824] font-bold">Copied</span>
+                                            <span className="text-xs text-[#082824] font-bold">Copied!</span>
                                         )}
                                     </div>
-                                    <div className="flex items-center justify-between gap-4 bg-white rounded-xl p-3 border border-black/10">
-                                        <code className="text-xs font-mono text-black/80 break-all select-all">{activePublishableKey}</code>
+                                    <div className="flex items-center justify-between gap-4 bg-white rounded-2xl p-4 border border-black/10">
+                                        <code className="text-xs sm:text-sm font-mono text-black/90 break-all select-all font-semibold">{activePublishableKey}</code>
                                         <button 
                                             onClick={() => handleCopy(activePublishableKey, "Publishable Key")}
-                                            className="p-2 text-black/40 hover:text-black rounded-lg hover:bg-black/5 transition-all"
+                                            className="p-2.5 text-black/60 hover:text-black rounded-xl hover:bg-black/5 transition-all"
+                                            title="Copy Publishable Key"
                                         >
                                             <Copy className="w-4 h-4" />
                                         </button>
@@ -5284,20 +5265,21 @@ Please complete the following implementation tasks:
                                 </div>
 
                                 {/* Secret Key */}
-                                <div className="bg-[#D4E3E8]/50 border border-black/10 rounded-2xl p-5 font-sans">
-                                    <div className="flex items-center justify-between mb-2">
+                                <div className="bg-[#D4E3E8]/50 border border-black/10 rounded-[28px] p-6 font-sans space-y-3">
+                                    <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-2">
-                                            <span className="text-[10px] text-black/60 font-semibold uppercase tracking-wider font-mono">Secret Key</span>
-                                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-800 border border-yellow-500/30">Secret</span>
+                                            <span className="text-xs sm:text-sm text-[#082824] font-bold uppercase tracking-wider font-mono">Secret Key</span>
+                                            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-yellow-500/20 text-yellow-800 dark:text-yellow-300 border border-yellow-500/30">Secret</span>
                                         </div>
                                         <div className="flex items-center gap-4">
                                             {copiedText === "Secret Key" && (
-                                                <span className="text-[10px] text-[#082824] font-bold">Copied</span>
+                                                <span className="text-xs text-[#082824] font-bold">Copied!</span>
                                             )}
                                             {activeSecretAvailable && (
                                                 <button
                                                     onClick={() => setRevealSecret(!revealSecret)}
-                                                    className="text-black/40 hover:text-black transition-colors"
+                                                    className="text-black/60 hover:text-black transition-colors"
+                                                    title={revealSecret ? "Hide secret" : "Reveal secret"}
                                                 >
                                                     {revealSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                                 </button>
@@ -5306,8 +5288,8 @@ Please complete the following implementation tasks:
                                     </div>
                                     {activeSecretAvailable ? (
                                         <>
-                                            <div className="flex items-center justify-between gap-4 bg-white rounded-xl p-3 border border-black/10 font-mono">
-                                                <code className="text-xs text-black/80 break-all">
+                                            <div className="flex items-center justify-between gap-4 bg-white rounded-2xl p-4 border border-black/10 font-mono">
+                                                <code className="text-xs sm:text-sm text-black/90 break-all font-semibold">
                                                     {revealSecret
                                                         ? activeSecretKey
                                                         : "••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
@@ -5316,22 +5298,23 @@ Please complete the following implementation tasks:
                                                 <button
                                                     onClick={() => handleCopy(activeSecretKey, "Secret Key")}
                                                     disabled={!revealSecret}
-                                                    className="p-2 text-black/40 hover:text-black hover:bg-black/5 rounded-lg disabled:opacity-30 disabled:pointer-events-none transition-all"
+                                                    className="p-2.5 text-black/60 hover:text-black hover:bg-black/5 rounded-xl disabled:opacity-30 disabled:pointer-events-none transition-all"
+                                                    title="Copy Secret Key"
                                                 >
                                                     <Copy className="w-4 h-4" />
                                                 </button>
                                             </div>
-                                            <p className="mt-2 text-[10px] leading-relaxed text-amber-900">
+                                            <p className="text-xs sm:text-sm leading-relaxed text-amber-900">
                                                 Copy this now. It is only readable while this page stays open; the key is stored
                                                 hashed, so it cannot be shown again.
                                             </p>
                                         </>
                                     ) : (
                                         <>
-                                            <div className="flex items-center gap-4 rounded-xl border border-black/10 bg-white p-3 font-mono">
-                                                <code className="break-all text-xs text-black/60">{activeSecretKey}</code>
+                                            <div className="flex items-center gap-4 rounded-2xl border border-black/10 bg-white p-4 font-mono">
+                                                <code className="break-all text-xs sm:text-sm text-black/70 font-semibold">{activeSecretKey}</code>
                                             </div>
-                                            <p className="mt-2 text-[10px] leading-relaxed text-black/60">
+                                            <p className="text-xs sm:text-sm leading-relaxed text-black/60">
                                                 This is a fingerprint of the live key, not the key itself. It's enough to tell which one
                                                 your integration should be using. The secret is stored hashed and is shown only once,
                                                 when it is created. If you no longer have it, roll the key below to issue a new one.
@@ -5341,22 +5324,22 @@ Please complete the following implementation tasks:
                                 </div>
 
                                 {/* Roll Keys */}
-                                <div className="pt-4 border-t border-black/10 flex items-center justify-between font-sans">
+                                <div className="pt-6 border-t border-black/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-sans">
                                     <div>
-                                        <h3 className="text-xs font-semibold text-black mb-1">Rotation / Roll Credentials</h3>
-                                        <p className="text-[10px] text-black/60 max-w-md">
+                                        <h3 className="text-sm sm:text-base font-bold text-[#082824] mb-1">Rotation / Roll Credentials</h3>
+                                        <p className="text-xs sm:text-sm text-black/60 max-w-md">
                                             Roll your API key pair instantly. Old keys are immediately invalidated for safety in this sandbox.
                                             {!activeSecretAvailable && " This is also how you get a readable secret if you no longer have the current one. The new key is revealed and copied once, here."}
                                         </p>
                                     </div>
-                                    <div className="flex items-center gap-4">
+                                    <div className="flex items-center gap-4 shrink-0">
                                         {copiedText === "API Secret Key Rolled" && (
-                                            <span className="text-[10px] text-[#082824] font-bold">API Secret Key Rolled</span>
+                                            <span className="text-xs text-[#082824] font-bold">API Secret Key Rolled</span>
                                         )}
                                         <button
                                             onClick={handleRollKeys}
                                             disabled={isRolling}
-                                            className={`px-5 py-2.5 border border-black/15 rounded-full text-xs font-semibold hover:bg-black/5 transition-all flex items-center gap-2 ${isRolling ? "opacity-50" : ""}`}
+                                            className={`px-6 py-2.5 border border-black/15 bg-white rounded-full text-xs sm:text-sm font-bold text-[#082824] hover:bg-black/5 transition-all flex items-center gap-2 shadow-sm ${isRolling ? "opacity-50" : ""}`}
                                         >
                                             {isRolling ? <RefreshCw className="w-4 h-4 animate-spin text-black" /> : <RotateCw className="w-4 h-4 text-black" />}
                                             Roll
@@ -5371,16 +5354,16 @@ Please complete the following implementation tasks:
 
             case "checkout":
                 return (
-                    <div className="space-y-8">
+                    <div className="space-y-8 font-sans">
                         {/* Fastest path: the CLI (no SDK, plain REST). */}
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black shadow-sm">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-black shadow-sm space-y-4">
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                                 <div>
-                                    <h2 className="text-sm font-semibold text-black flex items-center gap-2">
-                                        <Code2 className="w-4 h-4 text-[#082824]" />
+                                    <h2 className="text-lg sm:text-xl font-bold text-[#082824] flex items-center gap-2.5">
+                                        <Code2 className="w-5 h-5 text-[#082824]" />
                                         Fastest integration: the CLI
                                     </h2>
-                                    <p className="mt-2 text-[11px] text-black/60 leading-relaxed max-w-md font-sans">
+                                    <p className="mt-1.5 text-xs sm:text-sm text-black/70 leading-relaxed max-w-md font-sans">
                                         One command scaffolds a checkout intent route, a signed webhook receiver, and a checkout button. SubScript is a plain REST API. There is no SDK to install.
                                     </p>
                                 </div>
@@ -5388,16 +5371,16 @@ Please complete the following implementation tasks:
                                     href="https://www.subscriptonarc.com/docs"
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="shrink-0 text-xs font-semibold text-[#082824] hover:underline"
+                                    className="shrink-0 text-xs sm:text-sm font-bold text-[#082824] hover:underline"
                                 >
                                     Read the docs →
                                 </a>
                             </div>
-                            <div className="mt-4 flex items-center gap-2 bg-[#D4E3E8]/50 border border-black/10 rounded-xl px-4 py-3">
-                                <code className="flex-1 text-xs font-mono text-[#082824] font-semibold break-all">npx @subscriptonarc/cli</code>
+                            <div className="flex items-center gap-3 bg-[#D4E3E8]/60 border border-black/10 rounded-2xl px-5 py-3.5">
+                                <code className="flex-1 text-xs sm:text-sm font-mono text-[#082824] font-bold break-all">npx @subscriptonarc/cli</code>
                                 <button
                                     onClick={() => handleCopy("npx @subscriptonarc/cli", "CLI Command")}
-                                    className="shrink-0 p-2 text-black/40 hover:text-black rounded-lg hover:bg-black/5 transition-colors"
+                                    className="shrink-0 p-2 text-black/60 hover:text-black rounded-xl hover:bg-black/5 transition-colors"
                                     title="Copy command"
                                 >
                                     {copiedText === "CLI Command" ? <Check className="w-4 h-4 text-[#082824]" /> : <Copy className="w-4 h-4" />}
@@ -5407,39 +5390,39 @@ Please complete the following implementation tasks:
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
                             {/* Configurator Form */}
-                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black flex flex-col justify-between">
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-black flex flex-col justify-between shadow-sm">
                                 <div>
-                                    <h2 className="text-sm font-semibold text-black mb-6 flex items-center gap-2">
-                                        <Sliders className="w-4 h-4 text-[#082824]" />
+                                    <h2 className="text-lg sm:text-xl font-bold text-[#082824] mb-6 flex items-center gap-2.5">
+                                        <Sliders className="w-5 h-5 text-[#082824]" />
                                         Checkout Configurator
                                     </h2>
-                                    <div className="space-y-4 font-sans text-xs">
+                                    <div className="space-y-4 font-sans text-xs sm:text-sm">
                                         <div>
-                                            <label className="text-[10px] text-black/60 font-semibold uppercase tracking-wider block mb-2">Subscription/Plan Name</label>
+                                            <label className="text-xs sm:text-sm font-bold text-[#082824] block mb-1.5">Subscription/Plan Name</label>
                                             <input 
                                                 type="text" 
                                                 aria-label="Subscription/Plan Name"
                                                 value={subName} 
                                                 onChange={(e) => setSubName(e.target.value)}
-                                                className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors"
+                                                className="w-full bg-white border border-black/15 rounded-2xl px-4 py-3 text-black text-sm sm:text-base focus:outline-none focus:border-[#8AB4DB] transition-colors"
                                             />
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
-                                                <label className="text-[10px] text-black/60 font-semibold uppercase tracking-wider block mb-2">Monthly cap (USDC)</label>
+                                                <label className="text-xs sm:text-sm font-bold text-[#082824] block mb-1.5">Monthly cap (USDC)</label>
                                                 <input 
                                                     type="text" 
                                                     value={subCap} 
                                                     onChange={(e) => setSubCap(e.target.value)}
-                                                    className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors"
+                                                    className="w-full bg-white border border-black/15 rounded-2xl px-4 py-3 text-black text-sm sm:text-base focus:outline-none focus:border-[#8AB4DB] transition-colors"
                                                 />
                                             </div>
                                             <div>
-                                                <label className="text-[10px] text-black/60 font-semibold uppercase tracking-wider block mb-2">Billing Interval</label>
+                                                <label className="text-xs sm:text-sm font-bold text-[#082824] block mb-1.5">Billing Interval</label>
                                                 <select 
                                                     value={subInterval}
                                                     onChange={(e) => setSubInterval(e.target.value)}
-                                                    className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors appearance-none"
+                                                    className="w-full bg-white border border-black/15 rounded-2xl px-4 py-3 text-black text-sm sm:text-base focus:outline-none focus:border-[#8AB4DB] transition-colors appearance-none"
                                                 >
                                                     <option value="weekly">Weekly</option>
                                                     <option value="monthly">Monthly</option>
@@ -5451,31 +5434,31 @@ Please complete the following implementation tasks:
                                             <button
                                                 type="button"
                                                 onClick={() => setShowCheckoutAdvanced(!showCheckoutAdvanced)}
-                                                className="text-[10px] text-black/60 hover:text-black flex items-center gap-1.5 font-semibold uppercase tracking-wider transition-colors"
+                                                className="text-xs sm:text-sm text-black/70 hover:text-black flex items-center gap-1.5 font-bold transition-colors"
                                             >
-                                                <Sliders className="w-3.5 h-3.5" />
+                                                <Sliders className="w-4 h-4" />
                                                 {showCheckoutAdvanced ? "Hide Advanced Options" : "Show Advanced Options"}
                                             </button>
                                         </div>
 
                                         {showCheckoutAdvanced && (
-                                            <div className="pt-3 border-t border-black/10 space-y-4">
+                                            <div className="pt-4 border-t border-black/10 space-y-4">
                                                 <div>
-                                                    <label className="text-[10px] text-black/60 font-semibold uppercase tracking-wider block mb-2">Settlement Rail</label>
+                                                    <label className="text-xs sm:text-sm font-bold text-[#082824] block mb-1.5">Settlement Rail</label>
                                                     <select 
                                                         value={subChain}
                                                         onChange={(e) => setSubChain(e.target.value)}
-                                                        className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors font-sans text-xs"
+                                                        className="w-full bg-white border border-black/15 rounded-2xl px-4 py-3 text-black text-sm sm:text-base focus:outline-none focus:border-[#8AB4DB] transition-colors font-sans"
                                                     >
                                                         <option value="arc">Arc Network (Hosted checkout live)</option>
                                                     </select>
                                                 </div>
                                                 <div>
-                                                    <label className="text-[10px] text-black/60 font-semibold uppercase tracking-wider block mb-2">Wallet Connection Provider</label>
+                                                    <label className="text-xs sm:text-sm font-bold text-[#082824] block mb-1.5">Wallet Connection Provider</label>
                                                     <select 
                                                         value={walletProvider}
                                                         onChange={(e) => setWalletProvider(e.target.value)}
-                                                        className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors font-sans text-xs"
+                                                        className="w-full bg-white border border-black/15 rounded-2xl px-4 py-3 text-black text-sm sm:text-base focus:outline-none focus:border-[#8AB4DB] transition-colors font-sans"
                                                     >
                                                         <option value="none">Not Connected (Agent will configure RainbowKit/wagmi)</option>
                                                         <option value="privy">Privy Auth (Embedded Wallets + Social Login)</option>
@@ -5485,11 +5468,11 @@ Please complete the following implementation tasks:
                                                     </select>
                                                 </div>
                                                 <div>
-                                                    <label className="text-[10px] text-black/60 font-semibold uppercase tracking-wider block mb-2">Backend & Database Provider</label>
+                                                    <label className="text-xs sm:text-sm font-bold text-[#082824] block mb-1.5">Backend & Database Provider</label>
                                                     <select 
                                                         value={dbProvider}
                                                         onChange={(e) => setDbProvider(e.target.value)}
-                                                        className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors font-sans text-xs"
+                                                        className="w-full bg-white border border-black/15 rounded-2xl px-4 py-3 text-black text-sm sm:text-base focus:outline-none focus:border-[#8AB4DB] transition-colors font-sans"
                                                     >
                                                         <option value="none">No Database (Agent will auto-detect or recommend Prisma)</option>
                                                         <option value="prisma">Prisma ORM (PostgreSQL/MySQL/SQLite)</option>
@@ -5499,11 +5482,11 @@ Please complete the following implementation tasks:
                                                     </select>
                                                 </div>
                                                 <div>
-                                                    <label className="text-[10px] text-black/60 font-semibold uppercase tracking-wider block mb-2">Session Persistence</label>
+                                                    <label className="text-xs sm:text-sm font-bold text-[#082824] block mb-1.5">Session Persistence</label>
                                                     <select 
                                                         value={sessionProvider}
                                                         onChange={(e) => setSessionProvider(e.target.value)}
-                                                        className="w-full bg-white border border-black/15 rounded-xl px-4 py-3 text-black focus:outline-none focus:border-[#8AB4DB] transition-colors font-sans text-xs"
+                                                        className="w-full bg-white border border-black/15 rounded-2xl px-4 py-3 text-black text-sm sm:text-base focus:outline-none focus:border-[#8AB4DB] transition-colors font-sans"
                                                     >
                                                         <option value="none">No Session Engine (Agent will configure HTTP Cookies/JWT)</option>
                                                         <option value="cookies">HTTP-Only Secure Cookies (Stateful session)</option>
@@ -5515,27 +5498,27 @@ Please complete the following implementation tasks:
                                         )}
                                     </div>
                                 </div>
-                                <div className="mt-8 pt-4 border-t border-black/10 text-[10px] text-black/50 font-sans">
+                                <div className="mt-8 pt-4 border-t border-black/10 text-xs text-black/50 font-sans">
                                     SubScript is fast, private, and reliable: Arc-native USDC gas, private burner activation, and a 1% protocol fee.
                                 </div>
                             </div>
 
                             {/* Code output Block */}
-                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black flex flex-col justify-between space-y-4">
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-black flex flex-col justify-between space-y-4 shadow-sm">
                                 <div className="space-y-1">
-                                    <span className="text-xs font-semibold text-black uppercase tracking-wider">Checkout Snippet (REST · no SDK)</span>
-                                    <p className="text-[10px] text-black/50 font-sans">A fetch-based checkout button + intent route. No SDK to install.</p>
+                                    <h3 className="text-sm sm:text-base font-bold text-[#082824]">Checkout Snippet (REST · no SDK)</h3>
+                                    <p className="text-xs text-black/60 font-sans">A fetch-based checkout button + intent route. No SDK to install.</p>
                                 </div>
-                                <pre className="bg-[#D4E3E8]/40 p-4 rounded-2xl border border-black/10 overflow-x-auto text-[10px] font-mono text-[#082824] text-left flex-1">
+                                <pre className="bg-[#D4E3E8]/40 p-4 rounded-2xl border border-black/10 overflow-x-auto text-xs font-mono text-[#082824] text-left flex-1">
                                     <code>{checkoutCode}</code>
                                 </pre>
                                 <button 
                                     onClick={() => handleCopy(checkoutCode, "Checkout Snippet")}
-                                    className="w-full py-3.5 rounded-full font-semibold text-xs transition-all duration-200 flex items-center justify-center gap-2 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824]"
+                                    className="w-full py-3.5 rounded-full font-bold text-sm sm:text-base transition-all duration-200 flex items-center justify-center gap-2 bg-[#000000] hover:bg-black/85 text-white shadow-sm"
                                 >
                                     {copiedText === "Checkout Snippet" ? (
                                         <>
-                                            <Check className="w-4 h-4" /> ✓ Snippet Copied
+                                            <Check className="w-4 h-4" /> Snippet Copied!
                                         </>
                                     ) : (
                                         <>
@@ -5546,30 +5529,27 @@ Please complete the following implementation tasks:
                             </div>
                         </div>
 
-
                         {/* Agent Prompt Block */}
                         <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] text-black overflow-hidden shadow-sm">
-                            <div className="border-b border-black/10 px-6 py-4 bg-black/[0.01]">
-                                <span className="text-xs font-semibold text-black uppercase tracking-wider">Agent Integration Prompt</span>
-                                <p className="text-[10px] text-black/50 font-sans mt-0.5">Set up your subscription options and grab the integration prompt for your AI agent.</p>
+                            <div className="border-b border-black/10 px-6 sm:px-8 py-5 bg-black/[0.01]">
+                                <h3 className="text-sm sm:text-base font-bold text-[#082824]">Agent Integration Prompt</h3>
+                                <p className="text-xs text-black/60 font-sans mt-0.5">Set up your subscription options and grab the integration prompt for your AI agent.</p>
                             </div>
-                            <div className="p-6 space-y-4 font-sans">
-
-
+                            <div className="p-6 sm:p-8 space-y-5 font-sans">
                                 {/* Configuration Status Card */}
                                 <div className="bg-[#D4E3E8]/40 border border-black/10 rounded-2xl p-5 text-center">
-                                    <p className="text-xs text-black/70 leading-relaxed font-sans">
+                                    <p className="text-xs sm:text-sm text-black/75 leading-relaxed font-sans">
                                         Prompt configurations compiled successfully. Ready to copy for your AI coding assistant.
                                     </p>
                                 </div>
 
                                 <button
                                     onClick={() => handleCopy(agentIntegrationPrompt, "Agent Prompt")}
-                                    className="w-full py-3.5 rounded-full font-semibold text-xs transition-all duration-200 flex items-center justify-center gap-2 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824]"
+                                    className="w-full py-3.5 rounded-full font-bold text-sm sm:text-base transition-all duration-200 flex items-center justify-center gap-2 bg-[#000000] hover:bg-black/85 text-white shadow-sm"
                                 >
                                     {copiedText === "Agent Prompt" ? (
                                         <>
-                                            <Check className="w-4 h-4" /> ✓ Prompt Copied
+                                            <Check className="w-4 h-4" /> Prompt Copied!
                                         </>
                                     ) : (
                                         <>
@@ -5581,23 +5561,23 @@ Please complete the following implementation tasks:
                         </div>
 
                         {/* MCP Config */}
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-4">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-black space-y-4 shadow-sm">
                             <div className="space-y-1">
-                                <span className="text-xs font-semibold text-black uppercase tracking-wider">cursor_mcp.json</span>
-                                <p className="text-[10px] text-black/50 font-sans mt-0.5">Drop-in MCP context for Cursor or compatible agents.</p>
+                                <h3 className="text-sm sm:text-base font-bold text-[#082824]">cursor_mcp.json</h3>
+                                <p className="text-xs text-black/60 font-sans mt-0.5">Drop-in MCP context for Cursor or compatible agents.</p>
                             </div>
                             <div className="bg-[#D4E3E8]/40 border border-black/10 rounded-2xl p-5 text-center">
-                                <p className="text-xs text-black/70 leading-relaxed font-sans">
+                                <p className="text-xs sm:text-sm text-black/75 leading-relaxed font-sans">
                                     Cursor MCP Server configurations compiled successfully. Ready to deploy.
                                 </p>
                             </div>
                             <button
                                 onClick={() => handleCopy(cursorMcpConfig, "MCP Config")}
-                                className="w-full py-3.5 rounded-full font-semibold text-xs transition-all duration-200 flex items-center justify-center gap-2 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824]"
+                                className="w-full py-3.5 rounded-full font-bold text-sm sm:text-base transition-all duration-200 flex items-center justify-center gap-2 bg-[#000000] hover:bg-black/85 text-white shadow-sm"
                             >
                                 {copiedText === "MCP Config" ? (
                                     <>
-                                        <Check className="w-4 h-4" /> ✓ MCP Config Copied
+                                        <Check className="w-4 h-4" /> MCP Config Copied!
                                     </>
                                 ) : (
                                     <>
@@ -5614,16 +5594,16 @@ Please complete the following implementation tasks:
                     return (
                         <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-sm text-black font-sans">
                             <Shield className="w-10 h-10 mx-auto text-[#082824]" />
-                            <h2 className="text-lg font-semibold text-black">Verify Wallet Ownership</h2>
-                            <p className="text-xs text-black/60 leading-relaxed max-w-xs mx-auto">
+                            <h2 className="text-xl font-bold text-[#082824]">Verify Wallet Ownership</h2>
+                            <p className="text-xs sm:text-sm text-black/60 leading-relaxed max-w-xs mx-auto">
                                 To protect your API credentials and webhook endpoints, please sign a secure message using your connected wallet.
                             </p>
                             <button
                                 onClick={handleBackendLogin}
                                 disabled={isLoggingIn}
-                                className="w-full py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-full text-xs font-semibold flex items-center justify-center gap-2 transition-all"
+                                className="w-full py-3.5 bg-[#000000] hover:bg-black/85 text-white rounded-full text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-sm"
                             >
-                                {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-[#082824]" /> : <Shield className="w-4 h-4" />}
+                                {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <Shield className="w-4 h-4" />}
                                 Authenticate Developer Portal
                             </button>
                         </div>
@@ -5637,27 +5617,27 @@ Please complete the following implementation tasks:
                     || "No active API key";
 
                 return (
-                    <div className="space-y-8 text-black">
+                    <div className="space-y-8 text-black font-sans">
                         {/* Webhook Endpoints Config */}
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm space-y-6">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 shadow-sm space-y-6">
                             <div>
-                                <h2 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
-                                    <Sliders className="w-4 h-4 text-[#082824]" />
+                                <h2 className="text-xl font-bold sm:text-2xl text-[#082824] mb-2 flex items-center gap-2.5">
+                                    <Sliders className="w-5 h-5 text-[#082824]" />
                                     Webhook Endpoints
                                 </h2>
-                                <p className="text-[11px] text-black/60 font-sans">
+                                <p className="text-sm sm:text-base text-black/70 font-sans">
                                     Register HTTPS URLs to receive real-time webhook events for your subscription lifecycle.
                                 </p>
                             </div>
 
-                            <div className="grid gap-3 rounded-2xl border border-black/10 bg-[#D4E3E8]/40 p-4 text-[10px] font-sans sm:grid-cols-2">
+                            <div className="grid gap-3 rounded-[28px] border border-black/10 bg-[#D4E3E8]/50 p-5 text-xs sm:text-sm font-sans sm:grid-cols-2">
                                 <div>
-                                    <p className="font-semibold text-black/50">Merchant wallet</p>
-                                    <p className="mt-1 break-all font-mono text-black">{sessionWallet || "Not authenticated"}</p>
+                                    <p className="font-bold text-[#082824]/70">Merchant wallet</p>
+                                    <p className="mt-1 break-all font-mono text-black font-semibold">{sessionWallet || "Not authenticated"}</p>
                                 </div>
                                 <div>
-                                    <p className="font-semibold text-black/50">API key</p>
-                                    <p className="mt-1 break-all font-mono text-black">{webhookKeyFingerprint}</p>
+                                    <p className="font-bold text-[#082824]/70">API key</p>
+                                    <p className="mt-1 break-all font-mono text-black font-semibold">{webhookKeyFingerprint}</p>
                                 </div>
                             </div>
 
@@ -5670,14 +5650,14 @@ Please complete the following implementation tasks:
                                         onChange={(e) => setWebhookUrlInput(e.target.value)}
                                         placeholder="https://your-api.com/webhooks/subscript"
                                         required
-                                        className="flex-1 rounded-xl border border-black/15 bg-white px-4 py-3 text-xs text-black outline-none transition-colors focus:border-[#8AB4DB]"
+                                        className="flex-1 rounded-2xl border border-black/15 bg-white px-4 py-3.5 text-sm sm:text-base text-black outline-none transition-colors focus:border-[#8AB4DB]"
                                     />
                                     <button
                                         type="submit"
                                         disabled={isAddingWebhook || !webhookUrlInput}
-                                        className="px-6 py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-full text-xs font-semibold flex items-center justify-center gap-2 transition-all disabled:opacity-40"
+                                        className="px-8 py-3.5 bg-[#000000] hover:bg-black/85 text-white rounded-full text-sm sm:text-base font-bold flex items-center justify-center gap-2 transition-all shadow-sm disabled:opacity-40 shrink-0"
                                     >
-                                        {isAddingWebhook ? <Loader2 className="w-4 h-4 animate-spin text-[#082824]" /> : <PlugZap className="w-4 h-4" />}
+                                        {isAddingWebhook ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <PlugZap className="w-4 h-4" />}
                                         Add Endpoint
                                     </button>
                                 </div>
@@ -5685,28 +5665,34 @@ Please complete the following implementation tasks:
 
                             {/* Registered Endpoints List */}
                             <div className="space-y-3 pt-2">
-                                <span className="text-[10px] font-semibold text-black/50 uppercase tracking-wider font-mono">Registered Endpoints</span>
+                                <span className="text-xs sm:text-sm font-bold text-[#082824] uppercase tracking-wider font-mono">Registered Endpoints</span>
                                 {isWebhooksLoading ? (
-                                    <div className="space-y-2 animate-pulse">
-                                        <div className="h-14 rounded-2xl bg-black/[0.04]" />
-                                        <div className="h-14 rounded-2xl bg-black/[0.04]" />
+                                    <div className="space-y-3">
+                                        <div className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm space-y-2 subscript-skeleton">
+                                            <div className="h-4 w-48 rounded-full bg-[#082824]/20" />
+                                            <div className="h-3.5 w-64 rounded-full bg-black/10" />
+                                        </div>
+                                        <div className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm space-y-2 subscript-skeleton">
+                                            <div className="h-4 w-52 rounded-full bg-[#082824]/20" />
+                                            <div className="h-3.5 w-60 rounded-full bg-black/10" />
+                                        </div>
                                     </div>
                                 ) : webhookEndpoints.length === 0 ? (
-                                    <div className="rounded-2xl border border-black/10 bg-black/[0.02] p-6 text-center text-xs text-black/50">
+                                    <div className="rounded-2xl border border-black/10 bg-black/[0.02] p-8 text-center text-sm text-black/60">
                                         No webhook endpoints registered yet. Add one above to begin receiving events.
                                     </div>
                                 ) : (
-                                    <div className="space-y-2">
+                                    <div className="space-y-3">
                                         {webhookEndpoints.map((ep) => (
-                                            <div key={ep.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-black/10 bg-[#D4E3E8]/40 p-4">
-                                                <div className="space-y-1 min-w-0 flex-1 font-sans">
+                                            <div key={ep.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+                                                <div className="space-y-1.5 min-w-0 flex-1 font-sans">
                                                     <div className="flex items-center gap-2">
-                                                        <span className="font-mono text-xs font-semibold text-black truncate">{ep.url}</span>
+                                                        <span className="font-mono text-sm sm:text-base font-bold text-[#082824] truncate">{ep.url}</span>
                                                     </div>
-                                                    <div className="flex items-center gap-3 text-[10px] text-black/60">
-                                                        <span>Secret: </span>
-                                                        <code className="font-mono bg-white px-2 py-0.5 rounded border border-black/10">
-                                                            {ep.secretAvailable && revealWebhookSecret === ep.id
+                                                    <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm text-black/70">
+                                                        <span className="font-bold">Secret: </span>
+                                                        <code className="font-mono bg-[#D4E3E8]/40 px-2.5 py-1 rounded-lg border border-black/10">
+                                                             {ep.secretAvailable && revealWebhookSecret === ep.id
                                                                 ? ep.secret
                                                                 : "whsec_••••••••"}
                                                         </code>
@@ -5715,7 +5701,7 @@ Please complete the following implementation tasks:
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => setRevealWebhookSecret(prev => prev === ep.id ? null : ep.id)}
-                                                                    className="text-[#082824] font-semibold hover:underline"
+                                                                    className="text-[#082824] font-bold hover:underline"
                                                                 >
                                                                     {revealWebhookSecret === ep.id ? "Hide" : "Reveal"}
                                                                 </button>
@@ -5723,13 +5709,13 @@ Please complete the following implementation tasks:
                                                                     <button
                                                                         type="button"
                                                                         onClick={() => handleCopy(ep.secret, `Webhook Secret ${ep.id}`)}
-                                                                        className="inline-flex items-center gap-1 text-[#082824] hover:underline font-semibold"
+                                                                        className="inline-flex items-center gap-1 text-[#082824] hover:underline font-bold"
                                                                     >
                                                                         {copiedText === `Webhook Secret ${ep.id}` ? (
-                                                                            <span className="text-emerald-700 font-bold flex items-center gap-1"><Check className="w-3 h-3" /> Copied!</span>
+                                                                            <span className="text-emerald-700 font-bold flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Copied!</span>
                                                                         ) : (
                                                                             <>
-                                                                                <Copy className="w-3 h-3" /> Copy secret
+                                                                                <Copy className="w-3.5 h-3.5" /> Copy secret
                                                                             </>
                                                                         )}
                                                                     </button>
@@ -5737,9 +5723,9 @@ Please complete the following implementation tasks:
                                                             </>
                                                         )}
                                                     </div>
-                                                    <p className="text-[10px] text-black/50 font-mono">
+                                                    <p className="text-xs text-black/60 font-mono">
                                                         {ep.latestDelivery
-                                                            ? <>Last delivery: <span className="font-mono text-black">{ep.latestDelivery.event}</span> · HTTP {ep.latestDelivery.status ?? "pending"} · {ep.latestDelivery.lastAttemptAt ? new Date(ep.latestDelivery.lastAttemptAt).toLocaleString() : "time unavailable"}</>
+                                                            ? <>Last delivery: <span className="font-mono font-bold text-black">{ep.latestDelivery.event}</span> · HTTP {ep.latestDelivery.status ?? "pending"} · {ep.latestDelivery.lastAttemptAt ? new Date(ep.latestDelivery.lastAttemptAt).toLocaleString() : "time unavailable"}</>
                                                             : (ep.deliveriesCount ? `${ep.deliveriesCount} deliveries` : "No deliveries recorded for this endpoint yet.")}
                                                     </p>
                                                 </div>
@@ -5747,7 +5733,7 @@ Please complete the following implementation tasks:
                                                     <button
                                                         type="button"
                                                         onClick={() => handleDeleteWebhook(ep.id)}
-                                                        className="px-3 py-1.5 rounded-full border border-red-200 bg-red-50 text-[10px] font-semibold text-red-700 hover:bg-red-100 transition"
+                                                        className="px-4 py-2 rounded-full border border-red-200 bg-red-50 text-xs font-bold text-red-700 hover:bg-red-100 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/30 dark:hover:bg-red-500/20 transition shadow-sm"
                                                     >
                                                         Delete
                                                     </button>
@@ -5760,14 +5746,14 @@ Please complete the following implementation tasks:
                         </div>
 
                         {/* Webhook health checks */}
-                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm space-y-4">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 shadow-sm space-y-4">
                             <div>
-                                <h2 className="text-sm font-semibold text-black">Webhook health checks</h2>
-                                <p className="mt-1 text-[11px] text-black/60 font-sans">
+                                <h2 className="text-lg sm:text-xl font-bold text-[#082824]">Webhook health checks</h2>
+                                <p className="mt-1 text-xs sm:text-sm text-black/70 font-sans">
                                     Send signed sample events to every active endpoint, or resend the newest real delivery.
                                 </p>
                             </div>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-wrap gap-2.5">
                                 {([
                                     ["test", "Send test webhook"],
                                     ["payment.succeeded", "Send test payment.succeeded"],
@@ -5778,7 +5764,7 @@ Please complete the following implementation tasks:
                                         type="button"
                                         onClick={() => handleSendWebhookTest(eventType)}
                                         disabled={Boolean(isTestingWebhook) || webhookEndpoints.every((endpoint) => !endpoint.active)}
-                                        className="rounded-full border border-black/15 bg-white px-4 py-2 text-[10px] font-semibold text-black hover:bg-black/5 transition disabled:opacity-40"
+                                        className="rounded-full border border-black/15 bg-white px-5 py-2.5 text-xs sm:text-sm font-bold text-[#082824] hover:bg-black/5 transition disabled:opacity-40 shadow-sm"
                                     >
                                         {isTestingWebhook === eventType ? "Sending…" : label}
                                     </button>
@@ -5787,43 +5773,43 @@ Please complete the following implementation tasks:
                                     type="button"
                                     onClick={() => handleReplayWebhook()}
                                     disabled={isReplaying || webhookEvents.length === 0}
-                                    className="rounded-full border border-black/15 bg-white px-4 py-2 text-[10px] font-semibold text-black hover:bg-black/5 transition disabled:opacity-40"
+                                    className="rounded-full border border-black/15 bg-white px-5 py-2.5 text-xs sm:text-sm font-bold text-[#082824] hover:bg-black/5 transition disabled:opacity-40 shadow-sm"
                                 >
                                     {isReplaying ? "Resending…" : "Resend latest event"}
                                 </button>
                             </div>
                             {replayStatus && (
-                                <p className="rounded-xl border border-black/10 bg-black/[0.03] px-3 py-2 text-[10px] text-black/70 font-sans">{replayStatus}</p>
+                                <p className="rounded-2xl border border-black/10 bg-black/[0.03] px-4 py-3 text-xs sm:text-sm text-black/70 font-sans">{replayStatus}</p>
                             )}
                         </div>
 
                         {/* Event Feed and Inspector */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
                             {/* Event Feed */}
-                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm flex flex-col justify-between">
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 shadow-sm flex flex-col justify-between">
                                 <div>
-                                    <h2 className="text-sm font-semibold text-black mb-5 flex items-center gap-2">
-                                        <Webhook className="w-4 h-4 text-[#082824]" />
+                                    <h2 className="text-lg sm:text-xl font-bold text-[#082824] mb-5 flex items-center gap-2.5">
+                                        <Webhook className="w-5 h-5 text-[#082824]" />
                                         Live Webhook Deliveries
                                     </h2>
-                                    <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+                                    <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
                                         {isEventsLoading ? (
-                                            <div className="space-y-2.5 animate-pulse">
+                                            <div className="space-y-2.5">
                                                 {Array.from({ length: 4 }).map((_, i) => (
-                                                    <div key={i} className="p-4 rounded-2xl border border-black/10 bg-black/[0.02] flex justify-between items-center">
+                                                    <div key={i} className="p-4 rounded-2xl border border-black/10 bg-white flex justify-between items-center subscript-skeleton">
                                                         <div className="space-y-1.5">
-                                                            <div className="h-3.5 w-36 rounded bg-black/15" />
-                                                            <div className="h-2.5 w-24 rounded bg-black/10" />
+                                                            <div className="h-4 w-36 rounded-full bg-[#082824]/20" />
+                                                            <div className="h-3 w-24 rounded-full bg-black/10" />
                                                         </div>
-                                                        <div className="h-5 w-14 rounded-full bg-black/10" />
+                                                        <div className="h-6 w-16 rounded-full bg-black/10" />
                                                     </div>
                                                 ))}
                                             </div>
                                         ) : webhookEvents.length === 0 ? (
-                                            <div className="py-12 text-center text-black/40 font-sans text-xs space-y-3">
-                                                <Webhook className="w-8 h-8 mx-auto text-black/20" />
-                                                <p>No webhook deliveries logged yet.</p>
-                                                <p className="text-[10px] text-black/30">Trigger events on-chain (like creating subscriptions) to see delivery reports here.</p>
+                                            <div className="py-12 text-center text-black/50 font-sans text-sm space-y-3">
+                                                <Webhook className="w-10 h-10 mx-auto text-[#082824]/30" />
+                                                <p className="font-semibold">No webhook deliveries logged yet.</p>
+                                                <p className="text-xs text-black/40">Trigger events on-chain (like creating subscriptions) to see delivery reports here.</p>
                                             </div>
                                         ) : (
                                             (() => {
@@ -5836,18 +5822,18 @@ Please complete the following implementation tasks:
                                                         className={`w-full p-4 rounded-2xl border text-left flex justify-between items-center transition-all ${
                                                             selectedWebhook === item.id 
                                                                 ? "bg-[#D4E3E8] border-[#8AB4DB] shadow-sm"
-                                                                : "bg-black/[0.02] border-black/10 hover:bg-black/[0.04]"
+                                                                : "bg-white border-black/10 hover:bg-black/[0.03]"
                                                         }`}
                                                     >
-                                                        <div className="font-mono text-[11px] space-y-1 max-w-[70%]">
-                                                            <p className="font-semibold text-black">{item.event}</p>
-                                                            <p className="text-black/50 text-[9px] truncate">{item.endpointUrl}</p>
-                                                            <p className="text-black/40 text-[9px]">{item.time}</p>
+                                                        <div className="font-mono text-xs sm:text-sm space-y-1 max-w-[70%]">
+                                                            <p className="font-bold text-[#082824]">{item.event}</p>
+                                                            <p className="text-black/60 text-xs truncate">{item.endpointUrl}</p>
+                                                            <p className="text-black/40 text-xs">{item.time}</p>
                                                         </div>
-                                                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold ${
+                                                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                                                             item.status >= 200 && item.status < 300
-                                                                ? "bg-emerald-100 text-emerald-800 border border-emerald-300" 
-                                                                : "bg-red-100 text-red-800 border border-red-300"
+                                                                ? "bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30" 
+                                                                : "bg-red-100 text-red-800 border border-red-300 dark:bg-red-500/15 dark:text-red-300 dark:border-red-500/30"
                                                         }`}>
                                                             HTTP {item.status}
                                                         </span>
@@ -5862,8 +5848,8 @@ Please complete the following implementation tasks:
                                         const totalPages = Math.ceil(webhookEvents.length / webhookPageSize);
                                         if (totalPages <= 1) return null;
                                         return (
-                                            <div className="flex items-center justify-between pt-4 mt-2 border-t border-black/10 font-sans">
-                                                <span className="text-[10px] text-black/50 font-semibold uppercase tracking-wider">
+                                            <div className="flex items-center justify-between pt-4 mt-3 border-t border-black/10 font-sans">
+                                                <span className="text-xs text-black/60 font-bold uppercase tracking-wider">
                                                     Page {webhooksPage + 1} of {totalPages}
                                                 </span>
                                                 <div className="flex gap-2">
@@ -5871,7 +5857,7 @@ Please complete the following implementation tasks:
                                                         type="button"
                                                         disabled={webhooksPage === 0}
                                                         onClick={() => setWebhooksPage((p) => Math.max(0, p - 1))}
-                                                        className="px-3 py-1.5 bg-white hover:bg-black/5 disabled:opacity-30 border border-black/15 text-black rounded-full text-[10px] font-semibold transition-all"
+                                                        className="px-4 py-2 bg-white hover:bg-black/5 disabled:opacity-30 border border-black/15 text-black rounded-full text-xs font-bold transition-all shadow-sm"
                                                     >
                                                         Prev
                                                     </button>
@@ -5879,7 +5865,7 @@ Please complete the following implementation tasks:
                                                         type="button"
                                                         disabled={webhooksPage >= totalPages - 1}
                                                         onClick={() => setWebhooksPage((p) => Math.min(totalPages - 1, p + 1))}
-                                                        className="px-3 py-1.5 bg-white hover:bg-black/5 disabled:opacity-30 border border-black/15 text-black rounded-full text-[10px] font-semibold transition-all"
+                                                        className="px-4 py-2 bg-white hover:bg-black/5 disabled:opacity-30 border border-black/15 text-black rounded-full text-xs font-bold transition-all shadow-sm"
                                                     >
                                                         Next
                                                     </button>
@@ -5889,54 +5875,54 @@ Please complete the following implementation tasks:
                                     })()}
                                 </div>
                                 
-                                <div className="mt-6 pt-4 border-t border-black/10 text-[10px] text-black/50 flex items-center justify-between font-sans">
-                                    <div className="flex items-center gap-2">
-                                        <span className="w-2 h-2 bg-[#8AB4DB] rounded-full" />
+                                <div className="mt-6 pt-4 border-t border-black/10 text-xs text-black/60 flex items-center justify-between font-sans">
+                                    <div className="flex items-center gap-2 font-semibold">
+                                        <span className="w-2.5 h-2.5 bg-[#8AB4DB] rounded-full" />
                                         <span>Logged: {webhookEvents.length} events</span>
                                     </div>
                                     <button
                                         onClick={fetchWebhookEvents}
-                                        className="text-[#082824] font-semibold hover:underline flex items-center gap-1"
+                                        className="text-[#082824] font-bold hover:underline flex items-center gap-1.5"
                                     >
-                                        <RefreshCw className="w-3 h-3" /> Refresh logs
+                                        <RefreshCw className="w-3.5 h-3.5" /> Refresh logs
                                     </button>
                                 </div>
                             </div>
 
                             {/* Payload Inspector */}
                             <div className="rounded-[34px] border border-black/10 overflow-hidden flex flex-col justify-between shadow-sm bg-[#FFFFF0]">
-                                <div className="flex items-center justify-between border-b border-black/10 px-6 py-4 bg-[#D4E3E8]/30">
-                                    <span className="text-xs font-semibold text-black uppercase tracking-wider font-mono">Payload Inspector</span>
+                                <div className="flex items-center justify-between border-b border-black/10 px-6 sm:px-8 py-5 bg-[#D4E3E8]/40">
+                                    <span className="text-xs sm:text-sm font-bold text-[#082824] uppercase tracking-wider font-mono">Payload Inspector</span>
                                     <button
                                         onClick={() => handleReplayWebhook(selectedWebhook)}
                                         disabled={isReplaying || !selectedWebhook}
-                                        className={`px-3 py-1.5 border border-black/15 bg-white rounded-full text-[10px] font-semibold text-black hover:bg-black/5 flex items-center gap-1.5 ${isReplaying || !selectedWebhook ? "opacity-50" : ""}`}
+                                        className={`px-4 py-2 border border-black/15 bg-white rounded-full text-xs font-bold text-[#082824] hover:bg-black/5 flex items-center gap-1.5 shadow-sm ${isReplaying || !selectedWebhook ? "opacity-50" : ""}`}
                                     >
-                                        {isReplaying ? <Loader2 className="w-3 h-3 animate-spin text-black" /> : <RotateCw className="w-3 h-3 text-black" />}
+                                        {isReplaying ? <Loader2 className="w-3.5 h-3.5 animate-spin text-black" /> : <RotateCw className="w-3.5 h-3.5 text-black" />}
                                         Replay
                                     </button>
                                 </div>
                                 
-                                <div className="flex-1 p-6 font-mono text-[11px] text-black/80 overflow-y-auto min-h-[300px] leading-relaxed select-all">
+                                <div className="flex-1 p-6 sm:p-8 font-mono text-xs sm:text-sm text-black/80 overflow-y-auto min-h-[300px] leading-relaxed select-all">
                                     {replayStatus && (
-                                        <p className={`p-3 border rounded-xl mb-4 font-sans text-xs ${
+                                        <p className={`p-4 border rounded-2xl mb-4 font-sans text-xs sm:text-sm ${
                                             replayStatus.includes("successfully") 
-                                                ? "bg-emerald-50 text-emerald-800 border-emerald-200" 
-                                                : "bg-red-50 text-red-800 border-red-200"
+                                                ? "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/30" 
+                                                : "bg-red-50 text-red-800 border-red-200 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/30"
                                         }`}>{replayStatus}</p>
                                     )}
                                     {selectedPayload ? (
                                         <div className="space-y-4">
                                             <div>
-                                                <p className="text-black/50 text-[9px] uppercase tracking-wider mb-1 font-semibold">JSON Payload</p>
-                                                <pre className="bg-white p-3 rounded-xl border border-black/10 overflow-x-auto text-[#082824]">
+                                                <p className="text-black/60 text-xs uppercase tracking-wider mb-2 font-bold">JSON Payload</p>
+                                                <pre className="bg-white p-4 rounded-2xl border border-black/10 overflow-x-auto text-[#082824] font-mono text-xs sm:text-sm">
                                                     <code>{JSON.stringify(selectedPayload.payload, null, 2)}</code>
                                                 </pre>
                                             </div>
                                             {selectedPayload.responseBody && (
                                                 <div>
-                                                    <p className="text-black/50 text-[9px] uppercase tracking-wider mb-1 font-semibold">Response Body</p>
-                                                    <pre className="bg-white p-3 rounded-xl border border-black/10 overflow-x-auto text-black/70 max-h-[150px]">
+                                                    <p className="text-black/60 text-xs uppercase tracking-wider mb-2 font-bold">Response Body</p>
+                                                    <pre className="bg-white p-4 rounded-2xl border border-black/10 overflow-x-auto text-black/70 max-h-[150px] font-mono text-xs">
                                                         <code>{selectedPayload.responseBody}</code>
                                                     </pre>
                                                 </div>
@@ -5947,7 +5933,7 @@ Please complete the following implementation tasks:
                                     )}
                                 </div>
                                 
-                                <div className="border-t border-black/10 px-6 py-4 bg-[#D4E3E8]/30 text-[10px] text-black/60 flex justify-between font-mono">
+                                <div className="border-t border-black/10 px-6 sm:px-8 py-4 bg-[#D4E3E8]/40 text-xs text-black/70 flex justify-between font-mono font-semibold">
                                     <span>Event ID: {selectedPayload?.id || "N/A"}</span>
                                     <span>HTTP Status: {selectedPayload?.status || "N/A"}</span>
                                 </div>
@@ -5962,12 +5948,28 @@ Please complete the following implementation tasks:
     const sidebarIdentityLabel =
         merchantAlias || (address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Your account");
 
+    const handleNavSelect = (id: string) => {
+        if (id === "payment-links-subscriptions") {
+            setActiveTab("payment-links");
+            setSubTab("subscriptions");
+        } else if (id === "payment-links-one-time") {
+            setActiveTab("payment-links");
+            setSubTab("one-time");
+        } else if (id === "payment-links-commit") {
+            setActiveTab("payment-links");
+            setSubTab("commit");
+        } else {
+            setActiveTab(id as TabId);
+        }
+    };
+
     return (
-        <div data-mounted={isMounted} data-merchant-theme={resolvedTheme} className="merchant-dashboard-root relative min-h-[100dvh] overflow-x-hidden bg-[#FFFFF0] font-sans text-black selection:bg-[#8AB4DB]/45 md:h-[100dvh] md:overflow-hidden">
+        <div data-mounted={isMounted} data-merchant-theme={resolvedTheme} className="merchant-dashboard-root relative min-h-[100dvh] overflow-x-hidden bg-[#353935] font-sans text-black selection:bg-[#8AB4DB]/45 md:h-[100dvh] md:overflow-hidden">
             <div className="relative md:flex md:h-[100dvh] md:min-h-0">
                 <MerchantDashboardNav
                     activeId={activeTab}
-                    onSelect={(id) => setActiveTab(id as TabId)}
+                    activeSubTab={subTab}
+                    onSelect={handleNavSelect}
                     identityLabel={sidebarIdentityLabel}
                     avatarUrl={userSettings?.profilePic || null}
                     verified={Boolean(userSettings?.verified)}
@@ -5986,7 +5988,7 @@ Please complete the following implementation tasks:
                         setActiveTab("settings");
                     }}
                 />
-                <div className="merchant-dashboard-workspace relative min-w-0 flex-1 overflow-y-auto bg-[#D4E3E8] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[70px]">
+                <div className="merchant-dashboard-workspace relative min-w-0 flex-1 overflow-y-auto bg-[#FFFFF0] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[28px] md:border md:border-black/10">
             {/* Session Consent Alerts Overlay */}
             {sessionAlert && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
@@ -6028,7 +6030,27 @@ Please complete the following implementation tasks:
                 </div>
             )}
             {/* Dashboard Content */}
-            <main className="mx-auto max-w-[1600px] px-4 pb-12 pt-20 sm:px-7 md:pt-24">
+            <main className="mx-auto max-w-[1600px] px-4 pb-12 pt-6 sm:px-7 md:pt-8">
+                {/* Top Workspace Header */}
+                <div className="mb-6 flex items-center justify-between">
+                    <div>
+                        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#082824]">
+                            Merchant Dashboard
+                        </h1>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                        <button
+                            onClick={() => setActiveTab("premium")}
+                            title="Premium"
+                            className="flex h-9 w-9 items-center justify-center rounded-full bg-[#D4E3E8] text-[#082824] hover:brightness-95 transition shadow-sm border border-black/5"
+                        >
+                            <DiamondIcon className="h-4 w-4" />
+                        </button>
+                        <div className="relative">
+                            <NotificationBell audience="MERCHANT" accent="#082824" className="merchant-light-bell" />
+                        </div>
+                    </div>
+                </div>
                 {isLoading ? (
                     <DashboardSkeleton activeTab={activeTab} isConnected={isConnected} />
                 ) : (
@@ -6041,9 +6063,9 @@ Please complete the following implementation tasks:
                                 left the content area blank. */}
                             <motion.div
                                 key={activeTab}
-                                initial={{ opacity: 0, y: 15, scale: 0.985, filter: "blur(1.5px)" }}
-                                animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
-                                transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                                initial={{ opacity: 0, y: 6 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.18, ease: "easeOut" }}
                             >
                                 {renderView()}
                             </motion.div>
@@ -6051,11 +6073,11 @@ Please complete the following implementation tasks:
                 )}
                 
                 {/* Footer */}
-                <footer className="mt-16 pt-8 border-t border-white/5 flex flex-col sm:flex-row justify-between items-center text-[10px] text-white/40 gap-4">
+                <footer className="mt-16 pt-8 border-t border-black/10 flex flex-col sm:flex-row justify-between items-center text-[10px] text-black/40 gap-4">
                     <span>© 2026 SubScript Protocol. All rights reserved.</span>
                     <div className="flex gap-4">
-                        <Link href="/terms" className="hover:text-white transition">Terms of Service</Link>
-                        <Link href="/privacy" className="hover:text-white transition">Privacy Policy</Link>
+                        <Link href="/terms" className="hover:text-black transition">Terms of Service</Link>
+                        <Link href="/privacy" className="hover:text-black transition">Privacy Policy</Link>
                     </div>
                     <span>Built on Arc Network</span>
                 </footer>
@@ -6134,12 +6156,6 @@ Please complete the following implementation tasks:
                 depositAddress={address || ""}
                 onSuccess={handleDepositSuccess}
                 executeContractWrite={executeContractWrite}
-            />
-            <SharePlanModal
-                isOpen={sharingPlan !== null}
-                onClose={() => setSharingPlan(null)}
-                plan={sharingPlan}
-                subscribeUrl={sharingPlan ? buildSubscribeUrl(sharingPlan.id, typeof window !== "undefined" ? window.location.origin : undefined) : ""}
             />
             {activeQrCodeLink && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md font-sans">
@@ -6228,6 +6244,12 @@ Please complete the following implementation tasks:
                     onCancel={confirmModal.onCancel ?? (() => setConfirmModal(null))}
                 />
             )}
+            <SharePlanModal
+                isOpen={sharingPlan !== null}
+                onClose={() => setSharingPlan(null)}
+                plan={sharingPlan}
+                subscribeUrl={sharingPlan ? buildSubscribeUrl(sharingPlan.id, typeof window !== "undefined" ? window.location.origin : undefined) : ""}
+            />
             {/* High-fidelity glassmorphic toast notification for settlement confirmation */}
                             {showToast && (
                                 <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass border border-emerald-500/30 bg-black/60 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-[0_8px_32px_0_rgba(0,210,180,0.2)]">
@@ -6724,50 +6746,50 @@ function LocalCustomerVaultRow({
     const isActive = Boolean(vault.active);
 
     return (
-        <div className="flex flex-col gap-4 rounded-2xl border border-white/5 bg-black/20 hover:bg-black/35 hover:border-white/10 transition p-4">
+        <div className="flex flex-col gap-4 rounded-[24px] border border-black/10 bg-white hover:bg-black/[0.02] transition p-5 shadow-sm font-sans">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                     <div className="flex items-center gap-2">
                         {/* Email when the customer volunteered one at this merchant's own checkout,
                             otherwise the opaque deposit reference. Never the wallet address. */}
-                        <p className={`text-xs font-bold text-white ${vault.payerEmail ? "break-words" : "font-mono break-all"}`}>
+                        <p className={`text-sm sm:text-base font-bold text-[#082824] ${vault.payerEmail ? "break-words" : "font-mono break-all"}`}>
                             {vault.payerEmail || vault.reference || "Deposit"}
                         </p>
-                        <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider ${
-                            isActive ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                            isActive ? "bg-emerald-500/10 text-emerald-700 border border-emerald-500/20" : "bg-red-500/10 text-red-600 border border-red-500/20"
                         }`}>
                             {isActive ? "Active" : "Inactive"}
                         </span>
                     </div>
-                    <p className="text-[10px] text-white/30 mt-1">
-                        Vault cycle start: <span className="text-white/50">{cycleStart}</span>
+                    <p className="text-xs text-black/50 mt-1">
+                        Vault cycle start: <span className="text-black/80 font-medium">{cycleStart}</span>
                     </p>
                 </div>
 
                 <div className="flex flex-wrap gap-x-6 gap-y-2">
                     <div>
-                        <span className="text-[8px] text-white/30 uppercase tracking-wider block font-bold">Customer Balance</span>
-                        <p className="text-sm font-black text-[#ccff00] mt-1">${formatUsdcMicros(vault.balanceUsdc)}</p>
+                        <span className="text-xs font-bold text-black/60 uppercase tracking-wider block">Customer Balance</span>
+                        <p className="text-base sm:text-lg font-black text-[#082824] mt-1">${formatUsdcMicros(vault.balanceUsdc)}</p>
                     </div>
                     <div>
-                        <span className="text-[8px] text-white/30 uppercase tracking-wider block font-bold">Required Deposit</span>
-                        <p className="text-sm font-black text-white mt-1">${formatUsdcMicros(vault.commitUsdc)}</p>
+                        <span className="text-xs font-bold text-black/60 uppercase tracking-wider block">Required Deposit</span>
+                        <p className="text-base sm:text-lg font-black text-black/80 mt-1">${formatUsdcMicros(vault.commitUsdc)}</p>
                     </div>
                     <div>
-                        <span className="text-[8px] text-white/30 uppercase tracking-wider block font-bold">Unbilled Usage</span>
-                        <p className="text-sm font-black text-[#00d2b4] mt-1">${formatUsdcMicros(vault.accruedUsageUsdc)}</p>
+                        <span className="text-xs font-bold text-black/60 uppercase tracking-wider block">Unbilled Usage</span>
+                        <p className="text-base sm:text-lg font-black text-[#082824] mt-1">${formatUsdcMicros(vault.accruedUsageUsdc)}</p>
                     </div>
                     <div>
-                        <span className="text-[8px] text-white/30 uppercase tracking-wider block font-bold">Overdue</span>
-                        <p className={`text-sm font-black mt-1 ${owedMicros > 0 ? "text-red-300" : "text-white"}`}>${formatUsdcMicros(vault.owedUsdc)}</p>
+                        <span className="text-xs font-bold text-black/60 uppercase tracking-wider block">Overdue</span>
+                        <p className={`text-base sm:text-lg font-black mt-1 ${owedMicros > 0 ? "text-red-600" : "text-black/80"}`}>${formatUsdcMicros(vault.owedUsdc)}</p>
                     </div>
                 </div>
             </div>
 
             {/* Live usage accrual tool */}
-            <form onSubmit={handleReportUsage} className="flex flex-col sm:flex-row gap-3 sm:items-end border-t border-white/5 pt-3">
-                <label className="flex-1 space-y-1">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-white/50">Bill usage (USDC)</span>
+            <form onSubmit={handleReportUsage} className="flex flex-col sm:flex-row gap-3 sm:items-end border-t border-black/10 pt-4">
+                <label className="flex-1 space-y-1.5">
+                    <span className="text-xs sm:text-sm font-bold text-[#082824]">Bill usage (USDC)</span>
                     <input
                         type="number"
                         min="0.01"
@@ -6775,30 +6797,30 @@ function LocalCustomerVaultRow({
                         disabled={loading}
                         value={chargeAmount}
                         onChange={(e) => { setChargeAmount(e.target.value); setReviewingCharge(false); setStatus(null); usageRequestKey.current = null; }}
-                        className="w-full max-w-xs bg-black/40 border border-white/10 rounded-xl px-3 py-1.5 text-white focus:outline-none focus:border-[#00d2b4] transition text-xs font-mono disabled:opacity-50"
+                        className="w-full max-w-xs bg-[#FFFFF0] border border-black/15 rounded-2xl px-4 py-2.5 text-black focus:outline-none focus:border-[#8AB4DB] transition text-sm sm:text-base font-mono disabled:opacity-50"
                         placeholder="1.50"
                     />
                 </label>
                 <button
                     type="submit"
                     disabled={loading}
-                    className="px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 disabled:opacity-50 text-[9px] font-bold uppercase tracking-wider text-white rounded-xl flex items-center justify-center gap-1.5 transition-all"
+                    className="px-6 py-2.5 bg-[#000000] hover:bg-black/85 disabled:opacity-50 text-xs sm:text-sm font-bold text-white rounded-full flex items-center justify-center gap-2 transition-all shadow-sm"
                 >
-                    {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 text-[#ccff00]" />}
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 text-white" />}
                     {reviewingCharge ? "Confirm charge" : "Review charge"}
                 </button>
             </form>
 
             {reviewingCharge && (
-                <div className="rounded-xl border border-amber-400/25 bg-amber-400/[0.06] p-3 text-[10px] leading-relaxed text-amber-200/80">
+                <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-xs sm:text-sm leading-relaxed text-amber-900">
                     This will add <strong>{Number(chargeAmount).toFixed(2)} USDC</strong> to the customer&apos;s live unbilled usage for this billing cycle. It is not a test. Review the customer address above before confirming.
-                    <button type="button" onClick={() => setReviewingCharge(false)} className="mt-2 block font-bold uppercase tracking-wider text-white/60 hover:text-white">Back to edit</button>
+                    <button type="button" onClick={() => setReviewingCharge(false)} className="mt-2 block font-bold uppercase tracking-wider text-[#082824] hover:underline">Back to edit</button>
                 </div>
             )}
 
             {status && (
-                <p className={`text-[9px] font-bold tracking-wide ${
-                    status.type === "success" ? "text-emerald-400" : "text-red-400"
+                <p className={`text-xs sm:text-sm font-bold tracking-wide ${
+                    status.type === "success" ? "text-emerald-700" : "text-red-600"
                 }`}>
                     {status.text}
                 </p>

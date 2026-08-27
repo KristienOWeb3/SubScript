@@ -142,6 +142,9 @@ export default function DmInviteManagerModal({
 
             {/* Modal Content */}
             <motion.div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="dm-invite-title"
                 initial={{ opacity: 0, scale: 0.95, y: 15 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 15 }}
@@ -155,7 +158,7 @@ export default function DmInviteManagerModal({
                             <LinkIcon className="h-4 w-4" />
                         </div>
                         <div>
-                            <h2 className="text-sm font-black uppercase tracking-tight text-[#111827]">My DM Invite Link</h2>
+                            <h2 id="dm-invite-title" className="text-sm font-black uppercase tracking-tight text-[#111827]">My DM Invite Link</h2>
                             <p className="text-[11px] text-black/55">Shareable link for peers to request connections</p>
                         </div>
                     </div>
@@ -171,7 +174,7 @@ export default function DmInviteManagerModal({
                 <div className="p-6 space-y-5">
                     {/* Error Banner */}
                     {error && (
-                        <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-[11px] text-rose-700">
+                        <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-[11px] text-rose-700 dark:text-rose-300">
                             {error}
                         </div>
                     )}
@@ -285,10 +288,10 @@ export default function DmInviteManagerModal({
                                         className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 space-y-3"
                                     >
                                         <div className="flex items-start gap-2.5">
-                                            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                                            <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                                             <div className="space-y-1">
-                                                <p className="text-xs font-bold text-amber-900">Are you sure you want to rotate your link?</p>
-                                                <p className="text-[11px] text-black/60 leading-relaxed">
+                                                <p className="text-xs font-bold text-amber-900 dark:text-amber-200">Are you sure you want to rotate your link?</p>
+                                                <p className="text-[11px] text-black/60 dark:text-white/60 leading-relaxed">
                                                     Any previously shared invite links will immediately stop working and cannot be restored.
                                                 </p>
                                             </div>

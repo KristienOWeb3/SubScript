@@ -47,7 +47,7 @@ export default function DashboardRouterPage() {
     }, []);
 
     return (
-        <main className="flex min-h-screen items-center justify-center bg-[#050608] px-6 text-white">
+        <main className="flex min-h-screen items-center justify-center bg-[#FFFFF0] px-6 text-[#082824]">
             <SkeletonPage label={message} className="w-full" />
         </main>
     );

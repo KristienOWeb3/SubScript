@@ -181,8 +181,8 @@ export async function GET(request: Request) {
             earnings30dUsdcMicros: rangeTotals.netMicros,
             series: buildOverviewSeries(seriesRows, range, now),
             monthly: buildOverviewMonths(monthlyRows),
-            plans: rankPlanOverview(activePlans, planMetrics.counts),
-            unassignedLegacyActiveCount: planMetrics.unassignedCount,
+            plans: rankPlanOverview(activePlans, planMetrics.counts, 5, planMetrics.unassignedCount),
+            unassignedLegacyActiveCount: 0,
         };
 
         return NextResponse.json({ success: true, overview: response });

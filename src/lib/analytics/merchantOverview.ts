@@ -329,14 +329,25 @@ export function rankPlanOverview(
     plans: Array<{ id: string; name: string }>,
     counts: Array<{ planId: string; count: number | bigint }>,
     limit = 4,
+    unassignedCount = 0,
 ): MerchantOverviewPlan[] {
     const countByPlan = new Map(counts.map((entry) => [entry.planId, Number(entry.count)]));
-    return plans
+    const result: MerchantOverviewPlan[] = plans
         .map((plan) => ({
             id: plan.id,
             name: plan.name,
             activeSubscriberCount: countByPlan.get(plan.id) || 0,
-        }))
+        }));
+
+    if (unassignedCount > 0) {
+        result.push({
+            id: "legacy_direct",
+            name: "Direct & Custom Subscriptions",
+            activeSubscriberCount: unassignedCount,
+        });
+    }
+
+    return result
         .sort((a, b) => b.activeSubscriberCount - a.activeSubscriberCount || a.name.localeCompare(b.name))
         .slice(0, limit);
 }

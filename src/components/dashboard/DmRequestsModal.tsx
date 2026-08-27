@@ -122,6 +122,9 @@ export default function DmRequestsModal({
 
             {/* Modal Box */}
             <motion.div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="dm-requests-title"
                 initial={{ opacity: 0, scale: 0.95, y: 15 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 15 }}
@@ -135,7 +138,7 @@ export default function DmRequestsModal({
                             <MessageSquare className="h-4 w-4" />
                         </div>
                         <div>
-                            <h2 className="text-sm font-black uppercase tracking-tight text-[#111827]">DM Connection Requests</h2>
+                            <h2 id="dm-requests-title" className="text-sm font-black uppercase tracking-tight text-[#111827]">DM Connection Requests</h2>
                             <p className="text-[11px] text-black/55">Manage incoming and outgoing DM requests</p>
                         </div>
                     </div>
@@ -192,8 +195,8 @@ export default function DmRequestsModal({
 
                 {/* Error Banner */}
                 {error && (
-                    <div className="mx-6 mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-[11px] text-rose-700 flex items-center gap-2">
-                        <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
+                    <div className="mx-6 mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-[11px] text-rose-700 dark:text-rose-300 flex items-center gap-2">
+                        <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
                         <span>{error}</span>
                     </div>
                 )}
@@ -252,13 +255,13 @@ export default function DmRequestsModal({
                                                 <span
                                                     className={`inline-block rounded-full px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${
                                                         req.status === "ACCEPTED"
-                                                            ? "bg-emerald-500/10 text-emerald-700 border border-emerald-500/20"
+                                                            ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20"
                                                             : req.status === "DECLINED"
-                                                            ? "bg-rose-500/10 text-rose-700 border border-rose-500/20"
+                                                            ? "bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/20"
                                                             : req.status === "CANCELED"
-                                                            ? "bg-black/5 text-black/50 border border-black/10"
+                                                            ? "bg-black/5 dark:bg-white/5 text-black/50 dark:text-white/50 border border-black/10 dark:border-white/10"
                                                             : req.status === "EXPIRED"
-                                                            ? "bg-amber-500/10 text-amber-700 border border-amber-500/20"
+                                                            ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20"
                                                             : "bg-[#2775CA] text-white font-black"
                                                     }`}
                                                 >

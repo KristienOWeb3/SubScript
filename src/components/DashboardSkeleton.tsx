@@ -2,89 +2,152 @@
 
 import React from "react";
 import Skeleton from "./ui/Skeleton";
-import { 
-    Key, Code2, Webhook, Crown, Shield, BarChart3, Link2, Sliders, Home, Building2, User
-} from "@/components/icons";
 
 interface DashboardSkeletonProps {
-    activeTab: "overview" | "premium" | "apikeys" | "checkout" | "webhooks" | "analytics" | "payment-links" | "plans" | "settings" | "payroll" | "offramp";
-    /* The dashboard renders its real bottom nav as soon as the wallet is connected, which is
-       before data finishes loading. Skip the placeholder bar in that window so the two fixed,
-       z-40 bars don't stack on top of each other on mobile. */
+    activeTab: "overview" | "premium" | "apikeys" | "checkout" | "webhooks" | "payment-links" | "plans" | "settings" | "payroll" | "offramp" | "commit" | "vaults" | "one-time" | string;
     isConnected?: boolean;
 }
 
-export default function DashboardSkeleton({ activeTab, isConnected = false }: DashboardSkeletonProps) {
-    const tabs = [
-        { id: "overview", label: "Overview", icon: Home },
-        { id: "premium", label: "Premium", icon: Crown },
-        { id: "analytics", label: "Analytics", icon: BarChart3 },
-        { id: "payment-links", label: "Payments and Subscriptions", icon: Sliders },
-        { id: "payroll", label: "Payroll", icon: Building2 },
-        { id: "apikeys", label: "API Keys", icon: Key },
-        { id: "checkout", label: "Checkout Setup", icon: Code2 },
-        { id: "webhooks", label: "Webhooks", icon: Webhook },
-        { id: "settings", label: "Profile & DNS", icon: User },
-    ] as const;
-
+export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps) {
     const renderContentSkeleton = () => {
         switch (activeTab) {
             case "overview":
                 return (
-                    <div className="space-y-8">
-                        {/* Stats Grid */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="space-y-4 sm:space-y-6 font-sans">
+                        {/* Top 4 Stat Cards */}
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 sm:gap-5">
                             {[1, 2, 3, 4].map((i) => (
-                                <div key={i} className="rounded-2xl border border-white/5 bg-white/[0.02] p-5 space-y-4">
+                                <div
+                                    key={i}
+                                    className="rounded-[28px] bg-[#D4E3E8] p-5 sm:p-6 border border-black/5 min-h-[200px] flex flex-col justify-between shadow-sm"
+                                >
                                     <div className="flex items-center justify-between">
-                                        <Skeleton className="h-3 w-24" />
-                                        <Skeleton circle className="w-7 h-7" />
+                                        <Skeleton className="h-4 w-28 rounded-full" />
+                                        <Skeleton className="h-5 w-16 rounded-full" />
                                     </div>
-                                    <Skeleton className="h-7 w-32" />
-                                    <div className="flex items-center justify-between pt-1">
-                                        <Skeleton className="h-3 w-20" />
-                                        <Skeleton className="h-4 w-12 rounded-full" />
+                                    <div className="space-y-2">
+                                        <Skeleton className="h-8 sm:h-9 w-40 rounded-xl" />
+                                        <Skeleton className="h-3 w-32 rounded-full" />
                                     </div>
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* Quick Actions Skeleton */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                            {[1, 2, 3, 4].map((i) => (
-                                <div key={i} className="rounded-xl border border-white/5 bg-white/[0.02] p-3.5 flex items-center gap-3">
-                                    <Skeleton circle className="w-8 h-8 shrink-0" />
-                                    <div className="space-y-1.5 flex-1">
-                                        <Skeleton className="h-3 w-16" />
-                                        <Skeleton className="h-2 w-24" />
+                                    <div className="pt-1">
+                                        <Skeleton className="h-9 w-28 rounded-full" />
                                     </div>
                                 </div>
                             ))}
                         </div>
 
-                        {/* Subscriptions / Customers Ledger */}
-                        <div className="rounded-3xl border border-white/5 bg-[#0e0e12]/80 p-6 space-y-5">
-                            <div className="flex justify-between items-center pb-4 border-b border-white/5">
-                                <div className="space-y-1">
-                                    <Skeleton className="h-4 w-36" />
-                                    <Skeleton className="h-3 w-48" />
+                        {/* Middle Row: Chart & Plans Ranking */}
+                        <div className="grid grid-cols-1 gap-4 sm:gap-5 xl:grid-cols-12">
+                            {/* Chart Card */}
+                            <div className="xl:col-span-8 rounded-[28px] bg-[#D4E3E8] p-5 sm:p-6 border border-black/5 min-h-[380px] flex flex-col justify-between shadow-sm">
+                                <div className="flex items-center justify-between pb-3 border-b border-black/10">
+                                    <div className="space-y-2">
+                                        <Skeleton className="h-6 w-48 rounded-xl" />
+                                        <Skeleton className="h-3.5 w-36 rounded-full" />
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <Skeleton className="h-7 w-16 rounded-full" />
+                                        <Skeleton className="h-7 w-16 rounded-full" />
+                                    </div>
                                 </div>
-                                <Skeleton className="h-8 w-24 rounded-lg" />
+                                <div className="my-4 h-[240px] rounded-2xl bg-white/40 subscript-skeleton" />
+                            </div>
+
+                            {/* Plans Ranking Card */}
+                            <div className="xl:col-span-4 rounded-[28px] bg-[#D4E3E8] p-5 sm:p-6 border border-black/5 min-h-[380px] flex flex-col justify-between shadow-sm">
+                                <div className="flex items-center justify-between pb-3 border-b border-black/10">
+                                    <Skeleton className="h-6 w-36 rounded-xl" />
+                                    <Skeleton circle className="w-6 h-6" />
+                                </div>
+                                <div className="space-y-3 my-3">
+                                    {[1, 2, 3, 4].map((i) => (
+                                        <div
+                                            key={i}
+                                            className="flex items-center justify-between p-3.5 rounded-2xl bg-white/60"
+                                        >
+                                            <div className="flex items-center gap-2.5">
+                                                <Skeleton circle className="w-6 h-6" />
+                                                <Skeleton className="h-4 w-28 rounded-full" />
+                                            </div>
+                                            <Skeleton className="h-4 w-10 rounded-full" />
+                                        </div>
+                                    ))}
+                                </div>
+                                <Skeleton className="h-4 w-32 rounded-full mt-2" />
+                            </div>
+                        </div>
+
+                        {/* Bottom Card: Active Subscriptions */}
+                        <div className="rounded-[28px] bg-[#D4E3E8] p-5 sm:p-6 border border-black/5 min-h-[300px] space-y-4 shadow-sm">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-black/10">
+                                <div className="space-y-1.5">
+                                    <Skeleton className="h-6 w-48 rounded-xl" />
+                                    <Skeleton className="h-3.5 w-64 rounded-full" />
+                                </div>
+                                <Skeleton circle className="w-10 h-10 bg-white/70" />
+                            </div>
+                            <div className="flex gap-2">
+                                <Skeleton className="h-8 w-24 rounded-full" />
+                                <Skeleton className="h-8 w-28 rounded-full" />
+                                <Skeleton className="h-8 w-24 rounded-full" />
+                            </div>
+                            <div className="space-y-2.5 pt-2">
+                                {[1, 2, 3].map((i) => (
+                                    <div key={i} className="h-14 w-full rounded-2xl bg-white/50 subscript-skeleton" />
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                );
+
+            case "plans":
+            case "create-plan":
+            case "payment-links-subscriptions":
+                return (
+                    <div className="space-y-8 font-sans">
+                        {/* Header & Form Card */}
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 space-y-6 shadow-sm">
+                            <div className="space-y-2 pb-2 border-b border-black/10">
+                                <Skeleton className="h-7 w-64 rounded-xl" />
+                                <Skeleton className="h-4 w-96 max-w-full rounded-full" />
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                                <div className="space-y-2">
+                                    <Skeleton className="h-4 w-28 rounded-full" />
+                                    <Skeleton className="h-12 w-full rounded-2xl bg-white" />
+                                </div>
+                                <div className="space-y-2">
+                                    <Skeleton className="h-4 w-28 rounded-full" />
+                                    <Skeleton className="h-12 w-full rounded-2xl bg-white" />
+                                </div>
+                                <div className="space-y-2">
+                                    <Skeleton className="h-4 w-28 rounded-full" />
+                                    <Skeleton className="h-12 w-full rounded-2xl bg-white" />
+                                </div>
+                                <div className="space-y-2">
+                                    <Skeleton className="h-4 w-28 rounded-full" />
+                                    <Skeleton className="h-12 w-full rounded-2xl bg-white" />
+                                </div>
+                            </div>
+                            <div className="pt-2">
+                                <Skeleton className="h-12 w-52 rounded-full" />
+                            </div>
+                        </div>
+
+                        {/* Existing Plans Table Card */}
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 space-y-4 shadow-sm">
+                            <div className="flex justify-between items-center pb-3 border-b border-black/10">
+                                <Skeleton className="h-6 w-44 rounded-xl" />
+                                <Skeleton className="h-8 w-24 rounded-full" />
                             </div>
                             <div className="space-y-3">
-                                {[1, 2, 3, 4].map((i) => (
-                                    <div key={i} className="flex justify-between items-center py-3 border-b border-white/5 last:border-0">
-                                        <div className="flex items-center gap-3">
-                                            <Skeleton circle className="w-8 h-8" />
-                                            <div className="space-y-1.5">
-                                                <Skeleton className="h-3.5 w-28" />
-                                                <Skeleton className="h-2.5 w-16" />
-                                            </div>
+                                {[1, 2, 3].map((i) => (
+                                    <div key={i} className="flex items-center justify-between p-4 rounded-2xl border border-black/10 bg-white">
+                                        <div className="space-y-2">
+                                            <Skeleton className="h-4 w-40 rounded-full" />
+                                            <Skeleton className="h-3 w-28 rounded-full" />
                                         </div>
-                                        <div className="flex items-center gap-4">
-                                            <Skeleton className="h-4 w-20" />
-                                            <Skeleton className="h-5 w-16 rounded-full" />
-                                        </div>
+                                        <Skeleton className="h-8 w-24 rounded-full" />
                                     </div>
                                 ))}
                             </div>
@@ -92,229 +155,111 @@ export default function DashboardSkeleton({ activeTab, isConnected = false }: Da
                     </div>
                 );
 
-            case "analytics":
+            case "payment-links":
+            case "payment-links-one-time":
+            case "one-time":
                 return (
-                    <div className="space-y-6">
-                        {/* Top Row: 2 columns, asymmetrical on desktop */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            {/* Top Left Card: spans 2 columns on desktop */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-xl relative overflow-hidden col-span-1 md:col-span-2 flex flex-col justify-between min-h-[240px]">
-                                <div className="space-y-4">
-                                    <Skeleton className="h-3.5 w-24" />
-                                    <Skeleton className="h-10 w-48" />
-                                </div>
-                                <div className="flex justify-between items-end mt-8">
-                                    <Skeleton className="h-3 w-64" />
-                                    <Skeleton className="h-9 w-32" />
-                                </div>
+                    <div className="space-y-8 font-sans">
+                        {/* Create Payment Link Form Card */}
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 space-y-6 shadow-sm">
+                            <div className="space-y-2 pb-2 border-b border-black/10">
+                                <Skeleton className="h-7 w-72 rounded-xl" />
+                                <Skeleton className="h-4 w-96 max-w-full rounded-full" />
                             </div>
-
-                            {/* Top Right Card: spans 1 column on desktop */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-xl relative overflow-hidden col-span-1 flex flex-col justify-between min-h-[240px]">
-                                <div className="space-y-6">
-                                    <div>
-                                        <Skeleton className="h-3 w-28 mb-2" />
-                                        <Skeleton className="h-8 w-16" />
-                                    </div>
-                                    <div>
-                                        <Skeleton className="h-3 w-28 mb-2" />
-                                        <Skeleton className="h-8 w-20" />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Bottom Row: 2 columns */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            {/* Left: Active Subscribers list */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
-                                <div className="flex justify-between items-center">
-                                    <Skeleton className="h-4 w-36" />
-                                    <Skeleton className="h-6 w-20" />
-                                </div>
-                                <div className="space-y-3">
-                                    {[1, 2, 3].map((i) => (
-                                        <div key={i} className="flex justify-between items-center py-2.5 border-b border-white/5 last:border-0">
-                                            <div className="flex items-center gap-3">
-                                                <Skeleton circle className="w-8 h-8" />
-                                                <div className="space-y-1.5">
-                                                    <Skeleton className="h-3.5 w-28" />
-                                                    <Skeleton className="h-2.5 w-16" />
-                                                </div>
-                                            </div>
-                                            <Skeleton className="h-4 w-20" />
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Right: Retention Rate Chart */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-xl flex flex-col justify-between min-h-[280px]">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                                 <div className="space-y-2">
-                                    <Skeleton className="h-4 w-32" />
-                                    <Skeleton className="h-3 w-48" />
+                                    <Skeleton className="h-4 w-28 rounded-full" />
+                                    <Skeleton className="h-12 w-full rounded-2xl bg-white" />
                                 </div>
-                                <div className="flex justify-center py-4">
-                                    <div className="relative w-36 h-36 flex items-center justify-center">
-                                        <Skeleton circle className="w-28 h-28" />
-                                    </div>
+                                <div className="space-y-2">
+                                    <Skeleton className="h-4 w-28 rounded-full" />
+                                    <Skeleton className="h-12 w-full rounded-2xl bg-white" />
                                 </div>
-                            </div>
-                        </div>
-                    </div>
-                );
-
-            case "settings":
-                return (
-                    <div className="space-y-8 max-w-4xl mx-auto">
-                        {/* Profile & Identity Section */}
-                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
-                            <div>
-                                <Skeleton className="h-4 w-36 mb-2" />
-                                <Skeleton className="h-3 w-64" />
-                            </div>
-
-                            <div className="flex flex-col md:flex-row items-start md:items-center gap-6 pb-6 border-b border-white/5">
-                                <Skeleton circle className="w-20 h-20 shrink-0" />
-                                <div className="space-y-2 flex-1">
-                                    <Skeleton className="h-4 w-40" />
-                                    <Skeleton className="h-3 w-64" />
+                                <div className="space-y-2 sm:col-span-2">
+                                    <Skeleton className="h-4 w-32 rounded-full" />
+                                    <Skeleton className="h-12 w-full rounded-2xl bg-white" />
+                                </div>
+                                <div className="space-y-2 sm:col-span-2">
+                                    <Skeleton className="h-4 w-24 rounded-full" />
+                                    <Skeleton className="h-20 w-full rounded-2xl bg-white" />
                                 </div>
                             </div>
-
-                            {/* DNS / Alias Section */}
-                            <div className="space-y-4">
-                                <Skeleton className="h-3.5 w-44" />
-                                <Skeleton className="h-8 w-full" />
-                                <div className="flex gap-2">
-                                    <Skeleton className="h-10 flex-1" />
-                                    <Skeleton className="h-10 w-24" />
-                                </div>
+                            <div className="pt-2">
+                                <Skeleton className="h-12 w-52 rounded-full" />
                             </div>
                         </div>
 
-                        {/* Payout & Settlement Wallet Section */}
-                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
-                            <div className="space-y-2">
-                                <Skeleton className="h-4 w-36" />
-                                <Skeleton className="h-3 w-80" />
+                        {/* Payment Links Table Card */}
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 space-y-4 shadow-sm">
+                            <div className="flex justify-between items-center pb-3 border-b border-black/10">
+                                <Skeleton className="h-6 w-44 rounded-xl" />
+                                <Skeleton className="h-8 w-24 rounded-full" />
                             </div>
                             <div className="space-y-3">
-                                <Skeleton className="h-10 w-full" />
-                                <div className="flex gap-3">
-                                    <Skeleton className="h-10 flex-1" />
-                                    <Skeleton className="h-10 w-24" />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                );
-
-            case "payroll":
-                return (
-                    <div className="space-y-8">
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                            <div>
-                                <Skeleton className="h-5 w-48 mb-1" />
-                                <Skeleton className="h-3 w-64" />
-                            </div>
-                            <Skeleton className="h-10 w-36" />
-                        </div>
-
-                        <div className="space-y-4">
-                            {[1, 2, 3].map((n) => (
-                                <div
-                                    key={n}
-                                    className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl relative overflow-hidden"
-                                >
-                                    <div className="flex justify-between items-start gap-4">
-                                        <div className="flex-1 space-y-3">
-                                            <Skeleton className="h-5 w-48" />
-                                            <div className="flex gap-6">
-                                                <Skeleton className="h-4 w-24" />
-                                                <Skeleton className="h-4 w-32" />
-                                                <Skeleton className="h-4 w-20" />
-                                            </div>
+                                {[1, 2, 3].map((i) => (
+                                    <div key={i} className="flex items-center justify-between p-4 rounded-2xl border border-black/10 bg-white">
+                                        <div className="space-y-2">
+                                            <Skeleton className="h-4 w-40 rounded-full" />
+                                            <Skeleton className="h-3 w-28 rounded-full" />
                                         </div>
-                                        <div className="flex gap-2">
-                                            <Skeleton className="h-9 w-20" />
-                                            <Skeleton className="h-9 w-9" />
-                                        </div>
+                                        <Skeleton className="h-8 w-24 rounded-full" />
                                     </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                );
-
-            case "offramp":
-                return (
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-8">
-                        <div>
-                            <Skeleton className="h-5 w-48 mb-2" />
-                            <Skeleton className="h-3 w-80" />
-                        </div>
-                        <div className="space-y-6 bg-black/40 border border-white/5 rounded-2xl p-6">
-                            <div className="flex justify-between items-center">
-                                <Skeleton className="h-8 w-24" />
-                                <Skeleton className="h-8 w-24" />
-                            </div>
-                            <Skeleton className="h-2 w-full mt-4" />
-                        </div>
-                        <div className="p-5 bg-white/[0.01] border border-white/5 rounded-2xl flex items-start gap-4">
-                            <Skeleton className="w-10 h-10 rounded-xl shrink-0" />
-                            <div className="space-y-2 flex-1">
-                                <Skeleton className="h-4 w-32" />
-                                <Skeleton className="h-3 w-full" />
+                                ))}
                             </div>
                         </div>
                     </div>
                 );
 
-            case "premium":
+            case "commit":
+            case "vaults":
+            case "payment-links-commit":
                 return (
-                    <div className="space-y-8">
-                        {/* Status Card */}
-                        <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl">
-                            <div className="flex items-start gap-4">
-                                <Skeleton circle className="w-12 h-12" />
-                                <div className="space-y-2 flex-1">
-                                    <div className="flex gap-2 items-center">
-                                        <Skeleton className="h-5 w-32" />
-                                        <Skeleton className="h-4.5 w-12" />
-                                    </div>
-                                    <Skeleton className="h-3 w-96" />
-                                    <Skeleton className="h-3 w-64" />
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Fund Rerouting */}
-                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-5">
-                            <Skeleton className="h-4 w-28" />
-                            <div className="bg-black/40 border border-white/5 rounded-2xl p-5 space-y-2">
-                                <Skeleton className="h-3 w-36" />
-                                <Skeleton className="h-4.5 w-96" />
-                            </div>
+                    <div className="space-y-8 font-sans">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div className="space-y-2">
-                                <Skeleton className="h-3 w-32" />
-                                <div className="flex gap-3">
-                                    <Skeleton className="h-10 flex-1" />
-                                    <Skeleton className="h-10 w-24" />
-                                </div>
+                                <Skeleton className="h-7 w-64 rounded-xl" />
+                                <Skeleton className="h-4 w-80 max-w-full rounded-full" />
+                            </div>
+                            <Skeleton className="h-10 w-28 rounded-full" />
+                        </div>
+
+                        {/* Stat Cards Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div className="rounded-[28px] bg-[#D4E3E8] p-6 border border-black/10 space-y-4 shadow-sm">
+                                <Skeleton className="h-4 w-36 rounded-full" />
+                                <Skeleton className="h-10 w-48 rounded-xl" />
+                                <Skeleton className="h-11 w-40 rounded-full" />
+                            </div>
+                            <div className="rounded-[28px] bg-white p-6 border border-black/10 space-y-4 shadow-sm">
+                                <Skeleton className="h-4 w-36 rounded-full" />
+                                <Skeleton className="h-12 w-full rounded-2xl" />
+                                <Skeleton className="h-3.5 w-64 rounded-full" />
                             </div>
                         </div>
 
-                        {/* Keeper Control */}
-                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
-                            <Skeleton className="h-4 w-36" />
-                            <Skeleton className="h-3 w-96" />
-                            <div className="flex justify-between items-center bg-black/40 border border-white/5 rounded-2xl p-5">
-                                <div className="space-y-2">
-                                    <Skeleton className="h-3 w-16" />
-                                    <Skeleton className="h-4 w-32" />
-                                </div>
-                                <Skeleton className="h-10 w-24" />
+                        {/* Active Customer Deposits Card */}
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 space-y-4 shadow-sm">
+                            <div className="flex justify-between items-center pb-3 border-b border-black/10">
+                                <Skeleton className="h-6 w-48 rounded-xl" />
+                                <Skeleton className="h-5 w-20 rounded-full" />
+                            </div>
+                            <div className="space-y-3">
+                                {[1, 2].map((i) => (
+                                    <div key={i} className="rounded-2xl border border-black/10 bg-white p-5 space-y-3 shadow-sm">
+                                        <div className="flex justify-between items-center">
+                                            <Skeleton className="h-4 w-44 rounded-full" />
+                                            <Skeleton className="h-6 w-20 rounded-full" />
+                                        </div>
+                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-black/5">
+                                            {[1, 2, 3, 4].map((j) => (
+                                                <div key={j} className="space-y-1.5">
+                                                    <Skeleton className="h-3 w-16 rounded-full" />
+                                                    <Skeleton className="h-5 w-20 rounded-lg" />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     </div>
@@ -322,191 +267,231 @@ export default function DashboardSkeleton({ activeTab, isConnected = false }: Da
 
             case "apikeys":
                 return (
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-8">
-                        <div className="flex justify-between items-start">
+                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-black space-y-8 shadow-sm font-sans">
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                             <div className="space-y-2">
-                                <Skeleton className="h-4.5 w-32" />
-                                <Skeleton className="h-3 w-80" />
+                                <Skeleton className="h-7 w-48 rounded-xl" />
+                                <Skeleton className="h-4 w-80 max-w-full rounded-full" />
                             </div>
-                            <Skeleton className="h-8 w-36" />
+                            <Skeleton className="h-9 w-36 rounded-full" />
                         </div>
 
                         <div className="space-y-6">
-                            {/* Publishable Key */}
-                            <div className="bg-black/40 border border-white/5 rounded-2xl p-5 space-y-3">
-                                <Skeleton className="h-3 w-24" />
-                                <div className="flex justify-between items-center bg-black/60 rounded-xl p-3 border border-white/5">
-                                    <Skeleton className="h-4 w-96" />
-                                    <Skeleton className="h-8 w-8" />
-                                </div>
+                            {/* Publishable Key Card */}
+                            <div className="bg-[#D4E3E8]/50 border border-black/10 rounded-[28px] p-6 space-y-3">
+                                <Skeleton className="h-4 w-32 rounded-full" />
+                                <Skeleton className="h-12 w-full rounded-2xl bg-white" />
                             </div>
 
-                            {/* Secret Key */}
-                            <div className="bg-black/40 border border-white/5 rounded-2xl p-5 space-y-3">
-                                <div className="flex justify-between">
-                                    <Skeleton className="h-3 w-20" />
-                                    <Skeleton className="h-4 w-8" />
+                            {/* Secret Key Card */}
+                            <div className="bg-[#D4E3E8]/50 border border-black/10 rounded-[28px] p-6 space-y-3">
+                                <div className="flex items-center gap-3">
+                                    <Skeleton className="h-4 w-24 rounded-full" />
+                                    <Skeleton className="h-5 w-14 rounded-full" />
                                 </div>
-                                <div className="flex justify-between items-center bg-black/60 rounded-xl p-3 border border-white/5">
-                                    <Skeleton className="h-4 w-96" />
-                                    <Skeleton className="h-8 w-8" />
-                                </div>
+                                <Skeleton className="h-12 w-full rounded-2xl bg-white" />
+                                <Skeleton className="h-3.5 w-72 rounded-full" />
                             </div>
 
-                            {/* Rotate section */}
-                            <div className="pt-4 border-t border-white/5 flex justify-between items-center">
-                                <div className="space-y-2">
-                                    <Skeleton className="h-3.5 w-36" />
-                                    <Skeleton className="h-3 w-80" />
+                            {/* Roll Keys */}
+                            <div className="pt-6 border-t border-black/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div className="space-y-1.5">
+                                    <Skeleton className="h-4 w-44 rounded-full" />
+                                    <Skeleton className="h-3.5 w-80 rounded-full" />
                                 </div>
-                                <Skeleton className="h-10 w-20" />
+                                <Skeleton className="h-10 w-36 rounded-full" />
                             </div>
                         </div>
                     </div>
                 );
 
-            case "payment-links":
-            case "plans":
             case "checkout":
                 return (
-                    <div className="space-y-8">
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+                    <div className="space-y-8 font-sans">
+                        {/* Fastest path CLI Card */}
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 shadow-sm space-y-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div className="space-y-2">
+                                    <Skeleton className="h-6 w-56 rounded-xl" />
+                                    <Skeleton className="h-3.5 w-80 rounded-full" />
+                                </div>
+                                <Skeleton className="h-4 w-24 rounded-full" />
+                            </div>
+                            <Skeleton className="h-12 w-full rounded-2xl bg-[#D4E3E8]/60" />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
                             {/* Configurator Form */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl flex flex-col justify-between space-y-6">
-                                <div className="space-y-5">
-                                    <Skeleton className="h-4 w-36" />
-                                    <div className="space-y-4">
-                                        <div className="space-y-2">
-                                            <Skeleton className="h-3 w-28" />
-                                            <Skeleton className="h-10 w-full" />
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 space-y-5 shadow-sm">
+                                <Skeleton className="h-6 w-48 rounded-xl" />
+                                <div className="space-y-4">
+                                    <div className="space-y-1.5">
+                                        <Skeleton className="h-3.5 w-32 rounded-full" />
+                                        <Skeleton className="h-11 w-full rounded-2xl bg-white" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1.5">
+                                            <Skeleton className="h-3.5 w-24 rounded-full" />
+                                            <Skeleton className="h-11 w-full rounded-2xl bg-white" />
                                         </div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div className="space-y-2">
-                                                <Skeleton className="h-3 w-28" />
-                                                <Skeleton className="h-10 w-full" />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Skeleton className="h-3 w-24" />
-                                                <Skeleton className="h-10 w-full" />
-                                            </div>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <Skeleton className="h-3 w-20" />
-                                            <Skeleton className="h-10 w-full" />
+                                        <div className="space-y-1.5">
+                                            <Skeleton className="h-3.5 w-24 rounded-full" />
+                                            <Skeleton className="h-11 w-full rounded-2xl bg-white" />
                                         </div>
                                     </div>
                                 </div>
-                                <Skeleton className="h-3 w-80 pt-4" />
+                                <Skeleton className="h-4 w-40 rounded-full mt-4" />
                             </div>
 
-                            {/* Code snippet output */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden flex flex-col justify-between shadow-2xl bg-black/40">
-                                <div className="flex justify-between items-center border-b border-white/5 px-6 py-4 bg-white/[0.01]">
-                                    <Skeleton className="h-3 w-28" />
-                                    <Skeleton className="h-6 w-6" />
+                            {/* Code Snippet Card */}
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 space-y-4 shadow-sm flex flex-col justify-between">
+                                <div className="space-y-2">
+                                    <Skeleton className="h-5 w-44 rounded-xl" />
+                                    <Skeleton className="h-3.5 w-60 rounded-full" />
                                 </div>
-                                <div className="flex-1 p-6 space-y-3">
-                                    <Skeleton className="h-3.5 w-64" />
-                                    <Skeleton className="h-3.5 w-80" />
-                                    <Skeleton className="h-3.5 w-72" />
-                                    <Skeleton className="h-3.5 w-96" />
-                                    <Skeleton className="h-3.5 w-64" />
-                                    <Skeleton className="h-3.5 w-44" />
-                                </div>
-                                <div className="border-t border-white/5 px-6 py-4 bg-white/[0.01] flex justify-between">
-                                    <Skeleton className="h-3 w-24" />
-                                    <Skeleton className="h-3 w-36" />
-                                </div>
+                                <Skeleton className="h-44 w-full rounded-2xl bg-[#D4E3E8]/40" />
+                                <Skeleton className="h-12 w-full rounded-full" />
                             </div>
                         </div>
 
-                        {/* Integration prompt */}
-                        <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40">
-                            <div className="flex justify-between items-center border-b border-white/5 px-6 py-4 bg-white/[0.01]">
-                                <div className="space-y-2">
-                                    <Skeleton className="h-3.5 w-36" />
-                                    <Skeleton className="h-3 w-80" />
-                                </div>
-                                <Skeleton className="h-6 w-6" />
-                            </div>
-                            <div className="p-6 space-y-3">
-                                <Skeleton className="h-3.5 w-96" />
-                                <Skeleton className="h-3.5 w-80" />
-                                <Skeleton className="h-3.5 w-full" />
-                                <Skeleton className="h-3.5 w-72" />
-                                <Skeleton className="h-3.5 w-96" />
-                            </div>
+                        {/* Agent Prompt Card */}
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 space-y-4 shadow-sm">
+                            <Skeleton className="h-5 w-48 rounded-xl" />
+                            <Skeleton className="h-16 w-full rounded-2xl bg-[#D4E3E8]/40" />
+                            <Skeleton className="h-12 w-full rounded-full" />
                         </div>
                     </div>
                 );
 
             case "webhooks":
                 return (
-                    <div className="space-y-8">
-                        {/* Webhook endpoints config */}
-                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                    <div className="space-y-8 text-black font-sans">
+                        {/* Endpoints Config Card */}
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 shadow-sm space-y-6">
                             <div className="space-y-2">
-                                <Skeleton className="h-4 w-32" />
-                                <Skeleton className="h-3 w-96" />
+                                <Skeleton className="h-7 w-52 rounded-xl" />
+                                <Skeleton className="h-4 w-80 max-w-full rounded-full" />
                             </div>
-                            <div className="flex gap-4">
-                                <Skeleton className="h-10 flex-1" />
-                                <Skeleton className="h-10 w-28" />
+                            <div className="grid gap-3 rounded-[28px] border border-black/10 bg-[#D4E3E8]/50 p-5 sm:grid-cols-2">
+                                <div className="space-y-1.5">
+                                    <Skeleton className="h-3.5 w-24 rounded-full" />
+                                    <Skeleton className="h-4 w-44 rounded-full" />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Skeleton className="h-3.5 w-20 rounded-full" />
+                                    <Skeleton className="h-4 w-36 rounded-full" />
+                                </div>
                             </div>
-                            <div className="space-y-3">
+                            <div className="flex flex-col sm:flex-row gap-3">
+                                <Skeleton className="h-12 flex-1 rounded-2xl bg-white" />
+                                <Skeleton className="h-12 w-36 rounded-full" />
+                            </div>
+                            <div className="space-y-3 pt-2">
+                                <Skeleton className="h-4 w-36 rounded-full" />
                                 {[1, 2].map((i) => (
-                                    <div key={i} className="bg-black/30 border border-white/5 rounded-2xl p-4 flex justify-between items-center">
+                                    <div key={i} className="flex items-center justify-between p-4 rounded-2xl border border-black/10 bg-white">
                                         <div className="space-y-2">
-                                            <Skeleton className="h-3.5 w-64" />
-                                            <Skeleton className="h-3 w-48" />
+                                            <Skeleton className="h-4 w-52 rounded-full" />
+                                            <Skeleton className="h-3 w-32 rounded-full" />
                                         </div>
-                                        <Skeleton className="h-8 w-16" />
+                                        <Skeleton className="h-8 w-20 rounded-full" />
                                     </div>
                                 ))}
                             </div>
                         </div>
 
-                        {/* Webhook live deliveries and inspector */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-                            {/* Live feed */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl flex flex-col justify-between space-y-6">
-                                <div className="space-y-5">
-                                    <Skeleton className="h-4 w-40" />
-                                    <div className="space-y-3">
-                                        {[1, 2, 3].map((i) => (
-                                            <div key={i} className="p-4 rounded-2xl border border-white/5 bg-white/[0.01] flex justify-between items-center">
-                                                <div className="space-y-2">
-                                                    <Skeleton className="h-3.5 w-32" />
-                                                    <Skeleton className="h-3 w-48" />
-                                                </div>
-                                                <Skeleton className="h-5 w-16" />
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="flex justify-between items-center border-t border-white/5 pt-4">
-                                    <Skeleton className="h-3 w-28" />
-                                    <Skeleton className="h-3.5 w-20" />
-                                </div>
+                        {/* Webhook Health Checks */}
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 shadow-sm space-y-4">
+                            <div className="space-y-1.5">
+                                <Skeleton className="h-5 w-48 rounded-xl" />
+                                <Skeleton className="h-3.5 w-72 rounded-full" />
                             </div>
+                            <div className="flex flex-wrap gap-2.5">
+                                <Skeleton className="h-9 w-36 rounded-full" />
+                                <Skeleton className="h-9 w-44 rounded-full" />
+                                <Skeleton className="h-9 w-44 rounded-full" />
+                            </div>
+                        </div>
 
-                            {/* Payload inspector */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden flex flex-col justify-between shadow-2xl bg-black/40">
-                                <div className="flex justify-between items-center border-b border-white/5 px-6 py-4 bg-white/[0.01]">
-                                    <Skeleton className="h-3.5 w-28" />
-                                    <Skeleton className="h-6 w-12" />
-                                </div>
-                                <div className="flex-1 p-6 space-y-3">
-                                    <Skeleton className="h-3.5 w-44" />
-                                    <Skeleton className="h-3.5 w-64" />
-                                    <Skeleton className="h-3.5 w-96" />
-                                    <Skeleton className="h-3.5 w-72" />
-                                </div>
-                                <div className="border-t border-white/5 px-6 py-4 bg-white/[0.01] flex justify-between">
-                                    <Skeleton className="h-3 w-36" />
-                                    <Skeleton className="h-3 w-28" />
+                        {/* Deliveries & Inspector Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 shadow-sm space-y-4">
+                                <Skeleton className="h-5 w-48 rounded-xl" />
+                                <div className="space-y-2.5">
+                                    {[1, 2, 3, 4].map((i) => (
+                                        <div key={i} className="flex items-center justify-between p-3.5 rounded-2xl border border-black/10 bg-white">
+                                            <div className="space-y-1.5">
+                                                <Skeleton className="h-4 w-32 rounded-full" />
+                                                <Skeleton className="h-3 w-20 rounded-full" />
+                                            </div>
+                                            <Skeleton className="h-6 w-16 rounded-full" />
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 shadow-sm space-y-4">
+                                <Skeleton className="h-5 w-40 rounded-xl" />
+                                <Skeleton className="h-56 w-full rounded-2xl bg-[#D4E3E8]/30" />
+                            </div>
+                        </div>
+                    </div>
+                );
+
+            case "settings":
+                return (
+                    <div className="w-full max-w-5xl space-y-8 font-sans text-black">
+                        <div className="space-y-2">
+                            <Skeleton className="h-7 sm:h-8 w-60 rounded-xl" />
+                            <Skeleton className="h-4 w-80 max-w-full rounded-full" />
+                        </div>
+                        <div className="border border-black/10 bg-[#FFFFF0] rounded-[34px] p-4 space-y-2 shadow-sm">
+                            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                                <div key={i} className="p-4 rounded-2xl flex items-center justify-between">
+                                    <div className="flex items-center gap-3.5">
+                                        <Skeleton className="w-11 h-11 rounded-2xl" />
+                                        <div className="space-y-1.5">
+                                            <Skeleton className="h-4 w-36 rounded-full" />
+                                            <Skeleton className="h-3 w-56 rounded-full" />
+                                        </div>
+                                    </div>
+                                    <Skeleton circle className="w-5 h-5" />
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+
+            case "payroll":
+                return (
+                    <div className="space-y-8 font-sans">
+                        <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 space-y-6 shadow-sm">
+                            <div className="flex justify-between items-center pb-4 border-b border-black/10">
+                                <div className="space-y-2">
+                                    <Skeleton className="h-7 w-48 rounded-xl" />
+                                    <Skeleton className="h-4 w-64 rounded-full" />
+                                </div>
+                                <Skeleton className="h-10 w-32 rounded-full" />
+                            </div>
+                            <div className="space-y-3">
+                                {[1, 2, 3].map((i) => (
+                                    <div key={i} className="h-14 rounded-2xl border border-black/10 bg-white" />
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                );
+
+            default:
+                return (
+                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 space-y-6 shadow-sm font-sans">
+                        <div className="space-y-2 pb-4 border-b border-black/10">
+                            <Skeleton className="h-7 w-52 rounded-xl" />
+                            <Skeleton className="h-4 w-80 max-w-full rounded-full" />
+                        </div>
+                        <div className="space-y-3">
+                            {[1, 2, 3].map((i) => (
+                                <div key={i} className="h-14 rounded-2xl border border-black/10 bg-white subscript-skeleton" />
+                            ))}
                         </div>
                     </div>
                 );
@@ -514,36 +499,9 @@ export default function DashboardSkeleton({ activeTab, isConnected = false }: Da
     };
 
     return (
-        <>
-            <div className="md:hidden space-y-6 pb-24 font-sans">
-                {/* Header / Title skeleton */}
-                <div className="flex justify-between items-center px-1">
-                    <div className="space-y-1.5">
-                        <Skeleton className="h-5 w-32 rounded-full" />
-                        <Skeleton className="h-3 w-48 rounded-full" />
-                    </div>
-                    <Skeleton circle className="h-9 w-9" />
-                </div>
-
-                {/* Content view skeleton */}
-                <div className="min-h-[400px]">
-                    {renderContentSkeleton()}
-                </div>
-
-                {/* Bottom Nav Bar — suppressed once the live nav is on screen (see isConnected above) or for payroll. */}
-                {!isConnected && activeTab !== "payroll" && (
-                    <div className="fixed bottom-6 left-1/2 z-40 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-around rounded-full border border-white/5 bg-black/60 px-3 py-3.5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-xl">
-                        {[1, 2, 3, 4, 5].map((item) => (
-                            <Skeleton key={item} circle className="h-10 w-10" />
-                        ))}
-                    </div>
-                )}
-            </div>
-
-            {/* Desktop content view skeleton */}
-            <div className="hidden md:block w-full min-h-[500px]">
-                {renderContentSkeleton()}
-            </div>
-        </>
+        <div className="w-full">
+            {renderContentSkeleton()}
+        </div>
     );
 }
+
