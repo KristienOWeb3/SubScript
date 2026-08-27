@@ -4555,6 +4555,43 @@ Please complete the following implementation tasks:
              case "payment-links":
                 return (
                     <div className="space-y-6" {...paymentSubTabsSwipe}>
+                        <div className="flex items-center gap-2 border-b border-black/10 pb-3">
+                            <button
+                                type="button"
+                                onClick={() => setSubTab("subscriptions")}
+                                className={`rounded-full px-4 py-2 text-xs font-bold transition-all ${
+                                    subTab === "subscriptions"
+                                        ? "bg-[#082824] text-white shadow-sm"
+                                        : "bg-black/5 text-black/60 hover:bg-black/10"
+                                }`}
+                            >
+                                Plans
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setSubTab("one-time")}
+                                className={`rounded-full px-4 py-2 text-xs font-bold transition-all ${
+                                    subTab === "one-time"
+                                        ? "bg-[#082824] text-white shadow-sm"
+                                        : "bg-black/5 text-black/60 hover:bg-black/10"
+                                }`}
+                            >
+                                One-Time Links
+                            </button>
+                            {isPremium && (
+                                <button
+                                    type="button"
+                                    onClick={() => setSubTab("commit")}
+                                    className={`rounded-full px-4 py-2 text-xs font-bold transition-all ${
+                                        subTab === "commit"
+                                            ? "bg-[#082824] text-white shadow-sm"
+                                            : "bg-black/5 text-black/60 hover:bg-black/10"
+                                    }`}
+                                >
+                                    Vault
+                                </button>
+                            )}
+                        </div>
                         <motion.div
                             key={subTab}
                             initial={{ opacity: 0, y: 6 }}
