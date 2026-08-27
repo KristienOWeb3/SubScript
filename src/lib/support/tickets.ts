@@ -507,7 +507,7 @@ export async function addSupportTicketMessage(input: {
     const inserted = await pgQuery<{ id: string }>(
         `INSERT INTO support_ticket_messages
         (id, ticket_id, sender_wallet, sender_role, sender_alias, sender_profile_pic, content, created_at)
-        SELECT $1, $2, $3, $4, $5, $6, $7, $8
+        SELECT $1::varchar, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::text, $7::text, $8::timestamptz
         WHERE EXISTS (
             SELECT 1 FROM support_tickets
             WHERE id = $2 AND status IN ('OPEN', 'CLAIMED')

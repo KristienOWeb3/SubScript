@@ -122,30 +122,49 @@ export async function POST(request: Request) {
             );
         }
 
-        const planId = typeof body.planId === "string" ? body.planId : "";
-        const checkoutSessionId = typeof body.checkoutSessionId === "string" ? body.checkoutSessionId : "";
-        if (!planId && !checkoutSessionId) {
+        const rawPlanId = typeof body.planId === "string" ? body.planId.trim() : "";
+        const rawCheckoutSessionId = typeof body.checkoutSessionId === "string" ? body.checkoutSessionId.trim() : "";
+        if (!rawPlanId && !rawCheckoutSessionId) {
             return NextResponse.json({ error: "planId or checkoutSessionId is required" }, { status: 400 });
         }
 
-        const checkout = checkoutSessionId
-            ? await prisma.paymentLink.findUnique({ where: { id: checkoutSessionId } })
+        let checkout = rawCheckoutSessionId
+            ? await prisma.paymentLink.findUnique({ where: { id: rawCheckoutSessionId } }).catch(() => null)
             : null;
-        const checkoutMeta = readSubscriptionCheckoutMeta(checkout?.stateSnapshot);
+        let checkoutMeta = readSubscriptionCheckoutMeta(checkout?.stateSnapshot);
+        let merchantPlan = rawPlanId
+            ? await prisma.merchantPlan.findUnique({ where: { id: rawPlanId } }).catch(() => null)
+            : null;
+
+        // Fallback: if checkoutSessionId wasn't a PaymentLink, check if it's a MerchantPlan
+        if (rawCheckoutSessionId && (!checkout || !checkoutMeta) && !merchantPlan) {
+            merchantPlan = await prisma.merchantPlan.findUnique({ where: { id: rawCheckoutSessionId } }).catch(() => null);
+        }
+        // Fallback: if planId wasn't a MerchantPlan, check if it's a PaymentLink
+        if (rawPlanId && !merchantPlan && (!checkout || !checkoutMeta)) {
+            checkout = await prisma.paymentLink.findUnique({ where: { id: rawPlanId } }).catch(() => null);
+            checkoutMeta = readSubscriptionCheckoutMeta(checkout?.stateSnapshot);
+        }
+
+        const isCheckoutMode = Boolean(checkout && checkoutMeta);
+        if (isCheckoutMode) {
+            if (!checkout!.active || !["PENDING", "PROCESSING"].includes(checkout!.status)) {
+                return NextResponse.json({ error: "Subscription checkout not found or no longer available" }, { status: 404 });
+            }
+        } else {
+            if (!merchantPlan || !merchantPlan.active) {
+                return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
+            }
+        }
+
+        const checkoutSessionId = isCheckoutMode ? checkout!.id : "";
+        const planId = merchantPlan ? merchantPlan.id : (rawPlanId || "");
+
         /* Beneficiary is merchant-authored checkout metadata. The payer cannot override the
            entitlement recipient from this authenticated execution endpoint. */
         const beneficiaryAddress = checkoutMeta?.beneficiary && checkoutMeta.beneficiary !== wallet.toLowerCase()
             ? checkoutMeta.beneficiary
             : null;
-        const merchantPlan = planId
-            ? await prisma.merchantPlan.findUnique({ where: { id: planId } })
-            : null;
-        if (checkoutSessionId && (!checkout || !checkout.active || !["PENDING", "PROCESSING"].includes(checkout.status) || !checkoutMeta)) {
-            return NextResponse.json({ error: "Subscription checkout not found or no longer available" }, { status: 404 });
-        }
-        if (!checkoutSessionId && (!merchantPlan || !merchantPlan.active)) {
-            return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
-        }
 
         const plan = checkout && checkoutMeta ? {
             id: checkout.id,
