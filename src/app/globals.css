@@ -1317,28 +1317,6 @@ body {
 
    Nothing position: fixed lives inside <main>. The session-consent alert sits between the workspace
    and <main> as a sibling, and all seven modals render after the workspace closes, so no fixed
-   overlay resolves inset-0 against a zoomed coordinate space.
-
-   The max-width caps are deliberately left alone. They are what made 80% look roomy in the first
-   place: on a 1440px screen the unzoomed content region is ~1120px, so MerchantOverview's
-   max-w-[1340px] never engaged and the layout ran edge to edge. Zooming to 0.8 hands <main> ~1500
-   zoomed pixels, which is past that cap — so it engages and centres on its own, no retuning.
-
-   Desktop only. Mobile is already a single column at a comfortable scale, and shrinking tap
-   targets on a phone would be a straight regression. */
-@media (min-width: 1024px) {
-  .merchant-dashboard-workspace > main,
-  .user-dashboard-content > main,
-  .user-dashboard-redesign > main,
-  .admin-workspace,
-  .admin-topography > main {
-    zoom: 0.8;
-    width: 125% !important;
-    max-width: 125% !important;
-    min-height: 125% !important;
-  }
-}
-
 /* ---------------------------------------------------------------------------
    MERCHANT LIGHT MODE → USER DASHBOARD SURFACES
 
