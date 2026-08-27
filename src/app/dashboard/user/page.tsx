@@ -4262,7 +4262,7 @@ export default function UserDashboard() {
                             {/* Desktop Chat Pane Header */}
                             <div
                               data-testid="desktop-dm-header"
-                              className="flex shrink-0 items-center justify-between border border-white/10 bg-black/40 px-4 py-2.5 rounded-2xl backdrop-blur-xl shadow-xl mb-2"
+                              className="sticky top-0 z-20 flex shrink-0 items-center justify-between border border-white/10 bg-black/40 px-4 py-2.5 rounded-2xl backdrop-blur-xl shadow-xl mb-2"
                             >
                               <div className="flex items-center gap-3">
                                 <Avatar profilePic={activeThread?.peerProfilePic || null} name={activeThreadLabel} />
@@ -4411,7 +4411,7 @@ export default function UserDashboard() {
                             {/* Bottom Action Footer for Desktop */}
                             <div
                               data-testid="desktop-dm-action-footer"
-                              className="shrink-0 mt-2 text-white w-full"
+                              className="sticky bottom-0 z-20 shrink-0 mt-2 text-white w-full"
                             >
                               {isCurrentPeerBlocked ? (
                                 <p className="text-center text-[11px] text-white/40 py-2">
