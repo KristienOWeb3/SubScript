@@ -27,6 +27,7 @@ import {
   Sliders,
   MessageSquare,
   DollarSign,
+  TrendingUp,
   RefreshCcw,
   UserCheck,
   Eye,
@@ -63,6 +64,8 @@ import { AdminAccountsView } from "@/components/admin/AdminAccountsView";
 import { AdminTransactionInspectorModal } from "@/components/admin/AdminTransactionInspectorModal";
 import { AdminMerchantCatalogModal } from "@/components/admin/AdminMerchantCatalogModal";
 import { AdminSystemHealthCard } from "@/components/admin/AdminSystemHealthCard";
+import { AdminRelayerBalancesCard } from "@/components/admin/AdminRelayerBalancesCard";
+import { AdminRevenueView } from "@/components/admin/AdminRevenueView";
 import { AdminRiskSignalsCard } from "@/components/admin/AdminRiskSignalsCard";
 
 type Merchant = {
@@ -269,6 +272,7 @@ const KYC_FORCE_CONFIRMATION = "FORCE APPROVE";
 type TabId =
   | "overview"
   | "analytics"
+  | "revenue"
   | "financials"
   | "reconciliation"
   | "accounts"
@@ -284,9 +288,13 @@ type TabId =
   | "audit-log"
   | "admins";
 
-const TABS: Array<{ id: TabId; label: string }> = [
+const TABS: Array<{ id: TabId; label: string; rootOnly?: boolean }> = [
   { id: "overview", label: "Overview" },
   { id: "analytics", label: "Analytics" },
+  /* Root only. Platform revenue is the whole P&L, and the delegated tiers exist so finance and
+     support hires can work the console without seeing it. The API enforces this independently —
+     hiding the tab is convenience, not the boundary. */
+  { id: "revenue", label: "Revenue", rootOnly: true },
   { id: "financials", label: "Financials & Ledger" },
   { id: "reconciliation", label: "Reconciliation Queue" },
   { id: "accounts", label: "Accounts & Identity" },
@@ -1138,6 +1146,7 @@ export default function AdminDashboardPage() {
   const adminSidebarItems: DashboardSidebarItem[] = [
     { id: "overview", label: "Overview", icon: Home },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
+    ...(viewerIsRoot ? [{ id: "revenue", label: "Revenue", icon: TrendingUp }] : []),
     { id: "financials", label: "Financials & Ledger", icon: DollarSign },
     { id: "reconciliation", label: "Reconciliation", icon: RefreshCcw },
     { id: "accounts", label: "Accounts & Identity", icon: Users },
@@ -1266,7 +1275,7 @@ export default function AdminDashboardPage() {
               </section>
 
               <div className="md:hidden flex gap-2 overflow-x-auto rounded-xl border border-[#dbe3ec] bg-white p-2 shadow-sm">
-                {TABS.map((t) => (
+                {TABS.filter((t) => !t.rootOnly || viewerIsRoot).map((t) => (
             <button
               key={t.id}
               type="button"
@@ -1308,6 +1317,11 @@ export default function AdminDashboardPage() {
             />
           )
         )}
+
+        {/* No viewerIsRoot guard on the render: the component asks the API, and the API answers 403
+            for a delegated admin, which it renders as an explanation. A bare `&& viewerIsRoot` here
+            would show a blank pane instead if someone reached the tab after losing root. */}
+        {tab === "revenue" && <AdminRevenueView />}
 
         {tab === "financials" && <AdminFinancialsView />}
 
@@ -2584,6 +2598,7 @@ export default function AdminDashboardPage() {
         {tab === "system" && (
           <div className="space-y-6">
             <AdminSystemHealthCard />
+            <AdminRelayerBalancesCard />
             {!flags ? (
               <>
                 <SkeletonToggleRows

@@ -150,11 +150,42 @@ test("money movement requires review and never exposes a cancel result after bro
 test("a completed CCTP burn is resumable and cannot be presented as a fresh bridge", () => {
     const dashboard = source("src/app/dashboard/user/page.tsx");
 
+    /* The burn is irreversible, so it is parked locally before we try to tell the backend about it.
+       Losing that record would leave money in flight with nothing watching it, and would invite the
+       user into a second burn. */
     assert.match(dashboard, /subscript:cctp-recovery/);
     assert.match(dashboard, /localStorage\.setItem\(cctpRecoveryKey/);
-    assert.match(dashboard, /Resume existing bridge/);
-    assert.match(dashboard, /do not burn again/);
-    assert.match(dashboard, /const bridgeableUsdc = sepoliaUsdc/);
+    assert.match(dashboard, /Finish this deposit/);
+    assert.match(dashboard, /Don&apos;t send again/);
+    assert.match(dashboard, /const bridgeableUsdc = selectedOrigin\?\.balance/);
+
+    /* The keeper relays the mint. A browser-side receiveMessage would race it for the same CCTP
+       nonce, and whichever lost would revert on every retry forever. */
+    assert.doesNotMatch(dashboard, /functionName: "receiveMessage"/);
+    assert.doesNotMatch(dashboard, /iris-api/);
+});
+
+test("cross-chain transfers split the fee off before the burn", () => {
+    const dashboard = source("src/app/dashboard/user/page.tsx");
+    const withdraw = source("src/app/api/user/cctp/withdraw/route.ts");
+
+    /* CCTP mints exactly what it burns, so a fee that is not taken before the burn is never taken at
+       all. Both the server path and the browser path transfer the fee to the treasury first, then
+       approve and burn only the net. */
+    for (const file of [dashboard, withdraw]) {
+        assert.match(file, /BRIDGE_FEE_TREASURY_ADDRESS/);
+        assert.match(file, /functionName: "transfer"/);
+    }
+
+    /* Approving the gross would leave the TokenMessenger able to pull the fee portion afterwards. */
+    assert.match(withdraw, /args: \[ARC_TOKEN_MESSENGER_ADDRESS, feeInfo\.netMicros\]/);
+    assert.match(withdraw, /feeInfo\.netMicros,\s*\r?\n\s*feeInfo\.domain,/);
+    assert.doesNotMatch(withdraw, /args: \[[^\]]*feeInfo\.grossMicros[^\]]*\]/);
+
+    /* CCTP V2 depositForBurn takes seven arguments; the four-argument V1 form is a different
+       selector and reverts on the V2 TokenMessenger every chain in CCTP_CONFIG points at. */
+    assert.match(dashboard, /minFinalityThreshold/);
+    assert.match(dashboard, /ANY_DESTINATION_CALLER/);
 });
 
 test("live usage accrual is idempotent across retries", () => {

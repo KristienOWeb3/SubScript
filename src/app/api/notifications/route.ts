@@ -159,3 +159,26 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Unable to update notifications" }, { status: 503 });
     }
 }
+
+export async function DELETE(request: Request) {
+    try {
+        const wallet = await getSessionWallet(request.headers);
+        if (!wallet) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+        const id = new URL(request.url).searchParams.get("id");
+        if (!id) {
+            return NextResponse.json({ error: "Missing notification id" }, { status: 400 });
+        }
+
+        /* Scoped to the caller's own rows, so a guessed id deletes nothing. deleteMany rather than
+           delete because a miss should be a no-op, not a 404 the client has to special-case. */
+        const { count } = await prisma.accountNotification.deleteMany({
+            where: { id, recipientAddress: wallet.toLowerCase() },
+        });
+
+        return jsonOk({ success: true, deleted: count });
+    } catch (error: any) {
+        console.error("[notifications] delete failed:", error);
+        return NextResponse.json({ error: "Unable to delete notification" }, { status: 500 });
+    }
+}
