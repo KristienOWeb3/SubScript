@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bell, X, CheckCircle, RefreshCw, ShieldAlert, Sparkles, CreditCard } from "@/components/icons";
+import { Bell, X, CheckCircle, RefreshCw, ShieldAlert, Sparkles, CreditCard, ArrowRightLeft } from "@/components/icons";
 
 type Notification = {
     id: string;
@@ -14,6 +14,11 @@ type Notification = {
     readAt: string | null;
     createdAt: string;
 };
+
+/* Bridge progress notifications are transient. "USDC on Base received, moving to Arc" is useful for
+   the five minutes it takes and clutter forever after, so once the panel has shown it and the user
+   closes the panel, it goes. Every other source stays until the user deletes it. */
+const TRANSIENT_SOURCES = new Set(["BRIDGE"]);
 
 /* Timestamps people read, not timestamps people decode. "12m ago" in uppercase mono looked like
    a log line; a notification panel is closer to a message list, so it says "12 minutes ago".
@@ -41,6 +46,8 @@ function getSourceIcon(source: string) {
             return <ShieldAlert className="h-4 w-4 text-amber-400" />;
         case "SYSTEM":
             return <Sparkles className="h-4 w-4 text-cyan-400" />;
+        case "BRIDGE":
+            return <ArrowRightLeft className="h-4 w-4 text-[#2775CA]" />;
         default:
             return <CreditCard className="h-4 w-4 text-emerald-400" />;
     }
@@ -79,6 +86,10 @@ export default function NotificationBell({
 
     const buttonRef = useRef<HTMLButtonElement | null>(null);
     const panelRef = useRef<HTMLDivElement | null>(null);
+    /* Ids already being deleted, so a bubbled second click can't double-count. */
+    const dismissingRef = useRef<Set<string>>(new Set());
+    /* Bridge notifications that have been on screen in an open panel. They are cleared on close. */
+    const viewedTransientRef = useRef<Set<string>>(new Set());
 
     /* A light accent needs dark text on top of it, and cannot be used as text on the panel's own
        light surface. `accentInk` is what the "Mark all read" action uses instead — lime on cream
@@ -171,6 +182,25 @@ export default function NotificationBell({
         }
     };
 
+    const handleDismiss = async (id: string) => {
+        /* Guard against a double fire: a row with a link has an onClick on both the <li> and the <a>
+           inside it, and the anchor's click bubbles. Without this the same row was deleted twice and
+           the unread badge dropped by two. */
+        if (dismissingRef.current.has(id)) return;
+        dismissingRef.current.add(id);
+
+        const target = items.find((item) => item.id === id);
+        setItems((current) => current.filter((item) => item.id !== id));
+        /* Only an unread row was ever counted, so only an unread row decrements. */
+        if (target && !target.readAt) setUnread((prev) => Math.max(0, prev - 1));
+
+        try {
+            await fetch(`/api/notifications?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+        } catch (error) {
+            console.warn("Failed to delete notification:", error);
+        }
+    };
+
     const togglePanel = () => {
         const next = !open;
         if (next) {
@@ -179,6 +209,31 @@ export default function NotificationBell({
         }
         setOpen(next);
     };
+
+    /* While the panel is open, note every transient row on screen. */
+    useEffect(() => {
+        if (!open) return;
+        for (const item of items) {
+            if (TRANSIENT_SOURCES.has(item.source?.toUpperCase())) {
+                viewedTransientRef.current.add(item.id);
+            }
+        }
+    }, [open, items]);
+
+    /* On close, clear the ones that were seen. Deleting them while the panel is still open would make
+       rows vanish under the user's cursor. */
+    useEffect(() => {
+        if (open) return;
+        const seen = Array.from(viewedTransientRef.current);
+        if (seen.length === 0) return;
+        viewedTransientRef.current.clear();
+        for (const id of seen) {
+            void handleDismiss(id);
+        }
+        /* handleDismiss is recreated every render and only reads state it also writes; adding it to
+           the dependency list would re-run this on each keystroke elsewhere in the dashboard. */
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open]);
 
     const skeletonContent = (
         <div className="p-4 space-y-3">
@@ -295,6 +350,9 @@ export default function NotificationBell({
                                     className={`notification-panel-row px-5 py-3.5 transition-all ${isUnread ? "bg-black/[0.02] hover:bg-black/[0.05]" : "hover:bg-black/[0.03]"}`}
                                 >
                                     {item.url ? (
+                                        /* Following the link is the action here. Deleting on any row click
+                                           destroyed notifications people were only trying to read, with no
+                                           undo; transient bridge rows clear themselves on close instead. */
                                         <a href={item.url} className="block" onClick={() => setOpen(false)}>
                                             {itemContent}
                                         </a>

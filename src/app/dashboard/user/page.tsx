@@ -2,29 +2,28 @@
 "use client";
 
 import { ethers } from "ethers";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { enablePush, disablePush, isPushEnabled, pushSupported, sendTestPush } from "@/lib/clientPush";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useDisconnect, useReadContract, useAccount, useSwitchChain, useWriteContract } from "wagmi";
-import { 
-  formatUnits, 
-  createPublicClient, 
-  http, 
-  keccak256, 
-  parseEventLogs, 
+import { useDisconnect, useReadContract, useReadContracts, useAccount, useSwitchChain, useWriteContract } from "wagmi";
+import {
+  formatUnits,
+  createPublicClient,
+  http,
   parseUnits,
   fallback
 } from "viem";
-import { sepolia } from "viem/chains";
 import { activeArcChain } from "@/lib/wagmi";
 import { MAX_BATCH_RECIPIENTS } from "@/lib/payments/batchLimits";
 import { arcHttp } from "@/lib/arc/transport";
-import { 
+import {
   ARC_CCTP_DOMAIN_ID,
-  ARC_MESSAGE_TRANSMITTER_ADDRESS,
-  CCTP_CONFIG 
+  ARC_TOKEN_MESSENGER_ADDRESS,
+  BRIDGE_FEE_TREASURY_ADDRESS,
+  CCTP_CONFIG
 } from "@/lib/contracts/constants";
+import { calculateBridgeFee, formatFeeBps, formatMicros } from "@/lib/cctp/feeEngine";
 import { QRCode } from "react-qrcode-logo";
 import jsQR from "jsqr";
 import { motion, AnimatePresence } from "framer-motion";
@@ -38,7 +37,7 @@ import { useTheme } from "@/hooks/useTheme";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
 import ConfirmModal from "@/components/ConfirmModal";
 import QrScannerModal from "@/components/QrScannerModal";
-import { parseScannedAddress, resolveScannedTarget } from "@/lib/qr/scanTargets";
+import { resolveScannedTarget } from "@/lib/qr/scanTargets";
 import SendSingleModal from "@/components/SendSingleModal";
 import SupportChatModal from "@/components/support/SupportChatModal";
 
@@ -146,20 +145,74 @@ const VAULT_CONTRACT_ABI = [
   { type: "function", name: "withdrawSurplus", stateMutability: "nonpayable", inputs: [{ name: "merchant", type: "address" }, { name: "amount", type: "uint256" }], outputs: [] },
 ] as const;
 
+/* CCTP client-side ABIs. Both the deposit (burn on an origin chain) and the browser-wallet
+   withdrawal (burn on Arc) paths sign these through wagmi. */
+const CCTP_ERC20_ABI = [
+  { type: "function", name: "approve", stateMutability: "nonpayable", inputs: [{ name: "spender", type: "address" }, { name: "value", type: "uint256" }], outputs: [{ name: "success", type: "bool" }] },
+  { type: "function", name: "transfer", stateMutability: "nonpayable", inputs: [{ name: "recipient", type: "address" }, { name: "value", type: "uint256" }], outputs: [{ name: "success", type: "bool" }] },
+] as const;
+
+/* CCTP V2 takes seven arguments. The four-argument V1 form is a different selector and reverts on a
+   V2 TokenMessenger, which is what every chain in CCTP_CONFIG points at. */
+const CCTP_TOKEN_MESSENGER_V2_ABI = [
+  {
+    type: "function",
+    name: "depositForBurn",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "amount", type: "uint256" },
+      { name: "destinationDomain", type: "uint32" },
+      { name: "mintRecipient", type: "bytes32" },
+      { name: "burnToken", type: "address" },
+      { name: "destinationCaller", type: "bytes32" },
+      { name: "maxFee", type: "uint256" },
+      { name: "minFinalityThreshold", type: "uint32" },
+    ],
+    outputs: [],
+  },
+] as const;
+
+/* bytes32(0): anyone may call receiveMessage, which is how our relayer completes the transfer
+   without having been named at burn time. */
+const ANY_DESTINATION_CALLER = `0x${"0".repeat(64)}` as `0x${string}`;
+
+/* 2000 = Finalized, the standard transfer. Requesting 1000 (Fast) needs a nonzero maxFee, which
+   would take a second cut out of the user's money on top of the protocol fee. */
+const CCTP_FINALITY_STANDARD = 2000;
+
+/* Left-pads an EVM address into the bytes32 mintRecipient CCTP expects. */
+const toBytes32Address = (address: string): `0x${string}` =>
+  `0x${address.trim().toLowerCase().replace(/^0x/, "").padStart(64, "0")}` as `0x${string}`;
+
+/* One CCTP chain a deposit can start from, with the user's USDC balance on it. */
+type DepositOriginBalance = {
+  chainId: number;
+  name: string;
+  feeBps: number;
+  feePercentage: string;
+  isL1: boolean;
+  balance: number;
+  balanceMicros: bigint;
+};
+
 const publicClient = createPublicClient({
   chain: activeArcChain,
   transport: arcHttp(),
 });
 
-const sepoliaClient = createPublicClient({
-  chain: sepolia,
-  transport: fallback([
-    http("https://ethereum-sepolia-rpc.publicnode.com"),
-    http("https://rpc.ankr.com/eth_sepolia"),
-    http("https://sepolia.gateway.tenderly.co"),
-    http("https://1rpc.io/sepolia"),
-  ]),
-});
+/* Read-only clients for the CCTP origin chains, built lazily from the RPC in CCTP_CONFIG so a chain
+   added there needs no client wired up by hand. Only used to wait on receipts, which needs no chain
+   metadata, so `chain` is deliberately omitted. */
+const originClientCache = new Map<number, ReturnType<typeof createPublicClient>>();
+function originPublicClient(chainId: number) {
+  const cached = originClientCache.get(chainId);
+  if (cached) return cached;
+  const rpc = CCTP_CONFIG[chainId]?.defaultRpc;
+  if (!rpc) throw new Error(`No RPC configured for chain ${chainId}.`);
+  const client = createPublicClient({ transport: http(rpc) });
+  originClientCache.set(chainId, client);
+  return client;
+}
 
 interface Subscription {
   subscriptionId: string;
@@ -1112,6 +1165,9 @@ export default function UserDashboard() {
   const { address: accountAddress, chainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
+  /* Operators can pause browser-wallet signing. A cross-chain withdrawal from a browser wallet needs
+     three signatures from it, so the Send sheet has to know before it offers the route. */
+  const { externalWalletEnabled } = usePlatformFlags();
 
   /* balanceOf only. useBalance({ token }) also reads decimals() and symbol() on every refetch, so a
      single balance cost 3 calls against Arc's public RPC — which rate-limits per RPC call (429,
@@ -1127,27 +1183,51 @@ export default function UserDashboard() {
     query: { enabled: Boolean(userWallet) },
   });
 
-  const { data: sepoliaUsdcBalance, refetch: refetchSepolia } = useReadContract({
-    address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as `0x${string}`, // Sepolia USDC
-    abi: ERC20_BALANCE_ABI,
-    functionName: "balanceOf",
-    args: userWallet ? [userWallet as `0x${string}`] : undefined,
-    chainId: 11155111,
+  /* Every chain a deposit can start from, straight out of CCTP_CONFIG, so adding a chain there shows
+     up in the Deposit sheet without a second edit. One balanceOf per chain, batched. This replaced a
+     pair of hand-written Sepolia and Ethereum-mainnet reads whose addresses and chain ids were
+     hardcoded here and drifted from the bridge config. */
+  const depositOriginChains = useMemo(
+    () =>
+      Object.entries(CCTP_CONFIG)
+        .filter(([, info]) => info.allowDeposits !== false)
+        .map(([chainId, info]) => ({ chainId: Number(chainId), info }))
+        /* Cheapest fee first, so Ethereum's 1% tier is not the default pick. */
+        .sort((a, b) => a.info.feeBps - b.info.feeBps || a.info.name.localeCompare(b.info.name)),
+    [],
+  );
+
+  const { data: originBalanceReads, refetch: refetchOriginBalances } = useReadContracts({
+    contracts: depositOriginChains.map(({ chainId, info }) => ({
+      address: info.usdc,
+      abi: ERC20_BALANCE_ABI,
+      functionName: "balanceOf" as const,
+      args: userWallet ? [userWallet as `0x${string}`] : undefined,
+      chainId,
+    })),
     query: { enabled: Boolean(userWallet) },
   });
 
-  const { data: mainnetUsdcBalance, refetch: refetchMainnet } = useReadContract({
-    address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as `0x${string}`, // Mainnet USDC
-    abi: ERC20_BALANCE_ABI,
-    functionName: "balanceOf",
-    args: userWallet ? [userWallet as `0x${string}`] : undefined,
-    chainId: 1,
-    query: { enabled: Boolean(userWallet) },
+  const originBalances: DepositOriginBalance[] = depositOriginChains.map(({ chainId, info }, index) => {
+    const read = originBalanceReads?.[index];
+    const micros = read?.status === "success" ? BigInt(read.result as bigint) : 0n;
+    return {
+      chainId,
+      name: info.name,
+      feeBps: info.feeBps,
+      feePercentage: formatFeeBps(info.feeBps),
+      isL1: Boolean(info.isL1),
+      balance: Number(formatUnits(micros, 6)),
+      balanceMicros: micros,
+    };
   });
 
-  const sepoliaUsdc = sepoliaUsdcBalance !== undefined ? Number(formatUnits(sepoliaUsdcBalance, 6)) : 0;
-  const mainnetUsdc = mainnetUsdcBalance !== undefined ? Number(formatUnits(mainnetUsdcBalance, 6)) : 0;
-  const hasExternalUsdc = sepoliaUsdc > 0 || mainnetUsdc > 0;
+  /* Drives whether the Deposit sheet opens on the chooser or straight to the address. Based on the
+     CCTP chains we can actually bridge from, not on a fixed pair of them. */
+  const hasExternalUsdc = originBalances.some((chain) => chain.balance > 0);
+
+  /* Total USDC the user holds off Arc, for the send-routing notice. */
+  const elsewhereUsdc = originBalances.reduce((sum, chain) => sum + chain.balance, 0);
 
   const walletBalance = usdcBalance !== undefined ? Number(formatUnits(usdcBalance, 6)) : 0;
 
@@ -1159,8 +1239,7 @@ export default function UserDashboard() {
       await Promise.race([
         Promise.all([
           refetchUsdc().catch(console.error),
-          refetchSepolia().catch(console.error),
-          refetchMainnet().catch(console.error),
+          refetchOriginBalances().catch(console.error),
           loadVaults().catch(console.error),
           /* The 30D spending figure is derived from subscriptions and paid DMs, so a refresh that
              only touched wallet and vault balances left it showing a stale number underneath two
@@ -1323,11 +1402,10 @@ export default function UserDashboard() {
 
   useEffect(() => {
     if (receiveOpen && userWallet) {
-      refetchSepolia().catch(console.error);
-      refetchMainnet().catch(console.error);
+      refetchOriginBalances().catch(console.error);
       refetchUsdc().catch(console.error);
     }
-  }, [receiveOpen, userWallet, refetchSepolia, refetchMainnet, refetchUsdc]);
+  }, [receiveOpen, userWallet, refetchOriginBalances, refetchUsdc]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2345,10 +2423,43 @@ export default function UserDashboard() {
     }
   };
 
+  /**
+   * Two scanners, two jobs.
+   *
+   * Inside Send (or a batch row) the only useful answer is a recipient: an address, or an alias we
+   * can resolve. A checkout or DM-invite link is not a recipient, so it is refused rather than pasted
+   * into the address box as a URL. The scanner on the dashboard itself is the opposite: it is there to
+   * open payment links, subscriptions and receipts.
+   */
   const handleScanQrResult = (scannedText: string) => {
-    /* Check if the scan is a SubScript link (DM invite, payment link, subscribe link, receipt, etc.) */
     const target = resolveScannedTarget(scannedText);
-    if (qrTargetIndex === null && target.kind === "link") {
+    const scanningForRecipient = sendSingleModalOpen || qrTargetIndex !== null;
+
+    if (scanningForRecipient) {
+      setQrScannerOpen(false);
+
+      if (target.kind === "link") {
+        const complaint = "That code opens a SubScript page, not a wallet address. Scan an address instead.";
+        if (qrTargetIndex === null) setSingleSendStatus(complaint);
+        else setBatchSendStatus(complaint);
+        return;
+      }
+
+      /* An address if the code carried one, otherwise the raw text so a .sub name still resolves. */
+      const address = target.kind === "address" ? target.address : target.value;
+      if (qrTargetIndex === null) {
+        setSingleSendStatus(null);
+        setSingleRecipient(address);
+      } else if (typeof qrTargetIndex === "number") {
+        setBatchSendStatus(null);
+        setBatchRows((rows) =>
+          rows.map((row, idx) => (idx === qrTargetIndex ? { ...row, address } : row))
+        );
+      }
+      return;
+    }
+
+    if (target.kind === "link") {
       setQrScannerOpen(false);
       setSendFundsOpen(false);
       setSendSingleModalOpen(false);
@@ -2356,16 +2467,10 @@ export default function UserDashboard() {
       return;
     }
 
-    /* Otherwise, narrow to address or alias for recipient inputs */
-    const address = target.kind === "address" ? target.address : (target.kind === "text" ? target.value : parseScannedAddress(scannedText));
-    if (qrTargetIndex === null) {
-      setSingleRecipient(address);
-      setSendFundsRecipient(address);
-    } else if (typeof qrTargetIndex === "number") {
-      setBatchRows((rows) =>
-        rows.map((row, idx) => (idx === qrTargetIndex ? { ...row, address } : row))
-      );
-    }
+    const address = target.kind === "address" ? target.address : target.value;
+    setSingleRecipient(address);
+    setSendFundsRecipient(address);
+    setQrScannerOpen(false);
   };
 
   const handleCreateShareableLink = async (event: React.FormEvent) => {
@@ -2573,14 +2678,110 @@ export default function UserDashboard() {
   const singleSendRequestKey = useRef<string | null>(null);
   const batchSendRequestKey = useRef<string | null>(null);
 
-  const handleSingleSend = async (e: React.FormEvent) => {
+  /**
+   * Cross-chain withdrawal for a browser wallet, which holds its own keys and so cannot be signed
+   * for server-side the way an in-app wallet is.
+   *
+   * Three transactions, in this order: pay the fee, approve the net, burn the net. The fee goes
+   * first because reverting there costs the user nothing, whereas burning first and then failing to
+   * collect would bridge the money and lose the fee with nothing to reconcile against. CCTP mints
+   * exactly what was burned, which is why the split has to happen before the burn rather than being
+   * recorded after it.
+   */
+  const withdrawCrossChainFromBrowserWallet = async (params: {
+    destinationChainId: number;
+    recipientAddress: string;
+    amountMicros: bigint;
+  }) => {
+    const fee = calculateBridgeFee(params.amountMicros, params.destinationChainId, "outbound_withdrawal");
+
+    if (chainId !== activeArcChain.id) {
+      await switchChainAsync({ chainId: activeArcChain.id });
+    }
+
+    let feeTxHash: `0x${string}` | undefined;
+    if (fee.feeMicros > 0n) {
+      feeTxHash = await writeContractAsync({
+        address: USDC_NATIVE_GAS_ADDRESS,
+        abi: CCTP_ERC20_ABI,
+        functionName: "transfer",
+        args: [BRIDGE_FEE_TREASURY_ADDRESS, fee.feeMicros],
+      });
+      const feeReceipt = await publicClient.waitForTransactionReceipt({ hash: feeTxHash, timeout: 120_000 });
+      if (feeReceipt.status !== "success") throw new Error("The bridge fee payment failed. Nothing was sent.");
+    }
+
+    /* Approve exactly the net. Approving the gross would leave the TokenMessenger able to pull the
+       fee portion afterwards. */
+    const approveHash = await writeContractAsync({
+      address: USDC_NATIVE_GAS_ADDRESS,
+      abi: CCTP_ERC20_ABI,
+      functionName: "approve",
+      args: [ARC_TOKEN_MESSENGER_ADDRESS, fee.netMicros],
+    });
+    const approveReceipt = await publicClient.waitForTransactionReceipt({ hash: approveHash, timeout: 120_000 });
+    if (approveReceipt.status !== "success") throw new Error("Approving the transfer failed. Nothing was sent.");
+
+    const burnTxHash = await writeContractAsync({
+      address: ARC_TOKEN_MESSENGER_ADDRESS,
+      abi: CCTP_TOKEN_MESSENGER_V2_ABI,
+      functionName: "depositForBurn",
+      args: [
+        fee.netMicros,
+        fee.domain,
+        toBytes32Address(params.recipientAddress),
+        USDC_NATIVE_GAS_ADDRESS,
+        ANY_DESTINATION_CALLER,
+        0n,
+        CCTP_FINALITY_STANDARD,
+      ],
+    });
+    const burnReceipt = await publicClient.waitForTransactionReceipt({ hash: burnTxHash, timeout: 180_000 });
+    if (burnReceipt.status !== "success") {
+      throw new Error("The transfer didn't go through on Arc. The fee has been recorded and will be refunded.");
+    }
+
+    /* Register last. The keeper needs the burn hash to fetch Circle's attestation, and until this
+       lands the transfer is invisible to us, so it retries rather than being fire-and-forget. */
+    let registered = false;
+    for (let attempt = 0; attempt < 3 && !registered; attempt++) {
+      try {
+        const res = await fetch("/api/user/cctp/withdraw/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            destinationChainIdOrDomain: params.destinationChainId,
+            recipientAddress: params.recipientAddress,
+            amountMicros: params.amountMicros.toString(),
+            burnTxHash,
+            feeTxHash,
+          }),
+        });
+        registered = res.ok;
+        if (!registered) await new Promise((resolve) => setTimeout(resolve, 2000));
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+    }
+    if (!registered) {
+      throw new Error(
+        `Your USDC was sent (${burnTxHash.slice(0, 10)}…) but we couldn't record it. Contact support with that hash and we'll finish the delivery.`,
+      );
+    }
+
+    return { burnTxHash, feeTxHash };
+  };
+
+  const handleSingleSend = async (e: React.FormEvent, selectedNetwork: string = "arc") => {
     e.preventDefault();
     setSingleSendStatus(null);
-    if (!singleResolved || !singleResolved.address) {
+    const recipientAddr = singleResolved?.address;
+
+    if (!recipientAddr) {
       setSingleSendStatus("Please provide a valid recipient wallet address or registered SubScript DNS name.");
       return;
     }
-    if (isOwnWalletAddress(singleResolved.address)) {
+    if (isOwnWalletAddress(recipientAddr)) {
       setSingleSendStatus("You cannot send USDC to your own connected wallet.");
       return;
     }
@@ -2591,24 +2792,58 @@ export default function UserDashboard() {
 
     setSingleSendLoading(true);
     try {
+      /* Anything other than Arc is a CCTP withdrawal: the fee is skimmed to the treasury on Arc and
+         only the remainder is burned, so the destination mints exactly the "will receive" figure the
+         modal quoted. An in-app wallet has server-held keys and the route does all three steps; a
+         browser wallet signs them itself in withdrawCrossChainFromBrowserWallet. */
+      if (selectedNetwork !== "arc") {
+        const amountMicros = parseUnits(limitDecimals(singleAmount, 6), 6);
+
+        if (isEmbeddedWalletSession) {
+          const res = await fetch("/api/user/cctp/withdraw", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              destinationChainIdOrDomain: selectedNetwork,
+              recipientAddress: recipientAddr,
+              amountMicros: amountMicros.toString(),
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || "We couldn't start that withdrawal.");
+        } else {
+          await withdrawCrossChainFromBrowserWallet({
+            destinationChainId: Number(selectedNetwork),
+            recipientAddress: recipientAddr,
+            amountMicros,
+          });
+        }
+
+        setSingleSendStatus("Sent. The receiving address will have the funds in about five minutes.");
+        setSingleRecipient("");
+        setSingleAmount("");
+        await refetchUsdc().catch(console.error);
+        return;
+      }
+
       if (isEmbeddedWalletSession) {
         singleSendRequestKey.current ||= crypto.randomUUID();
         const transfers = await sendFromEmbeddedWallet({
-          receiverAddress: singleResolved.address,
+          receiverAddress: singleResolved!.address!,
           amountUsdc: singleAmount,
           requestKey: singleSendRequestKey.current,
         });
         singleSendRequestKey.current = null;
         const txHash = transfers[0]?.txHash;
-        setSingleSendStatus(`Success! Transfer transaction submitted: ${txHash || "confirmed"}`);
+        setSingleSendStatus("Sent! Funds delivered on Arc.");
         /* Only recorded when the embedded wallet returned a hash. reconcileOptimisticTxs()
            matches on hash alone, so a hashless row could never be retired and would sit next to
            the confirmed DM entry reading "Sending" for the full five-minute TTL. */
         if (txHash) {
           recordOptimisticTx({
             txHash,
-            recipientAddress: singleResolved.address,
-            recipientLabel: singleResolved.alias || formatAddress(singleResolved.address),
+            recipientAddress: recipientAddr,
+            recipientLabel: singleResolved?.alias || formatAddress(recipientAddr),
             amountUsdc: singleAmount,
           });
         }
@@ -2620,7 +2855,7 @@ export default function UserDashboard() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               action: "log-transfer",
-              receiverAddress: singleResolved.address,
+              receiverAddress: recipientAddr,
               amountUsdc: singleAmount,
               txHash,
               title: `${singleAmount} USDC Sent`,
@@ -2659,14 +2894,14 @@ export default function UserDashboard() {
         address: USDC_NATIVE_GAS_ADDRESS,
         abi: usdcAbi,
         functionName: "transfer",
-        args: [singleResolved.address as `0x${string}`, parseUnits(limitDecimals(singleAmount, 6), 6)],
+        args: [recipientAddr as `0x${string}`, parseUnits(limitDecimals(singleAmount, 6), 6)],
       });
 
       setSingleSendStatus(`Success! Transfer transaction submitted: ${txHash}`);
       recordOptimisticTx({
         txHash: txHash || null,
-        recipientAddress: singleResolved.address,
-        recipientLabel: singleResolved.alias || formatAddress(singleResolved.address),
+        recipientAddress: recipientAddr,
+        recipientLabel: singleResolved?.alias || formatAddress(recipientAddr),
         amountUsdc: singleAmount,
       });
       setSingleRecipient("");
@@ -2677,7 +2912,7 @@ export default function UserDashboard() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "log-transfer",
-            receiverAddress: singleResolved.address,
+            receiverAddress: recipientAddr,
             amountUsdc: singleAmount,
             txHash,
             title: `${singleAmount} USDC Sent`,
@@ -4627,7 +4862,7 @@ export default function UserDashboard() {
             {activeTab === "batch" && (
               <section className="space-y-5 max-w-lg pb-6 lg:pb-0">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                  <SectionTitle title="Batch Payouts" subtitle="Pay many recipients in one run, or send to just one." />
+                  <SectionTitle title="Batch payouts" subtitle="Pay many people in one run, or just one." />
 
                   {/* Blue rather than the charcoal this used to be. #353935 sits within a couple of
                       shades of the dark canvas (#17181a), so the button read as a label instead of a
@@ -4645,6 +4880,13 @@ export default function UserDashboard() {
                   </button>
                 </div>
                   <div ref={batchFormRef} className="border border-black/10 bg-white/80 rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm text-black">
+                    {/* Batch payouts are Arc-only. There is no CCTP path here on purpose: a run of
+                        twenty recipients would be twenty separate burns, twenty attestations and
+                        twenty relayed mints, and a partial failure halfway through would leave the
+                        user reconciling it by hand. Cross-chain stays in Single Send, one at a time. */}
+                    <p className="rounded-2xl border border-[#2775CA]/25 bg-[#2775CA]/10 p-3 text-[11px] leading-relaxed text-black/75">
+                      Batch payouts go out on Arc only. To send USDC to another chain, use Single Send.
+                    </p>
                     {batchRows.map((row, index) => (
                       <div key={index} className="rounded-3xl border border-black/10 bg-black/5 p-4 space-y-3 relative text-black">
                         {batchRows.length > 1 && (
@@ -4765,7 +5007,7 @@ export default function UserDashboard() {
                     <BalanceRoutingNotice
                       amount={batchRows.reduce((sum, row) => sum + (isNaN(Number(row.amount)) ? 0 : Number(row.amount)), 0)}
                       walletBalance={walletBalance}
-                      sepoliaUsdc={sepoliaUsdc}
+                      elsewhereUsdc={elsewhereUsdc}
                     />
 
                     {batchSendStatus && (
@@ -7054,17 +7296,16 @@ export default function UserDashboard() {
         userWallet={userWallet} 
         copied={copiedAddress} 
         onCopy={copyAddress} 
-        onClose={() => setReceiveOpen(false)} 
-        sepoliaUsdc={sepoliaUsdc}
-        mainnetUsdc={mainnetUsdc}
+        onClose={() => setReceiveOpen(false)}
+        originBalances={originBalances}
         hasExternalUsdc={hasExternalUsdc}
         chainId={chainId}
         switchChainAsync={switchChainAsync}
         writeContractAsync={writeContractAsync}
         refetchBalances={() => {
           refetchUsdc().catch(console.error);
-          refetchSepolia().catch(console.error);
-          refetchMainnet().catch(console.error);
+          refetchOriginBalances().catch(console.error);
+          refetchOriginBalances().catch(console.error);
         }}
       />
       <QrScannerModal
@@ -7099,7 +7340,7 @@ export default function UserDashboard() {
           setActiveTab("batch");
         }}
         walletBalance={walletBalance}
-        sepoliaUsdc={sepoliaUsdc}
+        elsewhereUsdc={elsewhereUsdc}
         userWallet={userWallet}
         isEmbeddedWalletSession={isEmbeddedWalletSession}
         chainId={chainId}
@@ -7525,6 +7766,9 @@ export default function UserDashboard() {
         status={singleSendStatus}
         walletBalance={walletBalance}
         balanceKnown={usdcBalance !== undefined}
+        /* Both custody kinds can withdraw cross-chain: the in-app wallet through the server route,
+           a browser wallet by signing the fee, approval and burn itself. */
+        canWithdrawCrossChain={isEmbeddedWalletSession || externalWalletEnabled}
         onScanQr={() => {
           setQrTargetIndex(null);
           setQrScannerOpen(true);
@@ -7533,7 +7777,7 @@ export default function UserDashboard() {
           <BalanceRoutingNotice
             amount={singleAmount}
             walletBalance={walletBalance}
-            sepoliaUsdc={sepoliaUsdc}
+            elsewhereUsdc={elsewhereUsdc}
           />
         }
       />
@@ -9102,8 +9346,7 @@ function DepositModal({
   copied,
   onCopy,
   onClose,
-  sepoliaUsdc,
-  mainnetUsdc,
+  originBalances,
   hasExternalUsdc,
   chainId,
   switchChainAsync,
@@ -9115,8 +9358,7 @@ function DepositModal({
   copied: boolean;
   onCopy: () => void;
   onClose: () => void;
-  sepoliaUsdc: number;
-  mainnetUsdc: number;
+  originBalances: DepositOriginBalance[];
   hasExternalUsdc: boolean;
   chainId: number | undefined;
   switchChainAsync: any;
@@ -9125,36 +9367,70 @@ function DepositModal({
 }) {
   const [activeSubMode, setActiveSubMode] = useState<"menu" | "direct" | "cctp">("menu");
 
-  /* The CCTP bridge burns USDC on Sepolia through the browser wallet (switchChain +
+  /* The CCTP bridge burns USDC on the origin chain through the browser wallet (switchChain +
      writeContract via wagmi), so it is an external-wallet feature and disappears with the rest
      of them when an operator pauses external wallets. Leaving the Bridge tab up would walk the
      user to a network switch that cannot complete — and unlike signing in, this one starts by
      moving real money. Presentation only, as ever: the burn happens in the user's own wallet,
      so this hides a dead end rather than enforcing a boundary.
 
-     bridgeAvailable is computed below, once cctpRecovery is known — see the comment there for
+     bridgeAvailable is computed below, once pendingRegistration is known — see the comment there for
      why a paused bridge must still let an interrupted one finish. */
   const { externalWalletEnabled } = usePlatformFlags();
 
   // CCTP State
   const [cctpAmount, setCctpAmount] = useState("");
-  const [cctpStatus, setCctpStatus] = useState<"idle" | "switching" | "approving" | "burning" | "attesting" | "claiming" | "success" | "error">("idle");
+  const [originChainId, setOriginChainId] = useState<number | null>(null);
+  const [originMenuOpen, setOriginMenuOpen] = useState(false);
+  const [cctpStatus, setCctpStatus] = useState<
+    "idle" | "switching" | "paying_fee" | "approving" | "burning" | "registering" | "submitted" | "error"
+  >("idle");
   const [cctpMessage, setCctpMessage] = useState<string | null>(null);
   const [cctpError, setCctpError] = useState<string | null>(null);
   const [cctpReviewOpen, setCctpReviewOpen] = useState(false);
-  const [cctpRecovery, setCctpRecovery] = useState<{ burnHash: `0x${string}`; messageBytes: `0x${string}`; messageHash: `0x${string}`; amount: string } | null>(null);
 
-  const bridgeableUsdc = sepoliaUsdc;
-  const cctpInProgress = !["idle", "success", "error"].includes(cctpStatus);
+  /* A burn we have not managed to tell the backend about yet. The burn is irreversible and the keeper
+     cannot relay what it has never seen, so this survives a reload and the modal offers to finish
+     registering rather than inviting a second burn. */
+  const [pendingRegistration, setPendingRegistration] = useState<{
+    burnTxHash: `0x${string}`;
+    feeTxHash?: `0x${string}`;
+    originChainId: number;
+    grossAmountMicros: string;
+    amount: string;
+  } | null>(null);
+
+  const fundedOrigins = originBalances.filter((chain) => chain.balance > 0);
+  /* No initialising effect: the fallback chain here *is* the default, so an untouched picker already
+     shows the funded network with the cheapest fee. */
+  const selectedOrigin =
+    originBalances.find((chain) => chain.chainId === originChainId) ?? fundedOrigins[0] ?? originBalances[0] ?? null;
+  const bridgeableUsdc = selectedOrigin?.balance ?? 0;
+  const cctpInProgress = !["idle", "submitted", "error"].includes(cctpStatus);
   const cctpRecoveryKey = userWallet ? `subscript:cctp-recovery:${userWallet.toLowerCase()}` : null;
+
+  /* Quote straight from the fee engine the server charges with, so the "you'll be credited" figure
+     cannot drift from the amount that actually arrives. */
+  const cctpQuote = (() => {
+    if (!selectedOrigin || !cctpAmount) return null;
+    try {
+      return calculateBridgeFee(
+        parseUnits(limitDecimals(cctpAmount, 6), 6),
+        selectedOrigin.chainId,
+        "inbound_deposit",
+      );
+    } catch {
+      return null;
+    }
+  })();
 
   useEffect(() => {
     if (!open || !cctpRecoveryKey) return;
     try {
       const stored = window.localStorage.getItem(cctpRecoveryKey);
-      setCctpRecovery(stored ? JSON.parse(stored) : null);
+      setPendingRegistration(stored ? JSON.parse(stored) : null);
     } catch {
-      setCctpRecovery(null);
+      setPendingRegistration(null);
     }
   }, [open, cctpRecoveryKey]);
 
@@ -9164,10 +9440,10 @@ function DepositModal({
   // Reset sub-mode when modal opens
   useEffect(() => {
     if (open) {
-      /* An outstanding mint is the most urgent thing in this modal, so land on it directly.
+      /* An unregistered burn is the most urgent thing in this modal, so land on it directly.
          Otherwise: with the bridge unavailable Direct is the only destination, and a chooser
          menu listing one option is just an extra click. */
-      if (cctpRecovery) {
+      if (pendingRegistration) {
         setActiveSubMode("cctp");
       } else if (hasExternalUsdc && bridgeAvailable) {
         setActiveSubMode("menu");
@@ -9175,75 +9451,102 @@ function DepositModal({
         setActiveSubMode("direct");
       }
     }
-  }, [open, hasExternalUsdc, bridgeAvailable, cctpRecovery]);
+  }, [open, hasExternalUsdc, bridgeAvailable, pendingRegistration]);
 
   /* Covers the flag flipping while the modal is already open on the bridge pane. */
   useEffect(() => {
     if (!bridgeAvailable && activeSubMode === "cctp") setActiveSubMode("direct");
   }, [bridgeAvailable, activeSubMode]);
 
-  const completeCctpBridge = async (recovery: { burnHash: `0x${string}`; messageBytes: `0x${string}`; messageHash: `0x${string}`; amount: string }) => {
-    setCctpStatus("attesting");
-    setCctpError(null);
-    setCctpMessage("Circle attestation in progress. Fetching signature...");
-    let attestation: `0x${string}` | null = null;
-    let attempts = 0;
-    while (attempts < 60) {
-      attempts++;
+  /**
+   * Tells the backend about a burn so the keeper can relay it onto Arc. Retried, and the burn is
+   * parked in localStorage until it lands: an unregistered burn is money in flight that nothing is
+   * watching.
+   */
+  const registerDeposit = async (record: NonNullable<typeof pendingRegistration>) => {
+    setCctpStatus("registering");
+    setCctpMessage("Handing the transfer to Circle...");
+
+    let lastError = "";
+    for (let attempt = 0; attempt < 4; attempt++) {
       try {
-        const res = await fetch(`https://iris-api-sandbox.circle.com/attestations/${recovery.messageHash}`);
-        const data = await res.json();
-        if (data.status === "complete") {
-          const rawHex = data.attestation;
-          attestation = (rawHex.startsWith("0x") ? rawHex : `0x${rawHex}`) as `0x${string}`;
-          break;
+        const res = await fetch("/api/user/cctp/deposit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            originChainId: record.originChainId,
+            grossAmountMicros: record.grossAmountMicros,
+            burnTxHash: record.burnTxHash,
+            feeTxHash: record.feeTxHash,
+          }),
+        });
+        if (res.ok) {
+          if (cctpRecoveryKey) window.localStorage.removeItem(cctpRecoveryKey);
+          setPendingRegistration(null);
+          setCctpStatus("submitted");
+          setCctpMessage(null);
+          setCctpAmount("");
+          setCctpReviewOpen(false);
+          refetchBalances();
+          return;
         }
-      } catch (error) {
-        console.warn("Attestation fetch retry:", error);
+        const data = await res.json().catch(() => ({}));
+        lastError = data.error || `Server said ${res.status}`;
+      } catch (error: any) {
+        lastError = error?.message || "Network error";
       }
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+      await new Promise((resolve) => setTimeout(resolve, 2000 * (attempt + 1)));
     }
-    if (!attestation) throw new Error("Circle attestation is not ready yet. Resume this bridge later; do not burn again.");
 
-    setCctpStatus("claiming");
-    setCctpMessage("Switching to Arc Testnet to complete the existing bridge...");
-    await switchChainAsync({ chainId: activeArcChain.id });
-    const mintHash = await writeContractAsync({
-      address: ARC_MESSAGE_TRANSMITTER_ADDRESS,
-      abi: [{ type: "function", name: "receiveMessage", stateMutability: "nonpayable", inputs: [{ name: "message", type: "bytes" }, { name: "attestation", type: "bytes" }], outputs: [{ name: "success", type: "bool" }] }],
-      functionName: "receiveMessage",
-      args: [recovery.messageBytes, attestation],
-    });
-    setCctpMessage("Waiting for Arc mint confirmation...");
-    const mintReceipt = await publicClient.waitForTransactionReceipt({ hash: mintHash, timeout: 120_000 });
-    if (mintReceipt.status !== "success") throw new Error("Arc mint failed. Resume this bridge later; do not burn again.");
-
-    if (cctpRecoveryKey) window.localStorage.removeItem(cctpRecoveryKey);
-    setCctpRecovery(null);
-    setCctpStatus("success");
-    setCctpMessage("USDC bridged to your Arc wallet");
-    setCctpReviewOpen(false);
-    refetchBalances();
+    throw new Error(
+      `Your USDC was sent but we couldn't record it (${lastError}). Reopen this screen to finish, or contact support with ${record.burnTxHash.slice(0, 10)}…`,
+    );
   };
 
-  const handleResumeCctp = async () => {
-    if (!cctpRecovery) return;
+  const handleResumeRegistration = async () => {
+    if (!pendingRegistration) return;
+    setCctpError(null);
     try {
-      await completeCctpBridge(cctpRecovery);
+      await registerDeposit(pendingRegistration);
     } catch (error: any) {
       setCctpStatus("error");
-      setCctpError(error.message || "Could not resume the existing bridge.");
+      setCctpError(error.message || "We couldn't record that transfer.");
     }
   };
 
   const handleStartCctp = async (bridgeAmountStr: string) => {
     setCctpError(null);
-    if (!bridgeAmountStr || isNaN(Number(bridgeAmountStr)) || Number(bridgeAmountStr) <= 0) {
-      setCctpError("Please enter a valid amount to bridge.");
+
+    if (!selectedOrigin) {
+      setCctpError("Pick the network your USDC is on.");
       return;
     }
-    if (Number(bridgeAmountStr) > bridgeableUsdc) {
-      setCctpError("Insufficient Sepolia USDC. Mainnet bridging is not available in this flow.");
+    if (!bridgeAmountStr || isNaN(Number(bridgeAmountStr)) || Number(bridgeAmountStr) <= 0) {
+      setCctpError("Enter an amount to deposit.");
+      return;
+    }
+    if (Number(bridgeAmountStr) > selectedOrigin.balance) {
+      setCctpError(
+        `You have ${selectedOrigin.balance.toFixed(2)} USDC on ${selectedOrigin.name}, which isn't enough.`,
+      );
+      return;
+    }
+
+    const originConfig = CCTP_CONFIG[selectedOrigin.chainId];
+    if (!originConfig) {
+      setCctpError(`We don't support deposits from ${selectedOrigin.name} yet.`);
+      return;
+    }
+
+    let fee;
+    try {
+      fee = calculateBridgeFee(
+        parseUnits(limitDecimals(bridgeAmountStr, 6), 6),
+        selectedOrigin.chainId,
+        "inbound_deposit",
+      );
+    } catch (quoteError: any) {
+      setCctpError(quoteError.message || "That amount can't be deposited.");
       return;
     }
 
@@ -9252,105 +9555,99 @@ function DepositModal({
       return;
     }
 
+    const originClient = originPublicClient(selectedOrigin.chainId);
+
     try {
-      const requiredAmount = parseUnits(limitDecimals(bridgeAmountStr, 6), 6);
-      const sepoliaConfig = CCTP_CONFIG[11155111] || {
-        tokenMessenger: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275" as `0x${string}`,
-        usdc: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as `0x${string}`,
-      };
-
-      // Step 1: Switch Network to Sepolia
+      /* Step 1: get onto the origin chain. */
       setCctpStatus("switching");
-      setCctpMessage("Switching network to Ethereum Sepolia...");
-      if (chainId !== 11155111) {
-        await switchChainAsync({ chainId: 11155111 });
+      setCctpMessage(`Switching your wallet to ${selectedOrigin.name}...`);
+      if (chainId !== selectedOrigin.chainId) {
+        await switchChainAsync({ chainId: selectedOrigin.chainId });
       }
 
-      // Step 2: Approve Sepolia TokenMessenger
+      /* Step 2: pay the protocol fee on the origin chain, before anything is burned.
+         CCTP mints exactly what it burns, so a fee not taken here is never taken at all. Doing it
+         first also means a revert costs the user nothing: no burn has happened yet. */
+      let feeTxHash: `0x${string}` | undefined;
+      if (fee.feeMicros > 0n) {
+        setCctpStatus("paying_fee");
+        setCctpMessage(`Collecting the ${fee.feePercentage} bridge fee...`);
+        feeTxHash = await writeContractAsync({
+          address: originConfig.usdc,
+          abi: CCTP_ERC20_ABI,
+          functionName: "transfer",
+          args: [BRIDGE_FEE_TREASURY_ADDRESS, fee.feeMicros],
+          chainId: selectedOrigin.chainId,
+        });
+        const feeReceipt = await originClient.waitForTransactionReceipt({ hash: feeTxHash!, timeout: 240_000 });
+        if (feeReceipt.status !== "success") {
+          throw new Error("The fee payment didn't go through. Nothing was deposited.");
+        }
+      }
+
+      /* Step 3: approve exactly the net. Approving the gross would leave the TokenMessenger able to
+         pull the fee portion afterwards. */
       setCctpStatus("approving");
-      setCctpMessage("Approving USDC spend on Sepolia...");
+      setCctpMessage(`Approving ${formatMicros(fee.netMicros)} USDC on ${selectedOrigin.name}...`);
       const approveHash = await writeContractAsync({
-        address: sepoliaConfig.usdc,
-        abi: [
-          {
-            type: "function",
-            name: "approve",
-            stateMutability: "nonpayable",
-            inputs: [
-              { name: "spender", type: "address" },
-              { name: "value", type: "uint256" },
-            ],
-            outputs: [{ name: "success", type: "bool" }],
-          },
-        ],
+        address: originConfig.usdc,
+        abi: CCTP_ERC20_ABI,
         functionName: "approve",
-        args: [sepoliaConfig.tokenMessenger, requiredAmount],
+        args: [originConfig.tokenMessenger, fee.netMicros],
+        chainId: selectedOrigin.chainId,
       });
-
-      setCctpMessage("Waiting for Sepolia approval confirmation...");
-      const approveReceipt = await sepoliaClient.waitForTransactionReceipt({
-        hash: approveHash,
-        timeout: 240_000,
-      });
+      const approveReceipt = await originClient.waitForTransactionReceipt({ hash: approveHash, timeout: 240_000 });
       if (approveReceipt.status !== "success") {
-        throw new Error("Sepolia USDC approval failed.");
+        throw new Error("The approval didn't go through. Nothing was deposited.");
       }
 
-      // Step 3: Burn USDC on Sepolia
+      /* Step 4: burn the net, with your Arc wallet as the mint recipient. */
       setCctpStatus("burning");
-      setCctpMessage("Initiating CCTP burn on Sepolia...");
-      const mintRecipientBytes32 = ("0x" + userWallet!.slice(2).padStart(64, "0")) as `0x${string}`;
-
-      const burnHash = await writeContractAsync({
-        address: sepoliaConfig.tokenMessenger,
-        abi: [
-          {
-            type: "function",
-            name: "depositForBurn",
-            stateMutability: "nonpayable",
-            inputs: [
-              { name: "amount", type: "uint256" },
-              { name: "destinationDomain", type: "uint32" },
-              { name: "mintRecipient", type: "bytes32" },
-              { name: "burnToken", type: "address" },
-            ],
-            outputs: [{ name: "nonce", type: "uint64" }],
-          },
-        ],
+      setCctpMessage(`Sending ${formatMicros(fee.netMicros)} USDC to Arc...`);
+      const burnTxHash: `0x${string}` = await writeContractAsync({
+        address: originConfig.tokenMessenger,
+        abi: CCTP_TOKEN_MESSENGER_V2_ABI,
         functionName: "depositForBurn",
-        args: [requiredAmount, ARC_CCTP_DOMAIN_ID, mintRecipientBytes32, sepoliaConfig.usdc],
+        args: [
+          fee.netMicros,
+          ARC_CCTP_DOMAIN_ID,
+          toBytes32Address(userWallet!),
+          originConfig.usdc,
+          ANY_DESTINATION_CALLER,
+          0n,
+          CCTP_FINALITY_STANDARD,
+        ],
+        chainId: selectedOrigin.chainId,
       });
-
-      setCctpMessage("Waiting for CCTP burn confirmation...");
-      const burnReceipt = await sepoliaClient.waitForTransactionReceipt({
-        hash: burnHash,
-        timeout: 240_000,
-      });
+      const burnReceipt = await originClient.waitForTransactionReceipt({ hash: burnTxHash, timeout: 240_000 });
       if (burnReceipt.status !== "success") {
-        throw new Error("Sepolia CCTP burn failed.");
+        throw new Error(`The transfer failed on ${selectedOrigin.name}.`);
       }
 
-      // Persist the irreversible burn before attestation so reloads resume instead of burning twice.
-      const logs = parseEventLogs({
-        abi: [{ type: "event", name: "MessageSent", inputs: [{ type: "bytes", name: "message", indexed: false }] }],
-        logs: burnReceipt.logs,
-      });
-      if (logs.length === 0) {
-        throw new Error("MessageSent event not found.");
-      }
-      const messageBytes = (logs[0].args as any).message as `0x${string}`;
-      const messageHash = keccak256(messageBytes);
-      const recovery = { burnHash, messageBytes, messageHash, amount: bridgeAmountStr };
-      if (cctpRecoveryKey) window.localStorage.setItem(cctpRecoveryKey, JSON.stringify(recovery));
-      setCctpRecovery(recovery);
-      await completeCctpBridge(recovery);
+      /* Park the burn locally before telling the backend. From here on the money has left the origin
+         chain and only our keeper can deliver it, so a reload has to be able to finish registering
+         rather than tempting the user into a second burn. */
+      const record = {
+        burnTxHash,
+        feeTxHash,
+        originChainId: selectedOrigin.chainId,
+        grossAmountMicros: fee.grossMicros.toString(),
+        amount: bridgeAmountStr,
+      };
+      if (cctpRecoveryKey) window.localStorage.setItem(cctpRecoveryKey, JSON.stringify(record));
+      setPendingRegistration(record);
+
+      /* Step 5: hand it to the keeper. It polls Circle and mints on Arc, which is also what sends the
+         "moving to Arc" and "arrived" notifications. Minting from the browser instead would race the
+         keeper for the same nonce and leave one of them reverting forever. */
+      await registerDeposit(record);
     } catch (err: any) {
       console.error(err);
       setCctpStatus("error");
       if (err.message?.includes("User rejected the request")) {
-        setCctpError("Transaction signature was rejected by user.");
+        setCctpError("You cancelled the signature, so nothing was sent.");
       } else {
-        setCctpError(err.message || "Failed to bridge USDC.");
+        setCctpError(err.message || "We couldn't complete that deposit.");
       }
     }
   };
@@ -9470,10 +9767,12 @@ function DepositModal({
                 <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-[#353935] p-2.5 shadow-md">
                   <img src="/logo.png" alt="SubScript Logo" className="h-full w-full object-contain" />
                 </div>
-                <div className="rounded-3xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-left">
-                  <p className="text-[9px] font-black uppercase tracking-[0.16em] text-yellow-800">External USDC Detected</p>
-                  <p className="mt-1.5 text-[11px] text-black/80 leading-relaxed">
-                    We found <strong>{(sepoliaUsdc + mainnetUsdc).toFixed(2)} USDC</strong> outside Arc. Sepolia USDC can be bridged here; Mainnet bridging is not yet available.
+                <div className="rounded-3xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-left space-y-2">
+                  <p className="text-[9px] font-black uppercase tracking-[0.16em] text-yellow-800">What deposits cost</p>
+                  <p className="text-[11px] text-black/80 leading-relaxed">
+                    Sending USDC that&apos;s already on Arc is free. Bringing it in from another chain costs{" "}
+                    <strong>{formatFeeBps(50)}</strong> from Base, Arbitrum, Optimism and Polygon, or{" "}
+                    <strong>{formatFeeBps(100)}</strong> from Ethereum, which covers the gas we pay to deliver it.
                   </p>
                 </div>
                 <div className="space-y-3 pt-1">
@@ -9481,15 +9780,19 @@ function DepositModal({
                   <button
                     type="button"
                     onClick={() => setActiveSubMode("cctp")}
-                    disabled={sepoliaUsdc <= 0}
-                    className="flex w-full items-center gap-4 rounded-3xl border border-black/15 bg-white p-4 text-left hover:bg-black/5 transition-all group shadow-sm"
+                    disabled={!hasExternalUsdc}
+                    className="flex w-full items-center gap-4 rounded-3xl border border-black/15 bg-white p-4 text-left hover:bg-black/5 transition-all group shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#2775CA] text-white group-hover:scale-105 transition-all shrink-0">
                       <Globe className="h-5 w-5" />
                     </div>
                     <div className="flex-1">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-[#111827]">Circle CCTP Bridge</h4>
-                      <p className="mt-1 text-[9px] text-black/60 leading-normal">{sepoliaUsdc > 0 ? `Bridge up to ${sepoliaUsdc.toFixed(2)} USDC from Sepolia to Arc.` : "No bridgeable Sepolia USDC detected."}</p>
+                      <h4 className="text-xs font-black uppercase tracking-wider text-[#111827]">Bring USDC from another chain</h4>
+                      <p className="mt-1 text-[9px] text-black/60 leading-normal">
+                        {hasExternalUsdc
+                          ? `Up to ${originBalances.reduce((sum, chain) => sum + chain.balance, 0).toFixed(2)} USDC across ${fundedOrigins.length === 1 ? fundedOrigins[0].name : `${fundedOrigins.length} networks`}.`
+                          : "We didn't find USDC on any supported network."}
+                      </p>
                     </div>
                     <ArrowRight className="h-4 w-4 text-black/40 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
@@ -9504,8 +9807,8 @@ function DepositModal({
                       <Wallet className="h-5 w-5" />
                     </div>
                     <div className="flex-1">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-[#111827]">Direct Deposit</h4>
-                      <p className="mt-1 text-[9px] text-black/60 leading-normal">Show QR code & address to send USDC directly.</p>
+                      <h4 className="text-xs font-black uppercase tracking-wider text-[#111827]">Receive on Arc</h4>
+                      <p className="mt-1 text-[9px] text-black/60 leading-normal">Show your address and QR code. No fee.</p>
                     </div>
                     <ArrowRight className="h-4 w-4 text-black/40 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
@@ -9557,73 +9860,172 @@ function DepositModal({
 
             {activeSubMode === "cctp" && (
               <div className="space-y-4 text-left">
-                <div className="flex justify-between items-center">
-                  <span className="rounded-full bg-[#2775CA]/10 px-3 py-1 text-[9px] font-bold text-[#2775CA] border border-[#2775CA]/20">
-                    Sepolia available: {bridgeableUsdc.toFixed(2)} USDC
-                  </span>
-                </div>
-                
+                {selectedOrigin && (
+                  <div className="flex justify-between items-center">
+                    <span className="rounded-full bg-[#2775CA]/10 px-3 py-1 text-[9px] font-bold text-[#2775CA] border border-[#2775CA]/20">
+                      {selectedOrigin.balance.toFixed(2)} USDC on {selectedOrigin.name}
+                    </span>
+                  </div>
+                )}
+
                 {cctpStatus === "idle" ? (
                   <div className="space-y-4">
-                    {cctpRecovery && (
+                    {pendingRegistration && (
                       <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-[10px] leading-relaxed text-amber-900">
-                        <p className="font-bold uppercase tracking-wider text-amber-950">Bridge recovery found</p>
-                        <p className="mt-2">{cctpRecovery.amount} USDC was already burned on Sepolia. Resume attestation and Arc minting. Do not start another burn.</p>
-                        <a href={`https://sepolia.etherscan.io/tx/${cctpRecovery.burnHash}`} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block font-bold underline">View burn transaction</a>
+                        <p className="font-bold uppercase tracking-wider text-amber-950">Unfinished deposit</p>
+                        <p className="mt-2">
+                          {pendingRegistration.amount} USDC already left{" "}
+                          {CCTP_CONFIG[pendingRegistration.originChainId]?.name || "the origin chain"}, but we never
+                          managed to record it. Finish here and it will land on Arc. Don&apos;t send again.
+                        </p>
                       </div>
                     )}
-                    {!cctpRecovery && <div className="space-y-1.5">
-                      <span className="text-[9px] font-black uppercase tracking-[0.16em] text-black/60">Amount to Bridge (USDC)</span>
-                      <div className="relative">
-                        <input
-                          type="number"
-                          value={cctpAmount}
-                          onChange={(e) => { setCctpAmount(e.target.value); setCctpReviewOpen(false); setCctpError(null); }}
-                          className="subscript-input bg-white border border-black/15 text-[#111827] pr-16"
-                          placeholder="0.00"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => { setCctpAmount(bridgeableUsdc.toString()); setCctpReviewOpen(false); }}
-                          className="absolute right-3 top-2.5 px-2 py-1 rounded bg-black/10 text-[9px] font-black uppercase tracking-wider text-black hover:bg-black/20 transition-all"
-                        >
-                          Max
-                        </button>
-                      </div>
-                    </div>}
+
+                    {!pendingRegistration && (
+                      <>
+                        {originBalances.length === 0 ? (
+                          <p className="rounded-xl border border-black/10 bg-black/5 p-3 text-[10px] leading-relaxed text-black/70">
+                            No supported networks are configured for deposits right now.
+                          </p>
+                        ) : (
+                          <div className="space-y-1.5">
+                            <span className="text-[9px] font-black uppercase tracking-[0.16em] text-black/60">
+                              Where is your USDC?
+                            </span>
+                            <div className="relative">
+                              <button
+                                type="button"
+                                onClick={() => setOriginMenuOpen(!originMenuOpen)}
+                                aria-expanded={originMenuOpen}
+                                className="flex w-full items-center justify-between rounded-2xl border border-black/15 bg-white px-4 py-3 text-left text-xs font-bold text-[#111827] shadow-sm transition hover:bg-black/[0.02]"
+                              >
+                                <span className="flex flex-col">
+                                  <span>{selectedOrigin?.name ?? "Pick a network"}</span>
+                                  {/* The fee for this chain, right under its name. */}
+                                  <span className="text-[10px] font-normal text-black/50">
+                                    {selectedOrigin
+                                      ? `${selectedOrigin.feePercentage} fee · ${selectedOrigin.balance.toFixed(2)} USDC available`
+                                      : ""}
+                                  </span>
+                                </span>
+                                <ChevronDown className="h-4 w-4 shrink-0 text-black/40" />
+                              </button>
+
+                              {originMenuOpen && (
+                                <div className="custom-scrollbar absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-y-auto rounded-2xl border border-black/10 bg-white p-1.5 shadow-xl">
+                                  {originBalances.map((chain) => {
+                                    const isSelected = selectedOrigin?.chainId === chain.chainId;
+                                    const empty = chain.balance <= 0;
+                                    return (
+                                      <button
+                                        key={chain.chainId}
+                                        type="button"
+                                        disabled={empty}
+                                        onClick={() => {
+                                          setOriginChainId(chain.chainId);
+                                          setOriginMenuOpen(false);
+                                          setCctpReviewOpen(false);
+                                          setCctpError(null);
+                                        }}
+                                        className={`flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-xs transition ${
+                                          empty
+                                            ? "cursor-not-allowed text-black/35"
+                                            : isSelected
+                                              ? "bg-[#2775CA]/10 font-bold text-[#2775CA]"
+                                              : "text-black hover:bg-black/5"
+                                        }`}
+                                      >
+                                        <span className="min-w-0">
+                                          <span className="block truncate">{chain.name}</span>
+                                          <span className="block text-[10px] font-normal text-black/50">
+                                            {chain.feePercentage} fee
+                                            {empty ? " · nothing here" : ` · ${chain.balance.toFixed(2)} USDC`}
+                                          </span>
+                                        </span>
+                                        {isSelected && !empty && (
+                                          <CheckCircle2 className="h-4 w-4 shrink-0 text-[#2775CA]" />
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="space-y-1.5">
+                          <span className="text-[9px] font-black uppercase tracking-[0.16em] text-black/60">
+                            Amount (USDC)
+                          </span>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              value={cctpAmount}
+                              onChange={(e) => { setCctpAmount(e.target.value); setCctpReviewOpen(false); setCctpError(null); }}
+                              className="subscript-input bg-white border border-black/15 text-[#111827] pr-16"
+                              placeholder="0.00"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => { setCctpAmount(bridgeableUsdc.toString()); setCctpReviewOpen(false); }}
+                              className="absolute right-3 top-2.5 px-2 py-1 rounded bg-black/10 text-[9px] font-black uppercase tracking-wider text-black hover:bg-black/20 transition-all"
+                            >
+                              Max
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
 
                     {cctpError && <p className="text-[11px] text-red-700 bg-red-500/10 border border-red-500/20 rounded-xl p-3">{cctpError}</p>}
 
-                    {mainnetUsdc > 0 && <p className="rounded-xl border border-black/10 bg-black/5 p-3 text-[10px] leading-relaxed text-black/70">{mainnetUsdc.toFixed(2)} USDC was detected on Ethereum Mainnet but is excluded from this Sepolia-only bridge.</p>}
-
-                    {cctpReviewOpen && !cctpRecovery && (
+                    {/* What lands on Arc, once the fee comes off. Quoted from the same engine the
+                        server charges with, so this figure is what actually arrives. */}
+                    {cctpReviewOpen && !pendingRegistration && cctpQuote && selectedOrigin && (
                       <div className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-black">
-                        <div className="flex justify-between"><span className="text-black/60">From</span><span className="font-bold">Ethereum Sepolia</span></div>
-                        <div className="flex justify-between"><span className="text-black/60">To</span><span className="font-bold">Arc Testnet</span></div>
-                        <div className="flex justify-between"><span className="text-black/60">Amount</span><span className="font-bold">{Number(cctpAmount).toFixed(2)} USDC</span></div>
-                        <p className="border-t border-black/10 pt-3 text-[10px] leading-relaxed text-amber-900">This starts an approval and burn on Sepolia, followed by Circle attestation and minting on Arc. Keep this page open until completion.</p>
+                        <div className="flex justify-between"><span className="text-black/60">From</span><span className="font-bold">{selectedOrigin.name}</span></div>
+                        <div className="flex justify-between"><span className="text-black/60">To</span><span className="font-bold">Your Arc wallet</span></div>
+                        <div className="flex justify-between"><span className="text-black/60">You deposit</span><span className="font-bold">{formatMicros(cctpQuote.grossMicros)} USDC</span></div>
+                        <div className="flex justify-between font-medium text-amber-900">
+                          <span>Bridge fee ({cctpQuote.feePercentage})</span>
+                          <span>-{formatMicros(cctpQuote.feeMicros, 4)} USDC</span>
+                        </div>
+                        <div className="flex justify-between border-t border-black/10 pt-2 font-bold">
+                          <span>Credited on Arc</span>
+                          <span className="text-[#2775CA]">{formatMicros(cctpQuote.netMicros, 4)} USDC</span>
+                        </div>
+                        <p className="border-t border-black/10 pt-3 text-[10px] leading-relaxed text-amber-900">
+                          You&apos;ll sign {cctpQuote.feeMicros > 0n ? "three transactions" : "two transactions"} on{" "}
+                          {selectedOrigin.name}. After that you can close this: we&apos;ll notify you when the USDC lands
+                          on Arc, usually within {selectedOrigin.isL1 ? "fifteen minutes" : "five minutes"}.
+                        </p>
                         <button type="button" onClick={() => setCctpReviewOpen(false)} className="text-[10px] font-bold uppercase tracking-wider text-black/60 hover:text-black">Back to edit</button>
                       </div>
                     )}
 
                     <button
                       type="button"
-                      onClick={() => cctpRecovery ? handleResumeCctp() : handleStartCctp(cctpAmount)}
-                      className="w-full mt-2 rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] text-white py-3 font-bold text-xs shadow-sm transition flex items-center justify-center gap-2"
+                      disabled={!pendingRegistration && (!selectedOrigin || !cctpQuote)}
+                      onClick={() => pendingRegistration ? handleResumeRegistration() : handleStartCctp(cctpAmount)}
+                      className="w-full mt-2 rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] disabled:cursor-not-allowed disabled:opacity-50 text-white py-3 font-bold text-xs shadow-sm transition flex items-center justify-center gap-2"
                     >
-                      {cctpRecovery ? "Resume existing bridge" : cctpReviewOpen ? "Confirm bridge" : "Review bridge"}
+                      {pendingRegistration ? "Finish this deposit" : cctpReviewOpen ? "Confirm deposit" : "Review deposit"}
                     </button>
                   </div>
                 ) : (
                   <div className="space-y-5 py-4">
-                    {cctpStatus === "success" ? (
+                    {cctpStatus === "submitted" ? (
                       <div className="flex flex-col items-center gap-4 text-center">
                         <CheckCircle2 className="h-12 w-12 text-emerald-600" />
-                        <h4 className="text-sm font-black uppercase tracking-wider text-[#111827]">Bridging Successful</h4>
-                        <p className="text-xs text-black/60 leading-normal">{cctpMessage}</p>
+                        <h4 className="text-sm font-black uppercase tracking-wider text-[#111827]">On its way</h4>
+                        <p className="text-xs leading-normal text-black/60">
+                          Your USDC has left {selectedOrigin?.name ?? "the origin chain"}. We&apos;ll drop you a
+                          notification the moment it lands on Arc, usually within five minutes. You can close this.
+                        </p>
                         <button
                           type="button"
-                          onClick={() => cctpRecovery ? handleResumeCctp() : setCctpStatus("idle")}
+                          onClick={() => { setCctpStatus("idle"); setCctpError(null); }}
                           className="mt-4 rounded-xl border border-black/15 bg-white px-4 py-2 text-[10px] font-black uppercase tracking-wider text-black shadow-sm"
                         >
                           Done
@@ -9632,47 +10034,42 @@ function DepositModal({
                     ) : cctpStatus === "error" ? (
                       <div className="flex flex-col items-center gap-4 text-center">
                         <AlertCircle className="h-12 w-12 text-red-500" />
-                        <h4 className="text-sm font-black uppercase tracking-wider text-[#111827]">Bridging Failed</h4>
-                        <p className="text-xs text-red-700 px-4 leading-normal">{cctpError}</p>
+                        <h4 className="text-sm font-black uppercase tracking-wider text-[#111827]">That didn&apos;t work</h4>
+                        <p className="px-4 text-xs leading-normal text-red-700">{cctpError}</p>
                         <button
                           type="button"
                           onClick={() => setCctpStatus("idle")}
                           className="mt-4 rounded-xl border border-black/15 bg-white px-4 py-2 text-[10px] font-black uppercase tracking-wider text-black shadow-sm"
                         >
-                          {cctpRecovery ? "Resume existing bridge" : "Try Again"}
+                          {pendingRegistration ? "Finish this deposit" : "Try again"}
                         </button>
                       </div>
                     ) : (
                       <div className="space-y-6">
-                        <div className="flex items-center gap-4 bg-black/5 border border-black/10 rounded-2xl p-4">
-                          <Loader2 className="h-6 w-6 animate-spin text-[#2775CA] shrink-0" />
+                        <div className="flex items-center gap-4 rounded-2xl border border-black/10 bg-black/5 p-4">
+                          <Loader2 className="h-6 w-6 shrink-0 animate-spin text-[#2775CA]" />
                           <div className="space-y-1">
-                            <p className="text-xs font-bold text-black uppercase tracking-wider">CCTP Bridge Progress</p>
-                            <p className="text-[10px] text-black/60 leading-normal">{cctpMessage}</p>
+                            <p className="text-xs font-bold uppercase tracking-wider text-black">Depositing</p>
+                            <p className="text-[10px] leading-normal text-black/60">{cctpMessage}</p>
                           </div>
                         </div>
 
                         <div className="space-y-2 border-t border-black/10 pt-4 text-[10px] font-bold text-black/60">
-                          <div className={`flex justify-between items-center ${cctpStatus === "switching" ? "text-[#2775CA]" : ""}`}>
-                            <span>1. Network Switch</span>
-                            <span>{cctpStatus === "switching" ? "In Progress" : ""}</span>
-                          </div>
-                          <div className={`flex justify-between items-center ${cctpStatus === "approving" ? "text-[#2775CA]" : ""}`}>
-                            <span>2. Approve TokenMessenger</span>
-                            <span>{cctpStatus === "approving" ? "In Progress" : ""}</span>
-                          </div>
-                          <div className={`flex justify-between items-center ${cctpStatus === "burning" ? "text-[#2775CA]" : ""}`}>
-                            <span>3. Burn USDC on Sepolia</span>
-                            <span>{cctpStatus === "burning" ? "In Progress" : ""}</span>
-                          </div>
-                          <div className={`flex justify-between items-center ${cctpStatus === "attesting" ? "text-[#2775CA]" : ""}`}>
-                            <span>4. Fetch Circle Attestation</span>
-                            <span>{cctpStatus === "attesting" ? "In Progress" : ""}</span>
-                          </div>
-                          <div className={`flex justify-between items-center ${cctpStatus === "claiming" ? "text-[#2775CA]" : ""}`}>
-                            <span>5. Mint USDC on Arc Testnet</span>
-                            <span>{cctpStatus === "claiming" ? "In Progress" : ""}</span>
-                          </div>
+                          {([
+                            ["switching", `Switch to ${selectedOrigin?.name ?? "the origin chain"}`],
+                            ["paying_fee", "Collect the bridge fee"],
+                            ["approving", "Approve the transfer"],
+                            ["burning", "Send the USDC"],
+                            ["registering", "Hand it to Circle"],
+                          ] as const).map(([step, label], index) => (
+                            <div
+                              key={step}
+                              className={`flex items-center justify-between ${cctpStatus === step ? "text-[#2775CA]" : ""}`}
+                            >
+                              <span>{index + 1}. {label}</span>
+                              <span>{cctpStatus === step ? "In progress" : ""}</span>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     )}
@@ -9696,7 +10093,7 @@ function SendFundsModal({
   onClose,
   onGoToBatch,
   walletBalance,
-  sepoliaUsdc,
+  elsewhereUsdc,
   userWallet,
   isEmbeddedWalletSession,
   chainId,
@@ -9710,7 +10107,7 @@ function SendFundsModal({
   onClose: () => void;
   onGoToBatch?: () => void;
   walletBalance: number;
-  sepoliaUsdc: number;
+  elsewhereUsdc: number;
   userWallet: string | null;
   isEmbeddedWalletSession: boolean;
   chainId: number | undefined;
@@ -9935,7 +10332,7 @@ function SendFundsModal({
               <BalanceRoutingNotice
                 amount={amount}
                 walletBalance={walletBalance}
-                sepoliaUsdc={sepoliaUsdc}
+                elsewhereUsdc={elsewhereUsdc}
               />
 
               {reviewOpen && status !== "success" && (
@@ -9980,32 +10377,33 @@ function SendFundsModal({
 function BalanceRoutingNotice({
   amount,
   walletBalance,
-  sepoliaUsdc,
+  elsewhereUsdc,
 }: {
   amount: string | number;
   walletBalance: number;
-  sepoliaUsdc: number;
+  /* USDC the user holds on the CCTP chains we can bridge from. */
+  elsewhereUsdc: number;
 }) {
   const numericAmount = Number(amount);
-  /* Sepolia USDC only counts toward a send if it can actually be brought over, and the CCTP
+  /* USDC on another chain only counts toward a send if it can actually be brought over, and the CCTP
      bridge is a browser-wallet feature — so while external wallets are paused those funds are
      unreachable and must not be offered as a route. Without this the notice tells the user to
-     "bridge in Deposit first" and Deposit has no Bridge tab to go to. */
+     "bring it over in Deposit first" and Deposit has no bridge option to go to. */
   const { externalWalletEnabled } = usePlatformFlags();
-  const reachableSepoliaUsdc = externalWalletEnabled ? sepoliaUsdc : 0;
+  const reachableElsewhere = externalWalletEnabled ? elsewhereUsdc : 0;
   if (!amount || isNaN(numericAmount) || numericAmount <= 0) return null;
 
-  const combinedBalance = walletBalance + reachableSepoliaUsdc;
+  const combinedBalance = walletBalance + reachableElsewhere;
 
   if (numericAmount <= walletBalance) {
     return (
       <div className="bg-[#ccff00]/5 border border-[#ccff00]/25 rounded-2xl p-4 text-xs text-white/80 space-y-1">
         <p className="font-bold text-[#ccff00] uppercase tracking-wider text-[9px] flex items-center gap-1.5">
-          Direct Routing
+          Straight from your balance
           <span className="h-1.5 w-1.5 rounded-full bg-[#ccff00] animate-pulse" />
         </p>
         <p className="text-[11px] leading-relaxed text-white/60">
-          This transfer will be submitted on Arc Testnet using your native Arc USDC, then shown as complete after confirmation.
+          This one stays on Arc, so it lands in seconds and there&apos;s no fee.
         </p>
       </div>
     );
@@ -10015,11 +10413,12 @@ function BalanceRoutingNotice({
     return (
       <div className="bg-amber-500/5 border border-amber-500/25 rounded-2xl p-4 text-xs text-white/80 space-y-1">
         <p className="font-bold text-amber-400 uppercase tracking-wider text-[9px] flex items-center gap-1.5">
-          Bridge Required (CCTP)
+          Top up first
           <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
         </p>
         <p className="text-[11px] leading-relaxed text-white/60">
-          Your Arc balance ({walletBalance.toFixed(2)} USDC) is insufficient. Bridge {(numericAmount - walletBalance).toFixed(2)} USDC from Sepolia in Deposit first, wait for the Arc balance to update, then return to send.
+          You have {walletBalance.toFixed(2)} USDC on Arc. Bring over the other{" "}
+          {(numericAmount - walletBalance).toFixed(2)} USDC in Deposit, then come back and send.
         </p>
       </div>
     );
@@ -10028,17 +10427,17 @@ function BalanceRoutingNotice({
   return (
     <div className="bg-red-500/5 border border-red-500/25 rounded-2xl p-4 text-xs text-white/80 space-y-1">
       <p className="font-bold text-red-400 uppercase tracking-wider text-[9px] flex items-center gap-1.5">
-        Insufficient Balance
+        Not enough USDC
         <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
       </p>
       <p className="text-[11px] leading-relaxed text-white/60">
-        You need {numericAmount.toFixed(2)} USDC. You have {combinedBalance.toFixed(2)} USDC total
-        ({walletBalance.toFixed(2)} USDC on Arc
+        You&apos;re trying to send {numericAmount.toFixed(2)} USDC but you have {combinedBalance.toFixed(2)} in total,
+        with {walletBalance.toFixed(2)} of it on Arc
         {externalWalletEnabled
-          ? `, ${sepoliaUsdc.toFixed(2)} USDC on Sepolia). Deposit or bridge more before sending.`
-          : sepoliaUsdc > 0
-            ? `). Bridging is paused right now, so your ${sepoliaUsdc.toFixed(2)} USDC on Sepolia cannot be moved yet — deposit to Arc directly before sending.`
-            : "). Deposit more before sending."}
+          ? `${elsewhereUsdc > 0 ? ` and ${elsewhereUsdc.toFixed(2)} on other chains` : ""}. Add more before sending.`
+          : elsewhereUsdc > 0
+            ? `. Bridging is paused right now, so the ${elsewhereUsdc.toFixed(2)} USDC you hold elsewhere can't move yet. Send USDC to your Arc address instead.`
+            : ". Add more before sending."}
       </p>
     </div>
   );

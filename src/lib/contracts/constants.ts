@@ -86,30 +86,194 @@ export const ARC_MAINNET = {
   },
 } as const;
 
-/* CCTP Configuration mapping chainId -> { tokenMessenger, usdc, name, domain } */
-export const CCTP_CONFIG: Record<number, { tokenMessenger: `0x${string}`; usdc: `0x${string}`; name: string; domain: number }> = isProd
+export interface CCTPChainInfo {
+  /* TokenMessengerV2 — the contract depositForBurn is called on. */
+  tokenMessenger: `0x${string}`;
+  /* MessageTransmitterV2 — the contract receiveMessage is called on. These are two different
+     contracts and they are not interchangeable; relaying a mint to the TokenMessenger reverts. */
+  messageTransmitter: `0x${string}`;
+  usdc: `0x${string}`;
+  name: string;
+  domain: number;
+  /* Protocol bridge fee, in basis points. 100 = 1.0% (Ethereum L1 ERC-20), 50 = 0.5% (everything
+     else). Read this rather than hardcoding a percentage anywhere; see lib/cctp/feeEngine. */
+  feeBps: number;
+  nativeTokenSymbol: string;
+  /* Ethereum L1. Carries the 1% tier and a slower finality window than the L2s. */
+  isL1?: boolean;
+  allowDeposits?: boolean;
+  allowWithdrawals?: boolean;
+  /* Public RPC used when no RPC_URL_<chainId> env override is set. Read-only calls only. */
+  defaultRpc: string;
+}
+
+/* CCTP V2 addresses are deterministic: one TokenMessengerV2 and one MessageTransmitterV2 per
+   environment, identical on every EVM chain. Verified on-chain 2026-08-28 by calling
+   localMessageTransmitter() and feeRecipient() (both V2-only) against Ethereum, Base, Polygon and
+   Sepolia — see the probe in the PR discussion.
+
+   These MUST be the V2 contracts. Arc is V2-only (its transmitter is MessageTransmitterV2), so a
+   burn routed through a V1 TokenMessenger emits a V1 message Arc will never receive, and the funds
+   are unrecoverable. The V1 addresses look plausible and are widely copy-pasted from older docs:
+   0xBd3fa81B… (Ethereum), 0x1682Ae63… (Base), 0x19330d10… (Arbitrum), 0x2B406951… (OP),
+   0x9daF8c91… (Polygon), 0x9f3B8679… (all testnets). Every one of those is V1. Do not "fix" the
+   values below back to them. A V1 address answers localMessageTransmitter() with a V1 transmitter
+   and has no feeRecipient(); that call is how you tell them apart. */
+const CCTP_V2_TOKEN_MESSENGER = (isProd
+  ? "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d"
+  : "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA") as `0x${string}`;
+const CCTP_V2_MESSAGE_TRANSMITTER = (isProd
+  ? "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64"
+  : "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275") as `0x${string}`;
+
+/* CCTP Configuration mapping chainId -> CCTPChainInfo */
+export const CCTP_CONFIG: Record<number, CCTPChainInfo> = isProd
   ? {
       1: {
-        /* TokenMessengerV2 on Ethereum mainnet, per Circle's EVM contract reference
-           (developers.circle.com/cctp/evm-smart-contracts, verified 2026-08-24). MUST be V2:
-           Arc is V2-only — its transmitter is MessageTransmitterV2 — so a burn routed through the
-           V1 TokenMessenger (0xBd3fa81B58Ba92a82136038B25aDec7066af3155) produces a message Arc
-           will never receive. This was briefly set to that V1 address; do not "fix" it back. */
-        tokenMessenger: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+        tokenMessenger: CCTP_V2_TOKEN_MESSENGER,
+        messageTransmitter: CCTP_V2_MESSAGE_TRANSMITTER,
         usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-        name: "Ethereum Mainnet",
+        name: "Ethereum",
         domain: 0,
+        feeBps: 100,
+        nativeTokenSymbol: "ETH",
+        isL1: true,
+        allowDeposits: true,
+        allowWithdrawals: true,
+        defaultRpc: "https://ethereum-rpc.publicnode.com",
+      },
+      10: {
+        tokenMessenger: CCTP_V2_TOKEN_MESSENGER,
+        messageTransmitter: CCTP_V2_MESSAGE_TRANSMITTER,
+        usdc: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+        name: "OP Mainnet",
+        domain: 2,
+        feeBps: 50,
+        nativeTokenSymbol: "ETH",
+        allowDeposits: true,
+        allowWithdrawals: true,
+        defaultRpc: "https://optimism-rpc.publicnode.com",
+      },
+      137: {
+        tokenMessenger: CCTP_V2_TOKEN_MESSENGER,
+        messageTransmitter: CCTP_V2_MESSAGE_TRANSMITTER,
+        usdc: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+        name: "Polygon",
+        domain: 7,
+        feeBps: 50,
+        nativeTokenSymbol: "POL",
+        allowDeposits: true,
+        allowWithdrawals: true,
+        defaultRpc: "https://polygon-bor-rpc.publicnode.com",
+      },
+      8453: {
+        tokenMessenger: CCTP_V2_TOKEN_MESSENGER,
+        messageTransmitter: CCTP_V2_MESSAGE_TRANSMITTER,
+        usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        name: "Base",
+        domain: 6,
+        feeBps: 50,
+        nativeTokenSymbol: "ETH",
+        allowDeposits: true,
+        allowWithdrawals: true,
+        defaultRpc: "https://base-rpc.publicnode.com",
+      },
+      42161: {
+        tokenMessenger: CCTP_V2_TOKEN_MESSENGER,
+        messageTransmitter: CCTP_V2_MESSAGE_TRANSMITTER,
+        usdc: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+        name: "Arbitrum One",
+        domain: 3,
+        feeBps: 50,
+        nativeTokenSymbol: "ETH",
+        allowDeposits: true,
+        allowWithdrawals: true,
+        defaultRpc: "https://arbitrum-one-rpc.publicnode.com",
       },
     }
   : {
       11155111: {
-        tokenMessenger: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
+        tokenMessenger: CCTP_V2_TOKEN_MESSENGER,
+        messageTransmitter: CCTP_V2_MESSAGE_TRANSMITTER,
         usdc: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
         name: "Ethereum Sepolia",
-        domain: 7,
+        domain: 0,
+        feeBps: 100,
+        nativeTokenSymbol: "ETH",
+        isL1: true,
+        allowDeposits: true,
+        allowWithdrawals: true,
+        defaultRpc: "https://ethereum-sepolia-rpc.publicnode.com",
+      },
+      84532: {
+        tokenMessenger: CCTP_V2_TOKEN_MESSENGER,
+        messageTransmitter: CCTP_V2_MESSAGE_TRANSMITTER,
+        usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+        name: "Base Sepolia",
+        domain: 6,
+        feeBps: 50,
+        nativeTokenSymbol: "ETH",
+        allowDeposits: true,
+        allowWithdrawals: true,
+        defaultRpc: "https://base-sepolia-rpc.publicnode.com",
+      },
+      421614: {
+        tokenMessenger: CCTP_V2_TOKEN_MESSENGER,
+        messageTransmitter: CCTP_V2_MESSAGE_TRANSMITTER,
+        usdc: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d",
+        name: "Arbitrum Sepolia",
+        domain: 3,
+        feeBps: 50,
+        nativeTokenSymbol: "ETH",
+        allowDeposits: true,
+        allowWithdrawals: true,
+        defaultRpc: "https://arbitrum-sepolia-rpc.publicnode.com",
       },
     };
 
-/* Arc CCTP Domain ID: 26 for Arc Testnet / TBD_MAINNET_DOMAIN (using 26) for Arc Mainnet */
+/* Solana, CCTP domain 5.
+
+   allowWithdrawals is false and stays false until a Solana relayer exists. Receiving a CCTP
+   transfer on Solana needs a signed Solana transaction against the MessageTransmitter program, and
+   nothing in this codebase can produce one. Flipping this to true without that relayer burns the
+   user's USDC on Arc with no way to mint the other side. */
+export const SOLANA_CCTP_CONFIG = {
+  domain: 5,
+  name: "Solana",
+  feeBps: 50,
+  nativeTokenSymbol: "SOL",
+  allowDeposits: false,
+  allowWithdrawals: false,
+  /* Program ids are identical on devnet and mainnet-beta; Solana programs are deployed to the same
+     address on both. usdcMint does differ. */
+  tokenMessengerMinterProgramId: "CCTPiPYPc6AsJuwueEnWgSgucK3vANSubU4pMukbTWYp",
+  messageTransmitterProgramId: "CCTPmbSD7gX1bxKPAmg37pM4C62c8hVvskdY5t9zG9L",
+  usdcMint: isProd ? "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" : "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+} as const;
+
+/* Arc CCTP Domain ID: 26 for Arc Testnet / Arc Mainnet */
 export const ARC_CCTP_DOMAIN_ID = 26 as const;
+
+/* Arc's own TokenMessengerV2, used for outbound burns when withdrawing off Arc. Env-overridable for
+   the same reason as the other Arc addresses: the mainnet cutover should be config, not a code
+   edit. Defaults to the deterministic V2 address for the active environment. */
+export const ARC_TOKEN_MESSENGER_ADDRESS = envAddress(
+  process.env.NEXT_PUBLIC_ARC_TOKEN_MESSENGER_ADDRESS || process.env.ARC_TOKEN_MESSENGER_ADDRESS,
+  CCTP_V2_TOKEN_MESSENGER,
+);
+
+/* Where the protocol bridge fee lands. The fee is a plain USDC transfer taken before the burn, so
+   this is an ordinary address and the same one works on every EVM chain. Falls back to the merchant
+   treasury so a missing env var can never send fees to the zero address. */
+export const BRIDGE_FEE_TREASURY_ADDRESS = envAddress(
+  process.env.NEXT_PUBLIC_BRIDGE_FEE_TREASURY_ADDRESS || process.env.BRIDGE_FEE_TREASURY_ADDRESS,
+  MERCHANT_ADDRESS,
+);
+
+/* Circle's attestation service. Sandbox and production are separate deployments with separate
+   message stores; querying the wrong one returns 404 for every transfer forever. */
+export const CCTP_IRIS_BASE_URL = isProd
+  ? "https://iris-api.circle.com"
+  : "https://iris-api-sandbox.circle.com";
+
 

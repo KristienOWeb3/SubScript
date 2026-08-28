@@ -19,6 +19,10 @@ name: Keepers
 
 on:
   schedule:
+    - cron: "*/5 * * * *"    # keeper/cctp        — relay CCTP mints once Circle signs the attestation.
+                             #   Deposits and withdrawals both quote "about five minutes", and the
+                             #   relay is the last leg, so this is the one keeper that needs a tighter
+                             #   cadence than the rest.
     - cron: "*/15 * * * *"   # reconcile        — recover stuck premium-upgrade sessions
                              # keeper/vault-topup — refill vaults under a user auto top-up mandate
     - cron: "0 2 * * *"      # cron/billing      — premium recurring billing + downgrades
@@ -40,6 +44,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  cctp-relay:
+    # Every five minutes. The worker claims each row with a conditional UPDATE before it spends gas,
+    # so an overlapping run cannot relay the same burn twice; that makes it safe to schedule this
+    # tightly even though the `keepers` concurrency group queues runs rather than cancelling them.
+    if: github.event_name == 'schedule' && github.event.schedule == '*/5 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: keeper/cctp
+        env:
+          BASE: ${{ secrets.KEEPER_BASE_URL }}
+          SECRET: ${{ secrets.KEEPER_SECRET }}
+        run: |
+          curl -fsS --retry 3 --retry-delay 5 --max-time 300 -X GET \
+            "${BASE:-https://www.subscriptonarc.com}/api/keeper/cctp" \
+            -H "Authorization: Bearer ${SECRET}"
+
   reconcile:
     if: github.event_name == 'schedule' && github.event.schedule == '*/15 * * * *'
     runs-on: ubuntu-latest
@@ -157,7 +177,8 @@ jobs:
             /api/internal/billing \
             /api/cron/kyc-expiry \
             /api/cron/payment-reminders \
-            /api/keeper/vault-topup; do
+            /api/keeper/vault-topup \
+            /api/keeper/cctp; do
             echo "→ GET ${path}"
             curl -fsS --retry 2 --retry-delay 5 --max-time 300 -X GET \
               "${BASE}${path}" -H "Authorization: Bearer ${SECRET}"
