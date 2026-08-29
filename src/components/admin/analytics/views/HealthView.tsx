@@ -2,9 +2,9 @@
 
 import React from "react";
 import {
-  RunwayGaugeChart,
   StatCardWithSparkline,
 } from "../AdminCharts";
+import { AdminGasReservesCard } from "../../AdminGasReservesCard";
 import {
   Activity,
   AlertTriangle,
@@ -71,19 +71,8 @@ export function HealthView({ analytics, sponsor }: HealthViewProps) {
 
       {/* Gas Runway and Operations Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Gas Relayer Runway Meter */}
-        {/* targetUsdc stays at the component default. What the sponsor payload actually reports is a
-            balance, a top-up size and an underfunded flag derived from twice that top-up, which is a
-            warning threshold rather than a funding target. Nothing here knows the real target, so
-            passing a number would be inventing one. */}
-        <RunwayGaugeChart
-          valueUsdc={activeSponsor?.balanceUsdc}
-          topupsRemaining={activeSponsor?.estimatedTopupsRemaining}
-          underfunded={Boolean(activeSponsor?.underfunded)}
-          emergencyStop={Boolean(activeSponsor?.emergencyStop)}
-          dailyBurnRateUsdc={activeSponsor?.topupUsdc ?? "0.10"}
-          title="Gas sponsor reserve runway"
-        />
+        {/* Gas Relayer & Sponsor Reserves */}
+        <AdminGasReservesCard sponsor={activeSponsor} />
 
         {/* Operational Incident Summary */}
         <div className="min-w-0 rounded-2xl border border-[#e2e8f0] bg-white p-5 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)] flex flex-col justify-between">

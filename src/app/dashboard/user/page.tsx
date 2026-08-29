@@ -39,6 +39,8 @@ import ConfirmModal from "@/components/ConfirmModal";
 import QrScannerModal from "@/components/QrScannerModal";
 import { resolveScannedTarget } from "@/lib/qr/scanTargets";
 import SendSingleModal from "@/components/SendSingleModal";
+import DepositModal from "@/components/DepositModal";
+import { ChainLogo } from "@/components/ChainLogo";
 import SupportChatModal from "@/components/support/SupportChatModal";
 
 import DmRequestsModal from "@/components/dashboard/DmRequestsModal";
@@ -200,19 +202,6 @@ const publicClient = createPublicClient({
   transport: arcHttp(),
 });
 
-/* Read-only clients for the CCTP origin chains, built lazily from the RPC in CCTP_CONFIG so a chain
-   added there needs no client wired up by hand. Only used to wait on receipts, which needs no chain
-   metadata, so `chain` is deliberately omitted. */
-const originClientCache = new Map<number, ReturnType<typeof createPublicClient>>();
-function originPublicClient(chainId: number) {
-  const cached = originClientCache.get(chainId);
-  if (cached) return cached;
-  const rpc = CCTP_CONFIG[chainId]?.defaultRpc;
-  if (!rpc) throw new Error(`No RPC configured for chain ${chainId}.`);
-  const client = createPublicClient({ transport: http(rpc) });
-  originClientCache.set(chainId, client);
-  return client;
-}
 
 interface Subscription {
   subscriptionId: string;
@@ -664,9 +653,15 @@ export default function UserDashboard() {
     amountUsdc: string;
     amountFormatted: string;
     timestamp: number;
-    blockNumber: number;
+    blockNumber?: number;
     status: string;
-    senderName: string | null;
+    senderName?: string | null;
+    isCctp?: boolean;
+    direction?: string;
+    originName?: string;
+    destName?: string;
+    burnTxHash?: string;
+    mintTxHash?: string;
   }>>([]);
   const [allTxOpen, setAllTxOpen] = useState(false);
   const [allTxSearch, setAllTxSearch] = useState("");
@@ -796,7 +791,6 @@ export default function UserDashboard() {
       setBrowserPushTestBusy(false);
     }
   };
-  const [copiedAddress, setCopiedAddress] = useState(false);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [sendFundsOpen, setSendFundsOpen] = useState(false);
   const [sendFundsRecipient, setSendFundsRecipient] = useState("");
@@ -1222,9 +1216,6 @@ export default function UserDashboard() {
     };
   });
 
-  /* Drives whether the Deposit sheet opens on the chooser or straight to the address. Based on the
-     CCTP chains we can actually bridge from, not on a fixed pair of them. */
-  const hasExternalUsdc = originBalances.some((chain) => chain.balance > 0);
 
   /* Total USDC the user holds off Arc, for the send-routing notice. */
   const elsewhereUsdc = originBalances.reduce((sum, chain) => sum + chain.balance, 0);
@@ -1522,13 +1513,6 @@ export default function UserDashboard() {
     });
   };
 
-  const copyAddress = async () => {
-    if (!userWallet) return;
-    await navigator.clipboard.writeText(userWallet);
-    setCopiedAddress(true);
-    triggerToast("Address copied to clipboard");
-    setTimeout(() => setCopiedAddress(false), 1600);
-  };
 
   const isOwnWalletAddress = (address: string | null | undefined) => {
     return Boolean(address && userWallet && address.toLowerCase() === userWallet.toLowerCase());
@@ -3599,18 +3583,47 @@ export default function UserDashboard() {
         const usdVal = Number(d.amountUsdc) / 1_000_000;
         const localVal = usdVal * exchangeRate;
         const localLabel = `${detectedCurrency.symbol}${formatHeadlineAmount(localVal)}`;
+        const isCctp = Boolean(d.isCctp);
+        const isWithdrawal = d.direction === "outbound_withdrawal";
+        const incoming = isCctp ? !isWithdrawal : true;
+        const kind: "transfers" | "withdrawals" = isWithdrawal ? "withdrawals" : "transfers";
+
+        let name = d.senderName ? `Deposit from @${d.senderName}` : `Deposit from ${formatAddress(d.fromAddress)}`;
+        let detail = "USDC Deposit • Arc Network";
+        let status = "CONFIRMED";
+
+        if (isCctp) {
+          if (isWithdrawal) {
+            name = `CCTP Send to ${d.destName || "External Chain"}`;
+            detail = d.status === "completed" 
+              ? `CCTP Cross-chain Send • Delivered` 
+              : d.status === "failed" 
+              ? `CCTP Send • Failed` 
+              : `CCTP Send to ${d.destName || "External Chain"} • Bridging (~5 mins)`;
+            status = d.status === "completed" ? "CONFIRMED" : d.status === "failed" ? "FAILED" : "PENDING";
+          } else {
+            name = `CCTP Deposit from ${d.originName || "External Chain"}`;
+            detail = d.status === "completed"
+              ? `CCTP Cross-chain Deposit • Completed`
+              : d.status === "failed"
+              ? `CCTP Deposit • Failed`
+              : `CCTP Deposit from ${d.originName || "External Chain"} • Bridging (~5 mins)`;
+            status = d.status === "completed" ? "CONFIRMED" : d.status === "failed" ? "FAILED" : "PENDING";
+          }
+        }
+
         return {
-          id: `dep-${d.txHash}`,
-          kind: "transfers" as const,
-          name: d.senderName ? `Deposit from @${d.senderName}` : `Deposit from ${formatAddress(d.fromAddress)}`,
+          id: d.id || `dep-${d.txHash}`,
+          kind,
+          name,
           pic: null as string | null,
-          detail: "USDC Deposit • Arc Network",
-          amountLabel: `+$${formatUsdc(d.amountUsdc)}`,
-          localAmountLabel: `+${localLabel}`,
+          detail,
+          amountLabel: `${incoming ? "+" : "-"}$${formatUsdc(d.amountUsdc)}`,
+          localAmountLabel: `${incoming ? "+" : "-"}${localLabel}`,
           amountUsdc: usdVal,
-          status: "CONFIRMED",
+          status,
           time: d.timestamp,
-          incoming: true,
+          incoming,
           txHash: d.txHash,
         };
       }),
@@ -3932,7 +3945,13 @@ export default function UserDashboard() {
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => { setSelectedDmPeer(null); setSendFundsOpen(true); }}
+                            onClick={() => {
+                              setSelectedDmPeer(null);
+                              setSingleRecipient("");
+                              setSingleAmount("");
+                              setSingleSendStatus(null);
+                              setSendSingleModalOpen(true);
+                            }}
                             className="flex h-11 flex-1 min-w-[110px] items-center justify-center gap-2 rounded-full border border-[#2775CA] bg-[#2775CA] px-4 text-white transition hover:bg-[#1f62ab] active:scale-95 shadow-sm"
                             aria-label="Send"
                           >
@@ -4880,20 +4899,24 @@ export default function UserDashboard() {
                   </button>
                 </div>
                   <div ref={batchFormRef} className="border border-black/10 bg-white/80 rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm text-black">
-                    {/* Batch payouts are Arc-only. There is no CCTP path here on purpose: a run of
-                        twenty recipients would be twenty separate burns, twenty attestations and
-                        twenty relayed mints, and a partial failure halfway through would leave the
-                        user reconciling it by hand. Cross-chain stays in Single Send, one at a time. */}
-                    <p className="rounded-2xl border border-[#2775CA]/25 bg-[#2775CA]/10 p-3 text-[11px] leading-relaxed text-black/75">
-                      Batch payouts go out on Arc only. To send USDC to another chain, use Single Send.
-                    </p>
+                    {/* Batch payouts are Arc-only. */}
+                    <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3.5 flex items-start gap-2.5 text-black">
+                      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-800 mt-0.5" />
+                      <div className="text-[11px] leading-relaxed">
+                        <strong className="block text-amber-950 font-black uppercase tracking-wider text-[10px] mb-0.5">
+                          BATCH SEND ONLY SUPPORTS THE ARC NETWORK!
+                        </strong>
+                        Batch payouts are settled exclusively on Arc. To send USDC across chains (e.g. Base, Ethereum, Arbitrum, Polygon), use <strong>Single Send</strong>.
+                      </div>
+                    </div>
                     {batchRows.map((row, index) => (
                       <div key={index} className="rounded-3xl border border-black/10 bg-black/5 p-4 space-y-3 relative text-black">
                         {batchRows.length > 1 && (
                           <button
                             type="button"
+                            disabled={batchSendLoading}
                             onClick={() => setBatchRows((rows) => rows.filter((_, idx) => idx !== index))}
-                            className="absolute right-3 top-3 text-black/40 hover:text-black transition"
+                            className="absolute right-3 top-3 text-black/40 hover:text-black transition disabled:opacity-30 disabled:cursor-not-allowed"
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>
@@ -4905,11 +4928,12 @@ export default function UserDashboard() {
                             <span className="text-[9px] uppercase font-bold text-black/60">Address or DNS name</span>
                             <button
                               type="button"
+                              disabled={batchSendLoading}
                               onClick={() => {
                                 setQrTargetIndex(index);
                                 setQrScannerOpen(true);
                               }}
-                              className="flex md:hidden items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-[#2775CA] hover:underline"
+                              className="flex md:hidden items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-[#2775CA] hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                               <QrCode className="h-3.5 w-3.5 text-[#2775CA]" /> Scan QR
                             </button>
@@ -4917,18 +4941,20 @@ export default function UserDashboard() {
                           <div className="relative flex items-center gap-2">
                             <input
                               value={row.address}
+                              disabled={batchSendLoading}
                               onChange={(event) => setBatchRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, address: event.target.value } : item))}
                               placeholder="alice.sub or 0x..."
-                              className="subscript-input bg-white border border-black/15 text-[#111827]"
+                              className="subscript-input bg-white border border-black/15 text-[#111827] disabled:bg-black/5 disabled:cursor-not-allowed disabled:text-black/50"
                             />
                             <button
                               type="button"
+                              disabled={batchSendLoading}
                               onClick={() => {
                                 setQrTargetIndex(index);
                                 setQrScannerOpen(true);
                               }}
                               title={`Scan QR Code for Recipient #${index + 1}`}
-                              className="flex md:hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-black/15 bg-white text-black hover:bg-black/5 transition shadow-sm"
+                              className="flex md:hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-black/15 bg-white text-black hover:bg-black/5 transition shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                               <QrCode className="h-4 w-4 text-black" />
                             </button>
@@ -4940,6 +4966,7 @@ export default function UserDashboard() {
                             <span className="text-[9px] uppercase font-bold text-black/60">USDC Amount</span>
                             <button
                               type="button"
+                              disabled={batchSendLoading}
                               onClick={() => {
                                 const otherRowsSum = batchRows.reduce((sum, item, itemIdx) => {
                                   if (itemIdx === index) return sum;
@@ -4954,7 +4981,7 @@ export default function UserDashboard() {
                                   )
                                 );
                               }}
-                              className="text-[9px] font-black uppercase tracking-wider text-[#2775CA] hover:underline"
+                              className="text-[9px] font-black uppercase tracking-wider text-[#2775CA] hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                               The Rest
                             </button>
@@ -4962,12 +4989,14 @@ export default function UserDashboard() {
                           <div className="relative flex items-center">
                             <input
                               value={row.amount}
+                              disabled={batchSendLoading}
                               onChange={(event) => setBatchRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, amount: event.target.value } : item))}
                               placeholder="USDC amount"
-                              className="subscript-input bg-white border border-black/15 text-[#111827] pr-20 font-mono"
+                              className="subscript-input bg-white border border-black/15 text-[#111827] pr-20 font-mono disabled:bg-black/5 disabled:cursor-not-allowed disabled:text-black/50"
                             />
                             <button
                               type="button"
+                              disabled={batchSendLoading}
                               onClick={() => {
                                 const otherRowsSum = batchRows.reduce((sum, item, itemIdx) => {
                                   if (itemIdx === index) return sum;
@@ -4982,7 +5011,7 @@ export default function UserDashboard() {
                                   )
                                 );
                               }}
-                              className="absolute right-2.5 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg bg-[#2775CA]/10 text-[#2775CA] hover:bg-[#2775CA]/20 border border-[#2775CA]/30 transition z-10"
+                              className="absolute right-2.5 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg bg-[#2775CA]/10 text-[#2775CA] hover:bg-[#2775CA]/20 border border-[#2775CA]/30 transition z-10 disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                               The Rest
                             </button>
@@ -5020,15 +5049,13 @@ export default function UserDashboard() {
                       </p>
                     )}
 
-                    {/* Capped client-side against the same constant the send route enforces. Without
-                        this the button appended without limit and the only feedback for overshooting
-                        was a 400 after every row had been filled in. */}
+                    {/* Capped client-side against the same constant the send route enforces. */}
                     <button
                       type="button"
                       onClick={() => setBatchRows((rows) => (
                         rows.length >= MAX_BATCH_RECIPIENTS ? rows : [...rows, { address: "", amount: "" }]
                       ))}
-                      disabled={batchRows.length >= MAX_BATCH_RECIPIENTS}
+                      disabled={batchRows.length >= MAX_BATCH_RECIPIENTS || batchSendLoading}
                       className="w-full rounded-2xl border border-black/15 bg-white hover:bg-black/5 text-black py-3.5 text-xs font-black uppercase tracking-[0.16em] transition shadow-sm disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       {batchRows.length >= MAX_BATCH_RECIPIENTS
@@ -7291,20 +7318,19 @@ export default function UserDashboard() {
         )}
       </AnimatePresence>
 
+      {/* The shared component, the same one the merchant dashboard and payroll use. This page used to
+          render a private inline copy of the same name, which silently shadowed the import and left
+          the Deposit button opening the old modal with no chain picker and no fees. */}
       <DepositModal
-        open={receiveOpen}
-        userWallet={userWallet} 
-        copied={copiedAddress} 
-        onCopy={copyAddress} 
+        isOpen={receiveOpen}
         onClose={() => setReceiveOpen(false)}
-        originBalances={originBalances}
-        hasExternalUsdc={hasExternalUsdc}
+        isEmbeddedWallet={isEmbeddedWalletSession}
+        depositAddress={userWallet || ""}
         chainId={chainId}
         switchChainAsync={switchChainAsync}
         writeContractAsync={writeContractAsync}
-        refetchBalances={() => {
+        onSuccess={() => {
           refetchUsdc().catch(console.error);
-          refetchOriginBalances().catch(console.error);
           refetchOriginBalances().catch(console.error);
         }}
       />
@@ -9337,753 +9363,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <span className="text-[10px] font-black uppercase tracking-[0.16em] text-black/50">{label}</span>
       {children}
     </label>
-  );
-}
-
-function DepositModal({
-  open,
-  userWallet,
-  copied,
-  onCopy,
-  onClose,
-  originBalances,
-  hasExternalUsdc,
-  chainId,
-  switchChainAsync,
-  writeContractAsync,
-  refetchBalances,
-}: {
-  open: boolean;
-  userWallet: string | null;
-  copied: boolean;
-  onCopy: () => void;
-  onClose: () => void;
-  originBalances: DepositOriginBalance[];
-  hasExternalUsdc: boolean;
-  chainId: number | undefined;
-  switchChainAsync: any;
-  writeContractAsync: any;
-  refetchBalances: () => void;
-}) {
-  const [activeSubMode, setActiveSubMode] = useState<"menu" | "direct" | "cctp">("menu");
-
-  /* The CCTP bridge burns USDC on the origin chain through the browser wallet (switchChain +
-     writeContract via wagmi), so it is an external-wallet feature and disappears with the rest
-     of them when an operator pauses external wallets. Leaving the Bridge tab up would walk the
-     user to a network switch that cannot complete — and unlike signing in, this one starts by
-     moving real money. Presentation only, as ever: the burn happens in the user's own wallet,
-     so this hides a dead end rather than enforcing a boundary.
-
-     bridgeAvailable is computed below, once pendingRegistration is known — see the comment there for
-     why a paused bridge must still let an interrupted one finish. */
-  const { externalWalletEnabled } = usePlatformFlags();
-
-  // CCTP State
-  const [cctpAmount, setCctpAmount] = useState("");
-  const [originChainId, setOriginChainId] = useState<number | null>(null);
-  const [originMenuOpen, setOriginMenuOpen] = useState(false);
-  const [cctpStatus, setCctpStatus] = useState<
-    "idle" | "switching" | "paying_fee" | "approving" | "burning" | "registering" | "submitted" | "error"
-  >("idle");
-  const [cctpMessage, setCctpMessage] = useState<string | null>(null);
-  const [cctpError, setCctpError] = useState<string | null>(null);
-  const [cctpReviewOpen, setCctpReviewOpen] = useState(false);
-
-  /* A burn we have not managed to tell the backend about yet. The burn is irreversible and the keeper
-     cannot relay what it has never seen, so this survives a reload and the modal offers to finish
-     registering rather than inviting a second burn. */
-  const [pendingRegistration, setPendingRegistration] = useState<{
-    burnTxHash: `0x${string}`;
-    feeTxHash?: `0x${string}`;
-    originChainId: number;
-    grossAmountMicros: string;
-    amount: string;
-  } | null>(null);
-
-  const fundedOrigins = originBalances.filter((chain) => chain.balance > 0);
-  /* No initialising effect: the fallback chain here *is* the default, so an untouched picker already
-     shows the funded network with the cheapest fee. */
-  const selectedOrigin =
-    originBalances.find((chain) => chain.chainId === originChainId) ?? fundedOrigins[0] ?? originBalances[0] ?? null;
-  const bridgeableUsdc = selectedOrigin?.balance ?? 0;
-  const cctpInProgress = !["idle", "submitted", "error"].includes(cctpStatus);
-  const cctpRecoveryKey = userWallet ? `subscript:cctp-recovery:${userWallet.toLowerCase()}` : null;
-
-  /* Quote straight from the fee engine the server charges with, so the "you'll be credited" figure
-     cannot drift from the amount that actually arrives. */
-  const cctpQuote = (() => {
-    if (!selectedOrigin || !cctpAmount) return null;
-    try {
-      return calculateBridgeFee(
-        parseUnits(limitDecimals(cctpAmount, 6), 6),
-        selectedOrigin.chainId,
-        "inbound_deposit",
-      );
-    } catch {
-      return null;
-    }
-  })();
-
-  useEffect(() => {
-    if (!open || !cctpRecoveryKey) return;
-    try {
-      const stored = window.localStorage.getItem(cctpRecoveryKey);
-      setPendingRegistration(stored ? JSON.parse(stored) : null);
-    } catch {
-      setPendingRegistration(null);
-    }
-  }, [open, cctpRecoveryKey]);
-
-  /* When external wallets are turned off, the bridge feature is hidden entirely. */
-  const bridgeAvailable = externalWalletEnabled;
-
-  // Reset sub-mode when modal opens
-  useEffect(() => {
-    if (open) {
-      /* An unregistered burn is the most urgent thing in this modal, so land on it directly.
-         Otherwise: with the bridge unavailable Direct is the only destination, and a chooser
-         menu listing one option is just an extra click. */
-      if (pendingRegistration) {
-        setActiveSubMode("cctp");
-      } else if (hasExternalUsdc && bridgeAvailable) {
-        setActiveSubMode("menu");
-      } else {
-        setActiveSubMode("direct");
-      }
-    }
-  }, [open, hasExternalUsdc, bridgeAvailable, pendingRegistration]);
-
-  /* Covers the flag flipping while the modal is already open on the bridge pane. */
-  useEffect(() => {
-    if (!bridgeAvailable && activeSubMode === "cctp") setActiveSubMode("direct");
-  }, [bridgeAvailable, activeSubMode]);
-
-  /**
-   * Tells the backend about a burn so the keeper can relay it onto Arc. Retried, and the burn is
-   * parked in localStorage until it lands: an unregistered burn is money in flight that nothing is
-   * watching.
-   */
-  const registerDeposit = async (record: NonNullable<typeof pendingRegistration>) => {
-    setCctpStatus("registering");
-    setCctpMessage("Handing the transfer to Circle...");
-
-    let lastError = "";
-    for (let attempt = 0; attempt < 4; attempt++) {
-      try {
-        const res = await fetch("/api/user/cctp/deposit", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            originChainId: record.originChainId,
-            grossAmountMicros: record.grossAmountMicros,
-            burnTxHash: record.burnTxHash,
-            feeTxHash: record.feeTxHash,
-          }),
-        });
-        if (res.ok) {
-          if (cctpRecoveryKey) window.localStorage.removeItem(cctpRecoveryKey);
-          setPendingRegistration(null);
-          setCctpStatus("submitted");
-          setCctpMessage(null);
-          setCctpAmount("");
-          setCctpReviewOpen(false);
-          refetchBalances();
-          return;
-        }
-        const data = await res.json().catch(() => ({}));
-        lastError = data.error || `Server said ${res.status}`;
-      } catch (error: any) {
-        lastError = error?.message || "Network error";
-      }
-      await new Promise((resolve) => setTimeout(resolve, 2000 * (attempt + 1)));
-    }
-
-    throw new Error(
-      `Your USDC was sent but we couldn't record it (${lastError}). Reopen this screen to finish, or contact support with ${record.burnTxHash.slice(0, 10)}…`,
-    );
-  };
-
-  const handleResumeRegistration = async () => {
-    if (!pendingRegistration) return;
-    setCctpError(null);
-    try {
-      await registerDeposit(pendingRegistration);
-    } catch (error: any) {
-      setCctpStatus("error");
-      setCctpError(error.message || "We couldn't record that transfer.");
-    }
-  };
-
-  const handleStartCctp = async (bridgeAmountStr: string) => {
-    setCctpError(null);
-
-    if (!selectedOrigin) {
-      setCctpError("Pick the network your USDC is on.");
-      return;
-    }
-    if (!bridgeAmountStr || isNaN(Number(bridgeAmountStr)) || Number(bridgeAmountStr) <= 0) {
-      setCctpError("Enter an amount to deposit.");
-      return;
-    }
-    if (Number(bridgeAmountStr) > selectedOrigin.balance) {
-      setCctpError(
-        `You have ${selectedOrigin.balance.toFixed(2)} USDC on ${selectedOrigin.name}, which isn't enough.`,
-      );
-      return;
-    }
-
-    const originConfig = CCTP_CONFIG[selectedOrigin.chainId];
-    if (!originConfig) {
-      setCctpError(`We don't support deposits from ${selectedOrigin.name} yet.`);
-      return;
-    }
-
-    let fee;
-    try {
-      fee = calculateBridgeFee(
-        parseUnits(limitDecimals(bridgeAmountStr, 6), 6),
-        selectedOrigin.chainId,
-        "inbound_deposit",
-      );
-    } catch (quoteError: any) {
-      setCctpError(quoteError.message || "That amount can't be deposited.");
-      return;
-    }
-
-    if (!cctpReviewOpen) {
-      setCctpReviewOpen(true);
-      return;
-    }
-
-    const originClient = originPublicClient(selectedOrigin.chainId);
-
-    try {
-      /* Step 1: get onto the origin chain. */
-      setCctpStatus("switching");
-      setCctpMessage(`Switching your wallet to ${selectedOrigin.name}...`);
-      if (chainId !== selectedOrigin.chainId) {
-        await switchChainAsync({ chainId: selectedOrigin.chainId });
-      }
-
-      /* Step 2: pay the protocol fee on the origin chain, before anything is burned.
-         CCTP mints exactly what it burns, so a fee not taken here is never taken at all. Doing it
-         first also means a revert costs the user nothing: no burn has happened yet. */
-      let feeTxHash: `0x${string}` | undefined;
-      if (fee.feeMicros > 0n) {
-        setCctpStatus("paying_fee");
-        setCctpMessage(`Collecting the ${fee.feePercentage} bridge fee...`);
-        feeTxHash = await writeContractAsync({
-          address: originConfig.usdc,
-          abi: CCTP_ERC20_ABI,
-          functionName: "transfer",
-          args: [BRIDGE_FEE_TREASURY_ADDRESS, fee.feeMicros],
-          chainId: selectedOrigin.chainId,
-        });
-        const feeReceipt = await originClient.waitForTransactionReceipt({ hash: feeTxHash!, timeout: 240_000 });
-        if (feeReceipt.status !== "success") {
-          throw new Error("The fee payment didn't go through. Nothing was deposited.");
-        }
-      }
-
-      /* Step 3: approve exactly the net. Approving the gross would leave the TokenMessenger able to
-         pull the fee portion afterwards. */
-      setCctpStatus("approving");
-      setCctpMessage(`Approving ${formatMicros(fee.netMicros)} USDC on ${selectedOrigin.name}...`);
-      const approveHash = await writeContractAsync({
-        address: originConfig.usdc,
-        abi: CCTP_ERC20_ABI,
-        functionName: "approve",
-        args: [originConfig.tokenMessenger, fee.netMicros],
-        chainId: selectedOrigin.chainId,
-      });
-      const approveReceipt = await originClient.waitForTransactionReceipt({ hash: approveHash, timeout: 240_000 });
-      if (approveReceipt.status !== "success") {
-        throw new Error("The approval didn't go through. Nothing was deposited.");
-      }
-
-      /* Step 4: burn the net, with your Arc wallet as the mint recipient. */
-      setCctpStatus("burning");
-      setCctpMessage(`Sending ${formatMicros(fee.netMicros)} USDC to Arc...`);
-      const burnTxHash: `0x${string}` = await writeContractAsync({
-        address: originConfig.tokenMessenger,
-        abi: CCTP_TOKEN_MESSENGER_V2_ABI,
-        functionName: "depositForBurn",
-        args: [
-          fee.netMicros,
-          ARC_CCTP_DOMAIN_ID,
-          toBytes32Address(userWallet!),
-          originConfig.usdc,
-          ANY_DESTINATION_CALLER,
-          0n,
-          CCTP_FINALITY_STANDARD,
-        ],
-        chainId: selectedOrigin.chainId,
-      });
-      const burnReceipt = await originClient.waitForTransactionReceipt({ hash: burnTxHash, timeout: 240_000 });
-      if (burnReceipt.status !== "success") {
-        throw new Error(`The transfer failed on ${selectedOrigin.name}.`);
-      }
-
-      /* Park the burn locally before telling the backend. From here on the money has left the origin
-         chain and only our keeper can deliver it, so a reload has to be able to finish registering
-         rather than tempting the user into a second burn. */
-      const record = {
-        burnTxHash,
-        feeTxHash,
-        originChainId: selectedOrigin.chainId,
-        grossAmountMicros: fee.grossMicros.toString(),
-        amount: bridgeAmountStr,
-      };
-      if (cctpRecoveryKey) window.localStorage.setItem(cctpRecoveryKey, JSON.stringify(record));
-      setPendingRegistration(record);
-
-      /* Step 5: hand it to the keeper. It polls Circle and mints on Arc, which is also what sends the
-         "moving to Arc" and "arrived" notifications. Minting from the browser instead would race the
-         keeper for the same nonce and leave one of them reverting forever. */
-      await registerDeposit(record);
-    } catch (err: any) {
-      console.error(err);
-      setCctpStatus("error");
-      if (err.message?.includes("User rejected the request")) {
-        setCctpError("You cancelled the signature, so nothing was sent.");
-      } else {
-        setCctpError(err.message || "We couldn't complete that deposit.");
-      }
-    }
-  };
-
-  useEffect(() => {
-    if (!cctpInProgress) return;
-    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", warnBeforeLeaving);
-    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
-  }, [cctpInProgress]);
-
-  const closeDepositModal = () => {
-    if (cctpInProgress) return;
-    onClose();
-  };
-
-  /* Mobile thumb-swipe across the Direct / Bridge deposit modes. Off on the chooser menu. */
-  const depositSwipe = useSwipeTabs(
-    ["direct", "cctp"] as const,
-    activeSubMode as "direct" | "cctp",
-    (mode) => {
-      setActiveSubMode(mode);
-      setCctpStatus("idle");
-    },
-    { enabled: activeSubMode !== "menu" && !cctpInProgress && bridgeAvailable },
-  );
-  const [prevActiveSubMode, setPrevActiveSubMode] = useState<"menu" | "direct" | "cctp">("menu");
-  if (activeSubMode !== prevActiveSubMode) {
-    setPrevActiveSubMode(activeSubMode);
-  }
-  const subModes = ["menu", "direct", "cctp"] as const;
-  const subIndex = subModes.indexOf(activeSubMode);
-  const prevSubIndex = subModes.indexOf(prevActiveSubMode);
-  const subDirection = subIndex >= prevSubIndex ? 1 : -1;
-
-  return (
-    <AnimatePresence>
-      {open && userWallet && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 sm:p-5 backdrop-blur-md">
-          <motion.div initial={{ scale: 0.92, y: 18, filter: "blur(1.5px)" }} animate={{ scale: 1, y: 0, filter: "blur(0px)" }} exit={{ scale: 0.92, y: 18, filter: "blur(1.5px)" }} transition={{ type: "spring", stiffness: 450, damping: 32 }} role="dialog" aria-modal="true" aria-labelledby="deposit-dialog-title" className="relative flex flex-col max-h-[85vh] sm:max-h-[90vh] w-full max-w-sm overflow-hidden rounded-3xl border border-black/10 bg-[#FFFFF0] text-black p-5 sm:p-6 shadow-2xl" {...depositSwipe}>
-            {/* Header (Pinned) */}
-            <div className="shrink-0 flex items-center justify-between mb-3 border-b border-black/10 pb-3">
-              <h3 id="deposit-dialog-title" className="text-sm font-black uppercase tracking-wider text-[#111827]">
-                {activeSubMode === "menu" ? "Deposit USDC" : activeSubMode === "direct" ? "Direct Deposit" : "Circle CCTP Bridge"}
-              </h3>
-              <button type="button" onClick={closeDepositModal} disabled={cctpInProgress} aria-label="Close deposit dialog" className="flex h-9 w-9 items-center justify-center rounded-full bg-black/5 text-black/60 hover:bg-black/10 disabled:cursor-not-allowed disabled:opacity-30 transition-all"><X className="h-4 w-4" /></button>
-            </div>
-            
-            {/* Tabs for non-menu active modes (Pinned) */}
-            {activeSubMode !== "menu" && bridgeAvailable && (
-              <div className="shrink-0 relative mb-4 grid grid-cols-2 w-full gap-1 rounded-2xl bg-black/5 p-1 border border-black/10">
-                {(["direct", "cctp"] as const).map((tab) => {
-                  const isActive = activeSubMode === tab;
-                  return (
-                    <button
-                      key={tab}
-                      type="button"
-                      disabled={cctpInProgress}
-                      onClick={() => {
-                        setActiveSubMode(tab);
-                        setCctpStatus("idle");
-                      }}
-                      className={`relative flex items-center justify-center py-2 px-3 text-[10px] font-black uppercase tracking-wider rounded-xl z-10 transition-colors duration-200 ${
-                        isActive ? "text-white" : "text-black/60 hover:text-black"
-                      }`}
-                    >
-                      {isActive && (
-                        <motion.div
-                          layoutId="depositActivePill"
-                          className="absolute inset-0 bg-[#353935] rounded-xl -z-10 shadow-sm"
-                          transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                        />
-                      )}
-                      <span className="relative z-20">
-                        {tab === "direct" ? "Direct" : "Bridge"}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Scrollable Body Content */}
-            <div className="flex-1 overflow-y-auto min-h-0 w-full relative pr-0.5 custom-scrollbar text-black">
-              <AnimatePresence mode="wait" initial={false} custom={subDirection}>
-                <motion.div
-                  key={activeSubMode}
-                  custom={subDirection}
-                  variants={{
-                    enter: (dir: number) => ({
-                      x: dir > 0 ? "100%" : "-100%",
-                      opacity: 0,
-                    }),
-                    center: {
-                      x: 0,
-                      opacity: 1,
-                    },
-                    exit: (dir: number) => ({
-                      x: dir < 0 ? "100%" : "-100%",
-                      opacity: 0,
-                    }),
-                  }}
-                  initial="enter"
-                  animate="center"
-                  exit="exit"
-                  transition={{
-                    x: { type: "spring", stiffness: 300, damping: 30 },
-                    opacity: { duration: 0.2 },
-                  }}
-                  className="w-full"
-                >
-                  {activeSubMode === "menu" && (
-              <div className="space-y-4 py-1">
-                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-[#353935] p-2.5 shadow-md">
-                  <img src="/logo.png" alt="SubScript Logo" className="h-full w-full object-contain" />
-                </div>
-                <div className="rounded-3xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-left space-y-2">
-                  <p className="text-[9px] font-black uppercase tracking-[0.16em] text-yellow-800">What deposits cost</p>
-                  <p className="text-[11px] text-black/80 leading-relaxed">
-                    Sending USDC that&apos;s already on Arc is free. Bringing it in from another chain costs{" "}
-                    <strong>{formatFeeBps(50)}</strong> from Base, Arbitrum, Optimism and Polygon, or{" "}
-                    <strong>{formatFeeBps(100)}</strong> from Ethereum, which covers the gas we pay to deliver it.
-                  </p>
-                </div>
-                <div className="space-y-3 pt-1">
-                  {bridgeAvailable && (
-                  <button
-                    type="button"
-                    onClick={() => setActiveSubMode("cctp")}
-                    disabled={!hasExternalUsdc}
-                    className="flex w-full items-center gap-4 rounded-3xl border border-black/15 bg-white p-4 text-left hover:bg-black/5 transition-all group shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#2775CA] text-white group-hover:scale-105 transition-all shrink-0">
-                      <Globe className="h-5 w-5" />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-[#111827]">Bring USDC from another chain</h4>
-                      <p className="mt-1 text-[9px] text-black/60 leading-normal">
-                        {hasExternalUsdc
-                          ? `Up to ${originBalances.reduce((sum, chain) => sum + chain.balance, 0).toFixed(2)} USDC across ${fundedOrigins.length === 1 ? fundedOrigins[0].name : `${fundedOrigins.length} networks`}.`
-                          : "We didn't find USDC on any supported network."}
-                      </p>
-                    </div>
-                    <ArrowRight className="h-4 w-4 text-black/40 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => setActiveSubMode("direct")}
-                    className="flex w-full items-center gap-4 rounded-3xl border border-black/15 bg-white p-4 text-left hover:bg-black/5 transition-all group shadow-sm"
-                  >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#353935] text-[#FFFFF0] group-hover:scale-105 transition-all shrink-0">
-                      <Wallet className="h-5 w-5" />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-[#111827]">Receive on Arc</h4>
-                      <p className="mt-1 text-[9px] text-black/60 leading-normal">Show your address and QR code. No fee.</p>
-                    </div>
-                    <ArrowRight className="h-4 w-4 text-black/40 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {activeSubMode === "direct" && (
-              <div className="text-center space-y-2.5 py-1">
-                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-[#353935] p-2.5 shadow-md">
-                  <img src="/logo.png" alt="SubScript Logo" className="h-full w-full object-contain" />
-                </div>
-                <p className="text-[11px] text-black/70 leading-tight">Send native USDC on Arc Testnet to your SubScript wallet address.</p>
-                <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-2 text-[10px] leading-relaxed text-amber-900">Arc Testnet only. Sending another token or using another network will not credit this balance.</p>
-                <div className="mx-auto my-2 w-fit rounded-2xl bg-white p-3 shadow-md border border-black/10">
-                  <QRCode
-                    value={userWallet}
-                    size={140}
-                    ecLevel="H"
-                    bgColor="#ffffff"
-                    fgColor="#000000"
-                    qrStyle="dots"
-                    eyeRadius={[
-                      [10, 10, 0, 10],
-                      [10, 10, 10, 0],
-                      [10, 0, 10, 10]
-                    ]}
-                    logoImage="/logo.png"
-                    logoWidth={30}
-                    logoHeight={30}
-                    removeQrCodeBehindLogo={true}
-                    logoPadding={2}
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={onCopy}
-                  className={`flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-2.5 text-xs font-black transition-all ${
-                    copied
-                      ? "border-[#2775CA] bg-[#2775CA] text-white"
-                      : "border-black/15 bg-white text-[#111827] hover:bg-black/5"
-                  }`}
-                >
-                  {copied ? <Check className="h-4 w-4 text-white" /> : <Copy className="h-4 w-4" />}
-                  {copied ? "Copied to clipboard!" : formatAddress(userWallet)}
-                </button>
-              </div>
-            )}
-
-            {activeSubMode === "cctp" && (
-              <div className="space-y-4 text-left">
-                {selectedOrigin && (
-                  <div className="flex justify-between items-center">
-                    <span className="rounded-full bg-[#2775CA]/10 px-3 py-1 text-[9px] font-bold text-[#2775CA] border border-[#2775CA]/20">
-                      {selectedOrigin.balance.toFixed(2)} USDC on {selectedOrigin.name}
-                    </span>
-                  </div>
-                )}
-
-                {cctpStatus === "idle" ? (
-                  <div className="space-y-4">
-                    {pendingRegistration && (
-                      <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-[10px] leading-relaxed text-amber-900">
-                        <p className="font-bold uppercase tracking-wider text-amber-950">Unfinished deposit</p>
-                        <p className="mt-2">
-                          {pendingRegistration.amount} USDC already left{" "}
-                          {CCTP_CONFIG[pendingRegistration.originChainId]?.name || "the origin chain"}, but we never
-                          managed to record it. Finish here and it will land on Arc. Don&apos;t send again.
-                        </p>
-                      </div>
-                    )}
-
-                    {!pendingRegistration && (
-                      <>
-                        {originBalances.length === 0 ? (
-                          <p className="rounded-xl border border-black/10 bg-black/5 p-3 text-[10px] leading-relaxed text-black/70">
-                            No supported networks are configured for deposits right now.
-                          </p>
-                        ) : (
-                          <div className="space-y-1.5">
-                            <span className="text-[9px] font-black uppercase tracking-[0.16em] text-black/60">
-                              Where is your USDC?
-                            </span>
-                            <div className="relative">
-                              <button
-                                type="button"
-                                onClick={() => setOriginMenuOpen(!originMenuOpen)}
-                                aria-expanded={originMenuOpen}
-                                className="flex w-full items-center justify-between rounded-2xl border border-black/15 bg-white px-4 py-3 text-left text-xs font-bold text-[#111827] shadow-sm transition hover:bg-black/[0.02]"
-                              >
-                                <span className="flex flex-col">
-                                  <span>{selectedOrigin?.name ?? "Pick a network"}</span>
-                                  {/* The fee for this chain, right under its name. */}
-                                  <span className="text-[10px] font-normal text-black/50">
-                                    {selectedOrigin
-                                      ? `${selectedOrigin.feePercentage} fee · ${selectedOrigin.balance.toFixed(2)} USDC available`
-                                      : ""}
-                                  </span>
-                                </span>
-                                <ChevronDown className="h-4 w-4 shrink-0 text-black/40" />
-                              </button>
-
-                              {originMenuOpen && (
-                                <div className="custom-scrollbar absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-y-auto rounded-2xl border border-black/10 bg-white p-1.5 shadow-xl">
-                                  {originBalances.map((chain) => {
-                                    const isSelected = selectedOrigin?.chainId === chain.chainId;
-                                    const empty = chain.balance <= 0;
-                                    return (
-                                      <button
-                                        key={chain.chainId}
-                                        type="button"
-                                        disabled={empty}
-                                        onClick={() => {
-                                          setOriginChainId(chain.chainId);
-                                          setOriginMenuOpen(false);
-                                          setCctpReviewOpen(false);
-                                          setCctpError(null);
-                                        }}
-                                        className={`flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-xs transition ${
-                                          empty
-                                            ? "cursor-not-allowed text-black/35"
-                                            : isSelected
-                                              ? "bg-[#2775CA]/10 font-bold text-[#2775CA]"
-                                              : "text-black hover:bg-black/5"
-                                        }`}
-                                      >
-                                        <span className="min-w-0">
-                                          <span className="block truncate">{chain.name}</span>
-                                          <span className="block text-[10px] font-normal text-black/50">
-                                            {chain.feePercentage} fee
-                                            {empty ? " · nothing here" : ` · ${chain.balance.toFixed(2)} USDC`}
-                                          </span>
-                                        </span>
-                                        {isSelected && !empty && (
-                                          <CheckCircle2 className="h-4 w-4 shrink-0 text-[#2775CA]" />
-                                        )}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="space-y-1.5">
-                          <span className="text-[9px] font-black uppercase tracking-[0.16em] text-black/60">
-                            Amount (USDC)
-                          </span>
-                          <div className="relative">
-                            <input
-                              type="number"
-                              value={cctpAmount}
-                              onChange={(e) => { setCctpAmount(e.target.value); setCctpReviewOpen(false); setCctpError(null); }}
-                              className="subscript-input bg-white border border-black/15 text-[#111827] pr-16"
-                              placeholder="0.00"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => { setCctpAmount(bridgeableUsdc.toString()); setCctpReviewOpen(false); }}
-                              className="absolute right-3 top-2.5 px-2 py-1 rounded bg-black/10 text-[9px] font-black uppercase tracking-wider text-black hover:bg-black/20 transition-all"
-                            >
-                              Max
-                            </button>
-                          </div>
-                        </div>
-                      </>
-                    )}
-
-                    {cctpError && <p className="text-[11px] text-red-700 bg-red-500/10 border border-red-500/20 rounded-xl p-3">{cctpError}</p>}
-
-                    {/* What lands on Arc, once the fee comes off. Quoted from the same engine the
-                        server charges with, so this figure is what actually arrives. */}
-                    {cctpReviewOpen && !pendingRegistration && cctpQuote && selectedOrigin && (
-                      <div className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-black">
-                        <div className="flex justify-between"><span className="text-black/60">From</span><span className="font-bold">{selectedOrigin.name}</span></div>
-                        <div className="flex justify-between"><span className="text-black/60">To</span><span className="font-bold">Your Arc wallet</span></div>
-                        <div className="flex justify-between"><span className="text-black/60">You deposit</span><span className="font-bold">{formatMicros(cctpQuote.grossMicros)} USDC</span></div>
-                        <div className="flex justify-between font-medium text-amber-900">
-                          <span>Bridge fee ({cctpQuote.feePercentage})</span>
-                          <span>-{formatMicros(cctpQuote.feeMicros, 4)} USDC</span>
-                        </div>
-                        <div className="flex justify-between border-t border-black/10 pt-2 font-bold">
-                          <span>Credited on Arc</span>
-                          <span className="text-[#2775CA]">{formatMicros(cctpQuote.netMicros, 4)} USDC</span>
-                        </div>
-                        <p className="border-t border-black/10 pt-3 text-[10px] leading-relaxed text-amber-900">
-                          You&apos;ll sign {cctpQuote.feeMicros > 0n ? "three transactions" : "two transactions"} on{" "}
-                          {selectedOrigin.name}. After that you can close this: we&apos;ll notify you when the USDC lands
-                          on Arc, usually within {selectedOrigin.isL1 ? "fifteen minutes" : "five minutes"}.
-                        </p>
-                        <button type="button" onClick={() => setCctpReviewOpen(false)} className="text-[10px] font-bold uppercase tracking-wider text-black/60 hover:text-black">Back to edit</button>
-                      </div>
-                    )}
-
-                    <button
-                      type="button"
-                      disabled={!pendingRegistration && (!selectedOrigin || !cctpQuote)}
-                      onClick={() => pendingRegistration ? handleResumeRegistration() : handleStartCctp(cctpAmount)}
-                      className="w-full mt-2 rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] disabled:cursor-not-allowed disabled:opacity-50 text-white py-3 font-bold text-xs shadow-sm transition flex items-center justify-center gap-2"
-                    >
-                      {pendingRegistration ? "Finish this deposit" : cctpReviewOpen ? "Confirm deposit" : "Review deposit"}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-5 py-4">
-                    {cctpStatus === "submitted" ? (
-                      <div className="flex flex-col items-center gap-4 text-center">
-                        <CheckCircle2 className="h-12 w-12 text-emerald-600" />
-                        <h4 className="text-sm font-black uppercase tracking-wider text-[#111827]">On its way</h4>
-                        <p className="text-xs leading-normal text-black/60">
-                          Your USDC has left {selectedOrigin?.name ?? "the origin chain"}. We&apos;ll drop you a
-                          notification the moment it lands on Arc, usually within five minutes. You can close this.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => { setCctpStatus("idle"); setCctpError(null); }}
-                          className="mt-4 rounded-xl border border-black/15 bg-white px-4 py-2 text-[10px] font-black uppercase tracking-wider text-black shadow-sm"
-                        >
-                          Done
-                        </button>
-                      </div>
-                    ) : cctpStatus === "error" ? (
-                      <div className="flex flex-col items-center gap-4 text-center">
-                        <AlertCircle className="h-12 w-12 text-red-500" />
-                        <h4 className="text-sm font-black uppercase tracking-wider text-[#111827]">That didn&apos;t work</h4>
-                        <p className="px-4 text-xs leading-normal text-red-700">{cctpError}</p>
-                        <button
-                          type="button"
-                          onClick={() => setCctpStatus("idle")}
-                          className="mt-4 rounded-xl border border-black/15 bg-white px-4 py-2 text-[10px] font-black uppercase tracking-wider text-black shadow-sm"
-                        >
-                          {pendingRegistration ? "Finish this deposit" : "Try again"}
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-6">
-                        <div className="flex items-center gap-4 rounded-2xl border border-black/10 bg-black/5 p-4">
-                          <Loader2 className="h-6 w-6 shrink-0 animate-spin text-[#2775CA]" />
-                          <div className="space-y-1">
-                            <p className="text-xs font-bold uppercase tracking-wider text-black">Depositing</p>
-                            <p className="text-[10px] leading-normal text-black/60">{cctpMessage}</p>
-                          </div>
-                        </div>
-
-                        <div className="space-y-2 border-t border-black/10 pt-4 text-[10px] font-bold text-black/60">
-                          {([
-                            ["switching", `Switch to ${selectedOrigin?.name ?? "the origin chain"}`],
-                            ["paying_fee", "Collect the bridge fee"],
-                            ["approving", "Approve the transfer"],
-                            ["burning", "Send the USDC"],
-                            ["registering", "Hand it to Circle"],
-                          ] as const).map(([step, label], index) => (
-                            <div
-                              key={step}
-                              className={`flex items-center justify-between ${cctpStatus === step ? "text-[#2775CA]" : ""}`}
-                            >
-                              <span>{index + 1}. {label}</span>
-                              <span>{cctpStatus === step ? "In progress" : ""}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-                </motion.div>
-              </AnimatePresence>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
   );
 }
 

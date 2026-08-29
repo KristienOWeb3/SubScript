@@ -148,21 +148,36 @@ test("money movement requires review and never exposes a cancel result after bro
 });
 
 test("a completed CCTP burn is resumable and cannot be presented as a fresh bridge", () => {
+    /* The deposit flow lives in the shared DepositModal now, not inline in the user dashboard. */
+    const modal = source("src/components/DepositModal.tsx");
     const dashboard = source("src/app/dashboard/user/page.tsx");
 
     /* The burn is irreversible, so it is parked locally before we try to tell the backend about it.
        Losing that record would leave money in flight with nothing watching it, and would invite the
        user into a second burn. */
-    assert.match(dashboard, /subscript:cctp-recovery/);
-    assert.match(dashboard, /localStorage\.setItem\(cctpRecoveryKey/);
-    assert.match(dashboard, /Finish this deposit/);
-    assert.match(dashboard, /Don&apos;t send again/);
-    assert.match(dashboard, /const bridgeableUsdc = selectedOrigin\?\.balance/);
+    assert.match(modal, /subscript:cctp-recovery/);
+    assert.match(modal, /localStorage\.setItem\(recoveryKey/);
+    assert.match(modal, /Finish this deposit/);
+    assert.match(modal, /Don&apos;t send again/);
+
+    /* Every step waits to be mined. depositForBurn pulls through the allowance, so submitting it
+       while the approve is still pending reverts the burn. */
+    assert.match(modal, /waitForTransactionReceipt/);
+    assert.match(modal, /await settle\(approveTxHash, "The approval"\)/);
+    assert.match(modal, /await settle\(burnTxHash, "The transfer"\)/);
+
+    /* Origin receipts need an origin-chain client; the Arc one cannot see a Base transaction. */
+    assert.match(modal, /function originPublicClient/);
 
     /* The keeper relays the mint. A browser-side receiveMessage would race it for the same CCTP
        nonce, and whichever lost would revert on every retry forever. */
-    assert.doesNotMatch(dashboard, /functionName: "receiveMessage"/);
-    assert.doesNotMatch(dashboard, /iris-api/);
+    assert.doesNotMatch(modal, /functionName: "receiveMessage"/);
+    assert.doesNotMatch(modal, /iris-api/);
+
+    /* Exactly one DepositModal must be reachable from the user dashboard. A second, inline
+       declaration of the same name shadows the import and silently renders the wrong modal. */
+    assert.match(dashboard, /import DepositModal from "@\/components\/DepositModal"/);
+    assert.doesNotMatch(dashboard, /^function DepositModal\(/m);
 });
 
 test("cross-chain transfers split the fee off before the burn", () => {

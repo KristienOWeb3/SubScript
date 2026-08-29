@@ -275,7 +275,7 @@ test("applicant route derives role and commits case, event, audit, and badge ato
 test("admin route authenticates by wallet, attributes the actor, and uses optimistic atomic transitions", () => {
     const route = source("src/app/api/admin/kyc/route.ts");
 
-    assert.match(route, /requireAdmin\(request\)/g);
+    assert.match(route, /requireScope\(request/g);
     assert.doesNotMatch(route, /verifyAdminApiKey/);
     assert.match(route, /parseAdminListParams/);
     assert.match(route, /validateAdminDecision/);

@@ -14,8 +14,9 @@ function markdownFiles(directory) {
 }
 
 test("supporting documentation stays out of the repository root", () => {
+    const agentConfigFiles = new Set(["AGENTS.md", "CLAUDE.md"]);
     const rootDocs = readdirSync(root, { withFileTypes: true })
-        .filter((entry) => entry.isFile() && [".md", ".txt"].includes(path.extname(entry.name)))
+        .filter((entry) => entry.isFile() && [".md", ".txt"].includes(path.extname(entry.name)) && !agentConfigFiles.has(entry.name))
         .map((entry) => entry.name)
         .sort();
 

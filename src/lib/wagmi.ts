@@ -9,7 +9,9 @@ import {
     arbitrum,
     arbitrumSepolia,
     optimism,
+    optimismSepolia,
     polygon,
+    polygonAmoy,
 } from "viem/chains";
 import { arcHttp } from "@/lib/arc/transport";
 
@@ -65,7 +67,9 @@ export const config = createConfig({
         activeArcChain,
         mainnet,
         optimism,
+        optimismSepolia,
         polygon,
+        polygonAmoy,
         base,
         arbitrum,
         sepolia,
@@ -85,6 +89,8 @@ export const config = createConfig({
         11155111: http(),
         84532: http(),
         421614: http(),
+        11155420: http(),
+        80002: http(),
     },
     ssr: true,
 });

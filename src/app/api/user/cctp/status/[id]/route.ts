@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { pgMaybeOne } from "@/lib/serverPg";
 import { formatMicros } from "@/lib/cctp/feeEngine";
+import { processPendingCctpTransfers } from "@/lib/cctp/attestationWorker";
 
 /**
  * Progress of one bridge transfer, for the caller's own wallet only.
@@ -46,6 +47,11 @@ export async function GET(
 
     if (!record) {
       return NextResponse.json({ error: "Transfer not found" }, { status: 404 });
+    }
+
+    /* If still pending, trigger the keeper in background to advance the transfer */
+    if (record.status === "pending_attestation" || record.status === "minting") {
+      void processPendingCctpTransfers().catch(() => undefined);
     }
 
     return NextResponse.json({
