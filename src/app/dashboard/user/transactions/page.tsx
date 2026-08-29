@@ -206,12 +206,13 @@ export default function UserTransactionsPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [subRes, dmRes, sessionRes, settingsRes, depositsRes] = await Promise.all([
+      const [subRes, dmRes, sessionRes, settingsRes, depositsRes, _scanRes] = await Promise.all([
         fetch("/api/user/subscriptions"),
         fetch("/api/user/dms"),
         fetch("/api/auth/session"),
         fetch("/api/user/settings").catch(() => null),
         fetch("/api/user/deposits").catch(() => null),
+        fetch("/api/user/cctp/scan").catch(() => null),
         new Promise<void>((resolve) => window.setTimeout(resolve, 300))
       ]);
       const subData = await subRes.json().catch(() => ({}));
