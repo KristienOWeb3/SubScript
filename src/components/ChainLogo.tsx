@@ -197,6 +197,33 @@ export function ChainLogo({ chain, className = "h-5 w-5", size = 20 }: ChainLogo
     );
   }
 
+  // Avalanche / Avalanche Fuji
+  if (
+    identifier === "43114" ||
+    identifier === "43113" ||
+    identifier.includes("avax") ||
+    identifier.includes("avalanche") ||
+    identifier.includes("fuji") ||
+    identifier === "1"
+  ) {
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 32 32"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className={`shrink-0 rounded-full ${className}`}
+      >
+        <circle cx="16" cy="16" r="16" fill="#E84142" />
+        <path
+          fill="#FFFFFF"
+          d="M17.8 7.3c-.8-1.4-2.8-1.4-3.6 0L5.3 22.8c-.8 1.4.2 3.2 1.8 3.2h4.5c.8 0 1.5-.4 1.9-1.1l5.4-9.6 1.8 3.3c.4.7 1.1 1.1 1.9 1.1h4.1c1.6 0 2.6-1.8 1.8-3.2L17.8 7.3z"
+        />
+      </svg>
+    );
+  }
+
   // Solana
   if (identifier.includes("sol") || identifier === "5") {
     return (
