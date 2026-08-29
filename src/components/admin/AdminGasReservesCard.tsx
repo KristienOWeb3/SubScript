@@ -162,9 +162,25 @@ export function AdminGasReservesCard({ sponsor, className = "" }: AdminGasReserv
 
         {/* Live CCTP Chains Gas Balances Grid */}
         {loading ? (
-          <div className="py-8 flex flex-col items-center justify-center text-[#64748b] gap-2">
-            <RefreshCw className="h-5 w-5 animate-spin text-[#2775ca]" />
-            <p className="text-xs">Reading native gas balances across CCTP chains...</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 admin-skeleton-shimmer" role="status" aria-label="Loading native gas reserves...">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div
+                key={i}
+                className="p-3 rounded-xl bg-[#f8fafc] border border-[#e2e8f0] flex flex-col justify-between gap-2 animate-pulse"
+              >
+                <div className="flex items-center justify-between gap-1">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="h-4 w-4 rounded-full bg-[#e2e8f0] shrink-0" />
+                    <div className="h-3 w-16 rounded bg-[#e2e8f0]" />
+                  </div>
+                  <div className="h-4 w-12 rounded-full bg-[#e2e8f0]" />
+                </div>
+                <div className="flex items-baseline justify-between gap-1 pt-1 border-t border-[#f1f5f9]">
+                  <div className="h-4 w-14 rounded bg-[#e2e8f0]" />
+                  <div className="h-2.5 w-6 rounded bg-[#e2e8f0]" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : error ? (
           <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">

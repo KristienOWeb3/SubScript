@@ -129,9 +129,25 @@ export function AdminRelayerBalancesCard() {
       </div>
 
       {loading ? (
-        <div className="py-12 flex flex-col items-center justify-center text-neutral-400 gap-3">
-          <RefreshCw className="w-6 h-6 animate-spin text-blue-500" />
-          <p className="text-sm">Reading balances across chains...</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-5 admin-skeleton-shimmer" role="status" aria-label="Loading relayer balances...">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div
+              key={i}
+              className="p-4 rounded-xl bg-neutral-950 border border-neutral-800/70 flex flex-col justify-between gap-3 animate-pulse"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="space-y-1.5 min-w-0">
+                  <div className="h-4 w-24 rounded bg-neutral-800" />
+                  <div className="h-3 w-10 rounded bg-neutral-800" />
+                </div>
+                <div className="h-5 w-14 rounded-full bg-neutral-800" />
+              </div>
+              <div className="flex items-baseline justify-between pt-2 border-t border-neutral-800">
+                <div className="h-5 w-16 rounded bg-neutral-800" />
+                <div className="h-3 w-8 rounded bg-neutral-800" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : error ? (
         <div className="mt-4 p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm flex items-center gap-2">
