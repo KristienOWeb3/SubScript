@@ -18,6 +18,7 @@ import {
   FileSpreadsheet,
 } from "lucide-react";
 import { SkeletonStatGrid, SkeletonTable, SkeletonCard } from "@/components/ui/skeletons";
+import { AdminGasReservesCard } from "./AdminGasReservesCard";
 
 type FinancialsData = {
   summary: {
@@ -336,6 +337,9 @@ export function AdminFinancialsView() {
           </p>
         </div>
       </div>
+
+      {/* CCTP & Sponsor Gas Reserves Across All Supported Chains */}
+      <AdminGasReservesCard sponsor={data?.sponsorStatus} />
 
       {/* Secondary Metrics Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

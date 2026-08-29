@@ -4,11 +4,11 @@ import React, { useState } from "react";
 import {
   AreaTrendChart,
   DonutMetricChart,
-  RunwayGaugeChart,
   StatCardWithSparkline,
   type DataPoint,
   type DonutSegment,
 } from "../analytics/AdminCharts";
+import { AdminGasReservesCard } from "../AdminGasReservesCard";
 import { CHART_CATEGORICAL } from "../analytics/chartPalette";
 import {
   DollarSign,
@@ -203,20 +203,10 @@ export function AdminOverviewDashboard({
         emptyMessage="No settlements in this window yet."
       />
 
-      {/* Two Column Grid: Gas Gauge + Stream Breakdown */}
+      {/* Two Column Grid: Gas Reserves by Chain + Stream Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Gas Sponsor Runway Gauge */}
-        {/* targetUsdc is left at the component default. The sponsor payload carries a balance, a
-            top-up size and an underfunded flag, but no funding target, so there is no real number
-            to pass here. */}
-        <RunwayGaugeChart
-          valueUsdc={sponsor?.balanceUsdc ?? null}
-          topupsRemaining={sponsor?.estimatedTopupsRemaining ?? null}
-          underfunded={Boolean(sponsor?.underfunded)}
-          emergencyStop={Boolean(sponsor?.emergencyStop)}
-          dailyBurnRateUsdc={sponsor?.topupUsdc ?? "0.10"}
-          title="Gas sponsor reserve runway"
-        />
+        {/* Gas Sponsor & CCTP Native Reserves */}
+        <AdminGasReservesCard sponsor={sponsor} />
 
         {/* Protocol Commerce Activity Stream Donut */}
         <DonutMetricChart

@@ -191,9 +191,15 @@ export default function UserTransactionsPage() {
     amountUsdc: string;
     amountFormatted: string;
     timestamp: number;
-    blockNumber: number;
+    blockNumber?: number;
     status: string;
-    senderName: string | null;
+    senderName?: string | null;
+    isCctp?: boolean;
+    direction?: string;
+    originName?: string;
+    destName?: string;
+    burnTxHash?: string;
+    mintTxHash?: string;
   }>>([]);
 
   const loadData = useCallback(async () => {
@@ -370,23 +376,53 @@ export default function UserTransactionsPage() {
         receiptId: r.receiptId,
       };
     });
-  // Map external Arc USDC deposits not captured in DMs or receipts
+  // Map external Arc USDC deposits and CCTP transfers not captured in DMs or receipts
   const depositTransactions = deposits
-    .filter((d) => !mappedTxHashes.has(d.txHash.toLowerCase()))
+    .filter((d) => !mappedTxHashes.has((d.txHash || "").toLowerCase()))
     .map((d) => {
-      mappedTxHashes.add(d.txHash.toLowerCase());
+      if (d.txHash) mappedTxHashes.add(d.txHash.toLowerCase());
+      const isCctp = Boolean(d.isCctp);
+      const isWithdrawal = d.direction === "outbound_withdrawal";
+      const incoming = isCctp ? !isWithdrawal : true;
+      const kind: "transfers" | "withdrawals" = isWithdrawal ? "withdrawals" : "transfers";
+      const sign = incoming ? "+" : "-";
+
+      let name = d.senderName ? `Deposit from @${d.senderName}` : `Deposit from ${formatAddress(d.fromAddress)}`;
+      let detail = "USDC Deposit • Arc Network";
+      let status = "CONFIRMED";
+
+      if (isCctp) {
+        if (isWithdrawal) {
+          name = `CCTP Send to ${d.destName || "External Chain"}`;
+          detail = d.status === "completed"
+            ? `CCTP Send to ${d.destName || "External Chain"} • Delivered`
+            : d.status === "failed"
+            ? `CCTP Send • Failed`
+            : `CCTP Send to ${d.destName || "External Chain"} • Bridging (~5 mins)`;
+          status = d.status === "completed" ? "CONFIRMED" : d.status === "failed" ? "FAILED" : "PENDING";
+        } else {
+          name = `CCTP Deposit from ${d.originName || "External Chain"}`;
+          detail = d.status === "completed"
+            ? `CCTP Deposit from ${d.originName || "External Chain"} • Completed`
+            : d.status === "failed"
+            ? `CCTP Deposit • Failed`
+            : `CCTP Deposit from ${d.originName || "External Chain"} • Bridging (~5 mins)`;
+          status = d.status === "completed" ? "CONFIRMED" : d.status === "failed" ? "FAILED" : "PENDING";
+        }
+      }
+
       return {
-        id: `dep-${d.txHash}`,
-        kind: "transfers" as const,
-        name: d.senderName ? `Deposit from @${d.senderName}` : `Deposit from ${formatAddress(d.fromAddress)}`,
+        id: d.id || `dep-${d.txHash}`,
+        kind,
+        name,
         pic: null as string | null,
-        detail: "USDC Deposit • Arc Network",
+        detail,
         amountUsdc: d.amountUsdc,
-        amountLabel: `+$${formatUsdc(d.amountUsdc)}`,
-        localAmountLabel: `+${getLocalValueLabel(d.amountUsdc)}`,
+        amountLabel: `${sign}$${formatUsdc(d.amountUsdc)}`,
+        localAmountLabel: `${sign}${getLocalValueLabel(d.amountUsdc)}`,
         time: d.timestamp,
-        incoming: true,
-        status: "CONFIRMED",
+        incoming,
+        status,
         txHash: d.txHash,
         receiptId: null as string | null,
       };

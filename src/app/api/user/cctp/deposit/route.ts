@@ -4,6 +4,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { pgQuery, pgMaybeOne } from "@/lib/serverPg";
 import { calculateBridgeFee, formatMicros, resolveBridgeChain } from "@/lib/cctp/feeEngine";
 import { notifyDepositStarted } from "@/lib/cctp/notifications";
+import { processPendingCctpTransfers } from "@/lib/cctp/attestationWorker";
 import { resolveRpcUrl } from "@/lib/cctp/relayer";
 import { ARC_CCTP_DOMAIN_ID, BRIDGE_FEE_TREASURY_ADDRESS } from "@/lib/contracts/constants";
 
@@ -52,6 +53,8 @@ export async function POST(req: NextRequest) {
       [String(burnTxHash)],
     );
     if (existing) {
+      /* Trigger keeper in background to advance the transfer */
+      void processPendingCctpTransfers().catch(() => undefined);
       return NextResponse.json({
         success: true,
         transferId: existing.id,
@@ -103,6 +106,11 @@ export async function POST(req: NextRequest) {
       recipientAddress: userWallet,
       originChainName: chainConfig.name,
     });
+
+    /* Trigger keeper in background to start polling Iris and relay minting onto Arc */
+    void processPendingCctpTransfers().catch((err) =>
+      console.warn("[api/user/cctp/deposit] background keeper error:", err?.message)
+    );
 
     return NextResponse.json({
       success: true,
@@ -159,7 +167,11 @@ async function verifyFeeTransfer(params: {
   const usdcAddress = params.usdc.toLowerCase();
 
   const paid = receipt.logs.some((log) => {
-    if (log.address.toLowerCase() !== usdcAddress) return false;
+    const logContract = log.address.toLowerCase();
+    const isTargetUsdc =
+      logContract === usdcAddress ||
+      (params.chainId === 11155111 && logContract === "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238");
+    if (!isTargetUsdc) return false;
     if (log.topics[0] !== TRANSFER_TOPIC || log.topics.length < 3) return false;
     const logFrom = `0x${log.topics[1].slice(26)}`.toLowerCase();
     const logTo = `0x${log.topics[2].slice(26)}`.toLowerCase();

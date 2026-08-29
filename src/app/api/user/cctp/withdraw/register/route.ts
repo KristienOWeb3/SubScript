@@ -3,6 +3,7 @@ import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
 import { pgQuery, pgMaybeOne } from "@/lib/serverPg";
 import { validateBridgeRequest, formatMicros } from "@/lib/cctp/feeEngine";
+import { processPendingCctpTransfers } from "@/lib/cctp/attestationWorker";
 import { getArcRpcUrl } from "@/lib/cctp/relayer";
 import {
   ARC_CCTP_DOMAIN_ID,
@@ -101,6 +102,11 @@ export async function POST(req: NextRequest) {
         feeInfo.feeMicros > 0n ? String(feeTxHash) : null,
         String(burnTxHash),
       ],
+    );
+
+    /* Trigger keeper in background to start polling Iris and relay minting onto destination chain */
+    void processPendingCctpTransfers().catch((err) =>
+      console.warn("[api/user/cctp/withdraw/register] background keeper error:", err?.message)
     );
 
     return NextResponse.json({

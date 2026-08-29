@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { fetchArcUsdcDeposits } from "@/lib/deposits/arcDeposits";
+import { pgQuery } from "@/lib/serverPg";
+import { CCTP_CONFIG } from "@/lib/contracts/constants";
+import { processPendingCctpTransfers } from "@/lib/cctp/attestationWorker";
 
 export async function GET(request: Request) {
     try {
@@ -9,12 +12,68 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const deposits = await fetchArcUsdcDeposits(wallet);
+        const normalizedWallet = wallet.toLowerCase();
+
+        const [directDeposits, cctpTransfers] = await Promise.all([
+            fetchArcUsdcDeposits(normalizedWallet).catch(() => []),
+            pgQuery<any>(
+                `SELECT id, direction, user_wallet, recipient_address, origin_chain_id, origin_domain,
+                        destination_chain_id, destination_domain, gross_amount_micros, fee_amount_micros,
+                        net_amount_micros, fee_bps, fee_tx_hash, burn_tx_hash, mint_tx_hash, status,
+                        attempt_count, error_message, created_at, updated_at
+                   FROM cctp_bridge_transfers
+                  WHERE user_wallet = $1 OR recipient_address = $1
+                  ORDER BY created_at DESC
+                  LIMIT 50`,
+                [normalizedWallet]
+            ).catch(() => []),
+        ]);
+
+        const hasPending = cctpTransfers.some(
+            (t: any) => t.status === "pending_attestation" || t.status === "minting"
+        );
+        if (hasPending) {
+            void processPendingCctpTransfers().catch(() => undefined);
+        }
+
+        const cctpItems = cctpTransfers.map((tx: any) => {
+            const originName = CCTP_CONFIG[Number(tx.origin_chain_id)]?.name || (tx.origin_chain_id === "arc" ? "Arc" : `Chain ${tx.origin_chain_id}`);
+            const destName = CCTP_CONFIG[Number(tx.destination_chain_id)]?.name || (tx.destination_chain_id === "arc" ? "Arc" : `Chain ${tx.destination_chain_id}`);
+            const isIncoming = tx.direction === "inbound_deposit" || tx.recipient_address.toLowerCase() === normalizedWallet;
+            const micros = isIncoming ? BigInt(tx.net_amount_micros || 0) : BigInt(tx.gross_amount_micros || 0);
+            const whole = micros / 1_000_000n;
+            const frac = (micros % 1_000_000n).toString().padStart(6, "0").slice(0, 2);
+            const amountFormatted = `${whole.toString()}.${frac}`;
+
+            return {
+                id: `cctp-${tx.id}`,
+                txHash: tx.burn_tx_hash || tx.mint_tx_hash || tx.id,
+                burnTxHash: tx.burn_tx_hash,
+                mintTxHash: tx.mint_tx_hash,
+                fromAddress: tx.user_wallet,
+                toAddress: tx.recipient_address,
+                direction: tx.direction,
+                originChainId: tx.origin_chain_id,
+                destinationChainId: tx.destination_chain_id,
+                originName,
+                destName,
+                amountUsdc: micros.toString(),
+                amountFormatted,
+                timestamp: new Date(tx.created_at).getTime(),
+                status: tx.status,
+                isCctp: true,
+                senderName: null,
+            };
+        });
+
+        // Combine and dedup by txHash
+        const allDeposits = [...cctpItems, ...directDeposits];
 
         return NextResponse.json({
             success: true,
-            deposits,
-            count: deposits.length,
+            deposits: allDeposits,
+            cctpTransfers: cctpItems,
+            count: allDeposits.length,
         });
     } catch (error: any) {
         console.error("[api/user/deposits] error:", error);

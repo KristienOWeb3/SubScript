@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, QrCode, Send, User, X, Building2, Globe, CheckCircle2, ChevronDown } from "@/components/icons";
+import { ChainLogo } from "@/components/ChainLogo";
 import { listBridgeRoutes } from "@/lib/cctp/feeEngine";
 import type { BridgeRouteOption } from "@/lib/cctp/types";
 
@@ -210,8 +211,9 @@ export default function SendSingleModal({
                         <div className="mb-5 grid grid-cols-2 gap-2 rounded-2xl bg-black/5 p-1 text-xs">
                             <button
                                 type="button"
+                                disabled={loading}
                                 onClick={() => setSendMethod("onchain")}
-                                className={`flex items-center justify-center gap-2 rounded-xl py-2 font-bold transition ${
+                                className={`flex items-center justify-center gap-2 rounded-xl py-2 font-bold transition disabled:opacity-50 ${
                                     sendMethod === "onchain"
                                         ? "bg-white text-black shadow-sm"
                                         : "text-black/60 hover:text-black"
@@ -222,8 +224,9 @@ export default function SendSingleModal({
                             </button>
                             <button
                                 type="button"
+                                disabled={loading}
                                 onClick={() => setSendMethod("bank")}
-                                className={`flex items-center justify-center gap-1.5 rounded-xl py-2 font-bold transition ${
+                                className={`flex items-center justify-center gap-1.5 rounded-xl py-2 font-bold transition disabled:opacity-50 ${
                                     sendMethod === "bank"
                                         ? "bg-white text-black shadow-sm"
                                         : "text-black/60 hover:text-black"
@@ -261,17 +264,21 @@ export default function SendSingleModal({
                                     <div className="relative" ref={networkMenuRef}>
                                         <button
                                             type="button"
+                                            disabled={loading}
                                             onClick={() => setNetworkMenuOpen(!networkMenuOpen)}
                                             aria-expanded={networkMenuOpen}
-                                            className="flex w-full items-center justify-between rounded-2xl border border-black/15 bg-white px-4 py-3 text-xs font-bold text-[#111827] shadow-sm transition hover:bg-black/[0.02]"
+                                            className="flex w-full items-center justify-between rounded-2xl border border-black/15 bg-white px-4 py-3 text-xs font-bold text-[#111827] shadow-sm transition hover:bg-black/[0.02] disabled:opacity-60 disabled:cursor-not-allowed"
                                         >
-                                            <div className="flex flex-col text-left">
-                                                <span>{currentNetwork.name}</span>
-                                                <span className="text-[10px] font-normal text-black/50">
-                                                    {currentNetwork.feeBps === 0
-                                                        ? "No fee, arrives instantly"
-                                                        : `${currentNetwork.feePercentage} fee, ${currentNetwork.estimatedTime.toLowerCase()}`}
-                                                </span>
+                                            <div className="flex items-center gap-3">
+                                                <ChainLogo chain={currentNetwork.id} size={24} className="h-6 w-6" />
+                                                <div className="flex flex-col text-left">
+                                                    <span>{currentNetwork.name}</span>
+                                                    <span className="text-[10px] font-normal text-black/50">
+                                                        {currentNetwork.feeBps === 0
+                                                            ? "No fee, arrives instantly"
+                                                            : `${currentNetwork.feePercentage} fee, ${currentNetwork.estimatedTime.toLowerCase()}`}
+                                                    </span>
+                                                </div>
                                             </div>
                                             <ChevronDown className="h-4 w-4 text-black/40" />
                                         </button>
@@ -284,7 +291,7 @@ export default function SendSingleModal({
                                                         <button
                                                             key={option.id}
                                                             type="button"
-                                                            disabled={!option.available}
+                                                            disabled={!option.available || loading}
                                                             onClick={() => {
                                                                 setSelectedNetwork(option.id);
                                                                 setNetworkMenuOpen(false);
@@ -297,15 +304,18 @@ export default function SendSingleModal({
                                                                       : "text-black hover:bg-black/5"
                                                             }`}
                                                         >
-                                                            <div className="min-w-0">
-                                                                <div className="truncate">{option.name}</div>
-                                                                {/* The fee for this chain, right under its name. */}
-                                                                <div className="text-[10px] font-normal text-black/50">
-                                                                    {!option.available
-                                                                        ? option.unavailableReason || "Not available yet"
-                                                                        : option.feeBps === 0
-                                                                          ? "No fee, arrives instantly"
-                                                                          : `${option.feePercentage} fee, ${option.estimatedTime.toLowerCase()}`}
+                                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                                <ChainLogo chain={option.id} size={20} className="h-5 w-5" />
+                                                                <div className="min-w-0">
+                                                                    <div className="truncate">{option.name}</div>
+                                                                    {/* The fee for this chain, right under its name. */}
+                                                                    <div className="text-[10px] font-normal text-black/50">
+                                                                        {!option.available
+                                                                            ? option.unavailableReason || "Not available yet"
+                                                                            : option.feeBps === 0
+                                                                              ? "No fee, arrives instantly"
+                                                                              : `${option.feePercentage} fee, ${option.estimatedTime.toLowerCase()}`}
+                                                                    </div>
                                                                 </div>
                                                             </div>
                                                             {isSelected && option.available && (
@@ -331,9 +341,10 @@ export default function SendSingleModal({
                                             <input
                                                 ref={recipientInputRef}
                                                 value={recipient}
+                                                disabled={loading}
                                                 onChange={(event) => onRecipientChange(event.target.value)}
                                                 placeholder={isArcRoute ? "alice.sub or 0x..." : "0x..."}
-                                                className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3 pr-10 font-mono text-xs text-[#111827] shadow-sm focus:border-[#2775CA] focus:outline-none"
+                                                className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3 pr-10 font-mono text-xs text-[#111827] shadow-sm focus:border-[#2775CA] focus:outline-none disabled:bg-black/5 disabled:cursor-not-allowed disabled:text-black/60"
                                                 required
                                             />
                                             {resolving ? (
@@ -344,10 +355,11 @@ export default function SendSingleModal({
                                         </div>
                                         <button
                                             type="button"
+                                            disabled={loading}
                                             onClick={onScanQr}
                                             title="Scan a wallet address"
                                             aria-label="Scan a wallet address"
-                                            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-black/10 bg-white text-black/70 shadow-sm transition hover:border-[#2775CA] hover:bg-[#2775CA]/10 hover:text-[#2775CA]"
+                                            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-black/10 bg-white text-black/70 shadow-sm transition hover:border-[#2775CA] hover:bg-[#2775CA]/10 hover:text-[#2775CA] disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             <QrCode className="h-5 w-5 text-[#2775CA]" />
                                         </button>
@@ -405,18 +417,20 @@ export default function SendSingleModal({
                                     <div className="relative flex items-center">
                                         <input
                                             value={amount}
+                                            disabled={loading}
                                             onChange={(event) => onAmountChange(event.target.value)}
                                             placeholder="0.00"
                                             inputMode="decimal"
-                                            className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3 pr-16 font-mono text-xs text-[#111827] shadow-sm focus:border-[#2775CA] focus:outline-none"
+                                            className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3 pr-16 font-mono text-xs text-[#111827] shadow-sm focus:border-[#2775CA] focus:outline-none disabled:bg-black/5 disabled:cursor-not-allowed disabled:text-black/60"
                                             required
                                         />
                                         <button
                                             type="button"
+                                            disabled={loading}
                                             onClick={() => {
                                                 if (walletBalance > 0) onAmountChange(walletBalance.toString());
                                             }}
-                                            className="absolute right-2.5 z-10 rounded-lg border border-black/10 bg-black/5 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-black transition hover:bg-black/10"
+                                            className="absolute right-2.5 z-10 rounded-lg border border-black/10 bg-black/5 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-black transition hover:bg-black/10 disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             Max
                                         </button>

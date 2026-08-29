@@ -35,8 +35,8 @@ export function notifyDepositStarted(params: {
 }): Promise<void> {
   return createNotification({
     recipientAddress: params.recipientAddress,
-    title: "USDC on the way",
-    body: `USDC on ${params.originChainName} received, moving to Arc. Give it about five minutes.`,
+    title: "USDC moving to Arc",
+    body: `USDC on ${params.originChainName} received, moving to arc.. (Please wait for 5 minutes)`,
   });
 }
 
@@ -48,8 +48,8 @@ export function notifyDepositArrived(params: {
 }): Promise<void> {
   return createNotification({
     recipientAddress: params.recipientAddress,
-    title: "USDC arrived on Arc",
-    body: `${params.netUsdc} USDC from ${params.originChainName} is in your Arc wallet and ready to use.`,
+    title: "USDC deposited on Arc",
+    body: `USDC deposited is now on the arc network (${params.netUsdc} USDC from ${params.originChainName}).`,
   });
 }
 

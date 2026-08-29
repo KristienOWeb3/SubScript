@@ -75,11 +75,12 @@ export async function fetchCctpAttestation(params: {
   const messages: any[] = Array.isArray(data?.messages) ? data.messages : [];
   if (messages.length === 0) return null;
 
-  const wanted = params.expectedMintRecipient?.toLowerCase();
+  const normalizeHexAddr = (val?: string | null) => (val || "").toLowerCase().replace(/^0x/, "").replace(/^0+/, "");
+  const wanted = normalizeHexAddr(params.expectedMintRecipient);
   const match =
     (wanted
       ? messages.find(
-          (m) => String(m?.decodedMessage?.decodedMessageBody?.mintRecipient ?? "").toLowerCase() === wanted,
+          (m) => normalizeHexAddr(m?.decodedMessage?.decodedMessageBody?.mintRecipient) === wanted,
         )
       : undefined) ?? messages[0];
 

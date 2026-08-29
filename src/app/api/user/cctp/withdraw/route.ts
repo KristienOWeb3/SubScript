@@ -4,6 +4,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { getWalletCustody, deterministicIdempotencyKey } from "@/lib/custody";
 import { pgQuery } from "@/lib/serverPg";
 import { validateBridgeRequest, formatMicros } from "@/lib/cctp/feeEngine";
+import { processPendingCctpTransfers } from "@/lib/cctp/attestationWorker";
 import {
   addressToBytes32,
   ANY_DESTINATION_CALLER,
@@ -179,6 +180,11 @@ export async function POST(req: NextRequest) {
           SET status = 'pending_attestation', burn_tx_hash = $2, updated_at = now()
         WHERE id = $1`,
       [transferId, burnTxHash],
+    );
+
+    /* Trigger keeper in background to start polling Iris and relay minting onto destination chain */
+    void processPendingCctpTransfers().catch((err) =>
+      console.warn("[api/user/cctp/withdraw] background keeper error:", err?.message)
     );
 
     return NextResponse.json({
