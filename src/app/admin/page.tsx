@@ -57,6 +57,7 @@ import {
   GrowthSkeleton,
   KycSkeleton,
   HealthSkeleton,
+  AdminOverviewSkeleton,
 } from "@/components/admin/analytics/AnalyticsSkeletons";
 import { AdminFinancialsView } from "@/components/admin/AdminFinancialsView";
 import { AdminReconciliationView } from "@/components/admin/AdminReconciliationView";
@@ -1304,7 +1305,7 @@ export default function AdminDashboardPage() {
         )}
 
         {tab === "overview" && (
-          loading && !overviewData ? <VolumeSkeleton /> : (
+          loading && !overviewData ? <AdminOverviewSkeleton /> : (
             <AdminOverviewDashboard
               overviewData={overviewData}
               analyticsData={analytics}
@@ -2035,7 +2036,9 @@ export default function AdminDashboardPage() {
                 <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">
                   Banned Wallets
                 </h3>
-                {bannedAccounts.length === 0 ? (
+                {loading && bannedAccounts.length === 0 ? (
+                  <SkeletonRows count={3} avatar={false} lines={2} label="Loading banned wallets..." />
+                ) : bannedAccounts.length === 0 ? (
                   <p className="text-xs text-[#64748b]">No banned wallets.</p>
                 ) : (
                   <div className="space-y-2">
@@ -2055,7 +2058,9 @@ export default function AdminDashboardPage() {
                 <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">
                   Banned IPs
                 </h3>
-                {bannedIps.length === 0 ? (
+                {loading && bannedIps.length === 0 ? (
+                  <SkeletonRows count={3} avatar={false} lines={2} label="Loading banned IPs..." />
+                ) : bannedIps.length === 0 ? (
                   <p className="text-xs text-[#64748b]">No banned IPs.</p>
                 ) : (
                   <div className="space-y-2">

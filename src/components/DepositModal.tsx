@@ -142,6 +142,8 @@ export default function DepositModal({
     const [copied, setCopied] = useState(false);
     const [copiedContract, setCopiedContract] = useState(false);
     const [usdcBalance, setUsdcBalance] = useState("0.00");
+    const [originBalance, setOriginBalance] = useState("0.00");
+    const [loadingOriginBalance, setLoadingOriginBalance] = useState(false);
 
     // CCTP Interactive Deposit State
     const [cctpAmount, setCctpAmount] = useState("");
@@ -218,16 +220,12 @@ export default function DepositModal({
     }, [supportedChains, selectedChainId]);
 
     const cctpQuote = useMemo(() => {
-        if (selectedChain.isArc) return null;
-        if (!cctpAmount || isNaN(Number(cctpAmount)) || Number(cctpAmount) <= 0) return null;
+        if (!cctpAmount || isNaN(Number(cctpAmount)) || Number(cctpAmount) <= 0 || selectedChain.isArc) {
+            return null;
+        }
         try {
             return calculateBridgeFee(
-                parseUnits(
-                    cctpAmount.includes(".")
-                        ? `${cctpAmount.split(".")[0]}.${cctpAmount.split(".")[1].slice(0, 6)}`
-                        : cctpAmount,
-                    6
-                ),
+                (BigInt(Math.floor(Number(cctpAmount) * 1_000_000))).toString(),
                 selectedChain.chainId,
                 "inbound_deposit"
             );
@@ -251,6 +249,47 @@ export default function DepositModal({
         }
     }, [depositAddress]);
 
+    const fetchOriginBalance = useCallback(async () => {
+        if (
+            !depositAddress ||
+            depositAddress === "0xYOUR_CONNECTED_WALLET_ADDRESS" ||
+            selectedChain.isArc ||
+            !selectedChain.usdc
+        ) {
+            setOriginBalance("0.00");
+            return;
+        }
+        setLoadingOriginBalance(true);
+        try {
+            const res = await fetch(`/api/user/cctp/scan?address=${encodeURIComponent(depositAddress)}`, {
+                signal: AbortSignal.timeout(5000),
+            }).catch(() => null);
+            if (res && res.ok) {
+                const data = await res.json().catch(() => ({}));
+                const chainBal = Array.isArray(data.balances)
+                    ? data.balances.find((b: any) => b.chainId === selectedChain.chainId)
+                    : null;
+                if (chainBal) {
+                    setOriginBalance(chainBal.balanceUsdc || "0.00");
+                    return;
+                }
+            }
+            // Client-side fallback read
+            const client = originPublicClient(selectedChain.chainId);
+            const bal = await client.readContract({
+                address: selectedChain.usdc as `0x${string}`,
+                abi: ERC20_ABI,
+                functionName: "balanceOf",
+                args: [depositAddress as `0x${string}`],
+            });
+            setOriginBalance(parseFloat(formatUnits(bal as bigint, 6)).toFixed(2));
+        } catch {
+            setOriginBalance("0.00");
+        } finally {
+            setLoadingOriginBalance(false);
+        }
+    }, [depositAddress, selectedChain]);
+
     useEffect(() => {
         if (!isOpen) return;
         setStep("method");
@@ -260,6 +299,12 @@ export default function DepositModal({
         setCctpAmount("");
         fetchBalance();
     }, [isOpen, fetchBalance]);
+
+    useEffect(() => {
+        if (isOpen && !selectedChain.isArc) {
+            fetchOriginBalance();
+        }
+    }, [isOpen, selectedChain, fetchOriginBalance]);
 
     const handleCopy = async () => {
         await navigator.clipboard.writeText(depositAddress);
@@ -699,6 +744,36 @@ export default function DepositModal({
                                             </button>
                                         </div>
 
+                                        {/* Live Balance on Origin Chain */}
+                                        {!selectedChain.isArc && (
+                                            <div className="flex items-center justify-between p-3 rounded-2xl bg-black/[0.03] border border-black/10 text-xs">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <ChainLogo chain={selectedChain.chainId} size={16} className="h-4 w-4 shrink-0" />
+                                                    <span className="text-black/70 font-medium truncate">Your USDC on {selectedChain.shortName}:</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    {loadingOriginBalance ? (
+                                                        <Loader2 className="w-3.5 h-3.5 animate-spin text-[#2775CA]" />
+                                                    ) : (
+                                                        <span className="font-mono font-bold text-black">{originBalance} USDC</span>
+                                                    )}
+                                                    {parseFloat(originBalance) > 0 && (
+                                                        <button
+                                                            type="button"
+                                                            disabled={cctpInProgress}
+                                                            onClick={() => {
+                                                                setDepositMode("connected");
+                                                                setCctpAmount(originBalance);
+                                                            }}
+                                                            className="text-[10px] font-bold text-white bg-[#2775CA] hover:bg-[#1f62ab] px-2 py-0.5 rounded-lg transition shadow-sm"
+                                                        >
+                                                            Move to Arc
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+
                                         {/* Notice on EVM Address Identity */}
                                         <p className="text-[11px] text-black/65 leading-relaxed text-center">
                                             Send USDC on <strong className="text-black">{selectedChain.name}</strong> to your EVM deposit address below.
@@ -789,9 +864,20 @@ export default function DepositModal({
                                                         {cctpStatus === "idle" || cctpStatus === "error" ? (
                                                             <>
                                                                 <div className="space-y-1">
-                                                                    <label className="text-[9px] font-black uppercase tracking-wider text-black/60">
-                                                                        Amount to Deposit (USDC)
-                                                                    </label>
+                                                                    <div className="flex items-center justify-between">
+                                                                        <label className="text-[9px] font-black uppercase tracking-wider text-black/60">
+                                                                            Amount to Deposit (USDC)
+                                                                        </label>
+                                                                        {parseFloat(originBalance) > 0 && (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => setCctpAmount(originBalance)}
+                                                                                className="text-[9px] font-bold text-[#2775CA] hover:underline"
+                                                                            >
+                                                                                MAX ({originBalance})
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
                                                                     <input
                                                                         type="number"
                                                                         step="any"

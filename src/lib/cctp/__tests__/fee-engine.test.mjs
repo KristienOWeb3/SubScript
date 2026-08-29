@@ -169,4 +169,31 @@ describe("CCTP route listing", () => {
     assert.equal(solana.available, false);
     assert.equal(solana.unavailableReason, "Coming soon");
   });
+
+  it("verifies canonical Circle CCTP testnet contracts and domains", () => {
+    // Ethereum Sepolia (Domain 0)
+    assert.equal(CCTP_CONFIG[11155111]?.domain, 0);
+    assert.equal(CCTP_CONFIG[11155111]?.usdc.toLowerCase(), "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238".toLowerCase());
+
+    // Avalanche Fuji (Domain 1)
+    assert.equal(CCTP_CONFIG[43113]?.domain, 1);
+    assert.equal(CCTP_CONFIG[43113]?.usdc.toLowerCase(), "0x5425890298aed601595a70AB815c96711a31Bc65".toLowerCase());
+
+    // OP Sepolia (Domain 2)
+    assert.equal(CCTP_CONFIG[11155420]?.domain, 2);
+    assert.equal(CCTP_CONFIG[11155420]?.usdc.toLowerCase(), "0x5fd84259d66Cd46123540766Be93DFE6D43130D7".toLowerCase());
+
+    // Arbitrum Sepolia (Domain 3)
+    assert.equal(CCTP_CONFIG[421614]?.domain, 3);
+    assert.equal(CCTP_CONFIG[421614]?.usdc.toLowerCase(), "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d".toLowerCase());
+
+    // Base Sepolia (Domain 6)
+    assert.equal(CCTP_CONFIG[84532]?.domain, 6);
+    assert.equal(CCTP_CONFIG[84532]?.usdc.toLowerCase(), "0x036CbD53842c5426634e7929541eC2318f3dCF7e".toLowerCase());
+
+    // Polygon Amoy (Domain 7)
+    assert.equal(CCTP_CONFIG[80002]?.domain, 7);
+    assert.equal(CCTP_CONFIG[80002]?.usdc.toLowerCase(), "0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582".toLowerCase());
+  });
 });
+

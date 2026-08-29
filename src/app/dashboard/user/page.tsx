@@ -975,9 +975,10 @@ export default function UserDashboard() {
   const loadUserSettings = async () => {
     setIsSettingsLoading(true);
     try {
-      const [res, depositsRes] = await Promise.all([
+      const [res, depositsRes, scanRes] = await Promise.all([
         fetch("/api/user/settings"),
         fetch("/api/user/deposits").catch(() => null),
+        fetch("/api/user/cctp/scan").catch(() => null),
       ]);
       const data = await res.json();
       const depData = depositsRes ? await depositsRes.json().catch(() => ({})) : {};
