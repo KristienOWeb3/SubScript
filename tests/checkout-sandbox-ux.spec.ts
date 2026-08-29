@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import crypto from "crypto";
 import dotenv from "dotenv";
 import path from "path";
 
@@ -11,14 +12,29 @@ const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
 });
 
-const checkoutId = "de4d2dcb-e069-454a-b811-e6b3065525a6";
+const testMerchantWallet = "0x835a9aed7287068778e11df9d922b3ffac7cfc29".toLowerCase();
+const createdCheckoutIds: string[] = [];
+
+test.afterAll(async () => {
+  if (createdCheckoutIds.length > 0) {
+    await prisma.paymentLink.deleteMany({
+      where: { id: { in: createdCheckoutIds } },
+    });
+  }
+});
 
 async function mockCheckout(page: Page, checkoutId: string, simulationOnly: boolean) {
-  await prisma.paymentLink.deleteMany({ where: { id: checkoutId } });
+  createdCheckoutIds.push(checkoutId);
+  await prisma.merchant.upsert({
+    where: { walletAddress: testMerchantWallet },
+    update: { verified: true, tier: "PREMIUM" },
+    create: { walletAddress: testMerchantWallet, verified: true, tier: "PREMIUM" },
+  });
+
   await prisma.paymentLink.create({
     data: {
       id: checkoutId,
-      merchantAddress: "0x835a9aed7287068778e11df9d922b3ffac7cfc29",
+      merchantAddress: testMerchantWallet,
       title: "Kris's Script — Account Activation",
       description: "One-time $1 signup fee for Kris's Script",
       amountUsdc: BigInt(1000000),
@@ -70,7 +86,7 @@ async function mockCheckout(page: Page, checkoutId: string, simulationOnly: bool
       body: JSON.stringify({
         link: {
           id: checkoutId,
-          merchant_address: "0x835a9aed7287068778e11df9d922b3ffac7cfc29",
+          merchant_address: testMerchantWallet,
           merchant_display_name: "Kris's Script",
           title: "Kris's Script — Account Activation",
           description: "One-time $1 signup fee for Kris's Script",
@@ -100,7 +116,7 @@ async function mockCheckout(page: Page, checkoutId: string, simulationOnly: bool
 }
 
 test("simulation-only demo checkout exposes no payment initiation controls", async ({ page }) => {
-  const simCheckoutId = "de4d2dcb-e069-454a-b811-e6b3065525a6";
+  const simCheckoutId = crypto.randomUUID();
   await mockCheckout(page, simCheckoutId, true);
 
   await page.goto(`/pay/${simCheckoutId}`, { waitUntil: "domcontentloaded" });
@@ -114,7 +130,7 @@ test("simulation-only demo checkout exposes no payment initiation controls", asy
 });
 
 test("normal test-key checkout can initiate an Arc testnet payment", async ({ page }) => {
-  const normalCheckoutId = "ee4d2dcb-e069-454a-b811-e6b3065525a7";
+  const normalCheckoutId = crypto.randomUUID();
   await mockCheckout(page, normalCheckoutId, false);
 
   await page.goto(`/pay/${normalCheckoutId}`, { waitUntil: "domcontentloaded" });
