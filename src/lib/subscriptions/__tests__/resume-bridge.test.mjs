@@ -285,7 +285,7 @@ test("the DM thread's plan bar resumes rather than resubscribes", () => {
     const manager = dashboard.slice(dashboard.indexOf("function MerchantPlanManager"));
     const canceledBranch = manager.slice(
         manager.indexOf("isCanceledAtPeriodEnd ? ("),
-        manager.indexOf("Cancel current plan"),
+        manager.indexOf("Cancel plan"),
     );
     assert.match(canceledBranch, /onResume\?\.\(activeSubscription\)/);
     assert.doesNotMatch(canceledBranch, /onSubscribe/);

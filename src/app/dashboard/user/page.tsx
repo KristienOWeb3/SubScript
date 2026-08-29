@@ -7327,9 +7327,6 @@ export default function UserDashboard() {
         onClose={() => setReceiveOpen(false)}
         isEmbeddedWallet={isEmbeddedWalletSession}
         depositAddress={userWallet || ""}
-        chainId={chainId}
-        switchChainAsync={switchChainAsync}
-        writeContractAsync={writeContractAsync}
         onSuccess={() => {
           refetchUsdc().catch(console.error);
           refetchOriginBalances().catch(console.error);
@@ -8979,11 +8976,11 @@ function MerchantPlanManager({
               type="button"
               onClick={onCancel}
               disabled={loadingAction === `cancel-sub-${activeSubscription.subscriptionId}`}
-              className={`dm-quick-button flex-1 min-w-0 text-center truncate relative overflow-hidden border-red-500/20 bg-red-50 text-red-700 font-black shadow-sm ${
+              className={`dm-quick-button flex-1 min-w-0 text-center truncate relative overflow-hidden border-red-500/20 bg-red-50 text-red-700 font-bold text-[10px] sm:text-xs tracking-tight shadow-sm ${
                 loadingAction === `cancel-sub-${activeSubscription.subscriptionId}` ? "quick-action-loading" : ""
               }`}
             >
-              Cancel current plan
+              Cancel plan
             </motion.button>
           )
         )}

@@ -43,7 +43,7 @@ const channels = [
 const faqs = [
   {
     q: "How do I cancel a subscription?",
-    a: "Open your dashboard, find the subscription, and choose Cancel current plan. Cancellation is free, works immediately or at period end, and revokes the on-chain billing authorization itself — no future charge can execute after that.",
+    a: "Open your dashboard, find the subscription, and choose Cancel plan. Cancellation is free, works immediately or at period end, and revokes the on-chain billing authorization itself — no future charge can execute after that.",
   },
   {
     q: "I was charged incorrectly (wrong amount, duplicate, or after cancelling).",

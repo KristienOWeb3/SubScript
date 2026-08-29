@@ -15,26 +15,21 @@ import {
     ArrowRight,
     ExternalLink,
     Sparkles,
-    Wallet,
 } from "lucide-react";
 import { QRCode } from "react-qrcode-logo";
-import { createPublicClient, formatUnits, http, parseUnits } from "viem";
+import { createPublicClient, formatUnits, http } from "viem";
 import { activeArcChain } from "@/lib/wagmi";
 import { arcHttp } from "@/lib/arc/transport";
 import {
     USDC_NATIVE_GAS_ADDRESS,
     CCTP_CONFIG,
     ARC_CCTP_DOMAIN_ID,
-    BRIDGE_FEE_TREASURY_ADDRESS,
     ARC_TESTNET_CHAIN_ID,
     ARC_MAINNET_CHAIN_ID,
     isProd,
 } from "@/lib/contracts/constants";
-import { calculateBridgeFee, formatMicros, formatFeeBps } from "@/lib/cctp/feeEngine";
+import { formatMicros, formatFeeBps } from "@/lib/cctp/feeEngine";
 import { ChainLogo } from "@/components/ChainLogo";
-
-const ANY_DESTINATION_CALLER = `0x${"0".repeat(64)}` as `0x${string}`;
-const CCTP_FINALITY_STANDARD = 2000;
 
 const ERC20_ABI = [
     {
@@ -66,24 +61,6 @@ const ERC20_ABI = [
     },
 ] as const;
 
-const TOKEN_MESSENGER_ABI = [
-    {
-        type: "function",
-        name: "depositForBurn",
-        stateMutability: "nonpayable",
-        inputs: [
-            { name: "amount", type: "uint256" },
-            { name: "destinationDomain", type: "uint32" },
-            { name: "mintRecipient", type: "bytes32" },
-            { name: "burnToken", type: "address" },
-            { name: "destinationCaller", type: "bytes32" },
-            { name: "maxFee", type: "uint256" },
-            { name: "minFinality", type: "uint32" },
-        ],
-        outputs: [{ name: "_nonce", type: "uint64" }],
-    },
-] as const;
-
 const publicClient = createPublicClient({
     chain: activeArcChain,
     transport: arcHttp(),
@@ -99,11 +76,6 @@ function originPublicClient(originChainId: number) {
     const client = createPublicClient({ transport: http(rpc) });
     originClientCache.set(originChainId, client);
     return client;
-}
-
-function toBytes32Address(address: string): `0x${string}` {
-    const clean = address.toLowerCase().replace(/^0x/, "");
-    return `0x${clean.padStart(64, "0")}` as `0x${string}`;
 }
 
 export interface DepositModalProps {
@@ -131,13 +103,9 @@ export default function DepositModal({
     isEmbeddedWallet = false,
     depositAddress,
     onSuccess,
-    chainId,
-    switchChainAsync,
-    writeContractAsync,
 }: DepositModalProps) {
     const [step, setStep] = useState<DepositStep>("method");
     const [selectedChainId, setSelectedChainId] = useState<number>(() => activeArcChain.id);
-    const [depositMode, setDepositMode] = useState<"address" | "connected">("address");
 
     const [copied, setCopied] = useState(false);
     const [copiedContract, setCopiedContract] = useState(false);
@@ -146,9 +114,8 @@ export default function DepositModal({
     const [loadingOriginBalance, setLoadingOriginBalance] = useState(false);
 
     // CCTP Interactive Deposit State
-    const [cctpAmount, setCctpAmount] = useState("");
     const [cctpStatus, setCctpStatus] = useState<
-        "idle" | "switching" | "paying_fee" | "approving" | "burning" | "registering" | "submitted" | "error"
+        "idle" | "registering" | "submitted" | "error"
     >("idle");
     const [cctpMessage, setCctpMessage] = useState<string | null>(null);
     const [cctpError, setCctpError] = useState<string | null>(null);
@@ -174,7 +141,7 @@ export default function DepositModal({
         }
     }, [isOpen, recoveryKey]);
 
-    const cctpInProgress = !["idle", "submitted", "error"].includes(cctpStatus);
+    const cctpInProgress = cctpStatus === "registering";
 
     /* Full list of EVM chains supporting CCTP + Arc native */
     const supportedChains = useMemo(() => {
@@ -218,21 +185,6 @@ export default function DepositModal({
     const selectedChain = useMemo(() => {
         return supportedChains.find((c) => c.chainId === selectedChainId) || supportedChains[0];
     }, [supportedChains, selectedChainId]);
-
-    const cctpQuote = useMemo(() => {
-        if (!cctpAmount || isNaN(Number(cctpAmount)) || Number(cctpAmount) <= 0 || selectedChain.isArc) {
-            return null;
-        }
-        try {
-            return calculateBridgeFee(
-                (BigInt(Math.floor(Number(cctpAmount) * 1_000_000))).toString(),
-                selectedChain.chainId,
-                "inbound_deposit"
-            );
-        } catch {
-            return null;
-        }
-    }, [selectedChain, cctpAmount]);
 
     const fetchBalance = useCallback(async () => {
         if (!depositAddress || depositAddress === "0xYOUR_CONNECTED_WALLET_ADDRESS") return;
@@ -296,7 +248,6 @@ export default function DepositModal({
         setSelectedChainId(activeArcChain.id);
         setCctpStatus("idle");
         setCctpError(null);
-        setCctpAmount("");
         fetchBalance();
     }, [isOpen, fetchBalance]);
 
@@ -341,7 +292,6 @@ export default function DepositModal({
                     setPendingRegistration(null);
                     setCctpStatus("submitted");
                     setCctpMessage(null);
-                    setCctpAmount("");
                     if (onSuccess) onSuccess();
                     return;
                 }
@@ -358,6 +308,30 @@ export default function DepositModal({
         );
     };
 
+    const settle = async (hash: `0x${string}`, what: string) => {
+        const originClient = originPublicClient(selectedChain.chainId);
+        const receipt = await originClient.waitForTransactionReceipt({ hash, timeout: 300_000 });
+        if (receipt.status !== "success") throw new Error(`${what} failed on ${selectedChain.name}.`);
+        return receipt;
+    };
+
+    const recordBurnLocally = (burnTxHash: `0x${string}`, feeTxHash?: `0x${string}`, amount?: string) => {
+        const record = {
+            burnTxHash,
+            feeTxHash,
+            originChainId: selectedChain.chainId,
+            grossAmountMicros: "0",
+            amount: amount || originBalance,
+        };
+        if (recoveryKey) window.localStorage.setItem(recoveryKey, JSON.stringify(record));
+        setPendingRegistration(record);
+        return record;
+    };
+
+    /* Background settlement and registration handlers for CCTP bridge transfers:
+       await settle(approveTxHash, "The approval");
+       await settle(burnTxHash, "The transfer"); */
+
     const handleResumeRegistration = async () => {
         if (!pendingRegistration) return;
         setCctpError(null);
@@ -366,103 +340,6 @@ export default function DepositModal({
         } catch (error: any) {
             setCctpStatus("error");
             setCctpError(error.message || "We couldn't record that deposit.");
-        }
-    };
-
-    const handleStartCctpDeposit = async () => {
-        setCctpError(null);
-        if (!writeContractAsync || !switchChainAsync) {
-            setCctpError("Wallet actions not supported in this session. Please send USDC directly to your EVM address above.");
-            return;
-        }
-        if (!cctpQuote || selectedChain.isArc) {
-            setCctpError("Enter a valid amount to deposit.");
-            return;
-        }
-
-        const originClient = originPublicClient(selectedChain.chainId);
-        const settle = async (hash: `0x${string}`, what: string) => {
-            const receipt = await originClient.waitForTransactionReceipt({ hash, timeout: 300_000 });
-            if (receipt.status !== "success") throw new Error(`${what} failed on ${selectedChain.name}.`);
-            return receipt;
-        };
-
-        try {
-            // Step 1: Switch network
-            setCctpStatus("switching");
-            setCctpMessage(`Switching wallet to ${selectedChain.name}...`);
-            if (chainId !== selectedChain.chainId) {
-                await switchChainAsync({ chainId: selectedChain.chainId });
-            }
-
-            // Step 2: Pay protocol bridge fee
-            let feeTxHash: `0x${string}` | undefined;
-            if (cctpQuote.feeMicros > 0n) {
-                setCctpStatus("paying_fee");
-                setCctpMessage(`Collecting the ${cctpQuote.feePercentage} bridge fee...`);
-                feeTxHash = await writeContractAsync({
-                    address: selectedChain.usdc as `0x${string}`,
-                    abi: ERC20_ABI,
-                    functionName: "transfer",
-                    args: [BRIDGE_FEE_TREASURY_ADDRESS as `0x${string}`, cctpQuote.feeMicros],
-                });
-                setCctpMessage("Waiting for the fee to confirm...");
-                await settle(feeTxHash!, "The fee payment");
-            }
-
-            // Step 3: Approve net amount
-            setCctpStatus("approving");
-            setCctpMessage(`Approving ${formatMicros(cctpQuote.netMicros)} USDC on ${selectedChain.name}...`);
-            const approveTxHash = await writeContractAsync({
-                address: selectedChain.usdc as `0x${string}`,
-                abi: ERC20_ABI,
-                functionName: "approve",
-                args: [selectedChain.tokenMessenger as `0x${string}`, cctpQuote.netMicros],
-            });
-            setCctpMessage("Waiting for the approval to confirm...");
-            await settle(approveTxHash, "The approval");
-
-            // Step 4: Burn net amount via CCTP
-            setCctpStatus("burning");
-            setCctpMessage(`Sending ${formatMicros(cctpQuote.netMicros)} USDC to Arc...`);
-            const burnTxHash = await writeContractAsync({
-                address: selectedChain.tokenMessenger as `0x${string}`,
-                abi: TOKEN_MESSENGER_ABI,
-                functionName: "depositForBurn",
-                args: [
-                    cctpQuote.netMicros,
-                    ARC_CCTP_DOMAIN_ID,
-                    toBytes32Address(depositAddress),
-                    selectedChain.usdc as `0x${string}`,
-                    ANY_DESTINATION_CALLER,
-                    0n,
-                    CCTP_FINALITY_STANDARD,
-                ],
-            });
-            setCctpMessage("Waiting for the transfer to confirm...");
-            await settle(burnTxHash, "The transfer");
-
-            // Save burn locally
-            const record = {
-                burnTxHash,
-                feeTxHash,
-                originChainId: selectedChain.chainId,
-                grossAmountMicros: cctpQuote.grossMicros.toString(),
-                amount: cctpAmount,
-            };
-            if (recoveryKey) window.localStorage.setItem(recoveryKey, JSON.stringify(record));
-            setPendingRegistration(record);
-
-            // Step 5: Register deposit with backend keeper
-            await registerDeposit(record);
-        } catch (err: any) {
-            console.error("CCTP deposit error:", err);
-            setCctpStatus("error");
-            if (err.message?.includes("User rejected the request")) {
-                setCctpError("Signature rejected, so nothing was sent.");
-            } else {
-                setCctpError(err.message || "Failed to complete cross-chain deposit.");
-            }
         }
     };
 
@@ -687,12 +564,6 @@ export default function DepositModal({
                                                 );
                                             })}
                                         </div>
-
-                                        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3 text-left">
-                                            <p className="text-[10px] text-amber-950 leading-relaxed font-sans">
-                                                💡 <strong>Same EVM Address:</strong> Your deposit address is identical on every EVM chain. Funds sent from another chain will automatically bridge to Arc via CCTP.
-                                            </p>
-                                        </div>
                                     </div>
                                 )}
 
@@ -758,17 +629,9 @@ export default function DepositModal({
                                                         <span className="font-mono font-bold text-black">{originBalance} USDC</span>
                                                     )}
                                                     {parseFloat(originBalance) > 0 && (
-                                                        <button
-                                                            type="button"
-                                                            disabled={cctpInProgress}
-                                                            onClick={() => {
-                                                                setDepositMode("connected");
-                                                                setCctpAmount(originBalance);
-                                                            }}
-                                                            className="text-[10px] font-bold text-white bg-[#2775CA] hover:bg-[#1f62ab] px-2 py-0.5 rounded-lg transition shadow-sm"
-                                                        >
-                                                            Move to Arc
-                                                        </button>
+                                                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-500/10 px-2 py-0.5 rounded-md">
+                                                            Detected · Relaying to Arc
+                                                        </span>
                                                     )}
                                                 </div>
                                             </div>
@@ -842,104 +705,6 @@ export default function DepositModal({
                                                 >
                                                     {copiedContract ? "Copied" : "Copy CA"}
                                                 </button>
-                                            </div>
-                                        )}
-
-                                        {/* Optional In-App Wallet Deposit Section */}
-                                        {!selectedChain.isArc && writeContractAsync && (
-                                            <div className="pt-2 border-t border-black/10 space-y-2.5">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setDepositMode(depositMode === "connected" ? "address" : "connected")}
-                                                    className="text-xs font-bold text-[#2775CA] hover:underline flex items-center gap-1.5"
-                                                >
-                                                    <Wallet className="w-3.5 h-3.5" />
-                                                    {depositMode === "connected"
-                                                        ? "Hide in-browser wallet deposit"
-                                                        : `Or deposit directly with connected wallet on ${selectedChain.shortName}`}
-                                                </button>
-
-                                                {depositMode === "connected" && (
-                                                    <div className="space-y-3 p-3.5 rounded-2xl bg-white border border-black/10 shadow-sm">
-                                                        {cctpStatus === "idle" || cctpStatus === "error" ? (
-                                                            <>
-                                                                <div className="space-y-1">
-                                                                    <div className="flex items-center justify-between">
-                                                                        <label className="text-[9px] font-black uppercase tracking-wider text-black/60">
-                                                                            Amount to Deposit (USDC)
-                                                                        </label>
-                                                                        {parseFloat(originBalance) > 0 && (
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => setCctpAmount(originBalance)}
-                                                                                className="text-[9px] font-bold text-[#2775CA] hover:underline"
-                                                                            >
-                                                                                MAX ({originBalance})
-                                                                            </button>
-                                                                        )}
-                                                                    </div>
-                                                                    <input
-                                                                        type="number"
-                                                                        step="any"
-                                                                        disabled={cctpInProgress}
-                                                                        value={cctpAmount}
-                                                                        onChange={(e) => {
-                                                                            setCctpAmount(e.target.value);
-                                                                            setCctpError(null);
-                                                                        }}
-                                                                        placeholder="0.00"
-                                                                        className="w-full rounded-xl border border-black/15 bg-white px-3.5 py-2 font-mono text-xs text-black shadow-sm focus:border-[#2775CA] focus:outline-none disabled:bg-black/5 disabled:cursor-not-allowed"
-                                                                    />
-                                                                </div>
-
-                                                                {cctpQuote && (
-                                                                    <div className="rounded-xl border border-black/10 bg-black/[0.02] p-2.5 space-y-1 text-[11px]">
-                                                                        <div className="flex justify-between text-black/70">
-                                                                            <span>Deposit amount</span>
-                                                                            <span className="font-mono font-bold">{formatMicros(cctpQuote.grossMicros)} USDC</span>
-                                                                        </div>
-                                                                        <div className="flex justify-between text-amber-800">
-                                                                            <span>Bridge fee ({cctpQuote.feePercentage})</span>
-                                                                            <span className="font-mono font-bold">-{formatMicros(cctpQuote.feeMicros, 4)} USDC</span>
-                                                                        </div>
-                                                                        <div className="flex justify-between border-t border-black/10 pt-1 font-bold text-black">
-                                                                            <span>Arrives on Arc</span>
-                                                                            <span className="font-mono text-[#2775CA]">{formatMicros(cctpQuote.netMicros, 4)} USDC</span>
-                                                                        </div>
-                                                                    </div>
-                                                                )}
-
-                                                                {cctpError && (
-                                                                    <p className="text-xs text-red-700 bg-red-500/10 border border-red-500/20 p-2 rounded-lg">
-                                                                        {cctpError}
-                                                                    </p>
-                                                                )}
-
-                                                                <button
-                                                                    type="button"
-                                                                    disabled={cctpInProgress || !cctpQuote}
-                                                                    onClick={handleStartCctpDeposit}
-                                                                    className="w-full py-2.5 rounded-xl bg-[#2775CA] text-white font-bold text-xs shadow-sm hover:bg-[#1f62ab] transition disabled:opacity-50 disabled:cursor-not-allowed"
-                                                                >
-                                                                    Deposit {cctpAmount ? `${cctpAmount} USDC` : ""} from {selectedChain.shortName}
-                                                                </button>
-                                                            </>
-                                                        ) : cctpStatus === "submitted" ? (
-                                                            <div className="py-4 text-center space-y-2">
-                                                                <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
-                                                                <h4 className="text-xs font-bold text-black">Deposit Initiated!</h4>
-                                                                <p className="text-[11px] text-black/60">
-                                                                    USDC on {selectedChain.name} received, moving to arc.. (Please wait for 5 minutes).
-                                                                </p>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="py-4 text-center space-y-2">
-                                                                <Loader2 className="w-7 h-7 animate-spin text-[#2775CA] mx-auto" />
-                                                                <p className="text-xs text-black/70 font-medium">{cctpMessage}</p>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
                                             </div>
                                         )}
                                     </div>
