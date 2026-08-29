@@ -260,7 +260,7 @@ export default function SendSingleModal({
                             </div>
                         ) : (
                             <form onSubmit={handleSubmit} className="relative z-10 space-y-5">
-                                <Field label="Where should it go?">
+                                <Field label="Select network">
                                     <div className="relative" ref={networkMenuRef}>
                                         <button
                                             type="button"
