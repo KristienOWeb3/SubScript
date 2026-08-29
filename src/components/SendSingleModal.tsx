@@ -200,7 +200,7 @@ export default function SendSingleModal({
                                 type="button"
                                 onClick={onClose}
                                 disabled={loading}
-                                aria-label="Close"
+                                aria-label="Close send dialog"
                                 className="rounded-full p-1.5 text-black/40 transition hover:bg-black/5 hover:text-black disabled:opacity-40"
                             >
                                 <X className="h-4 w-4" />
@@ -357,8 +357,8 @@ export default function SendSingleModal({
                                             type="button"
                                             disabled={loading}
                                             onClick={onScanQr}
-                                            title="Scan a wallet address"
-                                            aria-label="Scan a wallet address"
+                                            title="Scan QR"
+                                            aria-label="Scan QR"
                                             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-black/10 bg-white text-black/70 shadow-sm transition hover:border-[#2775CA] hover:bg-[#2775CA]/10 hover:text-[#2775CA] disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             <QrCode className="h-5 w-5 text-[#2775CA]" />

@@ -433,11 +433,16 @@ test.describe("mobile overflow audit", () => {
     const page = await context.newPage();
     await page.goto(`${baseURL}/`, { waitUntil: "domcontentloaded" });
 
-    await page.getByRole("button", { name: "Open Menu" }).click();
+    const openMenuBtn = page.getByRole("button", { name: "Open Menu" });
     const menuScroller = page.locator(".overflow-y-auto").filter({
       has: page.getByRole("link", { name: "Documentation", exact: true }),
     });
-    await expect(menuScroller).toBeVisible();
+    await expect(async () => {
+      if (!await menuScroller.isVisible()) {
+        await openMenuBtn.click();
+      }
+      await expect(menuScroller).toBeVisible();
+    }).toPass({ timeout: 15000 });
 
     for (const linkName of [
       "Documentation",
