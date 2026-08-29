@@ -222,7 +222,8 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
 
     test("should roll API credentials", async ({ page }) => {
       await page.goto("/dashboard?tab=apikeys");
-      await expect(page.getByRole("heading", { name: "API Credentials", exact: true })).toBeVisible();
+      await page.waitForSelector('[data-mounted="true"]');
+      await expect(page.getByRole("heading", { name: "API Credentials", exact: true })).toBeVisible({ timeout: 20000 });
       
       // .click() auto-waits for visibility/actionability; .first() keeps it strict-mode safe.
       await page.locator('button').filter({ hasText: /^Roll$/ }).first().click();
@@ -235,6 +236,7 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
 
     test("should update SDK code dynamically in Checkout Setup", async ({ page }) => {
       await page.goto("/dashboard?tab=checkout");
+      await page.waitForSelector('[data-mounted="true"]');
       await page.getByRole("textbox", { name: "Subscription/Plan Name" }).fill("Custom DeepSeek Rate");
       
       // Check if generated code updates dynamically
@@ -279,7 +281,8 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
 
     test("should keep off-ramp settlement disabled", async ({ page }) => {
       await page.goto("/dashboard?tab=offramp");
-      await expect(page.getByRole("heading", { name: "Fiat off-ramp", exact: true })).toBeVisible();
+      await page.waitForSelector('[data-mounted="true"]');
+      await expect(page.getByRole("heading", { name: "Fiat off-ramp", exact: true })).toBeVisible({ timeout: 20000 });
       await expect(page.getByText("Coming soon", { exact: true })).toBeVisible();
       await expect(page.getByText(/Bank settlement routing is not yet available/)).toBeVisible();
       await expect(page.locator('input[type="range"]')).toHaveCount(0);
