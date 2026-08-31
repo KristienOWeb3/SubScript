@@ -29,8 +29,6 @@ export default function MobileFloatingNav<T extends string = string>({
 }: MobileFloatingNavProps<T>) {
   const [isRetracted, setIsRetracted] = useState(false);
   const lastScrollY = useRef(0);
-  const isRetractedRef = useRef(isRetracted);
-  isRetractedRef.current = isRetracted;
   const touchStartY = useRef(0);
 
   // Always expand whenever user changes tabs
@@ -43,17 +41,17 @@ export default function MobileFloatingNav<T extends string = string>({
 
     // Expand when at or near the top
     if (currentY <= 25) {
-      if (isRetractedRef.current) setIsRetracted(false);
+      setIsRetracted(false);
       lastScrollY.current = currentY;
       return;
     }
 
     // Scroll down past top area -> Smoothly retract to edges
-    if (delta > 6 && !isRetractedRef.current && currentY > 30) {
+    if (delta > 6 && currentY > 30) {
       setIsRetracted(true);
     }
     // Scroll up -> Expand back smoothly
-    else if (delta < -6 && isRetractedRef.current) {
+    else if (delta < -6) {
       setIsRetracted(false);
     }
 
@@ -110,10 +108,10 @@ export default function MobileFloatingNav<T extends string = string>({
         const currentY = getActiveScrollY();
 
         if (currentY <= 20) {
-          if (isRetractedRef.current) setIsRetracted(false);
-        } else if (touchDelta > 6 && !isRetractedRef.current && currentY > 25) {
+          setIsRetracted(false);
+        } else if (touchDelta > 6 && currentY > 25) {
           setIsRetracted(true);
-        } else if (touchDelta < -6 && isRetractedRef.current) {
+        } else if (touchDelta < -6) {
           setIsRetracted(false);
         }
       }
@@ -123,10 +121,10 @@ export default function MobileFloatingNav<T extends string = string>({
     const onWheel = (e: WheelEvent) => {
       const currentY = getActiveScrollY();
       if (currentY <= 20) {
-        if (isRetractedRef.current) setIsRetracted(false);
-      } else if (e.deltaY > 6 && !isRetractedRef.current && currentY > 25) {
+        setIsRetracted(false);
+      } else if (e.deltaY > 6 && currentY > 25) {
         setIsRetracted(true);
-      } else if (e.deltaY < -6 && isRetractedRef.current) {
+      } else if (e.deltaY < -6) {
         setIsRetracted(false);
       }
     };
@@ -182,8 +180,8 @@ export default function MobileFloatingNav<T extends string = string>({
             setIsRetracted(false);
           }
         }}
-        className={`liquid-glass pointer-events-auto relative flex h-12 items-center rounded-full backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] overflow-hidden border border-black/15 transition-colors duration-200 ${
-          isRetracted ? "cursor-pointer justify-center p-0 flex-none" : "px-1.5 justify-between flex-1 min-w-0"
+        className={`liquid-glass pointer-events-auto relative flex items-center rounded-full backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] overflow-hidden border border-black/15 transition-all duration-200 ${
+          isRetracted ? "h-12 w-12 cursor-pointer justify-center p-0 flex-none" : "px-3 py-[1.1rem] min-h-[79px] justify-between flex-1 min-w-0"
         }`}
         style={{
           backgroundColor: "rgb(39 117 202 / 20%)",
@@ -234,14 +232,14 @@ export default function MobileFloatingNav<T extends string = string>({
                     aria-current={isActive ? "page" : undefined}
                     aria-label={tab.label}
                     onClick={() => onSelectTab(tab.id)}
-                    className={`relative h-9 flex items-center justify-center rounded-full transition-all duration-200 ease-out active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2775CA] ${
+                    className={`relative h-11 flex items-center justify-center rounded-full transition-all duration-200 ease-out active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2775CA] ${
                       isActive
-                        ? "bg-[#353935] text-[#FFFFF0] shadow-sm px-2.5 gap-1.5 flex-1 min-w-[70px] max-w-[88px]"
-                        : "bg-transparent text-black/65 hover:bg-black/5 hover:text-black w-9 shrink-0"
+                        ? "bg-[#353935] text-[#FFFFF0] shadow-sm px-3 gap-1.5 flex-1 min-w-[76px] max-w-[94px]"
+                        : "bg-transparent text-black/65 hover:bg-black/5 hover:text-black w-10 shrink-0"
                     }`}
                   >
                     <IconComponent
-                      className={`h-4.5 w-4.5 shrink-0 transition-colors duration-200 ${
+                      className={`h-5 w-5 shrink-0 transition-colors duration-200 ${
                         isActive ? "text-[#FFFFF0]" : "text-black/65"
                       }`}
                     />
@@ -271,15 +269,15 @@ export default function MobileFloatingNav<T extends string = string>({
             setIsRetracted(false);
             onSelectTab("inbox" as unknown as T);
           }}
-          className={`relative h-12 flex items-center justify-center rounded-full border border-black/15 transition-all duration-200 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] active:scale-95 overflow-hidden ${
-            isInboxActive && !isRetracted
-              ? "bg-[#353935] text-[#FFFFF0] w-[88px] px-2.5 gap-1.5"
+          className={`relative flex items-center justify-center rounded-full border border-black/15 transition-all duration-200 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] active:scale-95 overflow-hidden ${
+            isRetracted
+              ? "h-12 w-12"
               : isInboxActive
-              ? "bg-[#353935] text-[#FFFFF0] w-12"
-              : "bg-[#2775CA]/20 text-black/70 hover:text-black w-12"
+              ? "min-h-[79px] bg-[#353935] text-[#FFFFF0] w-[88px] px-2.5 gap-1.5"
+              : "min-h-[79px] h-[79px] bg-[#2775CA]/20 text-black/70 hover:text-black w-[52px]"
           }`}
           style={{
-            backgroundColor: isInboxActive ? undefined : "rgb(39 117 202 / 20%)",
+            backgroundColor: isInboxActive && !isRetracted ? undefined : "rgb(39 117 202 / 20%)",
             backdropFilter: "blur(22px)",
             WebkitBackdropFilter: "blur(22px)",
           }}
