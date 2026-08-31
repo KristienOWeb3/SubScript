@@ -25,7 +25,7 @@ interface MobileFloatingNavProps<T extends string = string> {
 const RETRACT_THRESHOLD = 120;  // requires 120px of deliberate down-scroll before retracting
 const EXPAND_THRESHOLD  = 25;   // light 25px up-scroll immediately expands
 const COOLDOWN_MS       = 500;  // ignore opposite direction after committing
-const RETRACT_DELAY_MS  = 220;  // gentle debounce before closing to prevent sudden snaps
+const RETRACT_DELAY_MS  = 180;  // gentle debounce before closing to prevent sudden snaps
 const TOP_DEADZONE_PX   = 80;   // top 80px of page is deadzone: NEVER retracts near top
 
 export default function MobileFloatingNav<T extends string = string>({
@@ -161,91 +161,91 @@ export default function MobileFloatingNav<T extends string = string>({
   const ActiveIcon = activeTabItem?.icon;
   const isInboxActive = activeTab === ("inbox" as unknown as T);
 
-  /* Gentle, smooth 500ms liquid decelerating bezier curve */
+  /* Liquid, decelerating easing curve for full 500ms opening & closing */
   const motionBezier = "cubic-bezier(0.22, 1, 0.36, 1)";
-  const transitionStyle: React.CSSProperties = {
-    transition: `width 500ms ${motionBezier}, max-width 500ms ${motionBezier}, height 500ms ${motionBezier}, transform 500ms ${motionBezier}, opacity 300ms ease`,
-    willChange: "width, max-width, height, transform, opacity",
-    transform: "translateZ(0)",
-    WebkitTransform: "translateZ(0)",
-  };
+  const smoothTransition = `width 500ms ${motionBezier}, height 500ms ${motionBezier}, max-width 500ms ${motionBezier}, min-height 500ms ${motionBezier}, transform 500ms ${motionBezier}, border-radius 500ms ${motionBezier}, background-color 300ms ease`;
 
   return (
     <aside
       aria-label="Mobile navigation bar"
-      className={`fixed bottom-5 inset-x-0 mx-auto w-full max-w-sm px-4 z-50 flex items-center pointer-events-none select-none box-border ${
-        isRetracted ? "justify-between" : "justify-center gap-2"
-      }`}
-      style={{
-        transition: `gap 500ms ${motionBezier}, justify-content 500ms ${motionBezier}`,
-        transform: "translateZ(0)",
-      }}
+      className="fixed bottom-5 inset-x-0 mx-auto w-full max-w-sm px-4 z-50 flex items-center justify-between pointer-events-none select-none box-border"
+      style={{ transform: "translateZ(0)" }}
     >
       {/* ── Left Navigation Capsule ── */}
       <nav
         aria-label="Primary navigation"
         onClick={() => { if (isRetracted) setIsRetracted(false); }}
-        className={`liquid-glass pointer-events-auto relative flex items-center rounded-full backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] overflow-hidden border border-black/15 ${
-          isRetracted
-            ? "h-12 w-12 cursor-pointer justify-center p-0 flex-none"
-            : "px-3 py-[1.1rem] min-h-[79px] justify-between flex-1 min-w-0"
+        className={`liquid-glass pointer-events-auto relative flex items-center justify-center rounded-full backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] overflow-hidden border border-black/15 ${
+          isRetracted ? "cursor-pointer" : "px-3"
         }`}
         style={{
-          ...transitionStyle,
+          transition: smoothTransition,
+          willChange: "width, height, max-width, min-height",
+          transform: "translateZ(0)",
           backgroundColor: "rgb(39 117 202 / 20%)",
           backdropFilter: "blur(22px)",
           WebkitBackdropFilter: "blur(22px)",
+          width: isRetracted ? 48 : isInboxActive ? 220 : 272,
+          height: isRetracted ? 48 : 79,
+          minHeight: isRetracted ? 48 : 79,
           maxWidth: isRetracted ? 48 : isInboxActive ? 220 : 272,
         }}
       >
         <LiquidGlassEffect />
 
-        {isRetracted ? (
-          /* Retracted: single icon bubble */
+        {/* Retracted: Icon bubble (fades in/out without unmounting) */}
+        <div
+          className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ease-out ${
+            isRetracted ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          }`}
+        >
           <button
             type="button"
             aria-label={`Current: ${activeTabItem.label}. Tap to expand navigation`}
             onClick={(e) => { e.stopPropagation(); setIsRetracted(false); }}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-[#353935] text-[#FFFFF0] shadow-sm active:scale-95 transition-transform"
-            style={{ transform: "translateZ(0)" }}
           >
             {ActiveIcon && <ActiveIcon className="h-5 w-5 text-[#FFFFF0]" />}
           </button>
-        ) : (
-          /* Expanded: tab buttons */
-          <div className="flex w-full items-center justify-between gap-1" style={{ transform: "translateZ(0)" }}>
-            {tabs.map((tab) => {
-              const isActive = activeTab === tab.id;
-              const IconComponent = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  aria-pressed={isActive}
-                  aria-current={isActive ? "page" : undefined}
-                  aria-label={tab.label}
-                  onClick={() => onSelectTab(tab.id)}
-                  className={`relative h-11 flex items-center justify-center rounded-full transition-all duration-200 ease-out active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2775CA] ${
-                    isActive
-                      ? "bg-[#353935] text-[#FFFFF0] shadow-sm px-3 gap-1.5 flex-1 min-w-[76px] max-w-[94px]"
-                      : "bg-transparent text-black/65 hover:bg-black/5 hover:text-black w-10 shrink-0"
+        </div>
+
+        {/* Expanded: Tab buttons bar (fades in/out smoothly over 300ms without DOM removal) */}
+        <div
+          className={`flex w-full items-center justify-between gap-1 transition-opacity duration-300 ease-out ${
+            isRetracted ? "opacity-0 pointer-events-none" : "opacity-100 pointer-events-auto"
+          }`}
+        >
+          {tabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+            const IconComponent = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                aria-pressed={isActive}
+                aria-current={isActive ? "page" : undefined}
+                aria-label={tab.label}
+                onClick={() => onSelectTab(tab.id)}
+                className={`relative h-11 flex items-center justify-center rounded-full transition-all duration-200 ease-out active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2775CA] ${
+                  isActive
+                    ? "bg-[#353935] text-[#FFFFF0] shadow-sm px-3 gap-1.5 flex-1 min-w-[76px] max-w-[94px]"
+                    : "bg-transparent text-black/65 hover:bg-black/5 hover:text-black w-10 shrink-0"
+                }`}
+              >
+                <IconComponent
+                  className={`h-5 w-5 shrink-0 transition-colors duration-200 ${
+                    isActive ? "text-[#FFFFF0]" : "text-black/65"
                   }`}
-                >
-                  <IconComponent
-                    className={`h-5 w-5 shrink-0 transition-colors duration-200 ${
-                      isActive ? "text-[#FFFFF0]" : "text-black/65"
-                    }`}
-                  />
-                  {isActive && (
-                    <span className="whitespace-nowrap text-[9px] font-black uppercase tracking-wider text-[#FFFFF0] truncate">
-                      {tab.label}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
+                />
+                {isActive && (
+                  <span className="whitespace-nowrap text-[9px] font-black uppercase tracking-wider text-[#FFFFF0] truncate">
+                    {tab.label}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </nav>
 
       {/* ── Right Edge: Detached DMs Button ── */}
@@ -254,17 +254,18 @@ export default function MobileFloatingNav<T extends string = string>({
           type="button"
           onClick={() => { setIsRetracted(false); onSelectTab("inbox" as unknown as T); }}
           className={`relative flex items-center justify-center rounded-full border border-black/15 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] active:scale-95 overflow-hidden ${
-            isRetracted
-              ? "h-12 w-12"
-              : isInboxActive
-              ? "h-[79px] w-[88px] bg-[#353935] text-[#FFFFF0] px-2.5 gap-1.5"
-              : "h-[52px] w-[52px] bg-[#2775CA]/20 text-black/70 hover:text-black"
+            isInboxActive && !isRetracted
+              ? "bg-[#353935] text-[#FFFFF0] px-2.5 gap-1.5"
+              : "bg-[#2775CA]/20 text-black/70 hover:text-black"
           }`}
           style={{
-            ...transitionStyle,
+            transition: smoothTransition,
+            willChange: "width, height",
             backgroundColor: isInboxActive && !isRetracted ? undefined : "rgb(39 117 202 / 20%)",
             backdropFilter: "blur(22px)",
             WebkitBackdropFilter: "blur(22px)",
+            width: isRetracted ? 48 : isInboxActive ? 88 : 52,
+            height: isRetracted ? 48 : isInboxActive ? 79 : 52,
           }}
           aria-label="Open DMs"
         >
