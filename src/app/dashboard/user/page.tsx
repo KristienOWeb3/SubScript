@@ -3621,18 +3621,18 @@ export default function UserDashboard() {
           if (isWithdrawal) {
             name = `CCTP Send to ${d.destName || "External Chain"}`;
             detail = d.status === "completed" 
-              ? `CCTP Cross-chain Send • Delivered` 
+              ? `Withdrawal confirmed` 
               : d.status === "failed" 
-              ? `CCTP Send • Failed` 
-              : `CCTP Send to ${d.destName || "External Chain"} • Bridging (~5 mins)`;
+              ? `Withdrawal failed` 
+              : `CCTP Send to ${d.destName || "External Chain"} • Estimated arrival ~15 mins`;
             status = d.status === "completed" ? "CONFIRMED" : d.status === "failed" ? "FAILED" : "PENDING";
           } else {
             name = `CCTP Deposit from ${d.originName || "External Chain"}`;
             detail = d.status === "completed"
-              ? `CCTP Cross-chain Deposit • Completed`
+              ? `Deposit confirmed`
               : d.status === "failed"
-              ? `CCTP Deposit • Failed`
-              : `CCTP Deposit from ${d.originName || "External Chain"} • Bridging (~5 mins)`;
+              ? `Deposit failed`
+              : `CCTP Deposit from ${d.originName || "External Chain"} • Estimated arrival ~15 mins`;
             status = d.status === "completed" ? "CONFIRMED" : d.status === "failed" ? "FAILED" : "PENDING";
           }
         }
@@ -3659,12 +3659,16 @@ export default function UserDashboard() {
         const usdVal = Number(r.amountUsdc) / 1_000_000;
         const localVal = usdVal * exchangeRate;
         const localLabel = `${detectedCurrency.symbol}${formatHeadlineAmount(localVal)}`;
+        const cleanMemo = r.memoNote && !r.memoNote.toLowerCase().startsWith("rcpt-") && !/^rcpt-[0-9a-f]{32}$/i.test(r.memoNote.trim())
+          ? r.memoNote.trim()
+          : (incoming ? "Payment received" : "Payment sent");
+
         return {
           id: `rcpt-${r.receiptId}`,
           kind: "one-time" as const,
           name: r.counterpartyName || formatAddress(incoming ? r.payerAddress : r.merchantAddress) || "SubScript Transaction",
           pic: null as string | null,
-          detail: r.memoNote || (incoming ? "Received Payment" : "Payment Sent"),
+          detail: cleanMemo,
           amountLabel: `${incoming ? "+" : "-"}$${formatUsdc(r.amountUsdc)}`,
           localAmountLabel: `${incoming ? "+" : "-"}${localLabel}`,
           amountUsdc: usdVal,

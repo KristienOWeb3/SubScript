@@ -3,63 +3,184 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#000000" />
-    <title>Offline · SubScript</title>
+    <meta name="theme-color" content="#06080C" />
+    <title>You're Offline · SubScript</title>
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <style>
         :root { color-scheme: dark; }
-        * { box-sizing: border-box; }
-        html, body { height: 100%; margin: 0; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            height: 100%;
+            background: #06080C;
+            color: #F8FAFC;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            overflow: hidden;
+        }
         body {
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 24px;
-            background: #000;
-            color: #fff;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            -webkit-font-smoothing: antialiased;
+            padding: 20px;
+            position: relative;
         }
-        .card {
+        /* Ambient backdrop glow */
+        .glow {
+            position: absolute;
+            width: 320px;
+            height: 320px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(39, 117, 202, 0.28) 0%, rgba(204, 255, 0, 0.08) 50%, transparent 70%);
+            filter: blur(40px);
+            pointer-events: none;
+            z-index: 0;
+        }
+        .container {
+            position: relative;
+            z-index: 1;
             width: 100%;
-            max-width: 360px;
+            max-width: 380px;
             text-align: center;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 24px;
-            background: rgba(255, 255, 255, 0.03);
-            padding: 32px 24px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 28px;
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(28px);
+            -webkit-backdrop-filter: blur(28px);
+            padding: 36px 24px 28px;
+            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.1);
         }
-        .logo { width: 56px; height: 56px; margin: 0 auto 20px; display: block; }
-        h1 { font-size: 18px; font-weight: 800; margin: 0 0 8px; letter-spacing: -0.01em; }
-        p { font-size: 13px; line-height: 1.5; color: rgba(255, 255, 255, 0.55); margin: 0 0 24px; }
-        button {
+        .icon-wrap {
+            position: relative;
+            width: 72px;
+            height: 72px;
+            margin: 0 auto 22px;
+            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .icon-wrap svg {
+            width: 32px;
+            height: 32px;
+            stroke: #94A3B8;
+        }
+        .pulse-dot {
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #F59E0B;
+            border: 2px solid #06080C;
+            box-shadow: 0 0 10px rgba(245, 158, 11, 0.6);
+            animation: pulse 2s infinite ease-in-out;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.85); }
+        }
+        h1 {
+            font-size: 20px;
+            font-weight: 800;
+            margin-bottom: 10px;
+            letter-spacing: -0.02em;
+            color: #FFFFFF;
+        }
+        p.lead {
+            font-size: 13px;
+            line-height: 1.6;
+            color: #94A3B8;
+            margin-bottom: 24px;
+        }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 999px;
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.25);
+            font-size: 11px;
+            font-weight: 600;
+            color: #FCD34D;
+            margin-bottom: 24px;
+        }
+        .btn-retry {
             width: 100%;
             border: 0;
-            border-radius: 14px;
-            padding: 13px 16px;
-            background: #ccff00;
-            color: #000;
-            font-size: 12px;
-            font-weight: 900;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
+            border-radius: 16px;
+            padding: 14px 20px;
+            background: #F8FAFC;
+            color: #06080C;
+            font-size: 13px;
+            font-weight: 800;
+            letter-spacing: 0.02em;
             cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
         }
-        button:hover { filter: brightness(1.1); }
-        .hint { margin-top: 16px; font-size: 10px; color: rgba(255, 255, 255, 0.35); }
+        .btn-retry:hover {
+            background: #FFFFFF;
+            transform: translateY(-1px);
+        }
+        .btn-retry:active {
+            transform: translateY(0) scale(0.98);
+        }
+        .footer-note {
+            margin-top: 18px;
+            font-size: 11px;
+            line-height: 1.5;
+            color: #64748B;
+        }
     </style>
 </head>
 <body>
-    <main class="card">
-        <img class="logo" src="/icon-192.png" alt="SubScript" width="56" height="56" />
-        <h1>You're offline</h1>
-        <p>SubScript needs a connection to load your dashboard, balances, and payments. Your data is safe — nothing was lost.</p>
-        <button type="button" onclick="location.reload()">Try again</button>
-        <p class="hint">This page works offline. The dashboard will reload automatically once you're back online.</p>
+    <div class="glow"></div>
+    <main class="container">
+        <div class="icon-wrap">
+            <div class="pulse-dot"></div>
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+                <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path>
+                <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path>
+                <path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path>
+                <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path>
+                <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+                <line x1="12" y1="20" x2="12.01" y2="20"></line>
+            </svg>
+        </div>
+
+        <h1>You're offline right now</h1>
+        <p class="lead">We lost signal to the network. Your keys, balance records, and sessions remain completely secure on this device.</p>
+        
+        <div class="status-badge">
+            <span>●</span> Waiting for network reconnect
+        </div>
+
+        <button type="button" class="btn-retry" id="retryBtn" onclick="handleRetry()">
+            Check connection again
+        </button>
+
+        <p class="footer-note">No need to keep refreshing — SubScript will automatically restore your dashboard the second your connection returns.</p>
     </main>
+
     <script>
-        // Auto-retry the moment connectivity returns.
-        window.addEventListener("online", function () { location.reload(); });
+        function handleRetry() {
+            const btn = document.getElementById('retryBtn');
+            btn.textContent = 'Checking signal...';
+            btn.style.opacity = '0.7';
+            setTimeout(() => {
+                location.reload();
+            }, 300);
+        }
+
+        // Auto-reconnect the instant internet returns
+        window.addEventListener("online", function () {
+            location.reload();
+        });
     </script>
 </body>
 </html>

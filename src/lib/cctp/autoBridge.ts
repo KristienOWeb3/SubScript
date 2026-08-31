@@ -99,11 +99,25 @@ export async function sweepAndBridge(): Promise<SweepResult> {
   /* Deduplicate: if multiple intents point to the same (derived_address, chain), process once. */
   const seen = new Set<string>();
   const unique: ActiveIntent[] = [];
+  const distinctAddresses = new Set<string>();
+
   for (const intent of intents) {
     const key = `${intent.derived_deposit_address}:${intent.origin_chain_id}`;
     if (!seen.has(key)) {
       seen.add(key);
       unique.push(intent);
+    }
+    if (!distinctAddresses.has(intent.derived_deposit_address)) {
+      distinctAddresses.add(intent.derived_deposit_address);
+      // Also queue an Arc check for this user's derived address if not already queued
+      if (intent.origin_chain_id !== ARC_TESTNET_CHAIN_ID && intent.origin_chain_id !== ARC_MAINNET_CHAIN_ID) {
+        unique.push({
+          id: `arc-${intent.id}`,
+          user_wallet: intent.user_wallet,
+          derived_deposit_address: intent.derived_deposit_address,
+          origin_chain_id: ARC_TESTNET_CHAIN_ID,
+        });
+      }
     }
   }
 
@@ -156,59 +170,43 @@ async function processArcIntent(intent: ActiveIntent): Promise<boolean> {
     return false;
   }
 
-  // Minimum 0.05 USDC to route on Arc
-  const minSweepArc = 50_000n;
+  // Minimum 0.05 USDC to route on Arc (18 decimals: 0.05 * 1e18)
+  const minSweepArc = ethers.parseUnits("0.05", 18);
   if (nativeBal < minSweepArc) {
     return false;
   }
 
   console.log(
-    `[AutoBridge] detected ${formatMicros(nativeBal)} USDC on Arc at ${derived_deposit_address}, auto-routing to ${user_wallet}`,
+    `[AutoBridge] detected ${ethers.formatUnits(nativeBal, 18)} USDC on Arc at ${derived_deposit_address}, auto-routing to ${user_wallet}`,
   );
 
-  let originDepositor = user_wallet;
-  try {
-    const usdcContract = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, ERC20_ABI, provider);
-    const filter = usdcContract.filters.Transfer(null, derived_deposit_address);
-    const latestBlock = await provider.getBlockNumber();
-    const fromBlock = Math.max(0, latestBlock - 5000);
-    const events = await usdcContract.queryFilter(filter, fromBlock, latestBlock);
-    if (events.length > 0) {
-      const lastEvent: any = events[events.length - 1];
-      if (lastEvent.args && lastEvent.args[0]) {
-        originDepositor = String(lastEvent.args[0]).toLowerCase();
-      }
-    }
-  } catch {
-    // Best-effort lookup
-  }
-
+  const originDepositor = user_wallet;
   const feeBps = 100; // 1.0% protocol fee for Arc router deposit
-  const feeMicros = (nativeBal * 100n) / 10_000n;
-  const netBeforeGas = nativeBal - feeMicros;
+  const feeWei = (nativeBal * 100n) / 10_000n;
+  const netBeforeGas = nativeBal - feeWei;
 
   const signer = deriveDepositSigner(user_wallet, arcChainId);
-  const feeData = await provider.getFeeData();
-  const gasPrice = feeData.gasPrice || 100_000_000n;
-  const gasCost = 21_000n * gasPrice;
+  const gasReserve = ethers.parseUnits("0.002", 18);
 
-  // Send 1% protocol fee to treasury
+  // Send 1% protocol fee to treasury if configured
   let feeTxHash: string | null = null;
-  if (feeMicros > 0n && BRIDGE_FEE_TREASURY_ADDRESS) {
+  if (feeWei > 0n && BRIDGE_FEE_TREASURY_ADDRESS) {
     try {
       const feeTx = await signer.sendTransaction({
         to: BRIDGE_FEE_TREASURY_ADDRESS,
-        value: feeMicros,
+        value: feeWei,
       });
       await feeTx.wait();
       feeTxHash = feeTx.hash;
-      console.log(`[AutoBridge] Arc router 1% fee tx: ${feeTxHash} (${formatMicros(feeMicros)} USDC)`);
+      console.log(`[AutoBridge] Arc router 1% fee tx: ${feeTxHash} (${ethers.formatUnits(feeWei, 18)} USDC)`);
     } catch (e: any) {
       console.warn("[AutoBridge] could not send Arc router fee to treasury:", e?.message);
     }
   }
 
-  const sendAmount = netBeforeGas > gasCost ? netBeforeGas - gasCost : 0n;
+  // Fetch fresh balance after fee tx
+  const currentBal = await provider.getBalance(derived_deposit_address).catch(() => netBeforeGas);
+  const sendAmount = currentBal > gasReserve ? currentBal - gasReserve : 0n;
   if (sendAmount <= 0n) return false;
 
   const tx = await signer.sendTransaction({
@@ -217,7 +215,11 @@ async function processArcIntent(intent: ActiveIntent): Promise<boolean> {
   });
   const receipt = await tx.wait();
   const txHash = receipt?.hash || tx.hash;
-  console.log(`[AutoBridge] Arc sweep completed: ${txHash} (${formatMicros(sendAmount)} USDC net) to ${user_wallet}`);
+  console.log(`[AutoBridge] Arc sweep completed: ${txHash} (${ethers.formatUnits(sendAmount, 18)} USDC net) to ${user_wallet}`);
+
+  const grossMicros = nativeBal / (10n ** 12n);
+  const feeMicros = feeWei / (10n ** 12n);
+  const netMicros = sendAmount / (10n ** 12n);
 
   await pgQuery(
     `INSERT INTO cctp_bridge_transfers
@@ -229,9 +231,9 @@ async function processArcIntent(intent: ActiveIntent): Promise<boolean> {
     [
       originDepositor,
       user_wallet,
-      nativeBal.toString(),
+      grossMicros.toString(),
       feeMicros.toString(),
-      sendAmount.toString(),
+      netMicros.toString(),
       feeBps,
       feeTxHash,
       txHash,

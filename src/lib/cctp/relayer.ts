@@ -1,5 +1,5 @@
 import { ethers } from "ethers";
-import { CCTP_CONFIG } from "@/lib/contracts/constants";
+import { CCTP_CONFIG, ARC_TESTNET_CHAIN_ID, ARC_MAINNET_CHAIN_ID } from "@/lib/contracts/constants";
 
 /**
  * Single source of truth for which key relays CCTP mints and which RPC each chain uses.
@@ -41,6 +41,9 @@ export function getArcRpcUrl(): string {
  * RPC for a CCTP chain. `RPC_URL_<chainId>` wins, then the public default in CCTP_CONFIG.
  */
 export function resolveRpcUrl(chainId: number): string | null {
+  if (chainId === ARC_TESTNET_CHAIN_ID || chainId === ARC_MAINNET_CHAIN_ID) {
+    return getArcRpcUrl();
+  }
   return (
     process.env[`RPC_URL_${chainId}`] ||
     process.env[`NEXT_PUBLIC_RPC_${chainId}`] ||

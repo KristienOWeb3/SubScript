@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import type { LucideIcon } from "@/components/icons";
 import { MessageSquare } from "@/components/icons";
 import LiquidGlassEffect from "@/components/LiquidGlassEffect";
@@ -32,27 +32,27 @@ export default function MobileFloatingNav<T extends string = string>({
   const isRetractedRef = useRef(isRetracted);
   isRetractedRef.current = isRetracted;
 
-  // Expand whenever the active tab changes
+  // Always expand whenever user changes tabs
   useEffect(() => {
     setIsRetracted(false);
   }, [activeTab]);
 
   const handleScrollDelta = useCallback((currentY: number) => {
     const delta = currentY - lastScrollY.current;
-    
-    // If user is near the top (<= 40px), always expand
-    if (currentY <= 40) {
+
+    // Expand when near the top
+    if (currentY <= 35) {
       if (isRetractedRef.current) setIsRetracted(false);
       lastScrollY.current = currentY;
       return;
     }
 
-    // Scroll down > 20px -> Retract to edges
-    if (delta > 20 && !isRetractedRef.current) {
+    // Scroll down -> Retract to edges
+    if (delta > 15 && !isRetractedRef.current && currentY > 60) {
       setIsRetracted(true);
-    } 
-    // Scroll up < -15px -> Expand back to full pill
-    else if (delta < -15 && isRetractedRef.current) {
+    }
+    // Scroll up -> Expand back
+    else if (delta < -12 && isRetractedRef.current) {
       setIsRetracted(false);
     }
 
@@ -62,27 +62,31 @@ export default function MobileFloatingNav<T extends string = string>({
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const scrollContainer = document.querySelector(scrollContainerSelector) as HTMLElement | null;
-
-    const onWindowScroll = () => {
-      handleScrollDelta(window.scrollY);
-    };
-
-    const onContainerScroll = () => {
-      if (scrollContainer) {
-        handleScrollDelta(scrollContainer.scrollTop);
+    let ticking = false;
+    const onScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const scrollContainer = document.querySelector(scrollContainerSelector) as HTMLElement | null;
+          const containerY = scrollContainer ? scrollContainer.scrollTop : 0;
+          const windowY = window.scrollY || window.pageYOffset || 0;
+          const effectiveY = Math.max(containerY, windowY);
+          handleScrollDelta(effectiveY);
+          ticking = false;
+        });
+        ticking = true;
       }
     };
 
-    window.addEventListener("scroll", onWindowScroll, { passive: true });
+    window.addEventListener("scroll", onScroll, { passive: true });
+    const scrollContainer = document.querySelector(scrollContainerSelector) as HTMLElement | null;
     if (scrollContainer) {
-      scrollContainer.addEventListener("scroll", onContainerScroll, { passive: true });
+      scrollContainer.addEventListener("scroll", onScroll, { passive: true });
     }
 
     return () => {
-      window.removeEventListener("scroll", onWindowScroll);
+      window.removeEventListener("scroll", onScroll);
       if (scrollContainer) {
-        scrollContainer.removeEventListener("scroll", onContainerScroll);
+        scrollContainer.removeEventListener("scroll", onScroll);
       }
     };
   }, [handleScrollDelta, scrollContainerSelector]);
@@ -91,25 +95,20 @@ export default function MobileFloatingNav<T extends string = string>({
   const ActiveIcon = activeTabItem?.icon;
 
   return (
-    <div
-      className={`fixed bottom-6 z-50 transition-all duration-300 pointer-events-none ${
-        isRetracted
-          ? "left-4 right-4 flex items-center justify-between"
-          : "left-1/2 -translate-x-1/2 w-[92%] max-w-sm flex items-center justify-between gap-3"
-      }`}
-    >
-      {/* Left Navigation Capsule / Retracted Circle */}
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-sm z-50 flex items-center justify-between pointer-events-none">
+      {/* Left Navigation Capsule / Retracted Pill */}
       <motion.div
         layout
-        transition={{ type: "spring", stiffness: 400, damping: 32 }}
-        className="pointer-events-auto shrink-0"
-        style={{ width: isRetracted ? "auto" : "calc(100% - 62px)" }}
+        transition={{ type: "spring", stiffness: 420, damping: 30 }}
+        className={`pointer-events-auto transition-[flex,width] duration-300 ${
+          isRetracted ? "flex-none" : "flex-1 mr-3 min-w-0"
+        }`}
       >
         <nav
           aria-label="Primary navigation"
           className={`liquid-glass relative flex items-center rounded-full backdrop-blur-lg shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] transition-[padding,background-color] duration-300 ${
             isRetracted
-              ? "p-2.5 cursor-pointer justify-center"
+              ? "p-1.5 cursor-pointer justify-center"
               : "px-3 py-[1.1rem] justify-around w-full"
           }`}
           style={{
@@ -126,23 +125,21 @@ export default function MobileFloatingNav<T extends string = string>({
           <LiquidGlassEffect />
 
           {isRetracted ? (
-            /* Retracted State: Compact circular bubble showing only active tab's icon */
-            <motion.button
-              key="retracted-active"
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
+            /* Retracted State: Circular bubble with active tab icon */
+            <button
+              key="retracted-active-btn"
               type="button"
-              aria-label={activeTabItem.label}
+              aria-label={`Current: ${activeTabItem.label} (Tap to expand)`}
               onClick={(e) => {
                 e.stopPropagation();
                 setIsRetracted(false);
               }}
-              className="flex h-11 w-11 items-center justify-center rounded-full border border-black/20 bg-[#353935] text-[#FFFFF0] shadow-sm active:scale-95 transition-transform"
+              className="flex h-11 w-11 items-center justify-center rounded-full border border-black/20 bg-[#353935] text-[#FFFFF0] shadow-sm active:scale-90 transition-transform"
             >
               {ActiveIcon && <ActiveIcon className="h-5 w-5 text-[#FFFFF0]" />}
-            </motion.button>
+            </button>
           ) : (
-            /* Expanded State: Full horizontal bar with text to the RIGHT of the icon for active tab */
+            /* Expanded State: Horizontal tabs with text to the RIGHT of icon */
             tabs.map((tab) => {
               const isActive = activeTab === tab.id;
               const IconComponent = tab.icon;
@@ -172,7 +169,7 @@ export default function MobileFloatingNav<T extends string = string>({
                       }`}
                     />
                   </span>
-                  {/* Text on the RIGHT SIDE of the icon */}
+                  {/* Label strictly on the RIGHT SIDE of the icon */}
                   <span
                     className={`absolute left-10 top-1/2 -translate-y-1/2 whitespace-nowrap text-[9px] font-bold uppercase tracking-wide transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
                       isActive ? "translate-x-1 opacity-100" : "-translate-x-4 opacity-0"
@@ -188,11 +185,7 @@ export default function MobileFloatingNav<T extends string = string>({
       </motion.div>
 
       {/* Right Edge: Detached DMs Action Button */}
-      <motion.div
-        layout
-        transition={{ type: "spring", stiffness: 400, damping: 32 }}
-        className="pointer-events-auto relative shrink-0"
-      >
+      <div className="pointer-events-auto relative shrink-0">
         <button
           type="button"
           onClick={() => {
@@ -200,11 +193,14 @@ export default function MobileFloatingNav<T extends string = string>({
             onSelectTab("inbox" as unknown as T);
           }}
           className={`relative h-[3.3rem] flex items-center justify-center rounded-full border transition-all duration-300 gap-2 px-3 overflow-hidden shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] ${
-            activeTab === ("inbox" as unknown as T)
+            activeTab === ("inbox" as unknown as T) && !isRetracted
               ? "bg-[#353935] border-[#353935] text-[#FFFFF0] scale-105 w-[108px]"
+              : activeTab === ("inbox" as unknown as T)
+              ? "bg-[#353935] border-[#353935] text-[#FFFFF0] w-[3.3rem]"
               : "bg-[#2775CA]/20 border-black/15 text-black/60 hover:text-black w-[3.3rem]"
           }`}
           style={{
+            backgroundColor: activeTab === ("inbox" as unknown as T) ? undefined : "rgb(39 117 202 / 20%)",
             backdropFilter: "blur(22px)",
             WebkitBackdropFilter: "blur(22px)",
           }}
@@ -221,7 +217,8 @@ export default function MobileFloatingNav<T extends string = string>({
             {pendingDmCount > 9 ? "9+" : pendingDmCount}
           </span>
         )}
-      </motion.div>
+      </div>
     </div>
   );
 }
+
