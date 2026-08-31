@@ -78,12 +78,13 @@ export async function POST(req: NextRequest) {
       intentId = inserted[0]?.id || "";
     }
 
+    const feeBps = chainConfig ? chainConfig.feeBps : 100;
     return NextResponse.json({
       depositAddress: derivedAddress,
       chainName: chainConfig?.name || "Arc Network",
       chainId,
-      feeBps: chainConfig?.feeBps || 0,
-      fee: formatFeeBps(chainConfig?.feeBps || 0),
+      feeBps,
+      fee: formatFeeBps(feeBps),
       intentId,
     });
   } catch (error: any) {

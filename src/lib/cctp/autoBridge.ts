@@ -183,12 +183,32 @@ async function processArcIntent(intent: ActiveIntent): Promise<boolean> {
     // Best-effort lookup
   }
 
+  const feeBps = 100; // 1.0% protocol fee for Arc router deposit
+  const feeMicros = (nativeBal * 100n) / 10_000n;
+  const netBeforeGas = nativeBal - feeMicros;
+
   const signer = deriveDepositSigner(user_wallet, arcChainId);
   const feeData = await provider.getFeeData();
   const gasPrice = feeData.gasPrice || 100_000_000n;
   const gasCost = 21_000n * gasPrice;
-  const sendAmount = nativeBal > gasCost ? nativeBal - gasCost : 0n;
 
+  // Send 1% protocol fee to treasury
+  let feeTxHash: string | null = null;
+  if (feeMicros > 0n && BRIDGE_FEE_TREASURY_ADDRESS) {
+    try {
+      const feeTx = await signer.sendTransaction({
+        to: BRIDGE_FEE_TREASURY_ADDRESS,
+        value: feeMicros,
+      });
+      await feeTx.wait();
+      feeTxHash = feeTx.hash;
+      console.log(`[AutoBridge] Arc router 1% fee tx: ${feeTxHash} (${formatMicros(feeMicros)} USDC)`);
+    } catch (e: any) {
+      console.warn("[AutoBridge] could not send Arc router fee to treasury:", e?.message);
+    }
+  }
+
+  const sendAmount = netBeforeGas > gasCost ? netBeforeGas - gasCost : 0n;
   if (sendAmount <= 0n) return false;
 
   const tx = await signer.sendTransaction({
@@ -197,17 +217,25 @@ async function processArcIntent(intent: ActiveIntent): Promise<boolean> {
   });
   const receipt = await tx.wait();
   const txHash = receipt?.hash || tx.hash;
-  console.log(`[AutoBridge] Arc sweep completed: ${txHash} (${formatMicros(sendAmount)} USDC) to ${user_wallet}`);
+  console.log(`[AutoBridge] Arc sweep completed: ${txHash} (${formatMicros(sendAmount)} USDC net) to ${user_wallet}`);
 
-  const microsStr = sendAmount.toString();
   await pgQuery(
     `INSERT INTO cctp_bridge_transfers
        (direction, user_wallet, recipient_address, origin_chain_id, origin_domain,
         destination_chain_id, destination_domain, gross_amount_micros, fee_amount_micros,
-        net_amount_micros, fee_bps, mint_tx_hash, status)
-     VALUES ('inbound_deposit', $1, $2, 'arc', 0, 'arc', 0, $3, '0', $3, 0, $4, 'completed')
+        net_amount_micros, fee_bps, fee_tx_hash, mint_tx_hash, status)
+     VALUES ('inbound_deposit', $1, $2, 'arc', 0, 'arc', 0, $3, $4, $5, $6, $7, $8, 'completed')
      ON CONFLICT DO NOTHING`,
-    [originDepositor, user_wallet, microsStr, txHash],
+    [
+      originDepositor,
+      user_wallet,
+      nativeBal.toString(),
+      feeMicros.toString(),
+      sendAmount.toString(),
+      feeBps,
+      feeTxHash,
+      txHash,
+    ],
   ).catch(() => undefined);
 
   await pgQuery(
