@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useEffect, useState, useRef } from "react";
 import type { LucideIcon } from "@/components/icons";
 import { MessageSquare } from "@/components/icons";
 import LiquidGlassEffect from "@/components/LiquidGlassEffect";
@@ -20,11 +19,14 @@ interface MobileFloatingNavProps<T extends string = string> {
   readonly scrollContainerSelector?: string;
 }
 
-// Minimum scroll distance (px) before we commit to a direction change.
-// Prevents flicker when the user jiggles their thumb at the turn-around point.
-const DIRECTION_THRESHOLD = 18;
-// After committing to a direction, ignore the opposite direction for this many ms.
-const DIRECTION_COOLDOWN_MS = 180;
+/* ────────────────────────────────────────────────────
+ * Tuning constants — subtle, 120fps-friendly triggers.
+ * ──────────────────────────────────────────────────── */
+const RETRACT_THRESHOLD = 120;  // requires 120px of deliberate down-scroll before retracting
+const EXPAND_THRESHOLD  = 25;   // light 25px up-scroll immediately expands
+const COOLDOWN_MS       = 450;  // ignore opposite direction after committing
+const RETRACT_DELAY_MS  = 120;  // slight debounce to verify scroll intent
+const TOP_DEADZONE_PX   = 80;   // top 80px of page is deadzone: NEVER retracts near top
 
 export default function MobileFloatingNav<T extends string = string>({
   tabs,
@@ -35,230 +37,223 @@ export default function MobileFloatingNav<T extends string = string>({
 }: MobileFloatingNavProps<T>) {
   const [isRetracted, setIsRetracted] = useState(false);
 
-  // Direction tracking refs — never accessed during render
-  const anchorY = useRef(0);           // Y position when we last committed a direction
-  const lastDirection = useRef<"up" | "down" | null>(null);
-  const cooldownUntil = useRef(0);     // Timestamp: ignore opposite direction until this time
+  // Mutable tracking — only touched inside scroll handler, never during render
+  const scrollState = useRef({
+    lastY: 0,
+    accum: 0,
+    lastCommit: 0,
+    retractTimer: null as ReturnType<typeof setTimeout> | null,
+  });
 
   // Always expand whenever user changes tabs
   useEffect(() => {
     setIsRetracted(false);
   }, [activeTab]);
 
-  const processScroll = useCallback((currentY: number) => {
-    const now = Date.now();
-
-    // Near the top of the page — always expand, reset tracking
-    if (currentY <= 20) {
-      setIsRetracted(false);
-      anchorY.current = currentY;
-      lastDirection.current = null;
-      return;
-    }
-
-    const delta = currentY - anchorY.current;
-
-    // Determine candidate direction
-    let candidateDir: "up" | "down" | null = null;
-    if (delta > DIRECTION_THRESHOLD) {
-      candidateDir = "down";
-    } else if (delta < -DIRECTION_THRESHOLD) {
-      candidateDir = "up";
-    }
-
-    if (!candidateDir) return; // Haven't moved enough yet — do nothing
-
-    // If this is the same direction we're already committed to, just slide the anchor
-    if (candidateDir === lastDirection.current) {
-      anchorY.current = currentY;
-      return;
-    }
-
-    // Opposite direction — only commit if the cooldown has expired
-    if (now < cooldownUntil.current) {
-      return; // Still cooling down — ignore this reversal
-    }
-
-    // Commit to the new direction
-    lastDirection.current = candidateDir;
-    anchorY.current = currentY;
-    cooldownUntil.current = now + DIRECTION_COOLDOWN_MS;
-
-    if (candidateDir === "down" && currentY > 30) {
-      setIsRetracted(true);
-    } else if (candidateDir === "up") {
-      setIsRetracted(false);
-    }
-  }, []);
-
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    let ticking = false;
+    const s = scrollState.current;
+    let scrollEl: HTMLElement | null = null;
+    let rafId = 0;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let pollCount = 0;
 
-    const getActiveScrollY = () => {
-      const selectors = scrollContainerSelector.split(",").map((s) => s.trim());
-      for (const sel of selectors) {
+    const findContainer = (): HTMLElement | null => {
+      const sels = scrollContainerSelector.split(",").map((v) => v.trim());
+      for (const sel of sels) {
         const el = document.querySelector(sel) as HTMLElement | null;
-        if (el && el.scrollTop > 0) return el.scrollTop;
+        if (el) return el;
       }
-      return (
-        window.scrollY ||
-        window.pageYOffset ||
-        document.documentElement.scrollTop ||
-        document.body.scrollTop ||
-        0
-      );
+      return null;
     };
 
-    const handleScroll = (e?: Event) => {
-      if (ticking) return;
-      ticking = true;
-      window.requestAnimationFrame(() => {
-        let y = 0;
-        if (e?.target && "scrollTop" in (e.target as HTMLElement)) {
-          const t = e.target as HTMLElement;
-          y = t.scrollTop > 0 ? t.scrollTop : getActiveScrollY();
-        } else {
-          y = getActiveScrollY();
+    const cancelRetract = () => {
+      if (s.retractTimer) {
+        clearTimeout(s.retractTimer);
+        s.retractTimer = null;
+      }
+    };
+
+    const onScroll = () => {
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        if (!scrollEl) return;
+
+        const y = scrollEl.scrollTop;
+        const delta = y - s.lastY;
+        s.lastY = y;
+
+        // Top deadzone — always keep expanded and clear timers
+        if (y <= TOP_DEADZONE_PX) {
+          cancelRetract();
+          setIsRetracted(false);
+          s.accum = 0;
+          return;
         }
-        processScroll(y);
-        ticking = false;
+
+        // Ignore micro-scrolls (< 3px)
+        if (Math.abs(delta) < 3) return;
+
+        // Accumulate directional scroll delta
+        if ((delta > 0 && s.accum >= 0) || (delta < 0 && s.accum <= 0)) {
+          s.accum += delta;
+        } else {
+          s.accum = delta;
+          cancelRetract();
+        }
+
+        const now = Date.now();
+        if (now - s.lastCommit < COOLDOWN_MS) return;
+
+        // Scrolling DOWN past threshold (120px) → queue retraction
+        if (s.accum > RETRACT_THRESHOLD && !s.retractTimer) {
+          s.retractTimer = setTimeout(() => {
+            s.retractTimer = null;
+            setIsRetracted(true);
+            s.lastCommit = Date.now();
+            s.accum = 0;
+          }, RETRACT_DELAY_MS);
+        }
+        // Scrolling UP past threshold (25px) → expand immediately
+        else if (s.accum < -EXPAND_THRESHOLD) {
+          cancelRetract();
+          setIsRetracted(false);
+          s.lastCommit = now;
+          s.accum = 0;
+        }
       });
     };
 
-    // Capture phase catches scroll from any nested overflow container
-    window.addEventListener("scroll", handleScroll, { capture: true, passive: true });
-    document.addEventListener("scroll", handleScroll, { capture: true, passive: true });
+    const attach = (el: HTMLElement) => {
+      scrollEl = el;
+      s.lastY = el.scrollTop;
+      s.accum = 0;
+      el.addEventListener("scroll", onScroll, { passive: true });
+    };
+
+    const found = findContainer();
+    if (found) {
+      attach(found);
+    } else {
+      pollTimer = setInterval(() => {
+        pollCount++;
+        const el = findContainer();
+        if (el) {
+          attach(el);
+          if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        } else if (pollCount >= 20 && pollTimer) {
+          clearInterval(pollTimer); pollTimer = null;
+        }
+      }, 300);
+    }
 
     return () => {
-      window.removeEventListener("scroll", handleScroll, { capture: true });
-      document.removeEventListener("scroll", handleScroll, { capture: true });
+      if (scrollEl) scrollEl.removeEventListener("scroll", onScroll);
+      if (rafId) cancelAnimationFrame(rafId);
+      if (pollTimer) clearInterval(pollTimer);
+      cancelRetract();
     };
-  }, [processScroll, scrollContainerSelector]);
+  }, [scrollContainerSelector]);
 
   const activeTabItem = tabs.find((t) => t.id === activeTab) || tabs[0];
   const ActiveIcon = activeTabItem?.icon;
   const isInboxActive = activeTab === ("inbox" as unknown as T);
 
-  // Smooth, non-bouncy transition
-  const smoothTransition = {
-    type: "tween" as const,
-    ease: [0.25, 1, 0.5, 1],
-    duration: 0.28,
+  /* High-refresh 120fps ProMotion bezier curve */
+  const motionBezier = "cubic-bezier(0.16, 1, 0.3, 1)";
+  const transitionStyle: React.CSSProperties = {
+    transition: `width 360ms ${motionBezier}, max-width 360ms ${motionBezier}, height 360ms ${motionBezier}, transform 360ms ${motionBezier}, opacity 240ms ease`,
+    willChange: "width, max-width, height, transform, opacity",
+    transform: "translateZ(0)",
+    WebkitTransform: "translateZ(0)",
   };
 
   return (
-    <motion.aside
-      layout
-      transition={smoothTransition}
+    <aside
       aria-label="Mobile navigation bar"
       className={`fixed bottom-5 inset-x-0 mx-auto w-full max-w-sm px-4 z-50 flex items-center pointer-events-none select-none box-border ${
         isRetracted ? "justify-between" : "justify-center gap-2"
       }`}
+      style={{
+        transition: `gap 360ms ${motionBezier}, justify-content 360ms ${motionBezier}`,
+        transform: "translateZ(0)",
+      }}
     >
-      {/* ── Left Navigation Capsule / Retracted Pill ── */}
-      <motion.nav
+      {/* ── Left Navigation Capsule ── */}
+      <nav
         aria-label="Primary navigation"
-        layout
-        initial={false}
-        animate={{
-          width: isRetracted ? 48 : isInboxActive ? "calc(100% - 100px)" : "calc(100% - 56px)",
-          maxWidth: isRetracted ? 48 : isInboxActive ? 220 : 272,
-        }}
-        transition={smoothTransition}
-        onClick={() => {
-          if (isRetracted) setIsRetracted(false);
-        }}
-        className={`liquid-glass pointer-events-auto relative flex items-center rounded-full backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] overflow-hidden border border-black/15 transition-all duration-200 ${
+        onClick={() => { if (isRetracted) setIsRetracted(false); }}
+        className={`liquid-glass pointer-events-auto relative flex items-center rounded-full backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] overflow-hidden border border-black/15 ${
           isRetracted
             ? "h-12 w-12 cursor-pointer justify-center p-0 flex-none"
             : "px-3 py-[1.1rem] min-h-[79px] justify-between flex-1 min-w-0"
         }`}
         style={{
+          ...transitionStyle,
           backgroundColor: "rgb(39 117 202 / 20%)",
           backdropFilter: "blur(22px)",
           WebkitBackdropFilter: "blur(22px)",
+          maxWidth: isRetracted ? 48 : isInboxActive ? 220 : 272,
         }}
       >
         <LiquidGlassEffect />
 
-        <AnimatePresence mode="wait" initial={false}>
-          {isRetracted ? (
-            <motion.button
-              key="retracted-icon"
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.8, opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              type="button"
-              aria-label={`Current: ${activeTabItem.label}. Tap to expand navigation`}
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsRetracted(false);
-              }}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-[#353935] text-[#FFFFF0] shadow-sm active:scale-95 transition-transform"
-            >
-              {ActiveIcon && <ActiveIcon className="h-5 w-5 text-[#FFFFF0]" />}
-            </motion.button>
-          ) : (
-            <motion.div
-              key="expanded-tabs"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              className="flex w-full items-center justify-between gap-1"
-            >
-              {tabs.map((tab) => {
-                const isActive = activeTab === tab.id;
-                const IconComponent = tab.icon;
-
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    aria-pressed={isActive}
-                    aria-current={isActive ? "page" : undefined}
-                    aria-label={tab.label}
-                    onClick={() => onSelectTab(tab.id)}
-                    className={`relative h-11 flex items-center justify-center rounded-full transition-all duration-200 ease-out active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2775CA] ${
-                      isActive
-                        ? "bg-[#353935] text-[#FFFFF0] shadow-sm px-3 gap-1.5 flex-1 min-w-[76px] max-w-[94px]"
-                        : "bg-transparent text-black/65 hover:bg-black/5 hover:text-black w-10 shrink-0"
+        {isRetracted ? (
+          /* Retracted: single icon bubble */
+          <button
+            type="button"
+            aria-label={`Current: ${activeTabItem.label}. Tap to expand navigation`}
+            onClick={(e) => { e.stopPropagation(); setIsRetracted(false); }}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-[#353935] text-[#FFFFF0] shadow-sm active:scale-95 transition-transform"
+            style={{ transform: "translateZ(0)" }}
+          >
+            {ActiveIcon && <ActiveIcon className="h-5 w-5 text-[#FFFFF0]" />}
+          </button>
+        ) : (
+          /* Expanded: tab buttons */
+          <div className="flex w-full items-center justify-between gap-1" style={{ transform: "translateZ(0)" }}>
+            {tabs.map((tab) => {
+              const isActive = activeTab === tab.id;
+              const IconComponent = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  aria-pressed={isActive}
+                  aria-current={isActive ? "page" : undefined}
+                  aria-label={tab.label}
+                  onClick={() => onSelectTab(tab.id)}
+                  className={`relative h-11 flex items-center justify-center rounded-full transition-all duration-200 ease-out active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2775CA] ${
+                    isActive
+                      ? "bg-[#353935] text-[#FFFFF0] shadow-sm px-3 gap-1.5 flex-1 min-w-[76px] max-w-[94px]"
+                      : "bg-transparent text-black/65 hover:bg-black/5 hover:text-black w-10 shrink-0"
+                  }`}
+                >
+                  <IconComponent
+                    className={`h-5 w-5 shrink-0 transition-colors duration-200 ${
+                      isActive ? "text-[#FFFFF0]" : "text-black/65"
                     }`}
-                  >
-                    <IconComponent
-                      className={`h-5 w-5 shrink-0 transition-colors duration-200 ${
-                        isActive ? "text-[#FFFFF0]" : "text-black/65"
-                      }`}
-                    />
-                    {isActive && (
-                      <span className="whitespace-nowrap text-[9px] font-black uppercase tracking-wider text-[#FFFFF0] truncate">
-                        {tab.label}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.nav>
+                  />
+                  {isActive && (
+                    <span className="whitespace-nowrap text-[9px] font-black uppercase tracking-wider text-[#FFFFF0] truncate">
+                      {tab.label}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </nav>
 
       {/* ── Right Edge: Detached DMs Button ── */}
-      <motion.div
-        layout
-        transition={smoothTransition}
-        className="pointer-events-auto relative shrink-0"
-      >
+      <div className="pointer-events-auto relative shrink-0" style={{ transform: "translateZ(0)" }}>
         <button
           type="button"
-          onClick={() => {
-            setIsRetracted(false);
-            onSelectTab("inbox" as unknown as T);
-          }}
-          className={`relative flex items-center justify-center rounded-full border border-black/15 transition-all duration-200 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] active:scale-95 overflow-hidden ${
+          onClick={() => { setIsRetracted(false); onSelectTab("inbox" as unknown as T); }}
+          className={`relative flex items-center justify-center rounded-full border border-black/15 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] active:scale-95 overflow-hidden ${
             isRetracted
               ? "h-12 w-12"
               : isInboxActive
@@ -266,6 +261,7 @@ export default function MobileFloatingNav<T extends string = string>({
               : "h-[52px] w-[52px] bg-[#2775CA]/20 text-black/70 hover:text-black"
           }`}
           style={{
+            ...transitionStyle,
             backgroundColor: isInboxActive && !isRetracted ? undefined : "rgb(39 117 202 / 20%)",
             backdropFilter: "blur(22px)",
             WebkitBackdropFilter: "blur(22px)",
@@ -280,13 +276,12 @@ export default function MobileFloatingNav<T extends string = string>({
             </span>
           )}
         </button>
-        {/* Unread Message Badge */}
         {pendingDmCount > 0 && (
           <span className="pointer-events-none absolute -right-1 -top-1 z-20 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border-2 border-[#060608] bg-red-500 px-1 text-[10px] font-black leading-none text-white shadow-md">
             {pendingDmCount > 9 ? "9+" : pendingDmCount}
           </span>
         )}
-      </motion.div>
-    </motion.aside>
+      </div>
+    </aside>
   );
 }
