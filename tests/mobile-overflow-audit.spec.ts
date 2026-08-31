@@ -215,6 +215,7 @@ async function newAuditContext(
     if (path === "/api/user/settings") {
       return json({
         success: true,
+        receipts: [],
         settings: {
           alias: role === "merchant" ? "mobile-audit" : "mobile-user",
           profilePic: null,
@@ -237,7 +238,10 @@ async function newAuditContext(
       });
     }
 
+    if (path === "/api/user/deposits") return json({ success: true, deposits: [] });
+    if (path === "/api/user/cctp/scan") return json({ success: true, scan: [] });
     if (path === "/api/user/vault/config") return json({ success: true, vaults: [], config: null });
+    if (path === "/api/user/commit/halt") return json({ success: true, onHold: false });
     if (path === "/api/user/subscriptions") return json({ success: true, subscriptions: [] });
     if (path === "/api/user/dms") return json({ success: true, dms: dmMessages });
     if (path === "/api/user/payment-links") return json({ success: true, links: [] });

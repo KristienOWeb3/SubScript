@@ -988,9 +988,9 @@ export default function UserDashboard() {
       const depData = depositsRes ? await depositsRes.json().catch(() => ({})) : {};
       if (data.success) {
         setUserSettings(data.settings);
-        setSettingsTransactions(data.receipts);
-        if (data.settings.profilePic) setProfilePic(data.settings.profilePic);
-        if (data.settings.alias) setRegisteredDomain(data.settings.alias);
+        setSettingsTransactions(Array.isArray(data.receipts) ? data.receipts : []);
+        if (data.settings?.profilePic) setProfilePic(data.settings.profilePic);
+        if (data.settings?.alias) setRegisteredDomain(data.settings.alias);
       }
       if (depData.success && Array.isArray(depData.deposits)) {
         setDeposits(depData.deposits);
@@ -3651,7 +3651,7 @@ export default function UserDashboard() {
           txHash: d.txHash,
         };
       }),
-    ...settingsTransactions
+    ...(settingsTransactions || [])
       .filter((r) => !r.txHash || (!dms.some((dm) => dm.txHash && dm.txHash.toLowerCase() === r.txHash.toLowerCase()) && !deposits.some((d) => d.txHash && d.txHash.toLowerCase() === r.txHash.toLowerCase())))
       .map((r) => {
         const incoming = r.direction === "received";
