@@ -510,6 +510,7 @@ test.describe("mobile overflow audit", () => {
     );
     const desktopPage = await desktopContext.newPage();
     await desktopPage.goto(`${baseURL}/dashboard/user`, { waitUntil: "domcontentloaded" });
+    await desktopPage.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
 
     const sidebar = desktopPage.getByRole("complementary");
     const walletLabel = desktopPage.getByText("Wallet Balance", { exact: true });
@@ -554,6 +555,7 @@ test.describe("mobile overflow audit", () => {
     );
     const mobilePage = await mobileContext.newPage();
     await mobilePage.goto(`${baseURL}/dashboard/user`, { waitUntil: "domcontentloaded" });
+    await mobilePage.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
 
     const mobileWalletLabel = mobilePage.getByText("Wallet Balance", { exact: true });
     const mobileSpendingLabel = mobilePage.getByText("30D spending", { exact: true });
@@ -664,8 +666,11 @@ test.describe("mobile overflow audit", () => {
     );
     const page = await context.newPage();
     await page.goto(`${baseURL}/dashboard/user?tab=inbox`, { waitUntil: "domcontentloaded" });
+    await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
 
-    await page.getByText("Mobile Audit Merchant", { exact: true }).first().click();
+    const peerButton = page.getByText("Mobile Audit Merchant", { exact: true }).first();
+    await expect(peerButton).toBeVisible({ timeout: 60_000 });
+    await peerButton.click();
 
     const header = page.getByRole("banner").filter({ hasText: "Mobile Audit Merchant" });
     const footer = page.getByTestId("mobile-dm-action-footer");
