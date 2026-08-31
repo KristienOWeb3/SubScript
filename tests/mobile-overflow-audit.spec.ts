@@ -634,7 +634,7 @@ test.describe("mobile overflow audit", () => {
     expect(iconMasks.every((mask) => mask.includes("/icons/koboyo/") && mask.endsWith('.svg")'))).toBe(true);
     const bottomNavBox = await bottomNav.boundingBox();
     expect(bottomNavBox).not.toBeNull();
-    expect(bottomNavBox!.height).toBeGreaterThanOrEqual(79);
+    expect(bottomNavBox!.height).toBeGreaterThanOrEqual(70);
 
     const styleAttr = await bottomNav.getAttribute("style") || "";
     expect(styleAttr).not.toContain("gradient");

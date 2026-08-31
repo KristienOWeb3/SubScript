@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useEffect, useState, useRef } from "react";
 import type { LucideIcon } from "@/components/icons";
 import { MessageSquare } from "@/components/icons";
 import LiquidGlassEffect from "@/components/LiquidGlassEffect";
@@ -20,6 +19,15 @@ interface MobileFloatingNavProps<T extends string = string> {
   readonly scrollContainerSelector?: string;
 }
 
+/* ────────────────────────────────────────────────────
+ * Tuning constants — subtle, 120fps-friendly triggers.
+ * ──────────────────────────────────────────────────── */
+const RETRACT_THRESHOLD = 120;  // requires 120px of deliberate down-scroll before retracting
+const EXPAND_THRESHOLD  = 25;   // light 25px up-scroll immediately expands
+const COOLDOWN_MS       = 500;  // ignore opposite direction after committing
+const RETRACT_DELAY_MS  = 180;  // gentle debounce before closing to prevent sudden snaps
+const TOP_DEADZONE_PX   = 80;   // top 80px of page is deadzone: NEVER retracts near top
+
 export default function MobileFloatingNav<T extends string = string>({
   tabs,
   activeTab,
@@ -28,258 +36,238 @@ export default function MobileFloatingNav<T extends string = string>({
   scrollContainerSelector = ".user-dashboard-content, .user-dashboard-redesign",
 }: MobileFloatingNavProps<T>) {
   const [isRetracted, setIsRetracted] = useState(false);
-  const lastScrollY = useRef(0);
-  const touchStartY = useRef(0);
+
+  // Mutable tracking — only touched inside scroll handler, never during render
+  const scrollState = useRef({
+    lastY: 0,
+    accum: 0,
+    lastCommit: 0,
+    retractTimer: null as ReturnType<typeof setTimeout> | null,
+  });
 
   // Always expand whenever user changes tabs
   useEffect(() => {
     setIsRetracted(false);
   }, [activeTab]);
 
-  const handleScrollDelta = useCallback((currentY: number) => {
-    const delta = currentY - lastScrollY.current;
-
-    // Expand when at or near the top
-    if (currentY <= 25) {
-      setIsRetracted(false);
-      lastScrollY.current = currentY;
-      return;
-    }
-
-    // Scroll down past top area -> Smoothly retract to edges
-    if (delta > 6 && currentY > 30) {
-      setIsRetracted(true);
-    }
-    // Scroll up -> Expand back smoothly
-    else if (delta < -6) {
-      setIsRetracted(false);
-    }
-
-    lastScrollY.current = currentY;
-  }, []);
-
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    let ticking = false;
-    const getActiveScrollY = () => {
-      const selectors = scrollContainerSelector.split(",").map((s) => s.trim());
-      for (const sel of selectors) {
+    const s = scrollState.current;
+    let scrollEl: HTMLElement | null = null;
+    let rafId = 0;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let pollCount = 0;
+
+    const findContainer = (): HTMLElement | null => {
+      const sels = scrollContainerSelector.split(",").map((v) => v.trim());
+      for (const sel of sels) {
         const el = document.querySelector(sel) as HTMLElement | null;
-        if (el && el.scrollTop > 0) {
-          return el.scrollTop;
-        }
+        if (el) return el;
       }
-      return window.scrollY || window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+      return null;
     };
 
-    const handleAnyScroll = (e?: Event) => {
-      if (!ticking) {
-        window.requestAnimationFrame(() => {
-          let y = 0;
-          if (e && e.target && "scrollTop" in (e.target as HTMLElement)) {
-            const targetEl = e.target as HTMLElement;
-            if (targetEl.scrollTop > 0) {
-              y = targetEl.scrollTop;
-            } else {
-              y = getActiveScrollY();
-            }
-          } else {
-            y = getActiveScrollY();
-          }
-          handleScrollDelta(y);
-          ticking = false;
-        });
-        ticking = true;
+    const cancelRetract = () => {
+      if (s.retractTimer) {
+        clearTimeout(s.retractTimer);
+        s.retractTimer = null;
       }
     };
 
-    // Instant touch gesture detection for mobile devices
-    const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length > 0) {
-        touchStartY.current = e.touches[0].clientY;
-      }
-    };
+    const onScroll = () => {
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        if (!scrollEl) return;
 
-    const onTouchMove = (e: TouchEvent) => {
-      if (e.touches.length > 0) {
-        const touchCurrentY = e.touches[0].clientY;
-        const touchDelta = touchStartY.current - touchCurrentY; // > 0 means dragging up = scrolling DOWN
-        const currentY = getActiveScrollY();
+        const y = scrollEl.scrollTop;
+        const delta = y - s.lastY;
+        s.lastY = y;
 
-        if (currentY <= 20) {
+        // Top deadzone — always keep expanded and clear timers
+        if (y <= TOP_DEADZONE_PX) {
+          cancelRetract();
           setIsRetracted(false);
-        } else if (touchDelta > 6 && currentY > 25) {
-          setIsRetracted(true);
-        } else if (touchDelta < -6) {
-          setIsRetracted(false);
+          s.accum = 0;
+          return;
         }
-      }
+
+        // Ignore micro-scrolls (< 3px)
+        if (Math.abs(delta) < 3) return;
+
+        // Accumulate directional scroll delta
+        if ((delta > 0 && s.accum >= 0) || (delta < 0 && s.accum <= 0)) {
+          s.accum += delta;
+        } else {
+          s.accum = delta;
+          cancelRetract();
+        }
+
+        const now = Date.now();
+        if (now - s.lastCommit < COOLDOWN_MS) return;
+
+        // Scrolling DOWN past threshold (120px) → queue retraction
+        if (s.accum > RETRACT_THRESHOLD && !s.retractTimer) {
+          s.retractTimer = setTimeout(() => {
+            s.retractTimer = null;
+            setIsRetracted(true);
+            s.lastCommit = Date.now();
+            s.accum = 0;
+          }, RETRACT_DELAY_MS);
+        }
+        // Scrolling UP past threshold (25px) → expand immediately
+        else if (s.accum < -EXPAND_THRESHOLD) {
+          cancelRetract();
+          setIsRetracted(false);
+          s.lastCommit = now;
+          s.accum = 0;
+        }
+      });
     };
 
-    // Desktop mouse wheel listener
-    const onWheel = (e: WheelEvent) => {
-      const currentY = getActiveScrollY();
-      if (currentY <= 20) {
-        setIsRetracted(false);
-      } else if (e.deltaY > 6 && currentY > 25) {
-        setIsRetracted(true);
-      } else if (e.deltaY < -6) {
-        setIsRetracted(false);
-      }
+    const attach = (el: HTMLElement) => {
+      scrollEl = el;
+      s.lastY = el.scrollTop;
+      s.accum = 0;
+      el.addEventListener("scroll", onScroll, { passive: true });
     };
 
-    // Capture phase listener ensures ALL scroll events from any nested container are caught!
-    window.addEventListener("scroll", handleAnyScroll, { capture: true, passive: true });
-    document.addEventListener("scroll", handleAnyScroll, { capture: true, passive: true });
-    window.addEventListener("touchstart", onTouchStart, { passive: true });
-    window.addEventListener("touchmove", onTouchMove, { passive: true });
-    window.addEventListener("wheel", onWheel, { passive: true });
+    const found = findContainer();
+    if (found) {
+      attach(found);
+    } else {
+      pollTimer = setInterval(() => {
+        pollCount++;
+        const el = findContainer();
+        if (el) {
+          attach(el);
+          if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        } else if (pollCount >= 20 && pollTimer) {
+          clearInterval(pollTimer); pollTimer = null;
+        }
+      }, 300);
+    }
 
     return () => {
-      window.removeEventListener("scroll", handleAnyScroll, { capture: true });
-      document.removeEventListener("scroll", handleAnyScroll, { capture: true });
-      window.removeEventListener("touchstart", onTouchStart);
-      window.removeEventListener("touchmove", onTouchMove);
-      window.removeEventListener("wheel", onWheel);
+      if (scrollEl) scrollEl.removeEventListener("scroll", onScroll);
+      if (rafId) cancelAnimationFrame(rafId);
+      if (pollTimer) clearInterval(pollTimer);
+      cancelRetract();
     };
-  }, [handleScrollDelta, scrollContainerSelector]);
+  }, [scrollContainerSelector]);
 
   const activeTabItem = tabs.find((t) => t.id === activeTab) || tabs[0];
   const ActiveIcon = activeTabItem?.icon;
   const isInboxActive = activeTab === ("inbox" as unknown as T);
 
-  // Smooth, non-bouncy transition easing
-  const smoothTransition = {
-    type: "tween" as const,
-    ease: [0.25, 1, 0.5, 1], // Smooth cubic-bezier without bouncy overshoot
-    duration: 0.28,
-  };
+  /* Liquid, decelerating easing curve for full 500ms opening & closing */
+  const motionBezier = "cubic-bezier(0.22, 1, 0.36, 1)";
+  const smoothTransition = `width 500ms ${motionBezier}, height 500ms ${motionBezier}, max-width 500ms ${motionBezier}, min-height 500ms ${motionBezier}, transform 500ms ${motionBezier}, border-radius 500ms ${motionBezier}, background-color 300ms ease`;
 
   return (
-    <motion.aside
-      layout
-      transition={smoothTransition}
+    <aside
       aria-label="Mobile navigation bar"
-      className={`fixed bottom-5 inset-x-0 mx-auto w-full max-w-sm px-4 z-50 flex items-center pointer-events-none select-none box-border ${
+      className={`fixed bottom-5 inset-x-0 mx-auto w-full max-w-sm px-4 z-50 flex items-center box-border ${
         isRetracted ? "justify-between" : "justify-center gap-2"
       }`}
+      style={{ transform: "translateZ(0)" }}
     >
-      {/* Left Navigation Capsule / Retracted Pill */}
-      <motion.nav
+      {/* ── Left Navigation Capsule ── */}
+      <nav
         aria-label="Primary navigation"
-        layout
-        initial={false}
-        animate={{
-          width: isRetracted ? 48 : isInboxActive ? "calc(100% - 100px)" : "calc(100% - 56px)",
-          maxWidth: isRetracted ? 48 : isInboxActive ? 220 : 272,
-        }}
-        transition={smoothTransition}
-        onClick={() => {
-          if (isRetracted) {
-            setIsRetracted(false);
-          }
-        }}
-        className={`liquid-glass pointer-events-auto relative flex items-center rounded-full backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] overflow-hidden border border-black/15 transition-all duration-200 ${
-          isRetracted ? "h-12 w-12 cursor-pointer justify-center p-0 flex-none" : "px-3 py-[1.1rem] min-h-[79px] justify-between flex-1 min-w-0"
+        onClick={() => { if (isRetracted) setIsRetracted(false); }}
+        className={`liquid-glass pointer-events-auto relative flex items-center justify-center rounded-full backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] overflow-hidden border border-black/15 ${
+          isRetracted ? "cursor-pointer" : "px-3"
         }`}
         style={{
+          transition: smoothTransition,
+          willChange: "width, height, max-width, min-height",
+          transform: "translateZ(0)",
           backgroundColor: "rgb(39 117 202 / 20%)",
           backdropFilter: "blur(22px)",
           WebkitBackdropFilter: "blur(22px)",
+          width: isRetracted ? 48 : isInboxActive ? 220 : 272,
+          height: isRetracted ? 48 : 71,
+          minHeight: isRetracted ? 48 : 71,
+          maxWidth: isRetracted ? 48 : isInboxActive ? 220 : 272,
         }}
       >
         <LiquidGlassEffect />
 
-        <AnimatePresence mode="wait" initial={false}>
-          {isRetracted ? (
-            /* Retracted State: Clean circular active icon bubble on the left edge */
-            <motion.button
-              key="retracted-icon"
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.8, opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              type="button"
-              aria-label={`Current: ${activeTabItem.label}. Tap to expand navigation`}
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsRetracted(false);
-              }}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-[#353935] text-[#FFFFF0] shadow-sm active:scale-95 transition-transform"
-            >
-              {ActiveIcon && <ActiveIcon className="h-5 w-5 text-[#FFFFF0]" />}
-            </motion.button>
-          ) : (
-            /* Expanded State: Horizontal tabs with active tab text on RIGHT of icon */
-            <motion.div
-              key="expanded-tabs"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              className="flex w-full items-center justify-between gap-1"
-            >
-              {tabs.map((tab) => {
-                const isActive = activeTab === tab.id;
-                const IconComponent = tab.icon;
+        {/* Retracted: Icon bubble (fades in/out without unmounting) */}
+        <div
+          className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ease-out ${
+            isRetracted ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          }`}
+        >
+          <button
+            type="button"
+            aria-label={`Current: ${activeTabItem.label}. Tap to expand navigation`}
+            onClick={(e) => { e.stopPropagation(); setIsRetracted(false); }}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-[#353935] text-[#FFFFF0] shadow-sm active:scale-95 transition-transform"
+          >
+            {ActiveIcon && <ActiveIcon className="h-5 w-5 text-[#FFFFF0]" />}
+          </button>
+        </div>
 
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    aria-pressed={isActive}
-                    aria-current={isActive ? "page" : undefined}
-                    aria-label={tab.label}
-                    onClick={() => onSelectTab(tab.id)}
-                    className={`relative h-11 flex items-center justify-center rounded-full transition-all duration-200 ease-out active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2775CA] ${
-                      isActive
-                        ? "bg-[#353935] text-[#FFFFF0] shadow-sm px-3 gap-1.5 flex-1 min-w-[76px] max-w-[94px]"
-                        : "bg-transparent text-black/65 hover:bg-black/5 hover:text-black w-10 shrink-0"
-                    }`}
-                  >
-                    <IconComponent
-                      className={`h-5 w-5 shrink-0 transition-colors duration-200 ${
-                        isActive ? "text-[#FFFFF0]" : "text-black/65"
-                      }`}
-                    />
-                    {/* Label strictly on the RIGHT SIDE of the icon */}
-                    {isActive && (
-                      <span className="whitespace-nowrap text-[9px] font-black uppercase tracking-wider text-[#FFFFF0] truncate">
-                        {tab.label}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.nav>
+        {/* Expanded: Tab buttons bar (fades in/out smoothly over 300ms without DOM removal) */}
+        <div
+          className={`flex w-full items-center justify-between gap-1 transition-opacity duration-300 ease-out ${
+            isRetracted ? "opacity-0 pointer-events-none" : "opacity-100 pointer-events-auto"
+          }`}
+        >
+          {tabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+            const IconComponent = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                aria-pressed={isActive}
+                aria-current={isActive ? "page" : undefined}
+                aria-label={tab.label}
+                onClick={() => onSelectTab(tab.id)}
+                className={`relative h-10 flex items-center justify-center rounded-full transition-all duration-200 ease-out active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2775CA] ${
+                  isActive
+                    ? "bg-[#353935] text-[#FFFFF0] shadow-sm px-3 gap-1.5 flex-1 min-w-[76px] max-w-[94px]"
+                    : "bg-transparent text-black/65 hover:bg-black/5 hover:text-black w-9 shrink-0"
+                }`}
+              >
+                <IconComponent
+                  className={`h-5 w-5 shrink-0 transition-colors duration-200 ${
+                    isActive ? "text-[#FFFFF0]" : "text-black/65"
+                  }`}
+                />
+                {isActive && (
+                  <span className="whitespace-nowrap text-[9px] font-black uppercase tracking-wider text-[#FFFFF0] truncate">
+                    {tab.label}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
 
-      {/* Right Edge: Detached DMs Action Button */}
-      <motion.div
-        layout
-        transition={smoothTransition}
-        className="pointer-events-auto relative shrink-0"
-      >
+      {/* ── Right Edge: Detached DMs Button ── */}
+      <div className="pointer-events-auto relative shrink-0" style={{ transform: "translateZ(0)" }}>
         <button
           type="button"
-          onClick={() => {
-            setIsRetracted(false);
-            onSelectTab("inbox" as unknown as T);
-          }}
-          className={`relative flex items-center justify-center rounded-full border border-black/15 transition-all duration-200 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] active:scale-95 overflow-hidden ${
-            isRetracted
-              ? "h-12 w-12"
-              : isInboxActive
-              ? "min-h-[79px] bg-[#353935] text-[#FFFFF0] w-[88px] px-2.5 gap-1.5"
-              : "min-h-[79px] h-[79px] bg-[#2775CA]/20 text-black/70 hover:text-black w-[52px]"
+          onClick={() => { setIsRetracted(false); onSelectTab("inbox" as unknown as T); }}
+          className={`relative flex items-center justify-center rounded-full border border-black/15 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] active:scale-95 overflow-hidden transition-all duration-300 ${
+            isInboxActive && !isRetracted
+              ? "bg-[#353935] text-[#FFFFF0] px-3 gap-1.5"
+              : "bg-[#2775CA]/20 text-black/70 hover:text-black"
           }`}
           style={{
+            transition: smoothTransition,
+            willChange: "width, height, border-radius",
             backgroundColor: isInboxActive && !isRetracted ? undefined : "rgb(39 117 202 / 20%)",
             backdropFilter: "blur(22px)",
             WebkitBackdropFilter: "blur(22px)",
+            width: isRetracted ? 48 : isInboxActive ? 88 : 52,
+            height: isRetracted ? 48 : isInboxActive ? 71 : 52,
           }}
           aria-label="Open DMs"
         >
@@ -291,16 +279,12 @@ export default function MobileFloatingNav<T extends string = string>({
             </span>
           )}
         </button>
-        {/* Unread Message Badge */}
         {pendingDmCount > 0 && (
           <span className="pointer-events-none absolute -right-1 -top-1 z-20 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border-2 border-[#060608] bg-red-500 px-1 text-[10px] font-black leading-none text-white shadow-md">
             {pendingDmCount > 9 ? "9+" : pendingDmCount}
           </span>
         )}
-      </motion.div>
-    </motion.aside>
+      </div>
+    </aside>
   );
 }
-
-
-
