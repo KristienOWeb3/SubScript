@@ -18,7 +18,7 @@ import {
 import { deriveDepositSigner, deriveDepositAddress } from "./depositAddresses";
 import { getChainRelayer, resolveRpcUrl } from "./relayer";
 import { calculateBridgeFee, formatMicros, getMinBridgeAmount, MIN_BRIDGE_AMOUNT_MICROS } from "./feeEngine";
-import { notifyDepositStarted } from "./notifications";
+import { notifyDepositStarted, notifyAdminsLowGas } from "./notifications";
 import { processPendingCctpTransfers } from "./attestationWorker";
 
 /**
@@ -440,6 +440,25 @@ async function dripGasIfNeeded(
   }
 
   const relayer = getChainRelayer(chainId);
+  const relayerBalance = await provider.getBalance(relayer.address).catch(() => 0n);
+  const chainConfig = CCTP_CONFIG[chainId];
+  const nativeSymbol = chainConfig?.nativeTokenSymbol || "ETH";
+  const chainName = chainConfig?.name || `Chain ${chainId}`;
+
+  // If relayer balance is below 0.005 native tokens, alert all admins
+  const LOW_GAS_RELAYER_THRESHOLD = ethers.parseEther("0.005");
+  if (relayerBalance < LOW_GAS_RELAYER_THRESHOLD) {
+    void notifyAdminsLowGas({
+      chainName,
+      chainId,
+      walletAddress: relayer.address,
+      walletRole: "Relayer / Sponsor Wallet",
+      balanceFormatted: ethers.formatEther(relayerBalance),
+      tokenSymbol: nativeSymbol,
+      thresholdFormatted: "0.005",
+    }).catch(() => undefined);
+  }
+
   const dripAmount = GAS_DRIP_WEI[chainId] || DEFAULT_GAS_DRIP_WEI;
 
   console.log(
