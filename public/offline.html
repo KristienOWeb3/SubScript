@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#06080C" />
-    <title>You're Offline · SubScript</title>
+    <title>No connection · SubScript</title>
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <style>
         :root { color-scheme: dark; }
@@ -13,7 +13,7 @@
             height: 100%;
             background: #06080C;
             color: #F8FAFC;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             -webkit-font-smoothing: antialiased;
             overflow: hidden;
         }
@@ -21,127 +21,125 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: 24px;
             position: relative;
         }
-        /* Ambient backdrop glow */
         .glow {
             position: absolute;
-            width: 320px;
-            height: 320px;
+            width: 360px;
+            height: 360px;
             border-radius: 50%;
-            background: radial-gradient(circle, rgba(39, 117, 202, 0.28) 0%, rgba(204, 255, 0, 0.08) 50%, transparent 70%);
-            filter: blur(40px);
+            background: radial-gradient(circle, rgba(39, 117, 202, 0.22) 0%, rgba(204, 255, 0, 0.05) 55%, transparent 70%);
+            filter: blur(50px);
             pointer-events: none;
             z-index: 0;
         }
-        .container {
+        .card {
             position: relative;
             z-index: 1;
             width: 100%;
-            max-width: 380px;
+            max-width: 360px;
             text-align: center;
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 28px;
-            background: rgba(15, 23, 42, 0.65);
-            backdrop-filter: blur(28px);
-            -webkit-backdrop-filter: blur(28px);
-            padding: 36px 24px 28px;
-            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-        }
-        .icon-wrap {
-            position: relative;
-            width: 72px;
-            height: 72px;
-            margin: 0 auto 22px;
-            border-radius: 24px;
-            background: rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            padding: 32px 24px 28px;
+            box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        }
+        .icon-circle {
+            position: relative;
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 20px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             display: flex;
             align-items: center;
             justify-content: center;
         }
-        .icon-wrap svg {
-            width: 32px;
-            height: 32px;
+        .icon-circle svg {
+            width: 28px;
+            height: 28px;
             stroke: #94A3B8;
         }
-        .pulse-dot {
+        .dot {
             position: absolute;
-            top: -2px;
-            right: -2px;
-            width: 12px;
-            height: 12px;
+            top: 2px;
+            right: 2px;
+            width: 10px;
+            height: 10px;
             border-radius: 50%;
             background: #F59E0B;
             border: 2px solid #06080C;
-            box-shadow: 0 0 10px rgba(245, 158, 11, 0.6);
+            box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
             animation: pulse 2s infinite ease-in-out;
         }
         @keyframes pulse {
             0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.4; transform: scale(0.85); }
+            50% { opacity: 0.35; transform: scale(0.85); }
         }
         h1 {
-            font-size: 20px;
-            font-weight: 800;
-            margin-bottom: 10px;
-            letter-spacing: -0.02em;
+            font-size: 19px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            letter-spacing: -0.01em;
             color: #FFFFFF;
         }
-        p.lead {
+        p.desc {
             font-size: 13px;
-            line-height: 1.6;
+            line-height: 1.55;
             color: #94A3B8;
-            margin-bottom: 24px;
+            margin-bottom: 20px;
         }
-        .status-badge {
+        .status-tag {
             display: inline-flex;
             align-items: center;
             gap: 6px;
             padding: 4px 12px;
             border-radius: 999px;
             background: rgba(245, 158, 11, 0.1);
-            border: 1px solid rgba(245, 158, 11, 0.25);
+            border: 1px solid rgba(245, 158, 11, 0.2);
             font-size: 11px;
             font-weight: 600;
             color: #FCD34D;
-            margin-bottom: 24px;
+            margin-bottom: 22px;
         }
-        .btn-retry {
+        .btn-action {
             width: 100%;
             border: 0;
-            border-radius: 16px;
-            padding: 14px 20px;
+            border-radius: 14px;
+            padding: 13px 20px;
             background: #F8FAFC;
             color: #06080C;
             font-size: 13px;
-            font-weight: 800;
-            letter-spacing: 0.02em;
+            font-weight: 700;
             cursor: pointer;
-            transition: all 0.2s ease;
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+            transition: all 0.15s ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
         }
-        .btn-retry:hover {
+        .btn-action:hover {
             background: #FFFFFF;
             transform: translateY(-1px);
         }
-        .btn-retry:active {
+        .btn-action:active {
             transform: translateY(0) scale(0.98);
         }
-        .footer-note {
-            margin-top: 18px;
+        .note {
+            margin-top: 16px;
             font-size: 11px;
-            line-height: 1.5;
+            line-height: 1.45;
             color: #64748B;
         }
     </style>
 </head>
 <body>
     <div class="glow"></div>
-    <main class="container">
-        <div class="icon-wrap">
-            <div class="pulse-dot"></div>
+    <main class="card">
+        <div class="icon-circle">
+            <div class="dot"></div>
             <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="1" y1="1" x2="23" y2="23"></line>
                 <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path>
@@ -153,31 +151,30 @@
             </svg>
         </div>
 
-        <h1>You're offline right now</h1>
-        <p class="lead">We lost signal to the network. Your keys, balance records, and sessions remain completely secure on this device.</p>
+        <h1>You are currently offline</h1>
+        <p class="desc">Your device lost its internet connection. Your wallet keys and cached balances stay safe on your device.</p>
         
-        <div class="status-badge">
-            <span>●</span> Waiting for network reconnect
+        <div class="status-tag">
+            <span>●</span> Waiting for network signal
         </div>
 
-        <button type="button" class="btn-retry" id="retryBtn" onclick="handleRetry()">
-            Check connection again
+        <button type="button" class="btn-action" id="retryBtn" onclick="handleRetry()">
+            Try reconnecting
         </button>
 
-        <p class="footer-note">No need to keep refreshing — SubScript will automatically restore your dashboard the second your connection returns.</p>
+        <p class="note">This screen updates automatically as soon as your connection comes back.</p>
     </main>
 
     <script>
         function handleRetry() {
             const btn = document.getElementById('retryBtn');
-            btn.textContent = 'Checking signal...';
+            btn.textContent = 'Checking connection...';
             btn.style.opacity = '0.7';
-            setTimeout(() => {
+            setTimeout(function () {
                 location.reload();
             }, 300);
         }
 
-        // Auto-reconnect the instant internet returns
         window.addEventListener("online", function () {
             location.reload();
         });
