@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { pgQuery, pgMaybeOne } from "@/lib/serverPg";
-import { CCTP_CONFIG } from "@/lib/contracts/constants";
+import {
+  CCTP_CONFIG,
+  ARC_TESTNET_CHAIN_ID,
+  ARC_MAINNET_CHAIN_ID,
+} from "@/lib/contracts/constants";
 import { deriveDepositAddress } from "@/lib/cctp/depositAddresses";
 import { formatFeeBps } from "@/lib/cctp/feeEngine";
 
@@ -34,8 +38,9 @@ export async function POST(req: NextRequest) {
     }
 
     const chainId = Number(body.originChainId);
+    const isArc = chainId === ARC_TESTNET_CHAIN_ID || chainId === ARC_MAINNET_CHAIN_ID;
     const chainConfig = CCTP_CONFIG[chainId];
-    if (!chainConfig) {
+    if (!chainConfig && !isArc) {
       return NextResponse.json(
         { error: "That network isn't supported for deposits." },
         { status: 400 },
@@ -75,10 +80,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       depositAddress: derivedAddress,
-      chainName: chainConfig.name,
+      chainName: chainConfig?.name || "Arc Network",
       chainId,
-      feeBps: chainConfig.feeBps,
-      fee: formatFeeBps(chainConfig.feeBps),
+      feeBps: chainConfig?.feeBps || 0,
+      fee: formatFeeBps(chainConfig?.feeBps || 0),
       intentId,
     });
   } catch (error: any) {

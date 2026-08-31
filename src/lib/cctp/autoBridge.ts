@@ -4,6 +4,9 @@ import {
   CCTP_CONFIG,
   ARC_CCTP_DOMAIN_ID,
   BRIDGE_FEE_TREASURY_ADDRESS,
+  ARC_TESTNET_CHAIN_ID,
+  ARC_MAINNET_CHAIN_ID,
+  USDC_NATIVE_GAS_ADDRESS,
 } from "@/lib/contracts/constants";
 import {
   TOKEN_MESSENGER_V2_ABI,
@@ -131,11 +134,104 @@ export async function sweepAndBridge(): Promise<SweepResult> {
 }
 
 /**
+ * Sweeps native USDC sent to the derived router address on Arc directly to the user's wallet.
+ */
+async function processArcIntent(intent: ActiveIntent): Promise<boolean> {
+  const { user_wallet, derived_deposit_address, origin_chain_id } = intent;
+  const arcChainId = origin_chain_id || ARC_TESTNET_CHAIN_ID;
+  const rpc = resolveRpcUrl(arcChainId);
+  if (!rpc) return false;
+
+  const provider = new ethers.JsonRpcProvider(rpc, undefined, { staticNetwork: true });
+
+  let nativeBal: bigint;
+  try {
+    nativeBal = await Promise.race([
+      provider.getBalance(derived_deposit_address) as Promise<bigint>,
+      new Promise<bigint>((_, reject) =>
+        setTimeout(() => reject(new Error("RPC timeout")), BALANCE_TIMEOUT_MS),
+      ),
+    ]);
+  } catch {
+    return false;
+  }
+
+  // Minimum 0.05 USDC to route on Arc
+  const minSweepArc = 50_000n;
+  if (nativeBal < minSweepArc) {
+    return false;
+  }
+
+  console.log(
+    `[AutoBridge] detected ${formatMicros(nativeBal)} USDC on Arc at ${derived_deposit_address}, auto-routing to ${user_wallet}`,
+  );
+
+  let originDepositor = user_wallet;
+  try {
+    const usdcContract = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, ERC20_ABI, provider);
+    const filter = usdcContract.filters.Transfer(null, derived_deposit_address);
+    const latestBlock = await provider.getBlockNumber();
+    const fromBlock = Math.max(0, latestBlock - 5000);
+    const events = await usdcContract.queryFilter(filter, fromBlock, latestBlock);
+    if (events.length > 0) {
+      const lastEvent: any = events[events.length - 1];
+      if (lastEvent.args && lastEvent.args[0]) {
+        originDepositor = String(lastEvent.args[0]).toLowerCase();
+      }
+    }
+  } catch {
+    // Best-effort lookup
+  }
+
+  const signer = deriveDepositSigner(user_wallet, arcChainId);
+  const feeData = await provider.getFeeData();
+  const gasPrice = feeData.gasPrice || 100_000_000n;
+  const gasCost = 21_000n * gasPrice;
+  const sendAmount = nativeBal > gasCost ? nativeBal - gasCost : 0n;
+
+  if (sendAmount <= 0n) return false;
+
+  const tx = await signer.sendTransaction({
+    to: user_wallet,
+    value: sendAmount,
+  });
+  const receipt = await tx.wait();
+  const txHash = receipt?.hash || tx.hash;
+  console.log(`[AutoBridge] Arc sweep completed: ${txHash} (${formatMicros(sendAmount)} USDC) to ${user_wallet}`);
+
+  const microsStr = sendAmount.toString();
+  await pgQuery(
+    `INSERT INTO cctp_bridge_transfers
+       (direction, user_wallet, recipient_address, origin_chain_id, origin_domain,
+        destination_chain_id, destination_domain, gross_amount_micros, fee_amount_micros,
+        net_amount_micros, fee_bps, mint_tx_hash, status)
+     VALUES ('inbound_deposit', $1, $2, 'arc', 0, 'arc', 0, $3, '0', $3, 0, $4, 'completed')
+     ON CONFLICT DO NOTHING`,
+    [originDepositor, user_wallet, microsStr, txHash],
+  ).catch(() => undefined);
+
+  await pgQuery(
+    `UPDATE cctp_deposit_intents
+        SET status = 'matched', updated_at = now()
+      WHERE user_wallet = $1 AND origin_chain_id = $2 AND status = 'active'`,
+    [user_wallet, origin_chain_id],
+  ).catch(() => undefined);
+
+  return true;
+}
+
+/**
  * Process a single deposit intent: check balance, drip gas, burn via CCTP.
  * Returns true if a bridge was executed, false if skipped (no balance or already bridging).
  */
 async function processIntent(intent: ActiveIntent): Promise<boolean> {
   const { user_wallet, derived_deposit_address, origin_chain_id } = intent;
+
+  const isArc = origin_chain_id === ARC_TESTNET_CHAIN_ID || origin_chain_id === ARC_MAINNET_CHAIN_ID;
+  if (isArc) {
+    return processArcIntent(intent);
+  }
+
   const chainConfig = CCTP_CONFIG[origin_chain_id];
   if (!chainConfig) {
     console.warn(`[AutoBridge] no CCTP config for chain ${origin_chain_id}, skipping.`);
