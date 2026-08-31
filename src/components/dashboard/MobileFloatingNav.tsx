@@ -25,12 +25,13 @@ export default function MobileFloatingNav<T extends string = string>({
   activeTab,
   onSelectTab,
   pendingDmCount = 0,
-  scrollContainerSelector = ".user-dashboard-redesign",
+  scrollContainerSelector = ".user-dashboard-content, .user-dashboard-redesign",
 }: MobileFloatingNavProps<T>) {
   const [isRetracted, setIsRetracted] = useState(false);
   const lastScrollY = useRef(0);
   const isRetractedRef = useRef(isRetracted);
   isRetractedRef.current = isRetracted;
+  const touchStartY = useRef(0);
 
   // Always expand whenever user changes tabs
   useEffect(() => {
@@ -47,8 +48,8 @@ export default function MobileFloatingNav<T extends string = string>({
       return;
     }
 
-    // Scroll down past top area -> Smoothly retract to edge
-    if (delta > 6 && !isRetractedRef.current && currentY > 40) {
+    // Scroll down past top area -> Smoothly retract to edges
+    if (delta > 6 && !isRetractedRef.current && currentY > 30) {
       setIsRetracted(true);
     }
     // Scroll up -> Expand back smoothly
@@ -63,38 +64,86 @@ export default function MobileFloatingNav<T extends string = string>({
     if (typeof window === "undefined") return;
 
     let ticking = false;
-    const updateScroll = () => {
-      const scrollContainer = document.querySelector(scrollContainerSelector) as HTMLElement | null;
-      const containerY = scrollContainer ? scrollContainer.scrollTop : 0;
-      const windowY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
-      const currentY = Math.max(containerY, windowY);
-      handleScrollDelta(currentY);
-      ticking = false;
+    const getActiveScrollY = () => {
+      const selectors = scrollContainerSelector.split(",").map((s) => s.trim());
+      for (const sel of selectors) {
+        const el = document.querySelector(sel) as HTMLElement | null;
+        if (el && el.scrollTop > 0) {
+          return el.scrollTop;
+        }
+      }
+      return window.scrollY || window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
     };
 
-    const onScroll = () => {
+    const handleAnyScroll = (e?: Event) => {
       if (!ticking) {
-        window.requestAnimationFrame(updateScroll);
+        window.requestAnimationFrame(() => {
+          let y = 0;
+          if (e && e.target && "scrollTop" in (e.target as HTMLElement)) {
+            const targetEl = e.target as HTMLElement;
+            if (targetEl.scrollTop > 0) {
+              y = targetEl.scrollTop;
+            } else {
+              y = getActiveScrollY();
+            }
+          } else {
+            y = getActiveScrollY();
+          }
+          handleScrollDelta(y);
+          ticking = false;
+        });
         ticking = true;
       }
     };
 
-    window.addEventListener("scroll", onScroll, { passive: true });
-    document.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("touchmove", onScroll, { passive: true });
+    // Instant touch gesture detection for mobile devices
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length > 0) {
+        touchStartY.current = e.touches[0].clientY;
+      }
+    };
 
-    const scrollContainer = document.querySelector(scrollContainerSelector) as HTMLElement | null;
-    if (scrollContainer) {
-      scrollContainer.addEventListener("scroll", onScroll, { passive: true });
-    }
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 0) {
+        const touchCurrentY = e.touches[0].clientY;
+        const touchDelta = touchStartY.current - touchCurrentY; // > 0 means dragging up = scrolling DOWN
+        const currentY = getActiveScrollY();
+
+        if (currentY <= 20) {
+          if (isRetractedRef.current) setIsRetracted(false);
+        } else if (touchDelta > 6 && !isRetractedRef.current && currentY > 25) {
+          setIsRetracted(true);
+        } else if (touchDelta < -6 && isRetractedRef.current) {
+          setIsRetracted(false);
+        }
+      }
+    };
+
+    // Desktop mouse wheel listener
+    const onWheel = (e: WheelEvent) => {
+      const currentY = getActiveScrollY();
+      if (currentY <= 20) {
+        if (isRetractedRef.current) setIsRetracted(false);
+      } else if (e.deltaY > 6 && !isRetractedRef.current && currentY > 25) {
+        setIsRetracted(true);
+      } else if (e.deltaY < -6 && isRetractedRef.current) {
+        setIsRetracted(false);
+      }
+    };
+
+    // Capture phase listener ensures ALL scroll events from any nested container are caught!
+    window.addEventListener("scroll", handleAnyScroll, { capture: true, passive: true });
+    document.addEventListener("scroll", handleAnyScroll, { capture: true, passive: true });
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: true });
+    window.addEventListener("wheel", onWheel, { passive: true });
 
     return () => {
-      window.removeEventListener("scroll", onScroll);
-      document.removeEventListener("scroll", onScroll);
-      window.removeEventListener("touchmove", onScroll);
-      if (scrollContainer) {
-        scrollContainer.removeEventListener("scroll", onScroll);
-      }
+      window.removeEventListener("scroll", handleAnyScroll, { capture: true });
+      document.removeEventListener("scroll", handleAnyScroll, { capture: true });
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("wheel", onWheel);
     };
   }, [handleScrollDelta, scrollContainerSelector]);
 
@@ -105,14 +154,18 @@ export default function MobileFloatingNav<T extends string = string>({
   // Smooth, non-bouncy transition easing
   const smoothTransition = {
     type: "tween" as const,
-    ease: [0.22, 1, 0.36, 1], // Smooth cubic-bezier without bouncy overshoot
+    ease: [0.25, 1, 0.5, 1], // Smooth cubic-bezier without bouncy overshoot
     duration: 0.28,
   };
 
   return (
-    <aside
+    <motion.aside
+      layout
+      transition={smoothTransition}
       aria-label="Mobile navigation bar"
-      className="fixed bottom-5 inset-x-0 mx-auto w-full max-w-sm px-3.5 z-50 flex items-center justify-between pointer-events-none select-none box-border"
+      className={`fixed bottom-5 inset-x-0 mx-auto w-full max-w-sm px-4 z-50 flex items-center pointer-events-none select-none box-border ${
+        isRetracted ? "justify-between" : "justify-center gap-2"
+      }`}
     >
       {/* Left Navigation Capsule / Retracted Pill */}
       <motion.nav
@@ -120,8 +173,8 @@ export default function MobileFloatingNav<T extends string = string>({
         layout
         initial={false}
         animate={{
-          width: isRetracted ? 48 : isInboxActive ? "calc(100% - 108px)" : "calc(100% - 58px)",
-          maxWidth: isRetracted ? 48 : isInboxActive ? 220 : 288,
+          width: isRetracted ? 48 : isInboxActive ? "calc(100% - 100px)" : "calc(100% - 56px)",
+          maxWidth: isRetracted ? 48 : isInboxActive ? 220 : 272,
         }}
         transition={smoothTransition}
         onClick={() => {
@@ -130,13 +183,12 @@ export default function MobileFloatingNav<T extends string = string>({
           }
         }}
         className={`liquid-glass pointer-events-auto relative flex h-12 items-center rounded-full backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] overflow-hidden border border-black/15 transition-colors duration-200 ${
-          isRetracted ? "cursor-pointer justify-center p-0" : "px-1.5 justify-between"
+          isRetracted ? "cursor-pointer justify-center p-0 flex-none" : "px-1.5 justify-between flex-1 min-w-0"
         }`}
         style={{
           backgroundColor: "rgb(39 117 202 / 20%)",
           backdropFilter: "blur(22px)",
           WebkitBackdropFilter: "blur(22px)",
-          transformOrigin: "left center",
         }}
       >
         <LiquidGlassEffect />
@@ -221,7 +273,7 @@ export default function MobileFloatingNav<T extends string = string>({
           }}
           className={`relative h-12 flex items-center justify-center rounded-full border border-black/15 transition-all duration-200 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] active:scale-95 overflow-hidden ${
             isInboxActive && !isRetracted
-              ? "bg-[#353935] text-[#FFFFF0] w-[94px] px-3 gap-1.5"
+              ? "bg-[#353935] text-[#FFFFF0] w-[88px] px-2.5 gap-1.5"
               : isInboxActive
               ? "bg-[#353935] text-[#FFFFF0] w-12"
               : "bg-[#2775CA]/20 text-black/70 hover:text-black w-12"
@@ -248,7 +300,7 @@ export default function MobileFloatingNav<T extends string = string>({
           </span>
         )}
       </motion.div>
-    </aside>
+    </motion.aside>
   );
 }
 
