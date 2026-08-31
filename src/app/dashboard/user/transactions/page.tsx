@@ -194,8 +194,12 @@ export default function UserTransactionsPage() {
     blockNumber?: number;
     status: string;
     senderName?: string | null;
+    receiverName?: string | null;
+    incoming?: boolean;
     isCctp?: boolean;
     direction?: string;
+    originChainId?: number | string;
+    destinationChainId?: number | string;
     originName?: string;
     destName?: string;
     burnTxHash?: string;

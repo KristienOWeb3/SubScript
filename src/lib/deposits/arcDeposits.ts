@@ -24,6 +24,9 @@ export interface ArcDepositItem {
     network: string;
     direction: "inbound_deposit" | "outbound_send";
     incoming: boolean;
+    isCctp?: boolean;
+    originChainId?: number;
+    originName?: string;
 }
 
 const TRANSFER_EVENT_TOPIC = ethers.id("Transfer(address,address,uint256)");

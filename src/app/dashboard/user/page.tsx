@@ -656,8 +656,12 @@ export default function UserDashboard() {
     blockNumber?: number;
     status: string;
     senderName?: string | null;
+    receiverName?: string | null;
+    incoming?: boolean;
     isCctp?: boolean;
     direction?: string;
+    originChainId?: number | string;
+    destinationChainId?: number | string;
     originName?: string;
     destName?: string;
     burnTxHash?: string;
@@ -3542,6 +3546,7 @@ export default function UserDashboard() {
         status: subscriptionTxStatus(s.status),
         time: s.lastSettlementTimestamp ? new Date(s.lastSettlementTimestamp).getTime() : new Date(s.createdAt).getTime(),
         incoming: false,
+        txHash: undefined as string | undefined,
       };
     }),
     ...dms
@@ -3583,6 +3588,7 @@ export default function UserDashboard() {
           status: dmTxStatus(d.status),
           time: new Date(d.createdAt).getTime(),
           incoming,
+          txHash: d.txHash as string | undefined,
         };
       }),
     ...deposits
