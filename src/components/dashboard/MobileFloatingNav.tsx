@@ -255,10 +255,10 @@ export default function MobileFloatingNav<T extends string = string>({
         <button
           type="button"
           onClick={() => { setIsRetracted(false); onSelectTab("inbox" as unknown as T); }}
-          className={`relative flex items-center justify-center border border-black/15 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] active:scale-95 overflow-hidden transition-all duration-300 ${
+          className={`relative flex items-center justify-center rounded-full border border-black/15 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] active:scale-95 overflow-hidden transition-all duration-300 ${
             isInboxActive && !isRetracted
-              ? "rounded-[22px] bg-[#353935] text-[#FFFFF0] px-2.5 gap-1.5"
-              : "rounded-full bg-[#2775CA]/20 text-black/70 hover:text-black"
+              ? "bg-[#353935] text-[#FFFFF0] px-3 gap-1.5"
+              : "bg-[#2775CA]/20 text-black/70 hover:text-black"
           }`}
           style={{
             transition: smoothTransition,
