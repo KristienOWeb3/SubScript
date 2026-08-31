@@ -365,12 +365,16 @@ export default function UserTransactionsPage() {
       const incoming = r.direction === "received";
       const sign = incoming ? "+" : "-";
       const isConfirmed = normalizeReceiptStatus(r.status) === "CONFIRMED";
+      const cleanMemo = r.memoNote && !r.memoNote.toLowerCase().startsWith("rcpt-") && !/^rcpt-[0-9a-f]{32}$/i.test(r.memoNote.trim())
+        ? r.memoNote.trim()
+        : (incoming ? "Payment received" : "Payment sent");
+
       return {
         id: `rcpt-${r.receiptId}`,
         kind: "one-time" as const,
         name: r.counterpartyName || formatAddress(incoming ? r.payerAddress : r.merchantAddress) || "SubScript Transaction",
         pic: null as string | null,
-        detail: r.memoNote || (incoming ? "Received Payment" : "Payment Sent"),
+        detail: cleanMemo,
         amountUsdc: r.amountUsdc,
         amountLabel: `${sign}$${formatUsdc(r.amountUsdc)}`,
         localAmountLabel: `${sign}${getLocalValueLabel(r.amountUsdc)}`,
@@ -410,18 +414,18 @@ export default function UserTransactionsPage() {
         if (isWithdrawal) {
           name = `CCTP Send to ${d.destName || "External Chain"}`;
           detail = d.status === "completed"
-            ? `CCTP Send to ${d.destName || "External Chain"} • Delivered`
+            ? `Withdrawal confirmed`
             : d.status === "failed"
-            ? `CCTP Send • Failed`
-            : `CCTP Send to ${d.destName || "External Chain"} • Bridging (~5 mins)`;
+            ? `Withdrawal failed`
+            : `CCTP Send to ${d.destName || "External Chain"} • Estimated arrival ~15 mins`;
           status = d.status === "completed" ? "CONFIRMED" : d.status === "failed" ? "FAILED" : "PENDING";
         } else {
           name = `CCTP Deposit from ${d.originName || "External Chain"}`;
           detail = d.status === "completed"
-            ? `CCTP Deposit from ${d.originName || "External Chain"} • Completed`
+            ? `Deposit confirmed`
             : d.status === "failed"
-            ? `CCTP Deposit • Failed`
-            : `CCTP Deposit from ${d.originName || "External Chain"} • Bridging (~5 mins)`;
+            ? `Deposit failed`
+            : `CCTP Deposit from ${d.originName || "External Chain"} • Estimated arrival ~15 mins`;
           status = d.status === "completed" ? "CONFIRMED" : d.status === "failed" ? "FAILED" : "PENDING";
         }
       }

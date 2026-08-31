@@ -3,63 +3,181 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#000000" />
-    <title>Offline · SubScript</title>
+    <meta name="theme-color" content="#06080C" />
+    <title>No connection · SubScript</title>
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <style>
         :root { color-scheme: dark; }
-        * { box-sizing: border-box; }
-        html, body { height: 100%; margin: 0; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            height: 100%;
+            background: #06080C;
+            color: #F8FAFC;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            overflow: hidden;
+        }
         body {
             display: flex;
             align-items: center;
             justify-content: center;
             padding: 24px;
-            background: #000;
-            color: #fff;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            -webkit-font-smoothing: antialiased;
+            position: relative;
+        }
+        .glow {
+            position: absolute;
+            width: 360px;
+            height: 360px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(39, 117, 202, 0.22) 0%, rgba(204, 255, 0, 0.05) 55%, transparent 70%);
+            filter: blur(50px);
+            pointer-events: none;
+            z-index: 0;
         }
         .card {
+            position: relative;
+            z-index: 1;
             width: 100%;
             max-width: 360px;
             text-align: center;
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 24px;
-            background: rgba(255, 255, 255, 0.03);
-            padding: 32px 24px;
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            padding: 32px 24px 28px;
+            box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.08);
         }
-        .logo { width: 56px; height: 56px; margin: 0 auto 20px; display: block; }
-        h1 { font-size: 18px; font-weight: 800; margin: 0 0 8px; letter-spacing: -0.01em; }
-        p { font-size: 13px; line-height: 1.5; color: rgba(255, 255, 255, 0.55); margin: 0 0 24px; }
-        button {
+        .icon-circle {
+            position: relative;
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 20px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .icon-circle svg {
+            width: 28px;
+            height: 28px;
+            stroke: #94A3B8;
+        }
+        .dot {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #F59E0B;
+            border: 2px solid #06080C;
+            box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
+            animation: pulse 2s infinite ease-in-out;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.35; transform: scale(0.85); }
+        }
+        h1 {
+            font-size: 19px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            letter-spacing: -0.01em;
+            color: #FFFFFF;
+        }
+        p.desc {
+            font-size: 13px;
+            line-height: 1.55;
+            color: #94A3B8;
+            margin-bottom: 20px;
+        }
+        .status-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 999px;
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.2);
+            font-size: 11px;
+            font-weight: 600;
+            color: #FCD34D;
+            margin-bottom: 22px;
+        }
+        .btn-action {
             width: 100%;
             border: 0;
             border-radius: 14px;
-            padding: 13px 16px;
-            background: #ccff00;
-            color: #000;
-            font-size: 12px;
-            font-weight: 900;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
+            padding: 13px 20px;
+            background: #F8FAFC;
+            color: #06080C;
+            font-size: 13px;
+            font-weight: 700;
             cursor: pointer;
+            transition: all 0.15s ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
         }
-        button:hover { filter: brightness(1.1); }
-        .hint { margin-top: 16px; font-size: 10px; color: rgba(255, 255, 255, 0.35); }
+        .btn-action:hover {
+            background: #FFFFFF;
+            transform: translateY(-1px);
+        }
+        .btn-action:active {
+            transform: translateY(0) scale(0.98);
+        }
+        .note {
+            margin-top: 16px;
+            font-size: 11px;
+            line-height: 1.45;
+            color: #64748B;
+        }
     </style>
 </head>
 <body>
+    <div class="glow"></div>
     <main class="card">
-        <img class="logo" src="/icon-192.png" alt="SubScript" width="56" height="56" />
-        <h1>You're offline</h1>
-        <p>SubScript needs a connection to load your dashboard, balances, and payments. Your data is safe — nothing was lost.</p>
-        <button type="button" onclick="location.reload()">Try again</button>
-        <p class="hint">This page works offline. The dashboard will reload automatically once you're back online.</p>
+        <div class="icon-circle">
+            <div class="dot"></div>
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+                <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path>
+                <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path>
+                <path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path>
+                <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path>
+                <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+                <line x1="12" y1="20" x2="12.01" y2="20"></line>
+            </svg>
+        </div>
+
+        <h1>You are currently offline</h1>
+        <p class="desc">Your device lost its internet connection. Your wallet keys and cached balances stay safe on your device.</p>
+        
+        <div class="status-tag">
+            <span>●</span> Waiting for network signal
+        </div>
+
+        <button type="button" class="btn-action" id="retryBtn" onclick="handleRetry()">
+            Try reconnecting
+        </button>
+
+        <p class="note">This screen updates automatically as soon as your connection comes back.</p>
     </main>
+
     <script>
-        // Auto-retry the moment connectivity returns.
-        window.addEventListener("online", function () { location.reload(); });
+        function handleRetry() {
+            const btn = document.getElementById('retryBtn');
+            btn.textContent = 'Checking connection...';
+            btn.style.opacity = '0.7';
+            setTimeout(function () {
+                location.reload();
+            }, 300);
+        }
+
+        window.addEventListener("online", function () {
+            location.reload();
+        });
     </script>
 </body>
 </html>

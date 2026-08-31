@@ -598,7 +598,7 @@ export default function DepositModal({
                                                         <span className="text-[9px] font-bold text-black/50">({selectedChain.feePercentage})</span>
                                                     </div>
                                                     <p className="text-[10px] text-black/50 truncate">
-                                                        {selectedChain.isArc ? "Instant settlement" : "~5 mins via CCTP bridge"}
+                                                        {selectedChain.isArc ? "Instant settlement" : "Estimated ~15 mins via CCTP bridge"}
                                                     </p>
                                                 </div>
                                             </div>
