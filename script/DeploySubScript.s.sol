@@ -22,7 +22,7 @@ contract DeploySubScript is Script {
         address owner = vm.envAddress("MULTISIG_ADDRESS");
         require(owner != address(0), "MULTISIG_ADDRESS (owner) is required");
         require(owner != EXPOSED_OWNER, "owner must NOT be the exposed key address");
-        address treasury = vm.envOr("TREASURY_ADDRESS", address(0xaFCb6d3e9ebeD1A4BF78384689A1fFf280132295));
+        address treasury = vm.envOr("TREASURY_ADDRESS", address(0x725D56151CeaC9eAd625241D13b8307B22EDDb10));
         
         address paymentToken;
 
