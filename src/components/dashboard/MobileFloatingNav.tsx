@@ -24,8 +24,8 @@ interface MobileFloatingNavProps<T extends string = string> {
  * ──────────────────────────────────────────────────── */
 const RETRACT_THRESHOLD = 120;  // requires 120px of deliberate down-scroll before retracting
 const EXPAND_THRESHOLD  = 25;   // light 25px up-scroll immediately expands
-const COOLDOWN_MS       = 450;  // ignore opposite direction after committing
-const RETRACT_DELAY_MS  = 120;  // slight debounce to verify scroll intent
+const COOLDOWN_MS       = 500;  // ignore opposite direction after committing
+const RETRACT_DELAY_MS  = 220;  // gentle debounce before closing to prevent sudden snaps
 const TOP_DEADZONE_PX   = 80;   // top 80px of page is deadzone: NEVER retracts near top
 
 export default function MobileFloatingNav<T extends string = string>({
@@ -161,10 +161,10 @@ export default function MobileFloatingNav<T extends string = string>({
   const ActiveIcon = activeTabItem?.icon;
   const isInboxActive = activeTab === ("inbox" as unknown as T);
 
-  /* High-refresh 120fps ProMotion bezier curve */
-  const motionBezier = "cubic-bezier(0.16, 1, 0.3, 1)";
+  /* Gentle, smooth 500ms liquid decelerating bezier curve */
+  const motionBezier = "cubic-bezier(0.22, 1, 0.36, 1)";
   const transitionStyle: React.CSSProperties = {
-    transition: `width 360ms ${motionBezier}, max-width 360ms ${motionBezier}, height 360ms ${motionBezier}, transform 360ms ${motionBezier}, opacity 240ms ease`,
+    transition: `width 500ms ${motionBezier}, max-width 500ms ${motionBezier}, height 500ms ${motionBezier}, transform 500ms ${motionBezier}, opacity 300ms ease`,
     willChange: "width, max-width, height, transform, opacity",
     transform: "translateZ(0)",
     WebkitTransform: "translateZ(0)",
@@ -177,7 +177,7 @@ export default function MobileFloatingNav<T extends string = string>({
         isRetracted ? "justify-between" : "justify-center gap-2"
       }`}
       style={{
-        transition: `gap 360ms ${motionBezier}, justify-content 360ms ${motionBezier}`,
+        transition: `gap 500ms ${motionBezier}, justify-content 500ms ${motionBezier}`,
         transform: "translateZ(0)",
       }}
     >
