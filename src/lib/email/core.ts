@@ -111,10 +111,20 @@ export function renderEmailLayout(opts: {
 </body></html>`;
 }
 
-export function configuredSender() {
+export function configuredSender(category?: EmailCategory) {
     const sender = process.env.EMAIL_FROM;
-    if (sender) return sender;
-    if (process.env.NODE_ENV !== "production") return "SubScript <onboarding@resend.dev>";
+    if (sender) {
+        if (category === "transactional" || category === "lifecycle") {
+            return sender.replace(/Sub[sS]cript\s+Auth/i, "SubScript Receipts");
+        }
+        return sender;
+    }
+    if (process.env.NODE_ENV !== "production") {
+        if (category === "transactional" || category === "lifecycle") {
+            return "SubScript Receipts <onboarding@resend.dev>";
+        }
+        return "SubScript <onboarding@resend.dev>";
+    }
     throw new Error("EMAIL_FROM must be configured with a verified Resend sending domain in production");
 }
 
@@ -147,7 +157,7 @@ export async function sendTransactionalEmail(message: EmailMessage) {
 
     const resend = new Resend(apiKey);
     const response = await resend.emails.send({
-        from: configuredSender(),
+        from: configuredSender(message.category),
         to: message.to,
         subject: message.subject,
         html: message.html,

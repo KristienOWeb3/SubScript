@@ -362,7 +362,7 @@ export default function MerchantOverview({
                                         : "••••••••"}
                                 </p>
                                 <p className="mt-1 text-[11px] text-black/60">
-                                    Instant spendable USDC balance
+                                    Instant spendable balance
                                 </p>
                             </div>
                         )}
@@ -407,7 +407,7 @@ export default function MerchantOverview({
                                         : "••••••••"}
                                 </p>
                                 <p className="mt-1 text-[11px] text-black/60">
-                                    Ready to Withdraw on Arc Mainnet
+                                    Ready to Withdraw on Arc
                                 </p>
                             </div>
                         )}

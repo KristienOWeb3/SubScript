@@ -16,7 +16,6 @@ function LoginChoiceContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const safeNext = getSafeRelativePath(searchParams?.get("next") || null);
-  const [checkingSession, setCheckingSession] = useState(true);
   const [activeSession, setActiveSession] = useState<{ wallet: string; email?: string; role: string } | null>(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
 
@@ -37,8 +36,6 @@ function LoginChoiceContent() {
         }
       } catch (err) {
         console.error("Failed to check active session on login mount:", err);
-      } finally {
-        setCheckingSession(false);
       }
     };
     checkSession();
@@ -68,8 +65,8 @@ function LoginChoiceContent() {
       : getDashboardUrl(activeSession.role as any, "/dashboard");
   };
 
-  if (checkingSession || isSigningOut) {
-    return <AuthSkeleton title="portal" subtitle="Welcome to SubScript" />;
+  if (isSigningOut) {
+    return <AuthSkeleton title="portal" subtitle="Signing out..." />;
   }
 
   if (activeSession) {
@@ -128,54 +125,39 @@ function LoginChoiceContent() {
           <p className="text-xs text-[#1f62ab] font-bold uppercase tracking-widest mt-1">Welcome to SubScript</p>
         </div>
 
-        <div className="rounded-3xl border border-black/15 bg-white p-6 sm:p-8 shadow-sm space-y-6 relative overflow-hidden">
+        <div className="rounded-3xl border border-black/15 bg-white p-6 sm:p-8 shadow-sm space-y-5 relative overflow-hidden">
           
-          <div className="flex items-center justify-between px-1 pb-4 border-b border-black/10">
+          <div className="flex items-center justify-between px-1 pb-3 border-b border-black/10">
             <span className="text-[10px] uppercase font-black tracking-widest text-[#1f62ab]">Get Started</span>
             <span className="text-[10px] uppercase font-bold text-black/50 tracking-wider">Choose an option</span>
           </div>
 
-          <div className="space-y-4">
-            {/* No Google button here on purpose. This page is a two-way fork, and "Continue with
-                Google" sat above both choices without belonging to either, so it was ambiguous
-                whether it signed you in or created an account. Both /signin and /signup carry their
-                own Google button, where the intent is already settled. */}
-
+          <div className="space-y-3">
             {/* Sign In Option */}
             <button
               onClick={() => handleChoice("/signin")}
-              className="w-full text-left p-5 rounded-2xl border border-black/10 bg-white hover:border-[#2775CA]/40 hover:bg-black/[0.02] hover:shadow-md transition-all group flex items-start gap-4 shadow-sm"
+              className="w-full text-left px-4 py-3.5 rounded-2xl border border-black/10 bg-white hover:border-[#2775CA]/40 hover:bg-black/[0.02] hover:shadow-sm transition-all group flex items-center gap-3.5 shadow-sm"
             >
-              <div className="p-3 bg-[#2775CA]/10 border border-[#2775CA]/20 text-[#2775CA] rounded-xl group-hover:scale-105 transition-all">
-                <Lock className="w-5 h-5" />
+              <div className="p-2.5 bg-[#2775CA]/10 border border-[#2775CA]/20 text-[#2775CA] rounded-xl group-hover:scale-105 transition-all shrink-0">
+                <Lock className="w-4 h-4" />
               </div>
-              <div className="flex-1 space-y-1">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-[#111827] uppercase tracking-wider">Sign In</h3>
-                  <ArrowRight className="w-4 h-4 text-black/30 group-hover:text-[#2775CA] group-hover:translate-x-1 transition-all" />
-                </div>
-                <p className="text-xs text-black/60 leading-relaxed font-sans font-normal">
-                  Access your dashboard, manage active subscriptions, check developer API keys, or view payouts.
-                </p>
+              <div className="flex-1 flex items-center justify-between min-w-0">
+                <h3 className="text-sm font-bold text-[#111827] uppercase tracking-wider">Sign In</h3>
+                <ArrowRight className="w-4 h-4 text-black/30 group-hover:text-[#2775CA] group-hover:translate-x-1 transition-all shrink-0" />
               </div>
             </button>
 
             {/* Sign Up Option */}
             <button
               onClick={() => handleChoice("/signup")}
-              className="w-full text-left p-5 rounded-2xl border border-black/10 bg-white hover:border-[#2775CA]/40 hover:bg-black/[0.02] hover:shadow-md transition-all group flex items-start gap-4 shadow-sm"
+              className="w-full text-left px-4 py-3.5 rounded-2xl border border-black/10 bg-white hover:border-[#2775CA]/40 hover:bg-black/[0.02] hover:shadow-sm transition-all group flex items-center gap-3.5 shadow-sm"
             >
-              <div className="p-3 bg-[#2775CA]/10 border border-[#2775CA]/20 text-[#2775CA] rounded-xl group-hover:scale-105 transition-all">
-                <UserPlus className="w-5 h-5" />
+              <div className="p-2.5 bg-[#2775CA]/10 border border-[#2775CA]/20 text-[#2775CA] rounded-xl group-hover:scale-105 transition-all shrink-0">
+                <UserPlus className="w-4 h-4" />
               </div>
-              <div className="flex-1 space-y-1">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-[#111827] uppercase tracking-wider">Create Account</h3>
-                  <ArrowRight className="w-4 h-4 text-black/30 group-hover:text-[#2775CA] group-hover:translate-x-1 transition-all" />
-                </div>
-                <p className="text-xs text-black/60 leading-relaxed font-sans font-normal">
-                  New to SubScript? Set up a personal account or register a merchant node to start accepting payments.
-                </p>
+              <div className="flex-1 flex items-center justify-between min-w-0">
+                <h3 className="text-sm font-bold text-[#111827] uppercase tracking-wider">Sign Up</h3>
+                <ArrowRight className="w-4 h-4 text-black/30 group-hover:text-[#2775CA] group-hover:translate-x-1 transition-all shrink-0" />
               </div>
             </button>
           </div>

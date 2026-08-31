@@ -2865,7 +2865,7 @@ Please complete the following implementation tasks:
                                                             )}
                                                         </td>
                                                         <td className="py-3.5 px-3 font-mono font-bold text-[#082824] dark:text-white text-xs sm:text-[13px] whitespace-nowrap align-middle">
-                                                            ${(Number(link.amount_usdc) / 1000000).toFixed(2)} USDC
+                                                            ${(Number(link.amount_usdc) / 1000000).toFixed(2)}
                                                         </td>
                                                         <td className="py-3.5 px-3 text-black/70 dark:text-white/70 font-mono hidden md:table-cell text-[11px] truncate max-w-[130px] align-middle" title={link.external_reference || ""}>
                                                             {link.external_reference || "—"}
@@ -3019,7 +3019,7 @@ Please complete the following implementation tasks:
                                                                                                 {p.created_at ? new Date(p.created_at).toLocaleString() : "-"}
                                                                                             </td>
                                                                                             <td className="py-2 px-3 text-right text-black font-sans font-semibold">
-                                                                                                ${(Number(p.amount_usdc) / 1000000).toFixed(2)} USDC
+                                                                                                ${(Number(p.amount_usdc) / 1000000).toFixed(2)}
                                                                                             </td>
                                                                                         </tr>
                                                                                     ))}
@@ -4033,7 +4033,7 @@ Please complete the following implementation tasks:
                                                                     </span>
                                                                 </td>
                                                                 <td className="py-4 font-mono font-bold text-[#082824]">
-                                                                    {(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
+                                                                    ${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)}
                                                                 </td>
                                                                 <td className="py-4">
                                                                     <FinancialStatusBadge status={tx.status} />
@@ -4996,7 +4996,7 @@ Please complete the following implementation tasks:
                                             </div>
                                             <div className="flex justify-between border-b border-black/10 dark:border-white/10 pb-2">
                                                 <span>Price:</span>
-                                                <span>10 USDC / mo</span>
+                                                <span>$10 / mo</span>
                                             </div>
                                             {currentPeriodEnd && (
                                                 <div className="flex justify-between border-b border-black/10 dark:border-white/10 pb-2">
@@ -5026,7 +5026,7 @@ Please complete the following implementation tasks:
                                     </div>
 
                                     <div className="flex items-center justify-center gap-2">
-                                        <span className="text-3xl font-bold text-[#082824]">10 USDC</span>
+                                        <span className="text-3xl font-bold text-[#082824]">$10</span>
                                         <span className="text-xs text-black/50">/ month</span>
                                     </div>
 
@@ -6142,7 +6142,6 @@ Please complete the following implementation tasks:
                 isEmbeddedWallet={!!embeddedWallet}
                 depositAddress={address || ""}
                 onSuccess={handleDepositSuccess}
-                executeContractWrite={executeContractWrite}
             />
             {activeQrCodeLink && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md font-sans">

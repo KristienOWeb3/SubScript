@@ -44,7 +44,7 @@ export type VaultState = {
 
 function readProvider(): ethers.JsonRpcProvider {
     const url = process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network";
-    return new ethers.JsonRpcProvider(url);
+    return new ethers.JsonRpcProvider(url, undefined, { staticNetwork: true });
 }
 
 export function vaultReadContract(provider?: ethers.Provider) {
@@ -187,7 +187,7 @@ export function getKeeperSigner(): ethers.Wallet {
     if (!key) {
         throw new Error("KEEPER_PRIVATE_KEY is not configured — cannot run vault draws.");
     }
-    const provider = new ethers.JsonRpcProvider(process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network");
+    const provider = new ethers.JsonRpcProvider(process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network", undefined, { staticNetwork: true });
     return new ethers.Wallet(key, provider);
 }
 

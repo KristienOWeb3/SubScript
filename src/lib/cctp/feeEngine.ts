@@ -1,9 +1,22 @@
 import { CCTP_CONFIG, SOLANA_CCTP_CONFIG, CCTPChainInfo } from "@/lib/contracts/constants";
 import { BridgeDirection, BridgeFeeCalculation, BridgeRouteOption } from "./types";
 
-/* Below this the fee truncates to zero and the transfer costs more in relayer gas than it moves.
-   1 USDC at the 0.5% tier is a 5000-micro fee, which is the smallest amount worth relaying. */
-export const MIN_BRIDGE_AMOUNT_MICROS = 1_000_000n;
+/* Minimum bridge amounts:
+   - Ethereum L1: 10 USDC ($10.00) to keep L1 gas efficiency reasonable.
+   - L2s (Base, Arbitrum, OP, Polygon, Avalanche): 1 USDC ($1.00).
+   Smaller deposits remain safely on-chain at the user's derived address until total balance >= minimum. */
+export const MIN_BRIDGE_AMOUNT_L1_MICROS = 10_000_000n;
+export const MIN_BRIDGE_AMOUNT_L2_MICROS = 1_000_000n;
+export const MIN_BRIDGE_AMOUNT_MICROS = MIN_BRIDGE_AMOUNT_L2_MICROS;
+
+export function getMinBridgeAmount(targetChainIdOrDomain: string | number): bigint {
+  try {
+    const chain = resolveBridgeChain(targetChainIdOrDomain);
+    return chain.isL1 ? MIN_BRIDGE_AMOUNT_L1_MICROS : MIN_BRIDGE_AMOUNT_L2_MICROS;
+  } catch {
+    return MIN_BRIDGE_AMOUNT_L2_MICROS;
+  }
+}
 
 /* CCTP V2 reverts above $10M per burn. Rejecting here gives the user a sentence instead of an
    unexplained on-chain revert. */
@@ -64,14 +77,15 @@ export function calculateBridgeFee(
     throw new Error("That amount isn't a valid number.");
   }
 
-  if (grossMicros < MIN_BRIDGE_AMOUNT_MICROS) {
-    throw new Error(`The smallest amount you can bridge is ${formatMicros(MIN_BRIDGE_AMOUNT_MICROS)} USDC.`);
+  const chainConfig = resolveBridgeChain(targetChainIdOrDomain);
+  const minRequired = chainConfig.isL1 ? MIN_BRIDGE_AMOUNT_L1_MICROS : MIN_BRIDGE_AMOUNT_L2_MICROS;
+
+  if (grossMicros < minRequired) {
+    throw new Error(`The smallest amount you can bridge on ${chainConfig.name} is ${formatMicros(minRequired)} USDC.`);
   }
   if (grossMicros > MAX_BRIDGE_AMOUNT_MICROS) {
     throw new Error(`The largest amount you can bridge in one go is ${formatMicros(MAX_BRIDGE_AMOUNT_MICROS, 0)} USDC.`);
   }
-
-  const chainConfig = resolveBridgeChain(targetChainIdOrDomain);
 
   if (direction === "inbound_deposit" && chainConfig.allowDeposits === false) {
     throw new Error(`Deposits from ${chainConfig.name} are turned off right now.`);

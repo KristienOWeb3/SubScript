@@ -215,6 +215,7 @@ async function newAuditContext(
     if (path === "/api/user/settings") {
       return json({
         success: true,
+        receipts: [],
         settings: {
           alias: role === "merchant" ? "mobile-audit" : "mobile-user",
           profilePic: null,
@@ -237,7 +238,10 @@ async function newAuditContext(
       });
     }
 
+    if (path === "/api/user/deposits") return json({ success: true, deposits: [] });
+    if (path === "/api/user/cctp/scan") return json({ success: true, scan: [] });
     if (path === "/api/user/vault/config") return json({ success: true, vaults: [], config: null });
+    if (path === "/api/user/commit/halt") return json({ success: true, onHold: false });
     if (path === "/api/user/subscriptions") return json({ success: true, subscriptions: [] });
     if (path === "/api/user/dms") return json({ success: true, dms: dmMessages });
     if (path === "/api/user/payment-links") return json({ success: true, links: [] });
@@ -510,6 +514,7 @@ test.describe("mobile overflow audit", () => {
     );
     const desktopPage = await desktopContext.newPage();
     await desktopPage.goto(`${baseURL}/dashboard/user`, { waitUntil: "domcontentloaded" });
+    await desktopPage.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
 
     const sidebar = desktopPage.getByRole("complementary");
     const walletLabel = desktopPage.getByText("Wallet Balance", { exact: true });
@@ -554,6 +559,7 @@ test.describe("mobile overflow audit", () => {
     );
     const mobilePage = await mobileContext.newPage();
     await mobilePage.goto(`${baseURL}/dashboard/user`, { waitUntil: "domcontentloaded" });
+    await mobilePage.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
 
     const mobileWalletLabel = mobilePage.getByText("Wallet Balance", { exact: true });
     const mobileSpendingLabel = mobilePage.getByText("30D spending", { exact: true });
@@ -664,8 +670,11 @@ test.describe("mobile overflow audit", () => {
     );
     const page = await context.newPage();
     await page.goto(`${baseURL}/dashboard/user?tab=inbox`, { waitUntil: "domcontentloaded" });
+    await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
 
-    await page.getByText("Mobile Audit Merchant", { exact: true }).first().click();
+    const peerButton = page.getByText("Mobile Audit Merchant", { exact: true }).first();
+    await expect(peerButton).toBeVisible({ timeout: 60_000 });
+    await peerButton.click();
 
     const header = page.getByRole("banner").filter({ hasText: "Mobile Audit Merchant" });
     const footer = page.getByTestId("mobile-dm-action-footer");

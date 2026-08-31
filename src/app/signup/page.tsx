@@ -157,7 +157,6 @@ export default function SignupPage() {
   const [isCompleteRoleFlow, setIsCompleteRoleFlow] = useState(false);
   
   const [activeSession, setActiveSession] = useState<{ wallet: string; email?: string; role: string } | null>(null);
-  const [checkingSession, setCheckingSession] = useState(true);
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   /* CAPTCHA (Cloudflare Turnstile) states */
@@ -250,8 +249,6 @@ export default function SignupPage() {
         }
       } catch (err) {
         console.error("Failed to check active session on mount:", err);
-      } finally {
-        setCheckingSession(false);
       }
     };
     checkSession();
@@ -817,8 +814,8 @@ export default function SignupPage() {
       : getDashboardUrl(activeSession.role as any, "/dashboard");
   };
 
-  if (checkingSession || isSigningOut) {
-    return <AuthSkeleton title="signup" subtitle="Create your account" />;
+  if (isSigningOut) {
+    return <AuthSkeleton title="signup" subtitle="Signing out..." />;
   }
 
   if (activeSession) {

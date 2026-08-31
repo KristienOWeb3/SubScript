@@ -1,7 +1,7 @@
 export const ARC_TESTNET_CHAIN_ID = 5042002 as const;
 export const ARC_MAINNET_CHAIN_ID = 5042001 as const;
 
-export const MERCHANT_ADDRESS = "0xaFCb6d3e9ebeD1A4BF78384689A1fFf280132295" as const;
+export const MERCHANT_ADDRESS = "0x725D56151CeaC9eAd625241D13b8307B22EDDb10" as const;
 export const SUBSCRIPT_PROTOCOL_FEE_BPS = 100 as const;
 
 /* Shared signup-free sandbox merchant behind the published sk_test_demo_* key
@@ -215,7 +215,7 @@ export const CCTP_CONFIG: Record<number, CCTPChainInfo> = isProd
         isL1: true,
         allowDeposits: true,
         allowWithdrawals: true,
-        defaultRpc: "https://ethereum-sepolia-rpc.publicnode.com",
+        defaultRpc: "https://rpc.sepolia.org",
       },
       43113: {
         tokenMessenger: CCTP_V2_TOKEN_MESSENGER,
@@ -239,7 +239,7 @@ export const CCTP_CONFIG: Record<number, CCTPChainInfo> = isProd
         nativeTokenSymbol: "ETH",
         allowDeposits: true,
         allowWithdrawals: true,
-        defaultRpc: "https://base-sepolia-rpc.publicnode.com",
+        defaultRpc: "https://sepolia.base.org",
       },
       421614: {
         tokenMessenger: CCTP_V2_TOKEN_MESSENGER,
@@ -251,7 +251,7 @@ export const CCTP_CONFIG: Record<number, CCTPChainInfo> = isProd
         nativeTokenSymbol: "ETH",
         allowDeposits: true,
         allowWithdrawals: true,
-        defaultRpc: "https://arbitrum-sepolia-rpc.publicnode.com",
+        defaultRpc: "https://sepolia-rollup.arbitrum.io/rpc",
       },
       11155420: {
         tokenMessenger: CCTP_V2_TOKEN_MESSENGER,
@@ -275,7 +275,7 @@ export const CCTP_CONFIG: Record<number, CCTPChainInfo> = isProd
         nativeTokenSymbol: "POL",
         allowDeposits: true,
         allowWithdrawals: true,
-        defaultRpc: "https://rpc-amoy.polygon.technology",
+        defaultRpc: "https://polygon-amoy-bor-rpc.publicnode.com",
       },
     };
 

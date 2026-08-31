@@ -26,7 +26,7 @@ const USDC_TRANSFER_TOPIC = ethers.id("Transfer(address,address,uint256)").toLow
 async function verifyUsdcTransferOnChain(txHash: string, from: string, to: string, amountMicros: bigint): Promise<boolean> {
     try {
         const url = process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network";
-        const provider = new ethers.JsonRpcProvider(url);
+        const provider = new ethers.JsonRpcProvider(url, undefined, { staticNetwork: true });
         /* Wait briefly for confirmation — the browser-wallet path submits without waiting. */
         const receipt = await provider.waitForTransaction(txHash, 1, 30_000);
         if (!receipt || receipt.status !== 1) return false;

@@ -77,3 +77,72 @@ export function notifyTransferStalled(params: {
     body: `We couldn't finish moving your USDC. ${params.reason} Our team has been alerted, and your funds are safe.`,
   });
 }
+
+const lastGasAlertTime = new Map<string, number>();
+const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+
+/** Fired when native gas on a router or relayer address is below the operating threshold. */
+export async function notifyAdminsLowGas(params: {
+  chainName: string;
+  chainId: number | string;
+  walletAddress: string;
+  walletRole: "Router Address" | "Relayer / Sponsor Wallet";
+  balanceFormatted: string;
+  tokenSymbol: string;
+  thresholdFormatted: string;
+}): Promise<void> {
+  const key = `${params.chainId}:${params.walletAddress.toLowerCase()}`;
+  const now = Date.now();
+  const lastTime = lastGasAlertTime.get(key) || 0;
+  if (now - lastTime < SIX_HOURS_MS) {
+    return;
+  }
+  lastGasAlertTime.set(key, now);
+
+  try {
+    const { prisma } = await import("@/lib/prisma");
+    const { listAdminNotificationEmails } = await import("@/lib/email/adminRecipients");
+    const { sendAdminLowGasAlertEmail } = await import("@/lib/email/transactional");
+    const { listRootAdmins } = await import("@/lib/admin/identity");
+
+    const adminWallets = new Set<string>();
+    for (const w of listRootAdmins()) {
+      if (w) adminWallets.add(w.toLowerCase());
+    }
+    try {
+      const delegated = await prisma.adminWallet.findMany({ select: { wallet: true } });
+      delegated.forEach((r) => adminWallets.add(r.wallet.toLowerCase()));
+    } catch {}
+
+    const title = `⚠️ Low Gas Alert: ${params.chainName}`;
+    const body = `Gas is running low on ${params.chainName} (${params.walletRole} ${params.walletAddress}). Current balance: ${params.balanceFormatted} ${params.tokenSymbol} (Threshold: ${params.thresholdFormatted} ${params.tokenSymbol}). Please top up to maintain automated sweeps.`;
+
+    for (const adminAddr of adminWallets) {
+      await prisma.accountNotification.create({
+        data: {
+          recipientAddress: adminAddr,
+          audience: "ADMIN",
+          title,
+          body,
+          source: "OPS_ALERT",
+        },
+      }).catch(() => undefined);
+    }
+
+    const adminEmails = await listAdminNotificationEmails();
+    for (const email of adminEmails) {
+      await sendAdminLowGasAlertEmail({
+        adminEmail: email,
+        chainName: params.chainName,
+        chainId: params.chainId,
+        walletAddress: params.walletAddress,
+        walletRole: params.walletRole,
+        balanceFormatted: params.balanceFormatted,
+        tokenSymbol: params.tokenSymbol,
+        thresholdFormatted: params.thresholdFormatted,
+      }).catch((err) => console.warn("[cctp] low gas email send failed:", err?.message));
+    }
+  } catch (error) {
+    console.warn("[cctp] could not notify admins of low gas:", error);
+  }
+}

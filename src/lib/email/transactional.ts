@@ -413,3 +413,42 @@ export async function sendSupportTicketAlertEmail(input: {
         idempotencyKey: `ticket-alert:${input.ticketId}:${input.adminEmail}`,
     }));
 }
+
+export async function sendAdminLowGasAlertEmail(input: {
+    adminEmail: string;
+    chainName: string;
+    chainId: number | string;
+    walletAddress: string;
+    walletRole: "Router Address" | "Relayer / Sponsor Wallet";
+    balanceFormatted: string;
+    tokenSymbol: string;
+    thresholdFormatted: string;
+}) {
+    const chainSafe = htmlEscape(input.chainName);
+    const shortAddr = shortAddress(input.walletAddress);
+    const roleSafe = htmlEscape(input.walletRole);
+
+    await safelySendEmail("admin low gas alert", () => sendTransactionalEmail({
+        to: input.adminEmail,
+        category: "ops",
+        subject: `[SubScript Ops Alert] Low Gas on ${input.chainName} (${roleSafe})`,
+        text: `Low Gas Warning for SubScript CCTP\n\nNetwork: ${input.chainName} (Chain ID: ${input.chainId})\nAccount: ${input.walletAddress} (${input.walletRole})\nCurrent Balance: ${input.balanceFormatted} ${input.tokenSymbol}\nThreshold: ${input.thresholdFormatted} ${input.tokenSymbol}\n\nPlease top up native gas to prevent automated router sweeps and CCTP bridging delays.`,
+        html: renderEmailLayout({
+            previewText: `Low gas alert: ${input.balanceFormatted} ${input.tokenSymbol} left on ${input.chainName}`,
+            heading: "Low Gas Warning",
+            bodyHtml: `
+                <p style="margin:0 0 16px;font-size:14px;color:#08090a">Native gas on a protocol bridging account is running low and requires a top-up to maintain uninterrupted CCTP sweeps.</p>
+                <div style="margin:0 0 16px;padding:16px;background:#fef2f2;border:1px solid #fee2e2;border-radius:12px;font-size:13px;line-height:1.6">
+                    <p style="margin:0 0 8px"><strong>Network:</strong> ${chainSafe} (Chain ID: ${htmlEscape(String(input.chainId))})</p>
+                    <p style="margin:0 0 8px"><strong>Account:</strong> <span style="font-family:'SFMono-Regular',Consolas,monospace">${htmlEscape(input.walletAddress)}</span></p>
+                    <p style="margin:0 0 8px"><strong>Role:</strong> ${roleSafe}</p>
+                    <p style="margin:0 0 8px"><strong>Remaining Balance:</strong> <span style="color:#dc2626;font-weight:700">${htmlEscape(input.balanceFormatted)} ${htmlEscape(input.tokenSymbol)}</span></p>
+                    <p style="margin:0;color:#6b7280;font-size:12px">Safe Operating Threshold: ${htmlEscape(input.thresholdFormatted)} ${htmlEscape(input.tokenSymbol)}</p>
+                </div>
+                <p style="margin:0;color:#6b7280;font-size:12px">Please send native gas tokens to this address to ensure deposit sweeps continue smoothly.</p>
+            `,
+            cta: { label: "Open Admin Console", url: "https://www.subscriptonarc.com/admin" },
+        }),
+        idempotencyKey: `low-gas:${input.chainId}:${input.walletAddress.toLowerCase()}:${Math.floor(Date.now() / 21600000)}`,
+    }));
+}

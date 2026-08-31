@@ -11,7 +11,7 @@ contract SubScriptRouterTest is Test {
     MockUSDC public usdc;
 
     address public owner = address(0x725D56151CeaC9eAd625241D13b8307B22EDDb10);
-    address public treasury = address(0xaFCb6d3e9ebeD1A4BF78384689A1fFf280132295);
+    address public treasury = address(0x725D56151CeaC9eAd625241D13b8307B22EDDb10);
     address public merchant = address(0x4444444444444444444444444444444444444444);
     address public redirectDestination = address(0x5555555555555555555555555555555555555555);
     address public subscriber = address(0x1111111111111111111111111111111111111111);

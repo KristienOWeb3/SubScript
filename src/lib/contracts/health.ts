@@ -114,7 +114,7 @@ function defaultRpc() {
 }
 
 export async function auditContracts(rpcUrl: string = defaultRpc()): Promise<AuditResult> {
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const provider = new ethers.JsonRpcProvider(rpcUrl, undefined, { staticNetwork: true });
     const results: ContractResult[] = [];
 
     for (const spec of EXPECTED_CONTRACTS) {

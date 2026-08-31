@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { scanCrossChainBalances } from "@/lib/cctp/crossChainScanner";
+import { sweepAndBridge } from "@/lib/cctp/autoBridge";
 
 export const maxDuration = 30;
 
@@ -14,6 +15,9 @@ export async function GET(req: NextRequest) {
     if (!targetWallet || !/^0x[a-fA-F0-9]{40}$/.test(targetWallet)) {
       return NextResponse.json({ error: "Valid wallet address required" }, { status: 400 });
     }
+
+    // Proactively trigger a sweep pass on scan
+    void sweepAndBridge().catch(() => undefined);
 
     const result = await scanCrossChainBalances(targetWallet);
 

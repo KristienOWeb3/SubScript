@@ -9,7 +9,7 @@ This runbook outlines the exact operational procedures for the SubScript Mainnet
 *   **Network:** Arc Network Mainnet
 *   **Multi-Sig Owner:** `0x725D56151CeaC9eAd625241D13b8307B22EDDb10`
 *   **Active UUPS Proxy Contract:** `0x835A9aEd7287068778e11df9D922B3FfaC7cFc29`
-*   **Official Treasury / Cold Storage:** `0xaFCb6d3e9ebeD1A4BF78384689A1fFf280132295`
+*   **Official Treasury / Cold Storage:** `0x725D56151CeaC9eAd625241D13b8307B22EDDb10`
 
 ---
 

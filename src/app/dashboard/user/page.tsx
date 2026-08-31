@@ -656,8 +656,12 @@ export default function UserDashboard() {
     blockNumber?: number;
     status: string;
     senderName?: string | null;
+    receiverName?: string | null;
+    incoming?: boolean;
     isCctp?: boolean;
     direction?: string;
+    originChainId?: number | string;
+    destinationChainId?: number | string;
     originName?: string;
     destName?: string;
     burnTxHash?: string;
@@ -984,9 +988,9 @@ export default function UserDashboard() {
       const depData = depositsRes ? await depositsRes.json().catch(() => ({})) : {};
       if (data.success) {
         setUserSettings(data.settings);
-        setSettingsTransactions(data.receipts);
-        if (data.settings.profilePic) setProfilePic(data.settings.profilePic);
-        if (data.settings.alias) setRegisteredDomain(data.settings.alias);
+        setSettingsTransactions(Array.isArray(data.receipts) ? data.receipts : []);
+        if (data.settings?.profilePic) setProfilePic(data.settings.profilePic);
+        if (data.settings?.alias) setRegisteredDomain(data.settings.alias);
       }
       if (depData.success && Array.isArray(depData.deposits)) {
         setDeposits(depData.deposits);
@@ -1002,12 +1006,14 @@ export default function UserDashboard() {
     setIsVaultsLoading(true);
     try {
       const [res, haltRes] = await Promise.all([
-        fetch("/api/user/vault/config"),
+        fetch("/api/user/vault/config").catch(() => null),
         fetch("/api/user/commit/halt").catch(() => null),
       ]);
-      const data = await res.json();
-      if (data.success) {
-        setVaults(data.vaults);
+      if (res && res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data.success && Array.isArray(data.vaults)) {
+          setVaults(data.vaults);
+        }
       }
       if (haltRes && haltRes.ok) {
         const haltData = await haltRes.json().catch(() => ({}));
@@ -1193,6 +1199,7 @@ export default function UserDashboard() {
   );
 
   const { data: originBalanceReads, refetch: refetchOriginBalances } = useReadContracts({
+    allowFailure: true,
     contracts: depositOriginChains.map(({ chainId, info }) => ({
       address: info.usdc,
       abi: ERC20_BALANCE_ABI,
@@ -1200,7 +1207,11 @@ export default function UserDashboard() {
       args: userWallet ? [userWallet as `0x${string}`] : undefined,
       chainId,
     })),
-    query: { enabled: Boolean(userWallet) },
+    query: {
+      enabled: Boolean(userWallet),
+      retry: false,
+      staleTime: 15_000,
+    },
   });
 
   const originBalances: DepositOriginBalance[] = depositOriginChains.map(({ chainId, info }, index) => {
@@ -3516,7 +3527,7 @@ export default function UserDashboard() {
      normalized `status`. Spend Analysis needs real numbers to total In/Out per month — it used to
      recover amounts by stripping non-digits out of the formatted `amountLabel`, which silently
      mis-parsed anything with a thousands separator and had no way to tell a credit from a debit. */
-  const recentTransactions = [
+  const rawRecentTransactions = [
     ...subscriptions.map((s) => {
       const usdVal = Number(s.amountCapUsdc) / 1_000_000;
       const localVal = usdVal * exchangeRate;
@@ -3535,6 +3546,7 @@ export default function UserDashboard() {
         status: subscriptionTxStatus(s.status),
         time: s.lastSettlementTimestamp ? new Date(s.lastSettlementTimestamp).getTime() : new Date(s.createdAt).getTime(),
         incoming: false,
+        txHash: undefined as string | undefined,
       };
     }),
     ...dms
@@ -3576,6 +3588,7 @@ export default function UserDashboard() {
           status: dmTxStatus(d.status),
           time: new Date(d.createdAt).getTime(),
           incoming,
+          txHash: d.txHash as string | undefined,
         };
       }),
     ...deposits
@@ -3586,11 +3599,21 @@ export default function UserDashboard() {
         const localLabel = `${detectedCurrency.symbol}${formatHeadlineAmount(localVal)}`;
         const isCctp = Boolean(d.isCctp);
         const isWithdrawal = d.direction === "outbound_withdrawal";
-        const incoming = isCctp ? !isWithdrawal : true;
+        const incoming = isCctp ? !isWithdrawal : (d.incoming !== undefined ? Boolean(d.incoming) : d.direction !== "outbound_send");
         const kind: "transfers" | "withdrawals" = isWithdrawal ? "withdrawals" : "transfers";
 
-        let name = d.senderName ? `Deposit from @${d.senderName}` : `Deposit from ${formatAddress(d.fromAddress)}`;
-        let detail = "USDC Deposit • Arc Network";
+        let name = incoming
+          ? (d.senderName
+              ? `Deposit from @${d.senderName}`
+              : d.fromAddress && d.fromAddress !== "0x0000000000000000000000000000000000000000"
+              ? `Deposit from ${formatAddress(d.fromAddress)}`
+              : "Deposit on Arc")
+          : (d.receiverName
+              ? `Sent to @${d.receiverName}`
+              : d.toAddress && d.toAddress !== "0x0000000000000000000000000000000000000000"
+              ? `Sent to ${formatAddress(d.toAddress)}`
+              : "Sent USDC");
+        let detail = incoming ? "USDC Deposit • Arc Network" : "USDC Transfer • Arc Network";
         let status = "CONFIRMED";
 
         if (isCctp) {
@@ -3628,7 +3651,39 @@ export default function UserDashboard() {
           txHash: d.txHash,
         };
       }),
+    ...(settingsTransactions || [])
+      .filter((r) => !r.txHash || (!dms.some((dm) => dm.txHash && dm.txHash.toLowerCase() === r.txHash.toLowerCase()) && !deposits.some((d) => d.txHash && d.txHash.toLowerCase() === r.txHash.toLowerCase())))
+      .map((r) => {
+        const incoming = r.direction === "received";
+        const usdVal = Number(r.amountUsdc) / 1_000_000;
+        const localVal = usdVal * exchangeRate;
+        const localLabel = `${detectedCurrency.symbol}${formatHeadlineAmount(localVal)}`;
+        return {
+          id: `rcpt-${r.receiptId}`,
+          kind: "one-time" as const,
+          name: r.counterpartyName || formatAddress(incoming ? r.payerAddress : r.merchantAddress) || "SubScript Transaction",
+          pic: null as string | null,
+          detail: r.memoNote || (incoming ? "Received Payment" : "Payment Sent"),
+          amountLabel: `${incoming ? "+" : "-"}$${formatUsdc(r.amountUsdc)}`,
+          localAmountLabel: `${incoming ? "+" : "-"}${localLabel}`,
+          amountUsdc: usdVal,
+          status: r.status === "CONFIRMED" ? "CONFIRMED" : "PENDING",
+          time: new Date(r.createdAt).getTime(),
+          incoming,
+          txHash: r.txHash,
+        };
+      }),
   ].sort((a, b) => b.time - a.time);
+
+  // Deduplicate recent transactions by ID and txHash to guarantee unique React keys
+  const seenTxIds = new Set<string>();
+  const recentTransactions = rawRecentTransactions.filter((t) => {
+    const key = t.id || `${t.kind}-${t.txHash || t.time}`;
+    if (seenTxIds.has(key)) return false;
+    seenTxIds.add(key);
+    return true;
+  });
+
   const filteredTransactions = recentTransactions.filter((t) => {
     if (txFilter === "all") return true;
     if (txFilter === "deposits") return t.incoming && t.detail.toLowerCase().includes("deposit");
@@ -3922,9 +3977,9 @@ export default function UserDashboard() {
                             <RefreshCw className={`h-3 w-3 ${isRefreshingBalances ? "animate-spin" : ""}`} />
                           </button>
                         </div>
-                        <div className="mt-1.5 max-w-full text-[42px] font-extrabold leading-none text-black select-all sm:text-[38px]">
+                        <div className="mt-1.5 max-w-full text-[46px] font-extrabold leading-none text-black select-all sm:text-[38px]">
                           {isRefreshingBalances
-                            ? <span className="block h-[42px] w-[190px] rounded-2xl subscript-skeleton sm:h-[38px]" />
+                            ? <span className="block h-[46px] w-[190px] rounded-2xl subscript-skeleton sm:h-[38px]" />
                             : balanceVisible ? `$${formatHeadlineAmount(walletBalance)}` : "••••••"}
                         </div>
                         <p className="mt-1.5 w-full text-center font-mono text-sm font-bold text-black/65 sm:text-xs md:text-left">
@@ -6502,7 +6557,7 @@ export default function UserDashboard() {
                                     </td>
                                     <td className="py-4 text-black/60">{new Date(tx.createdAt).toLocaleString()}</td>
                                     <td className="py-4 font-mono font-bold text-black">
-                                      ${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
+                                      ${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)}
                                     </td>
                                     <td className="py-4">
                                       <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${txStatus === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-700" : txStatus === "FAILED" ? "bg-red-500/15 text-red-700" : "bg-amber-500/15 text-amber-700"}`}>
@@ -6576,7 +6631,7 @@ export default function UserDashboard() {
                                   </div>
                                   <div className="flex items-center justify-between text-[11px] pt-1">
                                     <span className="text-black/50">{new Date(tx.createdAt).toLocaleDateString()}</span>
-                                    <span className="font-bold text-black">${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC</span>
+                                    <span className="font-bold text-black">${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)}</span>
                                   </div>
                                   <div className="pt-2 flex items-center justify-end gap-3 border-t border-black/10 text-[10px]">
                                     {tx.isExternalDeposit ? (

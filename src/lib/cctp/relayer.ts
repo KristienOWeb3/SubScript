@@ -54,7 +54,7 @@ export function getArcRelayer(): ethers.Wallet {
   if (!key) {
     throw new Error("No relayer key configured. Set RELAYER_PRIVATE_KEY (or SPONSOR_PRIVATE_KEY).");
   }
-  return new ethers.Wallet(key, new ethers.JsonRpcProvider(getArcRpcUrl()));
+  return new ethers.Wallet(key, new ethers.JsonRpcProvider(getArcRpcUrl(), undefined, { staticNetwork: true }));
 }
 
 export function getChainRelayer(chainId: number): ethers.Wallet {
@@ -66,5 +66,5 @@ export function getChainRelayer(chainId: number): ethers.Wallet {
   if (!rpc) {
     throw new Error(`No RPC configured for chain ${chainId}. Set RPC_URL_${chainId}.`);
   }
-  return new ethers.Wallet(key, new ethers.JsonRpcProvider(rpc));
+  return new ethers.Wallet(key, new ethers.JsonRpcProvider(rpc, undefined, { staticNetwork: true }));
 }

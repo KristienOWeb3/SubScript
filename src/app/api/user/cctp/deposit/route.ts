@@ -148,7 +148,7 @@ async function verifyFeeTransfer(params: {
 
   let receipt: ethers.TransactionReceipt | null;
   try {
-    const provider = new ethers.JsonRpcProvider(rpc);
+    const provider = new ethers.JsonRpcProvider(rpc, undefined, { staticNetwork: true });
     receipt = await provider.getTransactionReceipt(params.feeTxHash);
   } catch (error: any) {
     console.error("[api/user/cctp/deposit] fee receipt lookup failed:", error?.message);

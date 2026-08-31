@@ -62,7 +62,7 @@ export async function GET(request: Request) {
       return { ...base, nativeBalance: "0", formattedBalance: "0.0000", status: "critical", error: "No RPC configured" };
     }
     try {
-      const provider = new ethers.JsonRpcProvider(params.rpc);
+      const provider = new ethers.JsonRpcProvider(params.rpc, undefined, { staticNetwork: true });
       const wei = await provider.getBalance(relayerAddress);
       const asNumber = Number(ethers.formatEther(wei));
       return {
