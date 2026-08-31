@@ -247,7 +247,7 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
             }>>`
                 SELECT mint_tx_hash, user_wallet, origin_chain_id
                   FROM cctp_bridge_transfers
-                 WHERE lower(mint_tx_hash) = ANY(${txHashes}) OR (user_wallet = ${normalizedWallet} AND direction = 'inbound_deposit')
+                 WHERE lower(mint_tx_hash) = ANY(${txHashes}) OR ((user_wallet = ${normalizedWallet} OR recipient_address = ${normalizedWallet}) AND direction = 'inbound_deposit')
                  ORDER BY created_at DESC
             `;
             const cctpMap = new Map((cctpMatches || []).map((c) => [c.mint_tx_hash?.toLowerCase() || "", c]));

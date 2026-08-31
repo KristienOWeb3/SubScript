@@ -236,16 +236,35 @@ async function processIntent(intent: ActiveIntent): Promise<boolean> {
   const burnTxHash = burnReceipt?.hash || burnTx.hash;
   console.log(`[AutoBridge] burn tx: ${burnTxHash} (${formatMicros(feeInfo.netMicros)} USDC net)`);
 
-  /* Step 4: Record the transfer in the DB. */
+  /* Find who deposited funds to the derived router address on the origin chain (e.g. 0x123). */
+  let originDepositor = user_wallet;
+  try {
+    const filter = usdc.filters.Transfer(null, derived_deposit_address);
+    const latestBlock = await provider.getBlockNumber();
+    const fromBlock = Math.max(0, latestBlock - 5000);
+    const events = await usdc.queryFilter(filter, fromBlock, latestBlock);
+    if (events.length > 0) {
+      const lastEvent: any = events[events.length - 1];
+      if (lastEvent.args && lastEvent.args[0]) {
+        originDepositor = String(lastEvent.args[0]).toLowerCase();
+      }
+    }
+  } catch {
+    // Best-effort lookup, fallback to user_wallet
+  }
+
+  /* Step 4: Record the transfer in the DB.
+     user_wallet = origin depositor address (0x123), recipient_address = user's Arc wallet. */
   const inserted = await pgQuery<{ id: string }>(
     `INSERT INTO cctp_bridge_transfers
        (direction, user_wallet, recipient_address, origin_chain_id, origin_domain,
         destination_chain_id, destination_domain, gross_amount_micros, fee_amount_micros,
         net_amount_micros, fee_bps, fee_tx_hash, burn_tx_hash, status)
-     VALUES ('inbound_deposit', $1, $1, $2, $3, 'arc', $4, $5, $6, $7, $8, $9, $10, 'pending_attestation')
+     VALUES ('inbound_deposit', $1, $2, $3, $4, 'arc', $5, $6, $7, $8, $9, $10, $11, 'pending_attestation')
      ON CONFLICT (burn_tx_hash) DO UPDATE SET updated_at = now()
      RETURNING id`,
     [
+      originDepositor,
       user_wallet,
       String(origin_chain_id),
       chainConfig.domain,
