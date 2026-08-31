@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import type { LucideIcon } from "@/components/icons";
 import { MessageSquare } from "@/components/icons";
 import LiquidGlassEffect from "@/components/LiquidGlassEffect";
@@ -30,33 +30,42 @@ export default function MobileFloatingNav<T extends string = string>({
   const [isRetracted, setIsRetracted] = useState(false);
   const lastScrollY = useRef(0);
   const touchStartY = useRef(0);
+  const lastStateChangeTime = useRef(0);
 
   // Always expand whenever user changes tabs
   useEffect(() => {
     setIsRetracted(false);
   }, [activeTab]);
 
+  const setRetractedWithDebounce = useCallback((retract: boolean) => {
+    const now = Date.now();
+    // Prevent rapid flickering during aggressive scroll reversals (100ms lock)
+    if (now - lastStateChangeTime.current < 100) return;
+    lastStateChangeTime.current = now;
+    setIsRetracted(retract);
+  }, []);
+
   const handleScrollDelta = useCallback((currentY: number) => {
     const delta = currentY - lastScrollY.current;
 
-    // Expand when at or near the top
-    if (currentY <= 25) {
-      setIsRetracted(false);
+    // Always expand at or near the top of the page
+    if (currentY <= 30) {
+      setRetractedWithDebounce(false);
       lastScrollY.current = currentY;
       return;
     }
 
-    // Scroll down past top area -> Smoothly retract to edges
-    if (delta > 6 && currentY > 30) {
-      setIsRetracted(true);
+    // Scroll down by substantial delta -> retract to edges
+    if (delta > 14 && currentY > 50) {
+      setRetractedWithDebounce(true);
     }
-    // Scroll up -> Expand back smoothly
-    else if (delta < -6) {
-      setIsRetracted(false);
+    // Scroll up by substantial delta -> expand back
+    else if (delta < -10) {
+      setRetractedWithDebounce(false);
     }
 
     lastScrollY.current = currentY;
-  }, []);
+  }, [setRetractedWithDebounce]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -104,15 +113,15 @@ export default function MobileFloatingNav<T extends string = string>({
     const onTouchMove = (e: TouchEvent) => {
       if (e.touches.length > 0) {
         const touchCurrentY = e.touches[0].clientY;
-        const touchDelta = touchStartY.current - touchCurrentY; // > 0 means dragging up = scrolling DOWN
+        const touchDelta = touchStartY.current - touchCurrentY; // > 0 means finger dragged UP, page scrolled DOWN
         const currentY = getActiveScrollY();
 
-        if (currentY <= 20) {
-          setIsRetracted(false);
-        } else if (touchDelta > 6 && currentY > 25) {
-          setIsRetracted(true);
-        } else if (touchDelta < -6) {
-          setIsRetracted(false);
+        if (currentY <= 25) {
+          setRetractedWithDebounce(false);
+        } else if (touchDelta > 14 && currentY > 45) {
+          setRetractedWithDebounce(true);
+        } else if (touchDelta < -10) {
+          setRetractedWithDebounce(false);
         }
       }
     };
@@ -120,12 +129,12 @@ export default function MobileFloatingNav<T extends string = string>({
     // Desktop mouse wheel listener
     const onWheel = (e: WheelEvent) => {
       const currentY = getActiveScrollY();
-      if (currentY <= 20) {
-        setIsRetracted(false);
-      } else if (e.deltaY > 6 && currentY > 25) {
-        setIsRetracted(true);
-      } else if (e.deltaY < -6) {
-        setIsRetracted(false);
+      if (currentY <= 25) {
+        setRetractedWithDebounce(false);
+      } else if (e.deltaY > 10 && currentY > 40) {
+        setRetractedWithDebounce(true);
+      } else if (e.deltaY < -10) {
+        setRetractedWithDebounce(false);
       }
     };
 
@@ -143,17 +152,16 @@ export default function MobileFloatingNav<T extends string = string>({
       window.removeEventListener("touchmove", onTouchMove);
       window.removeEventListener("wheel", onWheel);
     };
-  }, [handleScrollDelta, scrollContainerSelector]);
+  }, [handleScrollDelta, scrollContainerSelector, setRetractedWithDebounce]);
 
   const activeTabItem = tabs.find((t) => t.id === activeTab) || tabs[0];
-  const ActiveIcon = activeTabItem?.icon;
   const isInboxActive = activeTab === ("inbox" as unknown as T);
 
   // Smooth, non-bouncy transition easing
   const smoothTransition = {
     type: "tween" as const,
-    ease: [0.25, 1, 0.5, 1], // Smooth cubic-bezier without bouncy overshoot
-    duration: 0.28,
+    ease: [0.25, 1, 0.5, 1], // Smooth cubic-bezier
+    duration: 0.26,
   };
 
   return (
@@ -161,8 +169,8 @@ export default function MobileFloatingNav<T extends string = string>({
       layout
       transition={smoothTransition}
       aria-label="Mobile navigation bar"
-      className={`fixed bottom-5 inset-x-0 mx-auto w-full max-w-sm px-4 z-50 flex items-center pointer-events-none select-none box-border ${
-        isRetracted ? "justify-between" : "justify-center gap-2"
+      className={`fixed bottom-5 inset-x-0 mx-auto w-full max-w-[360px] px-4 z-50 flex items-center pointer-events-none select-none box-border ${
+        isRetracted ? "justify-between" : "justify-center gap-2.5"
       }`}
     >
       {/* Left Navigation Capsule / Retracted Pill */}
@@ -171,8 +179,7 @@ export default function MobileFloatingNav<T extends string = string>({
         layout
         initial={false}
         animate={{
-          width: isRetracted ? 48 : isInboxActive ? "calc(100% - 100px)" : "calc(100% - 56px)",
-          maxWidth: isRetracted ? 48 : isInboxActive ? 220 : 272,
+          width: isRetracted ? 54 : isInboxActive ? 210 : 268,
         }}
         transition={smoothTransition}
         onClick={() => {
@@ -180,8 +187,10 @@ export default function MobileFloatingNav<T extends string = string>({
             setIsRetracted(false);
           }
         }}
-        className={`liquid-glass pointer-events-auto relative flex items-center rounded-full backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] overflow-hidden border border-black/15 transition-all duration-200 ${
-          isRetracted ? "h-12 w-12 cursor-pointer justify-center p-0 flex-none" : "px-3 py-[1.1rem] min-h-[79px] justify-between flex-1 min-w-0"
+        className={`liquid-glass pointer-events-auto relative flex h-[54px] items-center rounded-full backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] overflow-hidden border border-black/15 transition-all duration-200 ${
+          isRetracted
+            ? "cursor-pointer justify-center p-0 flex-none"
+            : "px-1.5 justify-between flex-1 min-w-0"
         }`}
         style={{
           backgroundColor: "rgb(39 117 202 / 20%)",
@@ -191,73 +200,58 @@ export default function MobileFloatingNav<T extends string = string>({
       >
         <LiquidGlassEffect />
 
-        <AnimatePresence mode="wait" initial={false}>
-          {isRetracted ? (
-            /* Retracted State: Clean circular active icon bubble on the left edge */
-            <motion.button
-              key="retracted-icon"
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.8, opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              type="button"
-              aria-label={`Current: ${activeTabItem.label}. Tap to expand navigation`}
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsRetracted(false);
-              }}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-[#353935] text-[#FFFFF0] shadow-sm active:scale-95 transition-transform"
-            >
-              {ActiveIcon && <ActiveIcon className="h-5 w-5 text-[#FFFFF0]" />}
-            </motion.button>
-          ) : (
-            /* Expanded State: Horizontal tabs with active tab text on RIGHT of icon */
-            <motion.div
-              key="expanded-tabs"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              className="flex w-full items-center justify-between gap-1"
-            >
-              {tabs.map((tab) => {
-                const isActive = activeTab === tab.id;
-                const IconComponent = tab.icon;
+        {/* Stable Tabs List without DOM unmounting */}
+        <div className="flex w-full items-center justify-between gap-1 overflow-hidden">
+          {tabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+            const IconComponent = tab.icon;
 
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    aria-pressed={isActive}
-                    aria-current={isActive ? "page" : undefined}
-                    aria-label={tab.label}
-                    onClick={() => onSelectTab(tab.id)}
-                    className={`relative h-11 flex items-center justify-center rounded-full transition-all duration-200 ease-out active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2775CA] ${
-                      isActive
-                        ? "bg-[#353935] text-[#FFFFF0] shadow-sm px-3 gap-1.5 flex-1 min-w-[76px] max-w-[94px]"
-                        : "bg-transparent text-black/65 hover:bg-black/5 hover:text-black w-10 shrink-0"
-                    }`}
-                  >
-                    <IconComponent
-                      className={`h-5 w-5 shrink-0 transition-colors duration-200 ${
-                        isActive ? "text-[#FFFFF0]" : "text-black/65"
-                      }`}
-                    />
-                    {/* Label strictly on the RIGHT SIDE of the icon */}
-                    {isActive && (
-                      <span className="whitespace-nowrap text-[9px] font-black uppercase tracking-wider text-[#FFFFF0] truncate">
-                        {tab.label}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </motion.div>
-          )}
-        </AnimatePresence>
+            // When retracted, hide all inactive tabs smoothly
+            if (isRetracted && !isActive) {
+              return null;
+            }
+
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                aria-pressed={isActive}
+                aria-current={isActive ? "page" : undefined}
+                aria-label={tab.label}
+                onClick={(e) => {
+                  if (isRetracted) {
+                    e.stopPropagation();
+                    setIsRetracted(false);
+                  } else {
+                    onSelectTab(tab.id);
+                  }
+                }}
+                className={`relative h-10 flex items-center justify-center rounded-full transition-all duration-200 ease-out active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2775CA] ${
+                  isActive
+                    ? isRetracted
+                      ? "h-11 w-11 bg-[#353935] text-[#FFFFF0] shadow-sm mx-auto"
+                      : "bg-[#353935] text-[#FFFFF0] shadow-sm px-2.5 gap-1.5 flex-1 min-w-[70px] max-w-[88px]"
+                    : "bg-transparent text-black/65 hover:bg-black/5 hover:text-black w-9 shrink-0"
+                }`}
+              >
+                <IconComponent
+                  className={`h-5 w-5 shrink-0 transition-colors duration-200 ${
+                    isActive ? "text-[#FFFFF0]" : "text-black/65"
+                  }`}
+                />
+                {/* Label strictly on the RIGHT SIDE of the icon in expanded state */}
+                {isActive && !isRetracted && (
+                  <span className="whitespace-nowrap text-[9px] font-black uppercase tracking-wider text-[#FFFFF0] truncate">
+                    {tab.label}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </motion.nav>
 
-      {/* Right Edge: Detached DMs Action Button */}
+      {/* Right Edge: Detached Round DMs Action Button */}
       <motion.div
         layout
         transition={smoothTransition}
@@ -269,15 +263,15 @@ export default function MobileFloatingNav<T extends string = string>({
             setIsRetracted(false);
             onSelectTab("inbox" as unknown as T);
           }}
-          className={`relative flex items-center justify-center rounded-full border border-black/15 transition-all duration-200 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] active:scale-95 overflow-hidden ${
-            isRetracted
-              ? "h-12 w-12"
+          className={`relative h-[54px] flex items-center justify-center rounded-full border border-black/15 transition-all duration-200 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] active:scale-95 overflow-hidden ${
+            isInboxActive && !isRetracted
+              ? "bg-[#353935] text-[#FFFFF0] w-[90px] px-3 gap-1.5"
               : isInboxActive
-              ? "min-h-[79px] bg-[#353935] text-[#FFFFF0] w-[88px] px-2.5 gap-1.5"
-              : "min-h-[79px] h-[79px] bg-[#2775CA]/20 text-black/70 hover:text-black w-[52px]"
+              ? "bg-[#353935] text-[#FFFFF0] w-[54px]"
+              : "bg-[#2775CA]/20 text-black/70 hover:text-black w-[54px]"
           }`}
           style={{
-            backgroundColor: isInboxActive && !isRetracted ? undefined : "rgb(39 117 202 / 20%)",
+            backgroundColor: isInboxActive ? undefined : "rgb(39 117 202 / 20%)",
             backdropFilter: "blur(22px)",
             WebkitBackdropFilter: "blur(22px)",
           }}
@@ -301,6 +295,7 @@ export default function MobileFloatingNav<T extends string = string>({
     </motion.aside>
   );
 }
+
 
 
 
