@@ -168,7 +168,9 @@ export default function MobileFloatingNav<T extends string = string>({
   return (
     <aside
       aria-label="Mobile navigation bar"
-      className="fixed bottom-5 inset-x-0 mx-auto w-full max-w-sm px-4 z-50 flex items-center justify-between pointer-events-none select-none box-border"
+      className={`fixed bottom-5 inset-x-0 mx-auto w-full max-w-sm px-4 z-50 flex items-center box-border ${
+        isRetracted ? "justify-between" : "justify-center gap-2"
+      }`}
       style={{ transform: "translateZ(0)" }}
     >
       {/* ── Left Navigation Capsule ── */}
@@ -186,8 +188,8 @@ export default function MobileFloatingNav<T extends string = string>({
           backdropFilter: "blur(22px)",
           WebkitBackdropFilter: "blur(22px)",
           width: isRetracted ? 48 : isInboxActive ? 220 : 272,
-          height: isRetracted ? 48 : 79,
-          minHeight: isRetracted ? 48 : 79,
+          height: isRetracted ? 48 : 71,
+          minHeight: isRetracted ? 48 : 71,
           maxWidth: isRetracted ? 48 : isInboxActive ? 220 : 272,
         }}
       >
@@ -226,10 +228,10 @@ export default function MobileFloatingNav<T extends string = string>({
                 aria-current={isActive ? "page" : undefined}
                 aria-label={tab.label}
                 onClick={() => onSelectTab(tab.id)}
-                className={`relative h-11 flex items-center justify-center rounded-full transition-all duration-200 ease-out active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2775CA] ${
+                className={`relative h-10 flex items-center justify-center rounded-full transition-all duration-200 ease-out active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2775CA] ${
                   isActive
                     ? "bg-[#353935] text-[#FFFFF0] shadow-sm px-3 gap-1.5 flex-1 min-w-[76px] max-w-[94px]"
-                    : "bg-transparent text-black/65 hover:bg-black/5 hover:text-black w-10 shrink-0"
+                    : "bg-transparent text-black/65 hover:bg-black/5 hover:text-black w-9 shrink-0"
                 }`}
               >
                 <IconComponent
@@ -253,19 +255,19 @@ export default function MobileFloatingNav<T extends string = string>({
         <button
           type="button"
           onClick={() => { setIsRetracted(false); onSelectTab("inbox" as unknown as T); }}
-          className={`relative flex items-center justify-center rounded-full border border-black/15 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] active:scale-95 overflow-hidden ${
+          className={`relative flex items-center justify-center border border-black/15 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] active:scale-95 overflow-hidden transition-all duration-300 ${
             isInboxActive && !isRetracted
-              ? "bg-[#353935] text-[#FFFFF0] px-2.5 gap-1.5"
-              : "bg-[#2775CA]/20 text-black/70 hover:text-black"
+              ? "rounded-[22px] bg-[#353935] text-[#FFFFF0] px-2.5 gap-1.5"
+              : "rounded-full bg-[#2775CA]/20 text-black/70 hover:text-black"
           }`}
           style={{
             transition: smoothTransition,
-            willChange: "width, height",
+            willChange: "width, height, border-radius",
             backgroundColor: isInboxActive && !isRetracted ? undefined : "rgb(39 117 202 / 20%)",
             backdropFilter: "blur(22px)",
             WebkitBackdropFilter: "blur(22px)",
             width: isRetracted ? 48 : isInboxActive ? 88 : 52,
-            height: isRetracted ? 48 : isInboxActive ? 79 : 52,
+            height: isRetracted ? 48 : isInboxActive ? 71 : 52,
           }}
           aria-label="Open DMs"
         >
