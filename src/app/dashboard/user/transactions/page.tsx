@@ -384,12 +384,22 @@ export default function UserTransactionsPage() {
       if (d.txHash) mappedTxHashes.add(d.txHash.toLowerCase());
       const isCctp = Boolean(d.isCctp);
       const isWithdrawal = d.direction === "outbound_withdrawal";
-      const incoming = isCctp ? !isWithdrawal : true;
+      const incoming = isCctp ? !isWithdrawal : (d.incoming !== undefined ? Boolean(d.incoming) : d.direction !== "outbound_send");
       const kind: "transfers" | "withdrawals" = isWithdrawal ? "withdrawals" : "transfers";
       const sign = incoming ? "+" : "-";
 
-      let name = d.senderName ? `Deposit from @${d.senderName}` : `Deposit from ${formatAddress(d.fromAddress)}`;
-      let detail = "USDC Deposit • Arc Network";
+      let name = incoming
+        ? (d.senderName
+            ? `Deposit from @${d.senderName}`
+            : d.fromAddress && d.fromAddress !== "0x0000000000000000000000000000000000000000"
+            ? `Deposit from ${formatAddress(d.fromAddress)}`
+            : "Deposit on Arc")
+        : (d.receiverName
+            ? `Sent to @${d.receiverName}`
+            : d.toAddress && d.toAddress !== "0x0000000000000000000000000000000000000000"
+            ? `Sent to ${formatAddress(d.toAddress)}`
+            : "Sent USDC");
+      let detail = incoming ? "USDC Deposit • Arc Network" : "USDC Transfer • Arc Network";
       let status = "CONFIRMED";
 
       if (isCctp) {

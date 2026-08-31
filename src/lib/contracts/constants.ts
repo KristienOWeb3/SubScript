@@ -215,7 +215,7 @@ export const CCTP_CONFIG: Record<number, CCTPChainInfo> = isProd
         isL1: true,
         allowDeposits: true,
         allowWithdrawals: true,
-        defaultRpc: "https://ethereum-sepolia-rpc.publicnode.com",
+        defaultRpc: "https://rpc.sepolia.org",
       },
       43113: {
         tokenMessenger: CCTP_V2_TOKEN_MESSENGER,
@@ -239,7 +239,7 @@ export const CCTP_CONFIG: Record<number, CCTPChainInfo> = isProd
         nativeTokenSymbol: "ETH",
         allowDeposits: true,
         allowWithdrawals: true,
-        defaultRpc: "https://base-sepolia-rpc.publicnode.com",
+        defaultRpc: "https://sepolia.base.org",
       },
       421614: {
         tokenMessenger: CCTP_V2_TOKEN_MESSENGER,
@@ -251,7 +251,7 @@ export const CCTP_CONFIG: Record<number, CCTPChainInfo> = isProd
         nativeTokenSymbol: "ETH",
         allowDeposits: true,
         allowWithdrawals: true,
-        defaultRpc: "https://arbitrum-sepolia-rpc.publicnode.com",
+        defaultRpc: "https://sepolia-rollup.arbitrum.io/rpc",
       },
       11155420: {
         tokenMessenger: CCTP_V2_TOKEN_MESSENGER,
@@ -275,7 +275,7 @@ export const CCTP_CONFIG: Record<number, CCTPChainInfo> = isProd
         nativeTokenSymbol: "POL",
         allowDeposits: true,
         allowWithdrawals: true,
-        defaultRpc: "https://rpc-amoy.polygon.technology",
+        defaultRpc: "https://polygon-amoy-bor-rpc.publicnode.com",
       },
     };
 

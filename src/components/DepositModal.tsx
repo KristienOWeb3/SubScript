@@ -84,15 +84,6 @@ export interface DepositModalProps {
     isEmbeddedWallet?: boolean;
     depositAddress: string;
     onSuccess?: () => void;
-    chainId?: number;
-    switchChainAsync?: (params: { chainId: number }) => Promise<unknown>;
-    writeContractAsync?: (params: any) => Promise<`0x${string}`>;
-    executeContractWrite?: (params: {
-        address: string;
-        abi: any;
-        functionName: string;
-        args?: any[];
-    }) => Promise<string>;
 }
 
 type DepositStep = "method" | "bank_info" | "chains" | "address";
@@ -107,42 +98,6 @@ export default function DepositModal({
     const [step, setStep] = useState<DepositStep>("method");
     const [selectedChainId, setSelectedChainId] = useState<number>(() => activeArcChain.id);
 
-    const [copied, setCopied] = useState(false);
-    const [copiedContract, setCopiedContract] = useState(false);
-    const [usdcBalance, setUsdcBalance] = useState("0.00");
-    const [originBalance, setOriginBalance] = useState("0.00");
-    const [loadingOriginBalance, setLoadingOriginBalance] = useState(false);
-
-    // CCTP Interactive Deposit State
-    const [cctpStatus, setCctpStatus] = useState<
-        "idle" | "registering" | "submitted" | "error"
-    >("idle");
-    const [cctpMessage, setCctpMessage] = useState<string | null>(null);
-    const [cctpError, setCctpError] = useState<string | null>(null);
-
-    /* Irreversible burn recovery record stored in localStorage until acknowledged by backend keeper */
-    const [pendingRegistration, setPendingRegistration] = useState<{
-        burnTxHash: `0x${string}`;
-        feeTxHash?: `0x${string}`;
-        originChainId: number;
-        grossAmountMicros: string;
-        amount: string;
-    } | null>(null);
-
-    const recoveryKey = depositAddress ? `subscript:cctp-recovery:${depositAddress.toLowerCase()}` : null;
-
-    useEffect(() => {
-        if (!isOpen || !recoveryKey) return;
-        try {
-            const stored = window.localStorage.getItem(recoveryKey);
-            setPendingRegistration(stored ? JSON.parse(stored) : null);
-        } catch {
-            setPendingRegistration(null);
-        }
-    }, [isOpen, recoveryKey]);
-
-    const cctpInProgress = cctpStatus === "registering";
-
     /* Full list of EVM chains supporting CCTP + Arc native */
     const supportedChains = useMemo(() => {
         const arcChain = {
@@ -156,8 +111,9 @@ export default function DepositModal({
             usdc: USDC_NATIVE_GAS_ADDRESS,
             tokenMessenger: null,
             domain: ARC_CCTP_DOMAIN_ID,
-            badge: "0% Fee · Instant",
+            badge: "0% Fee · No Min",
             subtext: "Native Arc Settlement (Recommended)",
+            minDepositUsdc: 0,
         };
 
         const evmChains = Object.entries(CCTP_CONFIG).map(([cId, info]) => {
@@ -174,8 +130,9 @@ export default function DepositModal({
                 usdc: info.usdc,
                 tokenMessenger: info.tokenMessenger,
                 domain: info.domain,
-                badge: `${formatFeeBps(info.feeBps)} Fee`,
-                subtext: isL1 ? "Ethereum L1 · Circle CCTP" : `${info.name} · Circle CCTP`,
+                badge: `${formatFeeBps(info.feeBps)} Fee · Min ${isL1 ? "$10" : "$1"}`,
+                subtext: isL1 ? "Ethereum L1 · Circle CCTP (Min $10)" : `${info.name} · Circle CCTP (Min $1)`,
+                minDepositUsdc: isL1 ? 10 : 1,
             };
         });
 
@@ -185,6 +142,103 @@ export default function DepositModal({
     const selectedChain = useMemo(() => {
         return supportedChains.find((c) => c.chainId === selectedChainId) || supportedChains[0];
     }, [supportedChains, selectedChainId]);
+
+    const [copied, setCopied] = useState(false);
+    const [copiedContract, setCopiedContract] = useState(false);
+    const [usdcBalance, setUsdcBalance] = useState("0.00");
+    const [originBalance, setOriginBalance] = useState("0.00");
+    const [loadingOriginBalance, setLoadingOriginBalance] = useState(false);
+
+    /* Auto-bridge state: derived deposit address for CCTP chains */
+    const [derivedAddress, setDerivedAddress] = useState<string | null>(null);
+    const [loadingIntent, setLoadingIntent] = useState(false);
+    const [bridgeStatus, setBridgeStatus] = useState<
+        "idle" | "waiting" | "detected" | "bridging" | "completed" | "error"
+    >("idle");
+    const [bridgeError, setBridgeError] = useState<string | null>(null);
+
+    /* The address shown depends on whether the user selected Arc (own address) or a CCTP chain
+       (server-derived deposit address). */
+    const displayAddress = selectedChain.isArc ? depositAddress : (derivedAddress || depositAddress);
+
+    /* When user selects a CCTP chain and moves to the address step, register an intent. */
+    const registerIntent = useCallback(async (chainId: number) => {
+        setLoadingIntent(true);
+        setBridgeStatus("idle");
+        setBridgeError(null);
+        setDerivedAddress(null);
+        try {
+            const res = await fetch("/api/user/cctp/intent", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ originChainId: chainId }),
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.error || `Server said ${res.status}`);
+            }
+            const data = await res.json();
+            setDerivedAddress(data.depositAddress);
+            setBridgeStatus("waiting");
+        } catch (error: any) {
+            setBridgeError(error.message || "Couldn't set up your deposit address.");
+            setBridgeStatus("error");
+        } finally {
+            setLoadingIntent(false);
+        }
+    }, []);
+
+    /* Poll bridge status every 15 seconds while the modal is open on a CCTP chain. */
+    useEffect(() => {
+        if (!isOpen || selectedChain.isArc || !derivedAddress || bridgeStatus === "completed") return;
+
+        const poll = async () => {
+            try {
+                const res = await fetch(`/api/user/cctp/scan?address=${encodeURIComponent(derivedAddress)}`, {
+                    signal: AbortSignal.timeout(5000),
+                }).catch(() => null);
+                if (res && res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    const chainBal = Array.isArray(data.balances)
+                        ? data.balances.find((b: any) => b.chainId === selectedChain.chainId)
+                        : null;
+                    if (chainBal) {
+                        setOriginBalance(chainBal.balanceUsdc || "0.00");
+                        if (parseFloat(chainBal.balanceUsdc || "0") > 0) {
+                            setBridgeStatus("detected");
+                        }
+                    }
+
+                    /* Check if the transfer is already in progress or completed */
+                    const intentRes = await fetch("/api/user/cctp/intent", {
+                        signal: AbortSignal.timeout(5000),
+                    }).catch(() => null);
+                    if (intentRes && intentRes.ok) {
+                        const intentData = await intentRes.json().catch(() => ({}));
+                        const matched = Array.isArray(intentData.intents)
+                            ? intentData.intents.find(
+                                (i: any) => i.chainId === selectedChain.chainId && i.intentStatus === "matched"
+                              )
+                            : null;
+                        if (matched) {
+                            if (matched.bridgeStatus === "completed") {
+                                setBridgeStatus("completed");
+                                if (onSuccess) onSuccess();
+                            } else if (matched.bridgeStatus === "pending_attestation" || matched.bridgeStatus === "minting") {
+                                setBridgeStatus("bridging");
+                            }
+                        }
+                    }
+                }
+            } catch {
+                /* Polling failure is not critical, retry next tick. */
+            }
+        };
+
+        poll();
+        const interval = setInterval(poll, 15_000);
+        return () => clearInterval(interval);
+    }, [isOpen, selectedChain, derivedAddress, bridgeStatus, onSuccess]);
 
     const fetchBalance = useCallback(async () => {
         if (!depositAddress || depositAddress === "0xYOUR_CONNECTED_WALLET_ADDRESS") return;
@@ -212,8 +266,9 @@ export default function DepositModal({
             return;
         }
         setLoadingOriginBalance(true);
+        const scanAddr = derivedAddress || depositAddress;
         try {
-            const res = await fetch(`/api/user/cctp/scan?address=${encodeURIComponent(depositAddress)}`, {
+            const res = await fetch(`/api/user/cctp/scan?address=${encodeURIComponent(scanAddr)}`, {
                 signal: AbortSignal.timeout(5000),
             }).catch(() => null);
             if (res && res.ok) {
@@ -232,7 +287,7 @@ export default function DepositModal({
                 address: selectedChain.usdc as `0x${string}`,
                 abi: ERC20_ABI,
                 functionName: "balanceOf",
-                args: [depositAddress as `0x${string}`],
+                args: [scanAddr as `0x${string}`],
             });
             setOriginBalance(parseFloat(formatUnits(bal as bigint, 6)).toFixed(2));
         } catch {
@@ -240,14 +295,15 @@ export default function DepositModal({
         } finally {
             setLoadingOriginBalance(false);
         }
-    }, [depositAddress, selectedChain]);
+    }, [depositAddress, derivedAddress, selectedChain]);
 
     useEffect(() => {
         if (!isOpen) return;
         setStep("method");
         setSelectedChainId(activeArcChain.id);
-        setCctpStatus("idle");
-        setCctpError(null);
+        setBridgeStatus("idle");
+        setBridgeError(null);
+        setDerivedAddress(null);
         fetchBalance();
     }, [isOpen, fetchBalance]);
 
@@ -258,7 +314,7 @@ export default function DepositModal({
     }, [isOpen, selectedChain, fetchOriginBalance]);
 
     const handleCopy = async () => {
-        await navigator.clipboard.writeText(depositAddress);
+        await navigator.clipboard.writeText(displayAddress);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };
@@ -270,81 +326,7 @@ export default function DepositModal({
         setTimeout(() => setCopiedContract(false), 2000);
     };
 
-    const registerDeposit = async (record: NonNullable<typeof pendingRegistration>) => {
-        setCctpStatus("registering");
-        setCctpMessage("Handing the deposit to Circle and the Arc relayer...");
-
-        let lastError = "";
-        for (let attempt = 0; attempt < 4; attempt++) {
-            try {
-                const res = await fetch("/api/user/cctp/deposit", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        originChainId: record.originChainId,
-                        grossAmountMicros: record.grossAmountMicros,
-                        burnTxHash: record.burnTxHash,
-                        feeTxHash: record.feeTxHash,
-                    }),
-                });
-                if (res.ok) {
-                    if (recoveryKey) window.localStorage.removeItem(recoveryKey);
-                    setPendingRegistration(null);
-                    setCctpStatus("submitted");
-                    setCctpMessage(null);
-                    if (onSuccess) onSuccess();
-                    return;
-                }
-                const data = await res.json().catch(() => ({}));
-                lastError = data.error || `Server said ${res.status}`;
-            } catch (error: any) {
-                lastError = error?.message || "Network error";
-            }
-            await new Promise((resolve) => setTimeout(resolve, 2500 * (attempt + 1)));
-        }
-
-        throw new Error(
-            `Your USDC was sent but we couldn't record it (${lastError}). Reopen this screen to finish, or contact support with ${record.burnTxHash.slice(0, 10)}…`
-        );
-    };
-
-    const settle = async (hash: `0x${string}`, what: string) => {
-        const originClient = originPublicClient(selectedChain.chainId);
-        const receipt = await originClient.waitForTransactionReceipt({ hash, timeout: 300_000 });
-        if (receipt.status !== "success") throw new Error(`${what} failed on ${selectedChain.name}.`);
-        return receipt;
-    };
-
-    const recordBurnLocally = (burnTxHash: `0x${string}`, feeTxHash?: `0x${string}`, amount?: string) => {
-        const record = {
-            burnTxHash,
-            feeTxHash,
-            originChainId: selectedChain.chainId,
-            grossAmountMicros: "0",
-            amount: amount || originBalance,
-        };
-        if (recoveryKey) window.localStorage.setItem(recoveryKey, JSON.stringify(record));
-        setPendingRegistration(record);
-        return record;
-    };
-
-    /* Background settlement and registration handlers for CCTP bridge transfers:
-       await settle(approveTxHash, "The approval");
-       await settle(burnTxHash, "The transfer"); */
-
-    const handleResumeRegistration = async () => {
-        if (!pendingRegistration) return;
-        setCctpError(null);
-        try {
-            await registerDeposit(pendingRegistration);
-        } catch (error: any) {
-            setCctpStatus("error");
-            setCctpError(error.message || "We couldn't record that deposit.");
-        }
-    };
-
     const resetAndClose = () => {
-        if (cctpInProgress) return;
         setCopied(false);
         onClose();
     };
@@ -378,7 +360,7 @@ export default function DepositModal({
                             {/* Fixed Modal Header */}
                             <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-black/10 shrink-0 bg-white/80 backdrop-blur-md">
                                 <div className="flex items-center gap-2">
-                                    {step !== "method" && !cctpInProgress && (
+                                    {step !== "method" && bridgeStatus !== "bridging" && (
                                         <button
                                             type="button"
                                             onClick={() => {
@@ -403,7 +385,7 @@ export default function DepositModal({
                                 </div>
                                 <button
                                     onClick={resetAndClose}
-                                    disabled={cctpInProgress}
+                                    disabled={bridgeStatus === "bridging"}
                                     className="p-1.5 text-black/50 hover:text-black hover:bg-black/5 rounded-full transition disabled:opacity-40"
                                     aria-label="Close deposit dialog"
                                 >
@@ -528,6 +510,9 @@ export default function DepositModal({
                                                         onClick={() => {
                                                             setSelectedChainId(chain.chainId);
                                                             setStep("address");
+                                                            if (!chain.isArc) {
+                                                                registerIntent(chain.chainId);
+                                                            }
                                                         }}
                                                         className="flex w-full items-center justify-between rounded-2xl border border-black/15 bg-white p-3.5 text-left hover:border-[#2775CA] hover:bg-[#2775CA]/[0.02] transition shadow-sm group"
                                                     >
@@ -570,24 +555,36 @@ export default function DepositModal({
                                 {/* STEP 3: DEPOSIT ADDRESS & DETAILS */}
                                 {step === "address" && (
                                     <div className="space-y-4 text-left">
-                                        {/* Unfinished deposit recovery banner */}
-                                        {pendingRegistration && cctpStatus !== "registering" && (
-                                            <div className="space-y-2 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4">
-                                                <p className="text-[10px] font-black uppercase tracking-wider text-amber-900">
-                                                    Unfinished deposit
-                                                </p>
+                                        {/* Bridge Status Banner */}
+                                        {!selectedChain.isArc && bridgeStatus !== "idle" && bridgeStatus !== "waiting" && (
+                                            <div className={`space-y-1.5 rounded-2xl border p-4 ${
+                                                bridgeStatus === "completed"
+                                                    ? "border-emerald-500/40 bg-emerald-500/10"
+                                                    : bridgeStatus === "error"
+                                                    ? "border-red-500/40 bg-red-500/10"
+                                                    : "border-[#2775CA]/40 bg-[#2775CA]/10"
+                                            }`}>
+                                                <div className="flex items-center gap-2">
+                                                    {bridgeStatus === "completed" ? (
+                                                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                                    ) : bridgeStatus === "error" ? (
+                                                        <X className="w-4 h-4 text-red-600 shrink-0" />
+                                                    ) : (
+                                                        <Loader2 className="w-4 h-4 animate-spin text-[#2775CA] shrink-0" />
+                                                    )}
+                                                    <p className="text-[10px] font-black uppercase tracking-wider">
+                                                        {bridgeStatus === "detected" && "USDC detected · Preparing bridge..."}
+                                                        {bridgeStatus === "bridging" && "Bridging to Arc... (~5 min)"}
+                                                        {bridgeStatus === "completed" && "✓ Deposited on Arc"}
+                                                        {bridgeStatus === "error" && "Bridge error"}
+                                                    </p>
+                                                </div>
                                                 <p className="text-[11px] leading-relaxed text-black/75">
-                                                    {pendingRegistration.amount} USDC already left{" "}
-                                                    {CCTP_CONFIG[pendingRegistration.originChainId]?.name || "the origin chain"}, but we
-                                                    never managed to record it. Finish here and it will land on Arc. Don&apos;t send again.
+                                                    {bridgeStatus === "detected" && `${originBalance} USDC detected on ${selectedChain.shortName}. The keeper will bridge it automatically on the next tick.`}
+                                                    {bridgeStatus === "bridging" && `Your USDC is being bridged from ${selectedChain.shortName} to Arc via Circle CCTP. This typically takes about 5 minutes.`}
+                                                    {bridgeStatus === "completed" && "Your USDC has arrived on Arc and is ready to use."}
+                                                    {bridgeStatus === "error" && (bridgeError || "Something went wrong. Please try again.")}
                                                 </p>
-                                                <button
-                                                    type="button"
-                                                    onClick={handleResumeRegistration}
-                                                    className="mt-1 w-full rounded-xl bg-amber-600 py-2.5 text-[11px] font-bold text-white transition hover:bg-amber-700"
-                                                >
-                                                    Finish this deposit
-                                                </button>
                                             </div>
                                         )}
 
@@ -607,20 +604,20 @@ export default function DepositModal({
                                             </div>
                                             <button
                                                 type="button"
-                                                disabled={cctpInProgress}
+                                                disabled={bridgeStatus === "bridging"}
                                                 onClick={() => setStep("chains")}
-                                                className="text-[11px] font-bold text-[#2775CA] hover:underline px-2 py-1 rounded-lg hover:bg-black/5 transition shrink-0"
+                                                className="text-[11px] font-bold text-[#2775CA] hover:underline px-2 py-1 rounded-lg hover:bg-black/5 transition shrink-0 disabled:opacity-40"
                                             >
                                                 Change
                                             </button>
                                         </div>
 
-                                        {/* Live Balance on Origin Chain */}
-                                        {!selectedChain.isArc && (
+                                        {/* Live Balance on Deposit Address */}
+                                        {!selectedChain.isArc && derivedAddress && (
                                             <div className="flex items-center justify-between p-3 rounded-2xl bg-black/[0.03] border border-black/10 text-xs">
                                                 <div className="flex items-center gap-2 min-w-0">
                                                     <ChainLogo chain={selectedChain.chainId} size={16} className="h-4 w-4 shrink-0" />
-                                                    <span className="text-black/70 font-medium truncate">Your USDC on {selectedChain.shortName}:</span>
+                                                    <span className="text-black/70 font-medium truncate">USDC on {selectedChain.shortName}:</span>
                                                 </div>
                                                 <div className="flex items-center gap-2 shrink-0">
                                                     {loadingOriginBalance ? (
@@ -628,63 +625,90 @@ export default function DepositModal({
                                                     ) : (
                                                         <span className="font-mono font-bold text-black">{originBalance} USDC</span>
                                                     )}
-                                                    {parseFloat(originBalance) > 0 && (
-                                                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-500/10 px-2 py-0.5 rounded-md">
-                                                            Detected · Relaying to Arc
-                                                        </span>
-                                                    )}
                                                 </div>
                                             </div>
                                         )}
 
-                                        {/* Notice on EVM Address Identity */}
-                                        <p className="text-[11px] text-black/65 leading-relaxed text-center">
-                                            Send USDC on <strong className="text-black">{selectedChain.name}</strong> to your EVM deposit address below.
-                                        </p>
+                                        {/* Loading intent state */}
+                                        {loadingIntent && !selectedChain.isArc && (
+                                            <div className="flex items-center justify-center gap-2 py-4">
+                                                <Loader2 className="w-4 h-4 animate-spin text-[#2775CA]" />
+                                                <span className="text-xs text-black/60 font-medium">Setting up deposit address...</span>
+                                            </div>
+                                        )}
+
+                                        {/* Notice & Minimum Deposit Guidelines */}
+                                        {(!loadingIntent || selectedChain.isArc) && (
+                                            <div className="space-y-2">
+                                                <p className="text-[11px] text-black/65 leading-relaxed text-center">
+                                                    Send USDC on <strong className="text-black">{selectedChain.name}</strong> to {selectedChain.isArc ? "your" : "the"} deposit address below.
+                                                    {!selectedChain.isArc && " It will be automatically bridged to Arc."}
+                                                </p>
+                                                {!selectedChain.isArc && (
+                                                    <div className="rounded-xl border border-black/10 bg-black/[0.02] p-2.5 text-[11px] leading-snug text-black/75">
+                                                        <div className="flex items-center gap-1.5 font-bold text-black text-[11px]">
+                                                            <span>•</span>
+                                                            <span>{selectedChain.isL1 ? "Minimum bridge: $10.00 USDC" : "Minimum bridge: $1.00 USDC"}</span>
+                                                        </div>
+                                                        <p className="mt-1 text-[10px] text-black/60 pl-3">
+                                                            {selectedChain.isL1
+                                                                ? "Smaller deposits (e.g. $9) stay safely stored on-chain at your address until your total balance reaches $10 or more, which triggers auto-bridging."
+                                                                : "Deposits accumulate safely on-chain until reaching $1 or more, then auto-bridge to Arc."}
+                                                        </p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
 
                                         {/* QR Code */}
-                                        <div className="flex justify-center">
-                                            <div className="p-3 bg-white border border-black/10 rounded-2xl shadow-sm inline-block">
-                                                <QRCode
-                                                    value={depositAddress}
-                                                    size={135}
-                                                    ecLevel="H"
-                                                    bgColor="#ffffff"
-                                                    fgColor="#000000"
-                                                    qrStyle="dots"
-                                                    logoImage="/logo.png"
-                                                    logoWidth={26}
-                                                    logoHeight={26}
-                                                    removeQrCodeBehindLogo={true}
-                                                    logoPadding={2}
-                                                />
+                                        {(!loadingIntent || selectedChain.isArc) && (
+                                            <div className="flex justify-center">
+                                                <div className="p-3 bg-white border border-black/10 rounded-2xl shadow-sm inline-block">
+                                                    <QRCode
+                                                        value={displayAddress}
+                                                        size={135}
+                                                        ecLevel="H"
+                                                        bgColor="#ffffff"
+                                                        fgColor="#000000"
+                                                        qrStyle="dots"
+                                                        logoImage="/logo.png"
+                                                        logoWidth={26}
+                                                        logoHeight={26}
+                                                        removeQrCodeBehindLogo={true}
+                                                        logoPadding={2}
+                                                    />
+                                                </div>
                                             </div>
-                                        </div>
+                                        )}
 
                                         {/* Copy Address Box */}
-                                        <div className="bg-white border border-black/15 rounded-2xl p-3.5 text-left shadow-sm">
-                                            <div className="flex items-center justify-between mb-1">
-                                                <p className="text-[9px] text-black/50 uppercase tracking-wider font-black">
-                                                    Your EVM Deposit Address
-                                                </p>
-                                                <span className="text-[9px] font-bold text-emerald-700 bg-emerald-500/10 px-1.5 py-0.2 rounded">
-                                                    Same across all EVMs
-                                                </span>
+                                        {(!loadingIntent || selectedChain.isArc) && (
+                                            <div className="bg-white border border-black/15 rounded-2xl p-3.5 text-left shadow-sm">
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <p className="text-[9px] text-black/50 uppercase tracking-wider font-black">
+                                                        {selectedChain.isArc ? "Your EVM Deposit Address" : "Deposit Address"}
+                                                    </p>
+                                                    {selectedChain.isArc && (
+                                                        <span className="text-[9px] font-bold text-emerald-700 bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                                                            Same across all EVMs
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <code className="flex-1 text-[11px] text-black font-mono break-all select-all font-semibold">
+                                                        {displayAddress}
+                                                    </code>
+                                                    <button
+                                                        onClick={handleCopy}
+                                                        className="p-2 text-[#082824] hover:bg-black/5 rounded-xl transition shrink-0"
+                                                        title="Copy address"
+                                                        aria-label="Copy deposit address"
+                                                    >
+                                                        {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                                                    </button>
+                                                </div>
                                             </div>
-                                            <div className="flex items-center gap-2">
-                                                <code className="flex-1 text-[11px] text-black font-mono break-all select-all font-semibold">
-                                                    {depositAddress}
-                                                </code>
-                                                <button
-                                                    onClick={handleCopy}
-                                                    className="p-2 text-[#082824] hover:bg-black/5 rounded-xl transition shrink-0"
-                                                    title="Copy address"
-                                                    aria-label="Copy deposit address"
-                                                >
-                                                    {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                                                </button>
-                                            </div>
-                                        </div>
+                                        )}
 
                                         {copied && (
                                             <p className="text-emerald-700 text-[10px] font-black uppercase tracking-wider text-center">

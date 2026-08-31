@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
     }
 
     /* Balance check before anything irreversible. The gross has to be there: fee plus burn. */
-    const arcProvider = new ethers.JsonRpcProvider(getArcRpcUrl());
+    const arcProvider = new ethers.JsonRpcProvider(getArcRpcUrl(), undefined, { staticNetwork: true });
     const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, ERC20_ABI, arcProvider);
     let onChainBalance: bigint;
     try {

@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { processPendingCctpTransfers } from "@/lib/cctp/attestationWorker";
+import { sweepAndBridge } from "@/lib/cctp/autoBridge";
 
 export const maxDuration = 300;
 
@@ -39,8 +40,16 @@ async function handle(request: Request) {
   }
 
   try {
-    const result = await processPendingCctpTransfers();
-    return NextResponse.json({ success: true, ...result });
+    /* Phase 1: relay any pending attestations (existing mints waiting on Circle). */
+    const attestation = await processPendingCctpTransfers();
+
+    /* Phase 2: sweep derived deposit addresses and initiate new bridges. */
+    const sweep = await sweepAndBridge().catch((err: any) => {
+      console.error("[api/keeper/cctp] sweep error:", err?.message);
+      return { scanned: 0, bridged: 0, skipped: 0, errors: 1 };
+    });
+
+    return NextResponse.json({ success: true, attestation, sweep });
   } catch (error: any) {
     console.error("[api/keeper/cctp] error:", error?.message);
     return NextResponse.json({ error: "Failed to process CCTP transfers" }, { status: 500 });

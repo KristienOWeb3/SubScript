@@ -1453,7 +1453,6 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                 isEmbeddedWallet={!!embeddedWallet}
                 depositAddress={address || ""}
                 onSuccess={handleDepositSuccess}
-                executeContractWrite={executeContractWrite}
             />
 
             {/* High-fidelity glassmorphic toast notification */}

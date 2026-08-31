@@ -23,7 +23,7 @@ export class EventSourcedEngine {
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
         this.supabase = createClient(supabaseUrl, supabaseServiceKey);
-        this.rpcProvider = new ethers.JsonRpcProvider(process.env.RPC_URL || "https://rpc.testnet.arc.network");
+        this.rpcProvider = new ethers.JsonRpcProvider(process.env.RPC_URL || "https://rpc.testnet.arc.network", undefined, { staticNetwork: true });
         this.initWebSocket();
     }
 

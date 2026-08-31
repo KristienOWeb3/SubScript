@@ -28,7 +28,7 @@ const USDC_ABI = [
 ];
 
 function readProvider() {
-    return new ethers.JsonRpcProvider(process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network");
+    return new ethers.JsonRpcProvider(process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network", undefined, { staticNetwork: true });
 }
 
 export type OnChainSubscription = {

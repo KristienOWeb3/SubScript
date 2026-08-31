@@ -249,27 +249,27 @@ export default function DashboardSidebar({
 
             <div className="mt-6 space-y-4">
                 {!isCollapsed && promo && promoVisible && (
-                    <div className="relative hidden overflow-hidden rounded-2xl border border-[color:var(--sb-accent)]/20 bg-[color:var(--sb-accent)]/[0.06] p-3.5 text-white shadow-sm transition-all duration-300 lg:block">
-                        <div className="min-w-[180px]">
-                            <div className="mb-2 flex items-center justify-between gap-2">
-                                <span className="shrink-0 rounded bg-[color:var(--sb-accent)] px-2 py-0.5 text-[10px] font-bold text-black">
+                    <div className="relative hidden overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] p-3.5 text-white shadow-sm transition-all duration-300 lg:block hover:border-white/20 backdrop-blur-sm">
+                        <button
+                            type="button"
+                            onClick={() => setPromoVisible(false)}
+                            aria-label={`Dismiss ${promo.title}`}
+                            className="absolute top-2.5 right-2.5 z-10 p-1 rounded-full text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+                        >
+                            <X className="h-3.5 w-3.5" />
+                        </button>
+                        <div className="min-w-[180px] pr-6">
+                            <div className="mb-2 flex items-center">
+                                <span className="inline-flex items-center rounded-full bg-white/15 px-2.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-white/90 border border-white/10">
                                     {promo.badge}
                                 </span>
-                                <button
-                                    type="button"
-                                    onClick={() => setPromoVisible(false)}
-                                    aria-label={`Dismiss ${promo.title}`}
-                                    className="shrink-0 text-white/50 transition-colors hover:text-white"
-                                >
-                                    <X className="h-3.5 w-3.5" />
-                                </button>
                             </div>
-                            <p className="text-xs font-extrabold leading-tight text-white">{promo.title}</p>
-                            <p className="mt-1 text-[10px] leading-snug text-white/70">{promo.body}</p>
+                            <p className="text-xs font-bold leading-tight text-white">{promo.title}</p>
+                            <p className="mt-1 text-[11px] leading-snug text-white/70">{promo.body}</p>
                             <button
                                 type="button"
                                 onClick={promo.onCta}
-                                className="mt-2.5 shrink-0 rounded-md bg-[color:var(--sb-accent)] px-3 py-1 text-[10px] font-bold text-black transition hover:opacity-80"
+                                className="mt-3 inline-flex items-center justify-center rounded-xl bg-white/15 hover:bg-white/25 border border-white/15 px-3.5 py-1.5 text-[11px] font-bold text-white transition-all active:scale-95 shadow-sm"
                             >
                                 {promo.ctaLabel}
                             </button>

@@ -134,7 +134,7 @@ async function verifyArcFeeTransfer(params: {
 }): Promise<{ ok: true } | { ok: false; reason: string }> {
   let receipt: ethers.TransactionReceipt | null;
   try {
-    const provider = new ethers.JsonRpcProvider(getArcRpcUrl());
+    const provider = new ethers.JsonRpcProvider(getArcRpcUrl(), undefined, { staticNetwork: true });
     receipt = await provider.getTransactionReceipt(params.feeTxHash);
   } catch (error: any) {
     console.error("[api/user/cctp/withdraw/register] fee receipt lookup failed:", error?.message);

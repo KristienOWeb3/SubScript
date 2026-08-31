@@ -66,8 +66,20 @@ export async function GET(request: Request) {
             };
         });
 
-        // Combine and dedup by txHash
-        const allDeposits = [...cctpItems, ...directDeposits];
+        // Combine and dedup by txHash / mintTxHash / burnTxHash
+        const seenTxHashes = new Set<string>();
+        for (const item of cctpItems) {
+            if (item.txHash) seenTxHashes.add(item.txHash.toLowerCase());
+            if (item.mintTxHash) seenTxHashes.add(item.mintTxHash.toLowerCase());
+            if (item.burnTxHash) seenTxHashes.add(item.burnTxHash.toLowerCase());
+        }
+
+        const uniqueDirect = directDeposits.filter((d) => {
+            const h = (d.txHash || "").toLowerCase();
+            return !seenTxHashes.has(h);
+        });
+
+        const allDeposits = [...cctpItems, ...uniqueDirect].sort((a, b) => b.timestamp - a.timestamp);
 
         return NextResponse.json({
             success: true,

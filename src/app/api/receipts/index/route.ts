@@ -24,7 +24,7 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json().catch(() => ({}));
-        const provider = new ethers.JsonRpcProvider(process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network");
+        const provider = new ethers.JsonRpcProvider(process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network", undefined, { staticNetwork: true });
         const latest = await provider.getBlockNumber();
         const fromBlock = parseBlock(body.fromBlock, Math.max(0, latest - 5000));
         const toBlock = parseBlock(body.toBlock, "latest");

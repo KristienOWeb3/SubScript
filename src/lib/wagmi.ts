@@ -1,6 +1,6 @@
 import { createConfig, http } from "wagmi";
 import { injected } from "wagmi/connectors";
-import { defineChain } from "viem";
+import { defineChain, fallback } from "viem";
 import {
     mainnet,
     base,
@@ -81,16 +81,48 @@ export const config = createConfig({
         /* Both Arc chain ids map to the active RPC; only the selected one (arcChainId) is used. */
         5042002: arcTransport,
         5042001: arcTransport,
-        1: http(),
-        10: http(),
-        137: http(),
-        8453: http(),
-        42161: http(),
-        11155111: http(),
-        84532: http(),
-        421614: http(),
-        11155420: http(),
-        80002: http(),
+        1: fallback([
+            http("https://cloudflare-eth.com"),
+            http("https://ethereum-rpc.publicnode.com"),
+        ]),
+        10: fallback([
+            http("https://mainnet.optimism.io"),
+            http("https://optimism-rpc.publicnode.com"),
+        ]),
+        137: fallback([
+            http("https://polygon-rpc.com"),
+            http("https://polygon-bor-rpc.publicnode.com"),
+        ]),
+        8453: fallback([
+            http("https://mainnet.base.org"),
+            http("https://base-rpc.publicnode.com"),
+        ]),
+        42161: fallback([
+            http("https://arb1.arbitrum.io/rpc"),
+            http("https://arbitrum-one-rpc.publicnode.com"),
+        ]),
+        11155111: fallback([
+            http("https://rpc.sepolia.org"),
+            http("https://ethereum-sepolia-rpc.publicnode.com"),
+            http("https://1rpc.io/sepolia"),
+        ]),
+        84532: fallback([
+            http("https://sepolia.base.org"),
+            http("https://base-sepolia-rpc.publicnode.com"),
+        ]),
+        421614: fallback([
+            http("https://sepolia-rollup.arbitrum.io/rpc"),
+            http("https://arbitrum-sepolia.blockpi.network/v1/rpc/public"),
+            http("https://arbitrum-sepolia-rpc.publicnode.com"),
+        ]),
+        11155420: fallback([
+            http("https://sepolia.optimism.io"),
+            http("https://optimism-sepolia.blockpi.network/v1/rpc/public"),
+        ]),
+        80002: fallback([
+            http("https://polygon-amoy-bor-rpc.publicnode.com"),
+            http("https://rpc-amoy.polygon.technology"),
+        ]),
     },
     ssr: true,
 });

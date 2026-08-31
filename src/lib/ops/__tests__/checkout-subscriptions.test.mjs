@@ -147,24 +147,25 @@ test("money movement requires review and never exposes a cancel result after bro
     assert.doesNotMatch(withdrawal, /Batch payouts/);
 });
 
-test("a completed CCTP burn is resumable and cannot be presented as a fresh bridge", () => {
-    /* The deposit flow lives in the shared DepositModal now, not inline in the user dashboard. */
+test("CCTP deposits use server-side auto-bridge with intent registration and status tracking", () => {
+    /* The deposit flow lives in the shared DepositModal, backed by server-side auto-bridge. */
     const modal = source("src/components/DepositModal.tsx");
     const dashboard = source("src/app/dashboard/user/page.tsx");
+    const autoBridge = source("src/lib/cctp/autoBridge.ts");
+    const intentRoute = source("src/app/api/user/cctp/intent/route.ts");
 
-    /* The burn is irreversible, so it is parked locally before we try to tell the backend about it.
-       Losing that record would leave money in flight with nothing watching it, and would invite the
-       user into a second burn. */
-    assert.match(modal, /subscript:cctp-recovery/);
-    assert.match(modal, /localStorage\.setItem\(recoveryKey/);
-    assert.match(modal, /Finish this deposit/);
-    assert.match(modal, /Don&apos;t send again/);
+    /* Deposit intents register the user's intended chain and provide a deterministic deposit address. */
+    assert.match(modal, /\/api\/user\/cctp\/intent/);
+    assert.match(intentRoute, /deriveDepositAddress/);
 
-    /* Every step waits to be mined. depositForBurn pulls through the allowance, so submitting it
-       while the approve is still pending reverts the burn. */
-    assert.match(modal, /waitForTransactionReceipt/);
-    assert.match(modal, /await settle\(approveTxHash, "The approval"\)/);
-    assert.match(modal, /await settle\(burnTxHash, "The transfer"\)/);
+    /* The modal tracks real bridge lifecycle states without requiring browser wallet signing. */
+    assert.match(modal, /bridgeStatus/);
+    assert.match(modal, /Bridging to Arc/);
+
+    /* Server-side auto-bridge executes approve + depositForBurn on origin chain and drips gas if needed. */
+    assert.match(autoBridge, /depositForBurn/);
+    assert.match(autoBridge, /dripGasIfNeeded/);
+    assert.match(autoBridge, /calculateBridgeFee/);
 
     /* Origin receipts need an origin-chain client; the Arc one cannot see a Base transaction. */
     assert.match(modal, /function originPublicClient/);

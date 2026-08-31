@@ -21,7 +21,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Configuration Error: Admin private key missing on server" }, { status: 500 });
         }
 
-        const provider = new ethers.JsonRpcProvider(rpcUrl);
+        const provider = new ethers.JsonRpcProvider(rpcUrl, undefined, { staticNetwork: true });
         const adminWallet = new ethers.Wallet(adminPrivateKey, provider);
 
         /* 3. Verify merchant is Premium on-chain */

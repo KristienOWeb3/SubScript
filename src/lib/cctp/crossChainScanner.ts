@@ -179,3 +179,75 @@ export async function detectAndNotifyInboundCctp(
 
   void processPendingCctpTransfers().catch(() => undefined);
 }
+
+export interface DerivedScanResult {
+  userWallet: string;
+  derivedDepositAddress: string;
+  originChainId: number;
+  chainName: string;
+  balanceMicros: string;
+  balanceUsdc: string;
+  hasBalance: boolean;
+}
+
+/**
+ * Scans active deposit intents from the database and checks for USDC balances
+ * at their derived deposit addresses across origin chains.
+ */
+export async function scanDerivedDepositAddresses(): Promise<DerivedScanResult[]> {
+  const intents = await pgQuery<{
+    user_wallet: string;
+    derived_deposit_address: string;
+    origin_chain_id: number;
+  }>(
+    `SELECT DISTINCT user_wallet, derived_deposit_address, origin_chain_id
+       FROM cctp_deposit_intents
+      WHERE status = 'active' AND expires_at > now()
+      ORDER BY user_wallet ASC`,
+    []
+  ).catch(() => []);
+
+  if (intents.length === 0) return [];
+
+  const results: DerivedScanResult[] = [];
+
+  for (const intent of intents) {
+    const config = CCTP_CONFIG[intent.origin_chain_id];
+    const rpc = resolveRpcUrl(intent.origin_chain_id);
+    if (!config || !rpc || !config.usdc) continue;
+
+    try {
+      const provider = new ethers.JsonRpcProvider(rpc, undefined, { staticNetwork: true });
+      const usdcContract = new ethers.Contract(config.usdc, ERC20_ABI, provider);
+
+      const balanceBigInt: bigint = await Promise.race([
+        usdcContract.balanceOf(intent.derived_deposit_address) as Promise<bigint>,
+        new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error("RPC timeout")), 4500)),
+      ]);
+
+      const hasBalance = balanceBigInt > 0n;
+      results.push({
+        userWallet: intent.user_wallet,
+        derivedDepositAddress: intent.derived_deposit_address,
+        originChainId: intent.origin_chain_id,
+        chainName: config.name,
+        balanceMicros: balanceBigInt.toString(),
+        balanceUsdc: formatMicros(balanceBigInt),
+        hasBalance,
+      });
+    } catch {
+      results.push({
+        userWallet: intent.user_wallet,
+        derivedDepositAddress: intent.derived_deposit_address,
+        originChainId: intent.origin_chain_id,
+        chainName: config.name,
+        balanceMicros: "0",
+        balanceUsdc: "0.00",
+        hasBalance: false,
+      });
+    }
+  }
+
+  return results;
+}
+

@@ -51,7 +51,6 @@ function SignInContent() {
   const [walletMissingAccount, setWalletMissingAccount] = useState(false);
 
   const [activeSession, setActiveSession] = useState<{ wallet: string; email?: string; role: string } | null>(null);
-  const [checkingSession, setCheckingSession] = useState(true);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [captchaToken, setCaptchaToken] = useState("");
   const [turnstileLoaded, setTurnstileLoaded] = useState(false);
@@ -94,8 +93,6 @@ function SignInContent() {
         }
       } catch (err) {
         console.error("Failed to check active session on signin mount:", err);
-      } finally {
-        setCheckingSession(false);
       }
     };
     checkSession();
@@ -269,8 +266,8 @@ function SignInContent() {
       : getDashboardUrl(activeSession.role as any, "/dashboard");
   };
 
-  if (checkingSession || isSigningOut) {
-    return <AuthSkeleton title="signin" subtitle="Sign in to your account" />;
+  if (isSigningOut) {
+    return <AuthSkeleton title="signin" subtitle="Signing out..." />;
   }
 
   if (activeSession) {
