@@ -4,6 +4,7 @@ import { fetchArcUsdcDeposits } from "@/lib/deposits/arcDeposits";
 import { pgQuery } from "@/lib/serverPg";
 import { CCTP_CONFIG } from "@/lib/contracts/constants";
 import { processPendingCctpTransfers } from "@/lib/cctp/attestationWorker";
+import { sweepAndBridge } from "@/lib/cctp/autoBridge";
 
 export async function GET(request: Request) {
     try {
@@ -13,6 +14,9 @@ export async function GET(request: Request) {
         }
 
         const normalizedWallet = wallet.toLowerCase();
+
+        // Proactively run sweep on origin chains / Arc router addresses
+        void sweepAndBridge().catch(() => undefined);
 
         const [directDeposits, cctpTransfers] = await Promise.all([
             fetchArcUsdcDeposits(normalizedWallet).catch(() => []),
