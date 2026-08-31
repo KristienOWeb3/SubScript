@@ -14,10 +14,6 @@
     {
       "path": "/api/keeper/vault-draw",
       "schedule": "0 4 * * *"
-    },
-    {
-      "path": "/api/keeper/cctp",
-      "schedule": "*/5 * * * *"
     }
   ]
 }
