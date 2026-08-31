@@ -28,6 +28,7 @@ import { QRCode } from "react-qrcode-logo";
 import jsQR from "jsqr";
 import { motion, AnimatePresence } from "framer-motion";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
+import MobileFloatingNav from "@/components/dashboard/MobileFloatingNav";
 import LoadingDots from "@/components/ui/LoadingDots";
 import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 
@@ -7231,58 +7232,17 @@ export default function UserDashboard() {
         )}
       </div>
 
-      {/* Mobile-only Bottom Navigation Bar */}
+      {/* Mobile-only Floating Bottom Navigation Bar */}
       {isMobile && userWallet && !isActiveMobileDm && !mustBackupWallet && (
-        <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3">
-          {/* Capsule Navigation Menu */}
-          <nav
-            aria-label="Primary navigation"
-            className="liquid-glass flex flex-1 items-center justify-around rounded-full backdrop-blur-lg px-3 py-[1.1rem] shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
-            style={{ backgroundColor: "rgb(39 117 202 / 20%)", backdropFilter: "blur(22px)", WebkitBackdropFilter: "blur(22px)" }}
-          >
-            <LiquidGlassEffect />
-            {userBottomTabs.map((tab) => (
-              <AnimatedBottomNavButton
-                key={tab.id}
-                label={tab.label}
-                icon={tab.icon}
-                active={activeTab === tab.id}
-                accentClassName="text-[#FFFFF0]"
-                onClick={() => {
-                  setSelectedDmPeer(null);
-                  setActiveTab(tab.id);
-                }}
-                compact
-              />
-            ))}
-          </nav>
-
-          {/* DMs Icon Outside Bottom Bar Capsule */}
-          <div className="relative shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedDmPeer(null);
-                setActiveTab("inbox");
-              }}
-              className={`relative h-[3.3rem] flex items-center justify-center rounded-full border transition-all duration-300 gap-2 px-3 overflow-hidden ${
-                activeTab === "inbox"
-                  ? "bg-[#353935] border-[#353935] text-[#FFFFF0] scale-105 w-[108px]"
-                  : "bg-[#2775CA]/20 border-black/15 text-black/60 hover:text-black w-[3.3rem]"
-              }`}
-              aria-label="Open DMs"
-            >
-              <MessageSquare className="h-5 w-5 shrink-0" />
-              {activeTab === "inbox" && <span className="text-[7px] font-bold uppercase tracking-wider shrink-0">DMs</span>}
-            </button>
-            {/* Badge lives outside the button so its overflow-hidden never clips it. */}
-            {pendingDmCount > 0 && (
-              <span className="pointer-events-none absolute -right-1 -top-1 z-10 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border-2 border-[#060608] bg-red-500 px-1 text-[10px] font-black leading-none text-white">
-                {pendingDmCount > 9 ? "9+" : pendingDmCount}
-              </span>
-            )}
-          </div>
-        </div>
+        <MobileFloatingNav
+          tabs={userBottomTabs}
+          activeTab={activeTab}
+          onSelectTab={(tabId) => {
+            setSelectedDmPeer(null);
+            setActiveTab(tabId);
+          }}
+          pendingDmCount={pendingDmCount}
+        />
       )}
 
       {/* All Transactions (full list) */}
