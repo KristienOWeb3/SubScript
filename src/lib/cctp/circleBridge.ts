@@ -63,10 +63,17 @@ export async function fetchCctpAttestation(params: {
     signal: AbortSignal.timeout(params.timeoutMs ?? 15_000),
   });
 
-  /* 404 means Circle has not indexed the burn yet. Anything else is worth surfacing: a 429 in
+  /* 404 or 400 "not found" means Circle has not indexed the burn yet. Anything else is worth surfacing: a 429 in
      particular blocks every subsequent request for five minutes, so it must not look like
      "still pending". */
   if (response.status === 404) return null;
+  if (response.status === 400) {
+    const errorBody = await response.text().catch(() => "");
+    if (errorBody.toLowerCase().includes("not found") || errorBody.toLowerCase().includes("pending")) {
+      return null;
+    }
+    throw new Error(`Circle attestation service returned 400: ${errorBody.slice(0, 100)}`);
+  }
   if (!response.ok) {
     throw new Error(`Circle attestation service returned ${response.status}.`);
   }
@@ -116,7 +123,7 @@ export function addressToBytes32(address: string): `0x${string}` {
 }
 
 /**
- * True when a failed relay is a already-minted nonce rather than a real problem. CCTP allows each
+ * True when a failed relay is an already-minted nonce rather than a real problem. CCTP allows each
  * nonce to be redeemed once, so a duplicate relay reverts; treating that as success is what stops
  * the keeper from retrying a finished transfer forever.
  */
@@ -126,6 +133,15 @@ export function isAlreadyMintedError(message: string): boolean {
     text.includes("nonce already used") ||
     text.includes("message already received") ||
     text.includes("already used") ||
-    text.includes("nonce mismatch")
+    text.includes("nonce mismatch") ||
+    text.includes("message already executed") ||
+    text.includes("nonce already executed") ||
+    text.includes("already processed") ||
+    text.includes("already minted") ||
+    text.includes("duplicate message") ||
+    text.includes("message already consumed") ||
+    text.includes("0x3c2c1c0a") ||
+    text.includes("0x82b42900")
   );
 }
+

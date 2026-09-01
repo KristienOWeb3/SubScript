@@ -6,7 +6,6 @@ import {
   BRIDGE_FEE_TREASURY_ADDRESS,
   ARC_TESTNET_CHAIN_ID,
   ARC_MAINNET_CHAIN_ID,
-  USDC_NATIVE_GAS_ADDRESS,
 } from "@/lib/contracts/constants";
 import {
   TOKEN_MESSENGER_V2_ABI,
@@ -15,11 +14,14 @@ import {
   ANY_DESTINATION_CALLER,
   addressToBytes32,
 } from "./circleBridge";
-import { deriveDepositSigner, deriveDepositAddress } from "./depositAddresses";
+import { deriveDepositSigner } from "./depositAddresses";
 import { getChainRelayer, resolveRpcUrl } from "./relayer";
-import { calculateBridgeFee, formatMicros, getMinBridgeAmount, MIN_BRIDGE_AMOUNT_MICROS } from "./feeEngine";
+import { calculateBridgeFee, formatMicros, getMinBridgeAmount } from "./feeEngine";
 import { notifyDepositStarted, notifyAdminsLowGas } from "./notifications";
 import { processPendingCctpTransfers } from "./attestationWorker";
+
+const isProd = process.env.NEXT_PUBLIC_APP_ENV === "production" || process.env.NODE_ENV === "production";
+const targetArcChainId = isProd ? ARC_MAINNET_CHAIN_ID : ARC_TESTNET_CHAIN_ID;
 
 /**
  * Auto-bridge sweep engine.
@@ -36,14 +38,34 @@ import { processPendingCctpTransfers } from "./attestationWorker";
  * SECURITY: All signing happens server-side. No env vars are ever exposed to the client.
  */
 
-/* How much native gas to drip for a bridge (approve + transfer + depositForBurn).
-   Conservative estimates — actual cost is much lower on L2s. */
-const GAS_DRIP_WEI: Record<number, bigint> = {};
-/* Default drip: 0.002 ETH / 0.01 AVAX / 0.01 POL — enough for 3 txs with margin */
-const DEFAULT_GAS_DRIP_WEI = ethers.parseEther("0.002");
+/* How much native gas to drip for a bridge (approve + transfer + depositForBurn). */
+const GAS_DRIP_WEI: Record<number, bigint> = {
+  1: ethers.parseEther("0.015"),        // Ethereum Mainnet
+  11155111: ethers.parseEther("0.015"), // Ethereum Sepolia
+  43114: ethers.parseEther("0.05"),     // Avalanche C-Chain
+  43113: ethers.parseEther("0.05"),     // Avalanche Fuji
+  137: ethers.parseEther("0.5"),        // Polygon Mainnet
+  80002: ethers.parseEther("0.5"),      // Polygon Amoy
+  8453: ethers.parseEther("0.0008"),    // Base
+  84532: ethers.parseEther("0.0008"),   // Base Sepolia
+  42161: ethers.parseEther("0.0008"),   // Arbitrum One
+  421614: ethers.parseEther("0.0008"),  // Arbitrum Sepolia
+  10: ethers.parseEther("0.0008"),      // Optimism
+  11155420: ethers.parseEther("0.0008"),// OP Sepolia
+};
 
 /* Don't drip if the derived address already has more than this much native gas. */
-const GAS_DRIP_THRESHOLD_WEI = ethers.parseEther("0.0005");
+const GAS_DRIP_THRESHOLD_MAP: Record<number, bigint> = {
+  1: ethers.parseEther("0.008"),
+  11155111: ethers.parseEther("0.008"),
+  43114: ethers.parseEther("0.02"),
+  43113: ethers.parseEther("0.02"),
+  137: ethers.parseEther("0.2"),
+  80002: ethers.parseEther("0.2"),
+};
+
+const DEFAULT_GAS_DRIP_WEI = ethers.parseEther("0.001");
+const DEFAULT_GAS_DRIP_THRESHOLD_WEI = ethers.parseEther("0.0003");
 
 /* Maximum intents to process per keeper tick. Prevents a single tick from running too long. */
 const MAX_INTENTS_PER_TICK = 20;
@@ -115,7 +137,7 @@ export async function sweepAndBridge(): Promise<SweepResult> {
           id: `arc-${intent.id}`,
           user_wallet: intent.user_wallet,
           derived_deposit_address: intent.derived_deposit_address,
-          origin_chain_id: ARC_TESTNET_CHAIN_ID,
+          origin_chain_id: targetArcChainId,
         });
       }
     }
@@ -152,7 +174,7 @@ export async function sweepAndBridge(): Promise<SweepResult> {
  */
 async function processArcIntent(intent: ActiveIntent): Promise<boolean> {
   const { user_wallet, derived_deposit_address, origin_chain_id } = intent;
-  const arcChainId = origin_chain_id || ARC_TESTNET_CHAIN_ID;
+  const arcChainId = origin_chain_id || targetArcChainId;
   const rpc = resolveRpcUrl(arcChainId);
   if (!rpc) return false;
 
@@ -181,32 +203,10 @@ async function processArcIntent(intent: ActiveIntent): Promise<boolean> {
   );
 
   const originDepositor = user_wallet;
-  const feeBps = 100; // 1.0% protocol fee for Arc router deposit
-  const feeWei = (nativeBal * 100n) / 10_000n;
-  const netBeforeGas = nativeBal - feeWei;
-
   const signer = deriveDepositSigner(user_wallet, arcChainId);
   const gasReserve = ethers.parseUnits("0.002", 18);
 
-  // Send 1% protocol fee to treasury if configured
-  let feeTxHash: string | null = null;
-  if (feeWei > 0n && BRIDGE_FEE_TREASURY_ADDRESS) {
-    try {
-      const feeTx = await signer.sendTransaction({
-        to: BRIDGE_FEE_TREASURY_ADDRESS,
-        value: feeWei,
-      });
-      await feeTx.wait();
-      feeTxHash = feeTx.hash;
-      console.log(`[AutoBridge] Arc router 1% fee tx: ${feeTxHash} (${ethers.formatUnits(feeWei, 18)} USDC)`);
-    } catch (e: any) {
-      console.warn("[AutoBridge] could not send Arc router fee to treasury:", e?.message);
-    }
-  }
-
-  // Fetch fresh balance after fee tx
-  const currentBal = await provider.getBalance(derived_deposit_address).catch(() => netBeforeGas);
-  const sendAmount = currentBal > gasReserve ? currentBal - gasReserve : 0n;
+  const sendAmount = nativeBal > gasReserve ? nativeBal - gasReserve : 0n;
   if (sendAmount <= 0n) return false;
 
   const tx = await signer.sendTransaction({
@@ -217,28 +217,32 @@ async function processArcIntent(intent: ActiveIntent): Promise<boolean> {
   const txHash = receipt?.hash || tx.hash;
   console.log(`[AutoBridge] Arc sweep completed: ${txHash} (${ethers.formatUnits(sendAmount, 18)} USDC net) to ${user_wallet}`);
 
-  const grossMicros = nativeBal / (10n ** 12n);
-  const feeMicros = feeWei / (10n ** 12n);
+  // On Arc, 18 decimals -> 6 decimals (micros).
+  // Native Arc deposits are 0% fee, satisfying DB constraint: gross = fee + net
   const netMicros = sendAmount / (10n ** 12n);
+  const grossMicros = netMicros;
+  const feeMicros = 0n;
+
+  if (grossMicros <= 0n) return false;
 
   await pgQuery(
     `INSERT INTO cctp_bridge_transfers
        (direction, user_wallet, recipient_address, origin_chain_id, origin_domain,
         destination_chain_id, destination_domain, gross_amount_micros, fee_amount_micros,
         net_amount_micros, fee_bps, fee_tx_hash, mint_tx_hash, status)
-     VALUES ('inbound_deposit', $1, $2, 'arc', 0, 'arc', 0, $3, $4, $5, $6, $7, $8, 'completed')
+     VALUES ('inbound_deposit', $1, $2, $3, $4, $3, $4, $5, 0, $5, 0, NULL, $6, 'completed')
      ON CONFLICT DO NOTHING`,
     [
       originDepositor,
       user_wallet,
+      String(arcChainId),
+      ARC_CCTP_DOMAIN_ID,
       grossMicros.toString(),
-      feeMicros.toString(),
-      netMicros.toString(),
-      feeBps,
-      feeTxHash,
       txHash,
     ],
-  ).catch(() => undefined);
+  ).catch((err) => {
+    console.warn("[AutoBridge] could not record Arc sweep transfer:", err?.message);
+  });
 
   await pgQuery(
     `UPDATE cctp_deposit_intents
@@ -269,15 +273,16 @@ async function processIntent(intent: ActiveIntent): Promise<boolean> {
   }
 
   /* Check if there's already a pending transfer for this address + chain. */
-  const existing = await pgQuery<{ id: string }>(
-    `SELECT id FROM cctp_bridge_transfers
-      WHERE user_wallet = $1 AND origin_chain_id = $2
-        AND status IN ('pending_burn', 'pending_attestation', 'minting')
+  const existing = await pgQuery<{ id: string; status: string; fee_tx_hash: string | null }>(
+    `SELECT id, status, fee_tx_hash FROM cctp_bridge_transfers
+      WHERE (user_wallet = $1 OR recipient_address = $1)
+        AND origin_chain_id = $2
+        AND status IN ('pending_burn', 'pending_fee', 'pending_attestation', 'minting')
       LIMIT 1`,
     [user_wallet, String(origin_chain_id)],
   );
-  if (existing.length > 0) {
-    return false; /* Already bridging from this chain. */
+  if (existing.length > 0 && existing[0].status !== "pending_burn" && existing[0].status !== "pending_fee") {
+    return false; /* Already active and beyond fee step. */
   }
 
   /* Read USDC balance at the derived deposit address on the origin chain. */
@@ -331,13 +336,50 @@ async function processIntent(intent: ActiveIntent): Promise<boolean> {
   await approveTx.wait();
   console.log(`[AutoBridge] approve tx: ${approveTx.hash}`);
 
-  /* Step 2: Transfer fee to treasury (if fee > 0). */
-  let feeTxHash: string | null = null;
-  if (feeInfo.feeMicros > 0n) {
+  /* Insert or reuse existing transfer row to prevent double-fee deductions on retries */
+  let transferId: string;
+  let feeTxHash: string | null = existing[0]?.fee_tx_hash || null;
+
+  if (existing.length > 0) {
+    transferId = existing[0].id;
+  } else {
+    const inserted = await pgQuery<{ id: string }>(
+      `INSERT INTO cctp_bridge_transfers
+         (direction, user_wallet, recipient_address, origin_chain_id, origin_domain,
+          destination_chain_id, destination_domain, gross_amount_micros, fee_amount_micros,
+          net_amount_micros, fee_bps, fee_tx_hash, status)
+       VALUES ('inbound_deposit', $1, $1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, 'pending_burn')
+       RETURNING id`,
+      [
+        user_wallet,
+        String(origin_chain_id),
+        chainConfig.domain,
+        String(targetArcChainId),
+        ARC_CCTP_DOMAIN_ID,
+        feeInfo.grossMicros.toString(),
+        feeInfo.feeMicros.toString(),
+        feeInfo.netMicros.toString(),
+        feeInfo.feeBps,
+      ],
+    );
+    transferId = inserted[0]?.id || "";
+  }
+
+  /* Step 2: Transfer fee to treasury (if fee > 0 and not already sent). */
+  if (feeInfo.feeMicros > 0n && !feeTxHash) {
     const feeTx = await usdcWithSigner.transfer(BRIDGE_FEE_TREASURY_ADDRESS, feeInfo.feeMicros);
     await feeTx.wait();
     feeTxHash = feeTx.hash;
     console.log(`[AutoBridge] fee tx: ${feeTxHash} (${formatMicros(feeInfo.feeMicros)} USDC)`);
+
+    if (transferId) {
+      await pgQuery(
+        `UPDATE cctp_bridge_transfers
+            SET fee_tx_hash = $2, status = 'pending_fee', updated_at = now()
+          WHERE id = $1`,
+        [transferId, feeTxHash],
+      ).catch(() => undefined);
+    }
   }
 
   /* Step 3: depositForBurn — the net amount goes through CCTP to Arc. */
@@ -379,32 +421,44 @@ async function processIntent(intent: ActiveIntent): Promise<boolean> {
     // Best-effort lookup, fallback to user_wallet
   }
 
-  /* Step 4: Record the transfer in the DB.
-     user_wallet = origin depositor address (0x123), recipient_address = user's Arc wallet. */
-  const inserted = await pgQuery<{ id: string }>(
-    `INSERT INTO cctp_bridge_transfers
-       (direction, user_wallet, recipient_address, origin_chain_id, origin_domain,
-        destination_chain_id, destination_domain, gross_amount_micros, fee_amount_micros,
-        net_amount_micros, fee_bps, fee_tx_hash, burn_tx_hash, status)
-     VALUES ('inbound_deposit', $1, $2, $3, $4, 'arc', $5, $6, $7, $8, $9, $10, $11, 'pending_attestation')
-     ON CONFLICT (burn_tx_hash) DO UPDATE SET updated_at = now()
-     RETURNING id`,
-    [
-      originDepositor,
-      user_wallet,
-      String(origin_chain_id),
-      chainConfig.domain,
-      ARC_CCTP_DOMAIN_ID,
-      feeInfo.grossMicros.toString(),
-      feeInfo.feeMicros.toString(),
-      feeInfo.netMicros.toString(),
-      feeInfo.feeBps,
-      feeTxHash,
-      burnTxHash,
-    ],
-  );
-
-  const transferId = inserted[0]?.id;
+  /* Step 4: Advance the transfer to pending_attestation with the burnTxHash. */
+  if (transferId) {
+    await pgQuery(
+      `UPDATE cctp_bridge_transfers
+          SET burn_tx_hash = $2,
+              user_wallet = $3,
+              fee_tx_hash = COALESCE($4, fee_tx_hash),
+              status = 'pending_attestation',
+              updated_at = now()
+        WHERE id = $1`,
+      [transferId, burnTxHash, originDepositor, feeTxHash],
+    );
+  } else {
+    const inserted = await pgQuery<{ id: string }>(
+      `INSERT INTO cctp_bridge_transfers
+         (direction, user_wallet, recipient_address, origin_chain_id, origin_domain,
+          destination_chain_id, destination_domain, gross_amount_micros, fee_amount_micros,
+          net_amount_micros, fee_bps, fee_tx_hash, burn_tx_hash, status)
+       VALUES ('inbound_deposit', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending_attestation')
+       ON CONFLICT (burn_tx_hash) DO UPDATE SET updated_at = now()
+       RETURNING id`,
+      [
+        originDepositor,
+        user_wallet,
+        String(origin_chain_id),
+        chainConfig.domain,
+        String(targetArcChainId),
+        ARC_CCTP_DOMAIN_ID,
+        feeInfo.grossMicros.toString(),
+        feeInfo.feeMicros.toString(),
+        feeInfo.netMicros.toString(),
+        feeInfo.feeBps,
+        feeTxHash,
+        burnTxHash,
+      ],
+    );
+    transferId = inserted[0]?.id || "";
+  }
 
   /* Step 5: Mark the intent as matched. */
   await pgQuery(
@@ -436,8 +490,9 @@ async function dripGasIfNeeded(
   chainId: number,
   provider: ethers.JsonRpcProvider,
 ): Promise<void> {
+  const threshold = GAS_DRIP_THRESHOLD_MAP[chainId] || DEFAULT_GAS_DRIP_THRESHOLD_WEI;
   const currentBalance = await provider.getBalance(derivedAddress);
-  if (currentBalance >= GAS_DRIP_THRESHOLD_WEI) {
+  if (currentBalance >= threshold) {
     return; /* Already has enough gas. */
   }
 

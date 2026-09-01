@@ -124,7 +124,7 @@ export async function processPendingCctpTransfers(): Promise<CctpWorkerResult> {
               destination_chain_id, destination_domain, gross_amount_micros, fee_amount_micros,
               net_amount_micros, burn_tx_hash, attempt_count
          FROM cctp_bridge_transfers
-        WHERE status IN ('pending_attestation', 'minting')
+        WHERE (status = 'pending_attestation' OR (status = 'minting' AND updated_at < now() - interval '5 minutes'))
           AND burn_tx_hash IS NOT NULL
         ORDER BY created_at ASC
         LIMIT $1`,
@@ -159,7 +159,7 @@ export async function processPendingCctpTransfers(): Promise<CctpWorkerResult> {
 
       /* Claim the row before spending gas. The WHERE clause is the lock: only one worker can move a
          row out of pending_attestation, so a slow relay cannot be double-submitted by the next tick.
-         Rows already in `minting` are retries of a claim whose relay did not confirm. */
+         Rows already in `minting` are retries of a claim whose relay did not confirm after 5 minutes. */
       const claimed = await pgQuery<{ id: string }>(
         `UPDATE cctp_bridge_transfers
             SET status = 'minting',
@@ -169,7 +169,7 @@ export async function processPendingCctpTransfers(): Promise<CctpWorkerResult> {
                 attempt_count = attempt_count + 1,
                 updated_at = now()
           WHERE id = $1
-            AND status IN ('pending_attestation', 'minting')
+            AND (status = 'pending_attestation' OR (status = 'minting' AND updated_at < now() - interval '5 minutes'))
           RETURNING id`,
         [item.id, attestation.attestation, attestation.message, ethers.keccak256(attestation.message)],
       );
@@ -210,7 +210,8 @@ export async function processPendingCctpTransfers(): Promise<CctpWorkerResult> {
 
       const netUsdc = formatMicros(BigInt(item.net_amount_micros));
       if (item.direction === "inbound_deposit") {
-        const originName = CCTP_CONFIG[Number(item.origin_chain_id)]?.name || `chain ${item.origin_chain_id}`;
+        const isOriginArc = item.origin_chain_id === "arc" || item.origin_chain_id === "5042002" || item.origin_chain_id === "5042001";
+        const originName = isOriginArc ? "Arc Network" : (CCTP_CONFIG[Number(item.origin_chain_id)]?.name || `Chain ${item.origin_chain_id}`);
         await notifyDepositArrived({
           recipientAddress: item.recipient_address,
           originChainName: originName,
