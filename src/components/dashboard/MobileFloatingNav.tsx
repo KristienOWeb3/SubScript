@@ -27,9 +27,9 @@ const SCROLL_DOWN_DELTA_THRESHOLD = 14; // Requires 14px of intentional down-scr
 const SCROLL_UP_DELTA_THRESHOLD = 8;   // Requires 8px of intentional up-scroll to expand
 const TOP_DEADZONE_PX = 16;            // Keep locked expanded at the very top of page
 
-// Sleek compact dimensions (height reduced by ~7.7% from 52px to 48px)
-const CAPSULE_HEIGHT = 48;
-const CAPSULE_RETRACTED_SIZE = 48;
+// Sleek compact dimensions (+5% height increase from 48px to 50px)
+const CAPSULE_HEIGHT = 50;
+const CAPSULE_RETRACTED_SIZE = 50;
 
 export default function MobileFloatingNav<T extends string = string>({
   tabs,
@@ -257,7 +257,7 @@ export default function MobileFloatingNav<T extends string = string>({
           isRetracted
             ? isLeftSelected
               ? "bg-[#353935] dark:bg-[#2775CA] text-[#FFFFF0] dark:text-white border-black/20 dark:border-white/20 shadow-[0_12px_36px_rgba(0,0,0,0.35)] cursor-pointer active:scale-95"
-              : "bg-white/88 dark:bg-white/10 text-black/75 dark:text-white/80 border-black/15 dark:border-white/15 cursor-pointer active:scale-95"
+              : "bg-white/90 dark:bg-white/10 text-black dark:text-white/80 border-black/15 dark:border-white/15 cursor-pointer active:scale-95"
             : "border-black/15 dark:border-white/15 text-black/90 dark:text-white"
         }`}
         style={{
@@ -381,7 +381,7 @@ export default function MobileFloatingNav<T extends string = string>({
           className={`relative flex items-center justify-center rounded-full border shadow-[0_12px_40px_0_rgba(0,0,0,0.24)] active:scale-90 overflow-hidden transition-all duration-350 box-border ${
             isInboxActive
               ? "bg-[#353935] dark:bg-[#2775CA] text-[#FFFFF0] dark:text-white border-black/20 dark:border-white/20 shadow-[0_12px_36px_rgba(0,0,0,0.35)]"
-              : "bg-white/88 dark:bg-white/10 text-black/75 dark:text-white/80 border-black/15 dark:border-white/15 hover:text-black dark:hover:text-white"
+              : "bg-white/90 dark:bg-white/10 text-black dark:text-white/80 border-black/15 dark:border-white/15 hover:text-black dark:hover:text-white"
           } ${isInboxActive && !isRetracted ? "px-2.5 gap-1.5" : ""}`}
           style={{
             transition: capsuleTransition,
@@ -399,7 +399,13 @@ export default function MobileFloatingNav<T extends string = string>({
           aria-label="Open Direct Messages"
         >
           {!isInboxActive && <LiquidGlassEffect />}
-          <MessageSquare className={`h-4.5 w-4.5 shrink-0 relative z-10 ${isInboxActive ? "text-[#FFFFF0] dark:text-white" : "text-black/75 dark:text-white/80"}`} />
+          <MessageSquare
+            className={`h-4.5 w-4.5 shrink-0 relative z-10 ${
+              isInboxActive
+                ? "!text-[#FFFFF0] !bg-[#FFFFF0] dark:!text-white dark:!bg-white"
+                : "!text-black !bg-black dark:!text-white/80 dark:!bg-white/80"
+            }`}
+          />
           {isInboxActive && !isRetracted && (
             <span className="whitespace-nowrap text-[8.5px] font-black uppercase tracking-wider text-[#FFFFF0] dark:text-white truncate relative z-10">
               DMs
