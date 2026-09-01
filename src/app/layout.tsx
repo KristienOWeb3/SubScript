@@ -5,6 +5,7 @@ import "./globals.css";
 import PrivyProviderWrapper from "@/components/PrivyProviderWrapper";
 import PostHogProvider from "@/components/providers/PostHogProvider";
 import PwaInstaller from "@/components/PwaInstaller";
+import OfflineIndicator from "@/components/OfflineIndicator";
 
 export const dynamic = "force-dynamic";
 
@@ -300,6 +301,7 @@ export default async function RootLayout({
                 <PostHogProvider>
                     <PrivyProviderWrapper>
                         {children}
+                        <OfflineIndicator />
                         <PwaInstaller />
                     </PrivyProviderWrapper>
                 </PostHogProvider>

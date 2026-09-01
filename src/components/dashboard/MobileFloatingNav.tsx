@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import type { LucideIcon } from "@/components/icons";
 import { MessageSquare } from "@/components/icons";
 import LiquidGlassEffect from "@/components/LiquidGlassEffect";
@@ -19,14 +19,17 @@ interface MobileFloatingNavProps<T extends string = string> {
   readonly scrollContainerSelector?: string;
 }
 
-/* ────────────────────────────────────────────────────
- * Tuning constants — subtle, 120fps-friendly triggers.
- * ──────────────────────────────────────────────────── */
-const RETRACT_THRESHOLD = 120;  // requires 120px of deliberate down-scroll before retracting
-const EXPAND_THRESHOLD  = 25;   // light 25px up-scroll immediately expands
-const COOLDOWN_MS       = 500;  // ignore opposite direction after committing
-const RETRACT_DELAY_MS  = 180;  // gentle debounce before closing to prevent sudden snaps
-const TOP_DEADZONE_PX   = 80;   // top 80px of page is deadzone: NEVER retracts near top
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Fluid 120fps ProMotion Curves & Hysteresis Tuning
+ * Subtle, magnificent motion that remains silky-smooth even on rapid scrolls.
+ * ───────────────────────────────────────────────────────────────────────────── */
+const SCROLL_DOWN_DELTA_THRESHOLD = 14; // Requires 14px of intentional down-scroll to retract
+const SCROLL_UP_DELTA_THRESHOLD = 8;   // Requires 8px of intentional up-scroll to expand
+const TOP_DEADZONE_PX = 16;            // Keep locked expanded at the very top of page
+
+// Sleek compact dimensions (height reduced by ~7.7% from 52px to 48px)
+const CAPSULE_HEIGHT = 48;
+const CAPSULE_RETRACTED_SIZE = 48;
 
 export default function MobileFloatingNav<T extends string = string>({
   tabs,
@@ -37,185 +40,292 @@ export default function MobileFloatingNav<T extends string = string>({
 }: MobileFloatingNavProps<T>) {
   const [isRetracted, setIsRetracted] = useState(false);
 
-  // Mutable tracking — only touched inside scroll handler, never during render
-  const scrollState = useRef({
-    lastY: 0,
-    accum: 0,
-    lastCommit: 0,
-    retractTimer: null as ReturnType<typeof setTimeout> | null,
+  // Mutable tracking refs — isolated from React render cycle for zero-jitter 120fps performance
+  const trackingRef = useRef({
+    lastScrollY: 0,
+    accumulatedDelta: 0,
+    touchStartY: 0,
+    isTouchActive: false,
+    rafScheduled: false,
+    lastToggleTime: 0,
+    scrollContainerEl: null as HTMLElement | null,
   });
 
-  // Always expand whenever user changes tabs
+  // Always expand gracefully whenever user switches active tab
   useEffect(() => {
     setIsRetracted(false);
   }, [activeTab]);
 
+  const updateRetractionState = useCallback((shouldRetract: boolean) => {
+    const now = Date.now();
+    // 80ms minimum commitment prevents strobe effects during frantic opposite-direction flicks
+    if (now - trackingRef.current.lastToggleTime < 80) return;
+
+    setIsRetracted((prev) => {
+      if (prev !== shouldRetract) {
+        trackingRef.current.lastToggleTime = now;
+        return shouldRetract;
+      }
+      return prev;
+    });
+  }, []);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const s = scrollState.current;
-    let scrollEl: HTMLElement | null = null;
-    let rafId = 0;
-    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    const t = trackingRef.current;
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
     let pollCount = 0;
 
     const findContainer = (): HTMLElement | null => {
-      const sels = scrollContainerSelector.split(",").map((v) => v.trim());
-      for (const sel of sels) {
+      const selectors = scrollContainerSelector.split(",").map((s) => s.trim());
+      for (const sel of selectors) {
         const el = document.querySelector(sel) as HTMLElement | null;
         if (el) return el;
       }
       return null;
     };
 
-    const cancelRetract = () => {
-      if (s.retractTimer) {
-        clearTimeout(s.retractTimer);
-        s.retractTimer = null;
-      }
-    };
+    // ── High-performance Scroll Handler with Inertia Filtering ──
+    const handleScrollEvent = (targetEl?: HTMLElement | Window) => {
+      if (t.rafScheduled) return;
+      t.rafScheduled = true;
 
-    const onScroll = () => {
-      if (rafId) return;
-      rafId = requestAnimationFrame(() => {
-        rafId = 0;
-        if (!scrollEl) return;
+      requestAnimationFrame(() => {
+        t.rafScheduled = false;
+        const currentY =
+          targetEl && "scrollTop" in targetEl
+            ? targetEl.scrollTop
+            : window.scrollY || document.documentElement.scrollTop || 0;
 
-        const y = scrollEl.scrollTop;
-        const delta = y - s.lastY;
-        s.lastY = y;
+        const delta = currentY - t.lastScrollY;
+        t.lastScrollY = currentY;
 
-        // Top deadzone — always keep expanded and clear timers
-        if (y <= TOP_DEADZONE_PX) {
-          cancelRetract();
-          setIsRetracted(false);
-          s.accum = 0;
+        // Force expanded at the top deadzone
+        if (currentY <= TOP_DEADZONE_PX) {
+          t.accumulatedDelta = 0;
+          updateRetractionState(false);
           return;
         }
 
-        // Ignore micro-scrolls (< 3px)
-        if (Math.abs(delta) < 3) return;
-
-        // Accumulate directional scroll delta
-        if ((delta > 0 && s.accum >= 0) || (delta < 0 && s.accum <= 0)) {
-          s.accum += delta;
+        // Directional delta accumulation with smooth hysteresis
+        if ((delta > 0 && t.accumulatedDelta >= 0) || (delta < 0 && t.accumulatedDelta <= 0)) {
+          t.accumulatedDelta += delta;
         } else {
-          s.accum = delta;
-          cancelRetract();
+          t.accumulatedDelta = delta; // Re-anchor on direction reversal
         }
 
-        const now = Date.now();
-        if (now - s.lastCommit < COOLDOWN_MS) return;
-
-        // Scrolling DOWN past threshold (120px) → queue retraction
-        if (s.accum > RETRACT_THRESHOLD && !s.retractTimer) {
-          s.retractTimer = setTimeout(() => {
-            s.retractTimer = null;
-            setIsRetracted(true);
-            s.lastCommit = Date.now();
-            s.accum = 0;
-          }, RETRACT_DELAY_MS);
+        // Downward intentional scroll -> retract
+        if (t.accumulatedDelta > SCROLL_DOWN_DELTA_THRESHOLD) {
+          updateRetractionState(true);
+          t.accumulatedDelta = 0;
         }
-        // Scrolling UP past threshold (25px) → expand immediately
-        else if (s.accum < -EXPAND_THRESHOLD) {
-          cancelRetract();
-          setIsRetracted(false);
-          s.lastCommit = now;
-          s.accum = 0;
+        // Upward intentional scroll -> expand
+        else if (t.accumulatedDelta < -SCROLL_UP_DELTA_THRESHOLD) {
+          updateRetractionState(false);
+          t.accumulatedDelta = 0;
         }
       });
     };
 
-    const attach = (el: HTMLElement) => {
-      scrollEl = el;
-      s.lastY = el.scrollTop;
-      s.accum = 0;
-      el.addEventListener("scroll", onScroll, { passive: true });
+    // ── Direct Touch Gesture Tracking for Instant Response on Mobile ──
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches && e.touches.length > 0) {
+        t.touchStartY = e.touches[0].clientY;
+        t.isTouchActive = true;
+      }
     };
 
-    const found = findContainer();
-    if (found) {
-      attach(found);
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!t.isTouchActive || !e.touches || e.touches.length === 0) return;
+      const currentTouchY = e.touches[0].clientY;
+      const deltaTouchY = currentTouchY - t.touchStartY;
+
+      // Swiping UP on screen (scrolling content DOWN) -> smooth retraction
+      if (deltaTouchY < -14) {
+        updateRetractionState(true);
+        t.touchStartY = currentTouchY;
+      }
+      // Swiping DOWN on screen (scrolling content UP) -> smooth expansion
+      else if (deltaTouchY > 10) {
+        updateRetractionState(false);
+        t.touchStartY = currentTouchY;
+      }
+    };
+
+    const handleTouchEnd = () => {
+      t.isTouchActive = false;
+    };
+
+    // ── Trackpad Wheel Gesture Support ──
+    const handleWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) < 5) return;
+      if (e.deltaY > 10) {
+        updateRetractionState(true);
+      } else if (e.deltaY < -8) {
+        updateRetractionState(false);
+      }
+    };
+
+    const attachListeners = (container: HTMLElement | null) => {
+      if (container) {
+        t.scrollContainerEl = container;
+        t.lastScrollY = container.scrollTop;
+        container.addEventListener("scroll", () => handleScrollEvent(container), { passive: true });
+      }
+
+      window.addEventListener("scroll", () => handleScrollEvent(window), { passive: true });
+      window.addEventListener("touchstart", handleTouchStart, { passive: true });
+      window.addEventListener("touchmove", handleTouchMove, { passive: true });
+      window.addEventListener("touchend", handleTouchEnd, { passive: true });
+      window.addEventListener("wheel", handleWheel, { passive: true });
+    };
+
+    const container = findContainer();
+    if (container) {
+      attachListeners(container);
     } else {
-      pollTimer = setInterval(() => {
+      attachListeners(null);
+      pollInterval = setInterval(() => {
         pollCount++;
-        const el = findContainer();
-        if (el) {
-          attach(el);
-          if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-        } else if (pollCount >= 20 && pollTimer) {
-          clearInterval(pollTimer); pollTimer = null;
+        const found = findContainer();
+        if (found) {
+          t.scrollContainerEl = found;
+          t.lastScrollY = found.scrollTop;
+          found.addEventListener("scroll", () => handleScrollEvent(found), { passive: true });
+          if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+          }
+        } else if (pollCount >= 15 && pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
         }
-      }, 300);
+      }, 250);
     }
 
     return () => {
-      if (scrollEl) scrollEl.removeEventListener("scroll", onScroll);
-      if (rafId) cancelAnimationFrame(rafId);
-      if (pollTimer) clearInterval(pollTimer);
-      cancelRetract();
+      if (t.scrollContainerEl) {
+        t.scrollContainerEl.removeEventListener("scroll", () => handleScrollEvent(t.scrollContainerEl!));
+      }
+      window.removeEventListener("scroll", () => handleScrollEvent(window));
+      window.removeEventListener("touchstart", handleTouchStart);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleTouchEnd);
+      window.removeEventListener("wheel", handleWheel);
+      if (pollInterval) clearInterval(pollInterval);
     };
-  }, [scrollContainerSelector]);
+  }, [scrollContainerSelector, updateRetractionState]);
 
   const activeTabItem = tabs.find((t) => t.id === activeTab) || tabs[0];
   const ActiveIcon = activeTabItem?.icon;
   const isInboxActive = activeTab === ("inbox" as unknown as T);
+  const targetExpandedWidth = isInboxActive ? 216 : 272;
 
-  /* Liquid, decelerating easing curve for full 500ms opening & closing */
+  /* ─────────────────────────────────────────────────────────────────────────
+   * 120fps ProMotion Deceleration Curve:
+   * Cubic bezier (0.22, 1, 0.36, 1) over 500ms creates a regal, buttery glide
+   * ───────────────────────────────────────────────────────────────────────── */
   const motionBezier = "cubic-bezier(0.22, 1, 0.36, 1)";
-  const smoothTransition = `width 500ms ${motionBezier}, height 500ms ${motionBezier}, max-width 500ms ${motionBezier}, min-height 500ms ${motionBezier}, transform 500ms ${motionBezier}, border-radius 500ms ${motionBezier}, background-color 300ms ease`;
+  const capsuleTransition = `width 500ms ${motionBezier}, height 500ms ${motionBezier}, max-width 500ms ${motionBezier}, min-height 500ms ${motionBezier}, transform 500ms ${motionBezier}, border-radius 500ms ${motionBezier}, background 350ms ease, box-shadow 500ms ${motionBezier}`;
+
+  // When retracted, identify which pill is the active selection
+  const isLeftSelected = !isInboxActive;
+  const isRightSelected = isInboxActive;
 
   return (
     <aside
       aria-label="Mobile navigation bar"
-      className={`fixed bottom-5 inset-x-0 mx-auto w-full max-w-sm px-4 z-50 flex items-center box-border ${
+      className={`fixed bottom-4 inset-x-0 mx-auto w-full max-w-sm px-4 z-50 flex items-center box-border pointer-events-none ${
         isRetracted ? "justify-between" : "justify-center gap-2"
       }`}
-      style={{ transform: "translateZ(0)" }}
+      style={{
+        transform: "translate3d(0, 0, 0)",
+        WebkitBackfaceVisibility: "hidden",
+        transition: `padding 500ms ${motionBezier}`,
+      }}
     >
-      {/* ── Left Navigation Capsule ── */}
+      {/* ── Left Navigation Capsule (Shrinks to active tab icon circle on scroll down) ── */}
       <nav
         aria-label="Primary navigation"
-        onClick={() => { if (isRetracted) setIsRetracted(false); }}
-        className={`liquid-glass pointer-events-auto relative flex items-center justify-center rounded-full backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] overflow-hidden border border-black/15 ${
-          isRetracted ? "cursor-pointer" : "px-3"
+        data-retracted-selected={isRetracted && isLeftSelected ? "true" : undefined}
+        data-retracted={isRetracted ? "true" : "false"}
+        onClick={() => {
+          if (isRetracted) updateRetractionState(false);
+        }}
+        className={`pointer-events-auto relative flex items-center justify-center rounded-full backdrop-blur-2xl shadow-[0_12px_40px_0_rgba(0,0,0,0.24)] overflow-hidden border select-none ${
+          isRetracted
+            ? isLeftSelected
+              ? "bg-[#353935] dark:bg-[#2775CA] text-[#FFFFF0] dark:text-white border-black/20 dark:border-white/20 shadow-[0_12px_36px_rgba(0,0,0,0.35)] cursor-pointer active:scale-95"
+              : "bg-white/88 dark:bg-white/10 text-black/75 dark:text-white/80 border-black/15 dark:border-white/15 cursor-pointer active:scale-95"
+            : "border-black/15 dark:border-white/15 text-black/90 dark:text-white"
         }`}
         style={{
-          transition: smoothTransition,
-          willChange: "width, height, max-width, min-height",
-          transform: "translateZ(0)",
-          backgroundColor: "rgb(39 117 202 / 20%)",
-          backdropFilter: "blur(22px)",
-          WebkitBackdropFilter: "blur(22px)",
-          width: isRetracted ? 48 : isInboxActive ? 220 : 272,
-          height: isRetracted ? 48 : 71,
-          minHeight: isRetracted ? 48 : 71,
-          maxWidth: isRetracted ? 48 : isInboxActive ? 220 : 272,
+          transition: capsuleTransition,
+          willChange: "width, height, max-width, min-height, transform",
+          transform: "translate3d(0, 0, 0)",
+          WebkitBackfaceVisibility: "hidden",
+          backdropFilter: "blur(24px)",
+          WebkitBackdropFilter: "blur(24px)",
+          width: isRetracted ? CAPSULE_RETRACTED_SIZE : targetExpandedWidth,
+          height: CAPSULE_HEIGHT,
+          minHeight: CAPSULE_HEIGHT,
+          maxHeight: CAPSULE_HEIGHT,
+          maxWidth: isRetracted ? CAPSULE_RETRACTED_SIZE : targetExpandedWidth,
+          boxSizing: "border-box",
         }}
       >
-        <LiquidGlassEffect />
+        {!isRetracted && <LiquidGlassEffect />}
 
-        {/* Retracted: Icon bubble (fades in/out without unmounting) */}
+        {/* ── Retracted Mode: Centered Active Tab Icon ── */}
         <div
-          className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ease-out ${
-            isRetracted ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          className={`absolute inset-0 flex items-center justify-center transition-all duration-350 ease-out ${
+            isRetracted
+              ? "opacity-100 scale-100 pointer-events-auto"
+              : "opacity-0 scale-75 pointer-events-none"
           }`}
+          style={{
+            transitionTimingFunction: motionBezier,
+            transitionDuration: "450ms",
+          }}
         >
           <button
             type="button"
             aria-label={`Current: ${activeTabItem.label}. Tap to expand navigation`}
-            onClick={(e) => { e.stopPropagation(); setIsRetracted(false); }}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-[#353935] text-[#FFFFF0] shadow-sm active:scale-95 transition-transform"
+            aria-current={isLeftSelected ? "page" : undefined}
+            onClick={(e) => {
+              e.stopPropagation();
+              updateRetractionState(false);
+            }}
+            className={`flex h-10 w-10 items-center justify-center rounded-full transition-transform active:scale-90 ${
+              isLeftSelected ? "text-[#FFFFF0] dark:text-white" : "text-black/75 dark:text-white/80"
+            }`}
           >
-            {ActiveIcon && <ActiveIcon className="h-5 w-5 text-[#FFFFF0]" />}
+            {ActiveIcon && (
+              <ActiveIcon
+                className={`h-4.5 w-4.5 ${
+                  isLeftSelected ? "text-[#FFFFF0] dark:text-white" : "text-black/75 dark:text-white/80"
+                }`}
+              />
+            )}
           </button>
         </div>
 
-        {/* Expanded: Tab buttons bar (fades in/out smoothly over 300ms without DOM removal) */}
+        {/* ── Expanded Mode: Stable Fixed-Width Canvas (Prevents Text Squashing / Layout Stutter) ── */}
         <div
-          className={`flex w-full items-center justify-between gap-1 transition-opacity duration-300 ease-out ${
-            isRetracted ? "opacity-0 pointer-events-none" : "opacity-100 pointer-events-auto"
+          className={`relative h-full flex items-center justify-between px-1 transition-all ease-out ${
+            isRetracted
+              ? "opacity-0 scale-95 pointer-events-none"
+              : "opacity-100 scale-100 pointer-events-auto"
           }`}
+          style={{
+            width: targetExpandedWidth,
+            minWidth: targetExpandedWidth,
+            transitionTimingFunction: motionBezier,
+            transitionDuration: "380ms",
+            transform: "translate3d(0, 0, 0)",
+            WebkitBackfaceVisibility: "hidden",
+          }}
         >
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
@@ -228,19 +338,19 @@ export default function MobileFloatingNav<T extends string = string>({
                 aria-current={isActive ? "page" : undefined}
                 aria-label={tab.label}
                 onClick={() => onSelectTab(tab.id)}
-                className={`relative h-10 flex items-center justify-center rounded-full transition-all duration-200 ease-out active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2775CA] ${
+                className={`relative h-8.5 flex items-center justify-center rounded-full transition-all duration-350 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#353935] dark:focus-visible:ring-[#2775CA] ${
                   isActive
-                    ? "bg-[#353935] text-[#FFFFF0] shadow-sm px-3 gap-1.5 flex-1 min-w-[76px] max-w-[94px]"
-                    : "bg-transparent text-black/65 hover:bg-black/5 hover:text-black w-9 shrink-0"
+                    ? "shadow-sm px-2.5 gap-1.5 flex-1 min-w-[72px] max-w-[90px]"
+                    : "bg-transparent text-black/65 dark:text-white/70 hover:bg-black/5 dark:hover:bg-white/10 hover:text-black dark:hover:text-white w-9 shrink-0"
                 }`}
               >
                 <IconComponent
-                  className={`h-5 w-5 shrink-0 transition-colors duration-200 ${
-                    isActive ? "text-[#FFFFF0]" : "text-black/65"
+                  className={`h-4.5 w-4.5 shrink-0 transition-colors duration-250 ${
+                    isActive ? "text-[#FFFFF0] dark:text-white" : "text-black/65 dark:text-white/70"
                   }`}
                 />
                 {isActive && (
-                  <span className="whitespace-nowrap text-[9px] font-black uppercase tracking-wider text-[#FFFFF0] truncate">
+                  <span className="whitespace-nowrap text-[8.5px] font-black uppercase tracking-wider text-[#FFFFF0] dark:text-white truncate">
                     {tab.label}
                   </span>
                 )}
@@ -250,37 +360,54 @@ export default function MobileFloatingNav<T extends string = string>({
         </div>
       </nav>
 
-      {/* ── Right Edge: Detached DMs Button ── */}
-      <div className="pointer-events-auto relative shrink-0" style={{ transform: "translateZ(0)" }}>
+      {/* ── Right Edge: Action Button (DMs) ── */}
+      <div
+        className="pointer-events-auto relative shrink-0 flex items-center"
+        style={{
+          transform: "translate3d(0, 0, 0)",
+          WebkitBackfaceVisibility: "hidden",
+          height: CAPSULE_HEIGHT,
+        }}
+      >
         <button
           type="button"
-          onClick={() => { setIsRetracted(false); onSelectTab("inbox" as unknown as T); }}
-          className={`relative flex items-center justify-center rounded-full border border-black/15 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] active:scale-95 overflow-hidden transition-all duration-300 ${
-            isInboxActive && !isRetracted
-              ? "bg-[#353935] text-[#FFFFF0] px-3 gap-1.5"
-              : "bg-[#2775CA]/20 text-black/70 hover:text-black"
-          }`}
-          style={{
-            transition: smoothTransition,
-            willChange: "width, height, border-radius",
-            backgroundColor: isInboxActive && !isRetracted ? undefined : "rgb(39 117 202 / 20%)",
-            backdropFilter: "blur(22px)",
-            WebkitBackdropFilter: "blur(22px)",
-            width: isRetracted ? 48 : isInboxActive ? 88 : 52,
-            height: isRetracted ? 48 : isInboxActive ? 71 : 52,
+          data-testid="mobile-dm-btn"
+          data-retracted-selected={isRetracted && isRightSelected ? "true" : undefined}
+          aria-current={isInboxActive ? "page" : undefined}
+          onClick={() => {
+            updateRetractionState(false);
+            onSelectTab("inbox" as unknown as T);
           }}
-          aria-label="Open DMs"
+          className={`relative flex items-center justify-center rounded-full border shadow-[0_12px_40px_0_rgba(0,0,0,0.24)] active:scale-90 overflow-hidden transition-all duration-350 box-border ${
+            isInboxActive
+              ? "bg-[#353935] dark:bg-[#2775CA] text-[#FFFFF0] dark:text-white border-black/20 dark:border-white/20 shadow-[0_12px_36px_rgba(0,0,0,0.35)]"
+              : "bg-white/88 dark:bg-white/10 text-black/75 dark:text-white/80 border-black/15 dark:border-white/15 hover:text-black dark:hover:text-white"
+          } ${isInboxActive && !isRetracted ? "px-2.5 gap-1.5" : ""}`}
+          style={{
+            transition: capsuleTransition,
+            willChange: "width, height, border-radius, transform",
+            transform: "translate3d(0, 0, 0)",
+            WebkitBackfaceVisibility: "hidden",
+            backdropFilter: "blur(24px)",
+            WebkitBackdropFilter: "blur(24px)",
+            width: isRetracted ? CAPSULE_RETRACTED_SIZE : isInboxActive ? 82 : CAPSULE_RETRACTED_SIZE,
+            height: CAPSULE_HEIGHT,
+            minHeight: CAPSULE_HEIGHT,
+            maxHeight: CAPSULE_HEIGHT,
+            boxSizing: "border-box",
+          }}
+          aria-label="Open Direct Messages"
         >
-          <LiquidGlassEffect />
-          <MessageSquare className="h-5 w-5 shrink-0 relative z-10" />
+          {!isInboxActive && <LiquidGlassEffect />}
+          <MessageSquare className={`h-4.5 w-4.5 shrink-0 relative z-10 ${isInboxActive ? "text-[#FFFFF0] dark:text-white" : "text-black/75 dark:text-white/80"}`} />
           {isInboxActive && !isRetracted && (
-            <span className="whitespace-nowrap text-[9px] font-black uppercase tracking-wider text-[#FFFFF0] truncate relative z-10">
+            <span className="whitespace-nowrap text-[8.5px] font-black uppercase tracking-wider text-[#FFFFF0] dark:text-white truncate relative z-10">
               DMs
             </span>
           )}
         </button>
         {pendingDmCount > 0 && (
-          <span className="pointer-events-none absolute -right-1 -top-1 z-20 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border-2 border-[#060608] bg-red-500 px-1 text-[10px] font-black leading-none text-white shadow-md">
+          <span className="pointer-events-none absolute -right-1 -top-1 z-20 flex h-4.5 min-w-[1.15rem] items-center justify-center rounded-full border-2 border-[#060608] bg-red-500 px-1 text-[9px] font-black leading-none text-white shadow-md">
             {pendingDmCount > 9 ? "9+" : pendingDmCount}
           </span>
         )}

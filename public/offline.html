@@ -3,144 +3,317 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#06080C" />
-    <title>No connection · SubScript</title>
+    <meta name="theme-color" content="#060709" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#FFFFF0" media="(prefers-color-scheme: light)" />
+    <title>You're Offline · SubScript</title>
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <style>
-        :root { color-scheme: dark; }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg-canvas: #07090E;
+            --card-bg: rgba(14, 18, 27, 0.78);
+            --card-border: rgba(255, 255, 255, 0.09);
+            --card-shadow: 0 32px 64px -16px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            --text-primary: #FFFFFF;
+            --text-secondary: rgba(255, 255, 255, 0.62);
+            --text-tertiary: rgba(255, 255, 255, 0.38);
+            --badge-bg: rgba(39, 117, 202, 0.12);
+            --badge-border: rgba(39, 117, 202, 0.3);
+            --badge-text: #60A5FA;
+            --icon-bg: rgba(255, 255, 255, 0.05);
+            --icon-border: rgba(255, 255, 255, 0.1);
+            --icon-color: #93C5FD;
+            --glow-color: rgba(39, 117, 202, 0.22);
+            --btn-bg: linear-gradient(135deg, #2775CA 0%, #1F62AB 100%);
+            --btn-shadow: 0 10px 28px -4px rgba(39, 117, 202, 0.45);
+            --btn-text: #FFFFFF;
+            --pill-bg: rgba(255, 255, 255, 0.04);
+            --pill-border: rgba(255, 255, 255, 0.07);
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg-canvas: #F8F9FA;
+                --card-bg: rgba(255, 255, 255, 0.88);
+                --card-border: rgba(0, 0, 0, 0.08);
+                --card-shadow: 0 24px 50px -12px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 1);
+                --text-primary: #0A0D14;
+                --text-secondary: rgba(10, 13, 20, 0.65);
+                --text-tertiary: rgba(10, 13, 20, 0.4);
+                --badge-bg: rgba(39, 117, 202, 0.08);
+                --badge-border: rgba(39, 117, 202, 0.22);
+                --badge-text: #1D4ED8;
+                --icon-bg: rgba(39, 117, 202, 0.06);
+                --icon-border: rgba(39, 117, 202, 0.15);
+                --icon-color: #2775CA;
+                --glow-color: rgba(39, 117, 202, 0.12);
+                --btn-bg: linear-gradient(135deg, #2775CA 0%, #1F62AB 100%);
+                --btn-shadow: 0 10px 24px -4px rgba(39, 117, 202, 0.35);
+                --btn-text: #FFFFFF;
+                --pill-bg: rgba(0, 0, 0, 0.03);
+                --pill-border: rgba(0, 0, 0, 0.06);
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
         html, body {
             height: 100%;
-            background: #06080C;
-            color: #F8FAFC;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            width: 100%;
+            background-color: var(--bg-canvas);
+            color: var(--text-primary);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Helvetica, Arial, sans-serif;
             -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
             overflow: hidden;
-        }
-        body {
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 24px;
-            position: relative;
         }
-        .glow {
+
+        /* Ambient background glow */
+        .ambient-glow {
             position: absolute;
-            width: 360px;
-            height: 360px;
+            width: 440px;
+            height: 440px;
             border-radius: 50%;
-            background: radial-gradient(circle, rgba(39, 117, 202, 0.22) 0%, rgba(204, 255, 0, 0.05) 55%, transparent 70%);
-            filter: blur(50px);
+            background: radial-gradient(circle, var(--glow-color) 0%, rgba(39, 117, 202, 0.04) 50%, transparent 70%);
+            filter: blur(60px);
             pointer-events: none;
             z-index: 0;
+            animation: breathe 6s infinite ease-in-out;
         }
+
+        @keyframes breathe {
+            0%, 100% { transform: scale(1); opacity: 0.85; }
+            50% { transform: scale(1.12); opacity: 1; }
+        }
+
+        /* Main Glass Card */
         .card {
             position: relative;
             z-index: 1;
-            width: 100%;
-            max-width: 360px;
+            width: calc(100% - 32px);
+            max-width: 400px;
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 32px;
+            backdrop-filter: blur(28px);
+            -webkit-backdrop-filter: blur(28px);
+            padding: 36px 28px 30px;
+            box-shadow: var(--card-shadow);
             text-align: center;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 24px;
-            background: rgba(15, 23, 42, 0.7);
-            backdrop-filter: blur(24px);
-            -webkit-backdrop-filter: blur(24px);
-            padding: 32px 24px 28px;
-            box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+            animation: cardAppear 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
-        .icon-circle {
+
+        @keyframes cardAppear {
+            from {
+                opacity: 0;
+                transform: translateY(20px) scale(0.96);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        /* Icon Orb */
+        .icon-orb {
             position: relative;
-            width: 64px;
-            height: 64px;
+            width: 68px;
+            height: 68px;
             margin: 0 auto 20px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 24px;
+            background: var(--icon-bg);
+            border: 1px solid var(--icon-border);
             display: flex;
             align-items: center;
             justify-content: center;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
         }
-        .icon-circle svg {
-            width: 28px;
-            height: 28px;
-            stroke: #94A3B8;
+
+        .icon-orb svg {
+            width: 30px;
+            height: 30px;
+            stroke: var(--icon-color);
+            transition: transform 0.3s ease;
         }
-        .dot {
+
+        .signal-dot {
             position: absolute;
-            top: 2px;
-            right: 2px;
-            width: 10px;
-            height: 10px;
+            top: -3px;
+            right: -3px;
+            width: 13px;
+            height: 13px;
             border-radius: 50%;
             background: #F59E0B;
-            border: 2px solid #06080C;
-            box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
-            animation: pulse 2s infinite ease-in-out;
+            border: 2.5px solid var(--bg-canvas);
+            box-shadow: 0 0 10px rgba(245, 158, 11, 0.6);
+            animation: pulseSignal 2s infinite ease-in-out;
         }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.35; transform: scale(0.85); }
+
+        @keyframes pulseSignal {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(0.85); opacity: 0.45; }
         }
-        h1 {
-            font-size: 19px;
-            font-weight: 700;
-            margin-bottom: 8px;
-            letter-spacing: -0.01em;
-            color: #FFFFFF;
-        }
-        p.desc {
-            font-size: 13px;
-            line-height: 1.55;
-            color: #94A3B8;
-            margin-bottom: 20px;
-        }
-        .status-tag {
+
+        /* Status Badge */
+        .badge-pill {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            padding: 4px 12px;
+            padding: 5px 14px;
             border-radius: 999px;
-            background: rgba(245, 158, 11, 0.1);
-            border: 1px solid rgba(245, 158, 11, 0.2);
+            background: var(--badge-bg);
+            border: 1px solid var(--badge-border);
+            color: var(--badge-text);
             font-size: 11px;
-            font-weight: 600;
-            color: #FCD34D;
-            margin-bottom: 22px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            margin-bottom: 16px;
         }
-        .btn-action {
+
+        .badge-pill .pulse-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+            opacity: 0.9;
+        }
+
+        /* Typography */
+        h1 {
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            color: var(--text-primary);
+            margin-bottom: 10px;
+            line-height: 1.25;
+        }
+
+        p.description {
+            font-size: 13.5px;
+            line-height: 1.55;
+            color: var(--text-secondary);
+            margin-bottom: 24px;
+            font-weight: 450;
+        }
+
+        /* Security / Persistence info chips */
+        .info-grid {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+            text-align: left;
+        }
+
+        .info-pill {
+            flex: 1;
+            background: var(--pill-bg);
+            border: 1px solid var(--pill-border);
+            border-radius: 16px;
+            padding: 10px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .info-pill span.label {
+            font-size: 9.5px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-tertiary);
+        }
+
+        .info-pill span.val {
+            font-size: 11.5px;
+            font-weight: 700;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .info-pill span.val svg {
+            width: 12px;
+            height: 12px;
+            stroke: #10B981;
+        }
+
+        /* Action Reconnect Button */
+        .btn-reconnect {
+            position: relative;
             width: 100%;
             border: 0;
-            border-radius: 14px;
-            padding: 13px 20px;
-            background: #F8FAFC;
-            color: #06080C;
-            font-size: 13px;
-            font-weight: 700;
+            border-radius: 18px;
+            padding: 14px 24px;
+            background: var(--btn-bg);
+            color: var(--btn-text);
+            font-size: 12.5px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
             cursor: pointer;
-            transition: all 0.15s ease;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+            box-shadow: var(--btn-shadow);
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
-        .btn-action:hover {
-            background: #FFFFFF;
-            transform: translateY(-1px);
+
+        .btn-reconnect:hover {
+            transform: translateY(-1.5px);
+            filter: brightness(1.06);
         }
-        .btn-action:active {
+
+        .btn-reconnect:active {
             transform: translateY(0) scale(0.98);
         }
-        .note {
-            margin-top: 16px;
+
+        .btn-reconnect:disabled {
+            opacity: 0.65;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Spinner for checking connection state */
+        .spinner {
+            display: none;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255, 255, 255, 0.35);
+            border-radius: 50%;
+            border-top-color: #FFFFFF;
+            animation: spin 0.7s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .footnote {
+            margin-top: 18px;
             font-size: 11px;
             line-height: 1.45;
-            color: #64748B;
+            color: var(--text-tertiary);
+            font-weight: 500;
         }
     </style>
 </head>
 <body>
-    <div class="glow"></div>
-    <main class="card">
-        <div class="icon-circle">
-            <div class="dot"></div>
-            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <div class="ambient-glow"></div>
+
+    <main class="card" role="alert" aria-live="polite">
+        <div class="icon-orb">
+            <div class="signal-dot"></div>
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="1" y1="1" x2="23" y2="23"></line>
                 <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path>
                 <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path>
@@ -151,32 +324,86 @@
             </svg>
         </div>
 
-        <h1>You are currently offline</h1>
-        <p class="desc">Your device lost its internet connection. Your wallet keys and cached balances stay safe on your device.</p>
-        
-        <div class="status-tag">
-            <span>●</span> Waiting for network signal
+        <div class="badge-pill">
+            <span class="pulse-dot"></span>
+            Connection Offline
         </div>
 
-        <button type="button" class="btn-action" id="retryBtn" onclick="handleRetry()">
-            Try reconnecting
+        <h1>You're offline</h1>
+        <p class="description">Your device lost its internet connection. Your private keys and cached balances remain safe and encrypted.</p>
+
+        <div class="info-grid">
+            <div class="info-pill">
+                <span class="label">Wallet Security</span>
+                <span class="val">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    Protected
+                </span>
+            </div>
+            <div class="info-pill">
+                <span class="label">Auto-Sync</span>
+                <span class="val">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    Ready
+                </span>
+            </div>
+        </div>
+
+        <button type="button" class="btn-reconnect" id="retryBtn" onclick="handleRetry()">
+            <span class="spinner" id="retrySpinner"></span>
+            <span id="retryText">Reconnect Now</span>
         </button>
 
-        <p class="note">This screen updates automatically as soon as your connection comes back.</p>
+        <p class="footnote">SubScript will automatically reload as soon as your network signal recovers.</p>
     </main>
 
     <script>
+        let isChecking = false;
+
         function handleRetry() {
+            if (isChecking) return;
+            isChecking = true;
+
             const btn = document.getElementById('retryBtn');
-            btn.textContent = 'Checking connection...';
-            btn.style.opacity = '0.7';
+            const spinner = document.getElementById('retrySpinner');
+            const text = document.getElementById('retryText');
+
+            btn.disabled = true;
+            spinner.style.display = 'inline-block';
+            text.textContent = 'Checking signal...';
+
+            setTimeout(function () {
+                if (navigator.onLine) {
+                    text.textContent = 'Connected! Reloading...';
+                    location.reload();
+                } else {
+                    // Try fetch check with cache bust
+                    fetch('/favicon.ico?_t=' + Date.now(), { method: 'HEAD', cache: 'no-store' })
+                        .then(() => {
+                            text.textContent = 'Connected! Reloading...';
+                            location.reload();
+                        })
+                        .catch(() => {
+                            isChecking = false;
+                            btn.disabled = false;
+                            spinner.style.display = 'none';
+                            text.textContent = 'Still Offline — Tap to Retry';
+                        });
+                }
+            }, 600);
+        }
+
+        // Automatic instant reconnect on system network recovery
+        window.addEventListener("online", function () {
+            const text = document.getElementById('retryText');
+            if (text) text.textContent = 'Signal detected! Loading...';
             setTimeout(function () {
                 location.reload();
             }, 300);
-        }
-
-        window.addEventListener("online", function () {
-            location.reload();
         });
     </script>
 </body>
