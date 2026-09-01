@@ -133,19 +133,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "We couldn't start that withdrawal. Try again." }, { status: 500 });
     }
 
-    /* Step 1: take the fee. Small, cheap, and reverting here costs the user nothing. */
-    const { txHash: feeTxHash } = await custody.executeContract({
-      contractAddress: USDC_NATIVE_GAS_ADDRESS,
-      abi: ERC20_ABI,
-      functionName: "transfer",
-      args: [BRIDGE_FEE_TREASURY_ADDRESS, feeInfo.feeMicros],
-      idempotencyKey: deterministicIdempotencyKey(`cctp-withdraw-fee:${transferId}`),
-    });
-
-    await pgQuery(
-      `UPDATE cctp_bridge_transfers SET status = 'pending_fee', fee_tx_hash = $2, updated_at = now() WHERE id = $1`,
-      [transferId, feeTxHash],
-    );
+    /* Step 1: take the fee (if fee > 0). Small, cheap, and reverting here costs the user nothing. */
+    let feeTxHash: string | null = null;
+    if (feeInfo.feeMicros > 0n) {
+      const feeRes = await custody.executeContract({
+        contractAddress: USDC_NATIVE_GAS_ADDRESS,
+        abi: ERC20_ABI,
+        functionName: "transfer",
+        args: [BRIDGE_FEE_TREASURY_ADDRESS, feeInfo.feeMicros],
+        idempotencyKey: deterministicIdempotencyKey(`cctp-withdraw-fee:${transferId}`),
+      });
+      feeTxHash = feeRes.txHash;
+      await pgQuery(
+        `UPDATE cctp_bridge_transfers SET status = 'pending_fee', fee_tx_hash = $2, updated_at = now() WHERE id = $1`,
+        [transferId, feeTxHash],
+      );
+    }
 
     /* Step 2: approve exactly the net. Approving the gross would leave the TokenMessenger able to
        pull the fee portion later. */

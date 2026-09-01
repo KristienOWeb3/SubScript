@@ -40,9 +40,10 @@ export async function GET(request: Request) {
             void processPendingCctpTransfers().catch(() => undefined);
         }
 
+        const isArcChain = (id: string | number) => id === "arc" || id === "5042002" || id === 5042002 || id === "5042001" || id === 5042001;
         const cctpItems = cctpTransfers.map((tx: any) => {
-            const originName = CCTP_CONFIG[Number(tx.origin_chain_id)]?.name || (tx.origin_chain_id === "arc" ? "Arc" : `Chain ${tx.origin_chain_id}`);
-            const destName = CCTP_CONFIG[Number(tx.destination_chain_id)]?.name || (tx.destination_chain_id === "arc" ? "Arc" : `Chain ${tx.destination_chain_id}`);
+            const originName = isArcChain(tx.origin_chain_id) ? "Arc Network" : (CCTP_CONFIG[Number(tx.origin_chain_id)]?.name || `Chain ${tx.origin_chain_id}`);
+            const destName = isArcChain(tx.destination_chain_id) ? "Arc Network" : (CCTP_CONFIG[Number(tx.destination_chain_id)]?.name || `Chain ${tx.destination_chain_id}`);
             const isIncoming = tx.direction === "inbound_deposit" || tx.recipient_address.toLowerCase() === normalizedWallet;
             const micros = isIncoming ? BigInt(tx.net_amount_micros || 0) : BigInt(tx.gross_amount_micros || 0);
             const whole = micros / 1_000_000n;
