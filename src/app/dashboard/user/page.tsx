@@ -3426,12 +3426,12 @@ export default function UserDashboard() {
 
         {/* Mobile Bottom Bar Skeleton */}
         <div className="fixed bottom-4 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-2 md:hidden">
-          <div className="flex h-12 flex-1 items-center justify-around rounded-full border border-black/15 bg-[#2775CA]/20 px-3 backdrop-blur-2xl">
+          <div className="flex h-[50px] flex-1 items-center justify-around rounded-full border border-black/15 bg-[#2775CA]/20 px-3 backdrop-blur-2xl">
             {[1, 2, 3, 4].map((i) => (
               <div key={i} className="h-6 w-6 subscript-skeleton rounded-full" />
             ))}
           </div>
-          <div className="h-12 w-12 shrink-0 rounded-full subscript-skeleton" />
+          <div className="h-[50px] w-[50px] shrink-0 rounded-full subscript-skeleton" />
         </div>
       </div>
     );
@@ -7165,41 +7165,41 @@ export default function UserDashboard() {
                 {/* Referral QR Code Modal */}
                 {referralQrOpen && (
                   <div
-                    className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-md animate-in fade-in duration-200"
+                    className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-3 sm:p-4 backdrop-blur-md animate-in fade-in duration-200"
                     role="dialog"
                     aria-modal="true"
                     aria-label="Referral QR Code"
                     onClick={() => setReferralQrOpen(false)}
                   >
                     <div
-                      className="relative w-full max-w-sm rounded-3xl border border-black/15 bg-white p-6 shadow-2xl space-y-5 text-black"
+                      className="relative w-full max-w-[340px] sm:max-w-sm rounded-[28px] border border-black/10 dark:border-white/15 bg-white dark:bg-[#12131a] p-5 sm:p-6 shadow-2xl space-y-4 text-black dark:text-white max-h-[90vh] overflow-y-auto"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#2775CA]/10 text-[#2775CA]">
-                            <QrCode className="h-4 w-4" />
+                        <div className="flex items-center gap-2.5">
+                          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#2775CA]/10 dark:bg-[#2775CA]/20 text-[#2775CA] dark:text-[#589bf0]">
+                            <QrCode className="h-5 w-5" />
                           </span>
                           <div>
-                            <h3 className="text-sm font-black tracking-tight text-black">Referral QR Code</h3>
-                            <p className="text-[10px] text-black/60 font-medium">Scan to join SubScript with your link</p>
+                            <h3 className="text-sm font-black tracking-tight text-black dark:text-white">Referral QR Code</h3>
+                            <p className="text-[10px] text-black/60 dark:text-white/60 font-medium">Scan to join SubScript with your link</p>
                           </div>
                         </div>
                         <button
                           type="button"
                           onClick={() => setReferralQrOpen(false)}
-                          className="h-8 w-8 rounded-full border border-black/10 flex items-center justify-center text-black/60 hover:text-black hover:bg-black/5 transition"
+                          className="h-8 w-8 rounded-full border border-black/10 dark:border-white/10 flex items-center justify-center text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 transition"
                           aria-label="Close QR Modal"
                         >
                           <X className="h-4 w-4" />
                         </button>
                       </div>
 
-                      <div className="flex flex-col items-center justify-center rounded-2xl border border-black/10 bg-[#f8fafc] p-6 shadow-inner">
-                        <div id="referral-qr-canvas-wrap" className="rounded-2xl bg-white p-3 shadow-md border border-black/5">
+                      <div className="flex flex-col items-center justify-center rounded-2xl border border-black/10 dark:border-white/10 bg-[#f8fafc] dark:bg-white/[0.03] p-4 sm:p-5 shadow-inner">
+                        <div id="referral-qr-canvas-wrap" className="rounded-2xl bg-white p-2.5 sm:p-3 shadow-md border border-black/10 flex items-center justify-center w-[176px] sm:w-[200px] h-[176px] sm:h-[200px]">
                           <QRCode
                             value={referralLink}
-                            size={210}
+                            size={172}
                             ecLevel="H"
                             bgColor="#ffffff"
                             fgColor="#000000"
@@ -7210,16 +7210,16 @@ export default function UserDashboard() {
                               [8, 0, 8, 8],
                             ]}
                             logoImage="/logo.png"
-                            logoWidth={42}
-                            logoHeight={42}
+                            logoWidth={36}
+                            logoHeight={36}
                             removeQrCodeBehindLogo={true}
                             logoPadding={2}
                           />
                         </div>
                       </div>
 
-                      <div className="space-y-2">
-                        <div className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 font-mono text-[11px] text-black/80 truncate text-center select-all">
+                      <div className="space-y-2.5">
+                        <div className="rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 px-3 py-2 font-mono text-[10.5px] text-black/80 dark:text-white/80 truncate text-center select-all">
                           {referralLink}
                         </div>
                         <div className="grid grid-cols-2 gap-2">
@@ -7231,7 +7231,7 @@ export default function UserDashboard() {
                               triggerToast("Referral link copied!");
                               setTimeout(() => setReferralCopySuccess(false), 3000);
                             }}
-                            className="rounded-xl bg-[#2775CA] hover:bg-[#1f62ab] text-white py-2.5 text-xs font-black uppercase tracking-[0.14em] transition flex items-center justify-center gap-1.5 shadow-sm"
+                            className="rounded-xl bg-[#2775CA] hover:bg-[#1f62ab] text-white py-2.5 text-xs font-black uppercase tracking-[0.12em] transition flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
                           >
                             <Copy className="h-3.5 w-3.5" />
                             {referralCopySuccess ? "Copied!" : "Copy Link"}
@@ -7250,7 +7250,7 @@ export default function UserDashboard() {
                                 triggerToast("QR code downloaded!");
                               }
                             }}
-                            className="rounded-xl border border-black/15 bg-white hover:bg-black/5 text-black py-2.5 text-xs font-black uppercase tracking-[0.14em] transition flex items-center justify-center gap-1.5 shadow-sm"
+                            className="rounded-xl border border-black/15 dark:border-white/15 bg-white dark:bg-white/10 hover:bg-black/5 dark:hover:bg-white/15 text-black dark:text-white py-2.5 text-xs font-black uppercase tracking-[0.12em] transition flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
                           >
                             <Download className="h-3.5 w-3.5" />
                             Download

@@ -987,9 +987,9 @@ body {
 
 .user-dashboard-redesign nav[aria-label="Primary navigation"],
 .user-dashboard-redesign [data-testid="mobile-dm-btn"] {
-  height: 48px !important;
-  min-height: 48px !important;
-  max-height: 48px !important;
+  height: 50px !important;
+  min-height: 50px !important;
+  max-height: 50px !important;
   box-sizing: border-box !important;
 }
 
@@ -1001,9 +1001,14 @@ body {
 }
 
 .user-dashboard-redesign [data-testid="mobile-dm-btn"]:not([aria-current="page"]) {
-  background: rgba(255, 255, 255, 0.88) !important;
-  color: #111827 !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  color: #000000 !important;
   border-color: rgb(0 0 0 / 15%) !important;
+}
+
+.user-dashboard-redesign [data-testid="mobile-dm-btn"]:not([aria-current="page"]) svg {
+  color: #000000 !important;
+  stroke: #000000 !important;
 }
 
 .user-dashboard-loading .subscript-skeleton,
