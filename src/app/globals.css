@@ -985,6 +985,25 @@ body {
   box-shadow: none !important;
 }
 
+.user-dashboard-redesign nav[aria-label="Primary navigation"] button[aria-current="page"] .koboyo-icon,
+.user-dashboard-redesign nav[aria-label="Primary navigation"] button[aria-current="page"] svg,
+.user-dashboard-redesign nav[aria-label="Primary navigation"][data-retracted-selected="true"] .koboyo-icon,
+.user-dashboard-redesign nav[aria-label="Primary navigation"][data-retracted-selected="true"] svg {
+  color: #fffff0 !important;
+  background-color: #fffff0 !important;
+}
+
+.user-dashboard-redesign nav[aria-label="Primary navigation"] button:not([aria-current="page"]) {
+  color: #000000 !important;
+}
+
+.user-dashboard-redesign nav[aria-label="Primary navigation"] button:not([aria-current="page"]) .koboyo-icon,
+.user-dashboard-redesign nav[aria-label="Primary navigation"] button:not([aria-current="page"]) svg {
+  color: #000000 !important;
+  background-color: #000000 !important;
+  stroke: #000000 !important;
+}
+
 .user-dashboard-redesign nav[aria-label="Primary navigation"],
 .user-dashboard-redesign [data-testid="mobile-dm-btn"] {
   height: 50px !important;

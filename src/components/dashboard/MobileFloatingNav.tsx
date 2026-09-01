@@ -298,13 +298,15 @@ export default function MobileFloatingNav<T extends string = string>({
               updateRetractionState(false);
             }}
             className={`flex h-10 w-10 items-center justify-center rounded-full transition-transform active:scale-90 ${
-              isLeftSelected ? "text-[#FFFFF0] dark:text-white" : "text-black/75 dark:text-white/80"
+              isLeftSelected ? "text-[#FFFFF0] dark:text-white" : "text-black dark:text-white/80"
             }`}
           >
             {ActiveIcon && (
               <ActiveIcon
                 className={`h-4.5 w-4.5 ${
-                  isLeftSelected ? "text-[#FFFFF0] dark:text-white" : "text-black/75 dark:text-white/80"
+                  isLeftSelected
+                    ? "!text-[#FFFFF0] !bg-[#FFFFF0] dark:!text-white dark:!bg-white"
+                    : "!text-black !bg-black dark:!text-white/80 dark:!bg-white/80"
                 }`}
               />
             )}
@@ -341,12 +343,14 @@ export default function MobileFloatingNav<T extends string = string>({
                 className={`relative h-8.5 flex items-center justify-center rounded-full transition-all duration-350 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#353935] dark:focus-visible:ring-[#2775CA] ${
                   isActive
                     ? "shadow-sm px-2.5 gap-1.5 flex-1 min-w-[72px] max-w-[90px]"
-                    : "bg-transparent text-black/65 dark:text-white/70 hover:bg-black/5 dark:hover:bg-white/10 hover:text-black dark:hover:text-white w-9 shrink-0"
+                    : "bg-transparent text-black dark:text-white/70 hover:bg-black/5 dark:hover:bg-white/10 hover:text-black dark:hover:text-white w-9 shrink-0"
                 }`}
               >
                 <IconComponent
                   className={`h-4.5 w-4.5 shrink-0 transition-colors duration-250 ${
-                    isActive ? "text-[#FFFFF0] dark:text-white" : "text-black/65 dark:text-white/70"
+                    isActive
+                      ? "!text-[#FFFFF0] !bg-[#FFFFF0] dark:!text-white dark:!bg-white"
+                      : "!text-black !bg-black dark:!text-white/70 dark:!bg-white/70"
                   }`}
                 />
                 {isActive && (
