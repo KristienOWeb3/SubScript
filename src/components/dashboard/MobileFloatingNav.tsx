@@ -399,7 +399,13 @@ export default function MobileFloatingNav<T extends string = string>({
           aria-label="Open Direct Messages"
         >
           {!isInboxActive && <LiquidGlassEffect />}
-          <MessageSquare className={`h-4.5 w-4.5 shrink-0 relative z-10 ${isInboxActive ? "text-[#FFFFF0] dark:text-white" : "text-black dark:text-white/80"}`} />
+          <MessageSquare
+            className={`h-4.5 w-4.5 shrink-0 relative z-10 ${
+              isInboxActive
+                ? "!text-[#FFFFF0] !bg-[#FFFFF0] dark:!text-white dark:!bg-white"
+                : "!text-black !bg-black dark:!text-white/80 dark:!bg-white/80"
+            }`}
+          />
           {isInboxActive && !isRetracted && (
             <span className="whitespace-nowrap text-[8.5px] font-black uppercase tracking-wider text-[#FFFFF0] dark:text-white truncate relative z-10">
               DMs
