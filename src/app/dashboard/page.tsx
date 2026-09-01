@@ -3211,7 +3211,18 @@ Please complete the following implementation tasks:
                         ) : (
                             <div className="space-y-3">
                                 {activePlans.map((plan) => (
-                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} promotion={promotionsByPlan.get(plan.id) ?? null} onPromotionsChanged={fetchMerchantPlans} />
+                                    <MerchantPlanRow
+                                        key={plan.id}
+                                        plan={plan}
+                                        busy={isPlansLoading}
+                                        onToggle={handleTogglePlanActive}
+                                        promotion={promotionsByPlan.get(plan.id) ?? null}
+                                        onPromotionsChanged={fetchMerchantPlans}
+                                        onShowQr={(url, title) => {
+                                            setActiveQrCodeLink(url);
+                                            setActiveQrCodeTitle(title);
+                                        }}
+                                    />
                                 ))}
                             </div>
                         )}
@@ -3229,7 +3240,18 @@ Please complete the following implementation tasks:
                         ) : (
                             <div className="space-y-3">
                                 {inactivePlans.map((plan) => (
-                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} promotion={promotionsByPlan.get(plan.id) ?? null} onPromotionsChanged={fetchMerchantPlans} />
+                                    <MerchantPlanRow
+                                        key={plan.id}
+                                        plan={plan}
+                                        busy={isPlansLoading}
+                                        onToggle={handleTogglePlanActive}
+                                        promotion={promotionsByPlan.get(plan.id) ?? null}
+                                        onPromotionsChanged={fetchMerchantPlans}
+                                        onShowQr={(url, title) => {
+                                            setActiveQrCodeLink(url);
+                                            setActiveQrCodeTitle(title);
+                                        }}
+                                    />
                                 ))}
                             </div>
                         )}
@@ -6249,12 +6271,14 @@ function MerchantPlanRow({
     onToggle,
     promotion = null,
     onPromotionsChanged,
+    onShowQr,
 }: {
     plan: MerchantPlan;
     busy: boolean;
     onToggle: (plan: MerchantPlan) => void;
     promotion?: PlanPromotion | null;
     onPromotionsChanged?: () => void;
+    onShowQr?: (url: string, title: string) => void;
 }) {
     const [copied, setCopied] = useState(false);
     const subscribeUrl = buildSubscribeUrl(plan.id, typeof window !== "undefined" ? window.location.origin : undefined);
@@ -6314,15 +6338,28 @@ function MerchantPlanRow({
             {plan.active && !plan.targetSubscriber && (
                 <div data-testid="merchant-plan-link-strip" className="mt-3 flex min-w-0 items-center justify-between gap-2 overflow-hidden rounded-xl border border-white/5 bg-black/30 px-3 py-2">
                     <span className="block min-w-0 flex-1 truncate font-mono text-[10px] text-white/45">{subscribeUrl}</span>
-                    <button
-                        type="button"
-                        onClick={handleCopy}
-                        className="flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-[#00d2b4] transition hover:bg-[#00d2b4]/20"
-                        title={copied ? "Copied!" : "Copy subscribe link"}
-                    >
-                        {copied ? <Check className="h-3 w-3 shrink-0" /> : <Copy className="h-3 w-3 shrink-0" />}
-                        <span>{copied ? "Copied" : "Copy link"}</span>
-                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                            type="button"
+                            onClick={handleCopy}
+                            className="flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-[#00d2b4] transition hover:bg-[#00d2b4]/20"
+                            title={copied ? "Copied!" : "Copy subscribe link"}
+                        >
+                            {copied ? <Check className="h-3 w-3 shrink-0" /> : <Copy className="h-3 w-3 shrink-0" />}
+                            <span>{copied ? "Copied" : "Copy link"}</span>
+                        </button>
+                        {onShowQr && (
+                            <button
+                                type="button"
+                                onClick={() => onShowQr(subscribeUrl, `${plan.name} Plan Subscribe Link`)}
+                                className="flex shrink-0 items-center justify-center rounded-lg border border-[#00d2b4]/20 bg-[#00d2b4]/10 p-1.5 text-[#00d2b4] transition hover:bg-[#00d2b4]/20"
+                                title="Show QR Code"
+                                aria-label="Show QR Code"
+                            >
+                                <QrCode className="h-3 w-3" />
+                            </button>
+                        )}
+                    </div>
                 </div>
             )}
 

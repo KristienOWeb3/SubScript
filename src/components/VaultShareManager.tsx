@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Copy, Loader2, Plus, Shield, User, X, Check, ArrowUpRight } from "@/components/icons";
 import { parseUsdcToMicros } from "@/components/SubUserManager";
@@ -48,75 +49,84 @@ function utilizationPercent(share: Share): number | null {
     if (share.spendLimitUsdc === null) return null;
     const limit = BigInt(share.spendLimitUsdc);
     if (limit === 0n) return 100;
-    return Number((BigInt(share.spentUsdc) * 100n) / limit);
+    const spent = BigInt(share.spentUsdc);
+    const pct = Number((spent * 100n) / limit);
+    return Math.min(100, Math.max(0, pct));
 }
 
-type Busy = { commitId: string; action: string } | null;
-
-type DmContact = {
-    address: string;
-    displayName: string;
-    profilePic?: string | null;
-};
+interface VaultShareManagerProps {
+    readonly vaultId: string;
+    readonly merchantLabel?: string;
+    readonly balanceVisible?: boolean;
+}
 
 export default function VaultShareManager({
     vaultId,
-    merchantLabel,
+    merchantLabel = "Merchant",
     balanceVisible = true,
-}: {
-    vaultId: string;
-    merchantLabel: string;
-    balanceVisible?: boolean;
-}) {
+}: VaultShareManagerProps) {
+    const [mounted, setMounted] = useState(false);
     const [data, setData] = useState<SharesResponse | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [busy, setBusy] = useState<Busy>(null);
-    const [copiedId, setCopiedId] = useState<string | null>(null);
 
-    // Modals
+    // Modal state
     const [addModalOpen, setAddModalOpen] = useState(false);
-    const [selectedShare, setSelectedShare] = useState<Share | null>(null);
-
-    const money = (value: string | null) => (balanceVisible ? formatUsdc(value) : "••••");
-    const secretId = (value: string) => (balanceVisible ? value : "•".repeat(24));
-
     const [name, setName] = useState("");
     const [cap, setCap] = useState("");
+    const [creating, setCreating] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
     const [successMsg, setSuccessMsg] = useState<string | null>(null);
-    const [creating, setCreating] = useState(false);
-    const [dmContacts, setDmContacts] = useState<DmContact[]>([]);
 
+    // Selected share for details/actions
+    const [selectedShare, setSelectedShare] = useState<Share | null>(null);
+    const [copiedId, setCopiedId] = useState<string | null>(null);
+    const [actionRunning, setActionRunning] = useState<string | null>(null);
+
+    // DM Contacts for Quick-Select
+    const [dmContacts, setDmContacts] = useState<Array<{ address: string; displayName: string; profilePic?: string | null }>>([]);
+
+    // Confirmation modal state
+    const [confirmModal, setConfirmModal] = useState<{
+        title: string;
+        message: string;
+        confirmText: string;
+        onConfirm: () => void;
+    } | null>(null);
+
+    // Recap / Edit limit modal
+    const [recapModal, setRecapModal] = useState<{ share: Share; value: string } | null>(null);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    // Load DM contacts for suggestions
     const loadDmContacts = useCallback(async () => {
         try {
-            const sessionRes = await fetch("/api/auth/session", { credentials: "include" }).catch(() => null);
-            const sessionData = sessionRes && sessionRes.ok ? await sessionRes.json() : null;
-            const myAddress = sessionData?.wallet ? sessionData.wallet.toLowerCase() : null;
-
             const res = await fetch("/api/user/dms", { credentials: "include" });
+            if (!res.ok) return;
             const json = await res.json();
-            if (json.success && Array.isArray(json.dms)) {
-                const contactsMap = new Map<string, DmContact>();
-                json.dms.forEach((dm: any) => {
-                    if (dm.messageType === "SYSTEM" || dm.senderRole === "SYSTEM") return;
-
-                    if (dm.senderRole !== "ENTERPRISE" && dm.senderAddress) {
-                        const addr = dm.senderAddress.toLowerCase();
-                        if ((!myAddress || addr !== myAddress) && !contactsMap.has(addr)) {
-                            contactsMap.set(addr, {
-                                address: dm.senderAddress,
-                                displayName: dm.senderName || dm.senderAddress.slice(0, 10),
+            if (Array.isArray(json.conversations)) {
+                const contactsMap = new Map<string, { address: string; displayName: string; profilePic?: string | null }>();
+                const myAddress = json.userAddress?.toLowerCase();
+                json.conversations.forEach((dm: any) => {
+                    const sender = dm.senderAddress?.toLowerCase();
+                    const receiver = dm.receiverAddress?.toLowerCase();
+                    if (sender && sender !== myAddress) {
+                        if (!contactsMap.has(sender)) {
+                            contactsMap.set(sender, {
+                                address: sender,
+                                displayName: dm.senderDisplayName || `${sender.slice(0, 6)}...${sender.slice(-4)}`,
                                 profilePic: dm.senderProfilePic,
                             });
                         }
                     }
-                    if (dm.receiverRole !== "ENTERPRISE" && dm.receiverAddress) {
-                        const addr = dm.receiverAddress.toLowerCase();
-                        if ((!myAddress || addr !== myAddress) && !contactsMap.has(addr)) {
-                            contactsMap.set(addr, {
-                                address: dm.receiverAddress,
-                                displayName: dm.receiverName || dm.receiverAddress.slice(0, 10),
+                    if (receiver && receiver !== myAddress) {
+                        if (!contactsMap.has(receiver)) {
+                            contactsMap.set(receiver, {
+                                address: receiver,
+                                displayName: dm.receiverDisplayName || `${receiver.slice(0, 6)}...${receiver.slice(-4)}`,
                                 profilePic: dm.receiverProfilePic,
                             });
                         }
@@ -160,243 +170,166 @@ export default function VaultShareManager({
     const handleCreate = async () => {
         setFormError(null);
         setSuccessMsg(null);
-
-        const targetInput = name.trim().toLowerCase().replace(/^@/, "").replace(/\.subscript$/i, "");
-        const sessionRes = await fetch("/api/auth/session", { credentials: "include" }).catch(() => null);
-        const sessionData = sessionRes && sessionRes.ok ? await sessionRes.json() : null;
-        const myAddress = sessionData?.wallet ? sessionData.wallet.toLowerCase() : null;
-
-        if (myAddress && (targetInput === myAddress || targetInput === myAddress.slice(0, 10))) {
-            setFormError("You cannot add yourself as a user on your commitment.");
+        const trimmed = name.trim();
+        if (!trimmed) {
+            setFormError("User name or identifier is required.");
             return;
         }
 
-        const parsed = parseUsdcToMicros(cap);
-        if ("error" in parsed) {
-            setFormError(parsed.error);
-            return;
+        let capMicros: string | null = null;
+        if (cap.trim()) {
+            const parsed = parseUsdcToMicros(cap.trim());
+            if ("error" in parsed) {
+                setFormError(parsed.error);
+                return;
+            }
+            capMicros = parsed.micros;
         }
+
         setCreating(true);
         try {
-            const res = await fetch("/api/user/vault/shares", {
+            const res = await fetch(`/api/user/vault/shares?vaultId=${encodeURIComponent(vaultId)}`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 credentials: "include",
                 body: JSON.stringify({
-                    vaultId,
-                    displayName: name.trim() || null,
-                    spendLimitUsdc: parsed.micros,
+                    displayName: trimmed,
+                    spendLimitUsdc: capMicros,
                 }),
             });
             const json = await res.json();
-            if (!res.ok) throw new Error(json.error || "Could not create share");
+            if (!res.ok) throw new Error(json.error || "Could not create delegated commit");
+
+            setSuccessMsg(`User added! Delegated commit ID generated.`);
             setName("");
             setCap("");
-            setSuccessMsg(
-                json.dmSent
-                    ? "User added! Commit key sent to your open DM thread with this user."
-                    : "User added to commit successfully.",
-            );
             await load();
             setTimeout(() => {
                 setAddModalOpen(false);
                 setSuccessMsg(null);
             }, 1200);
         } catch (err: any) {
-            setFormError(err.message || "Could not add user to commit");
+            setFormError(err.message || "Failed to add user to commit");
         } finally {
             setCreating(false);
         }
     };
 
-    const [confirmModal, setConfirmModal] = useState<{
-        title: string;
-        message: string;
-        confirmText: string;
-        onConfirm: () => void;
-    } | null>(null);
-
-    const [recapModal, setRecapModal] = useState<{
-        share: Share;
-        value: string;
-    } | null>(null);
-    /* Set only by a successful rotation, so the new ID stays on screen after the list reloads. */
-    const [rotatedCommitId, setRotatedCommitId] = useState<string | null>(null);
-
-    const executeAction = async (commitId: string, action: "pause" | "resume" | "revoke" | "withdraw" | "rotate") => {
-        setBusy({ commitId, action });
-        setError(null);
-        try {
-            const res = await fetch("/api/user/vault/shares/status", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "include",
-                body: JSON.stringify({ commitId, action }),
-            });
-            const json = await res.json();
-            if (!res.ok) throw new Error(json.error || "Could not update share");
-            /* A rotation returns a brand new ID, and the primary has to hand it over or the friend is
-               locked out. Surfaced before the reload so it survives the list refresh. */
-            if (action === "rotate" && json.commitId) {
-                setRotatedCommitId(json.commitId);
-            }
-            await load();
-            if (selectedShare?.commitId === commitId) {
-                setSelectedShare(null);
-            }
-        } catch (err: any) {
-            setError(err.message || "Could not update share");
-        } finally {
-            setBusy(null);
-            setConfirmModal(null);
-        }
-    };
-
-    const runAction = (commitId: string, action: "pause" | "resume" | "revoke" | "withdraw" | "rotate") => {
+    const runAction = async (commitId: string, action: "pause" | "resume" | "rotate" | "revoke") => {
         if (action === "revoke") {
             setConfirmModal({
-                title: "Revoke Commit ID",
-                message: "Revoke this commit ID permanently? This user will no longer be able to spend.",
-                confirmText: "Revoke",
-                onConfirm: () => executeAction(commitId, action),
+                title: "Revoke Access",
+                message: "Are you sure you want to permanently revoke this user's access to this commit vault? Unused allocated credits will return to your unassigned pool.",
+                confirmText: "Yes, Revoke Access",
+                onConfirm: async () => {
+                    setConfirmModal(null);
+                    await executeAction(commitId, action);
+                },
             });
             return;
         }
-        if (action === "withdraw") {
-            setConfirmModal({
-                title: "Withdraw & Reclaim Share",
-                message: "Withdraw and revoke this share? Unspent funds will return to your unallocated escrow.",
-                confirmText: "Withdraw",
-                onConfirm: () => executeAction(commitId, action),
-            });
-            return;
-        }
-        /* Always a live credential here. A vault share never binds a wallet, so there is no unclaimed
-           case to soften the warning for: whoever holds this ID is using it on the merchant's platform
-           right now, and the swap breaks them until they paste the new one. */
+
         if (action === "rotate") {
             setConfirmModal({
-                title: "Replace this commit ID",
-                message: "The old ID stops working straight away, so whoever's using it will be refused "
-                    + "until you send them the new one. Their cap and what they've used stay the same. "
-                    + "Do this if the ID has leaked.",
-                confirmText: "Replace ID",
-                onConfirm: () => executeAction(commitId, action),
+                title: "Rotate Delegated Key",
+                message: "This will issue a new commit key for this user. The previous key will stop working immediately, but their usage history and cap will be preserved.",
+                confirmText: "Issue New Key",
+                onConfirm: async () => {
+                    setConfirmModal(null);
+                    await executeAction(commitId, action);
+                },
             });
             return;
         }
-        void executeAction(commitId, action);
+
+        await executeAction(commitId, action);
     };
 
-    const submitRecap = async (share: Share, entered: string) => {
-        const parsed = parseUsdcToMicros(entered);
-        if ("error" in parsed) {
-            setError(parsed.error);
-            return;
-        }
-        setBusy({ commitId: share.commitId, action: "recap" });
-        setError(null);
+    const executeAction = async (commitId: string, action: "pause" | "resume" | "rotate" | "revoke") => {
+        setActionRunning(`${commitId}-${action}`);
         try {
-            const res = await fetch("/api/user/vault/shares", {
+            const res = await fetch(`/api/user/vault/shares?vaultId=${encodeURIComponent(vaultId)}&commitId=${encodeURIComponent(commitId)}&action=${action}`, {
                 method: "PATCH",
-                headers: { "Content-Type": "application/json" },
                 credentials: "include",
-                body: JSON.stringify({ commitId: share.commitId, spendLimitUsdc: parsed.micros }),
             });
             const json = await res.json();
-            if (!res.ok) throw new Error(json.error || "Could not update cap");
+            if (!res.ok) throw new Error(json.error || `Could not ${action} access`);
+
             await load();
-            setRecapModal(null);
-            setSelectedShare(null);
+            if (selectedShare && selectedShare.commitId === commitId) {
+                if (action === "revoke") {
+                    setSelectedShare(null);
+                } else {
+                    const updated = json.shares?.find((s: Share) => s.commitId === (json.newCommitId || commitId));
+                    if (updated) setSelectedShare(updated);
+                }
+            }
         } catch (err: any) {
-            setError(err.message || "Could not update cap");
+            alert(err.message || `Failed to ${action} user access`);
         } finally {
-            setBusy(null);
+            setActionRunning(null);
         }
     };
 
-    const copyId = async (commitId: string) => {
+    const submitRecap = async (share: Share, newCapStr: string) => {
+        let capMicros: string | null = null;
+        if (newCapStr.trim()) {
+            const parsed = parseUsdcToMicros(newCapStr.trim());
+            if ("error" in parsed) {
+                alert(parsed.error);
+                return;
+            }
+            capMicros = parsed.micros;
+        }
+
         try {
-            await navigator.clipboard.writeText(commitId);
-            setCopiedId(commitId);
-            window.setTimeout(() => setCopiedId((prev) => (prev === commitId ? null : prev)), 1600);
-        } catch {
-            setError("Could not copy to clipboard");
+            const res = await fetch(`/api/user/vault/shares?vaultId=${encodeURIComponent(vaultId)}&commitId=${encodeURIComponent(share.commitId)}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ spendLimitUsdc: capMicros }),
+            });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.error || "Could not update spend limit");
+
+            setRecapModal(null);
+            await load();
+            if (selectedShare && selectedShare.commitId === share.commitId) {
+                setSelectedShare({ ...selectedShare, spendLimitUsdc: capMicros });
+            }
+        } catch (err: any) {
+            alert(err.message || "Failed to update cap");
         }
     };
 
-    const liveSharesList = data?.shares.filter((s) => s.status !== "REVOKED") ?? [];
-    const liveShares = liveSharesList.length;
-    const atCeiling = data ? liveShares >= data.maxShares : false;
+    const copyId = (id: string) => {
+        navigator.clipboard.writeText(id);
+        setCopiedId(id);
+        setTimeout(() => setCopiedId(null), 2000);
+    };
+
+    const secretId = (id: string) => `${id.slice(0, 10)}...${id.slice(-8)}`;
+
+    const money = (micros: string | null) => (balanceVisible ? formatUsdc(micros) : "•••");
+
+    const liveSharesList = data?.shares.filter((s) => s.status !== "REVOKED") || [];
+    const atCeiling = data ? liveSharesList.length >= data.maxShares : false;
 
     return (
-        <div className="space-y-3">
-            {/* A rotated share's new ID. Held on screen until dismissed, because the friend can't use
-                the vault until the primary sends it to them. */}
-            {rotatedCommitId && (
-                <div className="rounded-2xl border border-[#2775CA]/30 bg-[#2775CA]/10 px-3.5 py-2.5 text-black shadow-sm">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-[#2775CA]">New commit ID</p>
-                    <p className="mt-1 text-[11px] leading-relaxed text-black/65">
-                        The old one stopped working just now. Send this to whoever was using it.
-                    </p>
-                    <div className="mt-2 flex items-center gap-2">
-                        <code className="min-w-0 flex-1 truncate rounded-lg border border-black/10 bg-white px-2 py-1.5 font-mono text-[11px] font-bold text-[#2775CA]">
-                            {rotatedCommitId}
-                        </code>
-                        <button
-                            type="button"
-                            onClick={() => copyId(rotatedCommitId)}
-                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-black/15 bg-white text-black shadow-sm transition hover:bg-black/5"
-                            title="Copy the new commit ID"
-                            aria-label="Copy the new commit ID"
-                        >
-                            {copiedId === rotatedCommitId ? (
-                                <Check className="h-3.5 w-3.5 text-emerald-600" />
-                            ) : (
-                                <Copy className="h-3.5 w-3.5" />
-                            )}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setRotatedCommitId(null)}
-                            className="shrink-0 px-1.5 text-[10px] font-bold uppercase tracking-wider text-black/40 transition hover:text-black"
-                            aria-label="Dismiss the new commit ID"
-                        >
-                            Done
-                        </button>
-                    </div>
+        <div className="space-y-4">
+            {/* Header with Title & Stats */}
+            <div className="flex items-center justify-between border-b border-black/10 pb-3">
+                <div className="flex items-center gap-2">
+                    <Shield className="h-4 w-4 text-[#2775CA]" />
+                    <h3 className="text-xs font-black uppercase tracking-wider text-[#111827]">
+                        Shared Access & Delegated Users
+                    </h3>
                 </div>
-            )}
-
-            {/* Scoped Root Commit ID Pill with 1-Tap Copy */}
-            <div className="flex items-center justify-between gap-2 rounded-2xl border border-black/10 bg-[#FFFFF0] px-3.5 py-2 text-black shadow-sm">
-                <span className="text-[10px] font-black uppercase tracking-wider text-black/60">
-                    Commit ID:
-                </span>
-                <div className="flex items-center gap-2 min-w-0">
-                    {data?.rootCommitId ? (
-                        <code className="truncate font-mono text-xs font-bold text-[#2775CA]">
-                            {secretId(data.rootCommitId)}
-                        </code>
-                    ) : (
-                        <div className="h-4 w-28 rounded bg-black/10 animate-pulse" />
-                    )}
-                    {data?.rootCommitId && (
-                        <button
-                            type="button"
-                            onClick={() => copyId(data.rootCommitId)}
-                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-black/15 bg-white text-black hover:bg-black/5 transition shadow-sm"
-                            title="Copy Primary Commit ID"
-                            aria-label="Copy Primary Commit ID"
-                        >
-                            {copiedId === data.rootCommitId ? (
-                                <Check className="h-3.5 w-3.5 text-emerald-600" />
-                            ) : (
-                                <Copy className="h-3.5 w-3.5" />
-                            )}
-                        </button>
-                    )}
-                </div>
+                {data && (
+                    <span className="text-[10px] font-bold text-black/50">
+                        {liveSharesList.length} / {data.maxShares} Users
+                    </span>
+                )}
             </div>
 
             {/* Horizontal Members / Users Avatar Row with Prominent (+) Button */}
@@ -415,17 +348,17 @@ export default function VaultShareManager({
                                     key={share.commitId}
                                     type="button"
                                     onClick={() => setSelectedShare(share)}
-                                    className="group flex min-w-[76px] cursor-pointer shrink-0 flex-col items-center justify-center rounded-2xl border border-black/10 bg-white/80 p-2.5 text-center transition hover:border-[#2775CA] hover:bg-white shadow-sm"
+                                    className="group flex min-w-[76px] cursor-pointer shrink-0 flex-col items-center justify-center rounded-2xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-white/[0.06] p-2.5 text-center transition hover:border-[#2775CA] hover:bg-white dark:hover:bg-white/10 shadow-sm"
                                     title={`Manage ${share.displayName || "User"}`}
                                 >
-                                    <div className="mb-1 flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-black/15 bg-[#2775CA]/10 text-xs font-black text-[#2775CA] shrink-0 shadow-inner group-hover:scale-105 transition-transform">
+                                    <div className="mb-1 flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-black/15 dark:border-white/15 bg-[#2775CA]/10 text-xs font-black text-[#2775CA] shrink-0 shadow-inner group-hover:scale-105 transition-transform">
                                         {share.profilePic ? (
                                             <img src={share.profilePic} alt={share.displayName || "User"} className="h-full w-full object-cover" />
                                         ) : (
                                             initial
                                         )}
                                     </div>
-                                    <span className="w-full truncate text-[10px] font-bold text-black">
+                                    <span className="w-full truncate text-[10px] font-bold text-black dark:text-white">
                                         {share.displayName || "User"}
                                     </span>
                                     <span className="text-[8px] font-bold uppercase tracking-wider text-[#2775CA]">
@@ -444,7 +377,7 @@ export default function VaultShareManager({
                             setSuccessMsg(null);
                             setAddModalOpen(true);
                         }}
-                        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-black/20 bg-white text-black hover:bg-black/5 hover:border-[#2775CA] hover:text-[#2775CA] transition-all shadow-sm active:scale-95"
+                        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-black/20 dark:border-white/20 bg-white dark:bg-white/10 text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/15 hover:border-[#2775CA] hover:text-[#2775CA] transition-all shadow-sm active:scale-95"
                         title="Add user to this commit"
                         aria-label="Add user to this commit"
                     >
@@ -453,339 +386,385 @@ export default function VaultShareManager({
                 </div>
             </div>
 
-            {/* ADD USER TO COMMIT MODAL */}
-            <AnimatePresence>
-                {addModalOpen && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-                    >
-                        <motion.div
-                            initial={{ scale: 0.95, opacity: 0, y: 10 }}
-                            animate={{ scale: 1, opacity: 1, y: 0 }}
-                            exit={{ scale: 0.95, opacity: 0, y: 10 }}
-                            className="w-full max-w-md rounded-3xl border border-black/10 bg-[#FFFFF0] p-6 shadow-2xl space-y-5 text-black"
-                        >
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h3 className="text-base font-black uppercase tracking-wider text-[#111827]">
-                                        Add User to Commit
-                                    </h3>
-                                    <p className="text-[11px] text-black/60 font-sans">
-                                        Share {merchantLabel} commitment credits with team members or friends.
-                                    </p>
-                                </div>
-                                <button
-                                    type="button"
+            {/* ── PORTALED MODALS: Attached directly to document.body for full-screen edge-to-edge backdrop blur ── */}
+            {mounted && createPortal(
+                <>
+                    {/* ADD USER TO COMMIT MODAL */}
+                    <AnimatePresence>
+                        {addModalOpen && (
+                            <>
+                                <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
                                     onClick={() => setAddModalOpen(false)}
-                                    className="p-1.5 rounded-full hover:bg-black/5 text-black/50 hover:text-black transition"
+                                    className="fixed inset-0 bg-black/65 backdrop-blur-sm z-[100]"
+                                />
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.96, y: 16 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.96, y: 16 }}
+                                    transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                                    className="fixed inset-0 z-[101] flex items-center justify-center p-3 sm:p-4 font-sans pointer-events-none"
                                 >
-                                    <X className="h-5 w-5" />
-                                </button>
-                            </div>
-
-                            {data && (
-                                <div className="flex items-center justify-between rounded-2xl border border-black/10 bg-white/80 p-3 text-xs shadow-sm">
-                                    <span className="font-bold text-black/60 uppercase text-[10px] tracking-wider">Unassigned Escrow</span>
-                                    <span className="font-mono font-black text-sm text-[#2775CA]">${money(data.unallocatedUsdc)} USDC</span>
-                                </div>
-                            )}
-
-                            {/* DM Contacts Quick Picker */}
-                            {dmContacts.length > 0 && (
-                                <div className="space-y-1.5">
-                                    <span className="text-[9px] font-bold uppercase tracking-wider text-black/50">Select from DMs:</span>
-                                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                                        {dmContacts.map((c) => (
+                                    <div
+                                        role="dialog"
+                                        aria-modal="true"
+                                        className="pointer-events-auto bg-[#FFFFF0] dark:bg-[#0f1219] border border-black/15 dark:border-white/15 rounded-3xl w-full max-w-md max-h-[88vh] flex flex-col overflow-hidden shadow-2xl relative text-black dark:text-white p-6 space-y-5"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <h3 className="text-base font-black uppercase tracking-wider text-[#111827] dark:text-white">
+                                                    Add User to Commit
+                                                </h3>
+                                                <p className="text-[11px] text-black/60 dark:text-white/60 font-sans">
+                                                    Share {merchantLabel} commitment credits with team members or friends.
+                                                </p>
+                                            </div>
                                             <button
-                                                key={c.address}
                                                 type="button"
-                                                onClick={() => setName(c.displayName)}
-                                                className="flex items-center gap-1.5 rounded-xl border border-black/15 bg-white px-2.5 py-1 text-[10px] text-black hover:border-[#2775CA] hover:bg-[#2775CA]/5 transition shadow-sm"
+                                                onClick={() => setAddModalOpen(false)}
+                                                className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white transition"
                                             >
-                                                {c.profilePic ? (
-                                                    <img src={c.profilePic} alt={c.displayName} className="h-3.5 w-3.5 rounded-full object-cover shrink-0" />
-                                                ) : (
-                                                    <User className="h-3 w-3 text-black/40 shrink-0" />
-                                                )}
-                                                <span className="font-bold truncate max-w-[120px]">{c.displayName}</span>
+                                                <X className="h-5 w-5" />
                                             </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
+                                        </div>
 
-                            {/* Inputs */}
-                            <div className="space-y-3 font-sans">
-                                <div>
-                                    <label className="block text-[10px] font-black uppercase tracking-wider text-black/60 mb-1">User Name or Alias</label>
-                                    <input
-                                        value={name}
-                                        onChange={(e) => setName(e.target.value)}
-                                        placeholder="e.g. Choppa, alex.sub, or 0x..."
-                                        maxLength={128}
-                                        className="w-full rounded-2xl border border-black/15 bg-white px-3.5 py-2.5 text-xs text-[#111827] placeholder:text-black/30 focus:border-[#2775CA] focus:outline-none shadow-sm"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-black uppercase tracking-wider text-black/60 mb-1">Spend Cap in USDC (Optional)</label>
-                                    <input
-                                        value={cap}
-                                        onChange={(e) => setCap(e.target.value)}
-                                        placeholder="e.g. 500.00 (leave empty for uncapped)"
-                                        inputMode="decimal"
-                                        className="w-full rounded-2xl border border-black/15 bg-white px-3.5 py-2.5 text-xs text-[#111827] placeholder:text-black/30 focus:border-[#2775CA] focus:outline-none shadow-sm"
-                                    />
-                                </div>
-                            </div>
-
-                            {formError && (
-                                <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] font-bold text-red-700">
-                                    {formError}
-                                </p>
-                            )}
-
-                            {successMsg && (
-                                <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11px] font-bold text-emerald-800">
-                                    {successMsg}
-                                </p>
-                            )}
-
-                            <div className="flex justify-end gap-2 pt-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setAddModalOpen(false)}
-                                    className="px-4 py-2.5 rounded-2xl border border-black/15 bg-white text-xs font-bold text-black hover:bg-black/5 transition shadow-sm"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleCreate}
-                                    disabled={creating || atCeiling || !name.trim()}
-                                    className="px-5 py-2.5 rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] text-white text-xs font-black uppercase tracking-wider transition flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
-                                >
-                                    {creating && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                                    Add User & Send Key
-                                </button>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* MANAGE USER MODAL */}
-            <AnimatePresence>
-                {selectedShare && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-                    >
-                        <motion.div
-                            initial={{ scale: 0.95, opacity: 0, y: 10 }}
-                            animate={{ scale: 1, opacity: 1, y: 0 }}
-                            exit={{ scale: 0.95, opacity: 0, y: 10 }}
-                            className="w-full max-w-md rounded-3xl border border-black/10 bg-[#FFFFF0] p-6 shadow-2xl space-y-4 text-black"
-                        >
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border border-black/15 bg-[#2775CA]/10 text-sm font-black text-[#2775CA] shrink-0">
-                                        {selectedShare.profilePic ? (
-                                            <img src={selectedShare.profilePic} alt={selectedShare.displayName || "User"} className="h-full w-full object-cover" />
-                                        ) : (
-                                            selectedShare.displayName ? selectedShare.displayName[0].toUpperCase() : "U"
+                                        {data && (
+                                            <div className="flex items-center justify-between rounded-2xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-white/[0.06] p-3 text-xs shadow-sm">
+                                                <span className="font-bold text-black/60 dark:text-white/60 uppercase text-[10px] tracking-wider">Unassigned Escrow</span>
+                                                <span className="font-mono font-black text-sm text-[#2775CA]">${money(data.unallocatedUsdc)} USDC</span>
+                                            </div>
                                         )}
+
+                                        {/* DM Contacts Quick Picker */}
+                                        {dmContacts.length > 0 && (
+                                            <div className="space-y-1.5">
+                                                <span className="text-[9px] font-bold uppercase tracking-wider text-black/50 dark:text-white/50">Select from DMs:</span>
+                                                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                                                    {dmContacts.map((c) => (
+                                                        <button
+                                                            key={c.address}
+                                                            type="button"
+                                                            onClick={() => setName(c.displayName)}
+                                                            className="flex items-center gap-1.5 rounded-xl border border-black/15 dark:border-white/15 bg-white dark:bg-white/10 px-2.5 py-1 text-[10px] text-black dark:text-white hover:border-[#2775CA] hover:bg-[#2775CA]/10 transition shadow-sm"
+                                                        >
+                                                            {c.profilePic ? (
+                                                                <img src={c.profilePic} alt={c.displayName} className="h-3.5 w-3.5 rounded-full object-cover shrink-0" />
+                                                            ) : (
+                                                                <User className="h-3 w-3 text-black/40 dark:text-white/40 shrink-0" />
+                                                            )}
+                                                            <span className="font-bold truncate max-w-[120px]">{c.displayName}</span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Inputs */}
+                                        <div className="space-y-3 font-sans">
+                                            <div>
+                                                <label className="block text-[10px] font-black uppercase tracking-wider text-black/60 dark:text-white/60 mb-1">User Name or Alias</label>
+                                                <input
+                                                    value={name}
+                                                    onChange={(e) => setName(e.target.value)}
+                                                    placeholder="e.g. Choppa, alex.sub, or 0x..."
+                                                    maxLength={128}
+                                                    className="w-full rounded-2xl border border-black/15 dark:border-white/15 bg-white dark:bg-black/50 px-3.5 py-2.5 text-xs text-[#111827] dark:text-white placeholder:text-black/30 dark:placeholder:text-white/30 focus:border-[#2775CA] focus:outline-none shadow-sm"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-black uppercase tracking-wider text-black/60 dark:text-white/60 mb-1">Spend Cap in USDC (Optional)</label>
+                                                <input
+                                                    value={cap}
+                                                    onChange={(e) => setCap(e.target.value)}
+                                                    placeholder="e.g. 500.00 (leave empty for uncapped)"
+                                                    inputMode="decimal"
+                                                    className="w-full rounded-2xl border border-black/15 dark:border-white/15 bg-white dark:bg-black/50 px-3.5 py-2.5 text-xs text-[#111827] dark:text-white placeholder:text-black/30 dark:placeholder:text-white/30 focus:border-[#2775CA] focus:outline-none shadow-sm"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {formError && (
+                                            <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] font-bold text-red-700 dark:text-red-300">
+                                                {formError}
+                                            </p>
+                                        )}
+
+                                        {successMsg && (
+                                            <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
+                                                {successMsg}
+                                            </p>
+                                        )}
+
+                                        <div className="flex justify-end gap-2 pt-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => setAddModalOpen(false)}
+                                                className="px-4 py-2.5 rounded-2xl border border-black/15 dark:border-white/15 bg-white dark:bg-white/10 text-xs font-bold text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/15 transition shadow-sm"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={handleCreate}
+                                                disabled={creating || atCeiling || !name.trim()}
+                                                className="px-5 py-2.5 rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] text-white text-xs font-black uppercase tracking-wider transition flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
+                                            >
+                                                {creating && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                                                Add User & Send Key
+                                            </button>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <h3 className="text-base font-black uppercase tracking-wider text-[#111827]">
-                                            {selectedShare.displayName || "User"}
-                                        </h3>
-                                        <span className={`inline-block rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${STATUS_STYLES[selectedShare.status] ?? STATUS_STYLES.REVOKED}`}>
-                                            {selectedShare.status}
-                                        </span>
-                                    </div>
-                                </div>
-                                <button
-                                    type="button"
+                                </motion.div>
+                            </>
+                        )}
+                    </AnimatePresence>
+
+                    {/* MANAGE USER MODAL */}
+                    <AnimatePresence>
+                        {selectedShare && (
+                            <>
+                                <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
                                     onClick={() => setSelectedShare(null)}
-                                    className="p-1.5 rounded-full hover:bg-black/5 text-black/50 hover:text-black transition"
+                                    className="fixed inset-0 bg-black/65 backdrop-blur-sm z-[100]"
+                                />
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.96, y: 16 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.96, y: 16 }}
+                                    transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                                    className="fixed inset-0 z-[101] flex items-center justify-center p-3 sm:p-4 font-sans pointer-events-none"
                                 >
-                                    <X className="h-5 w-5" />
-                                </button>
-                            </div>
-
-                            {/* Scoped Commit ID */}
-                            <div className="rounded-2xl border border-black/10 bg-white/80 p-3 space-y-1 shadow-sm">
-                                <span className="text-[9px] font-black uppercase tracking-wider text-black/50">Delegated Commit Key</span>
-                                <div className="flex items-center justify-between gap-2">
-                                    <code className="truncate font-mono text-xs text-black/80">{secretId(selectedShare.commitId)}</code>
-                                    <button
-                                        type="button"
-                                        onClick={() => copyId(selectedShare.commitId)}
-                                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-black/15 bg-white text-black hover:bg-black/5 transition shadow-sm"
-                                        title="Copy Delegated Key"
+                                    <div
+                                        role="dialog"
+                                        aria-modal="true"
+                                        className="pointer-events-auto bg-[#FFFFF0] dark:bg-[#0f1219] border border-black/15 dark:border-white/15 rounded-3xl w-full max-w-md max-h-[88vh] flex flex-col overflow-hidden shadow-2xl relative text-black dark:text-white p-6 space-y-4"
+                                        onClick={(e) => e.stopPropagation()}
                                     >
-                                        {copiedId === selectedShare.commitId ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-                                    </button>
-                                </div>
-                            </div>
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border border-black/15 dark:border-white/15 bg-[#2775CA]/10 text-sm font-black text-[#2775CA] shrink-0">
+                                                    {selectedShare.profilePic ? (
+                                                        <img src={selectedShare.profilePic} alt={selectedShare.displayName || "User"} className="h-full w-full object-cover" />
+                                                    ) : (
+                                                        selectedShare.displayName ? selectedShare.displayName[0].toUpperCase() : "U"
+                                                    )}
+                                                </div>
+                                                <div>
+                                                    <h3 className="text-base font-black uppercase tracking-wider text-[#111827] dark:text-white">
+                                                        {selectedShare.displayName || "User"}
+                                                    </h3>
+                                                    <span className={`inline-block rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${STATUS_STYLES[selectedShare.status] ?? STATUS_STYLES.REVOKED}`}>
+                                                        {selectedShare.status}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedShare(null)}
+                                                className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white transition"
+                                            >
+                                                <X className="h-5 w-5" />
+                                            </button>
+                                        </div>
 
-                            {/* Usage & Cap */}
-                            <div className="rounded-2xl border border-black/10 bg-white/80 p-4 space-y-2 shadow-sm">
-                                <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider">
-                                    <span className="text-black/60">Usage</span>
-                                    <span className="text-[#2775CA]">${money(selectedShare.spentUsdc)} USDC Used</span>
-                                </div>
-                                <div className="flex items-center justify-between text-[10px] font-bold text-black/50">
-                                    <span>Cap</span>
-                                    <span>{selectedShare.spendLimitUsdc === null ? "Uncapped Pool" : `$${money(selectedShare.spendLimitUsdc)} Limit (${money(selectedShare.remainingUsdc)} left)`}</span>
-                                </div>
-                                {utilizationPercent(selectedShare) !== null && (
-                                    <div className="h-2 overflow-hidden rounded-full bg-black/10">
-                                        <div
-                                            className={`h-full rounded-full ${utilizationPercent(selectedShare)! >= 100 ? "bg-red-500" : utilizationPercent(selectedShare)! >= 80 ? "bg-amber-500" : "bg-[#2775CA]"}`}
-                                            style={{ width: `${Math.min(utilizationPercent(selectedShare)!, 100)}%` }}
-                                        />
+                                        {/* Scoped Commit ID */}
+                                        <div className="rounded-2xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-white/[0.06] p-3 space-y-1 shadow-sm">
+                                            <span className="text-[9px] font-black uppercase tracking-wider text-black/50 dark:text-white/50">Delegated Commit Key</span>
+                                            <div className="flex items-center justify-between gap-2">
+                                                <code className="truncate font-mono text-xs text-black/80 dark:text-white/90">{secretId(selectedShare.commitId)}</code>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => copyId(selectedShare.commitId)}
+                                                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-black/15 dark:border-white/15 bg-white dark:bg-white/10 text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/15 transition shadow-sm"
+                                                    title="Copy Delegated Key"
+                                                >
+                                                    {copiedId === selectedShare.commitId ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Usage & Cap */}
+                                        <div className="rounded-2xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-white/[0.06] p-4 space-y-2 shadow-sm">
+                                            <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider">
+                                                <span className="text-black/60 dark:text-white/60">Usage</span>
+                                                <span className="text-[#2775CA]">${money(selectedShare.spentUsdc)} USDC Used</span>
+                                            </div>
+                                            <div className="flex items-center justify-between text-[10px] font-bold text-black/50 dark:text-white/50">
+                                                <span>Cap</span>
+                                                <span>{selectedShare.spendLimitUsdc === null ? "Uncapped Pool" : `$${money(selectedShare.spendLimitUsdc)} Limit (${money(selectedShare.remainingUsdc)} left)`}</span>
+                                            </div>
+                                            {utilizationPercent(selectedShare) !== null && (
+                                                <div className="h-2 overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
+                                                    <div
+                                                        className={`h-full rounded-full ${utilizationPercent(selectedShare)! >= 100 ? "bg-red-500" : utilizationPercent(selectedShare)! >= 80 ? "bg-amber-500" : "bg-[#2775CA]"}`}
+                                                        style={{ width: `${Math.min(utilizationPercent(selectedShare)!, 100)}%` }}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Actions */}
+                                        <div className="flex flex-wrap gap-2 pt-1">
+                                            <button
+                                                type="button"
+                                                onClick={() => setRecapModal({ share: selectedShare, value: selectedShare.spendLimitUsdc ? formatUsdc(selectedShare.spendLimitUsdc) : "" })}
+                                                className="flex-1 py-2.5 rounded-2xl border border-black/15 dark:border-white/15 bg-white dark:bg-white/10 text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/15 text-xs font-bold transition shadow-sm"
+                                            >
+                                                Edit Cap
+                                            </button>
+                                            {selectedShare.status === "ACTIVE" ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => runAction(selectedShare.commitId, "pause")}
+                                                    className="flex-1 py-2.5 rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/20 text-xs font-bold transition shadow-sm"
+                                                >
+                                                    Pause Access
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => runAction(selectedShare.commitId, "resume")}
+                                                    className="flex-1 py-2.5 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-500/20 text-xs font-bold transition shadow-sm"
+                                                >
+                                                    Resume Access
+                                                </button>
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={() => runAction(selectedShare.commitId, "rotate")}
+                                                className="flex-1 py-2.5 rounded-2xl border border-black/15 dark:border-white/15 bg-white dark:bg-white/10 text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/15 text-xs font-bold transition shadow-sm"
+                                                title="Issue a new commit ID. Keeps the cap and usage, and the old ID stops working now."
+                                            >
+                                                New ID
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => runAction(selectedShare.commitId, "revoke")}
+                                                className="py-2.5 px-4 rounded-2xl border border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300 hover:bg-red-500/20 text-xs font-bold transition shadow-sm"
+                                            >
+                                                Revoke
+                                            </button>
+                                        </div>
                                     </div>
-                                )}
-                            </div>
+                                </motion.div>
+                            </>
+                        )}
+                    </AnimatePresence>
 
-                            {/* Actions */}
-                            <div className="flex flex-wrap gap-2 pt-1">
-                                <button
-                                    type="button"
-                                    onClick={() => setRecapModal({ share: selectedShare, value: selectedShare.spendLimitUsdc ? formatUsdc(selectedShare.spendLimitUsdc) : "" })}
-                                    className="flex-1 py-2.5 rounded-2xl border border-black/15 bg-white text-black hover:bg-black/5 text-xs font-bold transition shadow-sm"
-                                >
-                                    Edit Cap
-                                </button>
-                                {selectedShare.status === "ACTIVE" ? (
-                                    <button
-                                        type="button"
-                                        onClick={() => runAction(selectedShare.commitId, "pause")}
-                                        className="flex-1 py-2.5 rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-800 hover:bg-amber-500/20 text-xs font-bold transition shadow-sm"
-                                    >
-                                        Pause Access
-                                    </button>
-                                ) : (
-                                    <button
-                                        type="button"
-                                        onClick={() => runAction(selectedShare.commitId, "resume")}
-                                        className="flex-1 py-2.5 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-800 hover:bg-emerald-500/20 text-xs font-bold transition shadow-sm"
-                                    >
-                                        Resume Access
-                                    </button>
-                                )}
-                                <button
-                                    type="button"
-                                    onClick={() => runAction(selectedShare.commitId, "rotate")}
-                                    className="flex-1 py-2.5 rounded-2xl border border-black/15 bg-white text-black hover:bg-black/5 text-xs font-bold transition shadow-sm"
-                                    title="Issue a new commit ID. Keeps the cap and usage, and the old ID stops working now."
-                                >
-                                    New ID
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => runAction(selectedShare.commitId, "revoke")}
-                                    className="py-2.5 px-4 rounded-2xl border border-red-500/30 bg-red-500/10 text-red-700 hover:bg-red-500/20 text-xs font-bold transition shadow-sm"
-                                >
-                                    Revoke
-                                </button>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* CONFIRMATION MODAL */}
-            <AnimatePresence>
-                {confirmModal && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-                    >
-                        <motion.div
-                            initial={{ scale: 0.95, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.95, opacity: 0 }}
-                            className="w-full max-w-sm rounded-3xl border border-black/10 bg-[#FFFFF0] p-6 shadow-2xl space-y-4 text-black"
-                        >
-                            <h3 className="text-base font-bold text-[#111827] uppercase tracking-wider">{confirmModal.title}</h3>
-                            <p className="text-xs text-black/60 leading-relaxed font-sans">{confirmModal.message}</p>
-                            <div className="flex justify-end gap-2 pt-2">
-                                <button
-                                    type="button"
+                    {/* CONFIRMATION MODAL */}
+                    <AnimatePresence>
+                        {confirmModal && (
+                            <>
+                                <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
                                     onClick={() => setConfirmModal(null)}
-                                    className="px-4 py-2 text-xs font-bold text-black/60 hover:text-black transition"
+                                    className="fixed inset-0 bg-black/65 backdrop-blur-sm z-[100]"
+                                />
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.96, y: 16 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.96, y: 16 }}
+                                    transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                                    className="fixed inset-0 z-[101] flex items-center justify-center p-3 sm:p-4 font-sans pointer-events-none"
                                 >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={confirmModal.onConfirm}
-                                    className="px-4 py-2 rounded-xl bg-red-600 text-white text-xs font-bold uppercase tracking-wider transition shadow-sm hover:bg-red-700"
-                                >
-                                    {confirmModal.confirmText}
-                                </button>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                                    <div
+                                        role="dialog"
+                                        aria-modal="true"
+                                        className="pointer-events-auto bg-[#FFFFF0] dark:bg-[#0f1219] border border-black/15 dark:border-white/15 rounded-3xl w-full max-w-sm flex flex-col overflow-hidden shadow-2xl relative text-black dark:text-white p-6 space-y-4"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <h3 className="text-base font-bold text-[#111827] dark:text-white uppercase tracking-wider">{confirmModal.title}</h3>
+                                        <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed font-sans">{confirmModal.message}</p>
+                                        <div className="flex justify-end gap-2 pt-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => setConfirmModal(null)}
+                                                className="px-4 py-2 text-xs font-bold text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={confirmModal.onConfirm}
+                                                className="px-4 py-2 rounded-xl bg-red-600 text-white text-xs font-bold uppercase tracking-wider transition shadow-sm hover:bg-red-700"
+                                            >
+                                                {confirmModal.confirmText}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            </>
+                        )}
+                    </AnimatePresence>
 
-            {/* RECAP / EDIT CAP MODAL */}
-            <AnimatePresence>
-                {recapModal && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-                    >
-                        <motion.div
-                            initial={{ scale: 0.95, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.95, opacity: 0 }}
-                            className="w-full max-w-sm rounded-3xl border border-black/10 bg-[#FFFFF0] p-6 shadow-2xl space-y-4 text-black"
-                        >
-                            <h3 className="text-base font-bold text-[#111827] uppercase tracking-wider">Update Spend Cap</h3>
-                            <p className="text-xs text-black/60 leading-relaxed font-sans">
-                                Enter new spend cap in USDC for {recapModal.share.displayName || "this user"} (already spent ${formatUsdc(recapModal.share.spentUsdc)} USDC):
-                            </p>
-                            <input
-                                type="text"
-                                value={recapModal.value}
-                                onChange={(e) => setRecapModal({ ...recapModal, value: e.target.value })}
-                                placeholder="Cap in USDC (leave blank for uncapped)"
-                                inputMode="decimal"
-                                className="w-full rounded-2xl border border-black/15 bg-white px-3.5 py-2.5 text-xs text-[#111827] placeholder:text-black/30 focus:border-[#2775CA] focus:outline-none shadow-sm font-sans"
-                            />
-                            <div className="flex justify-end gap-2 pt-2">
-                                <button
-                                    type="button"
+                    {/* RECAP / EDIT CAP MODAL */}
+                    <AnimatePresence>
+                        {recapModal && (
+                            <>
+                                <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
                                     onClick={() => setRecapModal(null)}
-                                    className="px-4 py-2 text-xs font-bold text-black/60 hover:text-black transition"
+                                    className="fixed inset-0 bg-black/65 backdrop-blur-sm z-[100]"
+                                />
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.96, y: 16 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.96, y: 16 }}
+                                    transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                                    className="fixed inset-0 z-[101] flex items-center justify-center p-3 sm:p-4 font-sans pointer-events-none"
                                 >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => submitRecap(recapModal.share, recapModal.value)}
-                                    className="px-4 py-2 rounded-xl bg-[#2775CA] hover:bg-[#1f62ab] text-white text-xs font-bold uppercase tracking-wider transition shadow-sm"
-                                >
-                                    Save Cap
-                                </button>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                                    <div
+                                        role="dialog"
+                                        aria-modal="true"
+                                        className="pointer-events-auto bg-[#FFFFF0] dark:bg-[#0f1219] border border-black/15 dark:border-white/15 rounded-3xl w-full max-w-sm flex flex-col overflow-hidden shadow-2xl relative text-black dark:text-white p-6 space-y-4"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <h3 className="text-base font-bold text-[#111827] dark:text-white uppercase tracking-wider">Update Spend Cap</h3>
+                                        <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed font-sans">
+                                            Enter new spend cap in USDC for {recapModal.share.displayName || "this user"} (already spent ${formatUsdc(recapModal.share.spentUsdc)} USDC):
+                                        </p>
+                                        <input
+                                            type="text"
+                                            value={recapModal.value}
+                                            onChange={(e) => setRecapModal({ ...recapModal, value: e.target.value })}
+                                            placeholder="Cap in USDC (leave blank for uncapped)"
+                                            inputMode="decimal"
+                                            className="w-full rounded-2xl border border-black/15 dark:border-white/15 bg-white dark:bg-black/50 px-3.5 py-2.5 text-xs text-[#111827] dark:text-white placeholder:text-black/30 dark:placeholder:text-white/30 focus:border-[#2775CA] focus:outline-none shadow-sm font-sans"
+                                        />
+                                        <div className="flex justify-end gap-2 pt-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => setRecapModal(null)}
+                                                className="px-4 py-2 text-xs font-bold text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => submitRecap(recapModal.share, recapModal.value)}
+                                                className="px-4 py-2 rounded-xl bg-[#2775CA] hover:bg-[#1f62ab] text-white text-xs font-bold uppercase tracking-wider transition shadow-sm"
+                                            >
+                                                Save Cap
+                                            </button>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            </>
+                        )}
+                    </AnimatePresence>
+                </>,
+                document.body
+            )}
         </div>
     );
 }

@@ -889,6 +889,7 @@ export default function UserDashboard() {
      fetch effect fires. Without this the section would flash its empty state before shimmering. */
   const [referralsLoaded, setReferralsLoaded] = useState<boolean>(false);
   const [referralCopySuccess, setReferralCopySuccess] = useState<boolean>(false);
+  const [referralQrOpen, setReferralQrOpen] = useState<boolean>(false);
 
   const { theme, setTheme } = useTheme();
   const [supportChatOpen, setSupportChatOpen] = useState(false);
@@ -3424,13 +3425,13 @@ export default function UserDashboard() {
         </div>
 
         {/* Mobile Bottom Bar Skeleton */}
-        <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3 md:hidden">
-          <div className="flex flex-1 items-center justify-around rounded-full border border-black/15 bg-[#2775CA]/20 px-3 py-[1.1rem] backdrop-blur-2xl">
+        <div className="fixed bottom-4 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-2 md:hidden">
+          <div className="flex h-12 flex-1 items-center justify-around rounded-full border border-black/15 bg-[#2775CA]/20 px-3 backdrop-blur-2xl">
             {[1, 2, 3, 4].map((i) => (
               <div key={i} className="h-6 w-6 subscript-skeleton rounded-full" />
             ))}
           </div>
-          <div className="h-[3.3rem] w-[3.3rem] shrink-0 rounded-full subscript-skeleton" />
+          <div className="h-12 w-12 shrink-0 rounded-full subscript-skeleton" />
         </div>
       </div>
     );
@@ -4196,15 +4197,15 @@ export default function UserDashboard() {
                   subtitle="Fund prepaid balances for metered services"
                 />
 
-                <section className="commit-vault-shell p-0 sm:rounded-3xl sm:border sm:border-black/35 sm:bg-[#2775CA]/20 sm:p-8">
+                <section className="commit-vault-shell p-0 sm:rounded-3xl sm:border-0 sm:bg-transparent sm:p-0">
                   <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                       <div className="flex items-center gap-2">
-                        <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Prepaid Metered Vaults</h2>
+                        <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-black/75 dark:text-white/70">Prepaid Metered Vaults</h2>
                         <button
                           type="button"
                           onClick={toggleBalanceVisible}
-                          className="text-white/40 transition-colors hover:text-white"
+                          className="text-black/40 dark:text-white/40 transition-colors hover:text-black dark:hover:text-white"
                           aria-label={balanceVisible ? "Hide balances" : "Show balances"}
                           title={balanceVisible ? "Hide sensitive amounts" : "Show sensitive amounts"}
                         >
@@ -4213,15 +4214,15 @@ export default function UserDashboard() {
                         <button
                           type="button"
                           onClick={() => setVaultInfoOpen(true)}
-                          className="grid h-4 w-4 place-items-center rounded-full border border-white/20 text-[9px] font-black text-white/50 transition hover:border-[#ccff00]/50 hover:text-[#ccff00]"
+                          className="grid h-4 w-4 place-items-center rounded-full border border-black/20 dark:border-white/20 text-[9px] font-black text-black/50 dark:text-white/50 transition hover:border-[#2775CA] dark:hover:border-[#ccff00]/50 hover:text-[#2775CA] dark:hover:text-[#ccff00]"
                           aria-label="What is a vault?"
                         >
                           ?
                         </button>
                       </div>
-                      <p className="mt-1 text-[9px] text-white/40">
+                      <p className="mt-1 text-[9px] text-black/50 dark:text-white/40">
                         Prepaid balance for a metered service.{" "}
-                        <button type="button" onClick={() => setVaultInfoOpen(true)} className="font-bold text-[#ccff00]/80 hover:underline">
+                        <button type="button" onClick={() => setVaultInfoOpen(true)} className="font-bold text-[#2775CA] dark:text-[#ccff00]/80 hover:underline">
                           what&apos;s this?
                         </button>
                       </p>
@@ -4959,34 +4960,34 @@ export default function UserDashboard() {
                     <Send className="h-3.5 w-3.5" /> Single Send
                   </button>
                 </div>
-                  <div ref={batchFormRef} className="border border-black/10 bg-white/80 rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm text-black">
+                  <div ref={batchFormRef} className="border border-black/10 dark:border-white/15 bg-white/80 dark:bg-white/[0.04] rounded-3xl p-5 sm:p-8 space-y-6 shadow-sm text-black dark:text-white">
                     {/* Batch payouts are Arc-only. */}
-                    <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3.5 flex items-start gap-2.5 text-black">
-                      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-800 mt-0.5" />
-                      <div className="text-[11px] leading-relaxed">
-                        <strong className="block text-amber-950 font-black uppercase tracking-wider text-[10px] mb-0.5">
+                    <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 dark:bg-amber-950/40 dark:border-amber-400/40 p-3.5 flex items-start gap-2.5">
+                      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400 mt-0.5" />
+                      <div className="text-[11px] leading-relaxed text-amber-900/90 dark:text-amber-200">
+                        <strong className="block text-amber-950 dark:text-amber-300 font-black uppercase tracking-wider text-[10px] mb-0.5">
                           BATCH SEND ONLY SUPPORTS THE ARC NETWORK!
                         </strong>
-                        Batch payouts are settled exclusively on Arc. To send USDC across chains (e.g. Base, Ethereum, Arbitrum, Polygon), use <strong>Single Send</strong>.
+                        Batch payouts are settled exclusively on Arc. To send USDC across chains (e.g. Base, Ethereum, Arbitrum, Polygon), use <strong className="text-amber-950 dark:text-amber-100 font-bold">Single Send</strong>.
                       </div>
                     </div>
                     {batchRows.map((row, index) => (
-                      <div key={index} className="rounded-3xl border border-black/10 bg-black/5 p-4 space-y-3 relative text-black">
+                      <div key={index} className="rounded-3xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/[0.03] p-4 space-y-3 relative text-black dark:text-white">
                         {batchRows.length > 1 && (
                           <button
                             type="button"
                             disabled={batchSendLoading}
                             onClick={() => setBatchRows((rows) => rows.filter((_, idx) => idx !== index))}
-                            className="absolute right-3 top-3 text-black/40 hover:text-black transition disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="absolute right-3 top-3 text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white transition disabled:opacity-30 disabled:cursor-not-allowed"
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>
                         )}
-                        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-black/60">Recipient {index + 1}</p>
+                        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-black/60 dark:text-white/60">Recipient {index + 1}</p>
                         
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="text-[9px] uppercase font-bold text-black/60">Address or DNS name</span>
+                            <span className="text-[9px] uppercase font-bold text-black/60 dark:text-white/60">Address or DNS name</span>
                             <button
                               type="button"
                               disabled={batchSendLoading}
@@ -4994,9 +4995,9 @@ export default function UserDashboard() {
                                 setQrTargetIndex(index);
                                 setQrScannerOpen(true);
                               }}
-                              className="flex md:hidden items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-[#2775CA] hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
+                              className="flex md:hidden items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-[#2775CA] dark:text-[#589bf0] hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
                             >
-                              <QrCode className="h-3.5 w-3.5 text-[#2775CA]" /> Scan QR
+                              <QrCode className="h-3.5 w-3.5 text-[#2775CA] dark:text-[#589bf0]" /> Scan QR
                             </button>
                           </div>
                           <div className="relative flex items-center gap-2">
@@ -5005,7 +5006,7 @@ export default function UserDashboard() {
                               disabled={batchSendLoading}
                               onChange={(event) => setBatchRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, address: event.target.value } : item))}
                               placeholder="alice.sub or 0x..."
-                              className="subscript-input bg-white border border-black/15 text-[#111827] disabled:bg-black/5 disabled:cursor-not-allowed disabled:text-black/50"
+                              className="subscript-input bg-white dark:bg-white/[0.06] border border-black/15 dark:border-white/15 text-[#111827] dark:text-white disabled:bg-black/5 dark:disabled:bg-white/[0.02] disabled:cursor-not-allowed disabled:text-black/50 dark:disabled:text-white/40"
                             />
                             <button
                               type="button"
@@ -5015,16 +5016,16 @@ export default function UserDashboard() {
                                 setQrScannerOpen(true);
                               }}
                               title={`Scan QR Code for Recipient #${index + 1}`}
-                              className="flex md:hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-black/15 bg-white text-black hover:bg-black/5 transition shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                              className="flex md:hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-black/15 dark:border-white/15 bg-white dark:bg-white/10 text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/20 transition shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
                             >
-                              <QrCode className="h-4 w-4 text-black" />
+                              <QrCode className="h-4 w-4 text-black dark:text-white" />
                             </button>
                           </div>
                         </div>
 
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="text-[9px] uppercase font-bold text-black/60">USDC Amount</span>
+                            <span className="text-[9px] uppercase font-bold text-black/60 dark:text-white/60">USDC Amount</span>
                             <button
                               type="button"
                               disabled={batchSendLoading}
@@ -5042,7 +5043,7 @@ export default function UserDashboard() {
                                   )
                                 );
                               }}
-                              className="text-[9px] font-black uppercase tracking-wider text-[#2775CA] hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
+                              className="text-[9px] font-black uppercase tracking-wider text-[#2775CA] dark:text-[#589bf0] hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                               The Rest
                             </button>
@@ -5053,7 +5054,7 @@ export default function UserDashboard() {
                               disabled={batchSendLoading}
                               onChange={(event) => setBatchRows((rows) => rows.map((item, itemIndex) => itemIndex === index ? { ...item, amount: event.target.value } : item))}
                               placeholder="USDC amount"
-                              className="subscript-input bg-white border border-black/15 text-[#111827] pr-20 font-mono disabled:bg-black/5 disabled:cursor-not-allowed disabled:text-black/50"
+                              className="subscript-input bg-white dark:bg-white/[0.06] border border-black/15 dark:border-white/15 text-[#111827] dark:text-white pr-20 font-mono disabled:bg-black/5 dark:disabled:bg-white/[0.02] disabled:cursor-not-allowed disabled:text-black/50 dark:disabled:text-white/40"
                             />
                             <button
                               type="button"
@@ -5072,7 +5073,7 @@ export default function UserDashboard() {
                                   )
                                 );
                               }}
-                              className="absolute right-2.5 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg bg-[#2775CA]/10 text-[#2775CA] hover:bg-[#2775CA]/20 border border-[#2775CA]/30 transition z-10 disabled:opacity-40 disabled:cursor-not-allowed"
+                              className="absolute right-2.5 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg bg-[#2775CA]/10 dark:bg-[#2775CA]/25 text-[#2775CA] dark:text-[#589bf0] hover:bg-[#2775CA]/20 border border-[#2775CA]/30 transition z-10 disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                               The Rest
                             </button>
@@ -5082,14 +5083,14 @@ export default function UserDashboard() {
                     ))}
 
                     {batchProgress && (
-                      <div className="bg-[#2775CA]/10 border border-[#2775CA]/20 rounded-2xl p-4 flex items-center gap-3 text-black">
-                        <Loader2 className="w-4 h-4 animate-spin text-[#2775CA]" />
-                        <span className="text-xs text-black font-medium">{batchProgress}</span>
+                      <div className="bg-[#2775CA]/10 dark:bg-[#2775CA]/20 border border-[#2775CA]/20 dark:border-[#2775CA]/40 rounded-2xl p-4 flex items-center gap-3 text-black dark:text-white">
+                        <Loader2 className="w-4 h-4 animate-spin text-[#2775CA] dark:text-[#589bf0]" />
+                        <span className="text-xs text-black dark:text-white font-medium">{batchProgress}</span>
                       </div>
                     )}
 
                     {batchSelfSendRows.length > 0 && (
-                      <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-[11px] leading-relaxed text-red-700">
+                      <div className="rounded-2xl border border-red-500/30 bg-red-500/10 dark:bg-red-950/30 p-3 text-[11px] leading-relaxed text-red-700 dark:text-red-300">
                         Recipient {batchSelfSendRows.map((row) => row.index + 1).join(", ")} uses your connected wallet address. Remove it before running the batch.
                       </div>
                     )}
@@ -5103,8 +5104,8 @@ export default function UserDashboard() {
                     {batchSendStatus && (
                       <p className={`rounded-2xl border p-3 text-[11px] leading-relaxed ${
                         batchSendStatus.startsWith("Success") 
-                          ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-800" 
-                          : "bg-red-500/15 border-red-500/30 text-red-800"
+                          ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-800 dark:text-emerald-300" 
+                          : "bg-red-500/15 border-red-500/30 text-red-800 dark:text-red-300"
                       }`}>
                         {batchSendStatus}
                       </p>
@@ -7130,22 +7131,135 @@ export default function UserDashboard() {
                     <div className="flex-1 rounded-2xl border border-black/15 bg-[#f8fafc] px-4 py-3 font-mono text-xs text-black font-semibold overflow-x-auto whitespace-nowrap select-all flex items-center">
                       {referralLink}
                     </div>
-                    <button
-                      type="button"
-                      disabled={!referralLink}
-                      onClick={() => {
-                        if (!referralLink) return;
-                        navigator.clipboard.writeText(referralLink);
-                        setReferralCopySuccess(true);
-                        triggerToast("Referral link copied!");
-                        setTimeout(() => setReferralCopySuccess(false), 3000);
-                      }}
-                      className="rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] text-white px-6 py-3.5 text-xs font-black uppercase tracking-[0.16em] transition flex items-center justify-center gap-2 shrink-0 shadow-sm disabled:opacity-50"
-                    >
-                      {referralCopySuccess ? "Copied!" : "Copy Link"}
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        disabled={!referralLink}
+                        onClick={() => {
+                          if (!referralLink) return;
+                          navigator.clipboard.writeText(referralLink);
+                          setReferralCopySuccess(true);
+                          triggerToast("Referral link copied!");
+                          setTimeout(() => setReferralCopySuccess(false), 3000);
+                        }}
+                        className="rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] text-white px-5 py-3.5 text-xs font-black uppercase tracking-[0.16em] transition flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+                        title="Copy referral link"
+                      >
+                        {referralCopySuccess ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                        <span>{referralCopySuccess ? "Copied!" : "Copy Link"}</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!referralLink}
+                        onClick={() => setReferralQrOpen(true)}
+                        className="h-12 w-12 rounded-2xl border border-black/15 bg-white hover:bg-black/5 text-[#2775CA] transition flex items-center justify-center shrink-0 shadow-sm disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-[#2775CA]"
+                        title="Show QR Code"
+                        aria-label="Show Referral QR Code"
+                      >
+                        <QrCode className="h-5 w-5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
+
+                {/* Referral QR Code Modal */}
+                {referralQrOpen && (
+                  <div
+                    className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-md animate-in fade-in duration-200"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Referral QR Code"
+                    onClick={() => setReferralQrOpen(false)}
+                  >
+                    <div
+                      className="relative w-full max-w-sm rounded-3xl border border-black/15 bg-white p-6 shadow-2xl space-y-5 text-black"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#2775CA]/10 text-[#2775CA]">
+                            <QrCode className="h-4 w-4" />
+                          </span>
+                          <div>
+                            <h3 className="text-sm font-black tracking-tight text-black">Referral QR Code</h3>
+                            <p className="text-[10px] text-black/60 font-medium">Scan to join SubScript with your link</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setReferralQrOpen(false)}
+                          className="h-8 w-8 rounded-full border border-black/10 flex items-center justify-center text-black/60 hover:text-black hover:bg-black/5 transition"
+                          aria-label="Close QR Modal"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+
+                      <div className="flex flex-col items-center justify-center rounded-2xl border border-black/10 bg-[#f8fafc] p-6 shadow-inner">
+                        <div id="referral-qr-canvas-wrap" className="rounded-2xl bg-white p-3 shadow-md border border-black/5">
+                          <QRCode
+                            value={referralLink}
+                            size={210}
+                            ecLevel="H"
+                            bgColor="#ffffff"
+                            fgColor="#000000"
+                            qrStyle="dots"
+                            eyeRadius={[
+                              [8, 8, 0, 8],
+                              [8, 8, 8, 0],
+                              [8, 0, 8, 8],
+                            ]}
+                            logoImage="/logo.png"
+                            logoWidth={42}
+                            logoHeight={42}
+                            removeQrCodeBehindLogo={true}
+                            logoPadding={2}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 font-mono text-[11px] text-black/80 truncate text-center select-all">
+                          {referralLink}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(referralLink);
+                              setReferralCopySuccess(true);
+                              triggerToast("Referral link copied!");
+                              setTimeout(() => setReferralCopySuccess(false), 3000);
+                            }}
+                            className="rounded-xl bg-[#2775CA] hover:bg-[#1f62ab] text-white py-2.5 text-xs font-black uppercase tracking-[0.14em] transition flex items-center justify-center gap-1.5 shadow-sm"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                            {referralCopySuccess ? "Copied!" : "Copy Link"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const wrap = document.getElementById("referral-qr-canvas-wrap");
+                              const canvas = wrap?.querySelector("canvas");
+                              if (canvas) {
+                                const url = canvas.toDataURL("image/png");
+                                const a = document.createElement("a");
+                                a.href = url;
+                                a.download = "subscript-referral-qr.png";
+                                a.click();
+                                triggerToast("QR code downloaded!");
+                              }
+                            }}
+                            className="rounded-xl border border-black/15 bg-white hover:bg-black/5 text-black py-2.5 text-xs font-black uppercase tracking-[0.14em] transition flex items-center justify-center gap-1.5 shadow-sm"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            Download
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Referral Statistics Card */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

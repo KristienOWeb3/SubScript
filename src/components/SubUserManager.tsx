@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, Shield, User, X } from "@/components/icons";
 import type { UserCommit } from "@/types";
@@ -56,6 +57,7 @@ const STATUS_STYLES: Record<string, string> = {
 type Busy = { commitId: string; action: string } | null;
 
 export default function SubUserManager({ balanceVisible = true }: { balanceVisible?: boolean } = {}) {
+    const [mounted, setMounted] = useState(false);
     const [commitId, setCommitId] = useState<string | null>(null);
     const [subUsers, setSubUsers] = useState<UserCommit[]>([]);
     const [loading, setLoading] = useState(true);
@@ -84,6 +86,10 @@ export default function SubUserManager({ balanceVisible = true }: { balanceVisib
     /* Amounts collapse to dots when the commit tab's Eye toggle is off, matching the masking
        convention used across the dashboard. */
     const money = (value: string | null) => (balanceVisible ? formatUsdc(value) : "••••");
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     const load = useCallback(async () => {
         try {
@@ -505,175 +511,204 @@ export default function SubUserManager({ balanceVisible = true }: { balanceVisib
                 </ul>
             )}
 
-            <AnimatePresence>
-                {createOpen && (
-                    <motion.div
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        onClick={() => !creating && setCreateOpen(false)}
-                    >
-                        <motion.form
-                            onSubmit={createSubUser}
-                            onClick={(event) => event.stopPropagation()}
-                            className="w-full max-w-md space-y-4 rounded-3xl border border-white/10 bg-[#0a0a0a] p-6 shadow-2xl"
-                            initial={{ opacity: 0, scale: 0.95, y: 12 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, y: 12 }}
-                            transition={{ type: "spring", stiffness: 450, damping: 32 }}
-                        >
-                            <div className="flex items-center justify-between">
-                                <h3 className="text-sm font-black uppercase tracking-wider text-white">Add sub-user</h3>
-                                <button
-                                    type="button"
-                                    onClick={() => setCreateOpen(false)}
-                                    className="rounded-lg p-1 text-white/40 transition hover:text-white"
-                                    aria-label="Close"
+            {mounted && createPortal(
+                <>
+                    <AnimatePresence>
+                        {createOpen && (
+                            <>
+                                <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    onClick={() => !creating && setCreateOpen(false)}
+                                    className="fixed inset-0 bg-black/65 backdrop-blur-sm z-[100]"
+                                />
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.96, y: 16 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.96, y: 16 }}
+                                    transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                                    className="fixed inset-0 z-[101] flex items-center justify-center p-3 sm:p-4 font-sans pointer-events-none"
                                 >
-                                    <X className="h-4 w-4" />
-                                </button>
-                            </div>
+                                    <motion.form
+                                        role="dialog"
+                                        aria-modal="true"
+                                        onSubmit={createSubUser}
+                                        onClick={(event) => event.stopPropagation()}
+                                        className="pointer-events-auto w-full max-w-md space-y-4 rounded-3xl border border-white/10 bg-[#0a0a0a] p-6 shadow-2xl"
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <h3 className="text-sm font-black uppercase tracking-wider text-white">Add sub-user</h3>
+                                            <button
+                                                type="button"
+                                                onClick={() => setCreateOpen(false)}
+                                                className="rounded-lg p-1 text-white/40 transition hover:text-white"
+                                                aria-label="Close"
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </button>
+                                        </div>
 
-                            <label className="block space-y-2">
-                                <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">Label (optional)</span>
-                                <input
-                                    value={newName}
-                                    onChange={(event) => setNewName(event.target.value)}
-                                    maxLength={128}
-                                    placeholder="e.g. Design contractor"
-                                    className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder-white/25 outline-none focus:border-[#ccff00]/40"
+                                        <label className="block space-y-2">
+                                            <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">Label (optional)</span>
+                                            <input
+                                                value={newName}
+                                                onChange={(event) => setNewName(event.target.value)}
+                                                maxLength={128}
+                                                placeholder="e.g. Design contractor"
+                                                className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder-white/25 outline-none focus:border-[#ccff00]/40"
+                                            />
+                                        </label>
+
+                                        <label className="block space-y-2">
+                                            <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">Spend cap (USDC)</span>
+                                            <input
+                                                value={newLimit}
+                                                onChange={(event) => setNewLimit(event.target.value)}
+                                                inputMode="decimal"
+                                                placeholder="Leave blank for uncapped"
+                                                className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm text-white placeholder-white/25 outline-none focus:border-[#ccff00]/40"
+                                            />
+                                            <span className="block text-[9px] text-white/35">
+                                                Total they may ever spend from your wallet, not a per-transfer limit.
+                                            </span>
+                                        </label>
+
+                                        {createError && <p className="text-[11px] text-red-300">{createError}</p>}
+
+                                        <button
+                                            type="submit"
+                                            disabled={creating}
+                                            className="w-full rounded-xl border border-[#ccff00]/30 bg-[#ccff00]/10 py-2.5 text-[11px] font-black uppercase tracking-wider text-[#ccff00] transition hover:bg-[#ccff00]/20 disabled:opacity-50"
+                                        >
+                                            {creating ? "Creating..." : "Create invite"}
+                                        </button>
+                                    </motion.form>
+                                </motion.div>
+                            </>
+                        )}
+                    </AnimatePresence>
+
+                    <AnimatePresence>
+                        {editing && (
+                            <>
+                                <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    onClick={() => !savingLimit && setEditing(null)}
+                                    className="fixed inset-0 bg-black/65 backdrop-blur-sm z-[100]"
                                 />
-                            </label>
-
-                            <label className="block space-y-2">
-                                <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">Spend cap (USDC)</span>
-                                <input
-                                    value={newLimit}
-                                    onChange={(event) => setNewLimit(event.target.value)}
-                                    inputMode="decimal"
-                                    placeholder="Leave blank for uncapped"
-                                    className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm text-white placeholder-white/25 outline-none focus:border-[#ccff00]/40"
-                                />
-                                <span className="block text-[9px] text-white/35">
-                                    Total they may ever spend from your wallet, not a per-transfer limit.
-                                </span>
-                            </label>
-
-                            {createError && <p className="text-[11px] text-red-300">{createError}</p>}
-
-                            <button
-                                type="submit"
-                                disabled={creating}
-                                className="w-full rounded-xl border border-[#ccff00]/30 bg-[#ccff00]/10 py-2.5 text-[11px] font-black uppercase tracking-wider text-[#ccff00] transition hover:bg-[#ccff00]/20 disabled:opacity-50"
-                            >
-                                {creating ? "Creating..." : "Create invite"}
-                            </button>
-                        </motion.form>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            <AnimatePresence>
-                {editing && (
-                    <motion.div
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        onClick={() => !savingLimit && setEditing(null)}
-                    >
-                        <motion.form
-                            onSubmit={saveLimit}
-                            onClick={(event) => event.stopPropagation()}
-                            className="w-full max-w-md space-y-4 rounded-3xl border border-white/10 bg-[#0a0a0a] p-6 shadow-2xl"
-                            initial={{ opacity: 0, scale: 0.95, y: 12 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, y: 12 }}
-                            transition={{ type: "spring", stiffness: 450, damping: 32 }}
-                        >
-                            <div className="flex items-center justify-between">
-                                <h3 className="text-sm font-black uppercase tracking-wider text-white">Edit cap</h3>
-                                <button
-                                    type="button"
-                                    onClick={() => setEditing(null)}
-                                    className="rounded-lg p-1 text-white/40 transition hover:text-white"
-                                    aria-label="Close"
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.96, y: 16 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.96, y: 16 }}
+                                    transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                                    className="fixed inset-0 z-[101] flex items-center justify-center p-3 sm:p-4 font-sans pointer-events-none"
                                 >
-                                    <X className="h-4 w-4" />
-                                </button>
-                            </div>
+                                    <motion.form
+                                        role="dialog"
+                                        aria-modal="true"
+                                        onSubmit={saveLimit}
+                                        onClick={(event) => event.stopPropagation()}
+                                        className="pointer-events-auto w-full max-w-md space-y-4 rounded-3xl border border-white/10 bg-[#0a0a0a] p-6 shadow-2xl"
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <h3 className="text-sm font-black uppercase tracking-wider text-white">Edit cap</h3>
+                                            <button
+                                                type="button"
+                                                onClick={() => setEditing(null)}
+                                                className="rounded-lg p-1 text-white/40 transition hover:text-white"
+                                                aria-label="Close"
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </button>
+                                        </div>
 
-                            <p className="text-[11px] text-white/50">
-                                {editing.displayName} has spent{" "}
-                                <span className="font-mono text-white/80">{money(editing.spentUsdc)}</span> USDC so far.
-                            </p>
+                                        <p className="text-[11px] text-white/50">
+                                            {editing.displayName} has spent{" "}
+                                            <span className="font-mono text-white/80">{money(editing.spentUsdc)}</span> USDC so far.
+                                        </p>
 
-                            <label className="block space-y-2">
-                                <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">Spend cap (USDC)</span>
-                                <input
-                                    value={editLimit}
-                                    onChange={(event) => setEditLimit(event.target.value)}
-                                    inputMode="decimal"
-                                    placeholder="Leave blank for uncapped"
-                                    className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm text-white placeholder-white/25 outline-none focus:border-[#ccff00]/40"
-                                />
-                                <span className="block text-[9px] text-white/35">
-                                    Can&apos;t go below what they&apos;ve already spent — pause them instead to stop spending now.
-                                </span>
-                            </label>
+                                        <label className="block space-y-2">
+                                            <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">Spend cap (USDC)</span>
+                                            <input
+                                                value={editLimit}
+                                                onChange={(event) => setEditLimit(event.target.value)}
+                                                inputMode="decimal"
+                                                placeholder="Leave blank for uncapped"
+                                                className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm text-white placeholder-white/25 outline-none focus:border-[#ccff00]/40"
+                                            />
+                                            <span className="block text-[9px] text-white/35">
+                                                Can&apos;t go below what they&apos;ve already spent — pause them instead to stop spending now.
+                                            </span>
+                                        </label>
 
-                            {editError && <p className="text-[11px] text-red-300">{editError}</p>}
+                                        {editError && <p className="text-[11px] text-red-300">{editError}</p>}
 
-                            <button
-                                type="submit"
-                                disabled={savingLimit}
-                                className="w-full rounded-xl border border-[#ccff00]/30 bg-[#ccff00]/10 py-2.5 text-[11px] font-black uppercase tracking-wider text-[#ccff00] transition hover:bg-[#ccff00]/20 disabled:opacity-50"
-                            >
-                                {savingLimit ? "Saving..." : "Save cap"}
-                            </button>
-                        </motion.form>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                                        <button
+                                            type="submit"
+                                            disabled={savingLimit}
+                                            className="w-full rounded-xl border border-[#ccff00]/30 bg-[#ccff00]/10 py-2.5 text-[11px] font-black uppercase tracking-wider text-[#ccff00] transition hover:bg-[#ccff00]/20 disabled:opacity-50"
+                                        >
+                                            {savingLimit ? "Saving..." : "Save cap"}
+                                        </button>
+                                    </motion.form>
+                                </motion.div>
+                            </>
+                        )}
+                    </AnimatePresence>
 
-            {/* Custom SubScript Confirmation Modal */}
-            <AnimatePresence>
-                {subUserConfirm && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-                    >
-                        <motion.div
-                            initial={{ scale: 0.95, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.95, opacity: 0 }}
-                            className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#121212] p-6 shadow-2xl space-y-4"
-                        >
-                            <h3 className="text-base font-bold text-white uppercase tracking-wider">{subUserConfirm.title}</h3>
-                            <p className="text-xs text-white/60 leading-relaxed">{subUserConfirm.message}</p>
-                            <div className="flex justify-end gap-2 pt-2">
-                                <button
-                                    type="button"
+                    {/* Custom SubScript Confirmation Modal */}
+                    <AnimatePresence>
+                        {subUserConfirm && (
+                            <>
+                                <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
                                     onClick={() => setSubUserConfirm(null)}
-                                    className="px-4 py-2 text-xs font-bold text-white/50 hover:text-white transition"
+                                    className="fixed inset-0 bg-black/65 backdrop-blur-sm z-[100]"
+                                />
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.96, y: 16 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.96, y: 16 }}
+                                    transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                                    className="fixed inset-0 z-[101] flex items-center justify-center p-3 sm:p-4 font-sans pointer-events-none"
                                 >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={subUserConfirm.onConfirm}
-                                    className="px-4 py-2 rounded-xl bg-[#ccff00] text-black text-xs font-bold uppercase tracking-wider transition hover:opacity-90"
-                                >
-                                    {subUserConfirm.confirmText}
-                                </button>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                                    <div
+                                        role="dialog"
+                                        aria-modal="true"
+                                        className="pointer-events-auto w-full max-w-sm rounded-3xl border border-white/10 bg-[#121212] p-6 shadow-2xl space-y-4"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <h3 className="text-base font-bold text-white uppercase tracking-wider">{subUserConfirm.title}</h3>
+                                        <p className="text-xs text-white/60 leading-relaxed">{subUserConfirm.message}</p>
+                                        <div className="flex justify-end gap-2 pt-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => setSubUserConfirm(null)}
+                                                className="px-4 py-2 text-xs font-bold text-white/50 hover:text-white transition"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={subUserConfirm.onConfirm}
+                                                className="px-4 py-2 rounded-xl bg-[#ccff00] text-black text-xs font-bold uppercase tracking-wider transition hover:opacity-90"
+                                            >
+                                                {subUserConfirm.confirmText}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            </>
+                        )}
+                    </AnimatePresence>
+                </>,
+                document.body
+            )}
         </section>
     );
 }

@@ -31,6 +31,7 @@ import {
   RefreshCcw,
   UserCheck,
   Eye,
+  Trophy,
 } from "@/components/icons";
 import {
   SkeletonCard,
@@ -68,6 +69,7 @@ import { AdminSystemHealthCard } from "@/components/admin/AdminSystemHealthCard"
 import { AdminRelayerBalancesCard } from "@/components/admin/AdminRelayerBalancesCard";
 import { AdminRevenueView } from "@/components/admin/AdminRevenueView";
 import { AdminRiskSignalsCard } from "@/components/admin/AdminRiskSignalsCard";
+import { AdminReferralsView } from "@/components/admin/AdminReferralsView";
 
 type Merchant = {
   walletAddress: string;
@@ -275,6 +277,7 @@ type TabId =
   | "analytics"
   | "revenue"
   | "financials"
+  | "referrals"
   | "reconciliation"
   | "accounts"
   | "tickets"
@@ -297,6 +300,7 @@ const TABS: Array<{ id: TabId; label: string; rootOnly?: boolean }> = [
      hiding the tab is convenience, not the boundary. */
   { id: "revenue", label: "Revenue", rootOnly: true },
   { id: "financials", label: "Financials & Ledger" },
+  { id: "referrals", label: "Referral Leaderboard" },
   { id: "reconciliation", label: "Reconciliation Queue" },
   { id: "accounts", label: "Accounts & Identity" },
   { id: "tickets", label: "Support Tickets" },
@@ -1149,6 +1153,7 @@ export default function AdminDashboardPage() {
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     ...(viewerIsRoot ? [{ id: "revenue", label: "Revenue", icon: TrendingUp }] : []),
     { id: "financials", label: "Financials & Ledger", icon: DollarSign },
+    { id: "referrals", label: "Referrals", icon: Trophy },
     { id: "reconciliation", label: "Reconciliation", icon: RefreshCcw },
     { id: "accounts", label: "Accounts & Identity", icon: Users },
     { id: "tickets", label: "Support Tickets", icon: MessageSquare },
@@ -1325,6 +1330,8 @@ export default function AdminDashboardPage() {
         {tab === "revenue" && <AdminRevenueView />}
 
         {tab === "financials" && <AdminFinancialsView />}
+
+        {tab === "referrals" && <AdminReferralsView />}
 
         {tab === "reconciliation" && <AdminReconciliationView />}
 

@@ -731,9 +731,14 @@ body {
   color: #000000;
 }
 
-.user-dashboard-redesign .dashboard-blue-panel,
-.user-dashboard-redesign .commit-vault-shell {
+.user-dashboard-redesign .dashboard-blue-panel {
   background-color: rgb(39 117 202 / 20%);
+}
+
+.user-dashboard-redesign .commit-vault-shell {
+  background: transparent !important;
+  background-color: transparent !important;
+  border-color: transparent !important;
 }
 
 .user-dashboard-content .text-white:not([data-dm-bubble="dark"] *):not([data-dm-dark="true"] *):not([data-dm-bubble="dark"]):not([data-dm-dark="true"]),
@@ -846,46 +851,46 @@ body {
    `~=` matches whole space-separated tokens only, so a hover variant can no longer claim the
    resting state. Enumerated rather than excluding `hover:` wholesale because 11 elements here
    legitimately carry both a resting tint and a hover tint. */
-.user-dashboard-content [class~="bg-black/[0.02]"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-content [class~="bg-black/[0.03]"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-content [class~="bg-black/[0.04]"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-content [class~="bg-black/[0.05]"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-content [class~="bg-black/[0.08]"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-content [class~="bg-black/5"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-content [class~="bg-black/10"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-content [class~="bg-black/15"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-content [class~="bg-black/20"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-content [class~="bg-black/25"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-content [class~="bg-black/30"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-content [class~="bg-black/40"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-content [class~="bg-black/45"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-content [class~="bg-black/50"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-content [class~="bg-black/60"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-content [class~="bg-black/70"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-content [class~="bg-black/75"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-content [class~="bg-black/80"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-content [class~="bg-black/85"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-content [class~="bg-black/95"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.02]"],
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.03]"],
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.04]"],
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.05]"],
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.08]"],
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/5"],
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/10"],
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/15"],
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/20"],
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/25"],
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/30"],
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/40"],
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/45"],
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/50"],
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/60"],
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/70"],
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/75"],
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/80"],
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/85"],
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/95"] {
+.user-dashboard-content [class~="bg-black/[0.02]"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-content [class~="bg-black/[0.03]"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-content [class~="bg-black/[0.04]"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-content [class~="bg-black/[0.05]"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-content [class~="bg-black/[0.08]"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-content [class~="bg-black/5"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-content [class~="bg-black/10"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-content [class~="bg-black/15"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-content [class~="bg-black/20"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-content [class~="bg-black/25"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-content [class~="bg-black/30"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-content [class~="bg-black/40"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-content [class~="bg-black/45"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-content [class~="bg-black/50"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-content [class~="bg-black/60"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-content [class~="bg-black/70"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-content [class~="bg-black/75"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-content [class~="bg-black/80"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-content [class~="bg-black/85"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-content [class~="bg-black/95"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.02]"]:not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.03]"]:not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.04]"]:not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.05]"]:not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.08]"]:not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/5"]:not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/10"]:not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/15"]:not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/20"]:not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/25"]:not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/30"]:not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/40"]:not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/45"]:not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/50"]:not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/60"]:not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/70"]:not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/75"]:not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/80"]:not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/85"]:not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/95"]:not(.fixed):not([class*="fixed"]) {
   background-color: rgb(39 117 202 / 20%) !important;
 }
 
@@ -932,15 +937,12 @@ body {
   background-color: rgb(39 117 202 / 20%) !important;
 }
 
-.user-dashboard-redesign .fixed.inset-0 {
-  backdrop-filter: blur(24px) saturate(125%);
-  -webkit-backdrop-filter: blur(24px) saturate(125%);
-}
-
-.user-dashboard-redesign [role="dialog"] {
+.user-dashboard-redesign [role="dialog"],
+.user-dashboard-content [role="dialog"] {
   background-color: #fffff0 !important;
   color: #000000 !important;
-  border-color: rgb(0 0 0 / 20%) !important;
+  border-color: rgb(0 0 0 / 12%) !important;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 0, 0, 0.06) !important;
 }
 
 .user-dashboard-redesign .wallet-actions button[aria-label="Deposit"] {
@@ -959,10 +961,19 @@ body {
   background: transparent !important;
 }
 
-.user-dashboard-redesign nav[aria-label="Primary navigation"] {
+.user-dashboard-redesign nav[aria-label="Primary navigation"]:not([data-retracted-selected="true"]) {
   border: 1px solid rgb(0 0 0 / 18%);
   background: rgb(39 117 202 / 20%) !important;
   box-shadow: none !important;
+  backdrop-filter: blur(22px) saturate(125%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(125%) !important;
+}
+
+.user-dashboard-redesign nav[aria-label="Primary navigation"][data-retracted-selected="true"] {
+  border: 1px solid rgb(0 0 0 / 25%) !important;
+  background: #353935 !important;
+  color: #fffff0 !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35) !important;
   backdrop-filter: blur(22px) saturate(125%) !important;
   -webkit-backdrop-filter: blur(22px) saturate(125%) !important;
 }
@@ -972,6 +983,27 @@ body {
   background: #353935 !important;
   color: #fffff0 !important;
   box-shadow: none !important;
+}
+
+.user-dashboard-redesign nav[aria-label="Primary navigation"],
+.user-dashboard-redesign [data-testid="mobile-dm-btn"] {
+  height: 48px !important;
+  min-height: 48px !important;
+  max-height: 48px !important;
+  box-sizing: border-box !important;
+}
+
+.user-dashboard-redesign [data-testid="mobile-dm-btn"][aria-current="page"] {
+  background: #353935 !important;
+  color: #fffff0 !important;
+  border-color: rgb(0 0 0 / 25%) !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35) !important;
+}
+
+.user-dashboard-redesign [data-testid="mobile-dm-btn"]:not([aria-current="page"]) {
+  background: rgba(255, 255, 255, 0.88) !important;
+  color: #111827 !important;
+  border-color: rgb(0 0 0 / 15%) !important;
 }
 
 .user-dashboard-loading .subscript-skeleton,
@@ -1825,9 +1857,14 @@ aside [class~="bg-[#FFFFF0]"] *,
   border-color: var(--dk-line) !important;
 }
 
-[data-theme="dark"] .user-dashboard-redesign .dashboard-blue-panel,
-[data-theme="dark"] .user-dashboard-redesign .commit-vault-shell {
+[data-theme="dark"] .user-dashboard-redesign .dashboard-blue-panel {
   background-color: rgba(39, 117, 202, 0.16) !important;
+}
+
+[data-theme="dark"] .user-dashboard-redesign .commit-vault-shell {
+  background: transparent !important;
+  background-color: transparent !important;
+  border-color: transparent !important;
 }
 
 [data-theme="dark"] .user-dashboard-content [class*="bg-emerald"],
@@ -2029,10 +2066,43 @@ aside [class~="bg-[#FFFFF0]"] *,
 [data-theme="dark"] .user-dashboard-redesign [role="dialog"],
 [data-theme="dark"] .merchant-dashboard-root [role="dialog"],
 [data-theme="dark"] .merchant-dashboard-root [role="alertdialog"] {
-  background-color: var(--dk-card) !important;
-  color: var(--dk-ink) !important;
-  border-color: var(--dk-line-2) !important;
+  background-color: #0f1219 !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
   color-scheme: dark !important;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8), 0 0 30px rgba(39, 117, 202, 0.12) !important;
+}
+
+[data-theme="dark"] [role="dialog"] [class~="text-black"],
+[data-theme="dark"] [role="dialog"] [class*="text-[#111827]"],
+[data-theme="dark"] [role="dialog"] [class*="text-[#082824]"],
+[data-theme="dark"] [role="dialog"] [class*="text-[#06080C]"],
+[data-theme="dark"] [role="alertdialog"] [class~="text-black"] {
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] [role="dialog"] [class*="text-black/"],
+[data-theme="dark"] [role="dialog"] [class*="text-[#111827]/"],
+[data-theme="dark"] [role="alertdialog"] [class*="text-black/"] {
+  color: rgba(255, 255, 255, 0.65) !important;
+}
+
+[data-theme="dark"] [role="dialog"] [class*="border-black/"],
+[data-theme="dark"] [role="alertdialog"] [class*="border-black/"] {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+[data-theme="dark"] [role="dialog"] input:not([type="checkbox"]):not([type="radio"]),
+[data-theme="dark"] [role="dialog"] textarea,
+[data-theme="dark"] [role="dialog"] select {
+  background-color: rgba(0, 0, 0, 0.5) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] [role="dialog"] input::placeholder,
+[data-theme="dark"] [role="dialog"] textarea::placeholder {
+  color: rgba(255, 255, 255, 0.35) !important;
 }
 
 [data-theme="dark"] [role="dialog"] [class~="text-white"],
@@ -2043,19 +2113,58 @@ aside [class~="bg-[#FFFFF0]"] *,
 [data-theme="dark"] .merchant-dashboard-root [role="dialog"] [class^="text-white/"],
 [data-theme="dark"] .merchant-dashboard-root [role="dialog"] [class*=" text-white/"],
 [data-theme="dark"] .merchant-dashboard-root [role="alertdialog"] [class~="text-white"] {
-  color: var(--dk-ink) !important;
+  color: #ffffff !important;
 }
 
-/* -------------------------------------------------------------- chrome pieces */
-[data-theme="dark"] .user-dashboard-redesign nav[aria-label="Primary navigation"] {
-  border-color: var(--dk-line-2) !important;
-  background: rgba(255, 255, 255, 0.08) !important;
+[data-theme="dark"] .user-dashboard-redesign nav[aria-label="Primary navigation"]:not([data-retracted-selected="true"]) {
+  border-color: rgba(39, 117, 202, 0.3) !important;
+  background: linear-gradient(135deg, rgba(39, 117, 202, 0.12), rgba(15, 23, 42, 0.85)) !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 20px rgba(39, 117, 202, 0.12) !important;
+}
+
+[data-theme="dark"] .user-dashboard-redesign nav[aria-label="Primary navigation"][data-retracted-selected="true"] {
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  background: linear-gradient(135deg, #2775ca, #1f62ab) !important;
+  color: #ffffff !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 24px rgba(39, 117, 202, 0.5) !important;
 }
 
 [data-theme="dark"] .user-dashboard-redesign nav[aria-label="Primary navigation"] button[aria-current="page"] {
-  border-color: var(--dk-selected) !important;
-  background: var(--dk-selected) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  background: linear-gradient(135deg, #2775ca, #1f62ab) !important;
   color: #ffffff !important;
+  box-shadow: 0 6px 20px rgba(39, 117, 202, 0.4) !important;
+}
+
+[data-theme="dark"] .user-dashboard-redesign nav[aria-label="Primary navigation"] button:not([aria-current="page"]) {
+  color: rgba(255, 255, 255, 0.65) !important;
+}
+
+[data-theme="dark"] .user-dashboard-redesign nav[aria-label="Primary navigation"] button:not([aria-current="page"]) svg {
+  color: rgba(255, 255, 255, 0.65) !important;
+}
+
+[data-theme="dark"] .user-dashboard-redesign nav[aria-label="Primary navigation"] button:not([aria-current="page"]):hover,
+[data-theme="dark"] .user-dashboard-redesign nav[aria-label="Primary navigation"] button:not([aria-current="page"]):hover svg {
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .user-dashboard-redesign [data-testid="mobile-dm-btn"][aria-current="page"] {
+  background: linear-gradient(135deg, #2775ca, #1f62ab) !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 24px rgba(39, 117, 202, 0.5) !important;
+}
+
+[data-theme="dark"] .user-dashboard-redesign [data-testid="mobile-dm-btn"]:not([aria-current="page"]) {
+  background: linear-gradient(135deg, rgba(39, 117, 202, 0.12), rgba(15, 23, 42, 0.85)) !important;
+  color: rgba(255, 255, 255, 0.75) !important;
+  border-color: rgba(39, 117, 202, 0.3) !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 20px rgba(39, 117, 202, 0.12) !important;
+}
+
+[data-theme="dark"] .user-dashboard-redesign [data-testid="mobile-dm-btn"]:not([aria-current="page"]) svg {
+  color: rgba(255, 255, 255, 0.75) !important;
 }
 
 [data-theme="dark"] .user-dashboard-redesign .wallet-actions button[aria-label="Deposit"] {
