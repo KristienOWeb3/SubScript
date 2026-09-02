@@ -1,3 +1,5 @@
+import AuthLoadingState from "@/components/auth/AuthLoadingState";
+
 export default function SignUpLoading() {
-  return null;
+  return <AuthLoadingState activeTab="signup" />;
 }

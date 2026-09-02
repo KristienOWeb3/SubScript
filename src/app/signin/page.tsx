@@ -25,6 +25,7 @@ import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 import { usePlatformFlags } from "@/hooks/usePlatformFlags";
 import Script from "next/script";
 import AuthSplitLayout from "@/components/auth/AuthSplitLayout";
+import AuthLoadingState from "@/components/auth/AuthLoadingState";
 import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
 import { MetaMaskIcon, MetaMaskColorSpinner } from "@/components/auth/QuickAuthButtons";
 
@@ -369,7 +370,7 @@ function SignInContent() {
     if (email) params.set("email", email);
     const searchStr = params.toString() ? `?${params.toString()}` : "";
     if (typeof window !== "undefined" && window.location.pathname !== targetPath) {
-      window.history.pushState(null, "", `${targetPath}${searchStr}`);
+      window.location.assign(`${targetPath}${searchStr}`);
     }
   }, [activeTab, safeNext, email]);
 
@@ -678,7 +679,7 @@ function SignInContent() {
 
 export default function SignInPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<AuthLoadingState activeTab="signin" />}>
       <SignInContent />
     </Suspense>
   );
