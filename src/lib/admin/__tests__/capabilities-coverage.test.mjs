@@ -46,6 +46,7 @@ test("Platform Flags - Fallbacks include defaults", () => {
     assert.match(flagsSource, /googleSigninEnabled:\s*true/);
     assert.match(flagsSource, /externalWalletEnabled:\s*true/);
     assert.match(flagsSource, /maintenanceEnabled:\s*false/);
+    assert.match(flagsSource, /localBankTransferEnabled:\s*true/);
 });
 
 test("Platform Flags - the operational breakers are not reintroduced here", () => {

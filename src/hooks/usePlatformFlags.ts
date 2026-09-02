@@ -18,6 +18,7 @@ export type PublicPlatformFlags = {
     googleSigninEnabled: boolean;
     externalWalletEnabled: boolean;
     merchantInviteOnlyEnabled: boolean;
+    localBankTransferEnabled: boolean;
 };
 
 const DEFAULTS: PublicPlatformFlags = {
@@ -27,6 +28,7 @@ const DEFAULTS: PublicPlatformFlags = {
        every visitor merchant signup is closed when it is open, so this starts off and the server
        stays the boundary either way. */
     merchantInviteOnlyEnabled: false,
+    localBankTransferEnabled: true,
 };
 
 export function usePlatformFlags(): PublicPlatformFlags & { loaded: boolean } {
@@ -45,6 +47,7 @@ export function usePlatformFlags(): PublicPlatformFlags & { loaded: boolean } {
                         googleSigninEnabled: json.googleSigninEnabled !== false,
                         externalWalletEnabled: json.externalWalletEnabled === true,
                         merchantInviteOnlyEnabled: json.merchantInviteOnlyEnabled === true,
+                        localBankTransferEnabled: json.localBankTransferEnabled !== false,
                     });
                 })
                 .catch(() => {
