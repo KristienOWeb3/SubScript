@@ -344,9 +344,9 @@ export default function DepositModal({
                     />
 
                     <motion.div
-                        initial={{ opacity: 0, scale: 0.96, y: 16 }}
+                        initial={{ opacity: 0, scale: 0.95, y: 15 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.96, y: 16 }}
+                        exit={{ opacity: 0, scale: 0.95, y: 15 }}
                         transition={{ type: "spring", stiffness: 450, damping: 32 }}
                         className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 font-sans"
                     >
@@ -354,11 +354,12 @@ export default function DepositModal({
                             role="dialog"
                             aria-modal="true"
                             aria-labelledby="deposit-modal-title"
-                            className="bg-[#FFFFF0] dark:bg-[#0f1219] border border-black/15 dark:border-white/15 rounded-3xl w-full max-w-md max-h-[88vh] flex flex-col overflow-hidden shadow-2xl relative text-black dark:text-white"
+                            data-modal="deposit"
+                            className="deposit-modal bg-[#FFFFF0] dark:bg-[#18191c] border border-black/15 dark:border-white/15 rounded-3xl w-full max-w-md max-h-[88vh] flex flex-col overflow-hidden shadow-2xl relative text-[#082824] dark:text-[#f4f4f5]"
                             onClick={(e) => e.stopPropagation()}
                         >
                             {/* Fixed Modal Header */}
-                            <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-black/10 dark:border-white/10 shrink-0 bg-white/80 dark:bg-white/[0.05] backdrop-blur-md">
+                            <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-black/10 dark:border-white/10 shrink-0 bg-[#FFFFF0]/95 dark:bg-[#18191c]/95 backdrop-blur-md">
                                 <div className="flex items-center gap-2">
                                     {step !== "method" && bridgeStatus !== "bridging" && (
                                         <button
@@ -367,13 +368,13 @@ export default function DepositModal({
                                                 if (step === "address") setStep("chains");
                                                 else setStep("method");
                                             }}
-                                            className="p-1 -ml-1 text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition"
+                                            className="p-1 -ml-1 text-[#082824]/60 dark:text-white/60 hover:text-[#082824] dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition"
                                             aria-label="Back"
                                         >
                                             <ArrowLeft className="w-4 h-4" />
                                         </button>
                                     )}
-                                    <h2 id="deposit-modal-title" className="text-sm font-black uppercase tracking-wider text-[#082824] dark:text-white">
+                                    <h2 id="deposit-modal-title" className="text-sm font-black uppercase tracking-wider text-[#082824] dark:text-[#f4f4f5]">
                                         {step === "method"
                                             ? "Deposit Funds"
                                             : step === "bank_info"
@@ -386,7 +387,7 @@ export default function DepositModal({
                                 <button
                                     onClick={resetAndClose}
                                     disabled={bridgeStatus === "bridging"}
-                                    className="p-1.5 text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition disabled:opacity-40"
+                                    className="p-1.5 text-[#082824]/50 dark:text-white/50 hover:text-[#082824] dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition disabled:opacity-40"
                                     aria-label="Close deposit dialog"
                                 >
                                     <X className="w-4 h-4" />
@@ -394,19 +395,19 @@ export default function DepositModal({
                             </div>
 
                             {/* Scrollable Modal Body (No Cutout!) */}
-                            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4 custom-scrollbar text-black dark:text-white">
+                            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4 custom-scrollbar text-[#082824] dark:text-[#f4f4f5]">
                                 {/* STEP 1: METHOD SELECTION */}
                                 {step === "method" && (
                                     <div className="space-y-4">
-                                        <div className="rounded-2xl border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.05] p-4 text-left">
-                                            <p className="text-[10px] font-black uppercase tracking-wider text-black/50 dark:text-white/50">Current Balance</p>
+                                        <div className="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#222327] p-4 text-left shadow-sm">
+                                            <p className="text-[10px] font-black uppercase tracking-wider text-[#082824]/60 dark:text-white/60">Current Balance</p>
                                             <div className="flex items-baseline gap-2 mt-1">
-                                                <span className="text-2xl font-black text-black dark:text-white font-mono">{usdcBalance}</span>
-                                                <span className="text-xs font-bold text-black/60 dark:text-white/60">USDC on Arc</span>
+                                                <span className="text-2xl font-black text-[#082824] dark:text-white font-mono">{usdcBalance}</span>
+                                                <span className="text-xs font-bold text-[#082824]/70 dark:text-white/70">USDC on Arc</span>
                                             </div>
                                         </div>
 
-                                        <p className="text-xs text-black/70 dark:text-white/70 text-left font-medium">
+                                        <p className="text-xs text-[#082824]/70 dark:text-white/70 text-left font-medium">
                                             Select how you would like to deposit funds into your SubScript account:
                                         </p>
 
@@ -415,46 +416,46 @@ export default function DepositModal({
                                             <button
                                                 type="button"
                                                 onClick={() => setStep("chains")}
-                                                className="flex w-full items-center gap-3.5 rounded-2xl border border-black/15 dark:border-white/15 bg-white dark:bg-white/[0.06] p-4 text-left hover:border-black/30 dark:hover:border-white/30 hover:bg-black/[0.02] dark:hover:bg-white/[0.1] transition shadow-sm group"
+                                                className="flex w-full items-center gap-3.5 rounded-2xl border border-black/15 dark:border-white/15 bg-white dark:bg-[#222327] p-4 text-left hover:border-black/30 dark:hover:border-white/30 hover:bg-black/[0.02] dark:hover:bg-white/[0.05] transition shadow-sm group"
                                             >
                                                 <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#2775CA] text-white group-hover:scale-105 transition shrink-0 shadow-sm">
-                                                    <Globe className="h-6 w-6" />
+                                                    <Globe className="h-6 w-6 text-white" />
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                     <div className="flex items-center gap-2">
-                                                        <h4 className="text-xs font-black uppercase tracking-wider text-black dark:text-white">USDC (On-chain)</h4>
-                                                        <span className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border border-emerald-500/20">
+                                                        <h4 className="text-xs font-black uppercase tracking-wider text-[#082824] dark:text-[#f4f4f5]">USDC (On-chain)</h4>
+                                                        <span className="bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border border-emerald-500/20">
                                                             Active
                                                         </span>
                                                     </div>
-                                                    <p className="text-[11px] text-black/60 dark:text-white/60 mt-1 leading-snug">
-                                                        Deposit from <strong>Arc Network (0% fee)</strong> or any CCTP EVM chain (Base, Arbitrum, Ethereum, OP, Polygon).
+                                                    <p className="text-[11px] text-[#082824]/70 dark:text-white/70 mt-1 leading-snug">
+                                                        Deposit from <strong className="text-[#082824] dark:text-white">Arc Network (0% fee)</strong> or any CCTP EVM chain (Base, Arbitrum, Ethereum, OP, Polygon).
                                                     </p>
                                                 </div>
-                                                <ArrowRight className="h-4 w-4 text-black/40 group-hover:translate-x-1 transition shrink-0" />
+                                                <ArrowRight className="h-4 w-4 text-[#082824]/40 dark:text-white/40 group-hover:translate-x-1 transition shrink-0" />
                                             </button>
 
                                             {/* Option 2: Local Bank (Coming Soon) */}
                                             <button
                                                 type="button"
                                                 onClick={() => setStep("bank_info")}
-                                                className="flex w-full items-center gap-3.5 rounded-2xl border border-black/10 bg-black/[0.02] p-4 text-left hover:bg-black/[0.04] transition group"
+                                                className="flex w-full items-center gap-3.5 rounded-2xl border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-[#1f2023] p-4 text-left hover:bg-black/[0.04] dark:hover:bg-[#222327] transition group"
                                             >
-                                                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-black/10 text-black/60 group-hover:scale-105 transition shrink-0">
+                                                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-black/10 dark:bg-white/10 text-[#082824]/60 dark:text-white/60 group-hover:scale-105 transition shrink-0">
                                                     <Building2 className="h-6 w-6" />
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                     <div className="flex items-center gap-2">
-                                                        <h4 className="text-xs font-black uppercase tracking-wider text-black/80">Local Bank Transfer</h4>
-                                                        <span className="bg-amber-500/10 text-amber-800 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border border-amber-500/20">
+                                                        <h4 className="text-xs font-black uppercase tracking-wider text-[#082824]/80 dark:text-white/80">Local Bank Transfer</h4>
+                                                        <span className="bg-amber-500/10 text-amber-800 dark:text-amber-300 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border border-amber-500/20">
                                                             Coming Soon
                                                         </span>
                                                     </div>
-                                                    <p className="text-[11px] text-black/50 mt-1 leading-snug">
+                                                    <p className="text-[11px] text-[#082824]/50 dark:text-white/50 mt-1 leading-snug">
                                                         Direct fiat on-ramp to USDC via bank transfer (in private testing).
                                                     </p>
                                                 </div>
-                                                <ArrowRight className="h-4 w-4 text-black/30 group-hover:translate-x-1 transition shrink-0" />
+                                                <ArrowRight className="h-4 w-4 text-[#082824]/30 dark:text-white/30 group-hover:translate-x-1 transition shrink-0" />
                                             </button>
                                         </div>
                                     </div>
@@ -463,21 +464,21 @@ export default function DepositModal({
                                 {/* STEP 1B: BANK INFO (COMING SOON) */}
                                 {step === "bank_info" && (
                                     <div className="py-6 text-center space-y-4">
-                                        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-700 border border-amber-500/20">
+                                        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
                                             <Building2 className="h-7 w-7" />
                                         </div>
                                         <div>
-                                            <h4 className="text-sm font-black uppercase tracking-wider text-black">Local Bank Transfers (Coming Soon)</h4>
-                                            <p className="text-xs text-black/60 mt-2 leading-relaxed max-w-xs mx-auto">
+                                            <h4 className="text-sm font-black uppercase tracking-wider text-[#082824] dark:text-[#f4f4f5]">Local Bank Transfers (Coming Soon)</h4>
+                                            <p className="text-xs text-[#082824]/70 dark:text-white/70 mt-2 leading-relaxed max-w-xs mx-auto">
                                                 Direct bank account deposits and fiat on-ramping are currently in private compliance testing.
                                             </p>
                                         </div>
-                                        <div className="rounded-2xl border border-black/10 bg-white p-3.5 text-left text-xs text-black/70 space-y-1.5 shadow-sm">
-                                            <p className="font-bold text-black flex items-center gap-1.5">
+                                        <div className="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#222327] p-3.5 text-left text-xs text-[#082824]/80 dark:text-white/80 space-y-1.5 shadow-sm">
+                                            <p className="font-bold text-[#082824] dark:text-white flex items-center gap-1.5">
                                                 <Sparkles className="w-3.5 h-3.5 text-[#2775CA]" /> What you can do right now:
                                             </p>
-                                            <p className="text-[11px] leading-relaxed text-black/65">
-                                                Deposit USDC directly on <strong>Arc Network</strong> (free) or from <strong>Base, Arbitrum, Ethereum, OP, or Polygon</strong> with automated CCTP bridging.
+                                            <p className="text-[11px] leading-relaxed text-[#082824]/70 dark:text-white/70">
+                                                Deposit USDC directly on <strong className="text-[#082824] dark:text-white">Arc Network</strong> (free) or from <strong className="text-[#082824] dark:text-white">Base, Arbitrum, Ethereum, OP, or Polygon</strong> with automated CCTP bridging.
                                             </p>
                                         </div>
                                         <button
@@ -494,7 +495,7 @@ export default function DepositModal({
                                 {step === "chains" && (
                                     <div className="space-y-3.5">
                                         <div className="text-left">
-                                            <p className="text-xs text-black/70 leading-relaxed">
+                                            <p className="text-xs text-[#082824]/70 dark:text-white/70 leading-relaxed">
                                                 Select the network where you currently have USDC. All supported EVM chains bridge directly to your SubScript balance:
                                             </p>
                                         </div>
@@ -514,20 +515,20 @@ export default function DepositModal({
                                                                 registerIntent(chain.chainId);
                                                             }
                                                         }}
-                                                        className="flex w-full items-center justify-between rounded-2xl border border-black/15 dark:border-white/15 bg-white dark:bg-white/[0.06] p-3.5 text-left hover:border-[#2775CA] hover:bg-[#2775CA]/[0.02] dark:hover:bg-[#2775CA]/10 transition shadow-sm group"
+                                                        className="flex w-full items-center justify-between rounded-2xl border border-black/15 dark:border-white/15 bg-white dark:bg-[#222327] p-3.5 text-left hover:border-[#2775CA] hover:bg-[#2775CA]/[0.02] dark:hover:bg-[#2775CA]/10 transition shadow-sm group"
                                                     >
                                                         <div className="flex items-center gap-3 min-w-0">
                                                             <ChainLogo chain={chain.chainId} size={28} className="h-7 w-7 shrink-0" />
                                                             <div className="min-w-0">
                                                                 <div className="flex items-center gap-2">
-                                                                    <span className="text-xs font-black text-black dark:text-white truncate">{chain.name}</span>
+                                                                    <span className="text-xs font-black text-[#082824] dark:text-[#f4f4f5] truncate">{chain.name}</span>
                                                                     {isArc && (
                                                                         <span className="bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 text-[8px] font-black uppercase px-1.5 py-0.5 rounded border border-emerald-500/20">
                                                                             Native
                                                                         </span>
                                                                     )}
                                                                 </div>
-                                                                <p className="text-[10px] text-black/55 dark:text-white/55 truncate mt-0.5">{chain.subtext}</p>
+                                                                <p className="text-[10px] text-[#082824]/60 dark:text-white/60 truncate mt-0.5">{chain.subtext}</p>
                                                             </div>
                                                         </div>
 
@@ -543,7 +544,7 @@ export default function DepositModal({
                                                             >
                                                                 {chain.badge}
                                                             </span>
-                                                            <ArrowRight className="h-3.5 w-3.5 text-black/30 dark:text-white/40 group-hover:text-black dark:group-hover:text-white group-hover:translate-x-0.5 transition" />
+                                                            <ArrowRight className="h-3.5 w-3.5 text-[#082824]/30 dark:text-white/40 group-hover:text-[#082824] dark:group-hover:text-white group-hover:translate-x-0.5 transition" />
                                                         </div>
                                                     </button>
                                                 );
@@ -572,14 +573,14 @@ export default function DepositModal({
                                                     ) : (
                                                         <Loader2 className="w-4 h-4 animate-spin text-[#2775CA] shrink-0" />
                                                     )}
-                                                    <p className="text-[10px] font-black uppercase tracking-wider text-black dark:text-white">
+                                                    <p className="text-[10px] font-black uppercase tracking-wider text-[#082824] dark:text-[#f4f4f5]">
                                                         {bridgeStatus === "detected" && "USDC detected · Preparing bridge..."}
                                                         {bridgeStatus === "bridging" && "Bridging to Arc... (~5 min)"}
                                                         {bridgeStatus === "completed" && "✓ Deposited on Arc"}
                                                         {bridgeStatus === "error" && "Bridge error"}
                                                     </p>
                                                 </div>
-                                                <p className="text-[11px] leading-relaxed text-black/75 dark:text-white/75">
+                                                <p className="text-[11px] leading-relaxed text-[#082824]/75 dark:text-white/75">
                                                     {bridgeStatus === "detected" && `${originBalance} USDC detected on ${selectedChain.shortName}. The keeper will bridge it automatically on the next tick.`}
                                                     {bridgeStatus === "bridging" && `Your USDC is being bridged from ${selectedChain.shortName} to Arc via Circle CCTP. This typically takes about 5 minutes.`}
                                                     {bridgeStatus === "completed" && "Your USDC has arrived on Arc and is ready to use."}
@@ -589,15 +590,15 @@ export default function DepositModal({
                                         )}
 
                                         {/* Selected Network Summary Pill */}
-                                        <div className="flex items-center justify-between rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/[0.06] p-3 shadow-sm">
+                                        <div className="flex items-center justify-between rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#222327] p-3 shadow-sm">
                                             <div className="flex items-center gap-2.5 min-w-0">
                                                 <ChainLogo chain={selectedChain.chainId} size={24} className="h-6 w-6 shrink-0" />
                                                 <div className="min-w-0">
                                                     <div className="flex items-center gap-1.5">
-                                                        <span className="text-xs font-black text-black dark:text-white truncate">{selectedChain.name}</span>
-                                                        <span className="text-[9px] font-bold text-black/50 dark:text-white/50">({selectedChain.feePercentage})</span>
+                                                        <span className="text-xs font-black text-[#082824] dark:text-[#f4f4f5] truncate">{selectedChain.name}</span>
+                                                        <span className="text-[9px] font-bold text-[#082824]/60 dark:text-white/60">({selectedChain.feePercentage})</span>
                                                     </div>
-                                                    <p className="text-[10px] text-black/50 dark:text-white/50 truncate">
+                                                    <p className="text-[10px] text-[#082824]/60 dark:text-white/60 truncate">
                                                         {selectedChain.isArc ? "Instant settlement" : "Estimated ~15 mins via CCTP bridge"}
                                                     </p>
                                                 </div>
@@ -614,16 +615,16 @@ export default function DepositModal({
 
                                         {/* Live Balance on Deposit Address */}
                                         {!selectedChain.isArc && derivedAddress && (
-                                            <div className="flex items-center justify-between p-3 rounded-2xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/10 dark:border-white/10 text-xs">
+                                            <div className="flex items-center justify-between p-3 rounded-2xl bg-white dark:bg-[#222327] border border-black/10 dark:border-white/10 text-xs shadow-sm">
                                                 <div className="flex items-center gap-2 min-w-0">
                                                     <ChainLogo chain={selectedChain.chainId} size={16} className="h-4 w-4 shrink-0" />
-                                                    <span className="text-black/70 dark:text-white/70 font-medium truncate">USDC on {selectedChain.shortName}:</span>
+                                                    <span className="text-[#082824]/70 dark:text-white/70 font-medium truncate">USDC on {selectedChain.shortName}:</span>
                                                 </div>
                                                 <div className="flex items-center gap-2 shrink-0">
                                                     {loadingOriginBalance ? (
                                                         <Loader2 className="w-3.5 h-3.5 animate-spin text-[#2775CA]" />
                                                     ) : (
-                                                        <span className="font-mono font-bold text-black dark:text-white">{originBalance} USDC</span>
+                                                        <span className="font-mono font-bold text-[#082824] dark:text-white">{originBalance} USDC</span>
                                                     )}
                                                 </div>
                                             </div>
@@ -633,24 +634,24 @@ export default function DepositModal({
                                         {loadingIntent && !selectedChain.isArc && (
                                             <div className="flex items-center justify-center gap-2 py-4">
                                                 <Loader2 className="w-4 h-4 animate-spin text-[#2775CA]" />
-                                                <span className="text-xs text-black/60 dark:text-white/60 font-medium">Setting up deposit address...</span>
+                                                <span className="text-xs text-[#082824]/70 dark:text-white/70 font-medium">Setting up deposit address...</span>
                                             </div>
                                         )}
 
                                         {/* Notice & Minimum Deposit Guidelines */}
                                         {(!loadingIntent || selectedChain.isArc) && (
                                             <div className="space-y-2">
-                                                <p className="text-[11px] text-black/65 dark:text-white/65 leading-relaxed text-center">
-                                                    Send USDC on <strong className="text-black dark:text-white">{selectedChain.name}</strong> to {selectedChain.isArc ? "your" : "the"} deposit address below.
+                                                <p className="text-[11px] text-[#082824]/75 dark:text-white/75 leading-relaxed text-center">
+                                                    Send USDC on <strong className="text-[#082824] dark:text-white">{selectedChain.name}</strong> to {selectedChain.isArc ? "your" : "the"} deposit address below.
                                                     {!selectedChain.isArc && " It will be automatically bridged to Arc."}
                                                 </p>
                                                 {!selectedChain.isArc && (
-                                                    <div className="rounded-xl border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.05] p-2.5 text-[11px] leading-snug text-black/75 dark:text-white/75">
-                                                        <div className="flex items-center gap-1.5 font-bold text-black dark:text-white text-[11px]">
+                                                    <div className="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#222327] p-2.5 text-[11px] leading-snug text-[#082824]/80 dark:text-white/80 shadow-sm">
+                                                        <div className="flex items-center gap-1.5 font-bold text-[#082824] dark:text-white text-[11px]">
                                                             <span>•</span>
                                                             <span>{selectedChain.isL1 ? "Minimum bridge: $10.00 USDC" : "Minimum bridge: $1.00 USDC"}</span>
                                                         </div>
-                                                        <p className="mt-1 text-[10px] text-black/60 dark:text-white/60 pl-3">
+                                                        <p className="mt-1 text-[10px] text-[#082824]/65 dark:text-white/65 pl-3">
                                                             {selectedChain.isL1
                                                                 ? "Smaller deposits (e.g. $9) stay safely stored on-chain at your address until your total balance reaches $10 or more, which triggers auto-bridging."
                                                                 : "Deposits accumulate safely on-chain until reaching $1 or more, then auto-bridge to Arc."}
@@ -663,7 +664,7 @@ export default function DepositModal({
                                         {/* QR Code */}
                                         {(!loadingIntent || selectedChain.isArc) && (
                                             <div className="flex justify-center">
-                                                <div className="p-3 bg-white border border-black/10 dark:border-white/10 rounded-2xl shadow-sm inline-block">
+                                                <div className="p-3 bg-white border border-black/10 dark:border-white/15 rounded-2xl shadow-sm inline-block">
                                                     <QRCode
                                                         value={displayAddress}
                                                         size={135}
@@ -683,9 +684,9 @@ export default function DepositModal({
 
                                         {/* Copy Address Box */}
                                         {(!loadingIntent || selectedChain.isArc) && (
-                                            <div className="bg-white dark:bg-white/[0.06] border border-black/15 dark:border-white/15 rounded-2xl p-3.5 text-left shadow-sm">
+                                            <div className="bg-white dark:bg-[#222327] border border-black/15 dark:border-white/15 rounded-2xl p-3.5 text-left shadow-sm">
                                                 <div className="flex items-center justify-between mb-1">
-                                                    <p className="text-[9px] text-black/50 dark:text-white/50 uppercase tracking-wider font-black">
+                                                    <p className="text-[9px] text-[#082824]/60 dark:text-white/60 uppercase tracking-wider font-black">
                                                         {selectedChain.isArc ? "Your EVM Deposit Address" : "Deposit Address"}
                                                     </p>
                                                     {selectedChain.isArc && (
@@ -695,7 +696,7 @@ export default function DepositModal({
                                                     )}
                                                 </div>
                                                 <div className="flex items-center gap-2">
-                                                    <code className="flex-1 text-[11px] text-black dark:text-white font-mono break-all select-all font-semibold">
+                                                    <code className="flex-1 text-[11px] text-[#082824] dark:text-[#f4f4f5] font-mono break-all select-all font-semibold">
                                                         {displayAddress}
                                                     </code>
                                                     <button
@@ -718,9 +719,9 @@ export default function DepositModal({
 
                                         {/* Token Contract Reference */}
                                         {selectedChain.usdc && selectedChain.usdc !== "0x3600000000000000000000000000000000000000" && (
-                                            <div className="rounded-xl border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.05] p-2.5 text-[10px] flex items-center justify-between text-black/70 dark:text-white/70">
+                                            <div className="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#222327] p-2.5 text-[10px] flex items-center justify-between text-[#082824]/75 dark:text-white/75 shadow-sm">
                                                 <span className="truncate">
-                                                    USDC on {selectedChain.shortName}: <code className="font-mono text-black dark:text-white font-bold">{selectedChain.usdc.slice(0, 8)}...{selectedChain.usdc.slice(-6)}</code>
+                                                    USDC on {selectedChain.shortName}: <code className="font-mono text-[#082824] dark:text-white font-bold">{selectedChain.usdc.slice(0, 8)}...{selectedChain.usdc.slice(-6)}</code>
                                                 </span>
                                                 <button
                                                     type="button"
