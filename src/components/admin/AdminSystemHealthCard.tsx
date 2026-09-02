@@ -173,7 +173,7 @@ export function AdminSystemHealthCard() {
     }
   };
 
-  if (loading && !data) {
+  if (loading) {
     return (
       <div className="space-y-6">
         <SkeletonStatGrid count={3} columns={3} label="Loading system telemetry..." />

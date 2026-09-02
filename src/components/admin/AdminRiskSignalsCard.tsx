@@ -64,7 +64,7 @@ export function AdminRiskSignalsCard() {
     loadSignals();
   }, [loadSignals]);
 
-  if (loading && !data) {
+  if (loading) {
     return (
       <div className="space-y-4">
         <SkeletonStatGrid count={3} columns={3} label="Loading fraud & risk signals..." />

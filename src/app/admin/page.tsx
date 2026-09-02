@@ -1401,7 +1401,7 @@ export default function AdminDashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {loading && merchants.length === 0 ? (
+                  {loading ? (
                     <tr>
                       <td colSpan={5} className="p-4">
                         <SkeletonRows count={5} avatar={true} lines={2} label="Loading verified merchants..." />
@@ -1569,7 +1569,7 @@ export default function AdminDashboardPage() {
                 </div>
               </div>
 
-              {kycLoading && kycRecords.length === 0 ? (
+              {kycLoading ? (
                 <SkeletonRows
                   count={5}
                   avatar={false}
@@ -2043,7 +2043,7 @@ export default function AdminDashboardPage() {
                 <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">
                   Banned Wallets
                 </h3>
-                {loading && bannedAccounts.length === 0 ? (
+                {loading ? (
                   <SkeletonRows count={3} avatar={false} lines={2} label="Loading banned wallets..." />
                 ) : bannedAccounts.length === 0 ? (
                   <p className="text-xs text-[#64748b]">No banned wallets.</p>
@@ -2065,7 +2065,7 @@ export default function AdminDashboardPage() {
                 <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">
                   Banned IPs
                 </h3>
-                {loading && bannedIps.length === 0 ? (
+                {loading ? (
                   <SkeletonRows count={3} avatar={false} lines={2} label="Loading banned IPs..." />
                 ) : bannedIps.length === 0 ? (
                   <p className="text-xs text-[#64748b]">No banned IPs.</p>
@@ -2142,7 +2142,7 @@ export default function AdminDashboardPage() {
 
               {/* Sub-Section Content Area */}
               <div className="flex-1 min-w-0 w-full">
-                {analyticsLoading && !analytics ? (
+                {analyticsLoading ? (
                   analyticsSection === "volume" ? (
                     <VolumeSkeleton />
                   ) : analyticsSection === "subscriptions" ? (

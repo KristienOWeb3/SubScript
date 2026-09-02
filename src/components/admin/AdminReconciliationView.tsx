@@ -142,7 +142,7 @@ export function AdminReconciliationView() {
         </div>
       )}
 
-      {loading && events.length === 0 ? (
+      {loading ? (
         <SkeletonTable rows={6} columns={7} label="Loading payment reconciliation queue..." />
       ) : (
         /* Events Table */
