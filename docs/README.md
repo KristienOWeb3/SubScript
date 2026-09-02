@@ -22,9 +22,10 @@ material lives here, grouped by purpose.
 - [KYC verification](kyc-verification.md)
 - [Bank-transfer USDC on-ramp](bank-transfer-usdc-onramp.md)
 
-## Runbooks
+## Runbooks & Mainnet
 
-- [Mainnet cutover](runbooks/mainnet-cutover.md)
+- [Unified Mainnet Master Guide & Audit Bible](mainnet/README.md)
+- [Mainnet SQL cutover migration](mainnet/mainnet-sql-cutover.sql)
 - [Redeployment](redeploy-runbook.md)
 - [Web Push](runbooks/web-push.md)
 - [`null_api_key_plaintext` cleanup](runbooks/null_api_key_plaintext_after_hash_rollout.sql)

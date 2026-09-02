@@ -86,4 +86,11 @@ scripts/test-lh.mjs
 scripts/audit-landing-page.mjs
 scripts/lighthouse-suite.mjs
 
+# Private Mainnet & Operator Scratch Files
+.mainnet/
+mainnet/
+docs/mainnet/private/
+*.private.env
+mainnet-secrets.*
+
 
