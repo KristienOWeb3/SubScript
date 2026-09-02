@@ -33,6 +33,7 @@ type CircleGoogleWalletButtonProps = {
         provider?: string;
         role?: string | null;
     }) => void;
+    variant?: "full" | "icon";
 };
 
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
@@ -229,7 +230,7 @@ function GoogleColorSpinner({ className = "w-4 h-4" }: { className?: string }) {
     );
 }
 
-export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWalletButtonProps) {
+export default function CircleGoogleWalletButton({ onSuccess, variant = "full" }: CircleGoogleWalletButtonProps) {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [devEmailInput, setDevEmailInput] = useState("");
@@ -454,6 +455,32 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
             failWith(err.message || "Continue with Google failed.");
         }
     };
+
+    if (variant === "icon") {
+        return (
+            <div className="relative">
+                <button
+                    type="button"
+                    onClick={handleContinue}
+                    disabled={isLoading}
+                    title="Continue with Google"
+                    className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center shadow-sm disabled:opacity-50 disabled:cursor-not-allowed group relative"
+                >
+                    {isLoading ? (
+                        <GoogleColorSpinner className="h-4 w-4" />
+                    ) : (
+                        <GoogleLogo className="h-5 w-5 transition-transform group-hover:scale-105" />
+                    )}
+                </button>
+
+                {error ? (
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 z-50 rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs text-red-900 text-center shadow-lg">
+                        <p>{error}</p>
+                    </div>
+                ) : null}
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-3">

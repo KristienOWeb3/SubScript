@@ -23,7 +23,7 @@ export type PublicPlatformFlags = {
 
 const DEFAULTS: PublicPlatformFlags = {
     googleSigninEnabled: true,
-    externalWalletEnabled: false,
+    externalWalletEnabled: true,
     /* Presentation default only. Showing the invite-only copy before the flag lands would tell
        every visitor merchant signup is closed when it is open, so this starts off and the server
        stays the boundary either way. */

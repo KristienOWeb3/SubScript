@@ -29,6 +29,7 @@ on:
     - cron: "0 5 * * *"      # internal/payroll  — run due payroll campaigns
     - cron: "0 6 * * *"      # internal/billing  — premium downgrade sweep
     - cron: "0 7 * * *"      # cron/kyc-expiry   — expire stale KYC verifications
+    - cron: "0 8 * * *"      # cron/gdpr-hard-delete — purge accounts pending deletion > 30 days (GDPR compliance)
     - cron: "40 8 * * *"     # cron/payment-reminders — renewal / trial-ending / sponsored-access
                              #   notices. Off the top of the hour on purpose: GitHub's scheduler is
                              #   busiest at :00 and this job is not time-critical to the minute.
@@ -126,6 +127,19 @@ jobs:
             "${BASE:-https://www.subscriptonarc.com}/api/cron/kyc-expiry" \
             -H "Authorization: Bearer ${SECRET}"
 
+  gdpr-hard-delete:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 8 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: cron/gdpr-hard-delete
+        env:
+          BASE: ${{ secrets.KEEPER_BASE_URL }}
+          SECRET: ${{ secrets.KEEPER_SECRET }}
+        run: |
+          curl -fsS --retry 3 --retry-delay 5 --max-time 120 -X GET \
+            "${BASE:-https://www.subscriptonarc.com}/api/cron/gdpr-hard-delete" \
+            -H "Authorization: Bearer ${SECRET}"
+
   payment-reminders:
     # Renewal reminders, introductory-price-ending notices, and sponsored-access-ending notices.
     # This route had no scheduler at all: vercel.json is full (Hobby allows 2 crons, spent on
@@ -176,6 +190,7 @@ jobs:
             /api/internal/payroll \
             /api/internal/billing \
             /api/cron/kyc-expiry \
+            /api/cron/gdpr-hard-delete \
             /api/cron/payment-reminders \
             /api/keeper/vault-topup \
             /api/keeper/cctp; do

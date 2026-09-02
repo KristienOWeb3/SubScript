@@ -37,7 +37,7 @@ import {
     Activity, Key, Code2, Webhook, ArrowRightLeft, 
     ShieldAlert, Copy, Check, Eye, EyeOff, RotateCw, 
     RefreshCw, Sliders, CheckCircle, AlertTriangle,
-    PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
+    PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine, LogOut,
     Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
     Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, ChevronRight, User, Share2,
     ShieldCheck, Save, SquaresFour, MessageSquare, HelpCircle, Send, Terminal, Bell, Search, ChevronLeft, ArrowLeft
@@ -1780,7 +1780,8 @@ export default function DashboardPage() {
 
     const handleLogout = async () => {
         try {
-            await fetch("/api/auth/logout", { method: "POST" });
+            disconnect();
+            await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
             setSessionWallet(null);
             setEmbeddedWallet(null);
             setApiKeys([]);
@@ -1792,6 +1793,8 @@ export default function DashboardPage() {
             setInitialContractFetched(false);
         } catch (err) {
             console.error("Error logging out:", err);
+        } finally {
+            window.location.href = "/signin";
         }
     };
 
@@ -5985,6 +5988,7 @@ Please complete the following implementation tasks:
                     mobileEnabled={isConnected}
                     isPremium={isPremium}
                     isLoading={Boolean(isLoading)}
+                    onLogout={handleLogout}
                 />
                 <div className="merchant-dashboard-workspace relative min-w-0 flex-1 overflow-y-auto bg-[#FFFFF0] md:mt-[14px] md:h-[calc(100vh-14px)] md:rounded-tl-[28px] md:border md:border-black/10">
             {/* Session Consent Alerts Overlay */}
@@ -6058,6 +6062,15 @@ Please complete the following implementation tasks:
                         <div className="relative">
                             <NotificationBell audience="MERCHANT" accent="#082824" className="merchant-light-bell" />
                         </div>
+                        <button
+                            onClick={handleLogout}
+                            title="Log out"
+                            aria-label="Log out"
+                            className="flex h-9 items-center gap-1.5 px-3.5 rounded-full bg-[#FFFFF0] dark:bg-[#1f2023] text-red-600 hover:bg-red-50 hover:border-red-200 transition shadow-sm border border-black/10 dark:border-white/10 text-xs font-bold shrink-0"
+                        >
+                            <LogOut className="h-4 w-4" />
+                            <span className="hidden sm:inline">Log out</span>
+                        </button>
                     </div>
                 </div>
                 {isLoading ? (

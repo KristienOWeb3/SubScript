@@ -170,7 +170,7 @@ export default function Navbar() {
         { name: "Compare", href: "/compare", className: "text-[#9ca3af] hover:text-white" },
         { name: "Answers", href: "/answers", className: "text-[#9ca3af] hover:text-white" },
         { name: "Support", href: "/support", className: "text-[#9ca3af] hover:text-white" },
-        { name: "Sign in", href: "/login", className: "text-[#9ca3af] hover:text-white" },
+        { name: "Sign in", href: "/signin", className: "text-[#9ca3af] hover:text-white" },
     ];
 
     return (
@@ -222,7 +222,7 @@ export default function Navbar() {
                             </button>
                         )}
                         <Link
-                            href="/login"
+                            href="/signin"
                             className="text-sm font-semibold text-zinc-300 hover:text-white transition-colors"
                         >
                             Sign in

@@ -84,7 +84,7 @@ export function ChainLogo({ chain, className = "h-5 w-5", size = 20 }: ChainLogo
   ) {
     return (
       <img
-        src="/chains/base.jpeg"
+        src="/chains/base.svg"
         alt="Base"
         width={size}
         height={size}

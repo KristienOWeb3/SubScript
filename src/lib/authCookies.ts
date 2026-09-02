@@ -65,7 +65,7 @@ export function clearSessionCookie(response: NextResponse, request: Request) {
 export function setSiweNonceCookie(response: NextResponse, request: Request, nonce: string) {
     response.cookies.set("subscript_siwe_nonce", nonce, {
         ...baseCookieOptions(request),
-        maxAge: 300,
+        maxAge: 600,
     });
 }
 

@@ -128,6 +128,8 @@ export async function POST(request: Request) {
 
                 if (verifiedEmailVal) {
                     await assertAccountEmailAvailable(client, verifiedEmailVal, normalizedWallet);
+                } else if (emailVal && role === "USER") {
+                    await assertAccountEmailAvailable(client, emailVal, normalizedWallet);
                 }
 
                 const createdRoleResult = await client.query(
@@ -155,12 +157,13 @@ export async function POST(request: Request) {
                     }
                 } else {
                     await client.query("delete from merchants where wallet_address = $1", [normalizedWallet]);
-                    if (verifiedEmailVal) {
+                    const emailToSave = verifiedEmailVal || emailVal;
+                    if (emailToSave) {
                         await client.query(
                             `insert into customers (wallet_address, email)
                             values ($1, $2)
                             on conflict (wallet_address) do update set email = excluded.email`,
-                            [normalizedWallet, verifiedEmailVal]
+                            [normalizedWallet, emailToSave]
                         );
                     } else {
                         await client.query(

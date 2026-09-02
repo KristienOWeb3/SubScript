@@ -439,7 +439,7 @@ export default async function proxy(request: NextRequest) {
                already carrying a session is being told nothing more than "no such page". */
             const hasSession = Boolean(request.cookies.get("subscript_session_token")?.value);
             if (isAdminHost && !hasSession) {
-                return NextResponse.redirect(`${PUBLIC_ORIGIN}/login`);
+                return NextResponse.redirect(`${PUBLIC_ORIGIN}/signin`);
             }
             return new NextResponse("Not Found", { status: 404 });
         }
@@ -569,7 +569,7 @@ export default async function proxy(request: NextRequest) {
 
             // If not logged in, redirect to landing sign-in page
             if (!token && pathname !== "/signin" && pathname !== "/login" && pathname !== "/signup") {
-                return NextResponse.redirect(`${PUBLIC_ORIGIN}/login`);
+                return NextResponse.redirect(`${PUBLIC_ORIGIN}/signin`);
             }
 
             if (pathname === "/" || pathname === "/dashboard") {

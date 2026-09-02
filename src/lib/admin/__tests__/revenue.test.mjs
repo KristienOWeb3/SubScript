@@ -115,6 +115,6 @@ test("the login fork no longer carries a Google button that belongs to neither c
   /* It sat above both options without belonging to either. Both destinations still have one, so the
      capability is intact where the intent is already settled. */
   assert.doesNotMatch(login, /CircleGoogleWalletButton/);
-  assert.match(signin, /<CircleGoogleWalletButton/);
-  assert.match(signup, /<CircleGoogleWalletButton/);
+  assert.match(signin, /<MultiWalletAuthRow|<CircleGoogleWalletButton/);
+  assert.match(signup, /<MultiWalletAuthRow|<CircleGoogleWalletButton/);
 });
