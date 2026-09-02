@@ -32,7 +32,7 @@ test("referrals tab is present in admin navigation and rendered correctly", () =
   assert.match(page, /\{\s*id:\s*"referrals",\s*label:\s*"Referrals",\s*icon:\s*Trophy\s*\}/);
 
   // Tab view is rendered
-  assert.match(page, /\{tab === "referrals" && <AdminReferralsView \/>\}/);
+  assert.match(page, /\{tab === "referrals" && <AdminReferralsView[^>]*\/>\}/);
 });
 
 test("admin referrals view implements leaderboard ranking and CSV export", () => {

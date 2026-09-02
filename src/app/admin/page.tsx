@@ -882,7 +882,7 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     if (tab === "admins") loadAdmins();
-    if (tab === "analytics") loadAnalytics();
+    if (tab === "analytics" || tab === "broadcast") loadAnalytics();
     if (tab === "system") loadFlags();
     if (tab === "kyc") loadKyc();
     /* Both: the tab renders the enforcement switch, which lives in platform_flags, alongside the
@@ -1265,7 +1265,7 @@ export default function AdminDashboardPage() {
                     onClick={() => {
                       setRefreshCounter((c) => c + 1);
                       if (tab === "admins") loadAdmins();
-                      else if (tab === "analytics") loadAnalytics();
+                      else if (tab === "analytics" || tab === "broadcast") loadAnalytics();
                       else if (tab === "system") loadFlags();
                       else if (tab === "kyc") loadKyc();
                       else if (tab === "merchant-access") {
@@ -2863,7 +2863,14 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            {analytics && (analytics.recentBroadcasts || []).length > 0 && (
+            {analyticsLoading ? (
+              <div className={`${CARD} space-y-3`}>
+                <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">
+                  Recent Broadcasts
+                </h3>
+                <SkeletonRows count={3} avatar={false} lines={2} label="Loading broadcast history..." />
+              </div>
+            ) : analytics && (analytics.recentBroadcasts || []).length > 0 ? (
               <div className={`${CARD} space-y-3`}>
                 <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a]">
                   Recent Broadcasts
@@ -2908,7 +2915,7 @@ export default function AdminDashboardPage() {
                   ))}
                 </div>
               </div>
-            )}
+            ) : null}
           </div>
         )}
 
