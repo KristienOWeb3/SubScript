@@ -1219,6 +1219,8 @@ model PlatformFlag {
   /// Invite-only merchant signup. The one flag here whose reader fails CLOSED — see
   /// isMerchantInviteOnlyEnforced. Off until mainnet.
   merchantInviteOnlyEnabled Boolean @default(false) @map("merchant_invite_only_enabled")
+  /// Controls whether Local Bank Transfer is available in the user deposit modal.
+  localBankTransferEnabled  Boolean @default(true) @map("local_bank_transfer_enabled")
   updatedAt             DateTime @default(now()) @map("updated_at")
   updatedBy             String   @default("system") @map("updated_by")
 

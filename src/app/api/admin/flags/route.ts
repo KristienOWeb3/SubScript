@@ -39,6 +39,7 @@ export async function POST(request: Request) {
         const dbData: Record<string, any> = { updatedBy: auth.admin.wallet, updatedAt: new Date() };
         if (typeof body?.googleSigninEnabled === "boolean") dbData.googleSigninEnabled = body.googleSigninEnabled;
         if (typeof body?.externalWalletEnabled === "boolean") dbData.externalWalletEnabled = body.externalWalletEnabled;
+        if (typeof body?.localBankTransferEnabled === "boolean") dbData.localBankTransferEnabled = body.localBankTransferEnabled;
         if (typeof body?.maintenanceEnabled === "boolean") dbData.maintenanceEnabled = body.maintenanceEnabled;
         if (typeof body?.maintenanceMessage === "string" || body?.maintenanceMessage === null) {
             dbData.maintenanceMessage = body.maintenanceMessage
@@ -79,6 +80,7 @@ export async function POST(request: Request) {
             maintenanceMessage: row.maintenanceMessage ?? (body?.maintenanceMessage ?? before.maintenanceMessage),
             externalWalletEnabled: row.externalWalletEnabled ?? (body?.externalWalletEnabled ?? before.externalWalletEnabled),
             merchantInviteOnlyEnabled: row.merchantInviteOnlyEnabled ?? (body?.merchantInviteOnlyEnabled ?? before.merchantInviteOnlyEnabled),
+            localBankTransferEnabled: row.localBankTransferEnabled ?? (body?.localBankTransferEnabled ?? before.localBankTransferEnabled),
         };
 
         /* Drop the local cache immediately so this instance reflects the change without
@@ -137,6 +139,9 @@ export async function POST(request: Request) {
             }
             if (before.externalWalletEnabled !== after.externalWalletEnabled) {
                 changes.push({ flagName: "External Wallet Connection", prev: before.externalWalletEnabled ? "Enabled" : "Disabled", next: after.externalWalletEnabled ? "Enabled" : "Disabled" });
+            }
+            if (before.localBankTransferEnabled !== after.localBankTransferEnabled) {
+                changes.push({ flagName: "Local Bank Transfer", prev: before.localBankTransferEnabled ? "Enabled" : "Disabled", next: after.localBankTransferEnabled ? "Enabled" : "Disabled" });
             }
             if (before.maintenanceEnabled !== after.maintenanceEnabled) {
                 changes.push({ flagName: "Maintenance Mode", prev: before.maintenanceEnabled ? "Enabled" : "Disabled", next: after.maintenanceEnabled ? "Enabled" : "Disabled" });

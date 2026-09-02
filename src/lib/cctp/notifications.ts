@@ -36,7 +36,7 @@ export function notifyDepositStarted(params: {
   return createNotification({
     recipientAddress: params.recipientAddress,
     title: "USDC moving to Arc",
-    body: `USDC on ${params.originChainName} received, moving to arc.. (Please wait for 5 minutes)`,
+    body: `USDC on ${params.originChainName} received, moving to arc.. (Please wait for 15 minutes)`,
   });
 }
 

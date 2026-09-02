@@ -31,6 +31,7 @@ export type PlatformFlags = {
     maintenanceMessage: string | null;
     externalWalletEnabled: boolean;
     merchantInviteOnlyEnabled: boolean;
+    localBankTransferEnabled: boolean;
 };
 
 /* What an unreadable table means. Not a "safe default" in the abstract — a deliberate
@@ -45,6 +46,7 @@ export const FLAGS_FALLBACK: PlatformFlags = {
        Its consumer (isMerchantInviteOnlyEnforced in @/lib/merchants/accessGrants) also treats a
        thrown read as enforced, so the two agree. */
     merchantInviteOnlyEnabled: true,
+    localBankTransferEnabled: true,
 };
 
 /* A MISSING singleton row is not the same failure as an unreadable table: the table answered, it
@@ -53,6 +55,7 @@ export const FLAGS_FALLBACK: PlatformFlags = {
 const FLAGS_UNSEEDED: PlatformFlags = {
     ...FLAGS_FALLBACK,
     merchantInviteOnlyEnabled: false,
+    localBankTransferEnabled: true,
 };
 
 /* "This column does not exist yet" is not an incident either — it means the code is running ahead
@@ -91,6 +94,7 @@ export async function getPlatformFlags(): Promise<PlatformFlags> {
                   maintenanceMessage: row.maintenanceMessage ?? null,
                   externalWalletEnabled: row.externalWalletEnabled ?? true,
                   merchantInviteOnlyEnabled: row.merchantInviteOnlyEnabled ?? false,
+                  localBankTransferEnabled: row.localBankTransferEnabled ?? true,
               }
             : FLAGS_UNSEEDED;
         cached = { value, at: Date.now() };
@@ -118,6 +122,18 @@ export async function isGoogleSigninEnabled(): Promise<boolean> {
             select: { googleSigninEnabled: true },
         });
         return row?.googleSigninEnabled ?? true;
+    } catch {
+        return true;
+    }
+}
+
+export async function isLocalBankTransferEnabled(): Promise<boolean> {
+    try {
+        const row = await prisma.platformFlag.findUnique({
+            where: { id: 1 },
+            select: { localBankTransferEnabled: true },
+        });
+        return row?.localBankTransferEnabled ?? true;
     } catch {
         return true;
     }

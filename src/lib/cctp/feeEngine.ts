@@ -164,8 +164,8 @@ export function listBridgeRoutes(direction: BridgeDirection): BridgeRouteOption[
         domain: info.domain,
         feeBps: info.feeBps,
         feePercentage: formatFeeBps(info.feeBps),
-        /* Ethereum finality is the slow part, not Circle. */
-        estimatedTime: info.isL1 ? "About 15 minutes" : "About 5 minutes",
+        /* Circle CCTP cross-chain attestation and relay */
+        estimatedTime: "About 15 minutes",
         available: allowed !== false,
         nativeTokenSymbol: info.nativeTokenSymbol,
       };
@@ -179,7 +179,7 @@ export function listBridgeRoutes(direction: BridgeDirection): BridgeRouteOption[
     domain: SOLANA_CCTP_CONFIG.domain,
     feeBps: SOLANA_CCTP_CONFIG.feeBps,
     feePercentage: formatFeeBps(SOLANA_CCTP_CONFIG.feeBps),
-    estimatedTime: "About 5 minutes",
+    estimatedTime: "About 15 minutes",
     available: direction === "inbound_deposit" ? SOLANA_CCTP_CONFIG.allowDeposits : SOLANA_CCTP_CONFIG.allowWithdrawals,
     unavailableReason: "Coming soon",
     nativeTokenSymbol: SOLANA_CCTP_CONFIG.nativeTokenSymbol,

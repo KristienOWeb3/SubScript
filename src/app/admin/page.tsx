@@ -174,6 +174,7 @@ type PlatformFlags = {
   maintenanceMessage: string | null;
   externalWalletEnabled: boolean;
   merchantInviteOnlyEnabled: boolean;
+  localBankTransferEnabled: boolean;
   googleEnvConfigured?: boolean;
 };
 
@@ -2662,6 +2663,20 @@ export default function AdminDashboardPage() {
                       updateFlag(
                         { externalWalletEnabled: !flags.externalWalletEnabled },
                         "wallet"
+                      )
+                    }
+                  />
+
+                  <Toggle
+                    title="Local Bank Transfer"
+                    description="Controls whether the Local Bank Transfer option is offered in the user deposit modal. Turning this off disables and hides local bank transfers for all users across the platform."
+                    enabled={flags.localBankTransferEnabled}
+                    disabled={flagBusy === "bank"}
+                    busy={flagBusy === "bank"}
+                    onToggle={() =>
+                      updateFlag(
+                        { localBankTransferEnabled: !flags.localBankTransferEnabled },
+                        "bank"
                       )
                     }
                   />

@@ -20,6 +20,7 @@ export async function GET() {
                 flags.googleSigninEnabled !== false && process.env.NEXT_PUBLIC_CIRCLE_GOOGLE_ENABLED !== "false",
             externalWalletEnabled: flags.externalWalletEnabled,
             merchantInviteOnlyEnabled: flags.merchantInviteOnlyEnabled,
+            localBankTransferEnabled: flags.localBankTransferEnabled !== false,
         },
         { headers: { "Cache-Control": "private, no-store, max-age=0" } },
     );
