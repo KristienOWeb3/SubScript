@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import NotificationBell from "@/components/dashboard/NotificationBell";
-import { Wallet, Copy, Check, PlugZap, Eye, EyeOff, User } from "@/components/icons";
-import { useAccount, useConnect, useDisconnect, type Connector } from "wagmi";
+import { Wallet, Copy, Check, LogOut, Eye, EyeOff, User } from "@/components/icons";
+import { useAccount, useConnect, useDisconnect, useSwitchChain, type Connector } from "wagmi";
 import { WalletSelectionModal } from "@/components/WalletSelectionModal";
 import { createPublicClient, http, formatUnits } from "viem";
 import { activeArcChain } from "@/lib/wagmi";
@@ -63,9 +63,10 @@ export default function DashboardHeader({
 }: DashboardHeaderProps) {
     const [copiedAddress, setCopiedAddress] = useState(false);
     const [mounted, setMounted] = useState(false);
-    const { address: realAddress, isConnected: realIsConnected } = useAccount();
-    const { connect, connectors, isPending: isConnecting } = useConnect();
+    const { address: realAddress, isConnected: realIsConnected, chainId } = useAccount();
+    const { connect, connectAsync, connectors, isPending: isConnecting } = useConnect();
     const { disconnect } = useDisconnect();
+    const { switchChainAsync } = useSwitchChain();
     const [showWalletModal, setShowWalletModal] = useState(false);
     const [scrolled, setScrolled] = useState(false);
     const [usdcBalance, setUsdcBalance] = useState("0.00");
@@ -176,12 +177,19 @@ export default function DashboardHeader({
         }
     };
 
-    const handleSelectConnector = (connector: Connector) => {
+    const handleSelectConnector = async (connector: Connector) => {
         setShowWalletModal(false);
         if (realIsConnected) {
             disconnect();
         }
-        connect({ connector });
+        try {
+            await connectAsync({ connector, chainId: activeArcChain.id });
+            if (switchChainAsync) {
+                await switchChainAsync({ chainId: activeArcChain.id }).catch(() => {});
+            }
+        } catch {
+            connect({ connector });
+        }
     };
 
     const handleCopyAddress = () => {
@@ -193,12 +201,14 @@ export default function DashboardHeader({
     };
 
     const handleDisconnect = async () => {
-        if (embeddedWallet) {
-            onDisconnect?.();
-        } else {
-            disconnect();
+        try {
+            if (!embeddedWallet) {
+                disconnect();
+            }
             await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
             onDisconnect?.();
+        } finally {
+            window.location.href = "/signin";
         }
     };
 
@@ -241,14 +251,24 @@ export default function DashboardHeader({
                                         Admin
                                     </Link>
                                 )}
-                                {/* Disconnect Wallet Icon */}
-                                <button
-                                    onClick={handleDisconnect}
-                                    className="p-1.5 text-white/40 hover:text-red-400 bg-white/[0.02] hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 rounded-full transition-all shrink-0"
-                                    title="Disconnect wallet"
-                                >
-                                    <PlugZap className="w-3.5 h-3.5" />
-                                </button>
+                                {mounted && realIsConnected && chainId && chainId !== activeArcChain.id && (
+                                    <button
+                                        onClick={() => switchChainAsync?.({ chainId: activeArcChain.id })}
+                                        className="px-2 py-0.5 bg-amber-500/15 border border-amber-500/40 text-amber-300 hover:bg-amber-500/25 rounded-full text-[9px] font-bold tracking-wide transition-all animate-pulse shrink-0"
+                                        title="Connected to wrong network. Click to switch to Arc."
+                                    >
+                                        Switch to Arc
+                                    </button>
+                                )}
+                                 {/* Log Out Button */}
+                                 <button
+                                     onClick={handleDisconnect}
+                                     className="flex items-center gap-1 px-2 py-1 text-white/60 hover:text-red-400 bg-white/[0.04] hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 rounded-full transition-all shrink-0 text-[10px] font-semibold"
+                                     title="Log out"
+                                 >
+                                     <LogOut className="w-3 h-3" />
+                                     <span>Log out</span>
+                                 </button>
                                 {/* Address/Domain pill */}
                                 <button
                                     onClick={handleDnsClick}
@@ -317,6 +337,15 @@ export default function DashboardHeader({
                                             Admin
                                         </Link>
                                     )}
+                                    {mounted && realIsConnected && chainId && chainId !== activeArcChain.id && (
+                                        <button
+                                            onClick={() => switchChainAsync?.({ chainId: activeArcChain.id })}
+                                            className="px-3 py-1.5 bg-amber-500/15 border border-amber-500/40 text-amber-300 hover:bg-amber-500/25 rounded-full text-[11px] font-bold tracking-wide transition-all animate-pulse shrink-0"
+                                            title="Connected to wrong network. Click to switch to Arc."
+                                        >
+                                            Switch to Arc
+                                        </button>
+                                    )}
                                     {/* Wallet Address (copyable) */}
                                     <button
                                         onClick={handleCopyAddress}
@@ -358,13 +387,14 @@ export default function DashboardHeader({
                                         </p>
                                     </div>
 
-                                    <button
-                                        onClick={handleDisconnect}
-                                        className="p-2 text-white/40 hover:text-red-400 bg-white/[0.02] hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 rounded-full transition-all"
-                                        title="Disconnect wallet"
-                                    >
-                                        <PlugZap className="w-3.5 h-3.5" />
-                                    </button>
+                                     <button
+                                         onClick={handleDisconnect}
+                                         className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white/70 hover:text-red-400 bg-white/[0.03] hover:bg-red-500/10 border border-white/10 hover:border-red-500/25 rounded-full transition-all"
+                                         title="Log out"
+                                     >
+                                         <LogOut className="w-3.5 h-3.5" />
+                                         <span className="hidden md:inline">Log out</span>
+                                     </button>
 
                                     {/* PFP Icon */}
                                     <button

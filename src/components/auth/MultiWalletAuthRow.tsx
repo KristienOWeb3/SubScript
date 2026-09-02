@@ -8,10 +8,14 @@ import {
   RabbyIcon,
   PhantomIcon,
   OkxIcon,
+  TrustWalletIcon,
+  CoinbaseIcon,
+  RainbowIcon,
+  BraveIcon,
   WalletIcon,
   MetaMaskColorSpinner,
 } from "@/components/auth/WalletIcons";
-import { Wallet, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 interface MultiWalletAuthRowProps {
   googleAvailable?: boolean;
@@ -19,7 +23,8 @@ interface MultiWalletAuthRowProps {
   onGoogleSuccess: (data: any) => void;
   connectors: readonly Connector[];
   onSelectConnector: (connector: Connector) => void;
-  onOpenModal: () => void;
+  onNoWalletDetected: (message: string) => void;
+  onOpenModal?: () => void;
   isConnecting?: boolean;
   siweLoading?: boolean;
   connectingConnectorId?: string | null;
@@ -32,43 +37,53 @@ export function MultiWalletAuthRow({
   onGoogleSuccess,
   connectors,
   onSelectConnector,
+  onNoWalletDetected,
   onOpenModal,
   isConnecting = false,
   siweLoading = false,
   connectingConnectorId = null,
   disabled = false,
 }: MultiWalletAuthRowProps) {
-  // Find connectors matching known wallets
-  const walletMap = useMemo(() => {
-    const map = new Map<string, Connector>();
-    for (const c of connectors) {
-      const lower = (c.name + " " + c.id).toLowerCase();
-      if (lower.includes("metamask") && !map.has("metamask")) map.set("metamask", c);
-      else if (lower.includes("rabby") && !map.has("rabby")) map.set("rabby", c);
-      else if (lower.includes("phantom") && !map.has("phantom")) map.set("phantom", c);
-      else if (lower.includes("okx") && !map.has("okx")) map.set("okx", c);
-      else if (lower.includes("coinbase") && !map.has("coinbase")) map.set("coinbase", c);
+  // Check which wallets are actually detected in the user's browser
+  const detectedConnectors = useMemo(() => {
+    // 1. Check for specific EIP-6963 announced providers (MetaMask, Rabby, Phantom, OKX, Trust, etc.)
+    const specific = connectors.filter((c) => c.id !== "injected");
+    if (specific.length > 0) {
+      const seen = new Set<string>();
+      return specific.filter((c) => {
+        const key = (c.name || c.id).toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
     }
-    return map;
+
+    // 2. If no EIP-6963 providers, check if legacy window.ethereum exists
+    if (typeof window !== "undefined" && Boolean((window as any).ethereum)) {
+      const injected = connectors.find((c) => c.id === "injected") || connectors[0];
+      return injected ? [injected] : [];
+    }
+
+    // 3. No wallet extension detected
+    return [];
   }, [connectors]);
 
-  // Check if any specific connector is in progress
   const isBusy = isConnecting || siweLoading;
 
-  const handleWalletClick = (walletKey: string) => {
-    const connector = walletMap.get(walletKey);
-    if (connector) {
-      onSelectConnector(connector);
-    } else {
-      // If specific wallet is not directly matched, open modal to let user choose or see install instructions
-      onOpenModal();
-    }
-  };
+  // Helper to render the specific official icon for a connector
+  const renderConnectorIcon = (c: Connector) => {
+    const lower = (c.name + " " + c.id).toLowerCase();
+    if (lower.includes("metamask")) return <MetaMaskIcon className="w-5 h-5 transition-transform group-hover:scale-110" />;
+    if (lower.includes("rabby")) return <RabbyIcon className="w-5 h-5 transition-transform group-hover:scale-110" />;
+    if (lower.includes("phantom")) return <PhantomIcon className="w-5 h-5 transition-transform group-hover:scale-110" />;
+    if (lower.includes("okx") || lower.includes("okex")) return <OkxIcon className="w-5 h-5 transition-transform group-hover:scale-110" />;
+    if (lower.includes("trust")) return <TrustWalletIcon className="w-5 h-5 transition-transform group-hover:scale-110" />;
+    if (lower.includes("coinbase")) return <CoinbaseIcon className="w-5 h-5 transition-transform group-hover:scale-110" />;
+    if (lower.includes("rainbow")) return <RainbowIcon className="w-5 h-5 transition-transform group-hover:scale-110" />;
+    if (lower.includes("brave")) return <BraveIcon className="w-5 h-5 transition-transform group-hover:scale-110" />;
 
-  const metamaskConnector = walletMap.get("metamask");
-  const rabbyConnector = walletMap.get("rabby");
-  const phantomConnector = walletMap.get("phantom");
-  const okxConnector = walletMap.get("okx");
+    return <WalletIcon name={c.name} id={c.id} iconUrl={c.icon} className="w-5 h-5 transition-transform group-hover:scale-110" />;
+  };
 
   return (
     <div className="flex items-center justify-center gap-2 sm:gap-2.5 flex-wrap">
@@ -81,92 +96,55 @@ export function MultiWalletAuthRow({
 
       {externalWalletEnabled && (
         <>
-          {/* MetaMask Button */}
-          <button
-            type="button"
-            onClick={() => handleWalletClick("metamask")}
-            disabled={disabled || isBusy}
-            title={metamaskConnector ? "Connect MetaMask" : "MetaMask (Click to choose or install)"}
-            className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center shadow-xs disabled:opacity-50 disabled:cursor-not-allowed group relative"
-          >
-            {isBusy && connectingConnectorId && metamaskConnector?.id === connectingConnectorId ? (
-              <MetaMaskColorSpinner className="w-4 h-4" />
-            ) : (
+          {detectedConnectors.length === 0 ? (
+            /* NO wallet detected: ONLY show MetaMask icon button.
+               When clicked, explicitly display error that no wallet is detected. */
+            <button
+              type="button"
+              onClick={() =>
+                onNoWalletDetected("No Web3 wallet detected. Please install a browser extension like MetaMask, Rabby, or OKX to continue.")
+              }
+              disabled={disabled || isBusy}
+              title="MetaMask (No wallet detected)"
+              className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center shadow-xs disabled:opacity-50 disabled:cursor-not-allowed group relative"
+            >
               <MetaMaskIcon className="w-5 h-5 transition-transform group-hover:scale-110" />
-            )}
-            {metamaskConnector && (
-              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#FFFFF0]" title="Installed" />
-            )}
-          </button>
+            </button>
+          ) : (
+            /* One or more wallets DETECTED: show each detected wallet with its official logo */
+            detectedConnectors.map((connector) => {
+              const isCurrentConnecting = isBusy && connectingConnectorId === connector.id;
+              const isMetaMask = (connector.name + " " + connector.id).toLowerCase().includes("metamask");
 
-          {/* Rabby Button */}
-          <button
-            type="button"
-            onClick={() => handleWalletClick("rabby")}
-            disabled={disabled || isBusy}
-            title={rabbyConnector ? "Connect Rabby Wallet" : "Rabby Wallet (Click to choose or install)"}
-            className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center shadow-xs disabled:opacity-50 disabled:cursor-not-allowed group relative"
-          >
-            {isBusy && connectingConnectorId && rabbyConnector?.id === connectingConnectorId ? (
-              <Loader2 className="w-4 h-4 animate-spin text-[#8697FF]" />
-            ) : (
-              <RabbyIcon className="w-5 h-5 transition-transform group-hover:scale-110" />
-            )}
-            {rabbyConnector && (
-              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#FFFFF0]" title="Installed" />
-            )}
-          </button>
-
-          {/* Phantom Button */}
-          <button
-            type="button"
-            onClick={() => handleWalletClick("phantom")}
-            disabled={disabled || isBusy}
-            title={phantomConnector ? "Connect Phantom" : "Phantom (Click to choose or install)"}
-            className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center shadow-xs disabled:opacity-50 disabled:cursor-not-allowed group relative"
-          >
-            {isBusy && connectingConnectorId && phantomConnector?.id === connectingConnectorId ? (
-              <Loader2 className="w-4 h-4 animate-spin text-[#AB9FF2]" />
-            ) : (
-              <PhantomIcon className="w-5 h-5 transition-transform group-hover:scale-110" />
-            )}
-            {phantomConnector && (
-              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#FFFFF0]" title="Installed" />
-            )}
-          </button>
-
-          {/* OKX Button */}
-          <button
-            type="button"
-            onClick={() => handleWalletClick("okx")}
-            disabled={disabled || isBusy}
-            title={okxConnector ? "Connect OKX Wallet" : "OKX Wallet (Click to choose or install)"}
-            className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center shadow-xs disabled:opacity-50 disabled:cursor-not-allowed group relative"
-          >
-            {isBusy && connectingConnectorId && okxConnector?.id === connectingConnectorId ? (
-              <Loader2 className="w-4 h-4 animate-spin text-black" />
-            ) : (
-              <OkxIcon className="w-5 h-5 transition-transform group-hover:scale-110" />
-            )}
-            {okxConnector && (
-              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#FFFFF0]" title="Installed" />
-            )}
-          </button>
-
-          {/* More / All Wallets Button */}
-          <button
-            type="button"
-            onClick={onOpenModal}
-            disabled={disabled || isBusy}
-            title="Choose from all installed wallets"
-            className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center shadow-xs disabled:opacity-50 disabled:cursor-not-allowed group relative"
-          >
-            <Wallet className="w-4 h-4 text-black/70 group-hover:text-[#2775CA] transition-colors" />
-          </button>
+              return (
+                <button
+                  key={connector.uid || connector.id}
+                  type="button"
+                  onClick={() => onSelectConnector(connector)}
+                  disabled={disabled || isBusy}
+                  title={`Connect ${connector.name}`}
+                  className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center shadow-xs disabled:opacity-50 disabled:cursor-not-allowed group relative"
+                >
+                  {isCurrentConnecting ? (
+                    isMetaMask ? (
+                      <MetaMaskColorSpinner className="w-4 h-4" />
+                    ) : (
+                      <Loader2 className="w-4 h-4 animate-spin text-[#2775CA]" />
+                    )
+                  ) : (
+                    renderConnectorIcon(connector)
+                  )}
+                  {/* Subtle detected dot */}
+                  <span
+                    className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#FFFFF0]"
+                    title="Installed"
+                  />
+                </button>
+              );
+            })
+          )}
         </>
       )}
     </div>
   );
 }
-
-export default MultiWalletAuthRow;

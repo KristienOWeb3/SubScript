@@ -24,6 +24,7 @@ import {
     CreditCard,
     Zap,
     Crown,
+    LogOut,
 } from "@/components/icons";
 
 const paymentIds = new Set([
@@ -46,6 +47,7 @@ export default function MerchantDashboardNav({
     mobileEnabled,
     isPremium,
     isLoading = false,
+    onLogout,
 }: {
     activeId: string;
     activeSubTab?: string;
@@ -57,6 +59,7 @@ export default function MerchantDashboardNav({
     mobileEnabled?: boolean;
     isPremium?: boolean;
     isLoading?: boolean;
+    onLogout?: () => void;
 }) {
     const [paymentsOpen, setPaymentsOpen] = useState(true);
     const [developerOpen, setDeveloperOpen] = useState(true);
@@ -226,6 +229,15 @@ export default function MerchantDashboardNav({
                                 >
                                     <HelpCircle className="h-4 w-4 text-white/70" /> Help Center
                                 </Link>
+                                <button
+                                    onClick={() => {
+                                        setAccountMenuOpen(false);
+                                        onLogout?.();
+                                    }}
+                                    className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-red-400 hover:bg-red-500/10 transition border-t border-white/10 mt-1 pt-2"
+                                >
+                                    <LogOut className="h-4 w-4 text-red-400" /> Log out
+                                </button>
                             </div>
                         )}
                     </div>
@@ -369,6 +381,14 @@ export default function MerchantDashboardNav({
                             <HelpCircle className="h-4 w-4 shrink-0" />
                             <span>Help Center</span>
                         </Link>
+                        <button
+                            onClick={() => onLogout?.()}
+                            className="flex w-full items-center gap-2 rounded-full px-3.5 py-2.5 text-left text-xs font-semibold text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-all duration-200 whitespace-nowrap"
+                            title="Log out"
+                        >
+                            <LogOut className="h-4 w-4 shrink-0 text-red-400" />
+                            <span>Log out</span>
+                        </button>
                     </div>
                 </div>
             </aside>
@@ -476,6 +496,15 @@ export default function MerchantDashboardNav({
                             >
                                 <HelpCircle className="h-4 w-4" /> Help Center
                             </Link>
+                            <button
+                                onClick={() => {
+                                    setMoreOpen(false);
+                                    onLogout?.();
+                                }}
+                                className="col-span-2 flex w-full items-center justify-center gap-2 rounded-full px-3.5 py-2 text-xs font-bold text-red-400 hover:bg-red-500/10 border border-red-500/20 transition-all mt-1"
+                            >
+                                <LogOut className="h-4 w-4" /> Log out
+                            </button>
                         </div>
                     </div>
                 </div>

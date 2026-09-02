@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback, Suspense } from "react";
 import posthog from "posthog-js";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAccount, useConnect, useDisconnect, useSignMessage, type Connector } from "wagmi";
+import { useAccount, useConnect, useDisconnect, useSignMessage, useSwitchChain, type Connector } from "wagmi";
+import { activeArcChain } from "@/lib/wagmi";
 import { WalletSelectionModal } from "@/components/WalletSelectionModal";
 import { MultiWalletAuthRow } from "@/components/auth/MultiWalletAuthRow";
 import { 
@@ -89,10 +90,11 @@ function SignupContent() {
     return getSafeRelativePath(searchParams?.get("next") || null);
   }, [searchParams]);
 
-  const { address, isConnected, connector: activeConnector } = useAccount();
+  const { address, isConnected, connector: activeConnector, chainId } = useAccount();
   const { connectAsync, connectors, isPending: isConnecting } = useConnect();
   const { disconnect } = useDisconnect();
   const { signMessageAsync } = useSignMessage();
+  const { switchChainAsync } = useSwitchChain();
   const { externalWalletEnabled, googleSigninEnabled, merchantInviteOnlyEnabled, loaded: platformFlagsLoaded } = usePlatformFlags();
   const googleAvailable = CIRCLE_GOOGLE_ENABLED && (!platformFlagsLoaded || googleSigninEnabled !== false);
 
@@ -372,7 +374,14 @@ function SignupContent() {
       if (isConnected) {
         disconnect();
       }
-      await connectAsync({ connector });
+      const connRes = await connectAsync({ connector, chainId: activeArcChain.id });
+      if (switchChainAsync && connRes?.chainId !== activeArcChain.id) {
+        try {
+          await switchChainAsync({ chainId: activeArcChain.id });
+        } catch {
+          // Handled during SIWE if rejected
+        }
+      }
     } catch (err: any) {
       setConnectingConnectorId(null);
       setWalletAuthRequested(false);
@@ -390,6 +399,18 @@ function SignupContent() {
     if (!isConnected || !address || siweLoading) return;
     setSiweLoading(true);
     setSiweError(null);
+
+    // Enforce Arc network before signature
+    if (chainId && chainId !== activeArcChain.id && switchChainAsync) {
+      try {
+        await switchChainAsync({ chainId: activeArcChain.id });
+      } catch {
+        setSiweError("Please switch your wallet to Arc Network to continue.");
+        setSiweLoading(false);
+        setConnectingConnectorId(null);
+        return;
+      }
+    }
 
     try {
       const checkRes = await fetch("/api/auth/check-account", {
@@ -878,10 +899,12 @@ function SignupContent() {
           onGoogleSuccess={handleLoginSuccess}
           connectors={connectors}
           onSelectConnector={handleSelectConnector}
+          onNoWalletDetected={(msg) => setSiweError(msg)}
           onOpenModal={() => setShowWalletModal(true)}
           isConnecting={isConnecting}
           siweLoading={siweLoading}
           connectingConnectorId={connectingConnectorId}
+          disabled={otpLoading}
         />
 
         {/* Divider */}

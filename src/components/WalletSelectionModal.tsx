@@ -177,19 +177,20 @@ export function WalletSelectionModal({
             <span className="text-[10px] font-bold text-black/50 uppercase tracking-wider block">
               More Supported Wallets
             </span>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-5 gap-1.5">
               {[
                 { name: "MetaMask", id: "metamask", url: "https://metamask.io/download/" },
                 { name: "Rabby", id: "rabby", url: "https://rabby.io/" },
                 { name: "Phantom", id: "phantom", url: "https://phantom.app/" },
                 { name: "OKX", id: "okx", url: "https://www.okx.com/web3" },
+                { name: "Trust", id: "trust", url: "https://trustwallet.com/browser-extension" },
               ].map((wallet) => (
                 <a
                   key={wallet.id}
                   href={wallet.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="p-2 rounded-xl border border-black/10 bg-white hover:bg-black/5 flex flex-col items-center justify-center gap-1 group transition-all"
+                  className="p-1.5 sm:p-2 rounded-xl border border-black/10 bg-white hover:bg-black/5 flex flex-col items-center justify-center gap-1 group transition-all"
                   title={`Install ${wallet.name}`}
                 >
                   <div className="w-6 h-6 flex items-center justify-center transition-transform group-hover:scale-110">

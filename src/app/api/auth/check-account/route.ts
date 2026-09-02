@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sanitizeInput } from "@/utils/security";
 import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
+import { normalizeAccountEmail } from "@/lib/auth/accountEmail";
 
 export async function POST(request: Request) {
     try {
