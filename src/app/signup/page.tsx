@@ -30,6 +30,7 @@ import { CIRCLE_GOOGLE_ENABLED } from "@/lib/featureFlags";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 import { usePlatformFlags } from "@/hooks/usePlatformFlags";
 import AuthSplitLayout from "@/components/auth/AuthSplitLayout";
+import AuthLoadingState from "@/components/auth/AuthLoadingState";
 import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
 import { MetaMaskIcon, MetaMaskColorSpinner } from "@/components/auth/QuickAuthButtons";
 
@@ -610,7 +611,7 @@ function SignupContent() {
     if (email) params.set("email", email);
     const searchStr = params.toString() ? `?${params.toString()}` : "";
     if (typeof window !== "undefined" && window.location.pathname !== targetPath) {
-      window.history.pushState(null, "", `${targetPath}${searchStr}`);
+      window.location.assign(`${targetPath}${searchStr}`);
     }
   }, [activeTab, getSafeNext, email]);
 
@@ -866,9 +867,9 @@ function SignupContent() {
 
           <p className="text-center text-xs text-black/60 pt-0.5">
             Already have an account?{" "}
-            <Link href="/signin" className="text-[#2775CA] font-bold hover:underline">
+            <a href="/signin" className="text-[#2775CA] font-bold hover:underline">
               Sign in
-            </Link>
+            </a>
           </p>
         </div>
       </AuthSplitLayout>
@@ -1073,9 +1074,9 @@ function SignupContent() {
 
         <p className="text-center text-xs text-black/60 pt-0.5">
           Already have an account?{" "}
-          <Link href="/signin" className="text-[#2775CA] font-bold hover:underline">
+          <a href="/signin" className="text-[#2775CA] font-bold hover:underline">
             Sign in
-          </Link>
+          </a>
         </p>
       </div>
 
@@ -1100,7 +1101,7 @@ function SignupContent() {
 
 export default function SignupPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<AuthLoadingState activeTab="signup" />}>
       <SignupContent />
     </Suspense>
   );
