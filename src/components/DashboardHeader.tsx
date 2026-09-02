@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import NotificationBell from "@/components/dashboard/NotificationBell";
 import { Wallet, Copy, Check, PlugZap, Eye, EyeOff, User } from "@/components/icons";
-import { useAccount, useConnect, useDisconnect } from "wagmi";
+import { useAccount, useConnect, useDisconnect, type Connector } from "wagmi";
+import { WalletSelectionModal } from "@/components/WalletSelectionModal";
 import { createPublicClient, http, formatUnits } from "viem";
 import { activeArcChain } from "@/lib/wagmi";
 import { arcHttp } from "@/lib/arc/transport";
@@ -65,6 +66,7 @@ export default function DashboardHeader({
     const { address: realAddress, isConnected: realIsConnected } = useAccount();
     const { connect, connectors, isPending: isConnecting } = useConnect();
     const { disconnect } = useDisconnect();
+    const [showWalletModal, setShowWalletModal] = useState(false);
     const [scrolled, setScrolled] = useState(false);
     const [usdcBalance, setUsdcBalance] = useState("0.00");
     const [merchantAlias, setMerchantAlias] = useState<string | null>(propMerchantAlias || null);
@@ -164,10 +166,22 @@ export default function DashboardHeader({
     const showMobileBack = activeTab && !bottomBarTabs.includes(activeTab) && onBackToOverview;
 
     const handleConnect = () => {
+        if (connectors.length > 1) {
+            setShowWalletModal(true);
+            return;
+        }
         const connector = connectors.find((c) => c.id === "injected") || connectors[0];
         if (connector) {
             connect({ connector });
         }
+    };
+
+    const handleSelectConnector = (connector: Connector) => {
+        setShowWalletModal(false);
+        if (realIsConnected) {
+            disconnect();
+        }
+        connect({ connector });
     };
 
     const handleCopyAddress = () => {
@@ -379,6 +393,14 @@ export default function DashboardHeader({
                     </div>
                 </header>
             </div>
+
+            <WalletSelectionModal
+                isOpen={showWalletModal}
+                onClose={() => setShowWalletModal(false)}
+                connectors={connectors}
+                onSelectConnector={handleSelectConnector}
+                isConnected={realIsConnected}
+            />
         </>
     );
 }

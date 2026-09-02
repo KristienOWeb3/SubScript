@@ -4,7 +4,9 @@ import { useState, useEffect, useCallback, Suspense } from "react";
 import posthog from "posthog-js";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAccount, useConnect, useSignMessage } from "wagmi";
+import { useAccount, useConnect, useDisconnect, useSignMessage, type Connector } from "wagmi";
+import { WalletSelectionModal } from "@/components/WalletSelectionModal";
+import { MultiWalletAuthRow } from "@/components/auth/MultiWalletAuthRow";
 import { 
   Loader2, 
   Mail, 
@@ -87,11 +89,15 @@ function SignupContent() {
     return getSafeRelativePath(searchParams?.get("next") || null);
   }, [searchParams]);
 
-  const { address, isConnected } = useAccount();
-  const { connect, connectors, isPending: isConnecting } = useConnect();
+  const { address, isConnected, connector: activeConnector } = useAccount();
+  const { connectAsync, connectors, isPending: isConnecting } = useConnect();
+  const { disconnect } = useDisconnect();
   const { signMessageAsync } = useSignMessage();
   const { externalWalletEnabled, googleSigninEnabled, merchantInviteOnlyEnabled, loaded: platformFlagsLoaded } = usePlatformFlags();
   const googleAvailable = CIRCLE_GOOGLE_ENABLED && (!platformFlagsLoaded || googleSigninEnabled !== false);
+
+  const [showWalletModal, setShowWalletModal] = useState(false);
+  const [connectingConnectorId, setConnectingConnectorId] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<"signin" | "signup">("signup");
   const [email, setEmail] = useState(searchParams?.get("email") || "");
@@ -356,22 +362,28 @@ function SignupContent() {
     }
   };
 
-  const handleConnectWallet = () => {
-    posthog.capture(activeTab === "signup" ? "signup_method_selected" : "signin_method_selected", { method: "wallet" });
+  const handleSelectConnector = async (connector: Connector) => {
+    setShowWalletModal(false);
+    setConnectingConnectorId(connector.id);
     setWalletAuthRequested(true);
     setWalletSignupPrompt(false);
     setSiweError(null);
-    const injectedConnector = connectors.find((c) => c.id === "injected");
-    if (isConnected && address) {
-      performSiwe();
-    } else if (injectedConnector) {
-      connect({ connector: injectedConnector });
-    } else if (connectors.length > 0) {
-      connect({ connector: connectors[0] });
-    } else {
+    try {
+      if (isConnected) {
+        disconnect();
+      }
+      await connectAsync({ connector });
+    } catch (err: any) {
+      setConnectingConnectorId(null);
       setWalletAuthRequested(false);
-      setSiweError("No injected Web3 wallet found. Please install MetaMask or Rabby.");
+      setSiweError(err?.message || "Failed to connect wallet.");
     }
+  };
+
+  const handleConnectWallet = () => {
+    posthog.capture(activeTab === "signup" ? "signup_method_selected" : "signin_method_selected", { method: "wallet" });
+    setSiweError(null);
+    setShowWalletModal(true);
   };
 
   const performSiwe = useCallback(async () => {
@@ -433,6 +445,7 @@ function SignupContent() {
     } finally {
       setSiweLoading(false);
       setWalletAuthRequested(false);
+      setConnectingConnectorId(null);
     }
   }, [isConnected, address, signMessageAsync, handleLoginSuccess, siweLoading, captchaToken, activeTab]);
 
@@ -859,29 +872,17 @@ function SignupContent() {
       <div className="space-y-3.5">
 
         {/* Quick Social & Web3 Auth Row */}
-        <div className="flex items-center justify-center gap-3">
-          {googleAvailable && (
-            <div className="shrink-0">
-              <CircleGoogleWalletButton onSuccess={handleLoginSuccess} variant="icon" />
-            </div>
-          )}
-
-          {externalWalletEnabled && (
-            <button
-              type="button"
-              onClick={handleConnectWallet}
-              disabled={isConnecting || siweLoading}
-              title="Connect MetaMask / Browser Wallet"
-              className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center shadow-sm disabled:opacity-50 disabled:cursor-not-allowed group relative"
-            >
-              {isConnecting || siweLoading ? (
-                <MetaMaskColorSpinner className="w-4 h-4" />
-              ) : (
-                <MetaMaskIcon className="w-5 h-5 transition-transform group-hover:scale-105" />
-              )}
-            </button>
-          )}
-        </div>
+        <MultiWalletAuthRow
+          googleAvailable={googleAvailable}
+          externalWalletEnabled={externalWalletEnabled}
+          onGoogleSuccess={handleLoginSuccess}
+          connectors={connectors}
+          onSelectConnector={handleSelectConnector}
+          onOpenModal={() => setShowWalletModal(true)}
+          isConnecting={isConnecting}
+          siweLoading={siweLoading}
+          connectingConnectorId={connectingConnectorId}
+        />
 
         {/* Divider */}
         <div className="relative py-1 flex items-center justify-center">
@@ -1059,6 +1060,16 @@ function SignupContent() {
         src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
         strategy="afterInteractive"
         onLoad={() => setTurnstileLoaded(true)}
+      />
+
+      <WalletSelectionModal
+        isOpen={showWalletModal}
+        onClose={() => setShowWalletModal(false)}
+        connectors={connectors}
+        onSelectConnector={handleSelectConnector}
+        connectingConnectorId={connectingConnectorId}
+        activeConnectorId={activeConnector?.id}
+        isConnected={isConnected}
       />
     </AuthSplitLayout>
   );
