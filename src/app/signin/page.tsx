@@ -82,6 +82,7 @@ function SignInContent() {
   const [captchaToken, setCaptchaToken] = useState("");
   const [turnstileLoaded, setTurnstileLoaded] = useState(false);
   const isTurnstileConfigured = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
+  const captchaRequired = isTurnstileConfigured && !captchaToken;
 
   const [resendCooldown, setResendCooldown] = useState(0);
 
@@ -221,6 +222,7 @@ function SignInContent() {
   };
 
   const handleSelectConnector = async (connector: Connector) => {
+    if (captchaRequired) return;
     setShowWalletModal(false);
     setConnectingConnectorId(connector.id);
     setWalletAuthRequested(true);
@@ -246,6 +248,7 @@ function SignInContent() {
   };
 
   const handleConnectWallet = () => {
+    if (captchaRequired) return;
     posthog.capture(activeTab === "signup" ? "signup_method_selected" : "signin_method_selected", { method: "wallet" });
     setWalletMissingAccount(false);
     setSiweError(null);
@@ -328,6 +331,7 @@ function SignInContent() {
   }, [walletAuthRequested, isConnected, address, performSiwe]);
 
   const handleGoogleClick = async () => {
+    if (captchaRequired) return;
     posthog.capture(activeTab === "signup" ? "signup_method_selected" : "signin_method_selected", { method: "circle_google" });
     setGoogleLoading(true);
     setGoogleError(null);
@@ -459,8 +463,14 @@ function SignInContent() {
           isConnecting={isConnecting}
           siweLoading={siweLoading}
           connectingConnectorId={connectingConnectorId}
-          disabled={otpLoading}
+          disabled={otpLoading || captchaRequired}
         />
+
+        {isTurnstileConfigured && (
+          <div className="flex justify-center scale-90 origin-top">
+            <div id="turnstile-email-signin"></div>
+          </div>
+        )}
 
         {/* Divider */}
         <div className="relative py-1 flex items-center justify-center">
@@ -491,11 +501,6 @@ function SignInContent() {
                 />
               </div>
 
-              {isTurnstileConfigured && (
-                <div className="pt-1 flex justify-center scale-90 origin-top">
-                  <div id="turnstile-email-signin"></div>
-                </div>
-              )}
             </div>
 
             {/* Explicit Send OTP Button beneath email */}
