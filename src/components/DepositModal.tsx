@@ -585,14 +585,14 @@ export default function DepositModal({
                                                     )}
                                                     <p className="text-[10px] font-black uppercase tracking-wider text-[#082824] dark:text-[#f4f4f5]">
                                                         {bridgeStatus === "detected" && "USDC detected · Preparing bridge..."}
-                                                        {bridgeStatus === "bridging" && "Bridging to Arc... (~5 min)"}
+                                                        {bridgeStatus === "bridging" && "Bridging to Arc... (~15 mins)"}
                                                         {bridgeStatus === "completed" && "✓ Deposited on Arc"}
                                                         {bridgeStatus === "error" && "Bridge error"}
                                                     </p>
                                                 </div>
                                                 <p className="text-[11px] leading-relaxed text-[#082824]/75 dark:text-white/75">
                                                     {bridgeStatus === "detected" && `${originBalance} USDC detected on ${selectedChain.shortName}. The keeper will bridge it automatically on the next tick.`}
-                                                    {bridgeStatus === "bridging" && `Your USDC is being bridged from ${selectedChain.shortName} to Arc via Circle CCTP. This typically takes about 5 minutes.`}
+                                                    {bridgeStatus === "bridging" && `Your USDC is being bridged from ${selectedChain.shortName} to Arc via Circle CCTP. This typically takes about 15 minutes.`}
                                                     {bridgeStatus === "completed" && "Your USDC has arrived on Arc and is ready to use."}
                                                     {bridgeStatus === "error" && (bridgeError || "Something went wrong. Please try again.")}
                                                 </p>
