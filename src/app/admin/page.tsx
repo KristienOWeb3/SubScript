@@ -375,7 +375,9 @@ export default function AdminDashboardPage() {
   const [analyticsSection, setAnalyticsSection] = useState<AnalyticsSectionId>("volume");
 
   const [flags, setFlags] = useState<PlatformFlags | null>(null);
+  const [flagsLoading, setFlagsLoading] = useState(false);
   const [flagBusy, setFlagBusy] = useState<string | null>(null);
+  const [refreshCounter, setRefreshCounter] = useState(0);
   const [maintenanceMessage, setMaintenanceMessage] = useState("");
   /* Typing the word arms the switch. Maintenance takes the whole product down, so it
      should not be one misplaced click away. */
@@ -490,6 +492,7 @@ export default function AdminDashboardPage() {
   }, []);
 
   const loadFlags = useCallback(async () => {
+    setFlagsLoading(true);
     try {
       const res = await fetch("/api/admin/flags");
       const json = await res.json();
@@ -499,6 +502,8 @@ export default function AdminDashboardPage() {
       setMaintenanceMessage(json.maintenanceMessage || "");
     } catch (err: any) {
       setError(err.message || "Failed to load platform flags");
+    } finally {
+      setFlagsLoading(false);
     }
   }, []);
 
@@ -1258,6 +1263,7 @@ export default function AdminDashboardPage() {
                   <button
                     type="button"
                     onClick={() => {
+                      setRefreshCounter((c) => c + 1);
                       if (tab === "admins") loadAdmins();
                       else if (tab === "analytics") loadAnalytics();
                       else if (tab === "system") loadFlags();
@@ -1271,10 +1277,10 @@ export default function AdminDashboardPage() {
                         loadData();
                       } else loadData();
                     }}
-                    disabled={loading}
+                    disabled={loading || flagsLoading || analyticsLoading || kycLoading || maLoading || adminsLoading}
                     className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white transition hover:bg-white/20 disabled:opacity-50"
                   >
-                    <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
+                    <RefreshCw className={`h-3 w-3 ${loading || flagsLoading || analyticsLoading || kycLoading || maLoading || adminsLoading ? "animate-spin" : ""}`} />
                     Refresh
                   </button>
                 </div>
@@ -1310,7 +1316,7 @@ export default function AdminDashboardPage() {
         )}
 
         {tab === "overview" && (
-          loading && !overviewData ? <AdminOverviewSkeleton /> : (
+          loading ? <AdminOverviewSkeleton /> : (
             <AdminOverviewDashboard
               overviewData={overviewData}
               analyticsData={analytics}
@@ -1327,19 +1333,20 @@ export default function AdminDashboardPage() {
         {/* No viewerIsRoot guard on the render: the component asks the API, and the API answers 403
             for a delegated admin, which it renders as an explanation. A bare `&& viewerIsRoot` here
             would show a blank pane instead if someone reached the tab after losing root. */}
-        {tab === "revenue" && <AdminRevenueView />}
+        {tab === "revenue" && <AdminRevenueView key={refreshCounter} />}
 
-        {tab === "financials" && <AdminFinancialsView />}
+        {tab === "financials" && <AdminFinancialsView key={refreshCounter} />}
 
-        {tab === "referrals" && <AdminReferralsView />}
+        {tab === "referrals" && <AdminReferralsView key={refreshCounter} />}
 
-        {tab === "reconciliation" && <AdminReconciliationView />}
+        {tab === "reconciliation" && <AdminReconciliationView key={refreshCounter} />}
 
-        {tab === "accounts" && <AdminAccountsView />}
+        {tab === "accounts" && <AdminAccountsView key={refreshCounter} />}
 
         {tab === "tickets" && (
           <div className={`${CARD} space-y-4`}>
             <AdminSupportTicketsView
+              key={refreshCounter}
               viewerWallet={viewerWallet}
               viewerIsRoot={viewerIsRoot}
             />
@@ -2088,7 +2095,7 @@ export default function AdminDashboardPage() {
 
         {tab === "account-settings" && (
           <div className={`${CARD} space-y-4`}>
-            <AdminAccountSettingsView viewerWallet={viewerWallet} />
+            <AdminAccountSettingsView key={refreshCounter} viewerWallet={viewerWallet} />
           </div>
         )}
 
@@ -2609,9 +2616,9 @@ export default function AdminDashboardPage() {
 
         {tab === "system" && (
           <div className="space-y-6">
-            <AdminSystemHealthCard />
-            <AdminRelayerBalancesCard />
-            {!flags ? (
+            <AdminSystemHealthCard key={refreshCounter} />
+            <AdminRelayerBalancesCard key={refreshCounter} />
+            {!flags || flagsLoading ? (
               <>
                 <SkeletonToggleRows
                   count={2}
@@ -2964,7 +2971,7 @@ export default function AdminDashboardPage() {
 
         {tab === "audit-log" && (
           <div className={`${CARD} space-y-4`}>
-            <AdminAuditLogView viewerWallet={viewerWallet} />
+            <AdminAuditLogView key={refreshCounter} viewerWallet={viewerWallet} />
           </div>
         )}
 
