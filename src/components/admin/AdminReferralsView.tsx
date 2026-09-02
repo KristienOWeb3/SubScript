@@ -316,7 +316,7 @@ export function AdminReferralsView() {
     document.body.removeChild(link);
   };
 
-  if (loading && !data) {
+  if (loading || refreshing) {
     return (
       <div className="space-y-6">
         <SkeletonStatGrid count={4} />

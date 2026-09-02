@@ -307,7 +307,7 @@ export function AdminAccountsView() {
         </div>
       )}
 
-      {loading && (activeSubTab === "all" ? accounts.length === 0 : deletedAccounts.length === 0) ? (
+      {loading ? (
         <SkeletonTable rows={8} columns={7} label="Loading accounts directory..." />
       ) : activeSubTab === "deleted" ? (
         /* Recently Deleted Accounts Table */

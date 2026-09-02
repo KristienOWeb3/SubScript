@@ -382,7 +382,7 @@ export function AdminAuditLogView({ viewerWallet }: AdminAuditLogViewProps) {
                             Try again
                         </button>
                     </div>
-                ) : loading && rows.length === 0 ? (
+                ) : loading ? (
                     <div className="p-4">
                         <SkeletonRows count={8} avatar={false} lines={2} label="Loading audit log entries..." />
                     </div>

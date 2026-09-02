@@ -102,7 +102,6 @@ export const config = createConfig({
             http("https://arbitrum-one-rpc.publicnode.com"),
         ]),
         11155111: fallback([
-            http("https://rpc.sepolia.org"),
             http("https://ethereum-sepolia-rpc.publicnode.com"),
             http("https://1rpc.io/sepolia"),
         ]),

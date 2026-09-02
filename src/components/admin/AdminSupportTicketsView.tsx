@@ -238,7 +238,7 @@ export function AdminSupportTicketsView({
                 {/* Left Ticket Queue List */}
                 <div className="lg:col-span-5 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm flex flex-col justify-between max-h-[640px] overflow-hidden">
                     <div className="overflow-y-auto space-y-2 pr-1 flex-1">
-                        {loading && tickets.length === 0 ? (
+                        {loading ? (
                             <div className="p-2">
                                 <SkeletonRows count={4} avatar={false} lines={2} label="Loading support ticket queue..." />
                             </div>

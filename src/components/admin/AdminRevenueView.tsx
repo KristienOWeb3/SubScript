@@ -98,7 +98,7 @@ export function AdminRevenueView() {
     void load();
   }, [load]);
 
-  if (loading) {
+  if (loading || refreshing) {
     return (
       <div className="space-y-6">
         <SkeletonStatGrid count={4} />
