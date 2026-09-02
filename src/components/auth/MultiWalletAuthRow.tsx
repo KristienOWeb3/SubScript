@@ -90,7 +90,7 @@ export function MultiWalletAuthRow({
       {/* Google Sign-in */}
       {googleAvailable && (
         <div className="shrink-0">
-          <CircleGoogleWalletButton onSuccess={onGoogleSuccess} variant="icon" />
+          <CircleGoogleWalletButton onSuccess={onGoogleSuccess} variant="icon" disabled={disabled} />
         </div>
       )}
 

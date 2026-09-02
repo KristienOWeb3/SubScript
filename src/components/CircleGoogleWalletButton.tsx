@@ -34,6 +34,7 @@ type CircleGoogleWalletButtonProps = {
         role?: string | null;
     }) => void;
     variant?: "full" | "icon";
+    disabled?: boolean;
 };
 
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
@@ -230,7 +231,7 @@ function GoogleColorSpinner({ className = "w-4 h-4" }: { className?: string }) {
     );
 }
 
-export default function CircleGoogleWalletButton({ onSuccess, variant = "full" }: CircleGoogleWalletButtonProps) {
+export default function CircleGoogleWalletButton({ onSuccess, variant = "full", disabled = false }: CircleGoogleWalletButtonProps) {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [devEmailInput, setDevEmailInput] = useState("");
@@ -383,6 +384,7 @@ export default function CircleGoogleWalletButton({ onSuccess, variant = "full" }
     };
 
     const handleContinue = async () => {
+        if (disabled) return;
         setIsLoading(true);
         setError(null);
         armWatchdog();
@@ -462,7 +464,7 @@ export default function CircleGoogleWalletButton({ onSuccess, variant = "full" }
                 <button
                     type="button"
                     onClick={handleContinue}
-                    disabled={isLoading}
+                    disabled={disabled || isLoading}
                     title="Continue with Google"
                     className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center shadow-sm disabled:opacity-50 disabled:cursor-not-allowed group relative"
                 >
@@ -487,7 +489,7 @@ export default function CircleGoogleWalletButton({ onSuccess, variant = "full" }
             <button
                 type="button"
                 onClick={handleContinue}
-                disabled={isLoading}
+                disabled={disabled || isLoading}
                 className="w-full rounded-2xl border border-black/15 bg-white text-[#111827] px-4 py-4 text-xs font-bold uppercase tracking-wider transition hover:bg-black/[0.03] hover:border-black/25 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 flex items-center justify-center gap-3 shadow-sm"
             >
                 {isLoading ? (
@@ -517,6 +519,7 @@ export default function CircleGoogleWalletButton({ onSuccess, variant = "full" }
                                 <button
                                     type="button"
                                     onClick={() => handleDevQuickLogin()}
+                                    disabled={disabled}
                                     className="px-3 py-1.5 bg-[#2775CA] text-white rounded-xl font-bold text-xs hover:bg-[#1f62ab] transition shrink-0"
                                 >
                                     Sign In
