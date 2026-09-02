@@ -109,6 +109,7 @@ function SignInContent() {
       window.turnstile.render(container, {
         sitekey: siteKey,
         theme: "light",
+        size: "flexible",
         callback: (token: string) => setCaptchaToken(token),
         "expired-callback": () => setCaptchaToken(""),
         "error-callback": () => setCaptchaToken(""),
@@ -466,12 +467,6 @@ function SignInContent() {
           disabled={otpLoading || captchaRequired}
         />
 
-        {isTurnstileConfigured && (
-          <div className="flex justify-center scale-90 origin-top">
-            <div id="turnstile-email-signin"></div>
-          </div>
-        )}
-
         {/* Divider */}
         <div className="relative py-1 flex items-center justify-center">
           <div className="absolute inset-0 flex items-center">
@@ -501,6 +496,11 @@ function SignInContent() {
                 />
               </div>
 
+              {isTurnstileConfigured && (
+                <div className="w-full pt-1">
+                  <div id="turnstile-email-signin"></div>
+                </div>
+              )}
             </div>
 
             {/* Explicit Send OTP Button beneath email */}

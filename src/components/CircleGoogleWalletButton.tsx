@@ -466,7 +466,7 @@ export default function CircleGoogleWalletButton({ onSuccess, variant = "full", 
                     onClick={handleContinue}
                     disabled={disabled || isLoading}
                     title="Continue with Google"
-                    className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center shadow-sm disabled:opacity-50 disabled:cursor-not-allowed group relative"
+                    className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed group relative"
                 >
                     {isLoading ? (
                         <GoogleColorSpinner className="h-4 w-4" />
@@ -490,7 +490,7 @@ export default function CircleGoogleWalletButton({ onSuccess, variant = "full", 
                 type="button"
                 onClick={handleContinue}
                 disabled={disabled || isLoading}
-                className="w-full rounded-2xl border border-black/15 bg-white text-[#111827] px-4 py-4 text-xs font-bold uppercase tracking-wider transition hover:bg-black/[0.03] hover:border-black/25 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 flex items-center justify-center gap-3 shadow-sm"
+                className="w-full rounded-2xl border border-black/15 bg-white text-[#111827] px-4 py-4 text-xs font-bold uppercase tracking-wider transition hover:bg-black/[0.03] hover:border-black/25 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 flex items-center justify-center gap-3"
             >
                 {isLoading ? (
                     <GoogleColorSpinner className="h-4 w-4" />
