@@ -651,26 +651,35 @@ export async function POST(request: Request) {
 
         try {
             if (externalTxHash) {
-                const verifiedExternal = await verifyExternalSubscriptionTx({
-                    txHash: externalTxHash,
-                    subscriber,
-                    merchant,
-                    amount: plan.amountUsdc,
-                    period: plan.periodSeconds,
-                });
-                if (!verifiedExternal) {
+                try {
+                    const verifiedExternal = await verifyExternalSubscriptionTx({
+                        txHash: externalTxHash,
+                        subscriber,
+                        merchant,
+                        amount: plan.amountUsdc,
+                        period: plan.periodSeconds,
+                    });
+                    if (!verifiedExternal) {
+                        await prisma.subscriptionAttempt.update({
+                            where: { attemptId: attempt.attemptId },
+                            data: { status: "FAILED_TERMINAL", lastError: "External transaction verification failed." }
+                        }).catch(() => {});
+                        return NextResponse.json({ error: "Invalid external subscription transaction." }, { status: 400 });
+                    }
+                    txHash = verifiedExternal.txHash;
+                    subId = verifiedExternal.subId;
+                    if (onChainActiveId && onChainActiveId !== verifiedExternal?.subId) {
+                        return NextResponse.json({ error: "On-chain active subscription ID mismatch." }, { status: 400 });
+                    }
+                    onChainSubmitted = true;
+                } catch (verifyErr: any) {
+                    const msg = verifyErr?.message || "Invalid external subscription transaction.";
                     await prisma.subscriptionAttempt.update({
                         where: { attemptId: attempt.attemptId },
-                        data: { status: "FAILED_TERMINAL", lastError: "External transaction verification failed." }
+                        data: { status: "PREPARED", leaseExpiresAt: null, lastError: msg }
                     }).catch(() => {});
-                    return NextResponse.json({ error: "Invalid external subscription transaction." }, { status: 400 });
+                    return NextResponse.json({ error: msg, code: "EXTERNAL_TX_UNCONFIRMED" }, { status: 400 });
                 }
-                txHash = verifiedExternal.txHash;
-                subId = verifiedExternal.subId;
-                if (onChainActiveId && onChainActiveId !== verifiedExternal?.subId) {
-                    return NextResponse.json({ error: "On-chain active subscription ID mismatch." }, { status: 400 });
-                }
-                onChainSubmitted = true;
             } else {
                 await requireSponsoredGas({
                     wallet: subscriber,

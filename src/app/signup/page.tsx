@@ -476,9 +476,9 @@ function SignupContent() {
 
   const handleRoleSelection = async () => {
     if (!selectedRole) return;
-    if (requiresEmailLinking) {
-      if (!email || !email.includes("@")) {
-        setRoleError("Please enter a valid email address to link with your account.");
+    if (requiresEmailLinking && email.trim()) {
+      if (!email.includes("@")) {
+        setRoleError("Please enter a valid email address to link with your account, or leave blank.");
         return;
       }
     }
@@ -491,7 +491,7 @@ function SignupContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           role: selectedRole,
-          email: requiresEmailLinking ? email : undefined,
+          email: requiresEmailLinking && email.trim() ? email.trim() : undefined,
           merchantInviteToken: selectedRole === "ENTERPRISE" ? merchantInvite : undefined,
           merchantSignupCode: selectedRole === "ENTERPRISE" ? merchantInvite : undefined,
         }),
@@ -526,9 +526,9 @@ function SignupContent() {
       return;
     }
 
-    if (requiresEmailLinking) {
-      if (!email || !email.includes("@")) {
-        setRoleError("Please enter a valid email address to link with your account.");
+    if (requiresEmailLinking && email.trim()) {
+      if (!email.includes("@")) {
+        setRoleError("Please enter a valid email address to link with your account, or leave blank.");
         return;
       }
     }
@@ -775,14 +775,13 @@ function SignupContent() {
           {requiresEmailLinking && (
             <div className="space-y-1 pt-1">
               <label className="block text-[11px] font-semibold text-[#111827]">
-                Link an Email for Receipts & Alerts
+                Link an Email for Receipts & Alerts <span className="text-black/40 font-normal">(Optional)</span>
               </label>
               <input
                 type="email"
                 placeholder="your@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                required
                 className="w-full rounded-xl border border-black/15 bg-[#FFFFF0] px-3.5 py-2 text-xs text-[#111827] placeholder:text-black/35 focus:border-[#2775CA] focus:outline-none shadow-sm"
               />
             </div>

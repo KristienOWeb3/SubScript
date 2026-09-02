@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { getSafeRelativePath } from "@/utils/navigation";
 
 export default async function LoginPage({
   searchParams,
@@ -10,9 +11,21 @@ export default async function LoginPage({
 
   for (const [key, value] of Object.entries(resolvedParams)) {
     if (typeof value === "string") {
-      params.set(key, value);
+      if (key === "next") {
+        const safe = getSafeRelativePath(value);
+        if (safe) params.set(key, safe);
+      } else {
+        params.set(key, value);
+      }
     } else if (Array.isArray(value)) {
-      value.forEach((v) => params.append(key, v));
+      value.forEach((v) => {
+        if (key === "next") {
+          const safe = getSafeRelativePath(v);
+          if (safe) params.append(key, safe);
+        } else {
+          params.append(key, v);
+        }
+      });
     }
   }
 

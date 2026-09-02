@@ -3,15 +3,25 @@ import { verifyMessage } from "viem";
 import { sanitizeInput } from "@/utils/security";
 import { createSessionToken, getCookieValue } from "@/lib/auth";
 import { pgMaybeOne } from "@/lib/serverPg";
-import { getAccountRole } from "@/lib/accounts/roles";
+import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
 import { verifyCaptchaToken } from "@/lib/captcha";
 import { clearSiweNonceCookie, setSessionCookie } from "@/lib/authCookies";
 import { buildWalletAuthMessage, walletAuthRequestContext } from "@/lib/walletAuthMessage";
 import { getPlatformFlags } from "@/lib/platform/flags";
 import { notifySignInAlert, SIGN_IN_PROVIDERS } from "@/lib/email/signInContext";
+import { checkProviderRateLimit } from "@/lib/providerRateLimit";
 
 export async function POST(request: Request) {
     try {
+        const requesterIp = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+        const ipLimit = checkProviderRateLimit({ provider: "siwe-verify-ip", key: requesterIp, limit: 30, windowMs: 60 * 1000 });
+        if (!ipLimit.ok) {
+            return NextResponse.json(
+                { error: "Too many wallet verification requests. Please wait before trying again." },
+                { status: 429, headers: { "Retry-After": String(ipLimit.retryAfterSeconds) } },
+            );
+        }
+
         /* External-wallet kill switch. This route is the only way a browser-wallet signature
            becomes a session — embedded wallets go through auth/circle/wallet/complete and email
            through auth/otp/verify — so refusing here disables external wallets platform-wide
@@ -82,20 +92,19 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Signature verification failed" }, { status: 401 });
         }
 
-        const role = await getAccountRole(address);
+        const normalizedAddress = address.toLowerCase();
+        const role = await resolveAccountRoleWithBackfill(normalizedAddress);
 
-        if (!role) {
-            // New wallet signup requires CAPTCHA validation
-            const requesterIp = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+        if (!role && captchaToken) {
             const isValid = await verifyCaptchaToken(captchaToken, requesterIp);
             if (!isValid) {
                 return NextResponse.json({ error: "Incorrect or expired CAPTCHA code. Please try again." }, { status: 400 });
             }
         }
 
-        const { token: jwt, expiresAt } = await createSessionToken(address, 30 * 24 * 60 * 60 * 1000);
+        const { token: jwt, expiresAt } = await createSessionToken(normalizedAddress, 30 * 24 * 60 * 60 * 1000);
 
-        const response = NextResponse.json({ success: true, wallet: address, role });
+        const response = NextResponse.json({ success: true, wallet: normalizedAddress, role });
         
         setSessionCookie(response, request, jwt, expiresAt);
         clearSiweNonceCookie(response, request);

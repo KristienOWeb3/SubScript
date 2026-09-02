@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { sanitizeInput } from "@/utils/security";
-import { pgMaybeOne } from "@/lib/serverPg";
-import { normalizeAccountEmail } from "@/lib/auth/accountEmail";
+import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
 
 export async function POST(request: Request) {
     try {
@@ -25,16 +24,16 @@ export async function POST(request: Request) {
 
         if (address) {
             const addressLower = address.toLowerCase().trim();
-            const roleRecord = await pgMaybeOne<{ role: string }>(
-                "select role from account_roles where address = $1 limit 1",
-                [addressLower]
-            );
-            if (roleRecord) {
+            if (!/^0x[a-fA-F0-9]{40}$/.test(addressLower)) {
+                return NextResponse.json({ error: "Invalid address format" }, { status: 400 });
+            }
+            const role = await resolveAccountRoleWithBackfill(addressLower);
+            if (role) {
                 return NextResponse.json({
                     exists: true,
                     onboardingComplete: true,
                     wallet: addressLower,
-                    role: roleRecord.role,
+                    role,
                 });
             }
             return NextResponse.json({ exists: false, onboardingComplete: false });
