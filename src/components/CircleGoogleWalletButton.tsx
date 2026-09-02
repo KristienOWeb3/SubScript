@@ -124,7 +124,9 @@ const PRELOAD_TTL_MS = 5 * 60_000;
 
 async function loadCircleBootstrap(): Promise<CircleBootstrap> {
     const configRes = await fetch("/api/auth/circle/google/config", { cache: "no-store" });
-    const config: CircleGoogleConfig & { error?: string } = await configRes.json();
+    const config: CircleGoogleConfig & { error?: string } = await configRes
+        .json()
+        .catch(() => ({ error: "Circle Google login is not configured or temporarily unavailable." } as any));
     if (!configRes.ok) {
         throw new Error(config.error || "Circle Google login is not configured.");
     }
@@ -315,7 +317,7 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
                 },
             }),
         });
-        const completed = await completeRes.json();
+        const completed = await completeRes.json().catch(() => ({ error: "Could not save your wallet." }));
         if (!completeRes.ok) {
             throw new Error(completed.error || "Could not save your wallet.");
         }
@@ -361,7 +363,7 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
                     googleIdToken: `dev_google_${encodeURIComponent(email)}`,
                 }),
             });
-            const data = await res.json();
+            const data = await res.json().catch(() => ({ error: "Dev login failed." }));
             if (!res.ok) {
                 throw new Error(data.error || "Dev login failed.");
             }
