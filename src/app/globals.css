@@ -5,6 +5,7 @@
    theme. Porting to @theme is a separate, reviewable step. */
 @import "tailwindcss";
 @config "../../tailwind.config.js";
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 html {
   font-size: 108%;
@@ -871,26 +872,26 @@ body {
 .user-dashboard-content [class~="bg-black/80"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
 .user-dashboard-content [class~="bg-black/85"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
 .user-dashboard-content [class~="bg-black/95"]:not([data-dm-bubble="dark"]):not([data-dm-bubble="dark"] *):not(.fixed):not([class*="fixed"]),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.02]"]:not(.fixed):not([class*="fixed"]),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.03]"]:not(.fixed):not([class*="fixed"]),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.04]"]:not(.fixed):not([class*="fixed"]),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.05]"]:not(.fixed):not([class*="fixed"]),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.08]"]:not(.fixed):not([class*="fixed"]),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/5"]:not(.fixed):not([class*="fixed"]),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/10"]:not(.fixed):not([class*="fixed"]),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/15"]:not(.fixed):not([class*="fixed"]),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/20"]:not(.fixed):not([class*="fixed"]),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/25"]:not(.fixed):not([class*="fixed"]),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/30"]:not(.fixed):not([class*="fixed"]),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/40"]:not(.fixed):not([class*="fixed"]),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/45"]:not(.fixed):not([class*="fixed"]),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/50"]:not(.fixed):not([class*="fixed"]),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/60"]:not(.fixed):not([class*="fixed"]),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/70"]:not(.fixed):not([class*="fixed"]),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/75"]:not(.fixed):not([class*="fixed"]),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/80"]:not(.fixed):not([class*="fixed"]),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/85"]:not(.fixed):not([class*="fixed"]),
-.user-dashboard-redesign [role="dialog"] [class~="bg-black/95"]:not(.fixed):not([class*="fixed"]) {
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.02]"]:not([data-modal="deposit"] *):not(.deposit-modal *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.03]"]:not([data-modal="deposit"] *):not(.deposit-modal *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.04]"]:not([data-modal="deposit"] *):not(.deposit-modal *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.05]"]:not([data-modal="deposit"] *):not(.deposit-modal *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/[0.08]"]:not([data-modal="deposit"] *):not(.deposit-modal *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/5"]:not([data-modal="deposit"] *):not(.deposit-modal *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/10"]:not([data-modal="deposit"] *):not(.deposit-modal *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/15"]:not([data-modal="deposit"] *):not(.deposit-modal *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/20"]:not([data-modal="deposit"] *):not(.deposit-modal *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/25"]:not([data-modal="deposit"] *):not(.deposit-modal *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/30"]:not([data-modal="deposit"] *):not(.deposit-modal *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/40"]:not([data-modal="deposit"] *):not(.deposit-modal *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/45"]:not([data-modal="deposit"] *):not(.deposit-modal *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/50"]:not([data-modal="deposit"] *):not(.deposit-modal *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/60"]:not([data-modal="deposit"] *):not(.deposit-modal *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/70"]:not([data-modal="deposit"] *):not(.deposit-modal *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/75"]:not([data-modal="deposit"] *):not(.deposit-modal *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/80"]:not([data-modal="deposit"] *):not(.deposit-modal *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/85"]:not([data-modal="deposit"] *):not(.deposit-modal *):not(.fixed):not([class*="fixed"]),
+.user-dashboard-redesign [role="dialog"] [class~="bg-black/95"]:not([data-modal="deposit"] *):not(.deposit-modal *):not(.fixed):not([class*="fixed"]) {
   background-color: rgb(39 117 202 / 20%) !important;
 }
 
