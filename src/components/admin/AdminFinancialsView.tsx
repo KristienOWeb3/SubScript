@@ -185,7 +185,7 @@ export function AdminFinancialsView() {
     }
   };
 
-  if (loading && !data) {
+  if (loading) {
     return (
       <div className="space-y-6">
         <SkeletonStatGrid count={4} columns={4} label="Loading reconciled financial indicators..." />

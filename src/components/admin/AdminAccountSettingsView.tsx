@@ -572,7 +572,7 @@ export function AdminAccountSettingsView({ viewerWallet }: { viewerWallet: strin
                     </div>
                 )}
 
-                {loading && holds.length === 0 ? (
+                {loading ? (
                     <div className="p-4">
                         <SkeletonRows count={4} avatar={false} lines={2} label="Loading active withdrawal holds..." />
                     </div>

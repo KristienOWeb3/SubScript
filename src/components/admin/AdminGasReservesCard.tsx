@@ -161,7 +161,7 @@ export function AdminGasReservesCard({ sponsor, className = "" }: AdminGasReserv
         </div>
 
         {/* Live CCTP Chains Gas Balances Grid */}
-        {loading ? (
+        {(loading || refreshing) ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 admin-skeleton-shimmer" role="status" aria-label="Loading native gas reserves...">
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <div

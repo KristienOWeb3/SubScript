@@ -215,7 +215,7 @@ export const CCTP_CONFIG: Record<number, CCTPChainInfo> = isProd
         isL1: true,
         allowDeposits: true,
         allowWithdrawals: true,
-        defaultRpc: "https://rpc.sepolia.org",
+        defaultRpc: "https://ethereum-sepolia-rpc.publicnode.com",
       },
       43113: {
         tokenMessenger: CCTP_V2_TOKEN_MESSENGER,
