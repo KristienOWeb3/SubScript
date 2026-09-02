@@ -63,7 +63,7 @@ export default function AuthSplitLayout({
 
         {/* Center: Hero Messaging & Dotted World Map Visual */}
         <div className="relative z-10 space-y-4 my-auto py-2">
-          <div className="space-y-2 max-w-md">
+          <div className="space-y-2 max-w-lg xl:max-w-xl">
             {leftHeadline ? (
               leftHeadline
             ) : (
@@ -74,7 +74,7 @@ export default function AuthSplitLayout({
             )}
             <p className="text-xs xl:text-sm text-white/85 leading-relaxed font-normal">
               {leftSubtitle ||
-                "Accept USDC from customers worldwide. Every payment settles right away with clear Arc Memo receipts."}
+                "Accept USDC from customers worldwide. Every payment settles right away."}
             </p>
           </div>
 

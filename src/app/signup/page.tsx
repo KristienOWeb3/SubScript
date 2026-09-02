@@ -125,9 +125,16 @@ function SignupContent() {
   const [merchantInviteBlocked, setMerchantInviteBlocked] = useState(false);
   const inviteOnlyNotice = merchantInviteOnlyEnabled && !merchantInvite;
 
-  const [showRoleSelector, setShowRoleSelector] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<"USER" | "ENTERPRISE">("USER");
-  const [signupStep, setSignupStep] = useState<"select-role" | "auth">("select-role");
+  const isCompleteRoleParam =
+    searchParams?.get("completeRole") === "1" || searchParams?.get("selectRole") === "1";
+  const [showRoleSelector, setShowRoleSelector] = useState(isCompleteRoleParam);
+  const [selectedRole, setSelectedRole] = useState<"USER" | "ENTERPRISE">(() => {
+    const roleHint = (searchParams?.get("role") || searchParams?.get("type") || "").toLowerCase();
+    return ["merchant", "enterprise", "business"].includes(roleHint) ? "ENTERPRISE" : "USER";
+  });
+  const [signupStep, setSignupStep] = useState<"select-role" | "auth">(
+    isCompleteRoleParam ? "select-role" : "auth"
+  );
   const [roleLoading, setRoleLoading] = useState(false);
   const [roleError, setRoleError] = useState<string | null>(null);
   const [requiresEmailLinking, setRequiresEmailLinking] = useState(false);
@@ -269,77 +276,7 @@ function SignupContent() {
         return;
       }
 
-      // Case 2: Merchant invite token present -> automatically register as ENTERPRISE
-      if (merchantInvite) {
-        fetch("/api/auth/register-role", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            role: "ENTERPRISE",
-            email: userEmail || undefined,
-            merchantInviteToken: merchantInvite,
-            merchantSignupCode: merchantInvite,
-          }),
-        })
-          .then((res) => res.json())
-          .then((regData) => {
-            if (regData.success) {
-              clearPreselectedRole();
-              triggerReferralLogging().finally(() => {
-                window.location.href = getDashboardUrl("ENTERPRISE", "/dashboard");
-              });
-            } else {
-              setRoleError(regData.error || "Failed to register merchant account with invite.");
-              setShowRoleSelector(true);
-            }
-          })
-          .catch(() => {
-            setRoleError("Network error registering merchant account.");
-            setShowRoleSelector(true);
-          });
-        return;
-      }
-
-      // Case 3: Intended role pre-selected
-      if (intendedRole) {
-        fetch("/api/auth/register-role", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            role: intendedRole,
-            email: userEmail || undefined,
-            merchantInviteToken: intendedRole === "ENTERPRISE" ? merchantInvite : undefined,
-            merchantSignupCode: intendedRole === "ENTERPRISE" ? merchantInvite : undefined,
-          }),
-        })
-          .then((res) => res.json())
-          .then((regData) => {
-            if (regData.success) {
-              clearPreselectedRole();
-              triggerReferralLogging().finally(() => {
-                const next = getSafeNext();
-                window.location.href = next && intendedRole === "USER"
-                  ? next
-                  : getDashboardUrl(intendedRole as any, "/dashboard");
-              });
-            } else {
-              clearPreselectedRole();
-              setRoleError(regData.error || "Failed to register account type.");
-              setMerchantInviteBlocked(typeof regData.code === "string" && regData.code.startsWith("MERCHANT_"));
-              setSelectedRole("USER");
-              setShowRoleSelector(true);
-              setSignupStep("select-role");
-            }
-          })
-          .catch(() => {
-            clearPreselectedRole();
-            setRoleError("Network error registering account type.");
-            setShowRoleSelector(true);
-          });
-        return;
-      }
-
-      // Case 4: No pre-selected role -> Show Role Selector
+      // Case 2: New account created (via OTP, Google, or Wallet) -> Prompt user to select account type (Merchant vs User)
       clearPreselectedRole();
       if (!data.email && !email) {
         setRequiresEmailLinking(true);
@@ -348,7 +285,7 @@ function SignupContent() {
       setShowRoleSelector(true);
       setSignupStep("select-role");
     },
-    [email, selectedRole, merchantInvite, triggerReferralLogging, getSafeNext]
+    [email, triggerReferralLogging, getSafeNext]
   );
 
   const handleSendOtp = async (e?: React.FormEvent) => {
@@ -620,8 +557,8 @@ function SignupContent() {
 
   const leftSubtitle =
     selectedRole === "USER"
-      ? "Pay friends, subscribe to services, and send money across borders with clear Arc Memo receipts."
-      : "Accept USDC from customers worldwide. Every payment settles right away with clear Arc Memo receipts.";
+      ? "Pay friends, subscribe to services, and send money across borders."
+      : "Accept USDC from customers worldwide. Every payment settles right away.";
 
   const handleTabChange = useCallback((tab: "signin" | "signup") => {
     if (tab === activeTab) return;
@@ -743,16 +680,8 @@ function SignupContent() {
           {selectedRole === "USER" ? (
             <div className="space-y-3">
               {/* Personal Perks */}
-              <div className="p-3.5 rounded-2xl border border-black/10 bg-black/[0.02] space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#2775CA] bg-[#2775CA]/10 px-2 py-0.5 rounded-full">
-                    Personal Perks
-                  </span>
-                  <span className="text-[10px] font-semibold text-black/40">
-                    Instant Access
-                  </span>
-                </div>
-                <ul className="space-y-1.5 text-xs text-[#111827]">
+              <div className="p-3.5 rounded-2xl border border-black/10 bg-black/[0.02]">
+                <ul className="space-y-2 text-xs text-[#111827]">
                   <li className="flex items-start gap-2">
                     <CheckCircle className="w-3.5 h-3.5 text-[#2775CA] shrink-0 mt-0.5" />
                     <span>Send and receive USDC across borders in seconds</span>
@@ -764,10 +693,6 @@ function SignupContent() {
                   <li className="flex items-start gap-2">
                     <CheckCircle className="w-3.5 h-3.5 text-[#2775CA] shrink-0 mt-0.5" />
                     <span>Sponsored gas fees with zero network friction on Arc</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle className="w-3.5 h-3.5 text-[#2775CA] shrink-0 mt-0.5" />
-                    <span>Plain-language Arc Memo receipts for every transfer</span>
                   </li>
                 </ul>
               </div>
@@ -792,22 +717,8 @@ function SignupContent() {
           ) : (
             <div className="space-y-3">
               {/* Merchant Perks */}
-              <div className="p-3.5 rounded-2xl border border-black/10 bg-black/[0.02] space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#2775CA] bg-[#2775CA]/10 px-2 py-0.5 rounded-full">
-                    Merchant Perks
-                  </span>
-                  {inviteOnlyNotice ? (
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-amber-700 bg-amber-500/10 px-2 py-0.5 rounded-full">
-                      Invite Required
-                    </span>
-                  ) : (
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-500/10 px-2 py-0.5 rounded-full">
-                      Open Access
-                    </span>
-                  )}
-                </div>
-                <ul className="space-y-1.5 text-xs text-[#111827]">
+              <div className="p-3.5 rounded-2xl border border-black/10 bg-black/[0.02]">
+                <ul className="space-y-2 text-xs text-[#111827]">
                   <li className="flex items-start gap-2">
                     <CheckCircle className="w-3.5 h-3.5 text-[#2775CA] shrink-0 mt-0.5" />
                     <span>Cross-border USDC checkout links and recurring billing engine</span>
@@ -819,10 +730,6 @@ function SignupContent() {
                   <li className="flex items-start gap-2">
                     <CheckCircle className="w-3.5 h-3.5 text-[#2775CA] shrink-0 mt-0.5" />
                     <span>Instant settlement on Arc with direct treasury withdrawals</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle className="w-3.5 h-3.5 text-[#2775CA] shrink-0 mt-0.5" />
-                    <span>Automated bookkeeping receipts indexed natively with Arc Memo</span>
                   </li>
                 </ul>
               </div>
@@ -837,14 +744,12 @@ function SignupContent() {
                     <span className="w-1.5 h-1.5 rounded-full bg-[#2775CA] shrink-0" />
                     <span>Business email address or corporate treasury wallet</span>
                   </li>
-                  <li className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#2775CA] shrink-0" />
-                    {inviteOnlyNotice ? (
+                  {inviteOnlyNotice && (
+                    <li className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#2775CA] shrink-0" />
                       <span>Merchant invite code (invite-only access active)</span>
-                    ) : (
-                      <span>No invite code needed during open public access</span>
-                    )}
-                  </li>
+                    </li>
+                  )}
                 </ul>
               </div>
 
@@ -940,26 +845,19 @@ function SignupContent() {
   // State C: Create Account / Auth Methods Form
   return (
     <AuthSplitLayout
-      leftHeadline={leftHeadline}
-      leftSubtitle={leftSubtitle}
-      title={selectedRole === "ENTERPRISE" ? "Create Merchant Account" : "Create Personal Account"}
+      activeTab="signup"
+      onTabChange={handleTabChange}
+      leftHeadline={
+        <h1 className="text-2xl xl:text-3xl font-black tracking-tight text-white leading-tight">
+          Cross-border payments and checkout <br />
+          <span className="text-white/95">for your business</span>
+        </h1>
+      }
+      leftSubtitle="Accept USDC from customers worldwide. Every payment settles right away."
+      title="Create your account"
       subtitle="Continue with your wallet or email to get started"
-      hideTabs={true}
     >
       <div className="space-y-3.5">
-        <div className="flex items-center justify-between pb-0.5">
-          <button
-            type="button"
-            onClick={() => setSignupStep("select-role")}
-            className="text-[11px] font-semibold text-[#2775CA] hover:underline flex items-center gap-1"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Change account type</span>
-          </button>
-          <span className="text-[10px] uppercase font-mono font-bold tracking-wider text-[#2775CA] bg-[#2775CA]/10 px-2 py-0.5 rounded-full">
-            {selectedRole === "ENTERPRISE" ? "Merchant" : "Personal"}
-          </span>
-        </div>
 
         {/* Quick Social & Web3 Auth Row */}
         <div className="flex items-center justify-center gap-3">

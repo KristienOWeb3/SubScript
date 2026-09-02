@@ -1,9 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Shield } from "@/components/icons";
-import Navbar from "@/components/Navbar";
-import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+import { ArrowLeft, Shield, ArrowRight } from "@/components/icons";
 
 const sections = [
   {
@@ -17,120 +15,199 @@ const sections = [
     title: "2. Account and Wallet Information",
     body: [
       "If you sign up with an external wallet, we may store your wallet address, selected role, account settings, alias, linked email, and notification preferences.",
-      "If you sign up with email onboarding, SubScript provisions an embedded wallet through Circle developer-controlled MPC wallet infrastructure; key material for these embedded wallets is managed by SubScript's custody provider so the platform can execute the payment actions you request. SubScript may store the resulting wallet address, login email, Circle wallet references, and account role. We do not store seed phrases.",
-      "If you link an email to a wallet account, that email is used for notifications and account communication. Linking email to a wallet does not by itself mean SubScript can recover an external self-custody wallet.",
+      "If you sign up with email onboarding, SubScript provisions an embedded wallet through Circle developer-controlled MPC wallet infrastructure. Key material for these embedded wallets is managed by SubScript's custody provider so the platform can execute the payment actions you request. SubScript may store the resulting wallet address, login email, Circle wallet references, and account role. We never store seed phrases.",
+      "If you link an email to a wallet account, that email is used for notifications and account communication. Linking an email to a wallet does not by itself mean SubScript can recover an external self-custody wallet.",
     ],
   },
   {
     title: "3. Payment, Receipt, and Memo Data",
     body: [
       "SubScript may store Checkout Intent IDs, payment link IDs, receipt IDs, merchant references, payer references, transaction hashes, memo payloads, payment status, amount, token, timestamp, and webhook delivery status.",
-      "Receipt pages are designed to be human-readable. By default, receipt visibility is intended for the payer, merchant, and SubScript. Future invite flows may allow a payer or merchant to share a receipt with selected viewers.",
-      "Arc Network memo data and transaction hashes may be public or indexable depending on how the payment is executed.",
+      "Receipt pages are designed to be human-readable. By default, receipt visibility is intended for the payer, merchant, and SubScript.",
+      "Arc Network memo data and transaction hashes are recorded on-chain and may be public or indexable by explorers depending on network execution.",
     ],
   },
   {
     title: "4. Merchant Data and Webhooks",
     body: [
       "For merchants, we may store API key metadata, webhook endpoints, webhook secrets, DNS aliases, branding, payment links, pricing configuration, and integration settings.",
-      "Webhook payloads may include intent IDs, payment IDs, receipt IDs, amount paid, status, and transaction references so merchants can fulfill purchases in their own systems.",
+      "Webhook payloads include intent IDs, payment IDs, receipt IDs, amount paid, status, and transaction references so merchants can fulfill purchases in their own systems.",
     ],
   },
   {
     title: "5. Identity Verification",
     body: [
       "If you start KYC or business verification, SubScript stores your wallet address, account type, country code, consent record, an opaque provider case reference, review status, controlled reason code, and lifecycle timestamps.",
-      "Identity documents, selfies, biometric data, full government identifiers, legal names, dates of birth, and provider screening evidence must be submitted directly to the configured verification provider. SubScript does not accept those materials through its KYC API.",
-      "The verification provider processes identity evidence under its own privacy and retention terms. SubScript retains its minimal case and audit records as needed for security, fraud prevention, compliance, and financial audit obligations. Approval can expire or be revoked.",
+      "Identity documents, selfies, biometric data, full government identifiers, legal names, dates of birth, and provider screening evidence must be submitted directly to the configured verification provider. SubScript does not store raw identity documents on its own servers.",
+      "The verification provider processes identity evidence under its own privacy and retention terms. SubScript retains minimal case and audit records as needed for security, fraud prevention, compliance, and financial audit obligations.",
     ],
   },
   {
     title: "6. Cookies and Session Data",
     body: [
       "SubScript uses cookies or similar storage to keep users signed in, preserve dashboard sessions, support embedded wallet login flows, and protect API requests.",
-      "Circle wallet session material generated by the frontend SDK is browser-scoped session material. It must not be treated as a global deployment secret and must not be shared across users.",
+      "Circle wallet session material generated by the frontend SDK is browser-scoped session material. It is never treated as a global secret and is never shared across users.",
     ],
   },
   {
     title: "7. Emails and Notifications",
     body: [
-      "If you provide an email, we may use it for account notifications, sign-up messages, payment receipts, failed payment alerts, subscription notices, product updates, security messages, and support.",
-      "We may use email delivery providers to send these messages. Those providers process message metadata needed to deliver email.",
+      "If you provide an email, we use it for account notifications, sign-up verification, payment receipts, failed payment alerts, subscription renewal notices, and security alerts.",
+      "We use trusted email delivery providers to deliver these messages. Those providers process only the metadata needed to ensure reliable delivery.",
     ],
   },
   {
     title: "8. Analytics, Security, and Logs",
     body: [
-      "We may process limited technical data such as IP-derived region, device/browser information, request timestamps, rate-limit events, errors, and security logs to protect the service and improve reliability.",
+      "We process limited technical data such as IP-derived region, device and browser information, request timestamps, rate-limit events, errors, and security logs to protect the service and improve reliability.",
       "We do not sell personal information. We do not use private payment receipt data for advertising profiles.",
     ],
   },
   {
-    title: "9. Your Choices and Deletion Limits",
+    title: "9. Your Choices and Data Rights",
     body: [
-      "You may request access, correction, export, or deletion of off-chain account data by contacting SubScript. We may retain records needed for security, legal, fraud prevention, or financial audit purposes.",
+      "You may request access, correction, export, or deletion of off-chain account data by contacting SubScript. Accounts scheduled for deletion are permanently purged following our automated 30-day statutory retention sweep.",
       "We cannot delete or alter public blockchain records, third-party explorer records, or transaction data already propagated across decentralized networks.",
     ],
   },
   {
-    title: "10. Contact",
+    title: "10. Contact Us",
     body: [
-      "For privacy requests, email compliance@subscriptonarc.com. Include the email or wallet address connected to the request so we can locate the relevant account records.",
+      "For privacy requests, reach out to compliance@subscriptonarc.com. Include the email or wallet address connected to the request so we can locate the relevant account records.",
     ],
   },
 ];
 
 export default function PrivacyPolicy() {
   return (
-    <main className="relative min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white">
-      <AnimatedGradientBg />
-      <div className="relative z-10">
-        <Navbar />
+    <main className="min-h-screen w-full bg-[#FFFFF0] text-[#111827] font-sans selection:bg-[#2775CA]/20 selection:text-black">
+      {/* Top Header Navigation */}
+      <header className="sticky top-0 z-30 w-full border-b border-black/10 bg-[#FFFFF0]/90 backdrop-blur-md">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+          <Link href="/" className="inline-flex items-center gap-2.5 group">
+            <div className="w-8 h-8 rounded-lg bg-[#2775CA] flex items-center justify-center p-1.5 shadow-sm">
+              <img
+                src="/logo-transparent.png"
+                alt="SubScript Logo"
+                className="w-full h-full object-contain brightness-0 invert"
+              />
+            </div>
+            <span className="text-lg font-black tracking-tight text-[#111827]">
+              SubScript
+            </span>
+          </Link>
 
-        <div className="mx-auto max-w-4xl px-6 pb-24 pt-36 sm:px-8">
-          <Link href="/" className="mb-8 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-white/50 transition-colors hover:text-white">
+          <div className="flex items-center gap-3">
+            <Link
+              href="/signin"
+              className="text-xs font-semibold text-black/70 hover:text-black transition-colors"
+            >
+              Sign In
+            </Link>
+            <Link
+              href="/signup"
+              className="px-3.5 py-2 text-xs font-bold text-white bg-[#2775CA] hover:bg-[#1f62ab] rounded-xl shadow-sm transition-all"
+            >
+              Get Started
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content Area */}
+      <div className="mx-auto max-w-4xl px-6 py-12 sm:px-8">
+        <div className="mb-8">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2775CA] hover:underline mb-4"
+          >
             <ArrowLeft className="h-3.5 w-3.5" />
             Back to Home
           </Link>
 
-          <div className="mb-12">
-            <span className="mb-3 block text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
-              Protocol Privacy
-            </span>
-            <h1 className="flex items-center gap-3 text-4xl font-extrabold uppercase leading-none tracking-tight text-white sm:text-5xl">
-              Privacy <span className="font-serif font-normal italic lowercase tracking-normal text-[#00d2b4]">policy</span>
-            </h1>
-            <p className="mt-4 font-mono text-xs text-white/40">Last Updated: July 8th, 2026</p>
-          </div>
+          <span className="block text-[11px] font-bold uppercase tracking-wider text-[#2775CA]">
+            Data Protection & Privacy
+          </span>
+          <h1 className="mt-1 text-3xl sm:text-4xl font-black tracking-tight text-[#111827]">
+            Privacy Policy
+          </h1>
+          <p className="mt-2 text-xs text-black/50 font-mono">
+            Last Updated: September 2nd, 2026
+          </p>
 
-          <div className="liquid-glass space-y-8 rounded-[32px] border border-white/5 p-8 text-sm leading-relaxed text-white/70 md:p-10">
-            {sections.map((section, index) => (
-              <section key={section.title} className="space-y-3">
-                <div className="flex items-center gap-2">
-                  {index === 0 && <Shield className="h-4 w-4 text-[#00d2b4]" />}
-                  <h2 className="text-base font-bold uppercase tracking-wider text-white">{section.title}</h2>
-                </div>
-                {section.body.map((paragraph) => (
-                  <p key={paragraph}>{paragraph}</p>
-                ))}
-              </section>
-            ))}
+          <div className="mt-4 rounded-2xl border border-black/10 bg-black/[0.02] p-4 text-xs leading-relaxed text-black/70">
+            <p className="font-semibold text-[#111827] mb-0.5">Privacy Commitment</p>
+            <p>
+              SubScript operates on principles of data minimization. We collect only the data necessary to execute payments, deliver receipts, enforce security, and meet statutory regulatory obligations.
+            </p>
           </div>
         </div>
 
-        <footer className="border-t border-white/5 bg-[#111111]/30 py-12">
-          <div className="mx-auto flex max-w-4xl flex-col items-center justify-between gap-4 px-6 text-[10px] text-white/40 sm:flex-row">
-            <span>© 2026 SubScript Protocol. All rights reserved.</span>
-            <div className="flex flex-wrap justify-center gap-4">
-              <Link href="/terms" className="transition hover:text-white">Terms of Service</Link>
-              <Link href="/privacy" className="transition hover:text-white">Privacy Policy</Link>
-              <Link href="/refunds" className="transition hover:text-white">Refund Policy</Link>
-              <Link href="/fulfillment" className="transition hover:text-white">Fulfillment Policy</Link>
-              <Link href="/support" className="transition hover:text-white">Support</Link>
-            </div>
+        {/* Section Cards */}
+        <div className="space-y-6">
+          {sections.map((section, index) => (
+            <section
+              key={section.title}
+              className="rounded-2xl border border-black/10 bg-white/40 p-6 sm:p-8 shadow-sm space-y-3 transition-shadow hover:shadow-md"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="w-6 h-6 rounded-lg bg-[#2775CA]/10 flex items-center justify-center text-[#2775CA] shrink-0">
+                  <Shield className="w-3.5 h-3.5" />
+                </div>
+                <h2 className="text-sm sm:text-base font-bold text-[#111827]">
+                  {section.title}
+                </h2>
+              </div>
+              <div className="space-y-2.5 text-xs sm:text-sm text-black/70 leading-relaxed pl-8">
+                {section.body.map((paragraph, pIndex) => (
+                  <p key={pIndex}>{paragraph}</p>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+
+        {/* Ready to start CTA */}
+        <div className="mt-12 rounded-3xl border border-black/10 bg-gradient-to-br from-[#2775CA] to-[#1E60B5] p-8 text-white text-center space-y-3 shadow-md">
+          <h3 className="text-xl font-black tracking-tight">Have questions about your data?</h3>
+          <p className="text-xs text-white/85 max-w-md mx-auto leading-relaxed">
+            Our compliance team is ready to answer questions regarding account security, encryption, and GDPR rights.
+          </p>
+          <div className="pt-2">
+            <a
+              href="mailto:compliance@subscriptonarc.com"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#FFFFF0] text-[#2775CA] font-bold text-xs uppercase tracking-wider rounded-xl shadow-sm hover:bg-white transition-all active:scale-[0.99]"
+            >
+              <span>Contact Compliance</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </a>
           </div>
-        </footer>
+        </div>
       </div>
+
+      {/* Footer */}
+      <footer className="border-t border-black/10 bg-[#FFFFF0] py-10 mt-12">
+        <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 px-6 text-xs text-black/50 sm:flex-row">
+          <span>© 2026 SubScript. All rights reserved.</span>
+          <div className="flex flex-wrap justify-center gap-5">
+            <Link href="/terms" className="hover:text-black transition-colors">
+              Terms of Service
+            </Link>
+            <Link href="/privacy" className="font-medium text-[#2775CA] hover:underline">
+              Privacy Policy
+            </Link>
+            <Link href="/refunds" className="hover:text-black transition-colors">
+              Refund Policy
+            </Link>
+            <Link href="/fulfillment" className="hover:text-black transition-colors">
+              Fulfillment Policy
+            </Link>
+            <Link href="/support" className="hover:text-black transition-colors">
+              Support
+            </Link>
+          </div>
+        </div>
+      </footer>
     </main>
   );
 }
