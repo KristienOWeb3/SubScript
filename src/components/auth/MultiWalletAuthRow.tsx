@@ -106,7 +106,7 @@ export function MultiWalletAuthRow({
               }
               disabled={disabled || isBusy}
               title="MetaMask (No wallet detected)"
-              className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center shadow-xs disabled:opacity-50 disabled:cursor-not-allowed group relative"
+              className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed group relative"
             >
               <MetaMaskIcon className="w-5 h-5 transition-transform group-hover:scale-110" />
             </button>
@@ -123,7 +123,7 @@ export function MultiWalletAuthRow({
                   onClick={() => onSelectConnector(connector)}
                   disabled={disabled || isBusy}
                   title={`Connect ${connector.name}`}
-                  className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center shadow-xs disabled:opacity-50 disabled:cursor-not-allowed group relative"
+                  className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed group relative"
                 >
                   {isCurrentConnecting ? (
                     isMetaMask ? (
