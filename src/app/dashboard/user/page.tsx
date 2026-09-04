@@ -21,9 +21,11 @@ import {
   ARC_CCTP_DOMAIN_ID,
   ARC_TOKEN_MESSENGER_ADDRESS,
   BRIDGE_FEE_TREASURY_ADDRESS,
-  CCTP_CONFIG
+  CCTP_CONFIG,
+  SOLANA_CCTP_CONFIG,
 } from "@/lib/contracts/constants";
 import { calculateBridgeFee, formatFeeBps, formatMicros } from "@/lib/cctp/feeEngine";
+import { isSolanaAddress, getSolanaRecipientAta, solanaAddressToBytes32 } from "@/lib/cctp/circleBridge";
 import { QRCode } from "react-qrcode-logo";
 import jsQR from "jsqr";
 import { motion, AnimatePresence } from "framer-motion";
@@ -2615,13 +2617,21 @@ export default function UserDashboard() {
   };
 
   useEffect(() => {
-    const trimmed = singleRecipient.trim().toLowerCase();
-    if (!trimmed) {
+    const raw = singleRecipient.trim();
+    if (!raw) {
       setSingleResolved(null);
       setSingleResolving(false);
       return;
     }
 
+    // Solana addresses are Base58 and case-sensitive. Check before lowercasing!
+    if (isSolanaAddress(raw)) {
+      setSingleResolved({ address: raw, alias: null, profilePic: null });
+      setSingleResolving(false);
+      return;
+    }
+
+    const trimmed = raw.toLowerCase();
     setSingleResolving(true);
     const timer = setTimeout(async () => {
       if (/^0x[a-fA-F0-9]{40}$/.test(trimmed)) {
@@ -2687,7 +2697,7 @@ export default function UserDashboard() {
    * recorded after it.
    */
   const withdrawCrossChainFromBrowserWallet = async (params: {
-    destinationChainId: number;
+    destinationChainId: number | string;
     recipientAddress: string;
     amountMicros: bigint;
   }) => {
@@ -2720,6 +2730,19 @@ export default function UserDashboard() {
     const approveReceipt = await publicClient.waitForTransactionReceipt({ hash: approveHash, timeout: 120_000 });
     if (approveReceipt.status !== "success") throw new Error("Approving the transfer failed. Nothing was sent.");
 
+    const isSolana =
+      fee.domain === 5 ||
+      params.destinationChainId === "solana" ||
+      isSolanaAddress(params.recipientAddress);
+
+    let mintRecipientBytes32: `0x${string}`;
+    if (isSolana) {
+      const ata = getSolanaRecipientAta(params.recipientAddress, SOLANA_CCTP_CONFIG.usdcMint);
+      mintRecipientBytes32 = solanaAddressToBytes32(ata);
+    } else {
+      mintRecipientBytes32 = toBytes32Address(params.recipientAddress);
+    }
+
     const burnTxHash = await writeContractAsync({
       address: ARC_TOKEN_MESSENGER_ADDRESS,
       abi: CCTP_TOKEN_MESSENGER_V2_ABI,
@@ -2727,7 +2750,7 @@ export default function UserDashboard() {
       args: [
         fee.netMicros,
         fee.domain,
-        toBytes32Address(params.recipientAddress),
+        mintRecipientBytes32,
         USDC_NATIVE_GAS_ADDRESS,
         ANY_DESTINATION_CALLER,
         0n,
@@ -2811,7 +2834,7 @@ export default function UserDashboard() {
           if (!res.ok) throw new Error(data.error || "We couldn't start that withdrawal.");
         } else {
           await withdrawCrossChainFromBrowserWallet({
-            destinationChainId: Number(selectedNetwork),
+            destinationChainId: selectedNetwork === "solana" ? "solana" : Number(selectedNetwork),
             recipientAddress: recipientAddr,
             amountMicros,
           });

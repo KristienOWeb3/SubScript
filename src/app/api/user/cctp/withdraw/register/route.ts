@@ -10,6 +10,7 @@ import {
   BRIDGE_FEE_TREASURY_ADDRESS,
   USDC_NATIVE_GAS_ADDRESS,
 } from "@/lib/contracts/constants";
+import { isSolanaAddress } from "@/lib/cctp/circleBridge";
 
 export const maxDuration = 60;
 
@@ -91,7 +92,9 @@ export async function POST(req: NextRequest) {
        RETURNING id`,
       [
         userWallet,
-        recipientAddress.trim().toLowerCase(),
+        isSolanaAddress(recipientAddress.trim()) || Number(feeInfo.domain) === 5 || feeInfo.chainId === "solana"
+          ? recipientAddress.trim()
+          : recipientAddress.trim().toLowerCase(),
         ARC_CCTP_DOMAIN_ID,
         feeInfo.chainId,
         feeInfo.domain,

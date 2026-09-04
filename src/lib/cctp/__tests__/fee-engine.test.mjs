@@ -78,14 +78,28 @@ describe("CCTP bridge fee engine", () => {
     assert.throws(() => calculateBridgeFee(10_000_000n, 999999, "inbound_deposit"), /don't support/i);
   });
 
-  /* Solana withdrawals need a Solana relayer signing against the MessageTransmitter program, and
-     nothing here can produce one. Allowing them would burn USDC on Arc with no way to mint the other
-     side, so the config keeps them off and the engine has to honour that. */
-  it("refuses Solana in both directions while there is no relayer", () => {
-    assert.equal(SOLANA_CCTP_CONFIG.allowWithdrawals, false);
+  /* Solana withdrawals are supported via the dedicated Solana relayer module. Inbound deposits remain
+     disabled until Solana wallet support / deposit tracking is activated. */
+  it("allows Solana outbound withdrawals while refusing inbound deposits", () => {
+    assert.equal(SOLANA_CCTP_CONFIG.allowWithdrawals, true);
     assert.equal(SOLANA_CCTP_CONFIG.allowDeposits, false);
-    assert.throws(() => calculateBridgeFee(100_000_000n, 5, "outbound_withdrawal"), /Solana/i);
-    assert.throws(() => calculateBridgeFee(100_000_000n, "solana", "inbound_deposit"), /Solana/i);
+
+    // Outbound withdrawal to Solana (domain 5 or "solana")
+    const fee = calculateBridgeFee(100_000_000n, 5, "outbound_withdrawal");
+    assert.equal(fee.grossMicros, 100_000_000n);
+    assert.equal(fee.feeMicros, 500_000n);
+    assert.equal(fee.netMicros, 99_500_000n);
+    assert.equal(fee.feeBps, 50);
+    assert.equal(fee.feePercentage, "0.5%");
+    assert.equal(fee.domain, 5);
+
+    const feeByString = calculateBridgeFee(100_000_000n, "solana", "outbound_withdrawal");
+    assert.equal(feeByString.domain, 5);
+    assert.equal(feeByString.netMicros, 99_500_000n);
+
+    // Inbound deposit from Solana is refused
+    assert.throws(() => calculateBridgeFee(100_000_000n, 5, "inbound_deposit"), /deposits from solana/i);
+    assert.throws(() => calculateBridgeFee(100_000_000n, "solana", "inbound_deposit"), /deposits from solana/i);
   });
 
   it("validates both addresses before quoting", () => {
@@ -121,6 +135,32 @@ describe("CCTP bridge fee engine", () => {
       recipientAddress: EVM_RECIPIENT,
     });
     assert.equal(valid.netMicros, 49_750_000n);
+
+    // Validates Solana Base58 recipient for Solana withdrawals
+    const SOLANA_RECIPIENT = "GSJ729WXUt7bWGo92ZrfJu5yB6XJYkoG21NFGZM7HPLg";
+    const solanaValid = validateBridgeRequest({
+      direction: "outbound_withdrawal",
+      targetChainIdOrDomain: "solana",
+      amountMicros: 50_000_000n,
+      userWallet: EVM_WALLET,
+      recipientAddress: SOLANA_RECIPIENT,
+    });
+    assert.equal(solanaValid.netMicros, 49_750_000n);
+    assert.equal(solanaValid.domain, 5);
+    assert.equal(solanaValid.feeBps, 50);
+
+    // Rejects invalid Solana address for Solana destination
+    assert.throws(
+      () =>
+        validateBridgeRequest({
+          direction: "outbound_withdrawal",
+          targetChainIdOrDomain: "solana",
+          amountMicros: 50_000_000n,
+          userWallet: EVM_WALLET,
+          recipientAddress: "not-a-solana-address",
+        }),
+      /recipient address/i,
+    );
   });
 
   /* Derived, not switched on: a hardcoded `feeBps === 100 ? "1.0%" : "0.5%"` silently mislabels any
@@ -166,11 +206,17 @@ describe("CCTP route listing", () => {
     assert.deepEqual(fees, [...fees].sort((a, b) => a - b));
   });
 
-  it("shows Solana as present but unavailable rather than hiding it", () => {
-    const solana = listBridgeRoutes("outbound_withdrawal").find((r) => r.id === "solana");
-    assert.ok(solana);
-    assert.equal(solana.available, false);
-    assert.equal(solana.unavailableReason, "Coming soon");
+  it("shows Solana as available for outbound withdrawals, but unavailable for inbound deposits", () => {
+    const solanaWithdrawal = listBridgeRoutes("outbound_withdrawal").find((r) => r.id === "solana");
+    assert.ok(solanaWithdrawal);
+    assert.equal(solanaWithdrawal.available, true);
+    assert.equal(solanaWithdrawal.feeBps, 50);
+    assert.equal(solanaWithdrawal.feePercentage, "0.5%");
+
+    const solanaDeposit = listBridgeRoutes("inbound_deposit").find((r) => r.id === "solana");
+    assert.ok(solanaDeposit);
+    assert.equal(solanaDeposit.available, false);
+    assert.equal(solanaDeposit.unavailableReason, "Coming soon");
   });
 
   it("verifies canonical Circle CCTP testnet contracts and domains", () => {

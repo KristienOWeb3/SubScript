@@ -3,16 +3,18 @@ import { ethers } from "ethers";
 import { requireScope } from "@/lib/admin/guard";
 import { CCTP_CONFIG, isProd } from "@/lib/contracts/constants";
 import { getArcRpcUrl, getRelayerAddress, resolveRpcUrl } from "@/lib/cctp/relayer";
+import { getSolanaConnection, getSolanaRelayerAddress } from "@/lib/cctp/solanaRelayer";
 import type { RelayerBalanceInfo } from "@/lib/cctp/types";
 
 export const maxDuration = 60;
 
-/* Native gas thresholds per chain, in whole tokens. Polygon is denominated in POL, everything else in
-   ETH, which is why they cannot share one number. */
+/* Native gas thresholds per chain, in whole tokens. Polygon is denominated in POL, Solana in SOL,
+   everything else in ETH, which is why they cannot share one number. */
 const THRESHOLDS: Record<string, { warning: number; critical: number }> = {
   arc: { warning: 10, critical: 2 },
   "1": { warning: 0.1, critical: 0.02 },
   "137": { warning: 10, critical: 2 },
+  solana: { warning: 0.2, critical: 0.05 },
   default: { warning: 0.05, critical: 0.01 },
 };
 
@@ -107,11 +109,55 @@ export async function GET(request: Request) {
     );
   }
 
+  /* Solana relayer monitoring: outbound Arc-to-Solana CCTP mints are signed and paid in SOL
+     by the dedicated Solana relayer keypair. */
+  const solanaRelayerAddress = getSolanaRelayerAddress();
+  reads.push(
+    (async (): Promise<RelayerBalanceInfo> => {
+      const base = {
+        chainId: "solana",
+        chainName: "Solana",
+        nativeTokenSymbol: "SOL",
+        walletAddress: solanaRelayerAddress || "Not configured",
+      };
+      if (!solanaRelayerAddress) {
+        return {
+          ...base,
+          nativeBalance: "0",
+          formattedBalance: "0.0000",
+          status: "critical",
+          error: "No Solana relayer key configured (SOLANA_RELAYER_PRIVATE_KEY)",
+        };
+      }
+      try {
+        const connection = getSolanaConnection();
+        const { PublicKey } = await import("@solana/web3.js");
+        const lamports = await connection.getBalance(new PublicKey(solanaRelayerAddress));
+        const sol = lamports / 1e9;
+        return {
+          ...base,
+          nativeBalance: lamports.toString(),
+          formattedBalance: sol.toFixed(4),
+          status: statusFor("solana", sol),
+        };
+      } catch (error: any) {
+        return {
+          ...base,
+          nativeBalance: "0",
+          formattedBalance: "0.0000",
+          status: "critical",
+          error: error?.message || "Solana RPC unreachable",
+        };
+      }
+    })(),
+  );
+
   balances.push(...(await Promise.all(reads)));
 
   return NextResponse.json({
     success: true,
     relayerAddress,
+    solanaRelayerAddress,
     environment: isProd ? "mainnet" : "testnet",
     balances,
     lastCheckedAt: new Date().toISOString(),

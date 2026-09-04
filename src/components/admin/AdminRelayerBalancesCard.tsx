@@ -23,6 +23,7 @@ interface ChainBalance {
 export function AdminRelayerBalancesCard() {
   const [balances, setBalances] = useState<ChainBalance[]>([]);
   const [relayerAddress, setRelayerAddress] = useState<string>("");
+  const [solanaRelayerAddress, setSolanaRelayerAddress] = useState<string>("");
   const [environment, setEnvironment] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -40,6 +41,7 @@ export function AdminRelayerBalancesCard() {
       }
       setBalances(Array.isArray(data?.balances) ? data.balances : []);
       setRelayerAddress(data?.relayerAddress || "");
+      setSolanaRelayerAddress(data?.solanaRelayerAddress || "");
       setEnvironment(data?.environment || "");
       setLastChecked(new Date().toLocaleTimeString());
       setError(null);
@@ -160,9 +162,19 @@ export function AdminRelayerBalancesCard() {
             <div className="flex items-center justify-between gap-3 text-xs px-3 py-2 rounded-lg bg-neutral-950 border border-neutral-800/80 text-neutral-400">
               <span className="flex items-center gap-1.5 font-medium shrink-0">
                 <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
-                Relayer wallet
+                EVM Relayer
               </span>
               <span className="font-mono text-neutral-300 truncate">{relayerAddress}</span>
+            </div>
+          )}
+
+          {solanaRelayerAddress && (
+            <div className="flex items-center justify-between gap-3 text-xs px-3 py-2 rounded-lg bg-neutral-950 border border-neutral-800/80 text-neutral-400">
+              <span className="flex items-center gap-1.5 font-medium shrink-0">
+                <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
+                Solana Relayer
+              </span>
+              <span className="font-mono text-neutral-300 truncate">{solanaRelayerAddress}</span>
             </div>
           )}
 

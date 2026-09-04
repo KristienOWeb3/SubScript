@@ -11,6 +11,9 @@ import {
   ERC20_ABI,
   FINALITY_THRESHOLD_STANDARD,
   TOKEN_MESSENGER_V2_ABI,
+  isSolanaAddress,
+  getSolanaRecipientAta,
+  solanaAddressToBytes32,
 } from "@/lib/cctp/circleBridge";
 import { getArcRpcUrl } from "@/lib/cctp/relayer";
 import {
@@ -18,6 +21,7 @@ import {
   ARC_TOKEN_MESSENGER_ADDRESS,
   BRIDGE_FEE_TREASURY_ADDRESS,
   USDC_NATIVE_GAS_ADDRESS,
+  SOLANA_CCTP_CONFIG,
 } from "@/lib/contracts/constants";
 
 export const maxDuration = 180;
@@ -106,6 +110,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const isSolana = Number(feeInfo.domain) === 5 || feeInfo.chainId === "solana" || isSolanaAddress(recipient);
+    const storedRecipient = isSolana ? recipient : recipient.toLowerCase();
+
     /* Row first: the id is also the idempotency seed, so two identical withdrawals get two distinct
        Circle transactions. Seeding on wallet+chain+amount made the second one silently return the
        first one's transaction hash. */
@@ -118,7 +125,7 @@ export async function POST(req: NextRequest) {
        RETURNING id`,
       [
         userWallet,
-        recipient.toLowerCase(),
+        storedRecipient,
         ARC_CCTP_DOMAIN_ID,
         feeInfo.chainId,
         feeInfo.domain,
@@ -162,6 +169,14 @@ export async function POST(req: NextRequest) {
 
     /* Step 3: burn the net on Arc. CCTP V2 takes seven arguments; the four-argument V1 form is a
        different selector and reverts here. */
+    let mintRecipientBytes32: `0x${string}`;
+    if (isSolana) {
+      const recipientAta = getSolanaRecipientAta(recipient, SOLANA_CCTP_CONFIG.usdcMint);
+      mintRecipientBytes32 = solanaAddressToBytes32(recipientAta);
+    } else {
+      mintRecipientBytes32 = addressToBytes32(recipient);
+    }
+
     const { txHash: burnTxHash } = await custody.executeContract({
       contractAddress: ARC_TOKEN_MESSENGER_ADDRESS,
       abi: TOKEN_MESSENGER_V2_ABI,
@@ -169,7 +184,7 @@ export async function POST(req: NextRequest) {
       args: [
         feeInfo.netMicros,
         feeInfo.domain,
-        addressToBytes32(recipient),
+        mintRecipientBytes32,
         USDC_NATIVE_GAS_ADDRESS,
         ANY_DESTINATION_CALLER,
         0n,

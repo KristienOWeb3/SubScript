@@ -123,6 +123,44 @@ export function addressToBytes32(address: string): `0x${string}` {
 }
 
 /**
+ * Validates whether an address string is a valid Solana public key on curve.
+ */
+export function isSolanaAddress(address: string): boolean {
+  if (!address || typeof address !== "string") return false;
+  const clean = address.trim();
+  if (clean.length < 32 || clean.length > 44) return false;
+  try {
+    const { PublicKey } = require("@solana/web3.js");
+    const pk = new PublicKey(clean);
+    return PublicKey.isOnCurve(pk.toBytes());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Derives the Associated Token Account (ATA) for USDC on Solana.
+ * On Solana, CCTP mints directly to the recipient's USDC ATA, NOT their base wallet account.
+ */
+export function getSolanaRecipientAta(walletAddress: string, usdcMint: string): string {
+  const { PublicKey } = require("@solana/web3.js");
+  const { getAssociatedTokenAddressSync } = require("@solana/spl-token");
+  const wallet = new PublicKey(walletAddress.trim());
+  const mint = new PublicKey(usdcMint.trim());
+  return getAssociatedTokenAddressSync(mint, wallet, true).toBase58();
+}
+
+/**
+ * Encodes a 32-byte Solana PublicKey (or Base58 string) into bytes32 hex for EVM depositForBurn.
+ * (Crucial: exactly 32 raw bytes, NEVER left-padded with zeros!)
+ */
+export function solanaAddressToBytes32(base58Address: string): `0x${string}` {
+  const { PublicKey } = require("@solana/web3.js");
+  const pk = new PublicKey(base58Address.trim());
+  return `0x${Buffer.from(pk.toBytes()).toString("hex")}` as `0x${string}`;
+}
+
+/**
  * True when a failed relay is an already-minted nonce rather than a real problem. CCTP allows each
  * nonce to be redeemed once, so a duplicate relay reverts; treating that as success is what stops
  * the keeper from retrying a finished transfer forever.
@@ -140,8 +178,13 @@ export function isAlreadyMintedError(message: string): boolean {
     text.includes("already minted") ||
     text.includes("duplicate message") ||
     text.includes("message already consumed") ||
+    text.includes("alreadyreceivedmessage") ||
+    text.includes("already in use") ||
+    text.includes("0x1770") ||
+    text.includes("6000") ||
     text.includes("0x3c2c1c0a") ||
     text.includes("0x82b42900")
   );
 }
+
 
