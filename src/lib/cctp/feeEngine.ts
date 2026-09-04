@@ -1,5 +1,6 @@
 import { CCTP_CONFIG, SOLANA_CCTP_CONFIG, CCTPChainInfo } from "@/lib/contracts/constants";
 import { BridgeDirection, BridgeFeeCalculation, BridgeRouteOption } from "./types";
+import { isSolanaAddress } from "./circleBridge";
 
 /* Minimum bridge amounts:
    - Ethereum L1: 10 USDC ($10.00) to keep L1 gas efficiency reasonable.
@@ -40,12 +41,38 @@ export function formatMicros(micros: bigint, decimals = 2): string {
   return decimals > 0 ? `${whole}.${frac}` : whole.toString();
 }
 
+export interface GenericBridgeChainInfo {
+  domain: number;
+  name: string;
+  feeBps: number;
+  nativeTokenSymbol?: string;
+  isL1?: boolean;
+  allowDeposits?: boolean;
+  allowWithdrawals?: boolean;
+  defaultRpc: string;
+  usdc: string;
+  tokenMessenger: string;
+  messageTransmitter: string;
+}
+
 /**
  * Resolves a chain id or CCTP domain to its config, or throws with a message worth showing a user.
  */
-export function resolveBridgeChain(targetChainIdOrDomain: string | number): CCTPChainInfo {
+export function resolveBridgeChain(targetChainIdOrDomain: string | number): CCTPChainInfo | GenericBridgeChainInfo {
   if (isSolanaTarget(targetChainIdOrDomain)) {
-    throw new Error("Solana transfers aren't available yet.");
+    return {
+      domain: SOLANA_CCTP_CONFIG.domain,
+      name: SOLANA_CCTP_CONFIG.name,
+      feeBps: SOLANA_CCTP_CONFIG.feeBps,
+      nativeTokenSymbol: SOLANA_CCTP_CONFIG.nativeTokenSymbol,
+      isL1: false,
+      allowDeposits: SOLANA_CCTP_CONFIG.allowDeposits,
+      allowWithdrawals: SOLANA_CCTP_CONFIG.allowWithdrawals,
+      defaultRpc: SOLANA_CCTP_CONFIG.defaultRpc,
+      usdc: SOLANA_CCTP_CONFIG.usdcMint,
+      tokenMessenger: SOLANA_CCTP_CONFIG.tokenMessengerMinterProgramId,
+      messageTransmitter: SOLANA_CCTP_CONFIG.messageTransmitterProgramId,
+    };
   }
   const chainId = Number(targetChainIdOrDomain);
   const chainConfig = Number.isFinite(chainId) ? CCTP_CONFIG[chainId] : undefined;
@@ -108,6 +135,11 @@ export function calculateBridgeFee(
     throw new Error("That amount is too small to bridge.");
   }
 
+  const chainId =
+    chainConfig.domain === SOLANA_CCTP_CONFIG.domain
+      ? "solana"
+      : (Object.keys(CCTP_CONFIG).find((id) => CCTP_CONFIG[Number(id)] === chainConfig) ?? "");
+
   return {
     grossMicros,
     feeMicros,
@@ -115,7 +147,7 @@ export function calculateBridgeFee(
     feeBps,
     feePercentage: formatFeeBps(feeBps),
     chainName: chainConfig.name,
-    chainId: Object.keys(CCTP_CONFIG).find((id) => CCTP_CONFIG[Number(id)] === chainConfig) ?? "",
+    chainId,
     domain: chainConfig.domain,
   };
 }
@@ -133,8 +165,15 @@ export function validateBridgeRequest(params: {
   if (!params.userWallet || !/^0x[a-fA-F0-9]{40}$/.test(params.userWallet.trim())) {
     throw new Error("That sender wallet address doesn't look right.");
   }
-  if (!params.recipientAddress || !/^0x[a-fA-F0-9]{40}$/.test(params.recipientAddress.trim())) {
-    throw new Error("That recipient address doesn't look right. Check it and try again.");
+  const isSolana = isSolanaTarget(params.targetChainIdOrDomain);
+  if (isSolana) {
+    if (!isSolanaAddress(params.recipientAddress)) {
+      throw new Error("That recipient address doesn't look like a valid Solana address.");
+    }
+  } else {
+    if (!params.recipientAddress || !/^0x[a-fA-F0-9]{40}$/.test(params.recipientAddress.trim())) {
+      throw new Error("That recipient address doesn't look right. Check it and try again.");
+    }
   }
 
   return calculateBridgeFee(params.amountMicros, params.targetChainIdOrDomain, params.direction);
@@ -173,6 +212,9 @@ export function listBridgeRoutes(direction: BridgeDirection): BridgeRouteOption[
     /* L2s first, Ethereum last: cheaper and faster routes should be the easy pick. */
     .sort((a, b) => a.feeBps - b.feeBps || a.name.localeCompare(b.name));
 
+  const solanaAllowed =
+    direction === "inbound_deposit" ? SOLANA_CCTP_CONFIG.allowDeposits : SOLANA_CCTP_CONFIG.allowWithdrawals;
+
   const solana: BridgeRouteOption = {
     id: "solana",
     name: SOLANA_CCTP_CONFIG.name,
@@ -180,8 +222,8 @@ export function listBridgeRoutes(direction: BridgeDirection): BridgeRouteOption[
     feeBps: SOLANA_CCTP_CONFIG.feeBps,
     feePercentage: formatFeeBps(SOLANA_CCTP_CONFIG.feeBps),
     estimatedTime: "About 15 minutes",
-    available: direction === "inbound_deposit" ? SOLANA_CCTP_CONFIG.allowDeposits : SOLANA_CCTP_CONFIG.allowWithdrawals,
-    unavailableReason: "Coming soon",
+    available: solanaAllowed !== false,
+    unavailableReason: solanaAllowed === false ? "Coming soon" : undefined,
     nativeTokenSymbol: SOLANA_CCTP_CONFIG.nativeTokenSymbol,
   };
 

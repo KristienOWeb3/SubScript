@@ -343,7 +343,13 @@ export default function SendSingleModal({
                                                 value={recipient}
                                                 disabled={loading}
                                                 onChange={(event) => onRecipientChange(event.target.value)}
-                                                placeholder={isArcRoute ? "alice.sub or 0x..." : "0x..."}
+                                                placeholder={
+                                                    isArcRoute
+                                                        ? "alice.sub or 0x..."
+                                                        : currentNetwork.id === "solana"
+                                                          ? "Solana address..."
+                                                          : "0x..."
+                                                }
                                                 className="w-full rounded-2xl border border-black/15 bg-white px-4 py-3 pr-10 font-mono text-xs text-[#111827] shadow-sm focus:border-[#2775CA] focus:outline-none disabled:bg-black/5 disabled:cursor-not-allowed disabled:text-black/60"
                                                 required
                                             />

@@ -13,6 +13,7 @@ import {
 import { getArcRelayer, getChainRelayer } from "./relayer";
 import { notifyDepositArrived, notifyTransferStalled, notifyWithdrawalArrived } from "./notifications";
 import { formatMicros } from "./feeEngine";
+import { relayCctpMintToSolana } from "./solanaRelayer";
 
 /* A burn is irreversible, so the worker keeps trying for a long time before it gives up. At the
    five-minute keeper cadence this is roughly two days of retries, which comfortably covers Ethereum
@@ -178,24 +179,49 @@ export async function processPendingCctpTransfers(): Promise<CctpWorkerResult> {
         continue;
       }
 
-      const { transmitter, relayer, chainName } = resolveMintTarget(item);
-      const messageTransmitter = new ethers.Contract(transmitter, MESSAGE_TRANSMITTER_V2_ABI, relayer);
-
       let mintTxHash: string;
-      try {
-        const tx = await messageTransmitter.receiveMessage(attestation.message, attestation.attestation);
-        const receipt = await tx.wait();
-        if (receipt && receipt.status !== 1) {
-          throw new Error("Destination mint reverted.");
+      let chainName: string;
+
+      const isSolana =
+        Number(item.destination_domain) === 5 ||
+        item.destination_chain_id === "solana" ||
+        item.destination_chain_id === "5";
+
+      if (isSolana) {
+        chainName = "Solana";
+        try {
+          const res = await relayCctpMintToSolana({
+            recipientAddress: item.recipient_address,
+            messageBytes: attestation.message,
+            attestationBytes: attestation.attestation,
+          });
+          mintTxHash = res.signature === "already_minted" ? item.burn_tx_hash : res.signature;
+        } catch (relayError: any) {
+          const message = String(relayError?.shortMessage || relayError?.message || relayError);
+          if (!isAlreadyMintedError(message)) throw relayError;
+          console.warn(`[CCTP Worker] ${item.id} was already minted on Solana; recording as complete.`);
+          mintTxHash = item.burn_tx_hash;
         }
-        mintTxHash = receipt?.hash || tx.hash;
-      } catch (relayError: any) {
-        const message = String(relayError?.shortMessage || relayError?.message || relayError);
-        /* Each CCTP nonce mints once. A revert on an already-spent nonce means the money is already
-           where it should be, usually because a previous attempt landed but we lost the receipt. */
-        if (!isAlreadyMintedError(message)) throw relayError;
-        console.warn(`[CCTP Worker] ${item.id} was already minted on ${chainName}; recording as complete.`);
-        mintTxHash = item.burn_tx_hash;
+      } else {
+        const target = resolveMintTarget(item);
+        chainName = target.chainName;
+        const messageTransmitter = new ethers.Contract(target.transmitter, MESSAGE_TRANSMITTER_V2_ABI, target.relayer);
+
+        try {
+          const tx = await messageTransmitter.receiveMessage(attestation.message, attestation.attestation);
+          const receipt = await tx.wait();
+          if (receipt && receipt.status !== 1) {
+            throw new Error("Destination mint reverted.");
+          }
+          mintTxHash = receipt?.hash || tx.hash;
+        } catch (relayError: any) {
+          const message = String(relayError?.shortMessage || relayError?.message || relayError);
+          /* Each CCTP nonce mints once. A revert on an already-spent nonce means the money is already
+             where it should be, usually because a previous attempt landed but we lost the receipt. */
+          if (!isAlreadyMintedError(message)) throw relayError;
+          console.warn(`[CCTP Worker] ${item.id} was already minted on ${chainName}; recording as complete.`);
+          mintTxHash = item.burn_tx_hash;
+        }
       }
 
       await pgQuery(

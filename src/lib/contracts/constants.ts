@@ -280,23 +280,24 @@ export const CCTP_CONFIG: Record<number, CCTPChainInfo> = isProd
     };
 
 /* Solana, CCTP domain 5.
-
-   allowWithdrawals is false and stays false until a Solana relayer exists. Receiving a CCTP
-   transfer on Solana needs a signed Solana transaction against the MessageTransmitter program, and
-   nothing in this codebase can produce one. Flipping this to true without that relayer burns the
-   user's USDC on Arc with no way to mint the other side. */
+   Outbound withdrawals from Arc to Solana are enabled via the backend Solana relayer, which
+   relays Circle attestations to MessageTransmitterV2 on Solana. */
 export const SOLANA_CCTP_CONFIG = {
   domain: 5,
   name: "Solana",
+  chainId: "solana",
   feeBps: 50,
   nativeTokenSymbol: "SOL",
   allowDeposits: false,
-  allowWithdrawals: false,
-  /* Program ids are identical on devnet and mainnet-beta; Solana programs are deployed to the same
-     address on both. usdcMint does differ. */
-  tokenMessengerMinterProgramId: "CCTPiPYPc6AsJuwueEnWgSgucK3vANSubU4pMukbTWYp",
-  messageTransmitterProgramId: "CCTPmbSD7gX1bxKPAmg37pM4C62c8hVvskdY5t9zG9L",
+  allowWithdrawals: process.env.NEXT_PUBLIC_SOLANA_CCTP_WITHDRAWALS_ENABLED !== "false",
+  /* Canonical Circle CCTP V2 Program IDs (identical on devnet and mainnet-beta). */
+  tokenMessengerMinterProgramId: "CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe",
+  messageTransmitterProgramId: "CCTPV2Sm4AdWt5296sk4P66VBZ7bEhcARwFaaS9YPbeC",
   usdcMint: isProd ? "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" : "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+  defaultRpc:
+    process.env.SOLANA_RPC_URL ||
+    process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+    (isProd ? "https://api.mainnet-beta.solana.com" : "https://api.devnet.solana.com"),
 } as const;
 
 /* Arc CCTP Domain ID: 26 for Arc Testnet / Arc Mainnet */
