@@ -204,7 +204,13 @@ function PopupContent() {
             } catch (err: any) {
                 clearVerifyWatchdog();
                 setStep("error");
-                setError(err.message || "Continue with Google failed.");
+                const errorMsg = err.message || "Continue with Google failed.";
+                setError(errorMsg);
+                if (window.opener && !window.opener.closed) {
+                    try {
+                        window.opener.postMessage({ type: "GOOGLE_AUTH_ERROR", error: errorMsg }, window.location.origin);
+                    } catch {}
+                }
             }
         };
 

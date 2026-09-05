@@ -5,6 +5,7 @@ import { getAccountRole } from "@/lib/accounts/roles";
 import { setSessionCookie } from "@/lib/authCookies";
 import { ensureDefaultAliasFromEmail } from "@/lib/auth/defaultAlias";
 import { withPgClient, pgMaybeOne } from "@/lib/serverPg";
+import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
 import crypto from "crypto";
 import { createSessionToken } from "@/lib/auth";
 import { notifySignInAlert, SIGN_IN_PROVIDERS } from "@/lib/email/signInContext";
@@ -109,14 +110,15 @@ export async function POST(request: Request) {
                 console.error("Failed to update identity last_verified_at:", updateErr);
             }
         } else {
-            // Check if there is an existing embedded wallet with this verified email
-            const existingEmailWallet = await pgMaybeOne<{ wallet_address: string }>(
-                "select wallet_address from user_embedded_wallets where email = $1 limit 1",
-                [emailVal]
-            );
+            const emailBinding = await withPgClient((client) => findAccountEmailBinding(client, emailVal));
+            if (isWalletOnlyEmailBinding(emailBinding)) {
+                return NextResponse.json({
+                    error: "This email is linked to a wallet-only SubScript account. Connect that wallet to sign in.",
+                }, { status: 409 });
+            }
 
-            if (existingEmailWallet) {
-                walletAddress = existingEmailWallet.wallet_address;
+            if (emailBinding) {
+                walletAddress = emailBinding.walletAddress;
                 try {
                     await withPgClient(async (client) => {
                         await client.query(
