@@ -86,6 +86,56 @@ export async function GET(request: Request) {
 
         const allDeposits = [...cctpItems, ...uniqueDirect].sort((a, b) => b.timestamp - a.timestamp);
 
+        // Dispatch in-app notification and email for newly discovered direct deposits
+        const recentDirectIncoming = uniqueDirect.filter(
+            (d) => d.incoming && d.timestamp > Date.now() - 3 * 24 * 60 * 60 * 1000
+        );
+        if (recentDirectIncoming.length > 0) {
+            void (async () => {
+                try {
+                    const { prisma } = await import("@/lib/prisma");
+                    for (const d of recentDirectIncoming) {
+                        const shortRef = d.txHash ? d.txHash.slice(0, 12) : "";
+                        if (!shortRef) continue;
+
+                        const existingNotice = await prisma.accountNotification.findFirst({
+                            where: {
+                                recipientAddress: normalizedWallet,
+                                body: { contains: shortRef },
+                            },
+                            select: { id: true },
+                        });
+
+                        if (!existingNotice) {
+                            await prisma.accountNotification.create({
+                                data: {
+                                    recipientAddress: normalizedWallet,
+                                    audience: "USER",
+                                    title: "USDC deposit received",
+                                    body: `Received ${d.amountFormatted} USDC on Arc Network (ref: ${shortRef}).`,
+                                    source: "BRIDGE",
+                                },
+                            }).catch(() => undefined);
+
+                            const { resolveRecipient, safelySendEmail } = await import("@/lib/email/core");
+                            const email = await resolveRecipient(normalizedWallet, "transactional");
+                            if (email) {
+                                const { sendDepositReceivedEmail } = await import("@/lib/email/transactional");
+                                await safelySendEmail("direct deposit email", () => sendDepositReceivedEmail({
+                                    recipientEmail: email,
+                                    amountUsdc: d.amountFormatted,
+                                    originChainName: "Arc Network",
+                                    txHash: d.txHash,
+                                }));
+                            }
+                        }
+                    }
+                } catch (notifyErr) {
+                    console.warn("[api/user/deposits] direct deposit notify error:", notifyErr);
+                }
+            })();
+        }
+
         return NextResponse.json({
             success: true,
             deposits: allDeposits,

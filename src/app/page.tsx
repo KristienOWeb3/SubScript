@@ -149,7 +149,7 @@ export default function Home() {
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.8, delay: 0.15 }}
                         >
-                            Every way money moves for your business.{" "}
+                            Every way money moves for you and your business.{" "}
                             <span className="font-serif italic text-[#00d2b4] font-normal tracking-normal">Settled in $USDC.</span>
                         </motion.h1>
 

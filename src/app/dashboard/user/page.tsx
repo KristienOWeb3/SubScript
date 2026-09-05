@@ -52,6 +52,7 @@ import BlockedUsersModal from "@/components/dashboard/BlockedUsersModal";
 import VaultShareManager from "@/components/VaultShareManager";
 import AccountHoldModal from "@/components/dashboard/AccountHoldModal";
 import { getDashboardUrl } from "@/utils/navigation";
+import { compressAvatarImage } from "@/utils/imageCompression";
 import { Identity } from "@/components/Identity";
 import { MerchantVerifiedTick } from "@/components/MerchantVerifiedBadge";
 import { receiptHrefFromDescriptionLine } from "@/lib/dms/receiptPresentation";
@@ -322,7 +323,22 @@ const SETTINGS_TX_PAGE_SIZE = 30;
 
 const formatAddress = (addr: string | null) => {
   if (!addr) return "";
-  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;};
+  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+};
+
+const formatChainAbbr = (chainNameOrId?: string | number | null): string => {
+  if (!chainNameOrId) return "";
+  const s = String(chainNameOrId).toLowerCase();
+  if (s.includes("eth") || s === "1" || s === "11155111") return "ETH";
+  if (s.includes("sol")) return "SOL";
+  if (s.includes("base") || s === "8453" || s === "84532") return "BASE";
+  if (s.includes("arb") || s === "42161" || s === "421614") return "ARB";
+  if (s.includes("poly") || s.includes("amoy") || s.includes("matic") || s === "137" || s === "80002") return "MATIC";
+  if (s.includes("avax") || s.includes("fuji") || s === "43114" || s === "43113") return "AVAX";
+  if (s.includes("opt") || s === "10" || s === "11155420") return "OP";
+  if (s.includes("arc")) return "ARC";
+  return s.toUpperCase();
+};
 
 const limitDecimals = (value: string, maxDecimals: number = 6): string => {
   if (!value || !value.includes(".")) return value;
@@ -2560,35 +2576,28 @@ export default function UserDashboard() {
   const handleProfilePicUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      setUploadError("Image size must be smaller than 2MB.");
+    if (file.size > 20 * 1024 * 1024) {
+      setUploadError("Image size must be smaller than 20MB.");
       return;
     }
 
     setUploadingPic(true);
     setUploadError(null);
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = async () => {
-      try {
-        const res = await fetch("/api/merchant/alias", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ profilePic: reader.result }),
-        });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error || "Failed to upload profile picture.");
-        setProfilePic(reader.result as string);
-      } catch (err: any) {
-        setUploadError(err.message || "Network error uploading image.");
-      } finally {
-        setUploadingPic(false);
-      }
-    };
-    reader.onerror = () => {
-      setUploadError("Failed to read image file.");
+    try {
+      const compressedDataUrl = await compressAvatarImage(file, 512, 0.85);
+      const res = await fetch("/api/merchant/alias", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profilePic: compressedDataUrl }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "Failed to upload profile picture.");
+      setProfilePic(compressedDataUrl);
+    } catch (err: any) {
+      setUploadError(err.message || "Network error uploading image.");
+    } finally {
       setUploadingPic(false);
-    };
+    }
   };
 
   const resolveRecipient = async (input: string): Promise<string | null> => {
@@ -3642,22 +3651,26 @@ export default function UserDashboard() {
         let status = "CONFIRMED";
 
         if (isCctp) {
+          const isConfirmed = d.status === "completed" || Boolean(d.mintTxHash);
+          status = isConfirmed ? "CONFIRMED" : d.status === "failed" ? "FAILED" : "PENDING";
           if (isWithdrawal) {
-            name = `CCTP Send to ${d.destName || "External Chain"}`;
-            detail = d.status === "completed" 
-              ? `Withdrawal confirmed` 
+            const destAbbr = formatChainAbbr(d.destName || d.destinationChainId);
+            const target = d.toAddress ? formatAddress(d.toAddress) : "";
+            name = target ? `Sent to ${target} ${destAbbr}`.trim() : `Sent to ${d.destName || "External Chain"}`;
+            detail = isConfirmed 
+              ? `Withdrawal confirmed • ${d.destName || "External Chain"}` 
               : d.status === "failed" 
-              ? `Withdrawal failed` 
-              : `CCTP Send to ${d.destName || "External Chain"} • Estimated arrival ~15 mins`;
-            status = d.status === "completed" ? "CONFIRMED" : d.status === "failed" ? "FAILED" : "PENDING";
+              ? "Withdrawal failed" 
+              : `Pending relay • ${d.destName || "External Chain"}`;
           } else {
-            name = `CCTP Deposit from ${d.originName || "External Chain"}`;
-            detail = d.status === "completed"
-              ? `Deposit confirmed`
+            const originAbbr = formatChainAbbr(d.originName || d.originChainId);
+            const origin = d.fromAddress && d.fromAddress !== "0x0000000000000000000000000000000000000000" ? formatAddress(d.fromAddress) : "";
+            name = origin ? `Deposit from ${origin} ${originAbbr}`.trim() : `Deposit from ${d.originName || "External Chain"}`;
+            detail = isConfirmed
+              ? `Deposit confirmed • ${d.originName || "External Chain"}`
               : d.status === "failed"
-              ? `Deposit failed`
-              : `CCTP Deposit from ${d.originName || "External Chain"} • Estimated arrival ~15 mins`;
-            status = d.status === "completed" ? "CONFIRMED" : d.status === "failed" ? "FAILED" : "PENDING";
+              ? "Deposit failed"
+              : `Pending arrival • ${d.originName || "External Chain"}`;
           }
         }
 
@@ -3718,6 +3731,10 @@ export default function UserDashboard() {
     if (txFilter === "deposits") return t.incoming && t.detail.toLowerCase().includes("deposit");
     return t.kind === txFilter;
   });
+
+  const thirtyDaySpendUsdc = recentTransactions
+    .filter((tx) => !tx.incoming && tx.status !== "FAILED" && tx.time >= thirtyDaysAgoMs)
+    .reduce((sum, tx) => sum + tx.amountUsdc, 0);
 
 
 
@@ -4067,7 +4084,7 @@ export default function UserDashboard() {
                           <p className="mt-0.5 text-xl font-extrabold tracking-tight text-white">
                             {isRefreshingBalances
                               ? <span className="block h-6 w-20 rounded-lg subscript-skeleton" />
-                              : balanceVisible ? `$${formatHeadlineAmount(monthlySpendUsdc)}` : "••••"}
+                              : balanceVisible ? `$${formatHeadlineAmount(thirtyDaySpendUsdc)}` : "••••"}
                           </p>
                         </div>
                         <button
@@ -5680,7 +5697,7 @@ export default function UserDashboard() {
                     subscriptions: { label: "Subscriptions", color: "#2775CA", bgColor: "rgba(39,117,202,0.08)", borderColor: "rgba(39,117,202,0.25)", Icon: Shield, total: 0, count: 0 },
                     payments: { label: "One-Time Payments", color: "#0284c7", bgColor: "rgba(2,132,199,0.08)", borderColor: "rgba(2,132,199,0.25)", Icon: CreditCard, total: 0, count: 0 },
                     transfers: { label: "Transfers", color: "#7c3aed", bgColor: "rgba(124,58,237,0.08)", borderColor: "rgba(124,58,237,0.25)", Icon: ArrowUpRight, total: 0, count: 0 },
-                    withdrawals: { label: "Withdrawals", color: "#ea580c", bgColor: "rgba(234,88,12,0.08)", borderColor: "rgba(234,88,12,0.25)", Icon: ArrowDownToLine, total: 0, count: 0 },
+                    withdrawals: { label: "Withdrawals", color: "#ea580c", bgColor: "rgba(234,88,12,0.08)", borderColor: "rgba(234,88,12,0.25)", Icon: ArrowUpRight, total: 0, count: 0 },
                   };
 
                   const bucketFor = (kind: string) =>

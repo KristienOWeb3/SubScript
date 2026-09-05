@@ -29,28 +29,28 @@ test("configuredSender transactional never sends from auth address or display na
         process.env.EMAIL_FROM = "SubScript Auth <auth@subscriptonarc.com>";
         assert.equal(
             configuredSender("transactional"),
-            "SubScript Receipts <receipts@subscriptonarc.com>"
+            "SubScript <receipts@subscriptonarc.com>"
         );
 
         // Form 2: SubScript with auth@ address
         process.env.EMAIL_FROM = "SubScript <auth@subscriptonarc.com>";
         assert.equal(
             configuredSender("transactional"),
-            "SubScript Receipts <receipts@subscriptonarc.com>"
+            "SubScript <receipts@subscriptonarc.com>"
         );
 
         // Form 3: Bare auth@ address
         process.env.EMAIL_FROM = "auth@subscriptonarc.com";
         assert.equal(
             configuredSender("transactional"),
-            "SubScript Receipts <receipts@subscriptonarc.com>"
+            "SubScript <receipts@subscriptonarc.com>"
         );
 
-        // Form 4: Non-auth address preserves custom mailbox but ensures SubScript Receipts display name
+        // Form 4: Non-auth address preserves custom mailbox but ensures SubScript display name
         process.env.EMAIL_FROM = "SubScript <billing@subscriptonarc.com>";
         assert.equal(
             configuredSender("transactional"),
-            "SubScript Receipts <billing@subscriptonarc.com>"
+            "SubScript <billing@subscriptonarc.com>"
         );
     } finally {
         process.env = originalEnv;
@@ -87,7 +87,7 @@ test("configuredSender derives appropriate security, ops, and lifecycle senders 
 
         process.env.EMAIL_FROM = "SubScript Auth <auth@subscriptonarc.com>";
 
-        assert.equal(configuredSender("security"), "SubScript Security <auth@subscriptonarc.com>");
+        assert.equal(configuredSender("security"), "SubScript Auth <auth@subscriptonarc.com>");
         assert.equal(configuredSender("ops"), "SubScript Ops <ops@subscriptonarc.com>");
         assert.equal(configuredSender("lifecycle"), "SubScript <notifications@subscriptonarc.com>");
     } finally {
@@ -107,8 +107,8 @@ test("configuredSender falls back to sandbox on non-production when unconfigured
         delete process.env.EMAIL_FROM_LIFECYCLE;
         process.env.NODE_ENV = "test";
 
-        assert.equal(configuredSender("transactional"), "SubScript Receipts <onboarding@resend.dev>");
-        assert.equal(configuredSender("security"), "SubScript Security <onboarding@resend.dev>");
+        assert.equal(configuredSender("transactional"), "SubScript <onboarding@resend.dev>");
+        assert.equal(configuredSender("security"), "SubScript Auth <onboarding@resend.dev>");
         assert.equal(configuredSender("ops"), "SubScript Ops <onboarding@resend.dev>");
         assert.equal(configuredSender("lifecycle"), "SubScript <onboarding@resend.dev>");
         assert.equal(configuredSender(), "SubScript <onboarding@resend.dev>");

@@ -55,6 +55,26 @@ export async function uploadProfilePicture(
             }
         }
 
+        // Clean up previous avatar files for this wallet to prevent orphaned storage accumulation
+        const cleanWallet = walletAddress.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const prefix = `profile_${cleanWallet}_`;
+        try {
+            const { data: existingFiles } = await supabaseAdmin.storage
+                .from(bucketName)
+                .list("", { search: prefix });
+            if (existingFiles && existingFiles.length > 0) {
+                const filesToDelete = existingFiles
+                    .filter((f) => f.name.startsWith(prefix))
+                    .map((f) => f.name);
+                if (filesToDelete.length > 0) {
+                    await supabaseAdmin.storage.from(bucketName).remove(filesToDelete);
+                    console.log(`[Storage Utility] Removed ${filesToDelete.length} stale avatar file(s) for wallet ${cleanWallet}`);
+                }
+            }
+        } catch (cleanupErr) {
+            console.warn("[Storage Utility] Non-fatal error cleaning up stale avatars:", cleanupErr);
+        }
+
         // Upload the file buffer
         const { error: uploadError } = await supabaseAdmin.storage
             .from(bucketName)

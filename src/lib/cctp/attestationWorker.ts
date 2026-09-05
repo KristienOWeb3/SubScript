@@ -242,12 +242,15 @@ export async function processPendingCctpTransfers(): Promise<CctpWorkerResult> {
           recipientAddress: item.recipient_address,
           originChainName: originName,
           netUsdc,
+          txHash: mintTxHash,
         });
       } else {
         await notifyWithdrawalArrived({
           recipientAddress: item.user_wallet,
           destinationChainName: chainName,
           netUsdc,
+          destinationAddress: item.recipient_address,
+          txHash: mintTxHash,
         });
       }
 

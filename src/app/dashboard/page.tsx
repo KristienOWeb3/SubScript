@@ -12,6 +12,7 @@ import DashboardSkeleton from "@/components/DashboardSkeleton";
 import Skeleton from "@/components/ui/Skeleton";
 import { SkeletonCard, SkeletonRows, SkeletonStatGrid } from "@/components/ui/skeletons";
 import { getDashboardUrl } from "@/utils/navigation";
+import { compressAvatarImage } from "@/utils/imageCompression";
 import { buildCheckoutUrl, buildSubscribeUrl } from "@/lib/checkoutUrl";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 import WithdrawModal from "@/components/WithdrawModal";
@@ -1040,36 +1041,33 @@ export default function DashboardPage() {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        if (file.size > 2 * 1024 * 1024) {
-            setUploadError("Image size must be smaller than 2MB");
+        if (file.size > 20 * 1024 * 1024) {
+            setUploadError("Image size must be smaller than 20MB");
             return;
         }
 
         setUploadingPic(true);
         setUploadError(null);
 
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-            try {
-                const res = await fetch("/api/user/settings", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ profilePic: reader.result })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    setUserSettings((prev: any) => ({ ...prev, profilePic: reader.result as string }));
-                } else {
-                    setUploadError(data.error || "Upload failed");
-                }
-            } catch (err) {
-                console.error("Error uploading profile pic:", err);
-                setUploadError("Upload failed");
-            } finally {
-                setUploadingPic(false);
+        try {
+            const compressedDataUrl = await compressAvatarImage(file, 512, 0.85);
+            const res = await fetch("/api/user/settings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ profilePic: compressedDataUrl })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setUserSettings((prev: any) => ({ ...prev, profilePic: compressedDataUrl }));
+            } else {
+                setUploadError(data.error || "Upload failed");
             }
-        };
-        reader.readAsDataURL(file);
+        } catch (err: any) {
+            console.error("Error uploading profile pic:", err);
+            setUploadError(err.message || "Upload failed");
+        } finally {
+            setUploadingPic(false);
+        }
     };
 
     const handleRegisterDns = (e: React.FormEvent) => {

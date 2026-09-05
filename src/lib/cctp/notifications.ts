@@ -41,29 +41,65 @@ export function notifyDepositStarted(params: {
 }
 
 /** Fired when Arc has minted and the money is spendable. */
-export function notifyDepositArrived(params: {
+export async function notifyDepositArrived(params: {
   recipientAddress: string;
   originChainName: string;
   netUsdc: string;
+  txHash?: string;
 }): Promise<void> {
-  return createNotification({
+  await createNotification({
     recipientAddress: params.recipientAddress,
     title: "USDC deposited on Arc",
     body: `USDC deposited is now on the arc network (${params.netUsdc} USDC from ${params.originChainName}).`,
   });
+
+  try {
+    const { resolveRecipient, safelySendEmail } = await import("@/lib/email/core");
+    const email = await resolveRecipient(params.recipientAddress, "transactional");
+    if (email) {
+      const { sendDepositReceivedEmail } = await import("@/lib/email/transactional");
+      await safelySendEmail("deposit received email", () => sendDepositReceivedEmail({
+        recipientEmail: email,
+        amountUsdc: params.netUsdc,
+        originChainName: params.originChainName,
+        txHash: params.txHash,
+      }));
+    }
+  } catch (emailErr) {
+    console.warn("[cctp] could not send deposit confirmation email:", emailErr);
+  }
 }
 
 /** Fired when a withdrawal's destination chain has minted. */
-export function notifyWithdrawalArrived(params: {
+export async function notifyWithdrawalArrived(params: {
   recipientAddress: string;
   destinationChainName: string;
   netUsdc: string;
+  destinationAddress?: string;
+  txHash?: string;
 }): Promise<void> {
-  return createNotification({
+  await createNotification({
     recipientAddress: params.recipientAddress,
     title: "Withdrawal delivered",
     body: `${params.netUsdc} USDC landed on ${params.destinationChainName}.`,
   });
+
+  try {
+    const { resolveRecipient, safelySendEmail } = await import("@/lib/email/core");
+    const email = await resolveRecipient(params.recipientAddress, "transactional");
+    if (email) {
+      const { sendWithdrawalCompletedEmail } = await import("@/lib/email/transactional");
+      await safelySendEmail("withdrawal completed email", () => sendWithdrawalCompletedEmail({
+        recipientEmail: email,
+        amountUsdc: params.netUsdc,
+        destinationChainName: params.destinationChainName,
+        destinationAddress: params.destinationAddress,
+        txHash: params.txHash,
+      }));
+    }
+  } catch (emailErr) {
+    console.warn("[cctp] could not send withdrawal delivery email:", emailErr);
+  }
 }
 
 /** Fired when a transfer has stopped retrying and needs someone to look at it. */

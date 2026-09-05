@@ -131,17 +131,18 @@ export async function sendSignInAlertEmail(
 
 export async function sendWelcomeEmail(email: string, role: "USER" | "ENTERPRISE", walletAddress: string) {
     const audience = role === "ENTERPRISE" ? "merchant" : "user";
+    const dashboardUrl = role === "ENTERPRISE" ? "https://subscriptonarc.com/dashboard/merchant" : "https://subscriptonarc.com/dashboard/user";
     return sendTransactionalEmail({
         to: email,
         category: "lifecycle",
         subject: "Welcome to SubScript",
-        text: `Your SubScript ${audience} account is ready. Wallet: ${walletAddress}`,
+        text: `Your SubScript ${audience} account is ready to go. Log in anytime at ${dashboardUrl}`,
         html: renderEmailLayout({
             previewText: `Your SubScript ${audience} account is ready`,
             heading: "Welcome to SubScript",
             bodyHtml: `<p style="margin:0 0 14px">Your SubScript ${htmlEscape(audience)} account is ready to go.</p>
-                <p style="margin:0 0 6px;color:#6b7280;font-size:13px">Connected wallet</p>
-                <div style="padding:12px 16px;background:#f4f6f8;border-radius:12px;font-family:'SFMono-Regular',Consolas,monospace;font-size:13px;color:#08090a;word-break:break-all">${htmlEscape(walletAddress)}</div>`,
+                <p style="margin:0 0 14px;color:#6b7280;font-size:14px;line-height:1.6">You can now send, deposit, and manage your USDC balances directly from your dashboard.</p>`,
+            cta: { label: "Go to Dashboard", url: dashboardUrl },
         }),
         idempotencyKey: `welcome:${walletAddress}:${role}`,
     });
@@ -452,3 +453,199 @@ export async function sendAdminLowGasAlertEmail(input: {
         idempotencyKey: `low-gas:${input.chainId}:${input.walletAddress.toLowerCase()}:${Math.floor(Date.now() / 21600000)}`,
     }));
 }
+
+const DEFAULT_CDN_BANNER_BASE = "https://jkrlsjpsytzffwjpixue.supabase.co/storage/v1/object/public/profiles/banners";
+
+function getNetworkBannerUrl(chainName: string): string {
+    const baseUrl = process.env.EMAIL_BANNER_BASE_URL || DEFAULT_CDN_BANNER_BASE;
+    const s = chainName.toLowerCase();
+    if (s.includes("eth")) return `${baseUrl}/eth-3d-banner-v4.png`;
+    if (s.includes("sol")) return `${baseUrl}/solana-3d-banner-v4.png`;
+    if (s.includes("tron") || s.includes("trx")) return `${baseUrl}/tron-3d-banner-v4.png`;
+    if (s.includes("bank")) return `${baseUrl}/bank-3d-banner-v4.png`;
+    if (s.includes("base")) return `${baseUrl}/base-3d-banner-v4.png`;
+    if (s.includes("arb")) return `${baseUrl}/arbitrum-3d-banner-v4.png`;
+    if (s.includes("poly") || s.includes("matic")) return `${baseUrl}/polygon-3d-banner-v4.png`;
+    if (s.includes("avax")) return `${baseUrl}/avalanche-3d-banner-v4.png`;
+    if (s.includes("opt")) return `${baseUrl}/optimism-3d-banner-v4.png`;
+    if (s.includes("arc")) return `${baseUrl}/arc-3d-banner-v4.png`;
+    return `${baseUrl}/usdc-3d-banner-v4.png`;
+}
+
+function getExplorerTxUrl(chainName: string, txHash: string): string {
+    const s = chainName.toLowerCase();
+    const isProd = process.env.NODE_ENV === "production" || process.env.NEXT_PUBLIC_VERCEL_ENV === "production";
+    if (s.includes("eth")) return isProd ? `https://etherscan.io/tx/${txHash}` : `https://sepolia.etherscan.io/tx/${txHash}`;
+    if (s.includes("sol")) return isProd ? `https://solscan.io/tx/${txHash}` : `https://solscan.io/tx/${txHash}?cluster=devnet`;
+    if (s.includes("base")) return isProd ? `https://basescan.org/tx/${txHash}` : `https://sepolia.basescan.org/tx/${txHash}`;
+    if (s.includes("arb")) return isProd ? `https://arbiscan.io/tx/${txHash}` : `https://sepolia.arbiscan.io/tx/${txHash}`;
+    if (s.includes("poly") || s.includes("matic")) return isProd ? `https://polygonscan.com/tx/${txHash}` : `https://amoy.polygonscan.com/tx/${txHash}`;
+    if (s.includes("avax")) return isProd ? `https://snowtrace.io/tx/${txHash}` : `https://testnet.snowtrace.io/tx/${txHash}`;
+    return isProd ? `https://arcscan.app/tx/${txHash}` : `https://testnet.arcscan.app/tx/${txHash}`;
+}
+
+function formatSpendaDateTime(d: Date = new Date()): string {
+    const day = String(d.getUTCDate()).padStart(2, "0");
+    const month = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const year = d.getUTCFullYear();
+    let hours = d.getUTCHours();
+    const minutes = String(d.getUTCMinutes()).padStart(2, "0");
+    const ampm = hours >= 12 ? "PM" : "AM";
+    hours = hours % 12 || 12;
+    const hoursStr = String(hours).padStart(2, "0");
+    return `${day}-${month}-${year} / ${hoursStr}:${minutes}${ampm} UTC`;
+}
+
+function renderSpendaReceiptCard(rows: Array<{ label: string; valueHtml: string }>): string {
+    const rowHtml = rows.map((r, i) => {
+        const border = i < rows.length - 1 ? "border-bottom:1px solid #1e222b;" : "";
+        return `<tr>
+          <td style="padding:10px 0;font-size:13px;color:#8b929e;${border}">${htmlEscape(r.label)}</td>
+          <td align="right" style="padding:10px 0;font-size:13px;font-weight:600;color:#ffffff;${border}">${r.valueHtml}</td>
+        </tr>`;
+    }).join("");
+
+    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#13151b;border:1px solid #232732;border-radius:16px;padding:12px 18px;margin:18px 0 24px">
+      ${rowHtml}
+    </table>`;
+}
+
+function getNetworkBannerHtml(chainName: string): string {
+    const bannerUrl = getNetworkBannerUrl(chainName);
+    return `<div style="margin:0 0 20px;border-radius:18px;overflow:hidden;background:#181b22;border:1px solid #282d38;text-align:center">
+      <img src="${bannerUrl}" alt="${htmlEscape(chainName)}" width="100%" style="display:block;max-height:170px;width:100%;object-fit:cover;border-radius:18px" />
+    </div>`;
+}
+
+export type DepositEmailParams = {
+    recipientEmail: string;
+    recipientName?: string | null;
+    amountUsdc: bigint | string | number;
+    originChainName: string;
+    txHash?: string | null;
+    referenceId?: string | null;
+    receivedAt?: Date;
+};
+
+export function buildDepositReceivedEmail(params: DepositEmailParams) {
+    const amount = formatUsdc(params.amountUsdc);
+    const chainName = params.originChainName || "External Chain";
+    const dateStr = formatSpendaDateTime(params.receivedAt);
+    const shortHash = params.txHash ? `${params.txHash.slice(0, 10)}...${params.txHash.slice(-8)}` : null;
+    const txLinkHtml = params.txHash
+        ? `<a href="${getExplorerTxUrl(chainName, params.txHash)}" target="_blank" style="color:#38bdf8;text-decoration:none">${htmlEscape(shortHash!)}</a>`
+        : `<span style="color:#94a3b8">Confirmed on-chain</span>`;
+
+    const bannerHtml = getNetworkBannerHtml(chainName);
+    const greetingName = params.recipientName?.trim() || "there";
+
+    const rows = [
+        { label: "Quantity", valueHtml: `${htmlEscape(amount)} USDC` },
+        { label: "Amount in USD", valueHtml: `$${htmlEscape(amount)}` },
+        { label: "Fee", valueHtml: "$0.00" },
+        { label: "Network", valueHtml: htmlEscape(chainName) },
+        { label: "Date/Time", valueHtml: htmlEscape(dateStr) },
+        { label: "Transaction Hash", valueHtml: txLinkHtml },
+    ];
+
+    const detailsCard = renderSpendaReceiptCard(rows);
+
+    return {
+        to: params.recipientEmail,
+        category: "transactional" as const,
+        subject: `Deposit confirmed: ${amount} USDC on ${chainName}`,
+        text: `Hi ${greetingName},\n\nYou have received a new USDC deposit into your SubScript account.\n\nQuantity: ${amount} USDC\nNetwork: ${chainName}\nDate: ${dateStr}\n\nManage your funds at https://subscriptonarc.com/dashboard/user`,
+        html: renderEmailLayout({
+            previewText: `Deposit confirmed: ${amount} USDC from ${chainName}`,
+            theme: "dark",
+            bodyHtml: `
+                ${bannerHtml}
+                <p style="margin:0 0 10px;font-size:15px;color:#cbd5e1">Hi <strong style="color:#ffffff">${htmlEscape(greetingName)}</strong>,</p>
+                <p style="margin:0 0 18px;font-size:14px;color:#94a3b8;line-height:1.6">You have received a new USDC deposit into your <strong style="color:#00d2b4">SubScript</strong> account. Log into your dashboard to manage your funds. See deposit details below.</p>
+                <div style="border-top:1px solid #232732;margin:18px 0"></div>
+                <div style="text-align:center;margin:0 0 8px">
+                    <span style="display:inline-block;padding:4px 14px;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.25);border-radius:9999px;font-size:12px;font-weight:700;color:#22c55e">Completed</span>
+                </div>
+                <div style="text-align:center;margin:6px 0 20px;font-size:32px;font-weight:900;color:#ffffff;letter-spacing:-0.5px">
+                    $${htmlEscape(amount)} <span style="font-size:18px;font-weight:700;color:#00d2b4">USDC</span>
+                </div>
+                ${detailsCard}
+            `,
+            cta: { label: "Go to Dashboard", url: "https://subscriptonarc.com/dashboard/user" },
+        }),
+        idempotencyKey: `deposit:${params.txHash || params.recipientEmail.toLowerCase()}:${dateStr}`,
+    };
+}
+
+export async function sendDepositReceivedEmail(params: DepositEmailParams) {
+    return sendTransactionalEmail(buildDepositReceivedEmail(params));
+}
+
+export type WithdrawalEmailParams = {
+    recipientEmail: string;
+    recipientName?: string | null;
+    amountUsdc: bigint | string | number;
+    destinationChainName: string;
+    destinationAddress?: string | null;
+    feeUsdc?: string | null;
+    txHash?: string | null;
+    referenceId?: string | null;
+    completedAt?: Date;
+};
+
+export function buildWithdrawalCompletedEmail(params: WithdrawalEmailParams) {
+    const amount = formatUsdc(params.amountUsdc);
+    const destName = params.destinationChainName || "External Chain";
+    const dateStr = formatSpendaDateTime(params.completedAt);
+    const shortHash = params.txHash ? `${params.txHash.slice(0, 10)}...${params.txHash.slice(-8)}` : null;
+    const txLinkHtml = params.txHash
+        ? `<a href="${getExplorerTxUrl(destName, params.txHash)}" target="_blank" style="color:#38bdf8;text-decoration:none">${htmlEscape(shortHash!)}</a>`
+        : `<span style="color:#94a3b8">Delivered on-chain</span>`;
+
+    const bannerHtml = getNetworkBannerHtml(destName);
+    const greetingName = params.recipientName?.trim() || "there";
+    const destAddrHtml = params.destinationAddress ? shortAddress(params.destinationAddress) : destName;
+
+    const rows = [
+        { label: "Quantity", valueHtml: `${htmlEscape(amount)} USDC` },
+        { label: "Amount in USD", valueHtml: `$${htmlEscape(amount)}` },
+        { label: "Fee", valueHtml: htmlEscape(params.feeUsdc || "$0.00") },
+        { label: "Destination Network", valueHtml: htmlEscape(destName) },
+        { label: "Destination Address", valueHtml: `<span style="font-family:'SFMono-Regular',Consolas,monospace">${htmlEscape(destAddrHtml)}</span>` },
+        { label: "Date/Time", valueHtml: htmlEscape(dateStr) },
+        { label: "Transaction Hash", valueHtml: txLinkHtml },
+    ];
+
+    const detailsCard = renderSpendaReceiptCard(rows);
+
+    return {
+        to: params.recipientEmail,
+        category: "transactional" as const,
+        subject: `Withdrawal delivered: ${amount} USDC to ${destName}`,
+        text: `Hi ${greetingName},\n\nYou have successfully made a withdrawal from your SubScript account to ${destName}.\n\nQuantity: ${amount} USDC\nDestination: ${destAddrHtml}\nDate: ${dateStr}\n\nCheck your transaction at https://subscriptonarc.com/dashboard/user/transactions`,
+        html: renderEmailLayout({
+            previewText: `Withdrawal delivered: ${amount} USDC to ${destName}`,
+            theme: "dark",
+            bodyHtml: `
+                ${bannerHtml}
+                <p style="margin:0 0 10px;font-size:15px;color:#cbd5e1">Hi <strong style="color:#ffffff">${htmlEscape(greetingName)}</strong>,</p>
+                <p style="margin:0 0 18px;font-size:14px;color:#94a3b8;line-height:1.6">You have successfully made a withdrawal from your <strong style="color:#00d2b4">SubScript</strong> account to <strong style="color:#ffffff">${htmlEscape(destName)}</strong>. See withdrawal details below.</p>
+                <div style="border-top:1px solid #232732;margin:18px 0"></div>
+                <div style="text-align:center;margin:0 0 8px">
+                    <span style="display:inline-block;padding:4px 14px;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.25);border-radius:9999px;font-size:12px;font-weight:700;color:#22c55e">Completed</span>
+                </div>
+                <div style="text-align:center;margin:6px 0 20px;font-size:32px;font-weight:900;color:#ffffff;letter-spacing:-0.5px">
+                    $${htmlEscape(amount)} <span style="font-size:18px;font-weight:700;color:#00d2b4">USDC</span>
+                </div>
+                ${detailsCard}
+            `,
+            cta: { label: "View Transactions", url: "https://subscriptonarc.com/dashboard/user/transactions" },
+        }),
+        idempotencyKey: `withdrawal:${params.txHash || params.destinationAddress || params.recipientEmail.toLowerCase()}:${dateStr}`,
+    };
+}
+
+export async function sendWithdrawalCompletedEmail(params: WithdrawalEmailParams) {
+    return sendTransactionalEmail(buildWithdrawalCompletedEmail(params));
+}
+

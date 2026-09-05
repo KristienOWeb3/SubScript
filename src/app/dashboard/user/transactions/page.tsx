@@ -94,6 +94,20 @@ function getExplorerTxUrl(txHash?: string | null) {
   return `https://arcscan.app/tx/${txHash}`;
 }
 
+function formatChainAbbr(chainNameOrId?: string | number | null): string {
+  if (!chainNameOrId) return "";
+  const s = String(chainNameOrId).toLowerCase();
+  if (s.includes("eth") || s === "1" || s === "11155111") return "ETH";
+  if (s.includes("sol")) return "SOL";
+  if (s.includes("base") || s === "8453" || s === "84532") return "BASE";
+  if (s.includes("arb") || s === "42161" || s === "421614") return "ARB";
+  if (s.includes("poly") || s.includes("amoy") || s.includes("matic") || s === "137" || s === "80002") return "MATIC";
+  if (s.includes("avax") || s.includes("fuji") || s === "43114" || s === "43113") return "AVAX";
+  if (s.includes("opt") || s === "10" || s === "11155420") return "OP";
+  if (s.includes("arc")) return "ARC";
+  return s.toUpperCase();
+}
+
 export default function UserTransactionsPage() {
   const router = useRouter();
   const { theme } = useTheme();
@@ -411,22 +425,26 @@ export default function UserTransactionsPage() {
       let status = "CONFIRMED";
 
       if (isCctp) {
+        const isConfirmed = d.status === "completed" || Boolean(d.mintTxHash);
+        status = isConfirmed ? "CONFIRMED" : d.status === "failed" ? "FAILED" : "PENDING";
         if (isWithdrawal) {
-          name = `CCTP Send to ${d.destName || "External Chain"}`;
-          detail = d.status === "completed"
-            ? `Withdrawal confirmed`
+          const destAbbr = formatChainAbbr(d.destName || d.destinationChainId);
+          const target = d.toAddress ? formatAddress(d.toAddress) : "";
+          name = target ? `Sent to ${target} ${destAbbr}`.trim() : `Sent to ${d.destName || "External Chain"}`;
+          detail = isConfirmed
+            ? `Withdrawal confirmed • ${d.destName || "External Chain"}`
             : d.status === "failed"
-            ? `Withdrawal failed`
-            : `CCTP Send to ${d.destName || "External Chain"} • Estimated arrival ~15 mins`;
-          status = d.status === "completed" ? "CONFIRMED" : d.status === "failed" ? "FAILED" : "PENDING";
+            ? "Withdrawal failed"
+            : `Pending relay • ${d.destName || "External Chain"}`;
         } else {
-          name = `CCTP Deposit from ${d.originName || "External Chain"}`;
-          detail = d.status === "completed"
-            ? `Deposit confirmed`
+          const originAbbr = formatChainAbbr(d.originName || d.originChainId);
+          const origin = d.fromAddress && d.fromAddress !== "0x0000000000000000000000000000000000000000" ? formatAddress(d.fromAddress) : "";
+          name = origin ? `Deposit from ${origin} ${originAbbr}`.trim() : `Deposit from ${d.originName || "External Chain"}`;
+          detail = isConfirmed
+            ? `Deposit confirmed • ${d.originName || "External Chain"}`
             : d.status === "failed"
-            ? `Deposit failed`
-            : `CCTP Deposit from ${d.originName || "External Chain"} • Estimated arrival ~15 mins`;
-          status = d.status === "completed" ? "CONFIRMED" : d.status === "failed" ? "FAILED" : "PENDING";
+            ? "Deposit failed"
+            : `Pending arrival • ${d.originName || "External Chain"}`;
         }
       }
 
@@ -602,9 +620,6 @@ export default function UserTransactionsPage() {
           </div>
 
           <div className="flex items-center gap-2 self-start sm:self-auto">
-            <span className="rounded-full bg-[#2775CA]/10 px-3.5 py-1 text-xs font-bold text-[#2775CA] border border-[#2775CA]/20">
-              {detectedCurrency.code} Rate Active
-            </span>
             <button
               type="button"
               onClick={loadData}
@@ -891,11 +906,11 @@ export default function UserTransactionsPage() {
                               ) : tx.kind === "recurring" ? (
                                 <Shield className="h-4 w-4 text-[#2775CA]" />
                               ) : tx.kind === "withdrawals" ? (
-                                <ArrowDownToLine className="h-4 w-4 text-amber-500" />
-                              ) : tx.detail.toLowerCase().includes("deposit") ? (
+                                <ArrowUpRight className="h-4 w-4 text-amber-500" />
+                              ) : tx.detail.toLowerCase().includes("deposit") || tx.incoming ? (
                                 <ArrowDownToLine className="h-4 w-4 text-emerald-500" />
                               ) : tx.kind === "transfers" ? (
-                                <User className="h-4 w-4 text-sky-500" />
+                                <ArrowUpRight className="h-4 w-4 text-sky-500" />
                               ) : (
                                 <CreditCard className="h-4 w-4 text-purple-500" />
                               )}
@@ -978,8 +993,8 @@ export default function UserTransactionsPage() {
                           ) : tx.kind === "recurring" ? (
                             <Shield className="h-4 w-4 text-[#2775CA]" />
                           ) : tx.kind === "withdrawals" ? (
-                            <ArrowDownToLine className="h-4 w-4 text-amber-500" />
-                          ) : tx.detail.toLowerCase().includes("deposit") ? (
+                            <ArrowUpRight className="h-4 w-4 text-amber-500" />
+                          ) : tx.detail.toLowerCase().includes("deposit") || tx.incoming ? (
                             <ArrowDownToLine className="h-4 w-4 text-emerald-500" />
                           ) : (
                             <CreditCard className="h-4 w-4 text-purple-500" />

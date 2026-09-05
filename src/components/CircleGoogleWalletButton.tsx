@@ -295,6 +295,8 @@ export default function CircleGoogleWalletButton({ onSuccess, variant = "full", 
                         : `/signup?email=${encodeURIComponent(event.data.data.email || "")}`;
                     window.location.href = destination;
                 }
+            } else if (event.data?.type === "GOOGLE_AUTH_ERROR") {
+                failWith(event.data.error || "Continue with Google failed.");
             }
         };
 

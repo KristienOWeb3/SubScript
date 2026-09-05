@@ -173,7 +173,7 @@ export const metadata: Metadata = {
         statusBarStyle: "black-translucent",
     },
     title: {
-        default: "SubScript | Every way money moves for your business, settled in $USDC",
+        default: "SubScript | Every way money moves for you and your business, settled in $USDC",
         template: "%s | SubScript",
     },
     description: siteDescription,
