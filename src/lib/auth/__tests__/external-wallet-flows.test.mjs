@@ -80,3 +80,17 @@ test("external subscription tx verification resets lease on unconfirmed transact
     assert.match(route, /leaseExpiresAt:\s*null/);
     assert.match(route, /status:\s*["']PREPARED["']/);
 });
+
+test("circle google wallet complete rejects wallet-only email accounts to prevent duplicate accounts", () => {
+    const route = source("src/app/api/auth/circle/wallet/complete/route.ts");
+
+    /* Verifies imports and usage of unified account email binding helper */
+    assert.match(route, /from "@\/lib\/auth\/accountEmail"/);
+    assert.match(route, /findAccountEmailBinding/);
+    assert.match(route, /isWalletOnlyEmailBinding/);
+
+    /* Enforces 409 refusal when email belongs to an external wallet-only account */
+    assert.match(route, /status:\s*409/);
+    assert.match(route, /This email is linked to a wallet-only SubScript account\. Connect that wallet to sign in\./);
+});
+
