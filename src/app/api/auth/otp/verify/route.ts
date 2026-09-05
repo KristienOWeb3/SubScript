@@ -1,4 +1,4 @@
-import { NextResponse, after } from "next/server";
+import { NextResponse } from "next/server";
 import { provisionEmbeddedWallet } from "@/lib/custody/provision";
 import { sanitizeInput } from "@/utils/security";
 import { getAccountRole } from "@/lib/accounts/roles";
@@ -16,7 +16,6 @@ import {
 import { setSessionCookie } from "@/lib/authCookies";
 import { ensureDefaultAliasFromEmail } from "@/lib/auth/defaultAlias";
 import { createSessionToken } from "@/lib/auth";
-import { notifySignInAlert, SIGN_IN_PROVIDERS } from "@/lib/email/signInContext";
 
 function hashOtp(email: string, code: string) {
     const secret = process.env.OTP_SECRET || process.env.JWT_SECRET;
@@ -270,16 +269,6 @@ export async function POST(request: Request) {
         });
 
         setSessionCookie(response, request, jwt, expiresAt);
-
-        /* Tell the account holder their account was just accessed. The email-code path alerts too,
-           even though the code went to this same mailbox: a forwarded or phished code still mints
-           a real session, and this email is the only place the device and the city are ever put in
-           front of the person who owns the account. Fired from after() so a mail problem can never
-           cost someone a sign-in that already worked. */
-        after(() => notifySignInAlert(request, {
-            walletAddress,
-            provider: SIGN_IN_PROVIDERS.emailCode,
-        }));
 
         return response;
     } catch (err: any) {

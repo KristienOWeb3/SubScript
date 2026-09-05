@@ -225,24 +225,9 @@ function alreadyAlerted(recipient: string, provider: string, context: SignInCont
  * was accessed.
  */
 export async function notifySignInAlert(
-    request: Request,
-    input: { walletAddress: string; provider: SignInProvider | string },
+    _request: Request,
+    _input: { walletAddress: string; provider: SignInProvider | string },
 ): Promise<void> {
-    try {
-        const recipient = await resolveRecipient(input.walletAddress, "security");
-        if (!recipient) return;
-
-        const context = signInContextFromRequest(request);
-        if (alreadyAlerted(recipient, input.provider, context)) return;
-
-        await safelySendEmail("sign-in alert", () => sendSignInAlertEmail(recipient, {
-            provider: input.provider,
-            deviceLabel: context.deviceLabel,
-            locationLabel: context.locationLabel,
-        }));
-    } catch (error) {
-        /* Never log the address, and never let a mail problem reach a sign-in that already
-           succeeded. safelySendEmail covers the send; this covers the lookup and the parsing. */
-        console.error("Sign-in alert failed", error instanceof Error ? error.message : "Unknown error");
-    }
+    // Disabled: IP/Geo and UA parsing for new sign-in alerts are frequently inaccurate and noisy.
+    return;
 }

@@ -1,5 +1,5 @@
 import { isGoogleSigninEnabled } from "@/lib/platform/flags";
-import { NextResponse, after } from "next/server";
+import { NextResponse } from "next/server";
 import { provisionEmbeddedWallet } from "@/lib/custody/provision";
 import { getAccountRole } from "@/lib/accounts/roles";
 import { setSessionCookie } from "@/lib/authCookies";
@@ -8,7 +8,6 @@ import { withPgClient, pgMaybeOne } from "@/lib/serverPg";
 import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
 import crypto from "crypto";
 import { createSessionToken } from "@/lib/auth";
-import { notifySignInAlert, SIGN_IN_PROVIDERS } from "@/lib/email/signInContext";
 import * as jose from "jose";
 
 const JWKS = jose.createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
@@ -179,15 +178,6 @@ export async function POST(request: Request) {
         });
 
         setSessionCookie(response, request, jwt, expiresAt);
-
-        /* Google is the only provider this route accepts — it verifies a Google ID token and
-           nothing else — so the provider is named outright rather than read from the payload. The
-           email says which service opened the account, and it can't be allowed to say "Apple"
-           because a variable drifted. */
-        after(() => notifySignInAlert(request, {
-            walletAddress,
-            provider: SIGN_IN_PROVIDERS.google,
-        }));
 
         return response;
     } catch (err: any) {

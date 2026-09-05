@@ -55,14 +55,16 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
 
     // Strategy 1: Arcscan Explorer API (Fast, indexed, historical)
     try {
-        const apiUrl = `${explorerBaseUrl}/api?module=account&action=tokentx&address=${normalizedWallet}&contractaddress=${targetContract}&page=1&offset=50&sort=desc`;
-        const res = await fetch(apiUrl, {
-            signal: AbortSignal.timeout(6000),
-            headers: { Accept: "application/json" },
-        });
+        const tokenTxUrl = `${explorerBaseUrl}/api?module=account&action=tokentx&address=${normalizedWallet}&contractaddress=${targetContract}&page=1&offset=50&sort=desc`;
+        const txListUrl = `${explorerBaseUrl}/api?module=account&action=txlist&address=${normalizedWallet}&page=1&offset=50&sort=desc`;
 
-        if (res.ok) {
-            const data = await res.json();
+        const [tokenRes, txListRes] = await Promise.allSettled([
+            fetch(tokenTxUrl, { signal: AbortSignal.timeout(6000), headers: { Accept: "application/json" } }),
+            fetch(txListUrl, { signal: AbortSignal.timeout(6000), headers: { Accept: "application/json" } }),
+        ]);
+
+        if (tokenRes.status === "fulfilled" && tokenRes.value.ok) {
+            const data = await tokenRes.value.json().catch(() => null);
             if (data && (data.status === "1" || Array.isArray(data.result))) {
                 const results = Array.isArray(data.result) ? data.result : [];
                 for (const item of results) {
@@ -106,6 +108,68 @@ export async function fetchArcUsdcDeposits(walletAddress: string): Promise<ArcDe
                             fromAddress: itemFrom,
                             toAddress: itemTo,
                             amountUsdc: itemValueStr,
+                            amountFormatted,
+                            timestamp: timeMs,
+                            blockNumber: blockNum,
+                            status: "COMPLETED",
+                            senderName: null,
+                            receiverName: null,
+                            tokenSymbol: "USDC",
+                            tokenAddress: targetContract,
+                            chainId,
+                            network: networkName,
+                            direction,
+                            incoming,
+                        });
+                    }
+                }
+                fetchSucceeded = true;
+            }
+        }
+
+        // Parse native gas transactions (txlist) from external wallets
+        if (txListRes.status === "fulfilled" && txListRes.value.ok) {
+            const data = await txListRes.value.json().catch(() => null);
+            if (data && (data.status === "1" || Array.isArray(data.result))) {
+                const results = Array.isArray(data.result) ? data.result : [];
+                for (const item of results) {
+                    if (item.isError === "1" || item.txreceipt_status === "0") continue;
+                    const itemTo = String(item.to || "").toLowerCase();
+                    const itemFrom = String(item.from || "").toLowerCase();
+                    const itemValueStr = String(item.value || "0");
+
+                    if (itemTo !== normalizedWallet && itemFrom !== normalizedWallet) continue;
+                    if (itemFrom === itemTo) continue;
+
+                    let weiVal = 0n;
+                    try {
+                        weiVal = BigInt(itemValueStr);
+                        if (weiVal <= 0n) continue;
+                    } catch {
+                        continue;
+                    }
+
+                    // On Arc, native gas is USDC with 18 decimals at RPC/EVM level. Convert 18 decimals to 6-decimal micros.
+                    const microsBigInt = weiVal / 10n ** 12n;
+                    if (microsBigInt <= 0n) continue;
+
+                    const incoming = itemTo === normalizedWallet;
+                    const direction: "inbound_deposit" | "outbound_send" = incoming ? "inbound_deposit" : "outbound_send";
+
+                    const timeMs = Number(item.timeStamp) * 1000 || Date.now();
+                    const blockNum = Number(item.blockNumber) || 0;
+                    const whole = microsBigInt / 1_000_000n;
+                    const fraction = (microsBigInt % 1_000_000n).toString().padStart(6, "0").slice(0, 2);
+                    const amountFormatted = `${whole.toString()}.${fraction}`;
+
+                    const depositId = `arc-${direction}-${item.hash}`;
+                    if (!deposits.some((d) => d.id === depositId || (d.txHash.toLowerCase() === item.hash.toLowerCase() && d.direction === direction))) {
+                        deposits.push({
+                            id: depositId,
+                            txHash: item.hash,
+                            fromAddress: itemFrom,
+                            toAddress: itemTo,
+                            amountUsdc: microsBigInt.toString(),
                             amountFormatted,
                             timestamp: timeMs,
                             blockNumber: blockNum,

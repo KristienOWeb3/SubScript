@@ -614,7 +614,7 @@ export default function DepositModal({
                                                 </div>
                                                 <div className="flex items-center justify-between">
                                                     <p className="text-[11px] leading-relaxed text-[#082824]/75 dark:text-white/75">
-                                                        {bridgeStatus === "detected" && `${originBalance} USDC detected on ${selectedChain.shortName}. The keeper will bridge it automatically on the next tick.`}
+                                                        {bridgeStatus === "detected" && `${originBalance} USDC detected on ${selectedChain.shortName}. it's currently being moved to Arc. ETA: 15 minutes`}
                                                         {bridgeStatus === "bridging" && `Your USDC is being bridged from ${selectedChain.shortName} to Arc via Circle CCTP. This typically takes about 15 minutes.`}
                                                         {bridgeStatus === "completed" && "Your USDC has arrived on Arc and is ready to use."}
                                                         {bridgeStatus === "error" && (bridgeError || "Something went wrong. Please try again.")}

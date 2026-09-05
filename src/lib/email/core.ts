@@ -72,17 +72,41 @@ export const EMAIL_FONT_STACK = "'Outfit','Inter',-apple-system,BlinkMacSystemFo
 
 export function renderEmailLayout(opts: {
     previewText: string;
-    heading: string;
+    heading?: string;
     bodyHtml: string;
     cta?: { label: string; url: string };
+    theme?: "light" | "dark";
 }): string {
+    const isDark = opts.theme === "dark";
     const button = opts.cta
-        ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:28px 0 4px">
-             <tr><td style="border-radius:9999px;background:#00d2b4">
-               <a href="${htmlEscape(opts.cta.url)}" style="display:inline-block;padding:13px 30px;font-family:${EMAIL_FONT_STACK};font-size:14px;font-weight:700;color:#08090a;text-decoration:none;border-radius:9999px">${htmlEscape(opts.cta.label)}</a>
+        ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:28px 0 4px;${isDark ? "width:100%" : ""}">
+             <tr><td align="${isDark ? "center" : "left"}" style="border-radius:9999px;background:#00d2b4">
+               <a href="${htmlEscape(opts.cta.url)}" style="display:inline-block;padding:13px 30px;font-family:${EMAIL_FONT_STACK};font-size:14px;font-weight:700;color:#08090a;text-decoration:none;border-radius:9999px;${isDark ? "width:80%;text-align:center" : ""}">${htmlEscape(opts.cta.label)}</a>
              </td></tr>
            </table>`
         : "";
+
+    const headingHtml = opts.heading
+        ? `<h1 style="margin:0 0 16px;font-family:${EMAIL_FONT_STACK};font-size:22px;font-weight:800;color:${isDark ? "#ffffff" : "#08090a"};letter-spacing:-0.4px">${htmlEscape(opts.heading)}</h1>`
+        : "";
+
+    const headerLogo = isDark
+        ? `<tr><td align="center" style="padding:12px 4px 24px">
+            <table role="presentation" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:8px 24px">
+              <tr><td>
+                <span style="font-family:${EMAIL_FONT_STACK};font-size:20px;font-weight:900;letter-spacing:-0.5px;color:#08090a">Sub<span style="color:#00a892">Script</span></span>
+              </td></tr>
+            </table>
+          </td></tr>`
+        : `<tr><td style="padding:8px 4px 20px">
+            <span style="font-family:${EMAIL_FONT_STACK};font-size:20px;font-weight:800;letter-spacing:-0.5px;color:#ffffff">Sub<span style="color:#00d2b4">Script</span></span>
+          </td></tr>`;
+
+    const cardStyle = isDark
+        ? `background:#12141a;border:1px solid #232732;border-radius:20px;padding:32px 28px`
+        : `background:#ffffff;border-radius:20px;padding:36px 34px`;
+
+    const textColor = isDark ? "#cbd5e1" : "#3a3d44";
 
     return `<!DOCTYPE html>
 <html lang="en"><head>
@@ -94,15 +118,13 @@ export function renderEmailLayout(opts: {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#08090a;padding:32px 16px">
   <tr><td align="center">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%">
-      <tr><td style="padding:8px 4px 20px">
-        <span style="font-family:${EMAIL_FONT_STACK};font-size:20px;font-weight:800;letter-spacing:-0.5px;color:#ffffff">Sub<span style="color:#00d2b4">Script</span></span>
-      </td></tr>
-      <tr><td style="background:#ffffff;border-radius:20px;padding:36px 34px">
-        <h1 style="margin:0 0 16px;font-family:${EMAIL_FONT_STACK};font-size:22px;font-weight:800;color:#08090a;letter-spacing:-0.4px">${htmlEscape(opts.heading)}</h1>
-        <div style="font-family:${EMAIL_FONT_STACK};font-size:15px;line-height:1.6;color:#3a3d44">${opts.bodyHtml}</div>
+      ${headerLogo}
+      <tr><td style="${cardStyle}">
+        ${headingHtml}
+        <div style="font-family:${EMAIL_FONT_STACK};font-size:15px;line-height:1.6;color:${textColor}">${opts.bodyHtml}</div>
         ${button}
       </td></tr>
-      <tr><td style="padding:22px 4px;font-family:${EMAIL_FONT_STACK};font-size:12px;line-height:1.6;color:#6b7280">
+      <tr><td style="padding:22px 4px;font-family:${EMAIL_FONT_STACK};font-size:12px;line-height:1.6;color:#6b7280;text-align:${isDark ? "center" : "left"}">
         Programmable USDC payments on Arc. You're receiving this because your email is linked to a SubScript account.
       </td></tr>
     </table>
@@ -148,12 +170,12 @@ export function configuredSender(category?: EmailCategory) {
             if (category === "transactional") {
                 // Receipts must NEVER come from auth@ or SubScript Auth
                 const user = parsed.user.toLowerCase().startsWith("auth") ? "receipts" : parsed.user;
-                return `SubScript Receipts <${user}@${parsed.domain}>`;
+                return `SubScript <${user}@${parsed.domain}>`;
             }
             if (category === "security") {
                 // Auth codes and sign-in alerts
                 const user = parsed.user.toLowerCase() === "receipts" ? "auth" : parsed.user;
-                return `SubScript Security <${user}@${parsed.domain}>`;
+                return `SubScript Auth <${user}@${parsed.domain}>`;
             }
             if (category === "ops") {
                 const user = (parsed.user.toLowerCase().startsWith("auth") || parsed.user.toLowerCase() === "receipts")
@@ -172,17 +194,17 @@ export function configuredSender(category?: EmailCategory) {
         // Fallback string replacement if sender doesn't match standard address regex
         if (category === "transactional") {
             return sender
-                .replace(/Sub[sS]cript(\s+Auth)?/i, "SubScript Receipts")
+                .replace(/Sub[sS]cript(\s+Auth)?/i, "SubScript")
                 .replace(/auth@/i, "receipts@");
         }
         if (category === "security") {
-            return sender.replace(/Sub[sS]cript(\s+Receipts)?/i, "SubScript Security");
+            return sender.replace(/Sub[sS]cript(\s+Receipts|\s+Security)?/i, "SubScript Auth");
         }
         if (category === "ops") {
-            return sender.replace(/Sub[sS]cript(\s+Auth|\s+Receipts)?/i, "SubScript Ops").replace(/auth@/i, "ops@");
+            return sender.replace(/Sub[sS]cript(\s+Auth|\s+Receipts|\s+Security)?/i, "SubScript Ops").replace(/auth@/i, "ops@");
         }
         if (category === "lifecycle") {
-            return sender.replace(/Sub[sS]cript\s+Auth/i, "SubScript").replace(/auth@/i, "notifications@");
+            return sender.replace(/Sub[sS]cript(\s+Auth|\s+Security)?/i, "SubScript").replace(/auth@/i, "notifications@");
         }
         return sender;
     }
@@ -190,10 +212,10 @@ export function configuredSender(category?: EmailCategory) {
     // 3. Non-production sandbox fallbacks
     if (process.env.NODE_ENV !== "production") {
         if (category === "transactional") {
-            return "SubScript Receipts <onboarding@resend.dev>";
+            return "SubScript <onboarding@resend.dev>";
         }
         if (category === "security") {
-            return "SubScript Security <onboarding@resend.dev>";
+            return "SubScript Auth <onboarding@resend.dev>";
         }
         if (category === "ops") {
             return "SubScript Ops <onboarding@resend.dev>";
@@ -292,11 +314,12 @@ export type WalletEmailPreference = {
 
 export async function getWalletEmailPreference(walletAddress: string) {
     return pgMaybeOne<WalletEmailPreference>(
-        `select embedded.email, coalesce(customer.email_enabled, merchant.email_enabled, true) as email_enabled
-         from user_embedded_wallets embedded
-         left join customers customer on customer.wallet_address = embedded.wallet_address
-         left join merchants merchant on merchant.wallet_address = embedded.wallet_address
-         where embedded.wallet_address = $1
+        `select coalesce(customer.email, embedded.email, merchant.email) as email,
+                coalesce(customer.email_enabled, merchant.email_enabled, true) as email_enabled
+         from (select $1::text as wallet_address) w
+         left join customers customer on lower(customer.wallet_address) = lower(w.wallet_address)
+         left join user_embedded_wallets embedded on lower(embedded.wallet_address) = lower(w.wallet_address)
+         left join merchants merchant on lower(merchant.wallet_address) = lower(w.wallet_address)
          limit 1`,
         [walletAddress.toLowerCase()]
     );
