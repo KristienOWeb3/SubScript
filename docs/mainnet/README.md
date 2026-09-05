@@ -304,8 +304,8 @@ MULTISIG_ADDRESS=0x...
 CIRCLE_ARC_BLOCKCHAIN=ARC
 
 # Database Secrets
-DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:6543/postgres?pgbouncer=true
-DIRECT_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres
+DATABASE_URL=postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT].supabase.co:6543/postgres?pgbouncer=true
+DIRECT_URL=postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT].supabase.co:5432/postgres
 SUPABASE_URL=https://[PROJECT].supabase.co
 SUPABASE_SERVICE_ROLE_KEY=eyJ...
 

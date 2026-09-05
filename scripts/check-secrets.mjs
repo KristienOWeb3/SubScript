@@ -20,6 +20,8 @@ const PLACEHOLDER_MARKERS = [
   "<YOUR-PASSWORD>",
   "YOUR_PASSWORD",
   "YOUR-PASSWORD",
+  "[PASSWORD]",
+  "<PASSWORD>",
   "${",
   "[REDACTED]",
   "<REDACTED>",
