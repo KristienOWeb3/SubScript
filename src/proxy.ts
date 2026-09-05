@@ -360,7 +360,8 @@ export default async function proxy(request: NextRequest) {
         pathname === "/user" || pathname.startsWith("/user/");
     const isPublicCheckoutPath =
         pathname === "/pay" || pathname.startsWith("/pay/") ||
-        pathname === "/receipt" || pathname.startsWith("/receipt/");
+        pathname === "/receipt" || pathname.startsWith("/receipt/") ||
+        pathname === "/subscribe" || pathname.startsWith("/subscribe/");
     const isProductionDomain = host === APEX_HOST
         || host === PUBLIC_HOST
         || isDashboardHost

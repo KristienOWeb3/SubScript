@@ -1,29 +1,35 @@
 # Fulfillment Policy
 
-Last Updated: July 8th, 2026
+Last Updated: September 4th, 2026 · Version 2.4 (Mainnet-Hardened)
 
-Full text: https://www.subscriptonarc.com/fulfillment
+Full text: https://www.subscriptonarc.com/fulfillment — companion policies: [Terms of Service](https://www.subscriptonarc.com/terms), [Refund & Cancellation](https://www.subscriptonarc.com/refunds), [Compliance](https://www.subscriptonarc.com/compliance), [Support](https://www.subscriptonarc.com/support).
 
 ## 1. What SubScript Delivers
 
-SubScript's own services are digital and delivered entirely online: dashboard access, hosted checkout, payment links, subscription billing, prepaid metered vaults, signed webhooks, receipt pages, and the developer API. Nothing SubScript sells ships physically.
+All services offered directly by SubScript are digital and provisioned online: developer APIs, hosted checkout interfaces, payment links, subscription routing, prepaid metered vaults, signed webhooks, and receipt resolvers. Nothing SubScript sells ships physically. For merchant purchases, the merchant is the sole seller and Merchant of Record (MoR) responsible for fulfillment.
 
 ## 2. Activation Timing
 
-Account access is provisioned immediately at sign-up; checkout pages, links, receipts, and the API are available as soon as created. SubScript Premium activates automatically when its payment confirms on-chain (typically seconds to minutes). If a confirmed Premium payment has not activated within one hour, contact compliance@subscriptonarc.com with the transaction hash.
+- **Account Workspaces & APIs:** Available immediately upon wallet connection or email OTP authentication.
+- **SubScript Premium:** Activates automatically upon on-chain transaction confirmation on Arc (typically 2 to 10 seconds). If not updated within 30 minutes, report to compliance@subscriptonarc.com with the transaction hash for automated reconciliation.
 
-## 3. Renewals and Receipts
+## 3. Webhook Delivery Guarantees
 
-Recurring charges execute automatically per billing period against the bounded authorization the user approved; each successful renewal produces an in-app receipt with a verifiable transaction link. Failed renewals notify the user, pause entitlements, and stop after repeated failures rather than piling up charge attempts.
+Signed webhooks (`x-subscript-signature` HMAC SHA-256) are dispatched immediately upon on-chain settlement. If a merchant's server is unreachable or non-2xx, our delivery worker retries automatically with exponential backoff and jitter over a 72-hour window. Live logs and manual replay are available in the merchant dashboard.
 
-## 4. Merchant Purchases
+## 4. Subscription Renewals & Dunning
 
-When a customer pays a merchant through SubScript, SubScript's role completes when the payment settles on-chain and the merchant receives a signed webhook carrying the Checkout Intent ID. Delivering the purchased goods or services is the merchant's obligation on the merchant's stated timeline; the SubScript receipt and on-chain transaction are the customer's proof of payment. Repeated non-fulfillment of verified payments violates the Terms of Service — report to compliance@subscriptonarc.com.
+Recurring charges execute automatically per billing interval against pre-authorized allowances. If a renewal fails due to insufficient balance, a 3-day dunning grace period triggers with daily retries and consumer notices before access is paused. No punitive overdraft penalties apply.
 
-## 5. Vault Settlement
+## 5. Prepaid Metered Vault Settlement
 
-Vault services activate when escrow reaches the merchant's required commitment; settlement at cycle end draws metered usage and automatically refunds the remainder. An unsettled matured cycle becomes reclaimable by the user after the grace window.
+Vault services activate upon escrow deposit in `SubScriptVault`. Settlement draws only verified usage at cycle end and automatically refunds all unconsumed escrow. If a cycle is abandoned, `reclaimMaturedEscrow()` allows permissionless capital recovery.
 
-## 6. Beta Availability
+## 6. Mainnet Availability & Force Majeure
 
-SubScript is in public beta on the Arc testnet: high availability is targeted but not guaranteed, contracts may be redeployed, and data may be reset while hardening for mainnet. Breaking changes are announced in the dashboard or by email where possible.
+SubScript targets 99.9% uptime on Arc Mainnet (`5042001`). SubScript is not liable for fulfillment delays arising from network-wide consensus pauses, major RPC provider outages, or Circle CCTP attestation service maintenance.
+
+## 7. Contact & Non-Delivery Reports
+
+compliance@subscriptonarc.com with your account address and receipt identifier.
+

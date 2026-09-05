@@ -8,6 +8,19 @@ type PageProps = {
     params: Promise<{ planId: string }>;
 };
 
+function validateStoredReturnUrl(value: unknown): string | undefined {
+    if (typeof value !== "string" || value.length > 2048) return undefined;
+    try {
+        const url = new URL(value);
+        const isLoopback = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+        return url.protocol === "https:" || (isLoopback && url.protocol === "http:")
+            ? url.toString()
+            : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
 function normalizePublicUrl(value: string | undefined) {
     if (!value) return "";
     try {
@@ -52,8 +65,8 @@ async function getPlan(planId: string) {
             amount_usdc: checkout.amount_usdc,
             period_seconds: subscriptionCheckoutPeriod(meta).toString(),
             min_commitment_seconds: String(meta.minCommitmentSeconds || 0),
-            success_url: meta.successUrl,
-            cancel_url: meta.cancelUrl,
+            success_url: validateStoredReturnUrl(meta.successUrl),
+            cancel_url: validateStoredReturnUrl(meta.cancelUrl),
             active: true,
             checkout_session_id: checkout.id,
         } as typeof plan & { checkout_session_id: string };

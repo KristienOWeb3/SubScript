@@ -5,75 +5,102 @@ import { ArrowLeft, Shield, ArrowRight } from "@/components/icons";
 
 const sections = [
   {
-    title: "1. Privacy Principles",
+    title: "1. Core Privacy Architecture & Data Minimization",
     body: [
-      "SubScript is built to reduce Web3 friction while keeping payment state transparent enough to verify. We collect the minimum off-chain data needed to operate accounts, receipts, webhooks, support, and notifications.",
-      "Some payment data is written to public blockchains. Public blockchain data is permanent, globally visible, and not fully controlled by SubScript.",
+      "SubScript Protocol ('SubScript', 'we', 'us', or 'our') is architected upon principles of privacy-by-design and rigorous data minimization. We collect only the off-chain information strictly required to authenticate accounts, coordinate smart contract subscription allowances, deliver verifiable receipts, route signed webhooks, and satisfy statutory anti-financial crime obligations.",
+      "We never sell, rent, or monetize your personal information. We never construct cross-context behavioral advertising profiles from your payment history, receipt data, or wallet transactions.",
     ],
   },
   {
-    title: "2. Account and Wallet Information",
+    title: "2. Lawful Bases for Processing (GDPR Article 6)",
     body: [
-      "If you sign up with an external wallet, we may store your wallet address, selected role, account settings, alias, linked email, and notification preferences.",
-      "If you sign up with email onboarding, SubScript provisions an embedded wallet through Circle developer-controlled MPC wallet infrastructure. Key material for these embedded wallets is managed by SubScript's custody provider so the platform can execute the payment actions you request. SubScript may store the resulting wallet address, login email, Circle wallet references, and account role. We never store seed phrases.",
-      "If you link an email to a wallet account, that email is used for notifications and account communication. Linking an email to a wallet does not by itself mean SubScript can recover an external self-custody wallet.",
+      "Under the European Union General Data Protection Regulation (Regulation (EU) 2016/679) and UK GDPR, SubScript processes off-chain personal data pursuant to the following lawful bases:",
+      "(a) Contractual Necessity (Art. 6(1)(b)): Processing wallet addresses, Checkout Intent IDs, and subscription states necessary to execute transactions you authorize under our Terms of Service;",
+      "(b) Legal Obligation (Art. 6(1)(c)): Retaining transaction audit logs, sanctions screening records, and tax-relevant payment references to comply with anti-money laundering (AML), counter-terrorist financing (CFT), and financial reporting statutes;",
+      "(c) Legitimate Interests (Art. 6(1)(f)): Processing technical telemetry, IP address lookups, rate-limiting counters, and anomaly logs to secure infrastructure, mitigate fraud, and prevent distributed denial-of-service (DDoS) attacks;",
+      "(d) Consent (Art. 6(1)(a)): Where you explicitly opt in to optional marketing communications or submit voluntary feedback.",
     ],
   },
   {
-    title: "3. Payment, Receipt, and Memo Data",
+    title: "3. Account and Cryptographic Wallet Information",
     body: [
-      "SubScript may store Checkout Intent IDs, payment link IDs, receipt IDs, merchant references, payer references, transaction hashes, memo payloads, payment status, amount, token, timestamp, and webhook delivery status.",
-      "Receipt pages are designed to be human-readable. By default, receipt visibility is intended for the payer, merchant, and SubScript.",
-      "Arc Network memo data and transaction hashes are recorded on-chain and may be public or indexable by explorers depending on network execution.",
+      "External Self-Custodial Wallets: When connecting an external Web3 wallet (MetaMask, Rabby, Phantom, OKX Wallet, Coinbase Wallet), we record your public Ethereum address, role selection (USER or ENTERPRISE), account preferences, and optional notification email. We never access, handle, or store your private keys, seed phrases, or external passwords.",
+      "Embedded MPC Operating Accounts: When onboarding via email or social authentication, an embedded multi-party computation (MPC) wallet is provisioned via Circle developer-controlled wallet infrastructure. SubScript stores the resulting public address, linked email address, and opaque Circle wallet identifiers. Key material is mathematically distributed between Circle's hardware security modules (HSMs) and browser-scoped session storage. SubScript cannot access plaintext private keys.",
+      "Sign-In with Ethereum (SIWE): Authenticated sessions are established via cryptographically signed EIP-4361 statements. Nonces expire after 10 minutes and session tokens are stored in secure, HTTP-only, SameSite cookies.",
     ],
   },
   {
-    title: "4. Merchant Data and Webhooks",
+    title: "4. Public Blockchain Immutability vs. Data Privacy (GDPR Article 17)",
     body: [
-      "For merchants, we may store API key metadata, webhook endpoints, webhook secrets, DNS aliases, branding, payment links, pricing configuration, and integration settings.",
-      "Webhook payloads include intent IDs, payment IDs, receipt IDs, amount paid, status, and transaction references so merchants can fulfill purchases in their own systems.",
+      "Crucial Notice on Blockchain Permanence: SubScript is built natively upon the Arc Network, Ethereum, and Solana. When you broadcast a transaction or authorize a subscription, certain metadata—including your public wallet address, transaction hash, token amount, timestamp, smart contract interaction, and Arc transaction memo—is permanently etched into decentralized public ledgers.",
+      "Public blockchain records are decentralized, mathematically immutable, and distributed across global independent validator nodes. SubScript possesses no technical or administrative capacity to alter, erase, overwrite, or delete records on the blockchain.",
+      "By interacting with SubScript, you expressly acknowledge and agree that your statutory 'Right to Erasure' (GDPR Art. 17 / CCPA) applies exclusively to mutable off-chain databases managed by SubScript, and cannot extend to immutable public blockchain ledgers.",
     ],
   },
   {
-    title: "5. Identity Verification",
+    title: "5. KYC & Business Verification Privacy Guardrails",
     body: [
-      "If you start KYC or business verification, SubScript stores your wallet address, account type, country code, consent record, an opaque provider case reference, review status, controlled reason code, and lifecycle timestamps.",
-      "Identity documents, selfies, biometric data, full government identifiers, legal names, dates of birth, and provider screening evidence must be submitted directly to the configured verification provider. SubScript does not store raw identity documents on its own servers.",
-      "The verification provider processes identity evidence under its own privacy and retention terms. SubScript retains minimal case and audit records as needed for security, fraud prevention, compliance, and financial audit obligations.",
+      "Zero Raw PII Storage Policy: SubScript intentionally does NOT store government IDs, passport photos, driver's licenses, biometric selfies, national identification numbers, full legal names, or raw credit scores on our servers.",
+      "When identity verification (KYC/KYB) is required for enterprise merchants or elevated tiers, applicants submit documents directly through our licensed, SOC2-compliant verification partner's hosted portal.",
+      "SubScript stores only an opaque provider case reference, account role, country code, submission timestamp, consent version, and normalized review status (PENDING, APPROVED, REJECTED, EXPIRED). This prevents sensitive personal identification documents from being exposed in protocol databases.",
     ],
   },
   {
-    title: "6. Cookies and Session Data",
+    title: "6. Payment, Checkout Intent & Webhook Data",
     body: [
-      "SubScript uses cookies or similar storage to keep users signed in, preserve dashboard sessions, support embedded wallet login flows, and protect API requests.",
-      "Circle wallet session material generated by the frontend SDK is browser-scoped session material. It is never treated as a global secret and is never shared across users.",
+      "To coordinate commerce, SubScript processes Checkout Intent IDs, payment link IDs, receipt identifiers, merchant counterparty references, amounts, and settlement status.",
+      "Receipt Visibility: Human-readable receipt summaries are accessible to the paying wallet and the designated merchant. Receipts do not expose the payer's physical address, bank routing details, or private credentials.",
+      "Merchant Webhook Deliveries: Outbound webhooks sent to merchant endpoints carry transaction hashes, intent IDs, and payment status. Webhooks are signed with an HMAC SHA-256 signature to guarantee authenticity.",
     ],
   },
   {
-    title: "7. Emails and Notifications",
+    title: "7. Cookies, Local Storage & Session Hygiene",
     body: [
-      "If you provide an email, we use it for account notifications, sign-up verification, payment receipts, failed payment alerts, subscription renewal notices, and security alerts.",
-      "We use trusted email delivery providers to deliver these messages. Those providers process only the metadata needed to ensure reliable delivery.",
+      "Strictly Necessary Cookies: SubScript uses essential session cookies to maintain authenticated logins, verify CSRF tokens, and prevent session hijacking. These cannot be disabled.",
+      "Browser Local Storage: Scoped local storage keys are used to preserve UI theme preferences and temporary Circle MPC client execution tokens. We do not use third-party cross-site tracking cookies.",
     ],
   },
   {
-    title: "8. Analytics, Security, and Logs",
+    title: "8. Subprocessors & Infrastructure Partners",
     body: [
-      "We process limited technical data such as IP-derived region, device and browser information, request timestamps, rate-limit events, errors, and security logs to protect the service and improve reliability.",
-      "We do not sell personal information. We do not use private payment receipt data for advertising profiles.",
+      "SubScript engages trusted third-party cloud infrastructure providers bound by rigorous data protection agreements (DPAs):",
+      "(a) Circle Internet Financial: Embedded MPC custody and Cross-Chain Transfer Protocol (CCTP) infrastructure;",
+      "(b) Supabase Inc.: Encrypted PostgreSQL database hosting with Row-Level Security (RLS) and point-in-time recovery;",
+      "(c) Vercel Inc.: Serverless edge computing and web application hosting;",
+      "(d) Upstash Inc.: In-memory Redis caching for IP rate limiting and replay prevention;",
+      "(e) Resend Inc.: Transactional email delivery for receipts, billing notifications, and security alerts.",
     ],
   },
   {
-    title: "9. Your Choices and Data Rights",
+    title: "9. International Data Transfers & Standard Contractual Clauses",
     body: [
-      "You may request access, correction, export, or deletion of off-chain account data by contacting SubScript. Accounts scheduled for deletion are permanently purged following our automated 30-day statutory retention sweep.",
-      "We cannot delete or alter public blockchain records, third-party explorer records, or transaction data already propagated across decentralized networks.",
+      "Your off-chain account information may be transferred to, stored, and processed in the United States and other jurisdictions where SubScript and our subprocessors maintain infrastructure.",
+      "For transfers of personal data outside the European Economic Area (EEA), United Kingdom, or Switzerland, SubScript relies on Standard Contractual Clauses (SCCs) adopted by the European Commission or adequacy decisions under the EU-U.S. Data Privacy Framework to safeguard your data.",
     ],
   },
   {
-    title: "10. Contact Us",
+    title: "10. Data Retention & Automated Statutory 30-Day Purge",
     body: [
-      "For privacy requests, reach out to compliance@subscriptonarc.com. Include the email or wallet address connected to the request so we can locate the relevant account records.",
+      "We retain off-chain account data only for as long as your account remains active or as required to fulfill tax, legal, accounting, and anti-fraud statutory obligations.",
+      "Automated Statutory Deletion: When an account requests deletion via our settings portal or privacy desk, the account enters a 30-day soft-delete grace period. Following the expiration of 30 days, our automated daily sweeper (/api/cron/gdpr-hard-delete) executes a permanent, cryptographic purge of all off-chain profile data, linked emails, and session records.",
+    ],
+  },
+  {
+    title: "11. Your Data Protection Rights (GDPR, UK GDPR & CCPA/CPRA)",
+    body: [
+      "Depending on your jurisdiction, you are entitled to exercise the following fundamental privacy rights:",
+      "(a) Right to Access & Portability: You may request a complete, machine-readable export of all off-chain data linked to your account via our automated endpoint (/api/user/account/gdpr-export);",
+      "(b) Right to Rectification: You may update or correct inaccurate account profile details or linked email addresses at any time in your dashboard;",
+      "(c) Right to Erasure ('Right to be Forgotten'): You may request full permanent deletion of your off-chain database records subject to the 30-day purge cycle;",
+      "(d) Right to Object & Restrict Processing: You have the right to object to or restrict certain non-essential data processing activities;",
+      "(e) California Rights (CCPA/CPRA): California residents have the right to know what personal information is collected, request deletion, and opt out of any sale or sharing of personal data (SubScript does not sell personal data).",
+    ],
+  },
+  {
+    title: "12. Data Protection Officer (DPO) & Regulatory Contact",
+    body: [
+      "If you have inquiries regarding this Privacy Policy, wish to exercise statutory data rights, or suspect a data incident, contact our Data Protection and Compliance Desk at: compliance@subscriptonarc.com.",
+      "European Union residents also possess the right to file a complaint directly with their local Data Protection Authority (such as the Irish Data Protection Commission or CNIL) if they believe their personal data has been processed unlawfully.",
     ],
   },
 ];
@@ -126,19 +153,22 @@ export default function PrivacyPolicy() {
           </Link>
 
           <span className="block text-[11px] font-bold uppercase tracking-wider text-[#2775CA]">
-            Data Protection & Privacy
+            Data Protection & Global Privacy
           </span>
           <h1 className="mt-1 text-3xl sm:text-4xl font-black tracking-tight text-[#111827]">
             Privacy Policy
           </h1>
           <p className="mt-2 text-xs text-black/50 font-mono">
-            Last Updated: September 2nd, 2026
+            Last Updated: September 4th, 2026 · Version 2.4 (GDPR & CCPA Compliant)
           </p>
 
-          <div className="mt-4 rounded-2xl border border-black/10 bg-black/[0.02] p-4 text-xs leading-relaxed text-black/70">
-            <p className="font-semibold text-[#111827] mb-0.5">Privacy Commitment</p>
+          <div className="mt-4 rounded-2xl border border-black/10 bg-black/[0.02] p-4 text-xs leading-relaxed text-black/70 space-y-2">
+            <div className="flex items-center gap-2 font-bold text-sm text-[#111827]">
+              <Shield className="w-4 h-4 text-[#2775CA]" />
+              <span>Data Minimization & Sovereign Privacy Standard</span>
+            </div>
             <p>
-              SubScript operates on principles of data minimization. We collect only the data necessary to execute payments, deliver receipts, enforce security, and meet statutory regulatory obligations.
+              SubScript enforces strict data minimization. We collect only the data necessary to execute payments, deliver receipts, enforce security, and fulfill legal requirements. On-chain transaction records are permanent by blockchain design; all off-chain data is protected under modern GDPR/CCPA standards with automated 30-day statutory purge lifecycles.
             </p>
           </div>
         </div>
@@ -148,7 +178,8 @@ export default function PrivacyPolicy() {
           {sections.map((section, index) => (
             <section
               key={section.title}
-              className="rounded-2xl border border-black/10 bg-white/40 p-6 sm:p-8 shadow-sm space-y-3 transition-shadow hover:shadow-md"
+              id={`section-${index + 1}`}
+              className="rounded-2xl border border-black/10 bg-white/40 p-6 sm:p-8 shadow-sm space-y-3 transition-shadow hover:shadow-md scroll-mt-24"
             >
               <div className="flex items-center gap-2.5">
                 <div className="w-6 h-6 rounded-lg bg-[#2775CA]/10 flex items-center justify-center text-[#2775CA] shrink-0">
@@ -158,7 +189,7 @@ export default function PrivacyPolicy() {
                   {section.title}
                 </h2>
               </div>
-              <div className="space-y-2.5 text-xs sm:text-sm text-black/70 leading-relaxed pl-8">
+              <div className="space-y-3 text-xs sm:text-sm text-black/75 leading-relaxed pl-8">
                 {section.body.map((paragraph, pIndex) => (
                   <p key={pIndex}>{paragraph}</p>
                 ))}
@@ -173,7 +204,7 @@ export default function PrivacyPolicy() {
           <p className="text-xs text-white/85 max-w-md mx-auto leading-relaxed">
             Our compliance team is ready to answer questions regarding account security, encryption, and GDPR rights.
           </p>
-          <div className="pt-2">
+          <div className="pt-2 flex flex-wrap justify-center gap-3">
             <a
               href="mailto:compliance@subscriptonarc.com"
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#FFFFF0] text-[#2775CA] font-bold text-xs uppercase tracking-wider rounded-xl shadow-sm hover:bg-white transition-all active:scale-[0.99]"
@@ -181,6 +212,12 @@ export default function PrivacyPolicy() {
               <span>Contact Compliance</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </a>
+            <Link
+              href="/compliance"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs uppercase tracking-wider rounded-xl border border-white/20 transition-all"
+            >
+              <span>Compliance Center</span>
+            </Link>
           </div>
         </div>
       </div>
@@ -188,7 +225,7 @@ export default function PrivacyPolicy() {
       {/* Footer */}
       <footer className="border-t border-black/10 bg-[#FFFFF0] py-10 mt-12">
         <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 px-6 text-xs text-black/50 sm:flex-row">
-          <span>© 2026 SubScript. All rights reserved.</span>
+          <span>© 2026 SubScript Protocol. All rights reserved.</span>
           <div className="flex flex-wrap justify-center gap-5">
             <Link href="/terms" className="hover:text-black transition-colors">
               Terms of Service
@@ -201,6 +238,9 @@ export default function PrivacyPolicy() {
             </Link>
             <Link href="/fulfillment" className="hover:text-black transition-colors">
               Fulfillment Policy
+            </Link>
+            <Link href="/compliance" className="hover:text-black transition-colors">
+              Compliance
             </Link>
             <Link href="/support" className="hover:text-black transition-colors">
               Support

@@ -709,7 +709,7 @@ export default function SubscribeClient({
                             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#1f62ab]">Recurring authorization</p>
                             <h3 id="subscription-review-title" className="mt-1 text-xl font-black text-[#111827]">{isUpgrade ? "Review upgrade" : "Review subscription"}</h3>
                         </div>
-                        {plan.cancelUrl && !result && (
+                        {plan.cancelUrl && !result && /^https?:\/\//i.test(plan.cancelUrl) && (
                             <a href={plan.cancelUrl} className="block text-center text-xs text-black/60 underline hover:text-[#111827]">Cancel and return to {getHostname(plan.cancelUrl)}</a>
                         )}
                         <div className="space-y-3 rounded-2xl border border-black/10 bg-[#f8fafc] p-4 text-xs">

@@ -227,3 +227,49 @@ test("raw Postgres access uses a bounded verified-TLS pool", async () => {
     assert.match(pg, /rejectUnauthorized: true/);
     assert.doesNotMatch(pg, /new Client/);
 });
+
+test("checkout edge proxy allows /subscribe without corrupting path into /pay/subscribe", async () => {
+    const proxy = await source("src/proxy.ts");
+    assert.match(proxy, /pathname === "\/subscribe" \|\| pathname\.startsWith\("\/subscribe\/"\)/);
+    assert.match(proxy, /isPublicCheckoutPath =[\s\S]*?\/subscribe/);
+});
+
+test("public subscribe page sanitizes return URLs before client rendering", async () => {
+    const [page, client] = await Promise.all([
+        source("src/app/subscribe/[planId]/page.tsx"),
+        source("src/app/subscribe/[planId]/SubscribeClient.tsx"),
+    ]);
+    assert.match(page, /function validateStoredReturnUrl/);
+    assert.match(page, /success_url: validateStoredReturnUrl\(meta\.successUrl\)/);
+    assert.match(page, /cancel_url: validateStoredReturnUrl\(meta\.cancelUrl\)/);
+    assert.ok(client.includes("/^https?:\\/\\//i.test(plan.cancelUrl)"));
+});
+
+test("vault webhook producers dynamically derive environment and avoid hardcoded TEST", async () => {
+    const [vaultDraw, withdraw, reclaim, cancelService, reportUsage] = await Promise.all([
+        source("src/app/api/keeper/vault-draw/route.ts"),
+        source("src/app/api/user/vault/withdraw/route.ts"),
+        source("src/app/api/user/vault/reclaim/route.ts"),
+        source("src/app/api/user/vault/cancel-service/route.ts"),
+        source("src/app/api/user/vault/report-usage/route.ts"),
+    ]);
+
+    assert.match(vaultDraw, /environment: \(row\.environment as "TEST" \| "LIVE"\) \|\| "TEST"/);
+    assert.match(withdraw, /const environment = SUBSCRIPT_VAULT_CHAIN_ID === 5042001 \? "LIVE" : "TEST";/);
+    assert.match(reclaim, /const environment = SUBSCRIPT_VAULT_CHAIN_ID === 5042001 \? "LIVE" : "TEST";/);
+    assert.match(cancelService, /environment: \(vault\.environment as "TEST" \| "LIVE"\) \|\| environment/);
+    assert.match(reportUsage, /const eventEnv = \(result\.vault\.environment as "TEST" \| "LIVE"\) \|\| "TEST"/);
+});
+
+test("solana cctp v2 derives remote_token_messenger with 4-byte big-endian buffer", async () => {
+    const solanaRelayer = await source("src/lib/cctp/solanaRelayer.ts");
+    assert.match(solanaRelayer, /const domainBuf = Buffer\.alloc\(4\);/);
+    assert.match(solanaRelayer, /domainBuf\.writeUInt32BE\(sourceDomain\);/);
+    assert.match(solanaRelayer, /\[Buffer\.from\("remote_token_messenger"\), domainBuf\]/);
+});
+
+test("cctp keeper requires secret authentication across all environments without blanket bypass", async () => {
+    const cctpKeeper = await source("src/app/api/keeper/cctp/route.ts");
+    assert.doesNotMatch(cctpKeeper, /if \(process\.env\.NODE_ENV !== "production"\) \{\s*return true;\s*\}/);
+    assert.match(cctpKeeper, /crypto\.timingSafeEqual/);
+});

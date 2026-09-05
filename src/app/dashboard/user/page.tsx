@@ -126,7 +126,7 @@ import { usePlatformFlags } from "@/hooks/usePlatformFlags";
 import { accountDisplayName, merchantDisplayName } from "@/lib/identityDisplay";
 import { recordOptimisticTx } from "@/lib/optimisticTx";
 
-const comingSoonUserSettings = new Set(["emailEnabled", "securityShieldEnabled", "securityMultiSigEnabled"]);
+const comingSoonUserSettings = new Set(["securityShieldEnabled", "securityMultiSigEnabled"]);
 
 function getExplorerTxUrl(txHash?: string | null) {
   if (!txHash) return "#";
@@ -5118,11 +5118,13 @@ export default function UserDashboard() {
                       </div>
                     )}
 
-                    <BalanceRoutingNotice
-                      amount={batchRows.reduce((sum, row) => sum + (isNaN(Number(row.amount)) ? 0 : Number(row.amount)), 0)}
-                      walletBalance={walletBalance}
-                      elsewhereUsdc={elsewhereUsdc}
-                    />
+                    {!batchSendStatus?.startsWith("Success") && (
+                      <BalanceRoutingNotice
+                        amount={batchRows.reduce((sum, row) => sum + (isNaN(Number(row.amount)) ? 0 : Number(row.amount)), 0)}
+                        walletBalance={walletBalance}
+                        elsewhereUsdc={elsewhereUsdc}
+                      />
+                    )}
 
                     {batchSendStatus && (
                       <p className={`rounded-2xl border p-3 text-[11px] leading-relaxed ${
@@ -6821,6 +6823,28 @@ export default function UserDashboard() {
                               <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.expiryWarningEnabled ? "translate-x-5" : "translate-x-0"}`} />
                             </button>
                           </div>
+
+                          <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                              <p className="text-black font-bold">Email Receipts</p>
+                              <p className="text-[10px] text-black/50">
+                                {userSettings?.walletBackup?.email || userEmail
+                                  ? `Send payment receipts and confirmations to ${userSettings?.walletBackup?.email || userEmail}`
+                                  : "Send transaction receipts and payment confirmations by email"}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={userSettings.emailEnabled !== false}
+                              aria-label="Email Receipts"
+                              onClick={() => handleToggleSetting("emailEnabled", userSettings.emailEnabled !== false)}
+                              disabled={savingSettingsField === "emailEnabled"}
+                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.emailEnabled !== false ? "bg-[#2775CA]" : "bg-black/15"}`}
+                            >
+                              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.emailEnabled !== false ? "translate-x-5" : "translate-x-0"}`} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -7387,6 +7411,8 @@ export default function UserDashboard() {
         onSuccess={() => {
           refetchUsdc().catch(console.error);
           refetchOriginBalances().catch(console.error);
+          loadUserSettings().catch(console.error);
+          loadVaults().catch(console.error);
         }}
       />
       <QrScannerModal
@@ -9768,11 +9794,13 @@ function SendFundsModal({
                 />
               </div>
 
-              <BalanceRoutingNotice
-                amount={amount}
-                walletBalance={walletBalance}
-                elsewhereUsdc={elsewhereUsdc}
-              />
+              {status !== "success" && (
+                <BalanceRoutingNotice
+                  amount={amount}
+                  walletBalance={walletBalance}
+                  elsewhereUsdc={elsewhereUsdc}
+                />
+              )}
 
               {reviewOpen && status !== "success" && (
                 <div className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-black">

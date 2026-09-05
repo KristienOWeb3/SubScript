@@ -146,8 +146,10 @@ export async function relayCctpMintToSolana(params: {
     [Buffer.from("token_messenger")],
     tokenMinterProg,
   );
+  const domainBuf = Buffer.alloc(4);
+  domainBuf.writeUInt32BE(sourceDomain);
   const [remoteTokenMessengerPda] = PublicKey.findProgramAddressSync(
-    [Buffer.from("remote_token_messenger"), Buffer.from(sourceDomain.toString())],
+    [Buffer.from("remote_token_messenger"), domainBuf],
     tokenMinterProg,
   );
   const [tokenMinterPda] = PublicKey.findProgramAddressSync(

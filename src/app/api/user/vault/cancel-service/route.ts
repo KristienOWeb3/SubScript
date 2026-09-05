@@ -23,7 +23,7 @@ import { prisma } from "@/lib/prisma";
 import { withPgClient } from "@/lib/serverPg";
 import { insertPgDm, pushDmNotification } from "@/lib/dms/notifications";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
-import { ARC_TESTNET_CHAIN_ID } from "@/lib/contracts/constants";
+import { SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
 
 export async function POST(request: Request) {
     try {
@@ -36,26 +36,27 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
         }
 
-        const body = sanitizeInput(await request.json().catch(() => null)) || {};
-        const { merchantAddress, reason } = body;
+        const body = sanitizeInput(await request.json().catch(() => null));
+        const { merchantAddress, reason } = body || {};
         if (typeof merchantAddress !== "string" || !ethers.isAddress(merchantAddress)) {
             return NextResponse.json({ error: "Invalid merchant address" }, { status: 400 });
         }
-        const cleanReason = typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 500) : null;
+        const cleanReason = typeof reason === "string" ? reason.slice(0, 500).trim() : null;
 
         const user = wallet.toLowerCase();
         const merchant = merchantAddress.toLowerCase();
+        const environment = SUBSCRIPT_VAULT_CHAIN_ID === 5042001 ? "LIVE" : "TEST";
 
         const vault = await prisma.meteredVault.findUnique({
             where: {
                 userAddress_merchantAddress_environment_settlementChainId: {
                     userAddress: user,
                     merchantAddress: merchant,
-                    environment: "TEST",
-                    settlementChainId: BigInt(ARC_TESTNET_CHAIN_ID),
+                    environment,
+                    settlementChainId: BigInt(SUBSCRIPT_VAULT_CHAIN_ID),
                 },
             },
-            select: { id: true, active: true, lockedUntil: true, cancelRequestedAt: true, balanceUsdc: true },
+            select: { id: true, active: true, lockedUntil: true, cancelRequestedAt: true, balanceUsdc: true, environment: true },
         });
         if (!vault) {
             return NextResponse.json(
@@ -124,7 +125,7 @@ export async function POST(request: Request) {
             }
             await recordMerchantEvent({
                 merchantAddress: merchant,
-                environment: "TEST",
+                environment: (vault.environment as "TEST" | "LIVE") || environment,
                 eventType: "vault.service_canceled",
                 resourceType: "vault",
                 resourceId: vault.id,

@@ -88,7 +88,7 @@ scripts/lighthouse-suite.mjs
 
 # Private Mainnet & Operator Scratch Files
 .mainnet/
-mainnet/
+/mainnet/
 docs/mainnet/private/
 *.private.env
 mainnet-secrets.*

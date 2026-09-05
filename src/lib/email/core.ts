@@ -111,20 +111,96 @@ export function renderEmailLayout(opts: {
 </body></html>`;
 }
 
+export function parseEmailSender(raw: string): { name: string; address: string; user: string; domain: string } | null {
+    const trimmed = raw.trim();
+    const match = trimmed.match(/^(?:(?:"?([^"<]+)"?\s*)?<)?([^<>\s@]+@[^<>\s@]+)>?$/);
+    if (!match) return null;
+    const name = (match[1] || "").trim();
+    const address = match[2].trim().toLowerCase();
+    const atIndex = address.indexOf("@");
+    if (atIndex === -1) return null;
+    const user = address.slice(0, atIndex);
+    const domain = address.slice(atIndex + 1);
+    return { name, address, user, domain };
+}
+
 export function configuredSender(category?: EmailCategory) {
+    // 1. Dedicated category-specific environment variable overrides
+    if (category === "transactional") {
+        const custom = process.env.EMAIL_FROM_RECEIPTS || process.env.EMAIL_FROM_TRANSACTIONAL;
+        if (custom) return custom;
+    } else if (category === "security") {
+        const custom = process.env.EMAIL_FROM_SECURITY || process.env.EMAIL_FROM_AUTH;
+        if (custom) return custom;
+    } else if (category === "ops") {
+        const custom = process.env.EMAIL_FROM_OPS;
+        if (custom) return custom;
+    } else if (category === "lifecycle") {
+        const custom = process.env.EMAIL_FROM_LIFECYCLE;
+        if (custom) return custom;
+    }
+
+    // 2. Base sender from EMAIL_FROM
     const sender = process.env.EMAIL_FROM;
     if (sender) {
-        if (category === "transactional" || category === "lifecycle") {
-            return sender.replace(/Sub[sS]cript\s+Auth/i, "SubScript Receipts");
+        const parsed = parseEmailSender(sender);
+        if (parsed) {
+            if (category === "transactional") {
+                // Receipts must NEVER come from auth@ or SubScript Auth
+                const user = parsed.user.toLowerCase().startsWith("auth") ? "receipts" : parsed.user;
+                return `SubScript Receipts <${user}@${parsed.domain}>`;
+            }
+            if (category === "security") {
+                // Auth codes and sign-in alerts
+                const user = parsed.user.toLowerCase() === "receipts" ? "auth" : parsed.user;
+                return `SubScript Security <${user}@${parsed.domain}>`;
+            }
+            if (category === "ops") {
+                const user = (parsed.user.toLowerCase().startsWith("auth") || parsed.user.toLowerCase() === "receipts")
+                    ? "ops"
+                    : parsed.user;
+                return `SubScript Ops <${user}@${parsed.domain}>`;
+            }
+            if (category === "lifecycle") {
+                const user = parsed.user.toLowerCase().startsWith("auth") ? "notifications" : parsed.user;
+                return `SubScript <${user}@${parsed.domain}>`;
+            }
+            const name = parsed.name || "SubScript";
+            return `${name} <${parsed.address}>`;
+        }
+
+        // Fallback string replacement if sender doesn't match standard address regex
+        if (category === "transactional") {
+            return sender
+                .replace(/Sub[sS]cript(\s+Auth)?/i, "SubScript Receipts")
+                .replace(/auth@/i, "receipts@");
+        }
+        if (category === "security") {
+            return sender.replace(/Sub[sS]cript(\s+Receipts)?/i, "SubScript Security");
+        }
+        if (category === "ops") {
+            return sender.replace(/Sub[sS]cript(\s+Auth|\s+Receipts)?/i, "SubScript Ops").replace(/auth@/i, "ops@");
+        }
+        if (category === "lifecycle") {
+            return sender.replace(/Sub[sS]cript\s+Auth/i, "SubScript").replace(/auth@/i, "notifications@");
         }
         return sender;
     }
+
+    // 3. Non-production sandbox fallbacks
     if (process.env.NODE_ENV !== "production") {
-        if (category === "transactional" || category === "lifecycle") {
+        if (category === "transactional") {
             return "SubScript Receipts <onboarding@resend.dev>";
+        }
+        if (category === "security") {
+            return "SubScript Security <onboarding@resend.dev>";
+        }
+        if (category === "ops") {
+            return "SubScript Ops <onboarding@resend.dev>";
         }
         return "SubScript <onboarding@resend.dev>";
     }
+
     throw new Error("EMAIL_FROM must be configured with a verified Resend sending domain in production");
 }
 
