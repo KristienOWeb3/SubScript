@@ -11,6 +11,7 @@ import { withdrawFromEmbedded, syncVaultMirror } from "@/lib/vault/onchain";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
+import { SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
 import crypto from "crypto";
 
 export const maxDuration = 120;
@@ -54,9 +55,10 @@ export async function POST(request: Request) {
         const txHash = await withdrawFromEmbedded(wallet, merchantAddress, amount);
         const v = await syncVaultMirror(wallet, merchantAddress);
 
+        const environment = SUBSCRIPT_VAULT_CHAIN_ID === 5042001 ? "LIVE" : "TEST";
         await recordMerchantEvent({
             merchantAddress: merchantAddress.toLowerCase(),
-            environment: "TEST",
+            environment,
             /* Was vault.paused, which was doing two jobs: this drain, and a temporary stop. The
                vault is not paused here, it is emptied. See VAULT_EVENT_TYPES for the split. */
             eventType: "vault.withdrawn",

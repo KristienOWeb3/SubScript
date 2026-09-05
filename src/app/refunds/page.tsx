@@ -7,62 +7,79 @@ import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 
 const sections = [
   {
-    title: "1. Scope: Who Sold You What",
+    title: "1. Scope & Merchant of Record Distinction",
     body: [
-      "This policy covers two different situations. When you buy something from a merchant through SubScript (a subscription, a payment link, a metered service), THE MERCHANT is the seller and merchant of record — their refund terms govern the purchase, and this policy explains what SubScript can and cannot do to help.",
-      "When you buy something from SubScript itself (currently the SubScript Premium merchant plan), SubScript is the seller and this policy applies directly.",
+      "This policy governs all refund requests, billing dispute escalations, and subscription cancellations across the SubScript protocol.",
+      "Third-Party Merchant Purchases: When you purchase a subscription, digital good, or service from a merchant through SubScript-hosted checkout pages, THE MERCHANT IS THE SOLE SELLER AND MERCHANT OF RECORD (MoR). Their individual terms of sale govern product eligibility, satisfaction guarantees, and refunds. SubScript provides non-custodial transaction routing, cryptographic receipt generation, and merchant webhook notification.",
+      "Direct SubScript Offerings: When you purchase SubScript's direct software offerings (specifically the SubScript Premium merchant subscription plan), SubScript is the seller of record, and Section 5 applies directly.",
     ],
   },
   {
-    title: "2. Testnet Beta: No Real Funds",
+    title: "2. Public Beta & Testnet Program Disclaimer",
     body: [
-      "SubScript is currently in public beta on the Arc testnet. Every payment made during the beta settles in Arc testnet USDC, a test asset with NO monetary value that cannot be redeemed, exchanged, or refunded for real money.",
-      "Because no real funds move during the beta, monetary refunds do not apply to testnet transactions. If a testnet charge behaves incorrectly (wrong amount, duplicate debit, charge after cancellation), report it to compliance@subscriptonarc.com — we treat every beta billing error as a launch-blocking bug and will correct your account state (balances, subscription status, tier) accordingly.",
+      "SubScript currently operates in public beta on the Arc testnet (Chain ID 5042002). Every transaction executed during the beta settles in Arc testnet USDC, which is a synthetic test asset with zero cash, fiat, or market value.",
+      "Monetary refunds cannot and will not be issued for testnet transactions because no real economic funds ever move. If an accounting anomaly, unintended balance debit, or double-billing occurs during beta testing, report it immediately to compliance@subscriptonarc.com. We treat all testnet billing discrepancies as launch-blocking priority issues and will manually reconcile your account state, balances, and tier access.",
     ],
   },
   {
-    title: "3. Cancelling Subscriptions — Always Available, Always Free",
+    title: "3. Cancelling Subscriptions — Instant, Unconditional & Free (FTC Click-to-Cancel)",
     body: [
-      "You can cancel any subscription at any time from your dashboard, free of charge. Cancellation revokes the on-chain billing authorization, so no future charges can execute for that subscription.",
-      "You can choose to cancel immediately or at the end of the period you already paid for. Cancelling never triggers a penalty, a failed-payment fee, or a wind-down charge.",
-      "SubScript's billing contract is sequence-based and idempotent: the same billing period can never be charged twice, and a charge can only execute inside its own billing window — lapsed periods are never back-charged.",
+      "In strict compliance with the Federal Trade Commission (FTC) 'Click-to-Cancel' Rule, the California Automatic Renewal Law (SB-313 / AB-390), and EU consumer protection directives, cancellation of any subscription is always accessible, immediate, and free of cost.",
+      "One-Click Dashboard Control: You may cancel any active subscription directly through your SubScript dashboard at any time. Cancellation immediately revokes the underlying on-chain smart contract spend allowance. Once cancelled, neither the merchant nor protocol keepers can execute any further recurring debits.",
+      "Effective Timing: You may choose to cancel immediately (halting service) or cancel effective at the end of the paid billing interval (preserving access until expiry). Cancelling never incurs termination fees, cancellation penalties, or hidden wind-down charges.",
+      "Cryptographic Idempotency: SubScript's smart contract billing engine is sequence-indexed. A given billing period can never be charged twice, and expired periods cannot be back-billed.",
     ],
   },
   {
-    title: "4. On-Chain Settlement Is Irreversible",
+    title: "4. On-Chain Settlement Irreversibility & Refund Mechanics",
     body: [
-      "USDC transfers confirmed on-chain cannot be reversed by SubScript. There is no chargeback mechanism on a blockchain. This is why the protocol is built to prevent wrong charges up front (visible amounts before confirming, bounded authorizations, duplicate-charge protection, one-click cancellation) rather than to undo them afterwards.",
-      "Where a refund is owed, it is paid as a new transaction back to the paying wallet — not by reversing the original one.",
+      "Cryptographic Irreversibility: Once a USDC transaction is mined into a block on the Arc Network, the transfer is final and irreversible. Blockchains possess no native credit card chargeback mechanism, and SubScript does not hold merchant funds in escrow custody.",
+      "Fresh Transaction Execution: Because on-chain transactions cannot be clawed back or undone, any approved refund is paid as an entirely new on-chain transfer of USDC directly back to the payer's originating wallet address.",
     ],
   },
   {
     title: "5. Refunds for SubScript Premium (SubScript as Seller)",
     body: [
-      "On mainnet, SubScript Premium is billed per period. You can cancel at any time; your Premium features remain active until the end of the period you paid for, and you will not be billed again.",
-      "We do not prorate or refund the remainder of a billing period after a voluntary cancellation, except where consumer law in your jurisdiction requires it.",
-      "Billing errors are always refundable: if you are charged after cancelling, charged twice for the same period, or charged an amount different from the advertised plan price, contact us within 30 days of the charge and we will refund the incorrect amount in USDC to the paying wallet.",
+      "SubScript Premium merchant tiers are billed on a recurring period-by-period basis. Upon voluntary cancellation, your Premium tier features remain active until the conclusion of the prepaid period; recurring billing terminates immediately.",
+      "We do not offer prorated cash refunds for partial or unused periods resulting from voluntary cancellation, except where required by mandatory local consumer protection statutes.",
+      "Guaranteed Refund of Protocol Billing Errors: If you experience a protocol-level billing error—such as an automated debit occurring after verified cancellation, a duplicate charge for the same cycle, or a charge exceeding the published tier rate—contact compliance@subscriptonarc.com within thirty (30) days of the transaction. Verified errors will be refunded in USDC to the paying wallet within 5 business days.",
     ],
   },
   {
-    title: "6. Refunds for Merchant Purchases (Merchant as Seller)",
+    title: "6. Merchant Purchases, Cryptographic Receipts & Dispute Mediation",
     body: [
-      "Merchants set their own refund terms for what they sell. Requests for refunds of merchant purchases should go to the merchant first — SubScript receipts identify the merchant for every payment.",
-      "SubScript does not hold merchant sale proceeds indefinitely and cannot claw back settled funds from a merchant's wallet. What SubScript provides is evidence and tooling: verifiable receipts, on-chain transaction records, cancellation controls, and merchant messaging, so both sides can resolve disputes from the same facts.",
-      "If you believe a merchant is using SubScript for deceptive billing, report it to compliance@subscriptonarc.com. Deceptive billing violates our Terms of Service and can lead to the merchant's removal from the platform.",
+      "Merchant-First Recourse: Requests for refunds on merchant transactions must be submitted directly to the merchant. SubScript provides tamper-proof digital receipts bearing the transaction hash, Checkout Intent ID, and merchant contact identifier to substantiate your claim.",
+      "Deceptive Billing & Platform Intervention: While SubScript cannot unilaterally confiscate funds from an external merchant's wallet, we enforce strict merchant integrity rules. If a merchant engages in unauthorized billing, deceptive recurring charges, or fails to deliver verified purchases, submit a dispute report to compliance@subscriptonarc.com.",
+      "Enforcement Actions: Verified deceptive billing violations result in immediate merchant account suspension, API key revocation, and public risk warnings across SubScript hosted checkout pages.",
     ],
   },
   {
-    title: "7. Prepaid Metered Vaults",
+    title: "7. Prepaid Metered Vault Escrow Settlement & Self-Reclaim",
     body: [
-      "Vault commitments are escrowed per billing cycle. At the end of a cycle, only the metered usage is drawn — every unused unit is automatically returned to your wallet as part of settlement, by contract design.",
-      "If a merchant or the settlement keeper fails to settle a matured cycle within the grace window, the vault contract lets you reclaim your full escrowed balance yourself. Your escrow can never be permanently locked.",
+      "Deterministic Escrow Accounting: Vault commitments are escrowed per billing cycle in the SubScriptVault smart contract. At the conclusion of each billing cycle, only verified metered consumption is drawn by the merchant.",
+      "Automatic Return of Unused Funds: Any unconsumed escrowed USDC is automatically released and returned to your wallet as part of the cycle settlement transaction.",
+      "Permissionless Emergency Reclaim: If a merchant or automated settlement keeper fails to finalize a matured cycle within the statutory contract grace window, you can invoke the permissionless reclaimMaturedEscrow() function on the SubScriptVault contract to withdraw 100% of your escrowed capital directly back to your wallet.",
     ],
   },
   {
-    title: "8. How to Request a Refund or Report a Billing Error",
+    title: "8. Chargeback Abuse & Fiat On-Ramp Fraud Warning",
     body: [
-      "Email compliance@subscriptonarc.com with: the wallet address or email on your account, the receipt ID or transaction hash, what you expected to be charged, and what actually happened.",
-      "We acknowledge refund and billing-error requests within 5 business days. Where a refund is owed by SubScript, we pay it in USDC to the original paying wallet.",
+      "If you acquire USDC through a third-party fiat-to-crypto on-ramp (e.g. credit card, ACH, bank wire, Apple Pay) and subsequently execute a fraudulent chargeback or reversal with your bank while retaining or spending the purchased crypto assets, your SubScript account will be permanently banned.",
+      "SubScript cooperates with licensed on-ramp providers and law enforcement agencies to investigate friendly fraud and chargeback abuse.",
+    ],
+  },
+  {
+    title: "9. Statutory Cooling-Off Rights & EU Digital Content Waiver",
+    body: [
+      "Under the EU Consumer Rights Directive (Directive 2011/83/EU) and equivalent UK statutory rules, consumers typically hold a 14-day right of withdrawal for distance sales.",
+      "Digital Waiver Notice: When you purchase immediate access to digital software, developer APIs, or on-chain services, you expressly request immediate performance and acknowledge that you lose your statutory right of withdrawal once digital service delivery has commenced.",
+    ],
+  },
+  {
+    title: "10. How to Submit a Refund Claim or Dispute",
+    body: [
+      "To submit a formal refund request or billing dispute for SubScript direct services or merchant escalations, email compliance@subscriptonarc.com with: (a) your account wallet address or email; (b) the Receipt ID or Arc transaction hash; (c) the merchant name or Checkout Intent ID; and (d) a factual description of the discrepancy.",
+      "Our compliance desk acknowledges claims within 5 business days and processes verified settlements directly in USDC on Arc.",
     ],
   },
 ];
@@ -82,12 +99,12 @@ export default function RefundPolicy() {
 
           <div className="mb-12">
             <span className="mb-3 block text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
-              Protocol Agreement
+              Protocol Agreement & Commercial Terms
             </span>
             <h1 className="flex items-center gap-3 text-4xl font-extrabold uppercase leading-none tracking-tight text-white sm:text-5xl">
               Refund <span className="font-serif font-normal italic lowercase tracking-normal text-[#00d2b4]">&amp; cancellation</span>
             </h1>
-            <p className="mt-4 font-mono text-xs text-white/40">Last Updated: July 8th, 2026</p>
+            <p className="mt-4 font-mono text-xs text-white/40">Last Updated: September 4th, 2026 · Version 2.4 (Mainnet-Hardened)</p>
             <p className="mt-3 rounded-xl border border-[#00d2b4]/20 bg-[#00d2b4]/5 px-4 py-3 text-xs leading-relaxed text-[#00d2b4]">
               Public beta notice: SubScript currently runs on the Arc testnet. Beta payments settle in
               testnet USDC, which has no monetary value — see Section 2.
@@ -101,8 +118,8 @@ export default function RefundPolicy() {
                   {index === 0 && <FileText className="h-4 w-4 text-[#00d2b4]" />}
                   <h2 className="text-base font-bold uppercase tracking-wider text-white">{section.title}</h2>
                 </div>
-                {section.body.map((paragraph) => (
-                  <p key={paragraph}>{paragraph}</p>
+                {section.body.map((paragraph, pIdx) => (
+                  <p key={pIdx}>{paragraph}</p>
                 ))}
               </section>
             ))}
@@ -115,8 +132,9 @@ export default function RefundPolicy() {
             <div className="flex flex-wrap justify-center gap-4">
               <Link href="/terms" className="transition hover:text-white">Terms of Service</Link>
               <Link href="/privacy" className="transition hover:text-white">Privacy Policy</Link>
-              <Link href="/refunds" className="transition hover:text-white">Refund Policy</Link>
+              <Link href="/refunds" className="text-[#00d2b4] transition hover:text-white">Refund Policy</Link>
               <Link href="/fulfillment" className="transition hover:text-white">Fulfillment Policy</Link>
+              <Link href="/compliance" className="transition hover:text-white">Compliance</Link>
               <Link href="/support" className="transition hover:text-white">Support</Link>
             </div>
           </div>

@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const paramAddress = url.searchParams.get("address");
 
-    const targetWallet = (sessionWallet || paramAddress || "").trim().toLowerCase();
+    const targetWallet = (paramAddress || sessionWallet || "").trim().toLowerCase();
     if (!targetWallet || !/^0x[a-fA-F0-9]{40}$/.test(targetWallet)) {
       return NextResponse.json({ error: "Valid wallet address required" }, { status: 400 });
     }

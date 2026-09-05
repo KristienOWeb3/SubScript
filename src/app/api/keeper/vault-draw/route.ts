@@ -176,7 +176,7 @@ async function runVaultDraw(request: Request) {
                         await syncVaultMirror(row.userAddress, row.merchantAddress);
                         await recordMerchantEvent({
                             merchantAddress: row.merchantAddress,
-                            environment: "TEST",
+                            environment: (row.environment as "TEST" | "LIVE") || "TEST",
                             eventType: "vault.settled",
                             resourceType: "vault",
                             resourceId: row.id,

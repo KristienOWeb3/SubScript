@@ -1427,6 +1427,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                         <div className="flex gap-4">
                             <Link href="/terms" className="hover:text-white transition">Terms of Service</Link>
                             <Link href="/privacy" className="hover:text-white transition">Privacy Policy</Link>
+                            <Link href="/compliance" className="hover:text-white transition">Compliance</Link>
                         </div>
                         <span>Built on Arc Network</span>
                     </footer>

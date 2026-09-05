@@ -155,9 +155,10 @@ export default function SupportPage() {
             ))}
 
             <section className="space-y-2 border-t border-white/5 pt-6">
-              <h3 className="text-sm font-bold text-white">Developers</h3>
+              <h3 className="text-sm font-bold text-white">Compliance & Developers</h3>
               <p>
-                Start with the <Link href="/docs" className="text-[#00d2b4] hover:underline">developer docs</Link> — quickstart,
+                Explore our <Link href="/compliance" className="text-[#00d2b4] hover:underline">Compliance Center</Link> for AML/CFT policies, sanctions screening, and regulatory disclosures.
+                For technical integration, start with the <Link href="/docs" className="text-[#00d2b4] hover:underline">developer docs</Link> — quickstart,
                 API reference, webhook verification, and SDK usage. Product and protocol updates are posted on{" "}
                 <a href="https://x.com/SubScript_onarc" target="_blank" rel="noopener noreferrer" className="text-[#00d2b4] hover:underline">
                   @SubScript_onarc
@@ -175,7 +176,8 @@ export default function SupportPage() {
               <Link href="/privacy" className="transition hover:text-white">Privacy Policy</Link>
               <Link href="/refunds" className="transition hover:text-white">Refund Policy</Link>
               <Link href="/fulfillment" className="transition hover:text-white">Fulfillment Policy</Link>
-              <Link href="/support" className="transition hover:text-white">Support</Link>
+              <Link href="/compliance" className="transition hover:text-white">Compliance</Link>
+              <Link href="/support" className="text-[#00d2b4] transition hover:text-white">Support</Link>
             </div>
           </div>
         </footer>

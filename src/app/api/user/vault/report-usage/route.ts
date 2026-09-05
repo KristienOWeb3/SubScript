@@ -31,6 +31,7 @@ type VaultUsageRow = {
     accrued_usage_usdc: string;
     active: boolean;
     usage_notified_bps: number;
+    environment?: string;
 };
 
 type UsageResult =
@@ -372,7 +373,7 @@ async function accrueUsageAtomically(
                             end,
                             updated_at = now()
                       where id = $2
-                  returning id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active, usage_notified_bps`,
+                  returning id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active, usage_notified_bps, environment`,
                     [actualNextAccrued.toString(), vault.id],
                 );
 
@@ -410,7 +411,7 @@ async function accrueUsageAtomically(
                         end,
                         updated_at = now()
                   where id = $2
-              returning id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active, usage_notified_bps`,
+              returning id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active, usage_notified_bps, environment`,
                 [nextAccrued.toString(), vault.id],
             );
 
@@ -703,9 +704,10 @@ export async function POST(request: Request) {
         scheduleDmPush(result.notification);
         scheduleDmPush(result.thresholdNotification);
 
+        const eventEnv = (result.vault.environment as "TEST" | "LIVE") || "TEST";
         await recordMerchantEvent({
             merchantAddress,
-            environment: "TEST",
+            environment: eventEnv,
             eventType: "vault.usage_recorded",
             resourceType: "vault",
             resourceId: result.vault.id,
@@ -725,7 +727,7 @@ export async function POST(request: Request) {
         if (result.thresholdNotification) {
             await recordMerchantEvent({
                 merchantAddress,
-                environment: "TEST",
+                environment: eventEnv,
                 eventType: "vault.threshold_reached",
                 resourceType: "vault",
                 resourceId: result.vault.id,

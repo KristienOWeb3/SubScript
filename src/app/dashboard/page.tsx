@@ -190,7 +190,6 @@ const shortenHash = (value: string | undefined) => {
 
 const comingSoonMerchantSettings = new Set([
     "pushEnabled",
-    "emailEnabled",
     "payoutSettlementEnabled",
     "disputeAlertsEnabled",
     "securityMultiSigEnabled",
@@ -5131,6 +5130,16 @@ Please complete the following implementation tasks:
                                 </h4>
                                 <div className="space-y-2 text-xs text-black/70 dark:text-white/70 font-sans">
                                     <label className="flex items-center justify-between p-2 rounded-xl bg-[#D4E3E8]/40 dark:bg-white/[0.04] border border-black/10 dark:border-white/10 cursor-pointer">
+                                        <span>Email Notifications &amp; Receipts</span>
+                                        <input
+                                            type="checkbox"
+                                            checked={userSettings?.emailEnabled !== false}
+                                            onChange={() => handleToggleSetting("emailEnabled", userSettings?.emailEnabled !== false)}
+                                            disabled={savingSettingsField === "emailEnabled"}
+                                            className="accent-[#082824] dark:accent-[#00d2b4] w-4 h-4 cursor-pointer"
+                                        />
+                                    </label>
+                                    <label className="flex items-center justify-between p-2 rounded-xl bg-[#D4E3E8]/40 dark:bg-white/[0.04] border border-black/10 dark:border-white/10 cursor-pointer">
                                         <span>New Subscriptions</span>
                                         <input type="checkbox" defaultChecked className="accent-[#082824] dark:accent-[#00d2b4] w-4 h-4" />
                                     </label>
@@ -6100,6 +6109,7 @@ Please complete the following implementation tasks:
                     <div className="flex gap-4">
                         <Link href="/terms" className="hover:text-black transition">Terms of Service</Link>
                         <Link href="/privacy" className="hover:text-black transition">Privacy Policy</Link>
+                        <Link href="/compliance" className="hover:text-black transition">Compliance</Link>
                     </div>
                     <span>Built on Arc Network</span>
                 </footer>

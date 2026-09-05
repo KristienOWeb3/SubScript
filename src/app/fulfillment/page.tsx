@@ -7,53 +7,55 @@ import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 
 const sections = [
   {
-    title: "1. What SubScript Delivers",
+    title: "1. Nature of Digital Deliverables & Service Scope",
     body: [
-      "SubScript's own services are digital and delivered entirely online: dashboard access, hosted checkout pages, payment links, subscription billing, prepaid metered vaults, signed webhooks, receipt pages, and the developer API. Nothing SubScript sells is shipped physically.",
-      "For purchases made from a merchant through SubScript, the merchant is the seller and is responsible for delivering what was purchased. Section 4 explains how that works.",
+      "All services and software subscriptions offered directly by SubScript Protocol ('SubScript') are digital and provisioned entirely online. This includes developer API keys, hosted checkout interfaces, recurring payment links, prepaid metered vaults, automated signed webhooks, and human-readable on-chain receipt resolvers. SubScript does not manufacture, ship, or deliver physical goods.",
+      "Third-Party Merchant Purchases: When you make a purchase from a third-party merchant through SubScript-hosted checkout pages, THE MERCHANT IS THE SOLE SELLER AND MERCHANT OF RECORD (MoR). The merchant is solely responsible for fulfilling the underlying products, software licenses, SaaS credentials, or services in accordance with their advertised fulfillment schedule.",
     ],
   },
   {
-    title: "2. When SubScript Services Activate",
+    title: "2. Instant Account Provisioning & Activation Timeline",
     body: [
-      "Account access is provisioned immediately at sign-up. Checkout pages, payment links, receipts, and the API are available as soon as they are created.",
-      "SubScript Premium activates when its payment confirms on-chain — typically within seconds to a few minutes of the transaction being submitted. Your merchant tier is upgraded automatically after confirmation; no manual step is required.",
-      "If a Premium payment confirms on-chain but your tier does not activate within one hour, contact compliance@subscriptonarc.com with the transaction hash and we will reconcile it.",
+      "User & Merchant Accounts: Account workspaces and API credentials activate immediately upon successful wallet connection or email OTP authentication.",
+      "SubScript Premium Merchant Tier: Direct upgrades to SubScript Premium activate automatically upon on-chain transaction confirmation on the Arc Network—typically within 2 to 10 seconds of block inclusion. If an on-chain payment confirms but your dashboard tier does not update within 30 minutes, contact compliance@subscriptonarc.com with your transaction hash for instant automated reconciliation.",
     ],
   },
   {
-    title: "3. Subscription Renewals and Receipts",
+    title: "3. Webhook Delivery Guarantees & Replay Protection",
     body: [
-      "Recurring charges execute automatically per billing period against the bounded authorization you approved. After each successful renewal you receive an in-app receipt message with the amount and a verifiable transaction link.",
-      "If a renewal cannot execute (insufficient balance or allowance), service entitlements may pause. You are notified and can top up or cancel; repeated failures stop the subscription rather than letting charge attempts pile up.",
+      "Guaranteed Webhook Delivery: Upon confirmed on-chain payment settlement, SubScript immediately dispatches a cryptographically signed webhook notification (carrying the Checkout Intent ID, receipt identifier, and amount) to the merchant's configured endpoint.",
+      "Exponential Backoff Retries: If a merchant's server is temporarily unreachable or returns a non-2xx HTTP status code, SubScript's delivery worker automatically retries delivery with exponential backoff and jitter over a 72-hour window.",
+      "Replay & Audit Inspector: Merchants can inspect real-time webhook payload delivery logs and trigger manual redeliveries at any time via the Webhooks tab in the merchant dashboard.",
     ],
   },
   {
-    title: "4. Merchant Purchases: Who Fulfills What",
+    title: "4. Subscription Renewals, Dunning & Failure Handling",
     body: [
-      "When you pay a merchant through SubScript, SubScript's role completes when the payment settles on-chain and the merchant is notified through a signed webhook carrying the Checkout Intent ID. Delivery of the purchased goods or services is then the merchant's obligation, on the merchant's stated timeline.",
-      "Merchants must verify webhook signatures and fulfill from verified events. A merchant's failure to deliver after a verified payment is a dispute between you and the merchant — your SubScript receipt and the on-chain transaction are your proof of payment.",
-      "If a merchant repeatedly fails to fulfill verified payments, report it to compliance@subscriptonarc.com; this violates our Terms of Service.",
+      "Automated Cycle Execution: Recurring subscription charges execute automatically at the beginning of each billing interval against the user's pre-authorized smart contract allowance.",
+      "Dunning Grace Period: If a renewal transaction fails due to insufficient USDC balance or gas exhaustion, service entitlements enter a 3-day grace period during which automated retries are conducted daily.",
+      "Notification Before Halt: The subscriber receives immediate email/in-app notices to top up their operating balance. If the account remains unfunded at the close of the grace period, the subscription pauses cleanly without punitive overdraft charges.",
     ],
   },
   {
-    title: "5. Prepaid Metered Vault Settlement",
+    title: "5. Prepaid Metered Vault Settlement Lifecycle",
     body: [
-      "Vault-based services activate when your committed escrow reaches the merchant's required commitment. The merchant renders service during the cycle; settlement draws only the metered usage at cycle end and automatically returns every unused unit to your wallet.",
-      "If a matured cycle is never settled within the grace window, you can reclaim your full escrow directly from the contract — service fulfillment failures can never permanently lock your funds.",
+      "Escrow Activation: Metered vault billing agreements activate the moment the subscriber deposits their committed USDC escrow into the SubScriptVault smart contract.",
+      "Settlement & Automatic Refund: At the end of each billing cycle, the merchant or settlement keeper submits verified usage metrics. The contract draws only the metered amount and automatically refunds 100% of any unconsumed escrow back to the subscriber's wallet in the same transaction.",
+      "Permissionless Fund Safety: If a matured billing cycle is not settled within the contract grace window, the subscriber can trigger the permissionless reclaimMaturedEscrow() function to recover their full escrow deposit directly.",
     ],
   },
   {
-    title: "6. Service Availability During the Beta",
+    title: "6. Platform Availability & SLA Benchmarks",
     body: [
-      "SubScript is in public beta on the Arc testnet. We target high availability but do not guarantee uninterrupted service during the beta: contracts may be redeployed, data may be reset, and features may change as part of hardening for mainnet.",
-      "Scheduled resets or breaking changes that affect your integrations will be announced in the dashboard or by email where possible.",
+      "Service Target: On Arc Mainnet, SubScript targets 99.9% uptime for smart contract routing, checkout hosting, and developer API endpoints.",
+      "Testnet Beta Notice: During the current Arc testnet beta, contracts may be upgraded, redeployed, or reset as part of mainnet hardening. Scheduled maintenance is broadcast via the developer portal.",
+      "Force Majeure & Blockchain Dependency: SubScript is not liable for fulfillment delays caused by Arc Network consensus pauses, major RPC provider outages, or Circle CCTP attestation service maintenance.",
     ],
   },
   {
-    title: "7. Contact",
+    title: "7. Fulfillment Inquiries & Non-Delivery Escalation",
     body: [
-      "Fulfillment questions, activation issues, or non-delivery reports: compliance@subscriptonarc.com. Include your wallet address or account email plus the receipt ID or transaction hash.",
+      "For questions regarding SubScript software delivery or to report a merchant who failed to fulfill purchases after verified payment, contact: compliance@subscriptonarc.com. Please include your account address and receipt identifier.",
     ],
   },
 ];
@@ -73,12 +75,12 @@ export default function FulfillmentPolicy() {
 
           <div className="mb-12">
             <span className="mb-3 block text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
-              Protocol Agreement
+              Protocol Agreement & Fulfillment SLA
             </span>
             <h1 className="flex items-center gap-3 text-4xl font-extrabold uppercase leading-none tracking-tight text-white sm:text-5xl">
               Fulfillment <span className="font-serif font-normal italic lowercase tracking-normal text-[#00d2b4]">policy</span>
             </h1>
-            <p className="mt-4 font-mono text-xs text-white/40">Last Updated: July 8th, 2026</p>
+            <p className="mt-4 font-mono text-xs text-white/40">Last Updated: September 4th, 2026 · Version 2.4 (Mainnet-Hardened)</p>
             <p className="mt-3 rounded-xl border border-[#00d2b4]/20 bg-[#00d2b4]/5 px-4 py-3 text-xs leading-relaxed text-[#00d2b4]">
               Public beta notice: SubScript currently runs on the Arc testnet. Beta payments settle in
               testnet USDC, which has no monetary value.
@@ -92,8 +94,8 @@ export default function FulfillmentPolicy() {
                   {index === 0 && <FileText className="h-4 w-4 text-[#00d2b4]" />}
                   <h2 className="text-base font-bold uppercase tracking-wider text-white">{section.title}</h2>
                 </div>
-                {section.body.map((paragraph) => (
-                  <p key={paragraph}>{paragraph}</p>
+                {section.body.map((paragraph, pIdx) => (
+                  <p key={pIdx}>{paragraph}</p>
                 ))}
               </section>
             ))}
@@ -107,7 +109,8 @@ export default function FulfillmentPolicy() {
               <Link href="/terms" className="transition hover:text-white">Terms of Service</Link>
               <Link href="/privacy" className="transition hover:text-white">Privacy Policy</Link>
               <Link href="/refunds" className="transition hover:text-white">Refund Policy</Link>
-              <Link href="/fulfillment" className="transition hover:text-white">Fulfillment Policy</Link>
+              <Link href="/fulfillment" className="text-[#00d2b4] transition hover:text-white">Fulfillment Policy</Link>
+              <Link href="/compliance" className="transition hover:text-white">Compliance</Link>
               <Link href="/support" className="transition hover:text-white">Support</Link>
             </div>
           </div>

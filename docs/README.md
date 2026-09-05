@@ -21,6 +21,7 @@ material lives here, grouped by purpose.
 - [Load testing](load-testing.md)
 - [KYC verification](kyc-verification.md)
 - [Bank-transfer USDC on-ramp](bank-transfer-usdc-onramp.md)
+- [Compliance, legal, and regulatory framework](compliance-and-legal-framework.md)
 
 ## Runbooks & Mainnet
 

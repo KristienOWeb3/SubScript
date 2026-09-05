@@ -488,7 +488,7 @@ export default function SendSingleModal({
                                     </p>
                                 )}
 
-                                {isArcRoute && routingNotice}
+                                {isArcRoute && !status?.startsWith("Sent") && !status?.startsWith("Success") && routingNotice}
 
                                 {status && (
                                     <p

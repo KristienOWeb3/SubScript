@@ -159,6 +159,7 @@ export default function DepositModal({
 
     /* Auto-bridge state: derived deposit address for CCTP chains */
     const [derivedAddress, setDerivedAddress] = useState<string | null>(null);
+    const [activeIntentId, setActiveIntentId] = useState<string | null>(null);
     const [loadingIntent, setLoadingIntent] = useState(false);
     const [bridgeStatus, setBridgeStatus] = useState<
         "idle" | "waiting" | "detected" | "bridging" | "completed" | "error"
@@ -175,6 +176,7 @@ export default function DepositModal({
         setBridgeStatus("idle");
         setBridgeError(null);
         setDerivedAddress(null);
+        setActiveIntentId(null);
         try {
             const res = await fetch("/api/user/cctp/intent", {
                 method: "POST",
@@ -187,6 +189,7 @@ export default function DepositModal({
             }
             const data = await res.json();
             setDerivedAddress(data.depositAddress);
+            setActiveIntentId(data.intentId || null);
             setBridgeStatus("waiting");
         } catch (error: any) {
             setBridgeError(error.message || "Couldn't set up your deposit address.");
@@ -195,58 +198,6 @@ export default function DepositModal({
             setLoadingIntent(false);
         }
     }, []);
-
-    /* Poll bridge status every 15 seconds while the modal is open on a CCTP chain. */
-    useEffect(() => {
-        if (!isOpen || selectedChain.isArc || !derivedAddress || bridgeStatus === "completed") return;
-
-        const poll = async () => {
-            try {
-                const res = await fetch(`/api/user/cctp/scan?address=${encodeURIComponent(derivedAddress)}`, {
-                    signal: AbortSignal.timeout(5000),
-                }).catch(() => null);
-                if (res && res.ok) {
-                    const data = await res.json().catch(() => ({}));
-                    const chainBal = Array.isArray(data.balances)
-                        ? data.balances.find((b: any) => b.chainId === selectedChain.chainId)
-                        : null;
-                    if (chainBal) {
-                        setOriginBalance(chainBal.balanceUsdc || "0.00");
-                        if (parseFloat(chainBal.balanceUsdc || "0") > 0) {
-                            setBridgeStatus("detected");
-                        }
-                    }
-
-                    /* Check if the transfer is already in progress or completed */
-                    const intentRes = await fetch("/api/user/cctp/intent", {
-                        signal: AbortSignal.timeout(5000),
-                    }).catch(() => null);
-                    if (intentRes && intentRes.ok) {
-                        const intentData = await intentRes.json().catch(() => ({}));
-                        const matched = Array.isArray(intentData.intents)
-                            ? intentData.intents.find(
-                                (i: any) => i.chainId === selectedChain.chainId && i.intentStatus === "matched"
-                              )
-                            : null;
-                        if (matched) {
-                            if (matched.bridgeStatus === "completed") {
-                                setBridgeStatus("completed");
-                                if (onSuccess) onSuccess();
-                            } else if (matched.bridgeStatus === "pending_attestation" || matched.bridgeStatus === "minting") {
-                                setBridgeStatus("bridging");
-                            }
-                        }
-                    }
-                }
-            } catch {
-                /* Polling failure is not critical, retry next tick. */
-            }
-        };
-
-        poll();
-        const interval = setInterval(poll, 15_000);
-        return () => clearInterval(interval);
-    }, [isOpen, selectedChain, derivedAddress, bridgeStatus, onSuccess]);
 
     const fetchBalance = useCallback(async () => {
         if (!depositAddress || depositAddress === "0xYOUR_CONNECTED_WALLET_ADDRESS") return;
@@ -263,6 +214,70 @@ export default function DepositModal({
         }
     }, [depositAddress]);
 
+    /* Poll bridge status every 15 seconds while the modal is open on a CCTP chain. */
+    useEffect(() => {
+        if (!isOpen || selectedChain.isArc || !derivedAddress || bridgeStatus === "completed") return;
+
+        const poll = async () => {
+            try {
+                // First check intent status to avoid setting "detected" on completed/bridging deposits
+                const intentRes = await fetch("/api/user/cctp/intent", {
+                    signal: AbortSignal.timeout(5000),
+                }).catch(() => null);
+
+                let isAlreadyBridgingOrDone = false;
+                if (intentRes && intentRes.ok) {
+                    const intentData = await intentRes.json().catch(() => ({}));
+                    const intentsList = Array.isArray(intentData.intents) ? intentData.intents : [];
+                    const matched = activeIntentId
+                        ? intentsList.find((i: any) => i.id === activeIntentId)
+                        : intentsList.find(
+                            (i: any) =>
+                                i.chainId === selectedChain.chainId &&
+                                (i.intentStatus === "matched" || (i.depositAddress && derivedAddress && i.depositAddress.toLowerCase() === derivedAddress.toLowerCase()))
+                          );
+
+                    if (matched) {
+                        if (matched.bridgeStatus === "completed") {
+                            isAlreadyBridgingOrDone = true;
+                            setBridgeStatus("completed");
+                            setOriginBalance("0.00");
+                            void fetchBalance();
+                            if (onSuccess) onSuccess();
+                            return;
+                        } else if (matched.bridgeStatus === "pending_attestation" || matched.bridgeStatus === "minting") {
+                            isAlreadyBridgingOrDone = true;
+                            setBridgeStatus("bridging");
+                        }
+                    }
+                }
+
+                const res = await fetch(`/api/user/cctp/scan?address=${encodeURIComponent(derivedAddress)}`, {
+                    signal: AbortSignal.timeout(5000),
+                }).catch(() => null);
+                if (res && res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    const chainBal = Array.isArray(data.balances)
+                        ? data.balances.find((b: any) => b.chainId === selectedChain.chainId)
+                        : null;
+                    if (chainBal) {
+                        const balNum = parseFloat(chainBal.balanceUsdc || "0");
+                        setOriginBalance(chainBal.balanceUsdc || "0.00");
+                        if (balNum > 0 && !isAlreadyBridgingOrDone) {
+                            setBridgeStatus("detected");
+                        }
+                    }
+                }
+            } catch {
+                /* Polling failure is not critical, retry next tick. */
+            }
+        };
+
+        poll();
+        const interval = setInterval(poll, 15_000);
+        return () => clearInterval(interval);
+    }, [isOpen, selectedChain, derivedAddress, bridgeStatus, activeIntentId, fetchBalance, onSuccess]);
+
     const fetchOriginBalance = useCallback(async () => {
         if (
             !depositAddress ||
@@ -270,6 +285,10 @@ export default function DepositModal({
             selectedChain.isArc ||
             !selectedChain.usdc
         ) {
+            setOriginBalance("0.00");
+            return;
+        }
+        if (bridgeStatus === "completed") {
             setOriginBalance("0.00");
             return;
         }
@@ -303,7 +322,7 @@ export default function DepositModal({
         } finally {
             setLoadingOriginBalance(false);
         }
-    }, [depositAddress, derivedAddress, selectedChain]);
+    }, [depositAddress, derivedAddress, selectedChain, bridgeStatus]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -312,6 +331,7 @@ export default function DepositModal({
         setBridgeStatus("idle");
         setBridgeError(null);
         setDerivedAddress(null);
+        setActiveIntentId(null);
         fetchBalance();
     }, [isOpen, fetchBalance]);
 
@@ -336,6 +356,8 @@ export default function DepositModal({
 
     const resetAndClose = () => {
         setCopied(false);
+        setActiveIntentId(null);
+        setBridgeStatus("idle");
         onClose();
     };
 
@@ -590,12 +612,27 @@ export default function DepositModal({
                                                         {bridgeStatus === "error" && "Bridge error"}
                                                     </p>
                                                 </div>
-                                                <p className="text-[11px] leading-relaxed text-[#082824]/75 dark:text-white/75">
-                                                    {bridgeStatus === "detected" && `${originBalance} USDC detected on ${selectedChain.shortName}. The keeper will bridge it automatically on the next tick.`}
-                                                    {bridgeStatus === "bridging" && `Your USDC is being bridged from ${selectedChain.shortName} to Arc via Circle CCTP. This typically takes about 15 minutes.`}
-                                                    {bridgeStatus === "completed" && "Your USDC has arrived on Arc and is ready to use."}
-                                                    {bridgeStatus === "error" && (bridgeError || "Something went wrong. Please try again.")}
-                                                </p>
+                                                <div className="flex items-center justify-between">
+                                                    <p className="text-[11px] leading-relaxed text-[#082824]/75 dark:text-white/75">
+                                                        {bridgeStatus === "detected" && `${originBalance} USDC detected on ${selectedChain.shortName}. The keeper will bridge it automatically on the next tick.`}
+                                                        {bridgeStatus === "bridging" && `Your USDC is being bridged from ${selectedChain.shortName} to Arc via Circle CCTP. This typically takes about 15 minutes.`}
+                                                        {bridgeStatus === "completed" && "Your USDC has arrived on Arc and is ready to use."}
+                                                        {bridgeStatus === "error" && (bridgeError || "Something went wrong. Please try again.")}
+                                                    </p>
+                                                    {bridgeStatus === "completed" && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setBridgeStatus("waiting");
+                                                                setOriginBalance("0.00");
+                                                                registerIntent(selectedChain.chainId);
+                                                            }}
+                                                            className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 underline hover:no-underline ml-2 shrink-0"
+                                                        >
+                                                            New Deposit
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
                                         )}
 
@@ -609,7 +646,11 @@ export default function DepositModal({
                                                         <span className="text-[9px] font-bold text-[#082824]/60 dark:text-white/60">({selectedChain.feePercentage})</span>
                                                     </div>
                                                     <p className="text-[10px] text-[#082824]/60 dark:text-white/60 truncate">
-                                                        {selectedChain.isArc ? "Instant settlement" : "Estimated ~15 mins via CCTP bridge"}
+                                                        {selectedChain.isArc
+                                                            ? "Instant settlement"
+                                                            : bridgeStatus === "completed"
+                                                            ? "Deposit confirmed on Arc"
+                                                            : "Estimated ~15 mins via CCTP bridge"}
                                                     </p>
                                                 </div>
                                             </div>
@@ -634,7 +675,9 @@ export default function DepositModal({
                                                     {loadingOriginBalance ? (
                                                         <Loader2 className="w-3.5 h-3.5 animate-spin text-[#2775CA]" />
                                                     ) : (
-                                                        <span className="font-mono font-bold text-[#082824] dark:text-white">{originBalance} USDC</span>
+                                                        <span className="font-mono font-bold text-[#082824] dark:text-white">
+                                                            {bridgeStatus === "completed" ? "0.00" : originBalance} USDC
+                                                        </span>
                                                     )}
                                                 </div>
                                             </div>
@@ -652,8 +695,11 @@ export default function DepositModal({
                                         {(!loadingIntent || selectedChain.isArc) && (
                                             <div className="space-y-2">
                                                 <p className="text-[11px] text-[#082824]/75 dark:text-white/75 leading-relaxed text-center">
-                                                    Send USDC on <strong className="text-[#082824] dark:text-white">{selectedChain.name}</strong> to {selectedChain.isArc ? "your" : "the"} deposit address below.
-                                                    {!selectedChain.isArc && " It will be automatically bridged to Arc."}
+                                                    {bridgeStatus === "completed" ? (
+                                                        "Your deposit is confirmed and ready to use on Arc. Send USDC below to make an additional deposit."
+                                                    ) : (
+                                                        <>Send USDC on <strong className="text-[#082824] dark:text-white">{selectedChain.name}</strong> to {selectedChain.isArc ? "your" : "the"} deposit address below.{!selectedChain.isArc && " It will be automatically bridged to Arc."}</>
+                                                    )}
                                                 </p>
                                                 {!selectedChain.isArc && (
                                                     <div className="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#222327] p-2.5 text-[11px] leading-snug text-[#082824]/80 dark:text-white/80 shadow-sm">
