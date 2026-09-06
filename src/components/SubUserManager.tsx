@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, Shield, User, X } from "@/components/icons";
+import { Check, Copy, Loader2, Shield, User, X } from "@/components/icons";
 import type { UserCommit } from "@/types";
 
 /* USDC is 6-decimal micros everywhere server-side, and the wire format is a decimal string so
@@ -59,6 +59,7 @@ type Busy = { commitId: string; action: string } | null;
 export default function SubUserManager({ balanceVisible = true }: { balanceVisible?: boolean } = {}) {
     const [mounted, setMounted] = useState(false);
     const [commitId, setCommitId] = useState<string | null>(null);
+    const [copiedCommitId, setCopiedCommitId] = useState(false);
     const [subUsers, setSubUsers] = useState<UserCommit[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -302,15 +303,33 @@ export default function SubUserManager({ balanceVisible = true }: { balanceVisib
     };
 
     return (
-        <section className="liquid-glass rounded-3xl border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl sm:p-8">
+        <section className="liquid-glass rounded-3xl border border-black/10 dark:border-white/5 bg-white/70 dark:bg-black/40 p-5 shadow-sm dark:shadow-2xl backdrop-blur-xl sm:p-8 text-black dark:text-white">
             <div className="mb-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                    <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Delegated Spending</h2>
-                    <p className="mt-1 text-[9px] text-white/40">
+                    <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-black/75 dark:text-white/70">Delegated Spending</h2>
+                    <p className="mt-1 text-[9px] text-black/50 dark:text-white/40">
                         Let someone spend from your wallet, up to a cap you set. Pause or revoke at any time.
                     </p>
                     {commitId && (
-                        <p className="mt-2 font-mono text-[9px] text-white/30">Your Commit ID: {commitId}</p>
+                        <div className="mt-2 flex items-center gap-2">
+                            <span className="font-mono text-[9px] text-black/50 dark:text-white/50">Your Commit ID:</span>
+                            <code className="font-mono text-[10px] font-bold text-[#2775CA] dark:text-[#ccff00]">
+                                {commitId.length > 20 ? `${commitId.slice(0, 10)}...${commitId.slice(-8)}` : commitId}
+                            </code>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    navigator.clipboard.writeText(commitId);
+                                    setCopiedCommitId(true);
+                                    setTimeout(() => setCopiedCommitId(false), 2000);
+                                }}
+                                className="flex h-5 w-5 items-center justify-center rounded border border-black/15 dark:border-white/10 bg-black/5 dark:bg-white/5 text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white hover:bg-black/10 dark:hover:bg-white/10 transition"
+                                title="Copy Commit ID"
+                                aria-label="Copy Commit ID"
+                            >
+                                {copiedCommitId ? <Check className="h-3 w-3 text-emerald-600 dark:text-[#ccff00]" /> : <Copy className="h-3 w-3" />}
+                            </button>
+                        </div>
                     )}
                 </div>
                 <button

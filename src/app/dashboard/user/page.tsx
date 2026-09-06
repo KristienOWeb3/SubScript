@@ -50,6 +50,7 @@ import DmRequestsModal from "@/components/dashboard/DmRequestsModal";
 import DmInviteManagerModal from "@/components/dashboard/DmInviteManagerModal";
 import BlockedUsersModal from "@/components/dashboard/BlockedUsersModal";
 import VaultShareManager from "@/components/VaultShareManager";
+import SubUserManager from "@/components/SubUserManager";
 import AccountHoldModal from "@/components/dashboard/AccountHoldModal";
 import { getDashboardUrl } from "@/utils/navigation";
 import { compressAvatarImage } from "@/utils/imageCompression";
@@ -4455,6 +4456,9 @@ export default function UserDashboard() {
                   )}
                 </section>
 
+                <div className="pt-2">
+                  <SubUserManager balanceVisible={balanceVisible} />
+                </div>
               </section>
             )}
 
