@@ -217,6 +217,7 @@ async function topUpVault(vault: VaultRow, merchantName: string): Promise<{ id: 
         wallet: vault.userAddress,
         action: "vault_auto_topup",
         requestKey: requestId,
+        principalRequiredWei: 0n,
     }).catch((err) => console.error(`[vault-topup] sponsorship error for ${vault.id}:`, err));
 
     /* 8. Durable intent, reusing the manual-commit ledger. The id is derived from the ARMING

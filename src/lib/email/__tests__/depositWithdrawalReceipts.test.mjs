@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 
 import {
     buildDepositReceivedEmail,
+    buildDepositInitiatedEmail,
     buildWithdrawalCompletedEmail,
+    buildWithdrawalInitiatedEmail,
 } from "../transactional.ts";
 import { renderEmailLayout } from "../core.ts";
 
@@ -20,6 +22,25 @@ test("renderEmailLayout supports dark theme with centered logo and dark card", (
     assert.ok(html.includes("border:1px solid #232732"), "should have subtle dark border");
     assert.ok(html.includes("Sub<span style=\"color:#00a892\">Script</span>"), "should have styled SubScript logo");
     assert.ok(html.includes("View Dashboard"), "should have CTA button");
+});
+
+test("buildDepositInitiatedEmail generates receipt with 3D banner, moving to Arc pill, and ~15 min notice", () => {
+    const mail = buildDepositInitiatedEmail({
+        recipientEmail: "tester@example.com",
+        recipientName: "Kristien",
+        amountUsdc: "150000000", // 150 USDC
+        originChainName: "Base",
+        txHash: "0x4b7c1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab",
+    });
+
+    assert.equal(mail.to, "tester@example.com");
+    assert.equal(mail.subject, "Deposit initiated: 150 USDC from Base");
+    assert.ok(mail.text.includes("Quantity: 150 USDC"));
+    assert.ok(mail.text.includes("Base"));
+    assert.ok(mail.text.includes("Arc Network"));
+    assert.ok(mail.html.includes("Moving to Arc (~15 mins)"), "should have moving to Arc pill");
+    assert.ok(mail.html.includes("base-3d-banner-v4.png"), "should have 3D Base banner");
+    assert.ok(mail.html.includes("basescan.org/tx/0x4b7c1234"), "should link to BaseScan");
 });
 
 test("buildDepositReceivedEmail generates Spenda-style receipt with 3D banner, completed pill, and explorer link", () => {
@@ -43,6 +64,25 @@ test("buildDepositReceivedEmail generates Spenda-style receipt with 3D banner, c
     assert.ok(mail.html.includes("etherscan.io/tx/0x58c5aa18"), "should link to Etherscan");
     assert.ok(mail.html.includes("260 USDC"), "should format micro amount");
     assert.ok(mail.idempotencyKey.includes("0x58c5aa18"), "should have deterministic idempotency key");
+});
+
+test("buildWithdrawalInitiatedEmail generates receipt with 3D banner, processing pill, and Arc explorer link", () => {
+    const mail = buildWithdrawalInitiatedEmail({
+        recipientEmail: "tester@example.com",
+        recipientName: "Kristien",
+        amountUsdc: "50000000", // 50 USDC
+        destinationChainName: "Solana",
+        destinationAddress: "8034936116solanaAddressXYZ",
+        txHash: "0x89ab1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab",
+    });
+
+    assert.equal(mail.to, "tester@example.com");
+    assert.equal(mail.subject, "Withdrawal initiated: 50 USDC to Solana");
+    assert.ok(mail.text.includes("Quantity: 50 USDC"));
+    assert.ok(mail.text.includes("Solana"));
+    assert.ok(mail.html.includes("Processing (~15 mins)"), "should have processing pill");
+    assert.ok(mail.html.includes("solana-3d-banner-v4.png"), "should have 3D Solana banner");
+    assert.ok(mail.html.includes("arcscan.app/tx/0x89ab1234"), "should link to ArcScan for Arc burn");
 });
 
 test("buildWithdrawalCompletedEmail generates Spenda-style receipt with destination address and network", () => {

@@ -246,7 +246,8 @@ async function runSponsorship(request: SponsoredGasRequest): Promise<SponsoredGa
         if (request.principalRequiredWei !== undefined) {
             const reserved = request.principalRequiredWei < BigInt(0) ? BigInt(0) : request.principalRequiredWei;
             const availableForGas = (balance as bigint) > reserved ? (balance as bigint) - reserved : BigInt(0);
-            requestedWei = availableForGas >= target ? BigInt(0) : target - availableForGas;
+            const minRequired = reserved === BigInt(0) ? ethers.parseUnits("0.02", 18) : target;
+            requestedWei = availableForGas >= minRequired ? BigInt(0) : target - availableForGas;
         }
     } catch (error) {
         console.warn("[gas-sponsor] beneficiary balance check failed; sponsoring the full target:", error instanceof Error ? error.message : error);

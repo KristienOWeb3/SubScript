@@ -1,5 +1,8 @@
 /* API route to load and update system-automated DMs for the authenticated user */
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { bindTxToReceipt } from "@/lib/receipts/binding";
+import { sendSettlementReceipts } from "@/lib/email/settlementReceipts";
 import { accountDisplayName, merchantDisplayName } from "@/lib/identityDisplay";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
@@ -363,6 +366,30 @@ export async function POST(request: Request) {
                 }
                 throw err;
             }
+
+            after(async () => {
+                const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+                const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+                const supabase = supabaseUrl && supabaseServiceKey ? createClient(supabaseUrl, supabaseServiceKey) : null;
+
+                if (supabase) {
+                    await bindTxToReceipt(supabase, {
+                        txHash,
+                        payerAddress: normalizedWallet,
+                        merchantAddress: normalizedReceiver,
+                        amountUsdc: amountMicros,
+                        title: title || `${amountUsdc} USDC Transfer`,
+                    }).catch((err) => console.error("Failed to bind transfer receipt:", err));
+                }
+                await sendSettlementReceipts({
+                    kind: "wallet_transfer",
+                    amountUsdc: amountMicros,
+                    txHash,
+                    payerAddress: normalizedWallet,
+                    payeeAddress: normalizedReceiver,
+                    paymentTitle: title || "USDC Transfer",
+                }).catch((err) => console.error("Failed to send settlement receipts for log-transfer:", err));
+            });
 
             return NextResponse.json({ success: true, dmId: dm.id }, { status: 201 });
         }

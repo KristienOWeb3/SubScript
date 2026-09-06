@@ -66,7 +66,7 @@ export async function POST(request: Request) {
 
         const cleanTitle = typeof title === "string" && title.trim()
             ? title.trim().slice(0, 120)
-            : (recurringRequested ? "Recurring Subscription" : "USDC payment");
+            : (recurringRequested ? "Recurring payment" : "USDC payment");
         const cleanDescription = typeof description === "string" && description.trim()
             ? description.trim().slice(0, 500)
             : (recurringRequested ? "SubScript recurring payment link." : "SubScript payment link.");

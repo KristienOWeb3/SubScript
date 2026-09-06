@@ -44,6 +44,7 @@ export async function POST(request: Request) {
             wallet: wallet.toLowerCase(),
             action: "execute_tx",
             requestKey: `vault-reclaim:${wallet.toLowerCase()}:${merchantAddress.toLowerCase()}`,
+            principalRequiredWei: 0n,
         });
 
         const txHash = await reclaimAbandonedFromEmbedded(wallet, merchantAddress);

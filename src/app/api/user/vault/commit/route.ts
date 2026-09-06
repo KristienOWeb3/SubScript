@@ -174,6 +174,7 @@ export async function POST(request: Request) {
                 wallet: normalizedWallet,
                 action: "vault_commit",
                 requestKey: sponsorRequestKey,
+                principalRequiredWei: 0n,
             });
         } catch (sponsorError: unknown) {
             /* Structured definitive failures occurred before any financial submission, so the

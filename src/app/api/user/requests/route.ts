@@ -59,10 +59,10 @@ export async function POST(request: Request) {
 
         const cleanTitle = typeof title === "string" && title.trim()
             ? title.trim().slice(0, 120)
-            : (recurringRequested ? "Recurring subscription request" : "USDC request");
+            : (recurringRequested ? "Recurring payment request" : "USDC request");
         const cleanDescription = typeof description === "string" && description.trim()
             ? description.trim().slice(0, 500)
-            : (recurringRequested ? "Recurring subscription request via SubScript." : "Peer USDC request through SubScript.");
+            : (recurringRequested ? "Recurring payment request via SubScript." : "Peer USDC request through SubScript.");
         const parsedExpiresInHours = expiresInHours === undefined || expiresInHours === null || expiresInHours === ""
             ? null
             : Number(expiresInHours);

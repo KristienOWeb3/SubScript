@@ -5,6 +5,7 @@ import { getWalletCustody, deterministicIdempotencyKey } from "@/lib/custody";
 import { pgQuery } from "@/lib/serverPg";
 import { validateBridgeRequest, formatMicros } from "@/lib/cctp/feeEngine";
 import { processPendingCctpTransfers } from "@/lib/cctp/attestationWorker";
+import { notifyWithdrawalStarted } from "@/lib/cctp/notifications";
 import {
   addressToBytes32,
   ANY_DESTINATION_CALLER,
@@ -199,6 +200,15 @@ export async function POST(req: NextRequest) {
         WHERE id = $1`,
       [transferId, burnTxHash],
     );
+
+    /* Send withdrawal initiated email & in-app notification */
+    await notifyWithdrawalStarted({
+      recipientAddress: userWallet,
+      destinationChainName: feeInfo.chainName,
+      amountUsdc: formatMicros(feeInfo.netMicros, 6),
+      destinationAddress: storedRecipient,
+      txHash: burnTxHash,
+    });
 
     /* Trigger keeper in background to start polling Iris and relay minting onto destination chain */
     void processPendingCctpTransfers().catch((err) =>

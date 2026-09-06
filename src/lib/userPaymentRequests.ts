@@ -158,7 +158,7 @@ export async function createUserPaymentRequest({
                         `Amount: ${amount.toFixed(2)} USDC ${isRecurring ? `(${formatPeriodDescription(periodSecs)})` : ""}`,
                         isRecurring ? `Plan: ${title}` : null,
                         expiresAt ? `Valid until: ${expiresAt.toLocaleString("en-US")}` : null,
-                        isRecurring ? "Recurring subscription request via SubScript." : "This is a structured SubScript payment request, not a free-form chat.",
+                        isRecurring ? "Recurring payment request via SubScript." : "This is a structured SubScript payment request, not a free-form chat.",
                     ].filter(Boolean).join("\n"),
                     payment_link_id: isRecurring && planId ? planId : paymentLinkId,
                 });

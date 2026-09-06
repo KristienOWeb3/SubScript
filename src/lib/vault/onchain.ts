@@ -42,9 +42,19 @@ export type VaultState = {
     disputed: boolean;
 };
 
+let _cachedReadProvider: ethers.JsonRpcProvider | null = null;
+let _cachedReadProviderUrl: string | null = null;
+
 function readProvider(): ethers.JsonRpcProvider {
     const url = process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network";
-    return new ethers.JsonRpcProvider(url, undefined, { staticNetwork: true });
+    if (!_cachedReadProvider || _cachedReadProviderUrl !== url) {
+        _cachedReadProvider = new ethers.JsonRpcProvider(url, SUBSCRIPT_VAULT_CHAIN_ID, {
+            staticNetwork: true,
+            batchMaxCount: 1,
+        });
+        _cachedReadProviderUrl = url;
+    }
+    return _cachedReadProvider;
 }
 
 export function vaultReadContract(provider?: ethers.Provider) {
@@ -187,9 +197,10 @@ export function getKeeperSigner(): ethers.Wallet {
     if (!key) {
         throw new Error("KEEPER_PRIVATE_KEY is not configured — cannot run vault draws.");
     }
-    const provider = new ethers.JsonRpcProvider(process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network", undefined, { staticNetwork: true });
-    return new ethers.Wallet(key, provider);
+    return new ethers.Wallet(key, readProvider());
 }
+
+export const VAULT_ALLOWANCE_RUNWAY = BigInt(50_000_000); // 50 USDC runway for smooth repeat commits
 
 /** Approve USDC to the vault (if needed) then commit `amount` micros for (user → merchant).
     `commit` moves funds, so the caller passes an attempt-scoped idempotencyKey — a retried
@@ -198,7 +209,8 @@ export function getKeeperSigner(): ethers.Wallet {
     just (user, merchant). */
 export async function commitFromEmbedded(walletAddress: string, merchant: string, amount: bigint, idempotencyKey?: string) {
     const custody = await getWalletCustody(walletAddress);
-    await ensureUsdcAllowance(custody, SUBSCRIPT_VAULT_ADDRESS, amount);
+    const targetAllowance = amount > VAULT_ALLOWANCE_RUNWAY ? amount : VAULT_ALLOWANCE_RUNWAY;
+    await ensureUsdcAllowance(custody, SUBSCRIPT_VAULT_ADDRESS, targetAllowance);
     const { txHash } = await custody.executeContract({
         contractAddress: SUBSCRIPT_VAULT_ADDRESS,
         abi: VAULT_ABI,
