@@ -314,11 +314,12 @@ export type WalletEmailPreference = {
 
 export async function getWalletEmailPreference(walletAddress: string) {
     return pgMaybeOne<WalletEmailPreference>(
-        `select coalesce(customer.email, embedded.email, merchant.email) as email,
+        `select nullif(coalesce(customer.email, embedded.email, auth_id.current_email, merchant.email), '') as email,
                 coalesce(customer.email_enabled, merchant.email_enabled, true) as email_enabled
          from (select $1::text as wallet_address) w
          left join customers customer on lower(customer.wallet_address) = lower(w.wallet_address)
          left join user_embedded_wallets embedded on lower(embedded.wallet_address) = lower(w.wallet_address)
+         left join auth_identities auth_id on lower(auth_id.wallet_address) = lower(w.wallet_address) and auth_id.disabled_at is null
          left join merchants merchant on lower(merchant.wallet_address) = lower(w.wallet_address)
          limit 1`,
         [walletAddress.toLowerCase()]

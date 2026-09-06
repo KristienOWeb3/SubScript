@@ -95,8 +95,8 @@ test("proration prices the rate difference, not the nominal amount difference", 
 
 test("the vault UI mirrors contract withdrawal/reclaim conditions and shows the cycle timeline", () => {
     const page = source("src/app/dashboard/user/page.tsx");
-    /* Withdraw only when INACTIVE + lock elapsed (withdrawSurplus's actual guards). */
-    assert.match(page, /const canWithdraw = balance > 0 && blocked && !locked;/);
+    /* Withdraw only when INACTIVE + lock elapsed for embedded wallets; external wallets can withdraw whenever balance > 0. */
+    assert.match(page, /const canWithdraw = balance > 0 && \(isExternalWallet \? true : \(blocked && !locked\)\);/);
     /* Reclaim only after lockedUntil + grace on a still-active vault. */
     assert.match(page, /const canReclaim = !blocked && !disputed && balance > 0 && reclaimDate !== null && now >= reclaimDate\.getTime\(\);/);
     assert.match(page, /Reclaim escrow/);

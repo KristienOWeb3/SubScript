@@ -741,15 +741,10 @@ export default function DepositModal({
                                         {/* Copy Address Box */}
                                         {(!loadingIntent || selectedChain.isArc) && (
                                             <div className="bg-white dark:bg-[#222327] border border-black/15 dark:border-white/15 rounded-2xl p-3.5 text-left shadow-sm">
-                                                <div className="flex items-center justify-between mb-1">
+                                                <div className="mb-1">
                                                     <p className="text-[9px] text-[#082824]/60 dark:text-white/60 uppercase tracking-wider font-black">
-                                                        {selectedChain.isArc ? "Your EVM Deposit Address" : "Deposit Address"}
+                                                        {selectedChain.isArc ? "Your Arc Deposit Address" : "Deposit Address"}
                                                     </p>
-                                                    {selectedChain.isArc && (
-                                                        <span className="text-[9px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                                                            Same across all EVMs
-                                                        </span>
-                                                    )}
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     <code className="flex-1 text-[11px] text-[#082824] dark:text-[#f4f4f5] font-mono break-all select-all font-semibold">

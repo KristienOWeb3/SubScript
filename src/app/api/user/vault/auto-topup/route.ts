@@ -188,6 +188,7 @@ export async function POST(request: Request) {
                 wallet: normalizedWallet,
                 action: "vault_auto_topup",
                 requestKey: `auto-topup-approve:${requestId}:${normalizedWallet}:${merchantAddress}:${monthlyLimitUsdc.toString()}`,
+                principalRequiredWei: 0n,
             });
         } catch (sponsorError: unknown) {
             if (isSponsoredGasError(sponsorError)) {

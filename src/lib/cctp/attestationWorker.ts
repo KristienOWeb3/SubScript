@@ -240,6 +240,7 @@ export async function processPendingCctpTransfers(): Promise<CctpWorkerResult> {
         const originName = isOriginArc ? "Arc Network" : (CCTP_CONFIG[Number(item.origin_chain_id)]?.name || `Chain ${item.origin_chain_id}`);
         await notifyDepositArrived({
           recipientAddress: item.recipient_address,
+          userWallet: item.user_wallet,
           originChainName: originName,
           netUsdc,
           txHash: mintTxHash,
@@ -247,6 +248,7 @@ export async function processPendingCctpTransfers(): Promise<CctpWorkerResult> {
       } else {
         await notifyWithdrawalArrived({
           recipientAddress: item.user_wallet,
+          userWallet: item.recipient_address,
           destinationChainName: chainName,
           netUsdc,
           destinationAddress: item.recipient_address,

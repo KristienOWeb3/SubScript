@@ -365,7 +365,7 @@ export function QrScannerModal({
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-2xl p-4 sm:p-6 animate-in fade-in duration-200"
+      className="fixed inset-0 z-[150] flex items-center justify-center bg-black/85 backdrop-blur-2xl p-4 sm:p-6 animate-in fade-in duration-200"
     >
       <div className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-white/15 bg-[#0e1217]/95 p-5 sm:p-6 text-white shadow-2xl">
         {/* Ambient Top Glow */}

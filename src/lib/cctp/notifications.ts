@@ -29,20 +29,43 @@ async function createNotification(params: {
 }
 
 /** Fired as soon as the burn lands on the origin chain. */
-export function notifyDepositStarted(params: {
+export async function notifyDepositStarted(params: {
   recipientAddress: string;
+  userWallet?: string;
   originChainName: string;
+  amountUsdc?: string;
+  txHash?: string;
 }): Promise<void> {
-  return createNotification({
+  await createNotification({
     recipientAddress: params.recipientAddress,
     title: "USDC moving to Arc",
     body: `USDC on ${params.originChainName} received, moving to arc.. (Please wait for 15 minutes)`,
   });
+
+  try {
+    const { resolveRecipient, safelySendEmail } = await import("@/lib/email/core");
+    let email = await resolveRecipient(params.recipientAddress, "transactional");
+    if (!email && params.userWallet) {
+      email = await resolveRecipient(params.userWallet, "transactional");
+    }
+    if (email) {
+      const { sendDepositInitiatedEmail } = await import("@/lib/email/transactional");
+      await safelySendEmail("deposit initiated email", () => sendDepositInitiatedEmail({
+        recipientEmail: email,
+        amountUsdc: params.amountUsdc || "0.00",
+        originChainName: params.originChainName,
+        txHash: params.txHash,
+      }));
+    }
+  } catch (emailErr) {
+    console.warn("[cctp] could not send deposit initiation email:", emailErr);
+  }
 }
 
 /** Fired when Arc has minted and the money is spendable. */
 export async function notifyDepositArrived(params: {
   recipientAddress: string;
+  userWallet?: string;
   originChainName: string;
   netUsdc: string;
   txHash?: string;
@@ -55,7 +78,10 @@ export async function notifyDepositArrived(params: {
 
   try {
     const { resolveRecipient, safelySendEmail } = await import("@/lib/email/core");
-    const email = await resolveRecipient(params.recipientAddress, "transactional");
+    let email = await resolveRecipient(params.recipientAddress, "transactional");
+    if (!email && params.userWallet) {
+      email = await resolveRecipient(params.userWallet, "transactional");
+    }
     if (email) {
       const { sendDepositReceivedEmail } = await import("@/lib/email/transactional");
       await safelySendEmail("deposit received email", () => sendDepositReceivedEmail({
@@ -70,9 +96,46 @@ export async function notifyDepositArrived(params: {
   }
 }
 
+/** Fired when an outbound withdrawal has burned on Arc and started CCTP routing. */
+export async function notifyWithdrawalStarted(params: {
+  recipientAddress: string;
+  userWallet?: string;
+  destinationChainName: string;
+  amountUsdc: string;
+  destinationAddress?: string;
+  txHash?: string;
+}): Promise<void> {
+  await createNotification({
+    recipientAddress: params.recipientAddress,
+    title: "Withdrawal processing",
+    body: `Withdrawal of ${params.amountUsdc} USDC to ${params.destinationChainName} is moving via CCTP.. (Please wait for 15 minutes)`,
+  });
+
+  try {
+    const { resolveRecipient, safelySendEmail } = await import("@/lib/email/core");
+    let email = await resolveRecipient(params.recipientAddress, "transactional");
+    if (!email && params.userWallet) {
+      email = await resolveRecipient(params.userWallet, "transactional");
+    }
+    if (email) {
+      const { sendWithdrawalInitiatedEmail } = await import("@/lib/email/transactional");
+      await safelySendEmail("withdrawal initiated email", () => sendWithdrawalInitiatedEmail({
+        recipientEmail: email,
+        amountUsdc: params.amountUsdc,
+        destinationChainName: params.destinationChainName,
+        destinationAddress: params.destinationAddress,
+        txHash: params.txHash,
+      }));
+    }
+  } catch (emailErr) {
+    console.warn("[cctp] could not send withdrawal initiation email:", emailErr);
+  }
+}
+
 /** Fired when a withdrawal's destination chain has minted. */
 export async function notifyWithdrawalArrived(params: {
   recipientAddress: string;
+  userWallet?: string;
   destinationChainName: string;
   netUsdc: string;
   destinationAddress?: string;
@@ -86,7 +149,10 @@ export async function notifyWithdrawalArrived(params: {
 
   try {
     const { resolveRecipient, safelySendEmail } = await import("@/lib/email/core");
-    const email = await resolveRecipient(params.recipientAddress, "transactional");
+    let email = await resolveRecipient(params.recipientAddress, "transactional");
+    if (!email && params.userWallet) {
+      email = await resolveRecipient(params.userWallet, "transactional");
+    }
     if (email) {
       const { sendWithdrawalCompletedEmail } = await import("@/lib/email/transactional");
       await safelySendEmail("withdrawal completed email", () => sendWithdrawalCompletedEmail({

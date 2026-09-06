@@ -8,6 +8,7 @@ import { STANDARD_CONTRACT_ADDRESS } from "../contracts/constants";
 import { assertProviderRateLimit } from "@/lib/providerRateLimit";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
 import { executeWithRpcFallback } from "@/lib/payments/rpc";
+import { getAccountRole } from "@/lib/accounts/roles";
 
 const STANDARD_ABI = [
     "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive)"
@@ -53,15 +54,21 @@ export async function triggerExitSurvey(
             return;
         }
 
-        // Respect the merchant's churn-survey preference — skip entirely when disabled.
-        // Also pull any custom exit-survey question the merchant defined (SUB-501).
+        // Exit surveys are strictly opt-in for verified ENTERPRISE merchants.
+        // Peer users and unconfigured merchants never trigger exit surveys.
+        const merchantRole = await getAccountRole(merchantAddress);
+        if (merchantRole !== "ENTERPRISE") {
+            console.log("Exit survey skipped: counterparty is not an enterprise merchant.");
+            return;
+        }
+
         const merchantPrefResult = await db
             .from("merchants")
             .select("churn_survey_enabled, churn_survey_question")
             .eq("wallet_address", merchantAddress.toLowerCase())
             .maybeSingle();
-        if (merchantPrefResult?.data && merchantPrefResult.data.churn_survey_enabled === false) {
-            console.log("Exit survey skipped: merchant has churn survey disabled.");
+        if (!merchantPrefResult?.data || merchantPrefResult.data.churn_survey_enabled !== true) {
+            console.log("Exit survey skipped: merchant does not have churn survey enabled.");
             return;
         }
         const customChurnQuestion = typeof merchantPrefResult?.data?.churn_survey_question === "string"
@@ -81,7 +88,7 @@ export async function triggerExitSurvey(
         // rendered as escaped text content in the client, so no HTML sanitization is needed here.
         const surveyPrompt = customChurnQuestion
             ? customChurnQuestion
-            : `Exit survey for tier ${subscriptionTier}: We would love to know why you cancelled your subscription. Please select one of the options below to help ${merchantName} improve:`;
+            : `Quick question: why did you decide to cancel your subscription with ${merchantName}? Share any feedback to help improve the service:`;
         const subIdStr = (typeof customerAddressOrSubId === "number" || /^\d+$/.test(String(customerAddressOrSubId)))
             ? String(customerAddressOrSubId)
             : "";
@@ -95,7 +102,7 @@ export async function triggerExitSurvey(
                 receiver_address: customerAddress.toLowerCase(),
                 message_type: "CHURN_SURVEY",
                 status: "PENDING",
-                title: "We are sorry to see you go",
+                title: "Subscription feedback",
                 description: surveyPrompt,
                 dedupe_key: dedupeKey,
             });
@@ -122,8 +129,8 @@ export async function triggerExitSurvey(
         }
 
         const adminAddress = (process.env.ADMIN_WALLET_ADDRESS || "").toLowerCase();
-        let subjectTemplate = "We are sorry to see you go";
-        let bodyTemplate = "Hello,\n\nWe noticed that your subscription (Tier: {{subscription_tier}}) was cancelled for wallet {{customer_wallet}}. We would appreciate it if you could share your feedback with us.\n\nBest regards,\nSubScript Team";
+        let subjectTemplate = "Subscription feedback";
+        let bodyTemplate = "Hello,\n\nYour subscription (Tier: {{subscription_tier}}) was cancelled for wallet {{customer_wallet}}. If you have a moment, we would appreciate any feedback on how we can improve.\n\nBest regards,\nSubScript Team";
 
         if (template && template.is_active && merchantAddress.toLowerCase() !== adminAddress) {
             subjectTemplate = template.subject_line;

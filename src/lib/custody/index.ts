@@ -88,7 +88,7 @@ export interface ContractExecution {
 /* How long to wait for a Circle transaction to confirm before giving up. Circle SCA transactions
    go through the 4337 pipeline, so confirmation can take a bit longer than a raw EOA send. */
 const CIRCLE_TX_CONFIRM_TIMEOUT_MS = Number(process.env.CIRCLE_TX_CONFIRM_TIMEOUT_MS) || 110_000;
-const CIRCLE_TX_POLL_INTERVAL_MS = 2_000;
+const CIRCLE_TX_POLL_INTERVAL_MS = Number(process.env.CIRCLE_TX_POLL_INTERVAL_MS) || 800;
 
 export interface WalletCustody {
     readonly address: string;

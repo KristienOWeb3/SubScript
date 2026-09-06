@@ -167,11 +167,14 @@ export async function createSubscriptionStartedDm({
         ]
         : [`Amount: ${amount} USDC / ${cadence}`, ...changeLines];
 
+    const cleanPlanName = (!planName || planName.toLowerCase() === "recurring subscription")
+        ? "recurring payments"
+        : planName;
     const title = isResubscription
-        ? `Resubscribed to ${planName}`
+        ? `Resubscribed to ${cleanPlanName}`
         : isChange
-        ? `Plan changed to ${planName}`
-        : `Subscribed to ${planName}`;
+        ? `Plan changed to ${cleanPlanName}`
+        : `Subscribed to ${cleanPlanName}`;
 
     const dm = await createDmAndNotify({
         senderAddress: merchant,

@@ -105,6 +105,8 @@ export async function POST(req: NextRequest) {
     await notifyDepositStarted({
       recipientAddress: userWallet,
       originChainName: chainConfig.name,
+      amountUsdc: formatMicros(feeInfo.netMicros),
+      txHash: String(burnTxHash),
     });
 
     /* Trigger keeper in background to start polling Iris and relay minting onto Arc */

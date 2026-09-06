@@ -4,6 +4,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { pgQuery, pgMaybeOne } from "@/lib/serverPg";
 import { validateBridgeRequest, formatMicros } from "@/lib/cctp/feeEngine";
 import { processPendingCctpTransfers } from "@/lib/cctp/attestationWorker";
+import { notifyWithdrawalStarted } from "@/lib/cctp/notifications";
 import { getArcRpcUrl } from "@/lib/cctp/relayer";
 import {
   ARC_CCTP_DOMAIN_ID,
@@ -106,6 +107,15 @@ export async function POST(req: NextRequest) {
         String(burnTxHash),
       ],
     );
+
+    /* Send withdrawal initiated email & in-app notification */
+    await notifyWithdrawalStarted({
+      recipientAddress: userWallet,
+      destinationChainName: feeInfo.chainName,
+      amountUsdc: formatMicros(feeInfo.netMicros, 6),
+      destinationAddress: recipientAddress.trim(),
+      txHash: String(burnTxHash),
+    });
 
     /* Trigger keeper in background to start polling Iris and relay minting onto destination chain */
     void processPendingCctpTransfers().catch((err) =>

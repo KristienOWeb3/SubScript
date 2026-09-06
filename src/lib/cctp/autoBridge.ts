@@ -17,7 +17,7 @@ import {
 import { deriveDepositSigner } from "./depositAddresses";
 import { getChainRelayer, resolveRpcUrl } from "./relayer";
 import { calculateBridgeFee, formatMicros, getMinBridgeAmount } from "./feeEngine";
-import { notifyDepositStarted, notifyAdminsLowGas } from "./notifications";
+import { notifyDepositStarted, notifyDepositArrived, notifyAdminsLowGas } from "./notifications";
 import { processPendingCctpTransfers } from "./attestationWorker";
 
 const isProd = process.env.NEXT_PUBLIC_APP_ENV === "production" || process.env.NODE_ENV === "production";
@@ -251,6 +251,13 @@ async function processArcIntent(intent: ActiveIntent): Promise<boolean> {
     [user_wallet, origin_chain_id],
   ).catch(() => undefined);
 
+  await notifyDepositArrived({
+    recipientAddress: user_wallet,
+    originChainName: "Arc Network",
+    netUsdc: formatMicros(netMicros),
+    txHash,
+  });
+
   return true;
 }
 
@@ -472,6 +479,8 @@ async function processIntent(intent: ActiveIntent): Promise<boolean> {
   await notifyDepositStarted({
     recipientAddress: user_wallet,
     originChainName: chainConfig.name,
+    amountUsdc: formatMicros(feeInfo.netMicros),
+    txHash: burnTxHash,
   });
 
   console.log(

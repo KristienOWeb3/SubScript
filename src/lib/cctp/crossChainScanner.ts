@@ -149,8 +149,9 @@ export async function detectAndNotifyInboundCctp(
     [burnTxHash]
   );
 
+  const feeInfo = calculateBridgeFee(grossAmountMicros, originChainId, "inbound_deposit");
+
   if (!existing) {
-    const feeInfo = calculateBridgeFee(grossAmountMicros, originChainId, "inbound_deposit");
     await pgQuery(
       `INSERT INTO cctp_bridge_transfers
          (direction, user_wallet, recipient_address, origin_chain_id, origin_domain,
@@ -175,6 +176,8 @@ export async function detectAndNotifyInboundCctp(
   await notifyDepositStarted({
     recipientAddress: normalizedWallet,
     originChainName: config.name,
+    amountUsdc: formatMicros(feeInfo.netMicros),
+    txHash: burnTxHash,
   });
 
   void processPendingCctpTransfers().catch(() => undefined);

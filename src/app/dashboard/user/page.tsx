@@ -1831,6 +1831,13 @@ export default function UserDashboard() {
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.success) throw new Error(data.error || "Cancel transaction failed.");
+            setSubscriptions((prev) =>
+              prev.map((s) =>
+                s.merchantAddress.toLowerCase() === merchantAddress.toLowerCase()
+                  ? { ...s, status: "CANCELLED", cancelAtPeriodEnd: false }
+                  : s
+              )
+            );
             if (data.message) {
               setPlanManagerStatus(data.message);
               triggerToast("Subscription cancelled");
@@ -1948,7 +1955,7 @@ export default function UserDashboard() {
             amountUsdc: humanAmount,
             txHash,
             title: `${humanAmount} USDC Sent`,
-            description: dm.title ? `Paid request: ${dm.title}` : "Paid in-DM payment request.",
+            description: dm.title ? `Paid request: ${dm.title}` : `Paid ${humanAmount} USDC.`,
           }),
         });
       }
@@ -2055,8 +2062,8 @@ export default function UserDashboard() {
         body: JSON.stringify({
           receiverAddress: selectedDmPeer,
           amountUsdc: dmRequestAmount,
-          title: dmRequestBillingType === "RECURRING" ? "Recurring Subscription" : "DM payment request",
-          description: dmRequestNote || (dmRequestBillingType === "RECURRING" ? "SubScript recurring subscription request" : "SubScript in-DM payment request"),
+          title: dmRequestBillingType === "RECURRING" ? "Recurring payment request" : "Payment request",
+          description: dmRequestNote || (dmRequestBillingType === "RECURRING" ? "Recurring payment request via SubScript." : "Payment request via SubScript."),
           expiresInHours: Number(dmRequestDuration),
           billingType: dmRequestBillingType,
           interval: dmRequestInterval,
@@ -2065,7 +2072,7 @@ export default function UserDashboard() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send DM request");
 
-      setDmRequestStatus(dmRequestBillingType === "RECURRING" ? "Recurring subscription request sent." : "Request sent inside this DM.");
+      setDmRequestStatus(dmRequestBillingType === "RECURRING" ? "Recurring payment request sent." : "Request sent inside this DM.");
       setDmRequestOpen(false);
       setDmRequestAmount("");
       setDmRequestNote("");
@@ -2276,8 +2283,9 @@ export default function UserDashboard() {
     event?.preventDefault();
     setVaultActionError(null);
     /* /api/auth/session only exposes emails returned by getVerifiedAccountEmail, so userEmail is
-       the client-side source of truth for the same OTP/trusted-provider check enforced server-side. */
-    if (vaultActionMode === "commit" && !userEmail) {
+       the client-side source of truth for the same OTP/trusted-provider check enforced server-side.
+       External browser wallets sign directly via their wallet provider and do not use server custody. */
+    if (isEmbeddedWalletSession && vaultActionMode === "commit" && !userEmail) {
       setVaultActionError("Verify your email before committing.");
       return;
     }
@@ -2505,7 +2513,7 @@ export default function UserDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amountUsdc: linkAmount,
-          title: linkMemo.trim() || (linkBillingType === "RECURRING" ? "Recurring Subscription" : "USDC payment"),
+          title: linkMemo.trim() || (linkBillingType === "RECURRING" ? "Recurring payment" : "USDC payment"),
           description: linkMemo.trim() || (linkBillingType === "RECURRING" ? "SubScript recurring payment link." : "SubScript payment link."),
           billingType: linkBillingType,
           interval: linkInterval,
@@ -2889,7 +2897,7 @@ export default function UserDashboard() {
               amountUsdc: singleAmount,
               txHash,
               title: `${singleAmount} USDC Sent`,
-              description: `Sent ${singleAmount} USDC directly from embedded wallet.`,
+              description: `Sent ${singleAmount} USDC.`,
             }),
           }).catch((err) => console.error("Failed to log single send transfer:", err));
           await loadDms().catch(() => {});
@@ -2946,7 +2954,7 @@ export default function UserDashboard() {
             amountUsdc: singleAmount,
             txHash,
             title: `${singleAmount} USDC Sent`,
-            description: `Sent ${singleAmount} USDC directly to recipient.`,
+            description: `Sent ${singleAmount} USDC.`,
           }),
         }).catch((err) => console.error("Failed to log single send transfer:", err));
         await loadDms().catch(() => {});
@@ -3015,7 +3023,7 @@ export default function UserDashboard() {
                 amountUsdc: t.amountUsdc,
                 txHash: t.txHash,
                 title: `${t.amountUsdc} USDC Sent`,
-                description: `Sent ${t.amountUsdc} USDC in a batch payout.`,
+                description: `Sent ${t.amountUsdc} USDC.`,
               }),
             }).catch(console.error);
           }
@@ -3066,7 +3074,7 @@ export default function UserDashboard() {
               amountUsdc: row.amount,
               txHash,
               title: `${row.amount} USDC Sent`,
-              description: `Sent ${row.amount} USDC in a batch payout.`,
+              description: `Sent ${row.amount} USDC.`,
             }),
           }).catch((err) => console.error("Failed to log batch send transfer:", err));
         }
@@ -3101,7 +3109,7 @@ export default function UserDashboard() {
                 amountUsdc: t.amountUsdc,
                 txHash: t.txHash,
                 title: `${t.amountUsdc} USDC Sent`,
-                description: `Sent ${t.amountUsdc} USDC in a batch payout.`,
+                description: `Sent ${t.amountUsdc} USDC.`,
               }),
             }).catch(console.error);
           }
@@ -3213,10 +3221,17 @@ export default function UserDashboard() {
      subscription therefore fell through as a personal contact and got offered Block and Send
      Funds, which is exactly what the note below says must not happen. peerRole is the real signal
      and is already first in the chain. */
-  const isActiveDmMerchant = selectedDmPeer
-    ? activeThread?.peerRole === "ENTERPRISE" ||
-      subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase())
-    : false;
+  /* Active merchant status is scoped strictly to enterprise counterparties where an active,
+     un-cancelled subscription exists. User-to-user recurring payments never convert a peer DM
+     into a merchant DM, and cancelling an enterprise subscription reverts immediately. */
+  const isPeerEnterprise = activeThread?.peerRole === "ENTERPRISE";
+  const hasActiveEnterpriseSub = subscriptions.some(
+    (s) =>
+      s.merchantAddress.toLowerCase() === selectedDmPeer?.toLowerCase() &&
+      s.status === "ACTIVE" &&
+      !s.cancelAtPeriodEnd
+  );
+  const isActiveDmMerchant = Boolean(selectedDmPeer && isPeerEnterprise && hasActiveEnterpriseSub);
   /* Kept strictly separate from isActiveDmMerchant above. That flag answers "is this
      counterparty a business?" and correctly drives whether Send Funds appears — you pay a
      business through its payment link, not by pushing USDC at it. It is NOT a trust signal: it
@@ -4399,6 +4414,7 @@ export default function UserDashboard() {
                               resumeBusy={vaultResumeBusyId === String(vault.id || vault.merchantAddress)}
                               reclaimBusy={vaultReclaimBusyId === String(vault.id || vault.merchantAddress)}
                               balanceVisible={balanceVisible}
+                              isExternalWallet={!isEmbeddedWalletSession}
                             />
                           </div>
                         ))}
@@ -7865,13 +7881,6 @@ export default function UserDashboard() {
         userRole="USER"
       />
 
-      <QrScannerModal
-        isOpen={qrScannerOpen}
-        onClose={() => setQrScannerOpen(false)}
-        onScan={handleScanQrResult}
-        title={qrTargetIndex !== null ? `Scan QR for Recipient #${qrTargetIndex + 1}` : "Scan QR"}
-      />
-
       {/* Single Send is a modal now; the Send tab body belongs to Batch Payouts. The routing
           notice is passed down rather than re-derived so Arc/CCTP rules live in one place. */}
       <SendSingleModal
@@ -7904,6 +7913,13 @@ export default function UserDashboard() {
             elsewhereUsdc={elsewhereUsdc}
           />
         }
+      />
+
+      <QrScannerModal
+        isOpen={qrScannerOpen}
+        onClose={() => setQrScannerOpen(false)}
+        onScan={handleScanQrResult}
+        title={qrTargetIndex !== null ? `Scan QR for Recipient #${qrTargetIndex + 1}` : "Scan QR"}
       />
 
       <DmRequestsModal
@@ -8652,7 +8668,12 @@ function DmBubble({
   /* `incoming` drives every visual decision below — side, avatar, bubble fill, label colour.
      `senderIsPeer` is the real direction and is what the action gates use. */
   const incoming = forceMerchantVoice || senderIsPeer;
-  const displayTitle = shortenWalletsInText(dm.title);
+  let displayTitle = shortenWalletsInText(dm.title);
+  if (displayTitle && /subscribed to recurring subscription/i.test(displayTitle)) {
+    displayTitle = "Subscribed to recurring payments";
+  } else if (displayTitle && /resubscribed to recurring subscription/i.test(displayTitle)) {
+    displayTitle = "Resubscribed to recurring payments";
+  }
   const displayDescription = shortenWalletsInText(dm.description);
   const senderLabel = formatPeerDisplayName(dm.senderName, dm.senderAddress);
   /* When the user's own wallet wrote the row, the merchant is the receiver — so merchant voice has
@@ -8898,7 +8919,7 @@ function DmBubble({
           {isRequest ? (
             <div className="space-y-2 font-sans text-xs">
               <h4 
-                className={`text-xs font-black uppercase tracking-wider border-b pb-1.5 ${
+                className={`text-xs font-black tracking-wider border-b pb-1.5 ${
                   incoming ? "text-white border-white/5" : "text-white border-white/10"
                 }`}
               >
@@ -8928,7 +8949,7 @@ function DmBubble({
             </div>
           ) : (
             <>
-              <h3 className="text-xs font-black uppercase leading-snug text-white break-words [word-break:break-word]">{displayTitle || "SubScript message"}</h3>
+              <h3 className="text-xs font-black leading-snug text-white break-words [word-break:break-word]">{displayTitle || "SubScript message"}</h3>
               <div className="mt-2 space-y-1">
                 {lines.length > 0 ? lines.map((line) => {
                   /* Receipt references read as noise in a chat bubble — show a same-origin
@@ -9480,7 +9501,7 @@ function DmRequestComposer({
                 <textarea
                   value={note}
                   onChange={(event) => onNoteChange(event.target.value)}
-                  placeholder={billingType === "RECURRING" ? "What is this recurring subscription for?" : "What is this request for?"}
+                  placeholder={billingType === "RECURRING" ? "What is this recurring payment for?" : "What is this request for?"}
                   rows={2}
                   className="subscript-input bg-white border border-black/15 text-[#111827] resize-none"
                 />
@@ -10031,6 +10052,7 @@ function MeteredVaultRow({
   resumeBusy,
   reclaimBusy,
   balanceVisible,
+  isExternalWallet,
 }: {
   vault: any;
   onCommit: (vault: any) => void;
@@ -10043,6 +10065,7 @@ function MeteredVaultRow({
   resumeBusy: boolean;
   reclaimBusy: boolean;
   balanceVisible: boolean;
+  isExternalWallet?: boolean;
 }) {
   const balance = Number(vault.balanceUsdc || 0);
   const commitNeeded = Number(vault.commitUsdc || 0);
@@ -10056,7 +10079,7 @@ function MeteredVaultRow({
   const now = Date.now();
   const locked = lockedUntilDate ? now < lockedUntilDate.getTime() : false;
 
-  const canWithdraw = balance > 0 && blocked && !locked;
+  const canWithdraw = balance > 0 && (isExternalWallet ? true : (blocked && !locked));
   const awaitingSettlement = !blocked && !disputed && lockedUntilDate !== null
     && now >= lockedUntilDate.getTime() && (reclaimDate === null || now < reclaimDate.getTime());
   const canReclaim = !blocked && !disputed && balance > 0 && reclaimDate !== null && now >= reclaimDate.getTime();

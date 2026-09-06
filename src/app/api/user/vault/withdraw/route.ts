@@ -50,6 +50,7 @@ export async function POST(request: Request) {
             wallet: wallet.toLowerCase(),
             action: "vault_withdraw",
             requestKey: sponsorRequestKey,
+            principalRequiredWei: 0n,
         });
 
         const txHash = await withdrawFromEmbedded(wallet, merchantAddress, amount);
