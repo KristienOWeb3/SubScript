@@ -318,18 +318,56 @@ export default function VaultShareManager({
     return (
         <div className="space-y-4">
             {/* Header with Title & Stats */}
-            <div className="flex items-center justify-between border-b border-black/10 pb-3">
+            <div className="flex items-center justify-between border-b border-black/10 dark:border-white/10 pb-3">
                 <div className="flex items-center gap-2">
                     <Shield className="h-4 w-4 text-[#2775CA]" />
-                    <h3 className="text-xs font-black uppercase tracking-wider text-[#111827]">
+                    <h3 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white">
                         Shared Access & Delegated Users
                     </h3>
                 </div>
                 {data && (
-                    <span className="text-[10px] font-bold text-black/50">
+                    <span className="text-[10px] font-bold text-black/50 dark:text-white/50">
                         {liveSharesList.length} / {data.maxShares} Users
                     </span>
                 )}
+            </div>
+
+            {/* Primary Commit ID Pill with 1-Tap Copy */}
+            <div className="flex items-center justify-between gap-2 rounded-2xl border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-black/30 px-3.5 py-2 text-black dark:text-white shadow-sm">
+                <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-black/60 dark:text-white/60 shrink-0">
+                        Primary Commit ID:
+                    </span>
+                    {copiedId === data?.rootCommitId && (
+                        <span className="rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[8px] font-bold text-emerald-600 dark:text-emerald-400 shrink-0">
+                            Copied
+                        </span>
+                    )}
+                </div>
+                <div className="flex items-center gap-2 min-w-0">
+                    {data?.rootCommitId ? (
+                        <code className="truncate font-mono text-xs font-bold text-[#2775CA]">
+                            {secretId(data.rootCommitId)}
+                        </code>
+                    ) : (
+                        <div className="h-4 w-28 rounded bg-black/10 dark:bg-white/10 animate-pulse" />
+                    )}
+                    {data?.rootCommitId && (
+                        <button
+                            type="button"
+                            onClick={() => copyId(data.rootCommitId)}
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-black/15 dark:border-white/15 bg-white dark:bg-white/10 text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/15 transition shadow-sm"
+                            title="Copy Primary Commit ID"
+                            aria-label="Copy Primary Commit ID"
+                        >
+                            {copiedId === data.rootCommitId ? (
+                                <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                            ) : (
+                                <Copy className="h-3.5 w-3.5" />
+                            )}
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* Horizontal Members / Users Avatar Row with Prominent (+) Button */}
