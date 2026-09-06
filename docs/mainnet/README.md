@@ -421,4 +421,3 @@ It applies:
 | 2026-09-06 | Primary Commit ID Restoration & Delegated Spending Access | Restored Primary Commit ID pill on metered vault cards in `VaultShareManager.tsx` with 1-tap clipboard copy, truncated monospace formatting, and reactive light/dark theme styling. Re-mounted wallet-level delegated spending component (`<SubUserManager />`) in user dashboard Commit tab with 1-tap copy for root commit IDs. Verified 577/577 security tests and 0 typecheck errors. | Antigravity AI |
 
 
-
