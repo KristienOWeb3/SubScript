@@ -16,11 +16,9 @@ interface ReceiptClientProps {
     receiptId: string;
 }
 
-/* The checkout's palette (src/app/pay/[id]/PublicPayClient.tsx), so a payer who just came from
-   there recognises the document: ivory page, white card, hairline borders, #111827 ink. The
-   accent stays SubScript teal. #00d2b4 is a fill colour — as text on white it sits at 1.9:1 — so
-   anything teal and readable uses the darker ink below (4.9:1). */
-const ACCENT_INK = "#007f70";
+/* Modern SubScript palette: Ivory page (#FFFFF0), white card, hairline borders (border-black/15),
+   #111827 ink, and SubScript Blue (#2775CA) accents. */
+const ACCENT_INK = "#2775CA";
 
 function formatAddress(address: string) {
     if (!address) return "";
@@ -498,7 +496,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                         <span aria-live="polite" className="sr-only">{referenceCopied ? "Reference copied" : ""}</span>
                     </div>
 
-                    {!sessionWallet && <div className="receipt-screen-only mt-5 rounded-2xl border p-5 space-y-4" style={{ borderColor: "rgba(0,127,112,0.35)", backgroundColor: "rgba(0,127,112,0.08)" }}>
+                    {!sessionWallet && <div className="receipt-screen-only mt-5 rounded-2xl border border-[#2775CA]/20 bg-[#2775CA]/5 p-5 space-y-4">
                         <p className="text-sm leading-relaxed text-[#111827]">
                             Set up a SubScript account and this receipt sits with the rest of your payments, with limits you set.
                         </p>

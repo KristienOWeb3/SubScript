@@ -42,16 +42,19 @@ SubScript is non-custodial subscription, metered billing, escrow vault, and paym
 This section details every manual action you as an operator must perform yourself across external consoles, hardware wallets, and air-gapped terminals.
 
 ### Phase A: Air-Gapped Key Generation & Hardware Custody
-- [ ] **Step A.1 — Generate Admin Keeper Key (`PRIVATE_KEY`):**
-  On an offline/air-gapped terminal, generate a fresh EVM keypair:
+- [ ] **Step A.0 — Air-Gapped Key Generation Script:**
+  On an offline/air-gapped terminal, generate all required protocol keypairs at once:
   ```bash
-  node -e "const w=require('ethers').Wallet.createRandom(); console.log('Address:', w.address); console.log('PRIVATE_KEY:', w.privateKey)"
+  node scripts/generate-airgap-keys.mjs
+  # Or output .env format directly:
+  node scripts/generate-airgap-keys.mjs --env
   ```
-  Store the private key in your encrypted password manager. Never commit this key to Git.
+- [ ] **Step A.1 — Generate Admin Keeper Key (`PRIVATE_KEY`):**
+  Store the generated `PRIVATE_KEY` in your encrypted password manager / secrets vault. Never commit this key to Git.
 - [ ] **Step A.2 — Generate Vault Drawer Key (`KEEPER_PRIVATE_KEY`):**
-  Generate a second fresh keypair for the vault settlement keeper using the same method.
+  Store the generated `KEEPER_PRIVATE_KEY` and record `KEEPER_ADDRESS`.
 - [ ] **Step A.3 — Generate Gas Sponsor Key (`SPONSOR_PRIVATE_KEY`):**
-  Generate a third fresh keypair for the gas sponsorship wallet.
+  Store the generated `SPONSOR_PRIVATE_KEY` and record `SPONSOR_ADDRESS`.
 - [ ] **Step A.4 — Set Up Root Admin Hardware Wallet (`ADMIN_WALLET_ADDRESSES`):**
   Initialize a Ledger or Trezor hardware wallet. Record its public Ethereum address for `ADMIN_WALLET_ADDRESSES`. Ensure this address is self-custodied (NOT a custodial Circle sandbox wallet, which causes permanent lockout).
 - [ ] **Step A.5 — Fund Solana Relayer Hot Wallet (`SOLANA_RELAYER_PUBLIC_KEY`):**
@@ -108,18 +111,15 @@ This section details every manual action you as an operator must perform yoursel
 
 ### Phase F: Smart Contract Deployment & Ownership Transfer
 - [ ] **Step F.1 — Deploy Contracts to Arc Mainnet:**
-  Using a funded deployer key, deploy the smart contracts in order:
+  Using a funded deployer key, deploy the full contract suite in one atomic run:
   ```bash
-  # 1. Deploy/Confirm StableFX Router address
-  # 2. Deploy SubScriptRouter UUPS proxy
-  npx hardhat run scripts/deploy-router.js --network arcMainnet
-  # 3. Deploy SubScriptPSA constructor
-  npx hardhat run scripts/deploy-standard.js --network arcMainnet
-  # 4. Deploy SubScriptVault UUPS proxy
-  npx hardhat run scripts/deploy-vault.js --network arcMainnet
-  # 5. Deploy SubScriptConfidential constructor
-  npx hardhat run scripts/deploy-confidential.js --network arcMainnet
+  # Unified end-to-end Arc Mainnet deployment (Router + PSA + Vault + Confidential + Receipts):
+  CONFIRM=yes npx hardhat run scripts/deploy-mainnet.js --network arcMainnet
+
+  # Or dry-run simulation on localhost:
+  npx hardhat run scripts/deploy-mainnet.js --network localhost
   ```
+  *(Individual component scripts `deploy-router.js`, `deploy-vault.js`, and `deploy-confidential.js` remain available for targeted operations).*
 - [ ] **Step F.2 — Transfer Ownership to Gnosis Safe:**
   Execute the ownership transfer script to transfer Router, PSA, and Vault ownership from deployer to `MULTISIG_ADDRESS`:
   ```bash
@@ -241,14 +241,22 @@ This section details every manual action you as an operator must perform yoursel
 
 ### 5.1 Emergency Pause & Unpause Calldata
 Target: `SubScriptRouter` or `SubScriptVault` UUPS Proxy.
+
+> [!WARNING]
+> **EVM Selector Errata Remediation:** Canonical EVM `pause()` selector is `0x8456cb59`. Previous documentation errata listed `0x84b0196e` (which is ERC-5267 `eip712Domain()` and will fail/revert on pause). Canonical EVM `unpause()` selector is `0x3f4ba83a` (correcting legacy transposition typo `0x3f4b7b65`).
+
 ```bash
 # Pause Calldata (0 ETH/USDC value):
 cast calldata "pause()"
-# -> Hex: 0x84b0196e
+# -> Hex: 0x8456cb59
 
 # Unpause Calldata (0 ETH/USDC value):
 cast calldata "unpause()"
-# -> Hex: 0x3f4b7b65
+# -> Hex: 0x3f4ba83a
+
+# Or generate interactively with the SECOPS CLI utility:
+node scripts/secops-calldata.mjs pause
+node scripts/secops-calldata.mjs unpause
 ```
 
 ### 5.2 UUPS Implementation Upgrade Calldata
@@ -256,10 +264,12 @@ Target: `SubScriptRouter` or `SubScriptVault` UUPS Proxy.
 ```bash
 # Upgrade without reinitializer:
 cast calldata "upgradeToAndCall(address,bytes)" <0xNEW_IMPLEMENTATION> 0x
+# CLI: node scripts/secops-calldata.mjs upgrade <0xNEW_IMPLEMENTATION> 0x
 
 # Upgrade with reinitializer (e.g. initializeV2(address)):
 INIT_DATA=$(cast calldata "initializeV2(address)" <0xTREASURY_ADDRESS>)
 cast calldata "upgradeToAndCall(address,bytes)" <0xNEW_IMPLEMENTATION> $INIT_DATA
+# CLI: node scripts/secops-calldata.mjs upgrade <0xNEW_IMPLEMENTATION> $INIT_DATA
 ```
 
 ### 5.3 Keeper Drawer & Dispute Resolution Calldata
@@ -267,9 +277,11 @@ Target: `SubScriptVault` UUPS Proxy.
 ```bash
 # Authorize Vault Drawer:
 cast calldata "setAuthorizedDrawer(address,bool)" <0xKEEPER_ADDRESS> true
+# CLI: node scripts/secops-calldata.mjs authorize-drawer <0xKEEPER_ADDRESS> true
 
 # Resolve User Dispute:
 cast calldata "resolveDispute(address,address,bool)" <0xUSER> <0xMERCHANT> true
+# CLI: node scripts/secops-calldata.mjs resolve-dispute <0xUSER> <0xMERCHANT> true
 ```
 
 ### 5.4 Incident Response Framework (SEV Levels)
@@ -363,18 +375,37 @@ ADMIN_WALLET_ADDRESSES=0x[HARDWARE_WALLET_1],0x[HARDWARE_WALLET_2]
 
 ---
 
-## 8. Production SQL Cutover Script Reference
+## 8. Production SQL Cutover Script Reference & Pre-Flight CLI
 
+### 8.1 Production SQL Cutover Script
 The dedicated SQL cutover script is maintained at:
 [`docs/mainnet/mainnet-sql-cutover.sql`](./mainnet-sql-cutover.sql)
 
 It applies:
 1. `ALTER TABLE payment_sessions ALTER COLUMN chain_id DROP DEFAULT;`
 2. `ALTER TABLE payment_links ALTER COLUMN settlement_chain_id DROP DEFAULT;`
-3. `ALTER TABLE subscriptions ALTER COLUMN contract_address DROP DEFAULT;`
-4. Dual `('TEST', 5042002)` / `('LIVE', 5042001)` check on `metered_vaults`.
-5. Composite unique index `(contract_address, subscription_id)` on `subscription_billing_claims`.
-6. Enforced Row-Level Security on all sensitive tables.
+3. `ALTER TABLE payment_link_checkout_attempts ALTER COLUMN settlement_chain_id DROP DEFAULT;`
+4. `ALTER TABLE payment_link_payments ALTER COLUMN verification_chain_id DROP DEFAULT;`
+5. `ALTER TABLE subscriptions ALTER COLUMN contract_address DROP DEFAULT;`
+6. Dual `('TEST', 5042002)` / `('LIVE', 5042001)` check on `metered_vaults`.
+7. Composite unique index `(lower(contract_address), subscription_id)` on `subscription_billing_claims`.
+8. Enforced Row-Level Security (RLS) with explicit deny-all policies on 21 critical tables.
+9. Production operational breakers in `system_settings` (`withdrawals_enabled=true`, `hosted_payments_enabled=true`, `local_bank_transfer_enabled=false`, `sponsor_emergency_stop=false`) and `platform_flags` (`local_bank_transfer_enabled=false`).
+
+### 8.2 Automated Mainnet Pre-Flight Readiness CLI
+Run the pre-flight readiness gate before cutover:
+```bash
+# Standard check across 5 audit domains
+node scripts/verify-mainnet-readiness.mjs
+# or via npm
+npm run verify:mainnet
+
+# Strict mode (fails on warnings such as uncommitted git changes)
+node scripts/verify-mainnet-readiness.mjs --strict
+
+# Machine-readable JSON output for CI pipelines
+node scripts/verify-mainnet-readiness.mjs --json
+```
 
 ---
 
@@ -427,7 +458,11 @@ It applies:
 | 2026-09-08 | Admin Gas Relayer Card, Support Mobile View & Mobile Sidebar | 1) AdminRelayerBalancesCard: Fixed styling to match admin light/ivory palette (rounded-2xl border-[#e2e8f0] bg-white, dark text #0f172a, ChainLogos, light status badges); eliminated jarring dark-theme shimmer sweep in favor of clean light skeleton pulses. 2) AdminSupportTicketsView: Implemented responsive master-detail view with mobileDetailOpen state so tickets queue and conversation thread toggle cleanly on mobile; added perfect circle back button (flex h-8 w-8 aspect-square rounded-full shrink-0) to return to queue; added horizontal scrolling for filter tabs. 3) Admin Mobile Sidebar: Replaced bottom drawer with Framer Motion slide-over sidebar matching landing page look and feel (dark glass #0b0f19, SubScript branding, admin identity pill, grouped nav items, and footer link); added circular hamburger menu button in sticky top bar. 4) Perfect Circles: Converted sidebar retractor/extender button and promo dismiss button in DashboardSidebar to aspect-square rounded-full shrink-0 circles. Verified 581/581 security tests and 0 typecheck errors. | Antigravity AI |
 | 2026-09-08 | Opened DM Skeleton Loader, Canceling Palette Overhaul & Send Funds Contrast | 1) Opened DM Skeleton Loader: Implemented `<OpenedDmSkeleton>` supporting both merchant (`SubscriptionDetailView` header, plan summary card, receipts timeline, bottom controls) and peer DM (chat header, alternating transaction bubbles, composer) layouts; added `isOpenedDmLoading` state in `src/app/dashboard/user/page.tsx` on desktop and mobile that eagerly fetches merchant plans via `/api/merchant/plans` with a smooth 350ms debounce to eliminate layout shifts and flashes. 2) Canceling Palette Overhaul: Replaced harsh amber/orange colors with refined slate/zinc palette across all canceling and canceled indicators in user dashboard, merchant dashboard (`src/app/dashboard/page.tsx`), and upgrade page (`src/app/dashboard/upgrade/page.tsx`). 3) Send Funds Contrast Fix: Fixed black-on-black button in user DMs by correcting text color to `#ffffff` in `src/app/globals.css` and applying prominent SubScript blue styling (`bg-[#2775CA] text-white`). Verified 581/581 tests and 0 TypeScript errors. | Antigravity AI |
 | 2026-09-09 | Production Standby Rollback & Mandatory CAPTCHA | Reverted production standby mode in `src/proxy.ts`, deleted PR branch, and restored all keeper crons and Vercel schedules. Maintained mandatory Turnstile CAPTCHA verification across all authentication endpoints. | Antigravity AI |
-| 2026-09-09 | Frontend UI Re-Audit (Purity & Persisting Pockets) | Re-audited full platform after recent migration commits: verified 100% of full-page route shells (51/51) now mount on Ivory `#FFFFF0` with SubScript Blue `#2775CA` (0 pages mounting `<AnimatedGradientBg />`). Flagged remaining pockets of legacy green (`#00d2b4`): 1) `SupportChatModal.tsx` (`#18181b`, `#00d2b4`); 2) Gift Checkout Modal in `user/page.tsx` (`#0c0c10`, `#00d2b4`, lime `#ccff00`); 3) `ReceiptClient.tsx` action buttons (`#00d2b4`); 4) Merchant Dashboard embedded modals/rows (QR modal, promo manager, plan rows); 5) `AnalyticsDashboard.tsx` dark theme & gauges; 6) 8 unused orphaned legacy components. Documented in `frontend_ui_audit.md`. | Antigravity AI |
+| 2026-09-09 | Arc Mainnet Contract Deployment Tooling | Prepared full Arc Mainnet smart contract deployment suite: 1) Added `arcMainnet` network to `hardhat.config.js` (`chainId: 5042001`, RPC fallback); 2) Created `scripts/deploy-mainnet.js` deploying SubScriptRouter (UUPS proxy), SubScriptPSA, SubScriptVault (UUPS proxy + initializeV2 treasury + setAuthorizedDrawer keeper + multisig ownership transfer), and SubScriptConfidential, with dry-run validation, receipt output (`docs/mainnet/deployment-receipt.json`), and .env variable formatting; 3) Created `scripts/generate-airgap-keys.mjs` for offline generation of Admin Keeper, Vault Drawer, Gas Sponsor, and Solana CCTP Relayer keypairs with safety warnings; 4) Verified local end-to-end execution on Hardhat/localhost, checked contract bytecode, and confirmed all 88 smart contract tests pass (100%). | Antigravity AI |
+| 2026-09-09 | Frontend UI Legacy Pockets Remediation | Remediated remaining legacy pockets to 100% Ivory (`#FFFFF0`) & SubScript Blue (`#2775CA`): 1) `SupportChatModal.tsx`: replaced pulse beacon and outgoing message bubbles with SubScript Blue (`#2775CA`); 2) `dashboard/user/page.tsx`: updated gift checkout modal actions and inputs to modern Ivory (`#FFFFF0`, border-black/10, SubScript Blue buttons) and eliminated dark `#0c0c10`/`#ccff00` email capture modal; 3) `receipt/[receiptId]/ReceiptClient.tsx`: updated `ACCENT_INK` to `#2775CA` and replaced inline teal border/bg with `border-[#2775CA]/20 bg-[#2775CA]/5`. Verified with 0 typecheck errors and 0 lint errors. | Antigravity AI |
+| 2026-09-09 | Database Cutover & Pre-Flight CLI Gate | Hardened `docs/mainnet/mainnet-sql-cutover.sql` (dropped hardcoded testnet defaults on payment_sessions, payment_links, checkout_attempts, and payments; metered_vaults dual TEST/LIVE check constraint; deny-all RLS on 21 critical tables; default system_settings & platform_flags: withdrawals=true, hosted_payments=true, local_bank_transfer=false, sponsor_stop=false). Built automated CLI `scripts/verify-mainnet-readiness.mjs` (`npm run verify:mainnet`) auditing 5 domains: 12 fail-closed env vars via registry.ts, contract artifacts, database migrations, check-secrets, and staged git status with formatted score banner, strict mode, and JSON output. | Antigravity AI |
+| 2026-09-09 | SECOPS Calldata Generator & Operational Docs | Built `scripts/secops-calldata.mjs` interactive & CLI utility using ethers.js to generate exact calldata hex strings for Gnosis Safe execution (emergency pause/unpause on Router/Vault, keeper drawer authorization, dispute resolution, UUPS upgrades). Remediated critical EVM selector documentation errata: canonical pause() is `0x8456cb59` (remediated legacy `0x84b0196e` which was `eip712Domain()`) and unpause() is `0x3f4ba83a` (remediated typo `0x3f4b7b65`). Overhauled `.env.local.example` and hardened `.env.example` with comprehensive Section 6 variable documentation, explanations, and DO NOT COMMIT security markers. Verified 8/8 ops tests and zero secret leaks. | Antigravity AI |
+
 
 
 

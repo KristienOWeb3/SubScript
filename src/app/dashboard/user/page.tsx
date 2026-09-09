@@ -7674,7 +7674,7 @@ export default function UserDashboard() {
                     <button
                       type="button"
                       onClick={() => copyGiftRequestUrl(giftRequestUrl)}
-                      className="dm-quick-button justify-center border-[#2775CA]/20 bg-[#2775CA]/10 text-[#2775CA]"
+                      className="flex items-center justify-center gap-1.5 rounded-xl border border-[#2775CA]/20 bg-[#2775CA]/10 py-2.5 text-xs font-bold text-[#2775CA] hover:bg-[#2775CA]/15 transition"
                     >
                       <Copy className="h-3.5 w-3.5" /> {giftRequestCopied ? "Copied!" : "Copy"}
                     </button>
@@ -7682,13 +7682,13 @@ export default function UserDashboard() {
                       href={`https://t.me/share/url?url=${encodeURIComponent(giftRequestUrl)}&text=${encodeURIComponent(`Sponsor my ${giftPlan.name} plan on SubScript`)}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="dm-quick-button justify-center border-[#2775CA]/20 bg-[#2775CA]/10 text-[#2775CA]"
+                      className="flex items-center justify-center gap-1.5 rounded-xl border border-[#2775CA]/20 bg-[#2775CA]/10 py-2.5 text-xs font-bold text-[#2775CA] hover:bg-[#2775CA]/15 transition"
                     >
                       <Share2 className="h-3.5 w-3.5" /> Telegram
                     </a>
                     <a
                       href={`mailto:?subject=${encodeURIComponent(`Sponsor ${giftPlan.name}`)}&body=${encodeURIComponent(`You can sponsor this SubScript plan here:\n\n${giftRequestUrl}`)}`}
-                      className="dm-quick-button justify-center border-black/10 bg-white text-black/60"
+                      className="flex items-center justify-center gap-1.5 rounded-xl border border-black/10 bg-white py-2.5 text-xs font-bold text-black/70 hover:bg-black/5 transition"
                     >
                       <Mail className="h-3.5 w-3.5" /> Email
                     </a>
@@ -7744,7 +7744,7 @@ export default function UserDashboard() {
                         if (event.target.value.trim()) setSelectedGiftFriendAddress("");
                       }}
                       placeholder="friend.sub or friend"
-                      className="subscript-input"
+                      className="subscript-input bg-white border border-black/15 text-[#111827] focus:border-[#2775CA] focus:outline-none"
                       disabled={giftRequestBusyPlanId !== null}
                     />
                   </Field>
@@ -7755,14 +7755,14 @@ export default function UserDashboard() {
                       type="button"
                       onClick={() => setGiftPlan(null)}
                       disabled={giftRequestBusyPlanId !== null}
-                      className="dm-quick-button min-w-0 border-black/10 bg-white text-black/60"
+                      className="flex items-center justify-center gap-1.5 rounded-2xl border border-black/15 bg-black/5 py-3 text-xs font-bold text-black/70 hover:bg-black/10 transition disabled:opacity-40"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={giftRequestBusyPlanId !== null || (!selectedGiftFriendAddress && !giftFriendUsername.trim())}
-                      className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white bg-[#2775CA] hover:bg-[#1f62ab] disabled:opacity-40 ${giftRequestBusyPlanId !== null ? "quick-action-loading" : ""}`}
+                      className={`relative flex items-center justify-center gap-1.5 overflow-hidden rounded-2xl bg-[#2775CA] py-3 text-xs font-bold text-white hover:bg-[#1f62ab] transition shadow-sm disabled:opacity-40 ${giftRequestBusyPlanId !== null ? "quick-action-loading" : ""}`}
                     >
                       {giftRequestBusyPlanId !== null ? "Sending DM..." : "Send Request in DM"}
                     </button>
@@ -7778,7 +7778,7 @@ export default function UserDashboard() {
                       value={giftFriendUsername}
                       onChange={(event) => setGiftFriendUsername(event.target.value)}
                       placeholder="friend.sub or friend"
-                      className="subscript-input"
+                      className="subscript-input bg-white border border-black/15 text-[#111827] focus:border-[#2775CA] focus:outline-none"
                       disabled={giftRequestBusyPlanId !== null}
                     />
                   </Field>
@@ -7791,14 +7791,14 @@ export default function UserDashboard() {
                       type="button"
                       onClick={() => setGiftPlan(null)}
                       disabled={giftRequestBusyPlanId !== null}
-                      className="dm-quick-button min-w-0 border-black/10 bg-white text-black/60"
+                      className="flex items-center justify-center gap-1.5 rounded-2xl border border-black/15 bg-black/5 py-3 text-xs font-bold text-black/70 hover:bg-black/10 transition disabled:opacity-40"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={giftRequestBusyPlanId !== null}
-                      className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white bg-[#2775CA] hover:bg-[#1f62ab] ${giftRequestBusyPlanId !== null ? "quick-action-loading" : ""}`}
+                      className={`relative flex items-center justify-center gap-1.5 overflow-hidden rounded-2xl bg-[#2775CA] py-3 text-xs font-bold text-white hover:bg-[#1f62ab] transition shadow-sm disabled:opacity-40 ${giftRequestBusyPlanId !== null ? "quick-action-loading" : ""}`}
                     >
                       {giftRequestBusyPlanId !== null ? <>Creating<LoadingDots /></> : "Create Link"}
                     </button>
@@ -8030,19 +8030,19 @@ export default function UserDashboard() {
       {/* Blocking email capture — an email is required for receipts and notifications.
           Shown for accounts that don't have one yet (e.g. wallet-onboarded payers). */}
       {!loading && userWallet && !userEmail && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-5 backdrop-blur-md">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-5 backdrop-blur-md">
           <form
             onSubmit={emailPromptStep === "email" ? handleSendEmailCode : handleVerifyEmailCode}
-            className="w-full max-w-sm space-y-4 rounded-3xl border border-[#ccff00]/20 bg-[#0c0c10] p-6 shadow-2xl"
+            className="w-full max-w-sm space-y-4 rounded-3xl border border-black/10 bg-[#FFFFF0] p-6 text-[#111827] shadow-2xl"
           >
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00]">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#2775CA]/20 bg-[#2775CA]/10 text-[#2775CA]">
               <Mail className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-sm font-black uppercase tracking-[0.14em] text-white">
+              <h2 className="text-sm font-black uppercase tracking-[0.14em] text-[#111827]">
                 {emailPromptStep === "email" ? "Add your email" : "Verify your email"}
               </h2>
-              <p className="mt-2 text-xs leading-relaxed text-white/50">
+              <p className="mt-2 text-xs leading-relaxed text-black/60">
                 {emailPromptStep === "email"
                   ? "We need an email to send you payment receipts, requests, and account notifications. This is required to continue."
                   : `Enter the 6-digit code we sent to ${emailPromptValue.trim()}.`}
@@ -8054,7 +8054,7 @@ export default function UserDashboard() {
                 value={emailPromptValue}
                 onChange={(event) => setEmailPromptValue(event.target.value)}
                 placeholder="you@example.com"
-                className="subscript-input"
+                className="subscript-input bg-white border border-black/15 text-[#111827] focus:border-[#2775CA] focus:outline-none"
                 autoFocus
                 required
               />
@@ -8066,18 +8066,18 @@ export default function UserDashboard() {
                 value={emailPromptCode}
                 onChange={(event) => setEmailPromptCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
                 placeholder="123456"
-                className="subscript-input text-center tracking-[0.4em]"
+                className="subscript-input bg-white border border-black/15 text-[#111827] focus:border-[#2775CA] focus:outline-none text-center tracking-[0.4em]"
                 autoFocus
                 required
               />
             )}
             {emailPromptError && (
-              <p className="text-[11px] font-bold text-red-300">{emailPromptError}</p>
+              <p className="text-[11px] font-bold text-red-600 bg-red-500/10 border border-red-500/20 rounded-xl p-3">{emailPromptError}</p>
             )}
             <button
               type="submit"
               disabled={emailPromptSaving}
-              className={`subscript-primary-button ${emailPromptSaving ? "opacity-60" : ""}`}
+              className={`w-full rounded-2xl bg-[#2775CA] hover:bg-[#1f62ab] text-white py-3.5 text-xs font-black uppercase tracking-wider transition shadow-md flex items-center justify-center gap-2 ${emailPromptSaving ? "opacity-60 cursor-not-allowed" : ""}`}
             >
               {emailPromptSaving
                 ? (emailPromptStep === "email" ? <>Sending<LoadingDots /></> : <>Verifying<LoadingDots /></>)
@@ -8087,7 +8087,7 @@ export default function UserDashboard() {
               <button
                 type="button"
                 onClick={() => { setEmailPromptStep("email"); setEmailPromptError(null); }}
-                className="w-full text-[11px] font-bold text-white/50 transition hover:text-white/80"
+                className="w-full text-[11px] font-bold text-black/50 transition hover:text-[#111827]"
               >
                 Use a different email
               </button>

@@ -226,7 +226,7 @@ export default function SupportChatModal({
                             <div>
                                 <h3 className="text-sm font-black uppercase tracking-wider text-[#111827] flex items-center gap-2">
                                     SubScript Support
-                                    <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                                    <span className="flex h-2 w-2 rounded-full bg-[#2775CA] animate-pulse" />
                                 </h3>
                                 <p className="text-[10px] text-black/45">
                                     {activeTicket ? `#${activeTicket.id.slice(0, 8)} · ${activeTicket.subject}` : "24/7 In-App Administrative Support"}
@@ -424,7 +424,7 @@ export default function SupportChatModal({
                                                         data-dm-dark={isOutgoing ? "true" : undefined}
                                                         className={`px-4 py-3 shadow-md select-text break-words [word-break:break-word] text-xs leading-relaxed ${
                                                             isOutgoing
-                                                                ? "bg-gradient-to-br from-[#00b2ff] to-[#007aff] text-white rounded-[20px] rounded-br-[4px]"
+                                                                ? "bg-[#2775CA] text-white rounded-[20px] rounded-br-[4px]"
                                                                 : "border border-black/10 bg-white text-[#111827] rounded-[20px] rounded-bl-[4px]"
                                                         }`}
                                                     >

@@ -243,7 +243,7 @@ npm run integration:smoke
 In the event of a critical issue during cutover:
 
 1. **Revert Environment:** In Vercel Environment Variables, set `NEXT_PUBLIC_ENVIRONMENT=testnet`, restore testnet contract addresses, and redeploy previous stable commit.
-2. **Emergency Protocol Pause:** If funds are at risk on mainnet contracts, Multi-Sig Safe executes `pause()` calldata (`0x84b0196e`) on `SubScriptRouter` and `SubScriptVault`.
+2. **Emergency Protocol Pause:** If funds are at risk on mainnet contracts, Multi-Sig Safe executes `pause()` calldata (`0x8456cb59`) on `SubScriptRouter` and `SubScriptVault` (or generates exact calldata via `node scripts/secops-calldata.mjs pause`).
 3. **Data Integrity:** Because mainnet was deployed on a separate production database, testnet sandbox data remains completely unaffected and intact.
 4. **Incident Review:** Convene War Room, execute incident response playbooks in `docs/SECOPS.md`, and publish post-mortem within 72 hours.
 
