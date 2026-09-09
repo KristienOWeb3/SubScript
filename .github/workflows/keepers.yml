@@ -18,16 +18,15 @@ name: Keepers
 #   - A failed step (401/5xx) turns the run red so you get a GitHub notification.
 
 on:
-  # Standby: Automated cron triggers disabled to prevent pinging production Vercel endpoints during mainnet preparation.
-  # schedule:
-  #   - cron: "*/5 * * * *"
-  #   - cron: "*/15 * * * *"
-  #   - cron: "0 2 * * *"
-  #   - cron: "0 5 * * *"
-  #   - cron: "0 6 * * *"
-  #   - cron: "0 7 * * *"
-  #   - cron: "0 8 * * *"
-  #   - cron: "40 8 * * *"
+  schedule:
+    - cron: "*/5 * * * *"
+    - cron: "*/15 * * * *"
+    - cron: "0 2 * * *"
+    - cron: "0 5 * * *"
+    - cron: "0 6 * * *"
+    - cron: "0 7 * * *"
+    - cron: "0 8 * * *"
+    - cron: "40 8 * * *"
   workflow_dispatch:
     inputs:
       run_all:

@@ -325,54 +325,6 @@ async function handleRateLimitViolation(ip: string, isRedisConfigured: boolean) 
 /* Define strict payload size limit: 1MB in bytes */
 const MAX_PAYLOAD_SIZE = 1048576;
 
-/* Standby HTML template for live production emergency standby */
-const STANDBY_HTML = `<!doctype html>
-<html lang="en">
-<head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>SubScript</title>
-    <link rel="icon" href="/favicon.ico" sizes="any" />
-    <style>
-        @font-face {
-            font-family: 'Sukar';
-            src: url('/fonts/SukarBold.ttf') format('truetype');
-            font-weight: 700;
-            font-style: normal;
-            font-display: swap;
-        }
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-        html, body {
-            width: 100%;
-            height: 100%;
-            background-color: #000000;
-            color: #ffffff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-family: 'Sukar', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            text-align: center;
-            padding: 1.5rem;
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
-        }
-        h1 {
-            font-size: clamp(1.5rem, 4vw, 2.5rem);
-            font-weight: 700;
-            letter-spacing: -0.02em;
-            line-height: 1.3;
-        }
-    </style>
-</head>
-<body>
-    <h1>SubScript will return on mainnet</h1>
-</body>
-</html>`;
-
 export default async function proxy(request: NextRequest) {
     const pathname = request.nextUrl.pathname;
     if (
@@ -401,38 +353,7 @@ export default async function proxy(request: NextRequest) {
     const isCheckoutHost = host === CHECKOUT_HOST;
     const isDocsHost = host === DOCS_HOST;
     const isAdminHost = host === ADMIN_HOST;
-    const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "::1" || host.endsWith(".local");
-
-    /* Live Production Standby Gate:
-       When running on live production (non-localhost), short-circuit all requests to display
-       "SubScript will return on mainnet" on a black background with white text using Sukar font.
-       All /api/* endpoints return 503 to halt database/keeper/RPC workloads on Vercel.
-       Localhost remains completely unrestricted so local development and mainnet preparation continue smoothly. */
-    const isStandbyPreview = request.nextUrl.searchParams.get("standby") === "1";
-    const shouldEnforceStandby = (!isLocalHost && process.env.NODE_ENV !== "development") || isStandbyPreview;
-
-    if (shouldEnforceStandby) {
-        if (isApiRoute) {
-            return NextResponse.json(
-                { message: "SubScript will return on mainnet" },
-                {
-                    status: 503,
-                    headers: {
-                        "Retry-After": "86400",
-                        "Cache-Control": "no-store",
-                    },
-                }
-            );
-        }
-
-        return new NextResponse(STANDBY_HTML, {
-            status: 200,
-            headers: {
-                "Content-Type": "text/html; charset=utf-8",
-                "Cache-Control": "public, max-age=3600, s-maxage=86400",
-            },
-        });
-    }
+    const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "::1";
     const isDashboardPath =
         pathname === "/dashboard" || pathname.startsWith("/dashboard/") ||
         pathname === "/merchant" || pathname.startsWith("/merchant/") ||

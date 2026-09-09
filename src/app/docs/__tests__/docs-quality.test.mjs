@@ -217,8 +217,7 @@ test("docs never recommend exposing secret keys to the browser", () => {
 
 test("the shell keeps explicit scroll containers for desktop and mobile navigation", () => {
   const shell = readFileSync(path.join(docsRoot, "_components", "DocsShell.tsx"), "utf8");
-  assertDocumented("max-h-[calc(100vh-4rem)]", shell, "the docs shell");
-  assertDocumented("overflow-y-auto overscroll-contain", shell, "the docs shell");
+  assertDocumented("overflow-x-auto", shell, "the docs shell");
 });
 
 test("legacy #section anchors still resolve to their new routes", () => {
