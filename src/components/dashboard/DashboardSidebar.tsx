@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import type { ComponentType, CSSProperties, ReactNode } from "react";
 import Link from "next/link";
-import { X, ChevronLeft, ChevronRight } from "@/components/icons";
+import { X, ChevronLeft, ChevronRight, ChevronDown } from "@/components/icons";
 
 /* The desktop sidebar, shared by the user, merchant, and admin dashboards. */
 
@@ -16,6 +16,7 @@ export type DashboardSidebarItem = {
     badgeCount?: number;
     tag?: string;
     accent?: string;
+    children?: ReadonlyArray<DashboardSidebarItem>;
 };
 
 export type DashboardSidebarPromo = {
@@ -51,6 +52,7 @@ export default function DashboardSidebar({
         fallback: string;
         onClick: () => void;
         title?: string;
+        sublabel?: string;
     };
     promo?: DashboardSidebarPromo;
     accent: string;
@@ -62,6 +64,7 @@ export default function DashboardSidebar({
     const [promoVisible, setPromoVisible] = useState(true);
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [mounted, setMounted] = useState(false);
+    const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
     useEffect(() => {
         setMounted(true);
@@ -70,6 +73,19 @@ export default function DashboardSidebar({
             setIsCollapsed(true);
         }
     }, []);
+
+    // Auto-expand any group that contains activeId
+    useEffect(() => {
+        for (const item of items) {
+            if (item.children && item.children.some((child) => child.id === activeId)) {
+                setOpenGroups((prev) => ({ ...prev, [item.id]: true }));
+            }
+        }
+    }, [activeId, items]);
+
+    const toggleGroup = (groupId: string) => {
+        setOpenGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
+    };
 
     const toggleCollapse = () => {
         setIsCollapsed((prev) => {
@@ -101,7 +117,7 @@ export default function DashboardSidebar({
         const sizing = isCollapsed
             ? "py-2.5 px-1.5 text-xs"
             : compact
-            ? "py-2.5 px-3 lg:px-3.5 text-xs"
+            ? "py-1.5 px-2.5 lg:px-3 text-[11px]"
             : "py-2.5 px-3 lg:px-3.5 text-xs";
         const className = `${rowBase} ${sizing} ${isActive ? activeRow : idleRow}`;
         const style = item.accent ? ({ "--sb-accent": item.accent } as CSSProperties) : undefined;
@@ -109,7 +125,7 @@ export default function DashboardSidebar({
         const body: ReactNode = (
             <>
                 <Icon
-                    className={`h-4 w-4 shrink-0 ${
+                    className={`shrink-0 ${compact ? "h-3.5 w-3.5" : "h-4 w-4"} ${
                         isActive
                             ? "text-[#353935]"
                             : "text-white/70 group-hover:text-white"
@@ -206,9 +222,16 @@ export default function DashboardSidebar({
                                 )}
                             </div>
                             {!isCollapsed && (
-                                <span className="hidden truncate font-mono text-[10px] font-bold text-white lg:inline max-w-[100px]">
-                                    {identity.label}
-                                </span>
+                                <div className="hidden lg:flex flex-col min-w-0 max-w-[115px]">
+                                    <span className="truncate font-mono text-[10px] font-bold text-white leading-tight">
+                                        {identity.label}
+                                    </span>
+                                    {identity.sublabel && (
+                                        <span className="truncate font-mono text-[8px] font-bold text-white/50 leading-tight">
+                                            {identity.sublabel}
+                                        </span>
+                                    )}
+                                </div>
                             )}
                         </button>
                     )}
@@ -219,12 +242,12 @@ export default function DashboardSidebar({
                         onClick={toggleCollapse}
                         aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                         title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                        className="p-1 rounded-full border border-white/10 bg-white/[0.04] text-white/50 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all"
+                        className="flex h-7 w-7 aspect-square items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/50 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all shrink-0"
                     >
                         {isCollapsed ? (
-                            <ChevronRight className="h-3 w-3" />
+                            <ChevronRight className="h-3.5 w-3.5" />
                         ) : (
-                            <ChevronLeft className="h-3 w-3" />
+                            <ChevronLeft className="h-3.5 w-3.5" />
                         )}
                     </button>
                 </div>
@@ -243,7 +266,57 @@ export default function DashboardSidebar({
                                 )}
                             </div>
                         ))
-                        : items.map((item) => renderRow(item, false))}
+                        : items.map((item) => {
+                            if (item.children && item.children.length > 0) {
+                                const isGroupActive = item.id === activeId || item.children.some((child) => child.id === activeId);
+                                const isOpen = openGroups[item.id] ?? isGroupActive;
+                                const Icon = item.icon;
+
+                                if (isCollapsed) {
+                                    const target = item.children.find((c) => c.id === activeId) || item.children[0];
+                                    return (
+                                        <button
+                                            key={item.id}
+                                            type="button"
+                                            onClick={() => onSelect(target.id)}
+                                            title={item.label}
+                                            aria-current={isGroupActive ? "page" : undefined}
+                                            className={`${rowBase} py-2.5 px-1.5 text-xs ${isGroupActive ? activeRow : idleRow}`}
+                                        >
+                                            <Icon className={`h-4 w-4 shrink-0 ${isGroupActive ? "text-[#353935]" : "text-white/70 group-hover:text-white"}`} />
+                                        </button>
+                                    );
+                                }
+
+                                return (
+                                    <div key={item.id} className="space-y-0.5">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                toggleGroup(item.id);
+                                                if (!isGroupActive && item.children && item.children.length > 0) {
+                                                    onSelect(item.children[0].id);
+                                                }
+                                            }}
+                                            title={item.label}
+                                            className={`${rowBase} py-2 px-3 lg:px-3.5 text-xs ${isGroupActive && !isOpen ? activeRow : "text-white/80 hover:bg-white/[0.08] hover:text-white"}`}
+                                        >
+                                            <Icon className={`h-4 w-4 shrink-0 ${isGroupActive && !isOpen ? "text-[#353935]" : "text-white/70 group-hover:text-white"}`} />
+                                            <span className="hidden lg:inline truncate font-bold text-white/90">{item.label}</span>
+                                            <span className="hidden lg:inline-flex ml-auto shrink-0 text-white/40">
+                                                {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                            </span>
+                                        </button>
+                                        {isOpen && (
+                                            <div className="space-y-0.5 pl-3 lg:pl-3.5 border-l border-white/10 ml-3 lg:ml-4 my-1">
+                                                {item.children.map((child) => renderRow(child, true))}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            }
+                            return renderRow(item, false);
+                        })}
                 </nav>
             </div>
 
@@ -254,7 +327,7 @@ export default function DashboardSidebar({
                             type="button"
                             onClick={() => setPromoVisible(false)}
                             aria-label={`Dismiss ${promo.title}`}
-                            className="absolute top-2.5 right-2.5 z-10 p-1 rounded-full text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+                            className="absolute top-2.5 right-2.5 z-10 flex h-6 w-6 aspect-square items-center justify-center rounded-full text-white/50 transition-colors hover:bg-white/10 hover:text-white shrink-0"
                         >
                             <X className="h-3.5 w-3.5" />
                         </button>

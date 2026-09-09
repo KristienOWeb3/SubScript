@@ -30,10 +30,10 @@ export default function SubscriptionsPage() {
 
       <Callout tone="plain" title="Subscription or plan? You will likely use both">
         <p>
-          A <span className="font-semibold text-white/80">plan</span> is a reusable tier — &quot;Pro, 7 USDC,
+          A <span className="font-semibold text-[#111827]">plan</span> is a reusable tier — &quot;Pro, 7 USDC,
           weekly&quot; — that exists once and is shown in your dashboard, in customer DMs, and on public{" "}
           <span className="font-mono">/subscribe</span> links. A{" "}
-          <span className="font-semibold text-white/80">subscription</span> is one customer&apos;s checkout against
+          <span className="font-semibold text-[#111827]">subscription</span> is one customer&apos;s checkout against
           that tier.
         </p>
         <p className="mt-2">
@@ -53,7 +53,7 @@ export default function SubscriptionsPage() {
       </Callout>
 
       <section className="space-y-4">
-        <h2 id="fields" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="fields" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Request fields
         </h2>
         <ApiTable
@@ -70,7 +70,7 @@ export default function SubscriptionsPage() {
             ["idempotencyKey", "string", "Recommended", "Stable key for one logical subscription checkout."],
           ]}
         />
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           <span className="font-mono">merchantCustomerId</span> deserves attention: it is the binding that survives
           plan upgrades. A customer who moves from Pro to Business gets a new subscription id, but{" "}
           <span className="font-mono">merchantCustomerId</span> stays constant, so it is what you should key
@@ -79,7 +79,7 @@ export default function SubscriptionsPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="example" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="example" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Creating a subscription
         </h2>
         <CodeBlock code={subscriptionCode} language="javascript" />
@@ -87,7 +87,7 @@ export default function SubscriptionsPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="states" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="states" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Subscription states
         </h2>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -98,13 +98,13 @@ export default function SubscriptionsPage() {
             ["canceled", "Unaccepted checkout sessions can be withdrawn by the merchant; active authorizations are customer-controlled."],
             ["expired", "Nobody accepted the checkout within 24 hours. Create a fresh one — accepting an expired checkout returns 410."],
           ].map(([status, text]) => (
-            <div key={status} className="rounded-2xl border border-white/5 bg-black/30 p-5">
-              <p className="font-mono text-sm font-bold text-[#00d2b4]">{status}</p>
-              <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
+            <div key={status} className="rounded-2xl border border-black/10 bg-white/60 p-5 shadow-sm">
+              <p className="font-mono text-sm font-bold text-[#2775CA]">{status}</p>
+              <p className="mt-2 text-xs leading-relaxed text-black/60">{text}</p>
             </div>
           ))}
         </div>
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           <span className="font-mono">status</span> reflects the billing record, not the checkout, so a subscription
           canceled after activation reports <span className="font-mono">canceled</span> rather than staying{" "}
           <span className="font-mono">active</span> forever. Filter on it with{" "}
@@ -122,11 +122,11 @@ export default function SubscriptionsPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="reconcile" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="reconcile" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Reading subscriptions back
         </h2>
         <ApiBadge method="GET" path="/api/v1/subscriptions/{id}" />
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           The webhook is a notification, not the only copy of the mapping. Every subscription read returns your own{" "}
           <span className="font-mono">externalReference</span>, so a missed delivery is recoverable instead of
           leaving a paying customer with no plan.
@@ -155,7 +155,7 @@ export default function SubscriptionsPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="events" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="events" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Lifecycle webhooks
         </h2>
         <Callout tone="teal">
@@ -169,12 +169,12 @@ export default function SubscriptionsPage() {
           </span>
           .
         </Callout>
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           The one to design carefully is <span className="font-mono">subscription.renewed</span>: it arrives every
           period for the life of the subscription, so extending an access window on each renewal must be
           idempotent per event id, or a single retried delivery grants a free extra period. The same event-claiming
           pattern from the{" "}
-          <Link href="/docs/webhooks" className="font-semibold text-[#00d2b4] hover:underline">
+          <Link href="/docs/webhooks" className="font-semibold text-[#2775CA] hover:underline">
             webhooks page
           </Link>{" "}
           covers this.
@@ -182,14 +182,14 @@ export default function SubscriptionsPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="plans" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="plans" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Plan catalog
         </h2>
         <Callout tone="plain" title="Plan catalog: /api/v1/plans">
           <p>
             A subscription checkout and its reusable catalog plan are distinct records. Amount-plus-interval
             subscription requests publish the companion plan by default; create stable tiers directly in the{" "}
-            <span className="font-bold text-white/85">plan catalog</span>. This is the same catalog the dashboard
+            <span className="font-bold text-[#111827]">plan catalog</span>. This is the same catalog the dashboard
             Plans tab, customer DMs, and <span className="font-mono">/subscribe</span> links read, so plans created
             here and in the dashboard always stay in sync. <span className="font-mono">GET /api/v1/plans</span>{" "}
             lists your plans (each with its shareable <span className="font-mono">subscribeUrl</span> and any live

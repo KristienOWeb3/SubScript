@@ -4940,13 +4940,13 @@ Please complete the following implementation tasks:
                                     {/* Subscription Cancellation Control */}
                                     <div className={`rounded-[34px] border p-6 shadow-sm space-y-6 ${
                                         cancelAtPeriodEnd 
-                                            ? "border-amber-500/30 bg-amber-500/[0.05] dark:bg-amber-500/[0.08]" 
+                                            ? "border-slate-300 dark:border-slate-700 bg-slate-100/70 dark:bg-slate-800/30" 
                                             : "border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023]"
                                     }`}>
                                         <h3 className={`text-sm font-semibold flex items-center gap-2 ${
-                                            cancelAtPeriodEnd ? "text-amber-700 dark:text-amber-300" : "text-[#082824] dark:text-white"
+                                            cancelAtPeriodEnd ? "text-slate-700 dark:text-slate-300" : "text-[#082824] dark:text-white"
                                         }`}>
-                                            <ShieldAlert className={`w-4 h-4 ${cancelAtPeriodEnd ? "text-amber-600 dark:text-amber-400" : "text-black/60 dark:text-white/60"}`} />
+                                            <ShieldAlert className={`w-4 h-4 ${cancelAtPeriodEnd ? "text-slate-600 dark:text-slate-400" : "text-black/60 dark:text-white/60"}`} />
                                             {cancelAtPeriodEnd ? "Subscription Scheduled to End" : "Subscription Management"}
                                         </h3>
                                         <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed font-sans">
@@ -5134,20 +5134,20 @@ Please complete the following implementation tasks:
                                             checked={userSettings?.emailEnabled !== false}
                                             onChange={() => handleToggleSetting("emailEnabled", userSettings?.emailEnabled !== false)}
                                             disabled={savingSettingsField === "emailEnabled"}
-                                            className="accent-[#082824] dark:accent-[#00d2b4] w-4 h-4 cursor-pointer"
+                                            className="accent-[#082824] dark:accent-[#2775CA] w-4 h-4 cursor-pointer"
                                         />
                                     </label>
                                     <label className="flex items-center justify-between p-2 rounded-xl bg-[#D4E3E8]/40 dark:bg-white/[0.04] border border-black/10 dark:border-white/10 cursor-pointer">
                                         <span>New Subscriptions</span>
-                                        <input type="checkbox" defaultChecked className="accent-[#082824] dark:accent-[#00d2b4] w-4 h-4" />
+                                        <input type="checkbox" defaultChecked className="accent-[#082824] dark:accent-[#2775CA] w-4 h-4" />
                                     </label>
                                     <label className="flex items-center justify-between p-2 rounded-xl bg-[#D4E3E8]/40 dark:bg-white/[0.04] border border-black/10 dark:border-white/10 cursor-pointer">
                                         <span>Successful Payments</span>
-                                        <input type="checkbox" defaultChecked className="accent-[#082824] dark:accent-[#00d2b4] w-4 h-4" />
+                                        <input type="checkbox" defaultChecked className="accent-[#082824] dark:accent-[#2775CA] w-4 h-4" />
                                     </label>
                                     <label className="flex items-center justify-between p-2 rounded-xl bg-[#D4E3E8]/40 dark:bg-white/[0.04] border border-black/10 dark:border-white/10 cursor-pointer">
                                         <span>Failed Renewals</span>
-                                        <input type="checkbox" defaultChecked className="accent-[#082824] dark:accent-[#00d2b4] w-4 h-4" />
+                                        <input type="checkbox" defaultChecked className="accent-[#082824] dark:accent-[#2775CA] w-4 h-4" />
                                     </label>
                                 </div>
                             </div>
@@ -6026,10 +6026,10 @@ Please complete the following implementation tasks:
                                     window.location.href = getDashboardUrl("USER", "/user");
                                 } else {
                                     await fetch("/api/auth/logout", { method: "POST" });
-                                    window.location.href = getDashboardUrl("USER", "/login");
+                                    window.location.href = getDashboardUrl("USER", "/signin");
                                 }
                             }}
-                            className="w-full py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black rounded-xl font-bold text-xs uppercase tracking-widest transition-all"
+                            className="w-full py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-xl font-bold text-xs uppercase tracking-widest transition-all"
                         >
                             {sessionAlert === "role_missing" && "Complete Account Setup"}
                             {sessionAlert === "wrong_role" && "Switch to User Dashboard"}
@@ -6210,7 +6210,7 @@ Please complete the following implementation tasks:
 
                         <div className="space-y-1">
                             <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center justify-center gap-2">
-                                <QrCode className="w-4 h-4 text-[#00d2b4]" />
+                                <QrCode className="w-4 h-4 text-[#8AB4DB]" />
                                 Payment Link QR Code
                             </h3>
                             <p className="text-[10px] text-white/40 font-mono uppercase tracking-wider truncate px-4">
@@ -6244,14 +6244,14 @@ Please complete the following implementation tasks:
                         <div className="space-y-2">
                             <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider text-left">Checkout URL</p>
                             <div className="bg-black/40 border border-white/5 rounded-xl p-3 flex items-center justify-between gap-3">
-                                <span className="text-[11px] font-mono text-white/70 truncate text-left flex-1">
+                                <span className="text-[11px] font-mono text-black/70 dark:text-white/70 truncate text-left flex-1">
                                     {activeQrCodeLink}
                                 </span>
                                 <button
                                     onClick={() => {
                                         navigator.clipboard.writeText(activeQrCodeLink);
                                     }}
-                                    className="p-1.5 text-[#00d2b4] hover:text-[#00d2b4]/80 rounded-lg hover:bg-[#00d2b4]/5 transition-all flex-shrink-0"
+                                    className="p-1.5 text-[#8AB4DB] hover:text-[#8AB4DB]/80 rounded-lg hover:bg-[#8AB4DB]/5 transition-all flex-shrink-0"
                                     title="Copy URL"
                                 >
                                     <Copy className="w-3.5 h-3.5" />
@@ -6276,7 +6276,7 @@ Please complete the following implementation tasks:
             {/* High-fidelity glassmorphic toast notification for settlement confirmation */}
                             {showToast && (
                                 <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass border border-emerald-500/30 bg-black/60 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-[0_8px_32px_0_rgba(0,210,180,0.2)]">
-                                    <Zap className="w-5 h-5 text-[#00d2b4] fill-[#00d2b4]/25 shrink-0" />
+                                    <Zap className="w-5 h-5 text-[#8AB4DB] fill-[#8AB4DB]/25 shrink-0" />
                                     <span className="text-xs font-bold uppercase tracking-wider text-white">
                                         {toastMessage}
                                     </span>
@@ -6315,7 +6315,7 @@ function MerchantPlanRow({
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                 <div className="min-w-0 w-full">
                     <p className="truncate text-sm font-black uppercase tracking-[0.08em] text-white">{plan.name}</p>
-                    <p className="mt-1 text-xs font-bold text-[#00d2b4]">
+                    <p className="mt-1 text-xs font-bold text-[#082824]">
                         {formatPlanAmount(plan.amountUsdc)} USDC / {formatPlanPeriod(plan.periodSeconds)}
                     </p>
                     <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.12em] text-white/30">
@@ -6331,7 +6331,7 @@ function MerchantPlanRow({
                     className={`inline-flex w-full shrink-0 items-center justify-center rounded-xl border px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition disabled:opacity-50 sm:w-auto ${
                         plan.active
                             ? "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-300 hover:bg-red-500/15"
-                            : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-[#00d2b4] hover:bg-emerald-500/15"
+                            : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/15"
                     }`}
                 >
                     {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : plan.active ? "Deactivate" : "Reactivate"}
@@ -6348,7 +6348,7 @@ function MerchantPlanRow({
                             href={plan.detailsUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[10px] font-bold text-[#00d2b4] transition hover:text-[#00d2b4]/80"
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-[#8AB4DB] transition hover:text-[#8AB4DB]/80"
                         >
                             View more ↗
                         </a>
@@ -6363,7 +6363,7 @@ function MerchantPlanRow({
                         <button
                             type="button"
                             onClick={handleCopy}
-                            className="flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-[#00d2b4] transition hover:bg-[#00d2b4]/20"
+                            className="flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-black/10 bg-[#D4E3E8] px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-[#082824] transition hover:bg-[#c6d8de]"
                             title={copied ? "Copied!" : "Copy subscribe link"}
                         >
                             {copied ? <Check className="h-3 w-3 shrink-0" /> : <Copy className="h-3 w-3 shrink-0" />}
@@ -6373,7 +6373,7 @@ function MerchantPlanRow({
                             <button
                                 type="button"
                                 onClick={() => onShowQr(subscribeUrl, `${plan.name} Plan Subscribe Link`)}
-                                className="flex shrink-0 items-center justify-center rounded-lg border border-[#00d2b4]/20 bg-[#00d2b4]/10 p-1.5 text-[#00d2b4] transition hover:bg-[#00d2b4]/20"
+                                className="flex shrink-0 items-center justify-center rounded-lg border border-black/10 bg-[#D4E3E8] p-1.5 text-[#082824] transition hover:bg-[#c6d8de]"
                                 title="Show QR Code"
                                 aria-label="Show QR Code"
                             >
@@ -6522,7 +6522,7 @@ function PlanPromotionPanel({
                             Edit
                         </button>
                         <button type="button" onClick={toggleActive} disabled={saving}
-                            className={`rounded-lg border px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition disabled:opacity-50 ${promotion.active ? "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-300 hover:bg-red-500/15" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-[#00d2b4] hover:bg-emerald-500/15"}`}>
+                            className={`rounded-lg border px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition disabled:opacity-50 ${promotion.active ? "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-300 hover:bg-red-500/15" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/15"}`}>
                             {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : promotion.active ? "Turn off" : "Turn on"}
                         </button>
                     </div>
@@ -6545,12 +6545,12 @@ function PlanPromotionPanel({
                         <div className="space-y-1">
                             <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Offer name</label>
                             <input type="text" value={promoName} onChange={(e) => setPromoName(e.target.value)} placeholder="Launch offer"
-                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                                className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-black focus:border-[#8AB4DB] focus:outline-none" />
                         </div>
                         <div className="space-y-1">
                             <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Offer type</label>
                             <select value={discountType} onChange={(e) => setDiscountType(e.target.value)}
-                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none">
+                                className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-black focus:border-[#8AB4DB] focus:outline-none">
                                 <option value="PERCENT">Percentage off</option>
                                 <option value="FIXED_PRICE">Fixed intro price</option>
                                 <option value="FREE_TRIAL">Free trial</option>
@@ -6560,41 +6560,41 @@ function PlanPromotionPanel({
                             <div className="space-y-1">
                                 <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Percent off (customer pays the rest)</label>
                                 <input type="number" min="1" max="100" step="1" value={percentOff} onChange={(e) => setPercentOff(e.target.value)}
-                                    className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                                    className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-black focus:border-[#8AB4DB] focus:outline-none" />
                             </div>
                         )}
                         {discountType === "FIXED_PRICE" && (
                             <div className="space-y-1">
                                 <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Intro price (USDC)</label>
                                 <input type="number" min="0" step="0.01" value={introPriceUsdc} onChange={(e) => setIntroPriceUsdc(e.target.value)}
-                                    className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                                    className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-black focus:border-[#8AB4DB] focus:outline-none" />
                             </div>
                         )}
                         <div className="space-y-1">
                             <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Discounted cycles</label>
                             <input type="number" min="1" max="36" value={introCycles} onChange={(e) => setIntroCycles(e.target.value)}
-                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                                className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-black focus:border-[#8AB4DB] focus:outline-none" />
                         </div>
                         <div className="space-y-1">
                             <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Offer ends (optional)</label>
                             <input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)}
-                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                                className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-black focus:border-[#8AB4DB] focus:outline-none" />
                         </div>
                         <div className="space-y-1">
                             <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Max redemptions (optional)</label>
                             <input type="number" min="1" value={maxRedemptions} onChange={(e) => setMaxRedemptions(e.target.value)} placeholder="Unlimited"
-                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                                className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-black focus:border-[#8AB4DB] focus:outline-none" />
                         </div>
                     </div>
                     <label className="flex items-center gap-2 text-[10px] text-white/60">
-                        <input type="checkbox" checked={newCustomersOnly} onChange={(e) => setNewCustomersOnly(e.target.checked)} className="accent-[#00d2b4]" />
+                        <input type="checkbox" checked={newCustomersOnly} onChange={(e) => setNewCustomersOnly(e.target.checked)} className="accent-[#2775CA]" />
                         New customers only (subscribers who never had a plan with you)
                     </label>
                     {previewIntroMicros !== null && previewIntroMicros < regularMicros && (
                         <p className="rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-[10px] text-white/60">
-                            Customers pay <span className="font-bold text-[#00d2b4]">{formatPlanAmount(previewIntroMicros.toString())} USDC</span>
+                            Customers pay <span className="font-bold text-[#082824]">{formatPlanAmount(previewIntroMicros.toString())} USDC</span>
                             {Number(introCycles) > 1 ? ` per ${cadence} for ${introCycles} cycles` : " today"}, then{" "}
-                            <span className="font-bold text-white/85">{formatPlanAmount(plan.amountUsdc)} USDC / {cadence}</span>. Both prices are
+                            <span className="font-bold text-[#082824] dark:text-white/85">{formatPlanAmount(plan.amountUsdc)} USDC / {cadence}</span>. Both prices are
                             disclosed and authorized at checkout; the switch to full price is enforced on-chain.
                         </p>
                     )}
@@ -6605,7 +6605,7 @@ function PlanPromotionPanel({
                             Cancel
                         </button>
                         <button type="submit" disabled={saving}
-                            className="rounded-lg bg-[#00d2b4] px-4 py-2 text-[9px] font-bold uppercase tracking-wider text-black transition hover:bg-[#00d2b4]/85 disabled:opacity-50">
+                            className="rounded-lg bg-[#8AB4DB] px-4 py-2 text-[9px] font-bold uppercase tracking-wider text-[#082824] transition hover:bg-[#7aa7d0] disabled:opacity-50">
                             {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : promotion ? "Save changes" : "Launch offer"}
                         </button>
                     </div>

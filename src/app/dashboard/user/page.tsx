@@ -292,7 +292,7 @@ const userDesktopTabs = [
   { id: "commit", label: "Vault & Commits", icon: Shield },
   { id: "batch", label: "Batch Payments", icon: Layers },
   { id: "links", label: "Payment Links", icon: Link2 },
-  { id: "inbox", label: "Direct Messages", icon: MessageSquare },
+  { id: "inbox", label: "Payments", icon: Wallet },
   { id: "referrals", label: "Refer & Earn", icon: Gift },
 ] as const;
 
@@ -551,17 +551,14 @@ export default function UserDashboard() {
 
   const [focusIntentId, setFocusIntentId] = useState<string | null>(null);
   const [selectedDmPeer, setSelectedDmPeer] = useState<string | null>(null);
+  const [paymentsSubView, setPaymentsSubView] = useState<"subscriptions" | "people">("subscriptions");
   const [dmRequestOpen, setDmRequestOpen] = useState(false);
   const [dmRequestAmount, setDmRequestAmount] = useState("");
   const [dmRequestNote, setDmRequestNote] = useState("");
   const [dmRequestDuration, setDmRequestDuration] = useState<(typeof dmRequestDurationOptions)[number]["value"]>("24");
-  const [dmRequestBillingType, setDmRequestBillingType] = useState<"ONE_TIME" | "RECURRING">("ONE_TIME");
-  const [dmRequestInterval, setDmRequestInterval] = useState<"monthly" | "weekly" | "daily" | "yearly">("monthly");
   const [dmRequestStatus, setDmRequestStatus] = useState<string | null>(null);
   const [linkAmount, setLinkAmount] = useState("");
   const [linkMemo, setLinkMemo] = useState("");
-  const [linkBillingType, setLinkBillingType] = useState<"ONE_TIME" | "RECURRING">("ONE_TIME");
-  const [linkInterval, setLinkInterval] = useState<"monthly" | "weekly" | "daily" | "yearly">("monthly");
   const [linkLoading, setLinkLoading] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [linkResultUrl, setLinkResultUrl] = useState<string | null>(null);
@@ -624,6 +621,8 @@ export default function UserDashboard() {
   const [plansMerchantAddress, setPlansMerchantAddress] = useState<string | null>(null);
 
   const [isThreadPlansLoading, setIsThreadPlansLoading] = useState(false);
+  const [isOpenedDmLoading, setIsOpenedDmLoading] = useState(false);
+  const loadingPeerRef = useRef<string | null>(null);
   const [planManagerOpen, setPlanManagerOpen] = useState(false);
   const [planManagerStatus, setPlanManagerStatus] = useState<string | null>(null);
   const [planManagerError, setPlanManagerError] = useState<string | null>(null);
@@ -1385,12 +1384,12 @@ export default function UserDashboard() {
       const res = await fetch("/api/auth/session");
       const data = await res.json();
       if (!data.loggedIn) {
-        redirectTo(getDashboardUrl("USER", "/login"), "Redirecting to login...");
+        redirectTo(getDashboardUrl("USER", "/signin"), "Please sign in or create an account to access your dashboard.");
         return;
       }
 
       if (!data.role) {
-        redirectTo(getDashboardUrl("USER", "/signup"), "Redirecting to sign up...");
+        redirectTo(getDashboardUrl("USER", "/signup"), "Please complete your account setup to access your dashboard.");
         return;
       }
 
@@ -1403,7 +1402,7 @@ export default function UserDashboard() {
       if (!data.isEmbedded && accountAddress && data.wallet.toLowerCase() !== accountAddress.toLowerCase()) {
         console.warn("Session wallet mismatch, logging out");
         await fetch("/api/auth/logout", { method: "POST" });
-        redirectTo(getDashboardUrl("USER", "/login"), "Signing you out...");
+        redirectTo(getDashboardUrl("USER", "/signin"), "Signing you out...");
         return;
       }
 
@@ -1414,7 +1413,7 @@ export default function UserDashboard() {
       await Promise.all([loadSubscriptions(), loadDms(), loadUserSettings(), loadVaults()]);
     } catch (e) {
       console.error("Session verification error:", e);
-      redirectTo(getDashboardUrl("USER", "/login"), "Redirecting to login...");
+      redirectTo(getDashboardUrl("USER", "/signin"), "Please sign in or create an account to continue.");
     } finally {
       setLoading(false);
     }
@@ -1423,6 +1422,15 @@ export default function UserDashboard() {
   useEffect(() => {
     verifySession();
   }, [verifySession, accountAddress]);
+
+  useEffect(() => {
+    if (redirectUrl && redirectMessage) {
+      const timer = setTimeout(() => {
+        window.location.href = redirectUrl;
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [redirectUrl, redirectMessage]);
 
   useEffect(() => {
     if (receiveOpen && userWallet) {
@@ -1510,7 +1518,7 @@ export default function UserDashboard() {
       console.error("Logout request error:", e);
     }
     disconnect();
-    redirectTo(getDashboardUrl("USER", "/login"), "Signing you out...");
+    redirectTo(getDashboardUrl("USER", "/signin"), "Signing you out...");
   };
 
   const [deleteAccountLoading, setDeleteAccountLoading] = useState(false);
@@ -2063,22 +2071,19 @@ export default function UserDashboard() {
         body: JSON.stringify({
           receiverAddress: selectedDmPeer,
           amountUsdc: dmRequestAmount,
-          title: dmRequestBillingType === "RECURRING" ? "Recurring payment request" : "Payment request",
-          description: dmRequestNote || (dmRequestBillingType === "RECURRING" ? "Recurring payment request via SubScript." : "Payment request via SubScript."),
+          title: "Payment request",
+          description: dmRequestNote || "Payment request via SubScript.",
           expiresInHours: Number(dmRequestDuration),
-          billingType: dmRequestBillingType,
-          interval: dmRequestInterval,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send DM request");
 
-      setDmRequestStatus(dmRequestBillingType === "RECURRING" ? "Recurring payment request sent." : "Request sent inside this DM.");
+      setDmRequestStatus("Request sent inside this DM.");
       setDmRequestOpen(false);
       setDmRequestAmount("");
       setDmRequestNote("");
       setDmRequestDuration("24");
-      setDmRequestBillingType("ONE_TIME");
       await loadDms();
     }).catch((err) => setDmRequestStatus(err.message));
   };
@@ -2514,10 +2519,8 @@ export default function UserDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amountUsdc: linkAmount,
-          title: linkMemo.trim() || (linkBillingType === "RECURRING" ? "Recurring payment" : "USDC payment"),
-          description: linkMemo.trim() || (linkBillingType === "RECURRING" ? "SubScript recurring payment link." : "SubScript payment link."),
-          billingType: linkBillingType,
-          interval: linkInterval,
+          title: linkMemo.trim() || "USDC payment",
+          description: linkMemo.trim() || "SubScript payment link.",
         }),
       });
       const data = await res.json();
@@ -2824,8 +2827,9 @@ export default function UserDashboard() {
       setSingleSendStatus("You cannot send USDC to your own connected wallet.");
       return;
     }
-    if (!singleAmount || isNaN(Number(singleAmount)) || Number(singleAmount) <= 0) {
-      setSingleSendStatus("Please provide a valid amount to send.");
+    const trimmedSingleAmount = singleAmount.trim();
+    if (!trimmedSingleAmount || !/^[0-9]+(\.[0-9]+)?$/.test(trimmedSingleAmount) || Number(trimmedSingleAmount) <= 0) {
+      setSingleSendStatus("Please provide a valid numeric USDC amount to send (e.g. 10.00).");
       return;
     }
 
@@ -3223,8 +3227,8 @@ export default function UserDashboard() {
      Funds, which is exactly what the note below says must not happen. peerRole is the real signal
      and is already first in the chain. */
   /* Active merchant status is scoped strictly to enterprise counterparties where an active,
-     un-cancelled subscription exists. User-to-user recurring payments never convert a peer DM
-     into a merchant DM, and cancelling an enterprise subscription reverts immediately. */
+     un-cancelled subscription exists. User-to-user recurring payments are completely abolished;
+     subscriptions are exclusively between enterprise merchants and subscribers. */
   const isPeerEnterprise = activeThread?.peerRole === "ENTERPRISE";
   const hasActiveEnterpriseSub = subscriptions.some(
     (s) =>
@@ -3233,6 +3237,7 @@ export default function UserDashboard() {
       !s.cancelAtPeriodEnd
   );
   const isActiveDmMerchant = Boolean(selectedDmPeer && isPeerEnterprise && hasActiveEnterpriseSub);
+  const isMerchantThread = Boolean(selectedDmPeer && (isPeerEnterprise || isActiveDmMerchant));
   /* Kept strictly separate from isActiveDmMerchant above. That flag answers "is this
      counterparty a business?" and correctly drives whether Send Funds appears — you pay a
      business through its payment link, not by pushing USDC at it. It is NOT a trust signal: it
@@ -3316,6 +3321,50 @@ export default function UserDashboard() {
 
     return () => cancelAnimationFrame(rafId);
   }, [activeTab, selectedDmPeer, selectedThreadDms.length]);
+
+  /* Eagerly load opened DM information (merchant plans, thread history) and maintain
+   * a smooth skeleton loader until everything is loaded. */
+  useEffect(() => {
+    if (!selectedDmPeer || activeTab !== "inbox") {
+      setIsOpenedDmLoading(false);
+      loadingPeerRef.current = null;
+      return;
+    }
+
+    const peer = selectedDmPeer.toLowerCase();
+    if (loadingPeerRef.current === peer) {
+      return;
+    }
+    loadingPeerRef.current = peer;
+
+    let isCancelled = false;
+    setIsOpenedDmLoading(true);
+
+    const loadThreadData = async () => {
+      const minDelay = new Promise((resolve) => setTimeout(resolve, 350));
+      const thread = dmThreads.find((t) => t.peerAddress.toLowerCase() === peer);
+      const isEnterprise =
+        thread?.peerRole === "ENTERPRISE" ||
+        subscriptions.some((s) => s.merchantAddress.toLowerCase() === peer);
+
+      const tasks: Promise<any>[] = [minDelay];
+
+      if (isEnterprise && plansMerchantAddress !== peer) {
+        tasks.push(loadPlansForMerchant(selectedDmPeer));
+      }
+
+      await Promise.allSettled(tasks);
+      if (!isCancelled) {
+        setIsOpenedDmLoading(false);
+      }
+    };
+
+    void loadThreadData();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedDmPeer, activeTab, dmThreads, subscriptions, plansMerchantAddress]);
 
   if (loading) {
     return (
@@ -3486,28 +3535,44 @@ export default function UserDashboard() {
   }
 
   if (redirectMessage) {
+    const isSignupTarget = redirectUrl?.includes("signup");
     return (
       <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[#FFFFF0] px-6 text-black">
-
-        <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl border border-white/10 bg-black/45 p-6 sm:p-8 text-center shadow-2xl backdrop-blur-xl">
-          <span className="inline-flex p-3 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 mb-2">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl border border-black/10 bg-white p-6 sm:p-8 text-center shadow-xl">
+          <span className="inline-flex p-3 rounded-full bg-[#2775CA]/10 text-[#2775CA] border border-[#2775CA]/20 mb-1">
+            <ShieldAlert className="w-6 h-6" />
           </span>
-          <div className="space-y-2">
-            <p className="text-sm font-black uppercase tracking-[0.18em] text-white">Session Notice</p>
-            <p className="text-xs leading-5 text-white/50">{redirectMessage}</p>
+          <div className="space-y-1.5">
+            <p className="text-sm font-black uppercase tracking-[0.16em] text-[#111827]">Session Notice</p>
+            <p className="text-xs leading-5 text-black/60">{redirectMessage}</p>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              if (redirectUrl) {
-                window.location.href = redirectUrl;
-              }
-            }}
-            className="subscript-primary-button w-full"
-          >
-            Proceed
-          </button>
+
+          <div className="w-full space-y-2 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (redirectUrl) {
+                  window.location.href = redirectUrl;
+                } else {
+                  window.location.href = getDashboardUrl("USER", "/signin");
+                }
+              }}
+              className="w-full py-2.5 bg-[#2775CA] hover:bg-[#1f62ab] text-white font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.99]"
+            >
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-white/70" />
+              <span>{isSignupTarget ? "Proceed to Sign Up" : "Proceed to Sign In"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = getDashboardUrl("USER", isSignupTarget ? "/signin" : "/signup");
+              }}
+              className="w-full py-2.5 bg-black/5 hover:bg-black/10 text-[#111827] font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all border border-black/10 active:scale-[0.99]"
+            >
+              <span>{isSignupTarget ? "Sign In Instead" : "Create Account / Sign Up"}</span>
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -3934,27 +3999,31 @@ export default function UserDashboard() {
             ? "h-[100dvh] md:h-[calc(100vh-14px)] min-h-0 overflow-hidden"
             : "h-[100dvh] md:h-[calc(100vh-14px)] overflow-y-auto overscroll-y-contain md:overflow-y-auto"
         }`}>
-          <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-0 z-30 h-32 bg-[#FFFFF0]/90 backdrop-blur-3xl saturate-150 [mask-image:linear-gradient(to_bottom,black_0%,black_35%,transparent_100%)] md:hidden" />
+          {!(activeTab === "inbox" && selectedDmPeer && (isMerchantThread || isOpenedDmLoading)) && (
+            <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-0 z-30 h-32 bg-[#FFFFF0]/90 backdrop-blur-3xl saturate-150 [mask-image:linear-gradient(to_bottom,black_0%,black_35%,transparent_100%)] md:hidden" />
+          )}
           {/* Mobile headers (only shown on small screens) */}
           {isMobile && (
             <div className="w-full">
               {activeTab === "inbox" && selectedDmPeer ? (
-                <ChatHeader
-                  peerName={activeThreadLabel}
-                  peerProfilePic={activeThread?.peerProfilePic || null}
-                  peerAddress={selectedDmPeer}
-                  isMerchant={isActiveDmMerchant}
-                  isVerifiedMerchant={isActiveDmMerchantVerified}
-                  isBlocked={isCurrentPeerBlocked}
-                  activeSubscription={activeThreadSubscription}
-                  onBack={() => setSelectedDmPeer(null)}
-                  onBlock={() => handleBlockPeer(selectedDmPeer)}
-                  onUnblock={() => handleUnblockPeer(selectedDmPeer)}
-                  onSendFunds={() => {
-                    setSendFundsRecipient(activeThreadLabel || selectedDmPeer);
-                    setSendFundsOpen(true);
-                  }}
-                />
+                isOpenedDmLoading ? null : isMerchantThread ? null : (
+                  <ChatHeader
+                    peerName={activeThreadLabel}
+                    peerProfilePic={activeThread?.peerProfilePic || null}
+                    peerAddress={selectedDmPeer}
+                    isMerchant={isActiveDmMerchant}
+                    isVerifiedMerchant={isActiveDmMerchantVerified}
+                    isBlocked={isCurrentPeerBlocked}
+                    activeSubscription={activeThreadSubscription}
+                    onBack={() => setSelectedDmPeer(null)}
+                    onBlock={() => handleBlockPeer(selectedDmPeer)}
+                    onUnblock={() => handleUnblockPeer(selectedDmPeer)}
+                    onSendFunds={() => {
+                      setSendFundsRecipient(activeThreadLabel || selectedDmPeer);
+                      setSendFundsOpen(true);
+                    }}
+                  />
+                )
               ) : (
                 <HomeHeader
                   registeredDomain={registeredDomain}
@@ -4480,6 +4549,39 @@ export default function UserDashboard() {
                           onOpenRequests={() => setDmRequestsModalOpen(true)}
                           onOpenInvite={() => setDmInviteModalOpen(true)}
                           onOpenBlocked={() => setBlockedUsersModalOpen(true)}
+                          paymentsSubView={paymentsSubView}
+                          onPaymentsSubViewChange={setPaymentsSubView}
+                        />
+                      </div>
+                    ) : isOpenedDmLoading ? (
+                      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+                        <OpenedDmSkeleton
+                          isMerchant={isMerchantThread}
+                          onBack={() => setSelectedDmPeer(null)}
+                          isMobile={true}
+                        />
+                      </div>
+                    ) : isMerchantThread ? (
+                      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+                        <SubscriptionDetailView
+                          peerAddress={selectedDmPeer}
+                          peerName={activeThread?.peerName}
+                          peerVerified={activeThread?.peerVerified}
+                          peerProfilePic={activeThread?.peerProfilePic}
+                          activeSubscription={activeThreadSubscription}
+                          dms={selectedThreadDms}
+                          plans={threadPlans}
+                          isPlansLoading={isThreadPlansLoading}
+                          planManagerOpen={planManagerOpen}
+                          onTogglePlanManager={handleTogglePlanManager}
+                          onCancelSubscription={(addr) => handleCancelSubscriptionForMerchant(addr)}
+                          onResumeSubscription={handleResumeSubscription}
+                          loadingAction={loadingAction}
+                          planManagerStatus={planManagerStatus}
+                          planManagerError={planManagerError}
+                          onBack={() => setSelectedDmPeer(null)}
+                          onPay={(dm) => handleConfirmPaymentDm(dm)}
+                          onDecline={(dm) => handleDeclineDm(dm)}
                         />
                       </div>
                     ) : (
@@ -4491,9 +4593,7 @@ export default function UserDashboard() {
                           className="min-h-0 flex-1 overflow-y-auto overscroll-contain will-change-transform translate-z-0 space-y-4 px-1 pt-1 pb-4"
                         >
                           <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55 mt-3">
-                            {isActiveDmMerchant
-                              ? "Updates from this merchant — you can't reply here"
-                              : "Direct peer-to-peer system messages only"}
+                            {`Send or request USDC with ${activeThreadLabel}. No free-text messages here.`}
                           </div>
                           <div className="mx-auto w-fit rounded-full bg-white/10 px-6 py-1 text-[10px] font-bold text-white/55">
                             {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
@@ -4565,20 +4665,6 @@ export default function UserDashboard() {
                             <p className="text-center text-[11px] text-white/40 py-2">
                               Messaging is disabled for blocked contacts.
                             </p>
-                          ) : isActiveDmMerchant ? (
-                            <MerchantPlanManager
-                              open={planManagerOpen}
-                              merchantLabel={activeThreadLabel}
-                              plans={threadPlans}
-                              activeSubscription={activeThreadSubscription}
-                              loading={isThreadPlansLoading}
-                              loadingAction={loadingAction}
-                              status={planManagerStatus}
-                              error={planManagerError}
-                              onToggle={handleTogglePlanManager}
-                              onCancel={() => selectedDmPeer && handleCancelSubscriptionForMerchant(selectedDmPeer)}
-                              onResume={handleResumeSubscription}
-                            />
                           ) : (
                             <div className="flex flex-col gap-2">
                               <DmRequestComposer
@@ -4586,8 +4672,6 @@ export default function UserDashboard() {
                                 amount={dmRequestAmount}
                                 note={dmRequestNote}
                                 duration={dmRequestDuration}
-                                billingType={dmRequestBillingType}
-                                interval={dmRequestInterval}
                                 status={dmRequestStatus}
                                 loading={loadingAction === "create-dm-request"}
                                 onToggle={() => {
@@ -4598,8 +4682,6 @@ export default function UserDashboard() {
                                 onAmountChange={setDmRequestAmount}
                                 onNoteChange={setDmRequestNote}
                                 onDurationChange={setDmRequestDuration}
-                                onBillingTypeChange={setDmRequestBillingType}
-                                onIntervalChange={setDmRequestInterval}
                               />
                             </div>
                           )}
@@ -4620,6 +4702,8 @@ export default function UserDashboard() {
                         onOpenRequests={() => setDmRequestsModalOpen(true)}
                         onOpenInvite={() => setDmInviteModalOpen(true)}
                         onOpenBlocked={() => setBlockedUsersModalOpen(true)}
+                        paymentsSubView={paymentsSubView}
+                        onPaymentsSubViewChange={setPaymentsSubView}
                       />
                     </div>
 
@@ -4627,15 +4711,60 @@ export default function UserDashboard() {
                     <div className="flex-1 flex flex-col overflow-hidden liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-4 min-h-0 justify-between">
                       <AnimatePresence mode="wait">
                         {selectedDmPeer ? (
-                          <motion.div
-                            key={selectedDmPeer}
-                            initial={{ opacity: 0, scale: 0.96, y: 12, filter: "blur(1.5px)" }}
-                            animate={{ opacity: 1, scale: 1, y: 0, filter: "blur(0px)" }}
-                            exit={{ opacity: 0, scale: 0.96, y: -12, filter: "blur(1.5px)" }}
-                            transition={{ type: "spring", stiffness: 450, damping: 32 }}
-                            className="flex flex-col h-full justify-between overflow-hidden"
-                          >
-                            {/* Desktop Chat Pane Header */}
+                          isOpenedDmLoading ? (
+                            <motion.div
+                              key={`loading-${selectedDmPeer}`}
+                              initial={{ opacity: 0, scale: 0.98 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.98 }}
+                              transition={{ duration: 0.15 }}
+                              className="flex flex-col h-full overflow-hidden"
+                            >
+                              <OpenedDmSkeleton
+                                isMerchant={isMerchantThread}
+                                onBack={() => setSelectedDmPeer(null)}
+                              />
+                            </motion.div>
+                          ) : isMerchantThread ? (
+                            <motion.div
+                              key={selectedDmPeer}
+                              initial={{ opacity: 0, scale: 0.96, y: 12, filter: "blur(1.5px)" }}
+                              animate={{ opacity: 1, scale: 1, y: 0, filter: "blur(0px)" }}
+                              exit={{ opacity: 0, scale: 0.96, y: -12, filter: "blur(1.5px)" }}
+                              transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                              className="flex flex-col h-full overflow-hidden"
+                            >
+                              <SubscriptionDetailView
+                                peerAddress={selectedDmPeer}
+                                peerName={activeThread?.peerName}
+                                peerVerified={activeThread?.peerVerified}
+                                peerProfilePic={activeThread?.peerProfilePic}
+                                activeSubscription={activeThreadSubscription}
+                                dms={selectedThreadDms}
+                                plans={threadPlans}
+                                isPlansLoading={isThreadPlansLoading}
+                                planManagerOpen={planManagerOpen}
+                                onTogglePlanManager={handleTogglePlanManager}
+                                onCancelSubscription={(addr) => handleCancelSubscriptionForMerchant(addr)}
+                                onResumeSubscription={handleResumeSubscription}
+                                loadingAction={loadingAction}
+                                planManagerStatus={planManagerStatus}
+                                planManagerError={planManagerError}
+                                onBack={() => setSelectedDmPeer(null)}
+                                onPay={(dm) => handleConfirmPaymentDm(dm)}
+                                onDecline={(dm) => handleDeclineDm(dm)}
+                              />
+                            </motion.div>
+                          ) : (
+                            <motion.div
+                              key={selectedDmPeer}
+                              initial={{ opacity: 0, scale: 0.96, y: 12, filter: "blur(1.5px)" }}
+                              animate={{ opacity: 1, scale: 1, y: 0, filter: "blur(0px)" }}
+                              exit={{ opacity: 0, scale: 0.96, y: -12, filter: "blur(1.5px)" }}
+                              transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                              className="flex flex-col h-full justify-between overflow-hidden"
+                            >
+                              {/* Desktop Chat Pane Header */}
                             <div
                               data-testid="desktop-dm-header"
                               className="sticky top-0 z-20 flex shrink-0 items-center justify-between border border-white/10 bg-black/40 px-4 py-2.5 rounded-2xl backdrop-blur-xl shadow-xl mb-2"
@@ -4659,9 +4788,9 @@ export default function UserDashboard() {
                                         {!activeThreadSubscription.cancelAtPeriodEnd && (
                                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
                                         )}
-                                        <span className={`relative inline-flex h-2 w-2 rounded-full ${activeThreadSubscription.cancelAtPeriodEnd ? "bg-amber-400" : "bg-emerald-400"}`} />
+                                        <span className={`relative inline-flex h-2 w-2 rounded-full ${activeThreadSubscription.cancelAtPeriodEnd ? "bg-slate-400" : "bg-emerald-400"}`} />
                                       </span>
-                                      <span className={`text-[8px] font-black uppercase tracking-[0.12em] ${activeThreadSubscription.cancelAtPeriodEnd ? "text-amber-400" : "text-emerald-400"}`}>
+                                      <span className={`text-[8px] font-black uppercase tracking-[0.12em] ${activeThreadSubscription.cancelAtPeriodEnd ? "text-slate-400" : "text-emerald-400"}`}>
                                         {activeThreadSubscription.cancelAtPeriodEnd ? "Cancelling" : "Recurring active"}
                                       </span>
                                     </div>
@@ -4674,7 +4803,8 @@ export default function UserDashboard() {
                                 <button
                                   type="button"
                                   onClick={() => setSelectedDmPeer(null)}
-                                  className="md:hidden p-2 text-white/60 hover:text-white bg-white/[0.02] border border-white/5 rounded-full transition-all shrink-0 animate-fade-in"
+                                  className="md:hidden flex h-9 w-9 aspect-square items-center justify-center text-white/60 hover:text-white bg-white/[0.02] hover:bg-white/10 active:bg-white/15 border border-white/5 rounded-full transition-all shrink-0 animate-fade-in"
+                                  aria-label="Back to activities"
                                 >
                                   <ArrowLeft className="h-4 w-4" />
                                 </button>
@@ -4706,7 +4836,7 @@ export default function UserDashboard() {
                                           setSendFundsRecipient(activeThreadLabel || selectedDmPeer);
                                           setSendFundsOpen(true);
                                         }}
-                                        className="px-3 py-1 bg-[#ccff00] text-black border border-black/20 font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#b8e600] transition shadow-sm active:scale-95 shrink-0"
+                                        className="px-3 py-1 bg-[#2775CA] hover:bg-[#2063ab] text-white border border-[#2775CA]/30 font-black uppercase tracking-wider text-[9px] rounded-full transition shadow-xs active:scale-95 shrink-0"
                                       >
                                         Send Funds
                                       </button>
@@ -4719,9 +4849,7 @@ export default function UserDashboard() {
                             {/* Message bubbles pane */}
                             <div ref={attachDmScroller} onScroll={handleDmScroll} className="min-h-0 flex-1 overflow-y-auto overscroll-contain will-change-transform translate-z-0 pr-1 space-y-3 py-2">
                               <div className="mx-auto w-fit max-w-full rounded-full border border-[#2775CA]/20 bg-[#2775CA]/10 px-4 py-1.5 text-center text-[9px] font-black uppercase tracking-[0.14em] text-[#2775CA] backdrop-blur-md shadow-sm">
-                                {isActiveDmMerchant
-                                  ? "Updates from this merchant — you can't reply here"
-                                  : "Direct peer-to-peer system messages only"}
+                                {`Send or request USDC with ${activeThreadLabel}. No free-text messages here.`}
                               </div>
                               <div className="mx-auto w-fit rounded-full border border-black/10 bg-black/5 backdrop-blur-md px-4 py-0.5 text-[9px] font-bold text-black/60">
                                 {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
@@ -4793,20 +4921,6 @@ export default function UserDashboard() {
                                 <p className="text-center text-[11px] text-white/40 py-2">
                                   Messaging is disabled for blocked contacts.
                                 </p>
-                              ) : isActiveDmMerchant ? (
-                                <MerchantPlanManager
-                                  open={planManagerOpen}
-                                  merchantLabel={activeThreadLabel}
-                                  plans={threadPlans}
-                                  activeSubscription={activeThreadSubscription}
-                                  loading={isThreadPlansLoading}
-                                  loadingAction={loadingAction}
-                                  status={planManagerStatus}
-                                  error={planManagerError}
-                                  onToggle={handleTogglePlanManager}
-                                  onCancel={() => selectedDmPeer && handleCancelSubscriptionForMerchant(selectedDmPeer)}
-                                  onResume={handleResumeSubscription}
-                                />
                               ) : (
                                 <div className="flex flex-col gap-2">
                                   <DmRequestComposer
@@ -4814,8 +4928,6 @@ export default function UserDashboard() {
                                     amount={dmRequestAmount}
                                     note={dmRequestNote}
                                     duration={dmRequestDuration}
-                                    billingType={dmRequestBillingType}
-                                    interval={dmRequestInterval}
                                     status={dmRequestStatus}
                                     loading={loadingAction === "create-dm-request"}
                                     onToggle={() => {
@@ -4826,15 +4938,14 @@ export default function UserDashboard() {
                                     onAmountChange={setDmRequestAmount}
                                     onNoteChange={setDmRequestNote}
                                     onDurationChange={setDmRequestDuration}
-                                    onBillingTypeChange={setDmRequestBillingType}
-                                    onIntervalChange={setDmRequestInterval}
                                   />
                                 </div>
                               )}
                             </div>
                           </motion.div>
-                        ) : (
-                          <motion.div
+                        )
+                      ) : (
+                        <motion.div
                             key="no-chat"
                             initial={{ opacity: 0, scale: 0.98, filter: "blur(1.5px)" }}
                             animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
@@ -4842,8 +4953,8 @@ export default function UserDashboard() {
                             className="flex flex-col items-center justify-center h-full text-center py-20 text-white/40 space-y-3"
                           >
                             <MessageSquare className="w-12 h-12 text-white/15 animate-pulse" />
-                            <h3 className="text-sm font-black uppercase tracking-wider text-white/60">Select a Chat to continue</h3>
-                            <p className="text-xs max-w-xs leading-relaxed text-white/45">Choose a merchant or user thread from the list on the left to view receipts, approve payment requests, or view transaction status.</p>
+                            <h3 className="text-sm font-black uppercase tracking-wider text-white/60">Pick a subscription or a person</h3>
+                            <p className="text-xs max-w-xs leading-relaxed text-white/45">See receipts, requests, and payment history.</p>
                           </motion.div>
                         )}
                       </AnimatePresence>
@@ -4858,43 +4969,7 @@ export default function UserDashboard() {
                 <SectionTitle title="Payment Links" subtitle="Create a shareable link to receive USDC. Anyone who pays is auto-onboarded and a DM opens with them." />
 
                 <form onSubmit={handleCreateShareableLink} className="border border-black/10 bg-white/80 rounded-3xl p-5 sm:p-8 space-y-5 shadow-sm text-black">
-                  {/* Link Billing Type Toggle */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black uppercase tracking-[0.14em] text-black/60">Payment Type</label>
-                    <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-black/[0.04] border border-black/10">
-                      <button
-                        type="button"
-                        onClick={() => setLinkBillingType("ONE_TIME")}
-                        className={`py-2 px-3 rounded-xl text-xs font-bold transition ${linkBillingType === "ONE_TIME" ? "bg-white text-black shadow-sm" : "text-black/60 hover:text-black"}`}
-                      >
-                        One-Time
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setLinkBillingType("RECURRING")}
-                        className={`py-2 px-3 rounded-xl text-xs font-bold transition ${linkBillingType === "RECURRING" ? "bg-[#2775CA] text-white shadow-sm" : "text-black/60 hover:text-black"}`}
-                      >
-                        Recurring
-                      </button>
-                    </div>
-                  </div>
-
-                  {linkBillingType === "RECURRING" && (
-                    <Field label="Billing Frequency">
-                      <select
-                        value={linkInterval}
-                        onChange={(event) => setLinkInterval(event.target.value as any)}
-                        className="subscript-input bg-white border border-black/15 text-[#111827]"
-                      >
-                        <option value="monthly">Monthly (every 30 days)</option>
-                        <option value="weekly">Weekly (every 7 days)</option>
-                        <option value="daily">Daily (every 24 hours)</option>
-                        <option value="yearly">Yearly (every 365 days)</option>
-                      </select>
-                    </Field>
-                  )}
-
-                  <Field label={linkBillingType === "RECURRING" ? "Recurring USDC Amount" : "USDC Amount"}>
+                  <Field label="USDC Amount">
                     <input
                       value={linkAmount}
                       onChange={(event) => setLinkAmount(event.target.value)}
@@ -4909,7 +4984,7 @@ export default function UserDashboard() {
                     <input
                       value={linkMemo}
                       onChange={(event) => setLinkMemo(event.target.value)}
-                      placeholder={linkBillingType === "RECURRING" ? "e.g. Monthly newsletter, community membership, software retainer..." : "e.g. Graphic design work, dinner split, coffee..."}
+                      placeholder="e.g. Graphic design work, dinner split, coffee..."
                       className="subscript-input bg-white border border-black/15 text-[#111827]"
                       maxLength={120}
                     />
@@ -7540,13 +7615,13 @@ export default function UserDashboard() {
               role="dialog"
               aria-modal="true"
               aria-labelledby="gift-plan-title"
-              className="w-full max-w-md space-y-5 rounded-3xl border border-[#00d2b4]/20 bg-[#0c0c10] p-6 text-white shadow-2xl"
+              className="w-full max-w-md space-y-5 rounded-3xl border border-black/10 bg-[#FFFFF0] p-6 text-[#111827] shadow-2xl"
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#00d2b4]">Gift checkout</p>
-                  <h2 id="gift-plan-title" className="mt-1 text-lg font-black text-white">{giftPlan.name}</h2>
-                  <p className="mt-1 text-xs font-bold text-[#ccff00]">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#2775CA]">Gift checkout</p>
+                  <h2 id="gift-plan-title" className="mt-1 text-lg font-black text-[#111827]">{giftPlan.name}</h2>
+                  <p className="mt-1 text-xs font-bold text-[#111827]">
                     {formatUsdc(giftPlan.amountUsdc)} USDC / {formatPlanPeriod(giftPlan.periodSeconds)}
                   </p>
                 </div>
@@ -7554,7 +7629,7 @@ export default function UserDashboard() {
                   type="button"
                   onClick={() => setGiftPlan(null)}
                   disabled={giftRequestBusyPlanId !== null}
-                  className="grid h-9 w-9 place-items-center rounded-full border border-white/10 bg-white/5 text-white/60 transition hover:bg-white/10 disabled:opacity-40"
+                  className="grid h-9 w-9 place-items-center rounded-full border border-black/10 bg-white text-black/60 transition hover:bg-black/5 disabled:opacity-40"
                   aria-label="Close gift checkout modal"
                 >
                   <X className="h-4 w-4" />
@@ -7562,18 +7637,18 @@ export default function UserDashboard() {
               </div>
 
               {/* Tab Selector */}
-              <div className="grid grid-cols-2 rounded-2xl bg-white/[0.04] p-1 border border-white/10">
+              <div className="grid grid-cols-2 rounded-2xl bg-white p-1 border border-black/10">
                 <button
                   type="button"
                   onClick={() => setGiftTab("friends")}
-                  className={`rounded-xl py-2 text-xs font-bold transition ${giftTab === "friends" ? "bg-[#00d2b4]/20 text-[#00d2b4] border border-[#00d2b4]/30" : "text-white/50 hover:text-white"}`}
+                  className={`rounded-xl py-2 text-xs font-bold transition ${giftTab === "friends" ? "bg-[#2775CA]/10 text-[#2775CA] border border-[#2775CA]/20" : "text-black/45 hover:text-black"}`}
                 >
                   SubScript Friends
                 </button>
                 <button
                   type="button"
                   onClick={() => setGiftTab("link")}
-                  className={`rounded-xl py-2 text-xs font-bold transition ${giftTab === "link" ? "bg-[#00d2b4]/20 text-[#00d2b4] border border-[#00d2b4]/30" : "text-white/50 hover:text-white"}`}
+                  className={`rounded-xl py-2 text-xs font-bold transition ${giftTab === "link" ? "bg-[#2775CA]/10 text-[#2775CA] border border-[#2775CA]/20" : "text-black/45 hover:text-black"}`}
                 >
                   Shareable Link
                 </button>
@@ -7581,25 +7656,25 @@ export default function UserDashboard() {
 
               {giftRequestUrl ? (
                 <div className="space-y-4">
-                  <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.06] p-4">
+                  <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
                     <div className="flex items-start gap-3">
-                      <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
+                      <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
                       <div>
-                        <p className="text-xs font-black uppercase tracking-wider text-emerald-200">Gift link ready</p>
-                        <p className="mt-1 text-[11px] leading-relaxed text-white/55">
+                        <p className="text-xs font-black uppercase tracking-wider text-emerald-700">Gift link ready</p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-black/60">
                           Share this checkout anywhere. The payment is one-time, single-use, and credits access to your account.
                         </p>
                       </div>
                     </div>
                   </div>
-                  <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
-                    <p className="break-all font-mono text-[11px] leading-relaxed text-white/70">{giftRequestUrl}</p>
+                  <div className="rounded-2xl border border-black/10 bg-white p-3">
+                    <p className="break-all font-mono text-[11px] leading-relaxed text-black/60">{giftRequestUrl}</p>
                   </div>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                     <button
                       type="button"
                       onClick={() => copyGiftRequestUrl(giftRequestUrl)}
-                      className="dm-quick-button justify-center border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00]"
+                      className="dm-quick-button justify-center border-[#2775CA]/20 bg-[#2775CA]/10 text-[#2775CA]"
                     >
                       <Copy className="h-3.5 w-3.5" /> {giftRequestCopied ? "Copied!" : "Copy"}
                     </button>
@@ -7607,13 +7682,13 @@ export default function UserDashboard() {
                       href={`https://t.me/share/url?url=${encodeURIComponent(giftRequestUrl)}&text=${encodeURIComponent(`Sponsor my ${giftPlan.name} plan on SubScript`)}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="dm-quick-button justify-center border-[#00d2b4]/20 bg-[#00d2b4]/10 text-[#00d2b4]"
+                      className="dm-quick-button justify-center border-[#2775CA]/20 bg-[#2775CA]/10 text-[#2775CA]"
                     >
                       <Share2 className="h-3.5 w-3.5" /> Telegram
                     </a>
                     <a
                       href={`mailto:?subject=${encodeURIComponent(`Sponsor ${giftPlan.name}`)}&body=${encodeURIComponent(`You can sponsor this SubScript plan here:\n\n${giftRequestUrl}`)}`}
-                      className="dm-quick-button justify-center border-white/10 bg-white/[0.05] text-white/70"
+                      className="dm-quick-button justify-center border-black/10 bg-white text-black/60"
                     >
                       <Mail className="h-3.5 w-3.5" /> Email
                     </a>
@@ -7621,14 +7696,14 @@ export default function UserDashboard() {
                 </div>
               ) : giftTab === "friends" ? (
                 <form onSubmit={handleCreateGiftPlanRequest} className="space-y-4">
-                  <p className="text-xs leading-relaxed text-white/55">
+                  <p className="text-xs leading-relaxed text-black/60">
                     Select an active contact or type a username to send an actionable sponsorship request card directly to their DM inbox.
                   </p>
 
                   {/* Friends List from active DM threads */}
                   {dmThreads.length > 0 && (
                     <div className="space-y-2">
-                      <p className="text-[10px] font-black uppercase tracking-wider text-white/40">Active DM Contacts</p>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-black/45">Active DM Contacts</p>
                       <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
                         {dmThreads.map((thread) => {
                           const isSelected = selectedGiftFriendAddress.toLowerCase() === thread.peerAddress.toLowerCase();
@@ -7640,18 +7715,18 @@ export default function UserDashboard() {
                                 setSelectedGiftFriendAddress(thread.peerAddress);
                                 setGiftFriendUsername("");
                               }}
-                              className={`w-full flex items-center justify-between gap-3 rounded-2xl border p-2.5 text-left transition ${isSelected ? "border-[#00d2b4] bg-[#00d2b4]/10" : "border-white/5 bg-white/[0.02] hover:bg-white/5"}`}
+                              className={`w-full flex items-center justify-between gap-3 rounded-2xl border p-2.5 text-left transition ${isSelected ? "border-[#2775CA] bg-[#2775CA]/10" : "border-black/10 bg-white hover:bg-black/[0.04]"}`}
                             >
                               <div className="flex items-center gap-2.5 overflow-hidden">
                                 <Avatar profilePic={thread.peerProfilePic} name={formatPeerDisplayName(thread.peerName, thread.peerAddress)} />
                                 <div className="truncate">
-                                  <p className="text-xs font-bold text-white truncate">
+                                  <p className="text-xs font-bold text-[#111827] truncate">
                                     {formatPeerDisplayName(thread.peerName, thread.peerAddress)}
                                   </p>
-                                  <p className="text-[10px] text-white/40 truncate">{thread.peerAddress}</p>
+                                  <p className="text-[10px] text-black/45 truncate">{thread.peerAddress}</p>
                                 </div>
                               </div>
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isSelected ? "bg-[#00d2b4] text-black" : "bg-white/5 text-white/40"}`}>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isSelected ? "bg-[#2775CA] text-white" : "bg-black/[0.04] text-black/60"}`}>
                                 {isSelected ? "Selected" : "Select"}
                               </span>
                             </button>
@@ -7674,20 +7749,20 @@ export default function UserDashboard() {
                     />
                   </Field>
 
-                  {giftRequestError && <p className="text-[11px] font-bold text-red-300">{giftRequestError}</p>}
+                  {giftRequestError && <p className="text-[11px] font-bold text-red-600">{giftRequestError}</p>}
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => setGiftPlan(null)}
                       disabled={giftRequestBusyPlanId !== null}
-                      className="dm-quick-button min-w-0 border-white/10 bg-white/[0.06] text-white/55"
+                      className="dm-quick-button min-w-0 border-black/10 bg-white text-black/60"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={giftRequestBusyPlanId !== null || (!selectedGiftFriendAddress && !giftFriendUsername.trim())}
-                      className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white border-[#00d2b4]/30 bg-[#00d2b4]/20 hover:bg-[#00d2b4]/30 disabled:opacity-40 ${giftRequestBusyPlanId !== null ? "quick-action-loading" : ""}`}
+                      className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white bg-[#2775CA] hover:bg-[#1f62ab] disabled:opacity-40 ${giftRequestBusyPlanId !== null ? "quick-action-loading" : ""}`}
                     >
                       {giftRequestBusyPlanId !== null ? "Sending DM..." : "Send Request in DM"}
                     </button>
@@ -7695,7 +7770,7 @@ export default function UserDashboard() {
                 </form>
               ) : (
                 <form onSubmit={handleCreateGiftPlanRequest} className="space-y-4">
-                  <p className="text-xs leading-relaxed text-white/55">
+                  <p className="text-xs leading-relaxed text-black/60">
                     Generates a shareable single-use gift checkout link. Send it to anyone on Telegram, WhatsApp, or Email.
                   </p>
                   <Field label="Lock to a friend's username (optional)">
@@ -7707,23 +7782,23 @@ export default function UserDashboard() {
                       disabled={giftRequestBusyPlanId !== null}
                     />
                   </Field>
-                  <p className="text-[10px] leading-relaxed text-white/40">
+                  <p className="text-[10px] leading-relaxed text-black/45">
                     Leave blank to make a public link. If specified, only that SubScript user can pay it.
                   </p>
-                  {giftRequestError && <p className="text-[11px] font-bold text-red-300">{giftRequestError}</p>}
+                  {giftRequestError && <p className="text-[11px] font-bold text-red-600">{giftRequestError}</p>}
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => setGiftPlan(null)}
                       disabled={giftRequestBusyPlanId !== null}
-                      className="dm-quick-button min-w-0 border-white/10 bg-white/[0.06] text-white/55"
+                      className="dm-quick-button min-w-0 border-black/10 bg-white text-black/60"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={giftRequestBusyPlanId !== null}
-                      className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white ${giftRequestBusyPlanId !== null ? "quick-action-loading" : ""}`}
+                      className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white bg-[#2775CA] hover:bg-[#1f62ab] ${giftRequestBusyPlanId !== null ? "quick-action-loading" : ""}`}
                     >
                       {giftRequestBusyPlanId !== null ? <>Creating<LoadingDots /></> : "Create Link"}
                     </button>
@@ -8264,7 +8339,8 @@ function ChatHeader({
             <button
               type="button"
               onClick={onBack}
-              className="p-1.5 text-white/60 hover:text-white bg-white/[0.04] border border-white/5 rounded-full transition-all shrink-0"
+              className="flex h-9 w-9 aspect-square items-center justify-center text-white/60 hover:text-white bg-white/[0.04] hover:bg-white/10 active:bg-white/15 border border-white/5 rounded-full transition-all shrink-0"
+              aria-label="Back to activities"
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
@@ -8282,7 +8358,7 @@ function ChatHeader({
                   {!activeSubscription.cancelAtPeriodEnd && (
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
                   )}
-                  <span className={`relative inline-flex h-2 w-2 rounded-full ${activeSubscription.cancelAtPeriodEnd ? "bg-amber-400" : "bg-emerald-400"}`} />
+                  <span className={`relative inline-flex h-2 w-2 rounded-full ${activeSubscription.cancelAtPeriodEnd ? "bg-slate-400" : "bg-emerald-400"}`} />
                 </span>
               )}
             </div>
@@ -8313,7 +8389,7 @@ function ChatHeader({
                   <button
                     type="button"
                     onClick={onSendFunds}
-                    className="px-3.5 py-1.5 bg-[#ccff00] text-black border border-black/20 font-black uppercase tracking-wider text-[10px] rounded-full hover:bg-[#b8e600] transition shadow-sm active:scale-95 shrink-0"
+                    className="px-3.5 py-1.5 bg-[#2775CA] hover:bg-[#2063ab] text-white border border-[#2775CA]/30 font-black uppercase tracking-wider text-[10px] rounded-full transition shadow-xs active:scale-95 shrink-0"
                   >
                     Send Funds
                   </button>
@@ -8420,7 +8496,7 @@ function SubscriptionRow({
               {subscription.merchantVerified && <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-400" />}
               {onOpenThread && <MessageSquare className="h-3 w-3 shrink-0 text-white/25 transition-colors group-hover:text-[#ccff00]" />}
             </div>
-            <p className={`mt-1 text-[10px] ${subscription.cancelAtPeriodEnd ? "font-bold text-amber-400" : "text-white/40"}`}>
+            <p className={`mt-1 text-[10px] ${subscription.cancelAtPeriodEnd ? "font-bold text-slate-400" : "text-white/40"}`}>
               {subscription.cancelAtPeriodEnd ? "Canceled · Access active until period end" : `Renews every ${intervalDays} days`}
             </p>
           </button>
@@ -8447,9 +8523,560 @@ function SubscriptionRow({
         <p className="text-xs font-black text-[#ccff00]">
           {balanceVisible ? `${formatUsdc(subscription.amountCapUsdc)} USDC` : "•••• USDC"}
         </p>
-        <p className={`text-[9px] uppercase ${subscription.cancelAtPeriodEnd ? "font-bold text-amber-400" : "text-white/35"}`}>
+        <p className={`text-[9px] uppercase ${subscription.cancelAtPeriodEnd ? "font-bold text-slate-400" : "text-white/35"}`}>
           {subscription.cancelAtPeriodEnd ? "Canceled (Period Active)" : humanSubscriptionStatus(subscription.status)}
         </p>
+      </div>
+    </div>
+  );
+}
+
+function OpenedDmSkeleton({
+  isMerchant,
+  onBack,
+  isMobile,
+}: {
+  isMerchant?: boolean;
+  onBack?: () => void;
+  isMobile?: boolean;
+}) {
+  if (isMerchant) {
+    return (
+      <div className="flex flex-col h-full min-h-0 overflow-hidden bg-[#FFFFF0] sm:bg-transparent animate-pulse" data-testid="opened-dm-skeleton">
+        {/* 1. Header Bar Skeleton */}
+        <div className="shrink-0 z-20 flex items-center justify-between gap-3 border-b border-black/10 bg-white/95 px-4 py-3 sm:py-3.5 shadow-xs backdrop-blur-md text-black sm:rounded-2xl sm:border sm:m-1">
+          <div className="flex items-center gap-3 min-w-0">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="md:hidden flex h-9 w-9 aspect-square items-center justify-center text-black/70 bg-black/5 rounded-full transition-all shrink-0"
+                aria-label="Back to contacts"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </button>
+            )}
+            <div className="h-10 w-10 aspect-square rounded-full bg-black/10 shrink-0" />
+            <div className="space-y-1.5 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <div className="h-3.5 w-28 rounded-md bg-black/20" />
+                <div className="h-3 w-3 rounded-full bg-black/10" />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-slate-300" />
+                <div className="h-2.5 w-20 rounded bg-black/15" />
+              </div>
+            </div>
+          </div>
+          <div className="h-6 w-16 rounded-full bg-black/5" />
+        </div>
+
+        {/* 2. Scrollable Body Skeleton */}
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-4 p-3 sm:p-4 custom-scrollbar">
+          {/* Plan Summary Card Skeleton */}
+          <div className="rounded-2xl border border-black/10 bg-white p-4 sm:p-5 shadow-xs space-y-4">
+            <div className="flex items-start justify-between gap-3 border-b border-black/5 pb-3">
+              <div className="space-y-1.5">
+                <div className="h-2 w-24 rounded bg-[#2775CA]/30" />
+                <div className="h-4.5 w-36 rounded-md bg-black/20" />
+              </div>
+              <div className="h-5 w-20 rounded-full bg-slate-100 border border-slate-200" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 pt-1">
+              <div className="space-y-1.5">
+                <div className="h-2 w-16 rounded bg-black/10" />
+                <div className="h-4 w-28 rounded bg-black/20" />
+              </div>
+              <div className="space-y-1.5">
+                <div className="h-2 w-16 rounded bg-black/10" />
+                <div className="h-4 w-24 rounded bg-black/20" />
+              </div>
+            </div>
+          </div>
+
+          {/* Receipts / History Timeline Skeleton */}
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between px-1">
+              <div className="h-3 w-32 rounded bg-black/20" />
+              <div className="h-2 w-12 rounded bg-black/10" />
+            </div>
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="rounded-2xl border border-black/5 bg-white/70 p-3.5 flex items-center justify-between gap-3 shadow-xs"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="h-8 w-8 rounded-xl bg-black/10 shrink-0" />
+                  <div className="space-y-1.5 min-w-0">
+                    <div className="h-3 w-28 rounded bg-black/20" />
+                    <div className="h-2 w-20 rounded bg-black/10" />
+                  </div>
+                </div>
+                <div className="text-right space-y-1.5 shrink-0">
+                  <div className="h-3.5 w-16 rounded bg-black/20 ml-auto" />
+                  <div className="h-2 w-12 rounded bg-slate-200 ml-auto" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 3. Docked Bottom Action Bar Skeleton */}
+        <div className="shrink-0 z-30 border-t border-black/10 bg-white/95 backdrop-blur-xl px-3 sm:px-4 py-2.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.05)] sm:rounded-b-2xl sm:m-1">
+          <div className="flex items-center justify-between gap-3 p-1">
+            <div className="space-y-1 min-w-0 flex-1">
+              <div className="h-2 w-24 rounded bg-[#2775CA]/30" />
+              <div className="h-3.5 w-36 rounded bg-black/20" />
+            </div>
+            <div className="h-8 w-24 rounded-full bg-black/10 shrink-0" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Regular Peer DM Skeleton
+  return (
+    <div className={`flex flex-col h-full justify-between overflow-hidden animate-pulse ${isMobile ? "pt-20" : ""}`} data-testid="opened-dm-skeleton">
+      {/* Desktop Chat Header Skeleton */}
+      {!isMobile && (
+        <div className="sticky top-0 z-20 flex shrink-0 items-center justify-between border border-white/10 bg-black/40 px-4 py-2.5 rounded-2xl backdrop-blur-xl shadow-xl mb-2">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 aspect-square rounded-full bg-white/10 shrink-0" />
+            <div className="space-y-1.5">
+              <div className="h-3 w-28 rounded bg-white/20" />
+              <div className="h-2 w-16 rounded bg-white/10" />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-24 rounded-full bg-[#2775CA]/40" />
+            <div className="h-8 w-8 aspect-square rounded-full bg-white/10 shrink-0" />
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Peer Chat Top Bar Skeleton (when mobile) */}
+      {isMobile && onBack && (
+        <div className="fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
+          <header className="w-full max-w-md liquid-glass rounded-full px-4 py-2.5 pointer-events-auto transition-all shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/40 backdrop-blur-xl border border-white/10 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onBack}
+                className="flex h-9 w-9 aspect-square items-center justify-center text-white/60 bg-white/[0.04] border border-white/5 rounded-full shrink-0"
+                aria-label="Back"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </button>
+              <div className="flex items-center gap-2 px-2.5 py-1 bg-white/[0.04] border border-white/5 rounded-full">
+                <div className="h-5 w-5 aspect-square rounded-full bg-white/10 shrink-0" />
+                <div className="h-3 w-20 rounded bg-white/20" />
+              </div>
+            </div>
+            <div className="h-7 w-20 rounded-full bg-[#2775CA]/40 shrink-0" />
+          </header>
+        </div>
+      )}
+
+      {/* Messages area skeleton */}
+      <div className="min-h-0 flex-1 overflow-y-auto space-y-4 px-2 py-4 custom-scrollbar">
+        <div className="mx-auto h-7 w-64 max-w-[85%] rounded-full border border-white/10 bg-white/[0.06] mt-3" />
+        <div className="mx-auto h-5 w-24 rounded-full bg-white/10 mt-2" />
+
+        {/* Incoming payment bubble */}
+        <div className="flex items-start gap-2.5 max-w-[80%] mr-auto">
+          <div className="h-7 w-7 aspect-square rounded-full bg-white/10 shrink-0 mt-1" />
+          <div className="rounded-2xl rounded-tl-sm border border-white/10 bg-white/10 p-4 space-y-2 w-60">
+            <div className="h-2.5 w-20 rounded bg-white/20" />
+            <div className="h-4 w-32 rounded bg-white/30" />
+            <div className="h-2 w-16 rounded bg-white/15" />
+          </div>
+        </div>
+
+        {/* Outgoing payment bubble */}
+        <div className="flex items-end justify-end max-w-[80%] ml-auto">
+          <div className="rounded-2xl rounded-tr-sm border border-[#2775CA]/30 bg-[#2775CA]/20 p-4 space-y-2 w-60 text-right">
+            <div className="h-2.5 w-16 rounded bg-[#2775CA]/40 ml-auto" />
+            <div className="h-4 w-32 rounded bg-white/30 ml-auto" />
+            <div className="h-2 w-12 rounded bg-[#2775CA]/30 ml-auto" />
+          </div>
+        </div>
+
+        {/* Incoming note bubble */}
+        <div className="flex items-start gap-2.5 max-w-[80%] mr-auto">
+          <div className="h-7 w-7 aspect-square rounded-full bg-white/10 shrink-0 mt-1" />
+          <div className="rounded-2xl rounded-tl-sm border border-white/10 bg-white/10 p-3 space-y-1.5 w-48">
+            <div className="h-3 w-32 rounded bg-white/20" />
+            <div className="h-2 w-20 rounded bg-white/15" />
+          </div>
+        </div>
+      </div>
+
+      {/* Composer Skeleton */}
+      <div className="shrink-0 pt-2">
+        <div className="h-12 w-full rounded-2xl border border-white/10 bg-white/[0.04] flex items-center justify-between px-4">
+          <div className="h-3 w-36 rounded bg-white/20" />
+          <div className="h-7 w-16 rounded-full bg-[#2775CA]/40" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SubscriptionDetailView({
+  peerAddress,
+  peerName,
+  peerVerified,
+  peerProfilePic,
+  activeSubscription,
+  dms,
+  plans,
+  isPlansLoading,
+  planManagerOpen,
+  onTogglePlanManager,
+  onCancelSubscription,
+  onResumeSubscription,
+  loadingAction,
+  planManagerStatus,
+  planManagerError,
+  onBack,
+  onPay,
+  onDecline,
+}: {
+  peerAddress: string;
+  peerName?: string | null;
+  peerVerified?: boolean;
+  peerProfilePic?: string | null;
+  activeSubscription: Subscription | null;
+  dms: DmMessage[];
+  plans: MerchantPlan[];
+  isPlansLoading: boolean;
+  planManagerOpen: boolean;
+  onTogglePlanManager: () => void;
+  onCancelSubscription: (merchantAddress: string) => void;
+  onResumeSubscription?: (subscription: Subscription) => void;
+  loadingAction: string | null;
+  planManagerStatus: string | null;
+  planManagerError: string | null;
+  onBack?: () => void;
+  onPay?: (dm: DmMessage) => void;
+  onDecline?: (dm: DmMessage) => void;
+}) {
+  const merchantLabel = formatPeerDisplayName(peerName, peerAddress);
+  const activePlan = activeSubscription
+    ? plans.find(
+        (p) =>
+          Number(activeSubscription.amountCapUsdc) === Number(p.amountUsdc) &&
+          Number(activeSubscription.billingIntervalSeconds) === Number(p.periodSeconds)
+      )
+    : null;
+  const planLabel = activePlan ? activePlan.name : "Active Plan";
+  const winbackDm = dms.find((dm) => dm.messageType === "WINBACK_OFFER" && dm.status === "PENDING");
+
+  // Sort newest first for chronological timeline
+  const sortedDms = [...dms].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+
+  return (
+    <div className="flex flex-col h-full min-h-0 overflow-hidden bg-[#FFFFF0] sm:bg-transparent">
+      {/* 1. Merchant Header */}
+      <div className="shrink-0 z-20 flex items-center justify-between gap-3 border-b border-black/10 bg-white/95 px-4 py-3 sm:py-3.5 shadow-xs backdrop-blur-md text-black sm:rounded-2xl sm:border sm:m-1">
+        <div className="flex items-center gap-3 min-w-0">
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="md:hidden flex h-9 w-9 aspect-square items-center justify-center text-black/70 hover:text-black bg-black/5 active:bg-black/10 rounded-full transition-all shrink-0"
+              aria-label="Back to activities"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          )}
+          <Avatar profilePic={peerProfilePic || null} name={merchantLabel} size="sm" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <h2 className="text-sm font-black uppercase tracking-wider text-[#111827] truncate">
+                {merchantLabel}
+              </h2>
+              <MerchantVerifiedTick verified={peerVerified} size="xs" />
+            </div>
+            {/* Recurring Status Beacon */}
+            <div className="flex items-center gap-1.5 mt-0.5">
+              {activeSubscription ? (
+                <>
+                  <span className="relative flex h-2 w-2 shrink-0">
+                    {!activeSubscription.cancelAtPeriodEnd && (
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
+                    )}
+                    <span
+                      className={`relative inline-flex h-2 w-2 rounded-full ${
+                        activeSubscription.cancelAtPeriodEnd ? "bg-slate-400" : "bg-emerald-500"
+                      }`}
+                    />
+                  </span>
+                  <span
+                    className={`text-[9px] font-black uppercase tracking-[0.12em] ${
+                      activeSubscription.cancelAtPeriodEnd ? "text-slate-600" : "text-emerald-700"
+                    }`}
+                  >
+                    {activeSubscription.cancelAtPeriodEnd ? "Cancelling at period end" : "Recurring active"}
+                  </span>
+                </>
+              ) : (
+                <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-black/45">
+                  No active subscription
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Scrollable Body: Plan Summary & Receipts Timeline */}
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-4 p-3 sm:p-4 custom-scrollbar">
+        {/* Plan Summary Card */}
+        {activeSubscription ? (
+          <div className="rounded-2xl border border-black/10 bg-white p-4 sm:p-5 shadow-sm space-y-3 text-black">
+            <div className="flex items-start justify-between gap-3 border-b border-black/5 pb-3">
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#2775CA]">Current Subscription</p>
+                <h3 className="text-base font-black text-[#111827] mt-0.5">{planLabel}</h3>
+              </div>
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${
+                  activeSubscription.cancelAtPeriodEnd
+                    ? "bg-slate-100 text-slate-700 border border-slate-200"
+                    : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                }`}
+              >
+                {activeSubscription.cancelAtPeriodEnd ? "Cancelling" : "Active"}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 pt-1">
+              <div>
+                <span className="text-[9px] font-bold uppercase tracking-wider text-black/50">Billing Rate</span>
+                <p className="font-mono text-sm font-black text-[#111827]">
+                  {formatUsdc(activeSubscription.amountCapUsdc)} USDC
+                  <span className="font-sans text-xs font-medium text-black/60">
+                    {" "}
+                    / {formatPlanPeriod(activeSubscription.billingIntervalSeconds)}
+                  </span>
+                </p>
+              </div>
+
+              <div>
+                <span className="text-[9px] font-bold uppercase tracking-wider text-black/50">
+                  {activeSubscription.cancelAtPeriodEnd ? "Access Until" : "Next Billing"}
+                </span>
+                <p className="text-xs font-bold text-[#111827]">
+                  {activeSubscription.nextBillingDate
+                    ? new Date(activeSubscription.nextBillingDate).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })
+                    : activeSubscription.lastSettlementTimestamp
+                    ? new Date(activeSubscription.lastSettlementTimestamp).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })
+                    : "Ongoing"}
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-black/15 bg-black/[0.02] p-5 text-center space-y-2 text-black">
+            <Building2 className="h-7 w-7 mx-auto text-black/25" />
+            <h3 className="text-xs font-bold text-[#111827]">No active subscription</h3>
+            <p className="text-[11px] text-black/60 max-w-sm mx-auto leading-relaxed">
+              You don&apos;t have an ongoing subscription with {merchantLabel}. Explore their published plans below to subscribe.
+            </p>
+            {winbackDm && (
+              <div className="mt-3 rounded-xl border border-[#2775CA]/30 bg-[#2775CA]/10 p-3 text-left space-y-2">
+                <p className="text-[10px] font-bold text-[#2775CA]">{winbackDm.title || "Special Renewal Offer"}</p>
+                <p className="text-xs text-black/70">{winbackDm.description}</p>
+                {onPay && (
+                  <button
+                    type="button"
+                    onClick={() => onPay(winbackDm)}
+                    className="rounded-lg bg-[#2775CA] px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-[#2063ab] transition"
+                  >
+                    Claim Offer & Resubscribe
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Receipts / History Timeline */}
+        <div className="space-y-2.5 text-black">
+          <div className="flex items-center justify-between px-1">
+            <h4 className="text-xs font-black uppercase tracking-wider text-[#111827]">
+              Receipts & Activity
+            </h4>
+            <span className="text-[10px] font-bold text-black/50">
+              {dms.length} {dms.length === 1 ? "record" : "records"}
+            </span>
+          </div>
+
+          {sortedDms.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-black/15 bg-black/[0.02] p-6 text-center space-y-1.5 text-black">
+              <Clock className="h-5 w-5 mx-auto text-black/25" />
+              <p className="text-xs font-bold text-[#111827]">No receipts yet</p>
+              <p className="text-[11px] text-black/60 max-w-sm mx-auto leading-relaxed">
+                Renewal receipts and reminders from {merchantLabel} will appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {sortedDms.map((dm) => {
+                const dateLabel = new Date(dm.createdAt).toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                });
+                const timeLabel = new Date(dm.createdAt).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                });
+                const isActionable =
+                  dm.status === "PENDING" &&
+                  Boolean(dm.paymentLinkId) &&
+                  ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER", "SPONSORED_PLAN_REQUEST"].includes(dm.messageType);
+                const txUrl = dm.txHash ? getExplorerTxUrl(dm.txHash) : null;
+                const isSuccess = dm.status === "CONFIRMED" || dm.status === "COMPLETED" || dm.messageType === "DEBIT_SUCCESS";
+                const isFailed = dm.status === "FAILED" || dm.status === "DECLINED";
+
+                return (
+                  <div
+                    key={dm.id}
+                    className="rounded-xl border border-black/10 bg-white p-3 shadow-xs space-y-2 text-black transition-all hover:border-black/20"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div
+                          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${
+                            isSuccess
+                              ? "bg-emerald-50 text-emerald-600"
+                              : isFailed
+                              ? "bg-rose-50 text-rose-600"
+                              : "bg-blue-50 text-[#2775CA]"
+                          }`}
+                        >
+                          {isSuccess ? (
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                          ) : isFailed ? (
+                            <AlertTriangle className="h-3.5 w-3.5" />
+                          ) : (
+                            <Clock className="h-3.5 w-3.5" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-[#111827] truncate">
+                            {shortenWalletsInText(dm.title || "Subscription Update")}
+                          </p>
+                          <p className="text-[10px] text-black/50">
+                            {dateLabel} • {timeLabel}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        {dm.amountUsdc && (
+                          <p className="font-mono text-xs font-black text-[#111827]">
+                            {formatUsdc(dm.amountUsdc)} USDC
+                          </p>
+                        )}
+                        <span
+                          className={`inline-block rounded-full px-1.5 py-0.2 text-[8px] font-black uppercase tracking-wider ${
+                            isSuccess
+                              ? "bg-emerald-50 text-emerald-700"
+                              : isFailed
+                              ? "bg-rose-50 text-rose-700"
+                              : "bg-blue-50 text-[#2775CA]"
+                          }`}
+                        >
+                          {dm.status}
+                        </span>
+                      </div>
+                    </div>
+
+                    {dm.description && (
+                      <p className="text-[11px] text-black/70 leading-relaxed pl-8">
+                        {shortenWalletsInText(dm.description)}
+                      </p>
+                    )}
+
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-black/5 text-[10px] pl-8">
+                      {txUrl ? (
+                        <a
+                          href={txUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 font-bold text-[#2775CA] hover:underline"
+                        >
+                          <span>ArcScan Tx</span>
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : (
+                        <span className="text-black/40">On-chain receipt</span>
+                      )}
+
+                      {isActionable && (
+                        <div className="flex items-center gap-1.5">
+                          {onDecline && (
+                            <button
+                              type="button"
+                              onClick={() => onDecline(dm)}
+                              disabled={loadingAction === `decline-${dm.id}`}
+                              className="rounded-lg border border-black/15 bg-white px-2.5 py-1 text-[10px] font-bold text-black hover:bg-black/5 transition"
+                            >
+                              Decline
+                            </button>
+                          )}
+                          {onPay && (
+                            <button
+                              type="button"
+                              onClick={() => onPay(dm)}
+                              disabled={loadingAction === `pay-${dm.id}`}
+                              className="rounded-lg bg-[#2775CA] px-2.5 py-1 text-[10px] font-bold text-white shadow-xs hover:bg-[#2063ab] transition"
+                            >
+                              {dm.messageType === "EXPIRY_WARNING" ? "Resubscribe" : "Confirm"}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 3. Docked Bottom Action Bar (Mobile-first, true edge-to-edge footer without cutouts) */}
+      <div className="shrink-0 z-30 border-t border-black/10 bg-white/95 backdrop-blur-xl px-3 sm:px-4 py-2.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.05)] sm:rounded-b-2xl sm:m-1">
+        <MerchantPlanManager
+          open={planManagerOpen}
+          merchantLabel={merchantLabel}
+          plans={plans}
+          activeSubscription={activeSubscription}
+          loading={isPlansLoading}
+          loadingAction={loadingAction}
+          status={planManagerStatus}
+          error={planManagerError}
+          onToggle={onTogglePlanManager}
+          onCancel={() => onCancelSubscription(peerAddress)}
+          onResume={onResumeSubscription}
+          isBottomBar={true}
+        />
       </div>
     </div>
   );
@@ -8463,6 +9090,8 @@ function DmThreadSelect({
   onOpenRequests,
   onOpenInvite,
   onOpenBlocked,
+  paymentsSubView,
+  onPaymentsSubViewChange,
 }: {
   threads: Array<{
     peerAddress: string;
@@ -8482,88 +9111,150 @@ function DmThreadSelect({
   onOpenRequests?: () => void;
   onOpenInvite?: () => void;
   onOpenBlocked?: () => void;
+  paymentsSubView: "subscriptions" | "people";
+  onPaymentsSubViewChange: (view: "subscriptions" | "people") => void;
 }) {
+  const subscriptionThreads = threads.filter((t) => t.peerRole === "ENTERPRISE");
+  const peopleThreads = threads.filter((t) => t.peerRole !== "ENTERPRISE");
+  const activeThreads = paymentsSubView === "subscriptions" ? subscriptionThreads : peopleThreads;
+
+  const subscriptionsPendingCount = subscriptionThreads.reduce((sum, t) => sum + (t.pendingCount || 0), 0);
+  const peoplePendingCount = peopleThreads.reduce((sum, t) => sum + (t.pendingCount || 0), 0);
+
   return (
     <div className="space-y-3">
-      <div className="border border-black/10 bg-white/80 rounded-2xl p-4 shadow-sm relative space-y-2.5 text-black">
+      <div className="border border-black/10 bg-white/80 rounded-2xl p-4 shadow-sm relative space-y-3 text-black">
         <div>
-          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#2775CA]">SubScript DMs</p>
-          <h1 className="mt-0.5 text-base font-black uppercase tracking-tight text-[#111827]">Payment Threads</h1>
+          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#2775CA]">Payments & subscriptions</p>
+          <h1 className="mt-0.5 text-base font-black uppercase tracking-tight text-[#111827]">Activities</h1>
         </div>
         <p className="text-[10px] font-medium leading-relaxed text-[#4b5563]">
-          Receipts, peer payments, and connection requests.
+          Subscription receipts, and payments with people you&apos;re connected to.
         </p>
 
-        {/* Action Toolbar */}
-        <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-black/10">
-          {onOpenRequests && (
-            <button
-              type="button"
-              onClick={onOpenRequests}
-              className="relative flex items-center gap-1 rounded-full border border-black/15 bg-white hover:bg-black/5 px-2.5 py-1 text-[9px] font-bold text-black transition-all active:scale-95 shadow-sm"
-            >
-              <Inbox className="h-3 w-3 text-[#2775CA]" />
-              <span>Requests</span>
-              {pendingRequestsCount > 0 && (
-                <span className="flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[#2775CA] px-1 text-[8px] font-black text-white">
-                  {pendingRequestsCount}
-                </span>
-              )}
-            </button>
-          )}
-
-          {onOpenInvite && (
-            <button
-              type="button"
-              onClick={onOpenInvite}
-              className="flex items-center gap-1 rounded-full border border-black/15 bg-white hover:bg-black/5 px-2.5 py-1 text-[9px] font-bold text-black transition-all active:scale-95 shadow-sm"
-            >
-              <Link2 className="h-3 w-3 text-black/60" />
-              <span>My Invite</span>
-            </button>
-          )}
-
-          {onOpenBlocked && (
-            <button
-              type="button"
-              onClick={onOpenBlocked}
-              className="flex items-center gap-1 rounded-full border border-black/15 bg-white hover:bg-rose-50 px-2 py-1 text-[9px] font-bold text-black/60 hover:text-rose-600 transition-all active:scale-95 ml-auto shadow-sm"
-              title="Blocked contacts"
-            >
-              <UserX className="h-3 w-3" />
-            </button>
-          )}
+        {/* Subscriptions | People Segmented Toggle */}
+        <div className="grid grid-cols-2 gap-1 rounded-xl bg-black/5 p-1 border border-black/5">
+          <button
+            type="button"
+            onClick={() => onPaymentsSubViewChange("subscriptions")}
+            className={`flex items-center justify-center gap-1.5 rounded-lg py-1.5 px-3 text-xs font-bold transition-all ${
+              paymentsSubView === "subscriptions"
+                ? "bg-white text-[#2775CA] shadow-xs"
+                : "text-[#64748b] hover:text-[#0f172a]"
+            }`}
+          >
+            <Building2 className="h-3.5 w-3.5" />
+            <span>Subscriptions</span>
+            {subscriptionsPendingCount > 0 && (
+              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#2775CA] px-1 text-[8px] font-black text-white">
+                {subscriptionsPendingCount}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => onPaymentsSubViewChange("people")}
+            className={`flex items-center justify-center gap-1.5 rounded-lg py-1.5 px-3 text-xs font-bold transition-all ${
+              paymentsSubView === "people"
+                ? "bg-white text-[#2775CA] shadow-xs"
+                : "text-[#64748b] hover:text-[#0f172a]"
+            }`}
+          >
+            <Users className="h-3.5 w-3.5" />
+            <span>People</span>
+            {peoplePendingCount > 0 && (
+              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#2775CA] px-1 text-[8px] font-black text-white">
+                {peoplePendingCount}
+              </span>
+            )}
+          </button>
         </div>
+
+        {/* Action Toolbar - only shown on People sub-view */}
+        {paymentsSubView === "people" && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-black/10">
+            {onOpenRequests && (
+              <button
+                type="button"
+                onClick={onOpenRequests}
+                className="relative flex items-center gap-1 rounded-full border border-black/15 bg-white hover:bg-black/5 px-2.5 py-1 text-[9px] font-bold text-black transition-all active:scale-95 shadow-sm"
+              >
+                <Inbox className="h-3 w-3 text-[#2775CA]" />
+                <span>Requests</span>
+                {pendingRequestsCount > 0 && (
+                  <span className="flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[#2775CA] px-1 text-[8px] font-black text-white">
+                    {pendingRequestsCount}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {onOpenInvite && (
+              <button
+                type="button"
+                onClick={onOpenInvite}
+                className="flex items-center gap-1 rounded-full border border-black/15 bg-white hover:bg-black/5 px-2.5 py-1 text-[9px] font-bold text-black transition-all active:scale-95 shadow-sm"
+              >
+                <Link2 className="h-3 w-3 text-black/60" />
+                <span>My Invite</span>
+              </button>
+            )}
+
+            {onOpenBlocked && (
+              <button
+                type="button"
+                onClick={onOpenBlocked}
+                className="flex items-center gap-1 rounded-full border border-black/15 bg-white hover:bg-rose-50 px-2 py-1 text-[9px] font-bold text-black/60 hover:text-rose-600 transition-all active:scale-95 ml-auto shadow-sm"
+                title="Blocked contacts"
+              >
+                <UserX className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
-      {threads.length === 0 ? (
-        <div className="mt-4 flex flex-col items-center justify-center rounded-2xl border border-dashed border-black/15 bg-black/[0.02] p-6 text-center space-y-1.5 text-black">
-          <Mail className="h-6 w-6 text-black/30" />
-          <p className="text-[11px] text-black/60">No conversations or connections yet.</p>
-          {onOpenInvite && (
-            <button
-              type="button"
-              onClick={onOpenInvite}
-              className="mt-1 text-[9px] font-bold text-[#2775CA] hover:underline"
-            >
-              Share your invite link
-            </button>
-          )}
-        </div>
+      {activeThreads.length === 0 ? (
+        paymentsSubView === "subscriptions" ? (
+          <div className="mt-4 flex flex-col items-center justify-center rounded-2xl border border-dashed border-black/15 bg-black/[0.02] p-6 text-center space-y-1.5 text-black">
+            <Building2 className="h-6 w-6 text-black/30" />
+            <p className="text-xs font-bold text-[#111827]">No subscriptions yet</p>
+            <p className="text-[11px] text-black/60 max-w-xs leading-relaxed">
+              When you subscribe to a merchant, receipts and renewal reminders land here.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-4 flex flex-col items-center justify-center rounded-2xl border border-dashed border-black/15 bg-black/[0.02] p-6 text-center space-y-1.5 text-black">
+            <Users className="h-6 w-6 text-black/30" />
+            <p className="text-xs font-bold text-[#111827]">No one connected yet</p>
+            <p className="text-[11px] text-black/60 max-w-xs leading-relaxed">
+              Share your invite link to start paying people.
+            </p>
+            {onOpenInvite && (
+              <button
+                type="button"
+                onClick={onOpenInvite}
+                className="mt-1 text-[9px] font-bold text-[#2775CA] hover:underline"
+              >
+                Share your invite link
+              </button>
+            )}
+          </div>
+        )
       ) : (
         <div className="space-y-2">
-          {threads.map((thread) => {
+          {activeThreads.map((thread) => {
             const isSelected = thread.peerAddress.toLowerCase() === selectedPeerAddress?.toLowerCase();
             const peerLabel = formatPeerDisplayName(thread.peerName, thread.peerAddress);
             const latestPreview = thread.latest
-              ? shortenWalletsInText(thread.latest.title || thread.latest.description || "SubScript payment message")
-              : "Connected • Ready to transact";
+              ? shortenWalletsInText(thread.latest.title || thread.latest.description || "SubScript payment update")
+              : (thread.peerRole === "ENTERPRISE" ? "Active Merchant" : "Connected • Ready to transact");
             const dateLabel = thread.latest
               ? new Date(thread.latest.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })
               : new Date(thread.latestTime).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-            const messageCountLabel = thread.totalCount > 0
-              ? `${thread.totalCount} system message${thread.totalCount === 1 ? "" : "s"}`
-              : "Active Connection";
+            const messageCountLabel = thread.peerRole === "ENTERPRISE"
+              ? `${thread.totalCount} receipt${thread.totalCount === 1 ? "" : "s"}`
+              : (thread.totalCount > 0 ? `${thread.totalCount} update${thread.totalCount === 1 ? "" : "s"}` : "Active Connection");
 
             return (
               <motion.button
@@ -9129,6 +9820,7 @@ function MerchantPlanManager({
   onToggle,
   onCancel,
   onResume,
+  isBottomBar,
 }: {
   open: boolean;
   merchantLabel: string;
@@ -9145,6 +9837,7 @@ function MerchantPlanManager({
      subscriber already paid for — /api/user/subscription/resume mints a free bridge instead.
      This prop is what routes the canceled branch there. */
   onResume?: (subscription: Subscription) => void;
+  isBottomBar?: boolean;
 }) {
   const hasActiveSubscription = !!activeSubscription;
   const isCanceledAtPeriodEnd = Boolean(activeSubscription?.cancelAtPeriodEnd);
@@ -9162,10 +9855,14 @@ function MerchantPlanManager({
       <motion.div
         layout
         transition={{ type: "spring", stiffness: 450, damping: 32 }}
-        className="order-2 flex flex-wrap items-center gap-2 rounded-2xl border border-black/15 bg-white p-3 shadow-sm text-black"
+        className={`order-2 flex flex-wrap items-center gap-2 text-black ${
+          isBottomBar
+            ? "p-0 border-0 bg-transparent shadow-none w-full"
+            : "rounded-2xl border border-black/15 bg-white p-3 shadow-sm"
+        }`}
       >
         <div className="min-w-0 flex-1">
-          <p className={`text-[9px] font-black uppercase tracking-[0.16em] ${isCanceledAtPeriodEnd ? "text-amber-700" : "text-[#2775CA]"}`}>
+          <p className={`text-[9px] font-black uppercase tracking-[0.16em] ${isCanceledAtPeriodEnd ? "text-slate-600" : "text-[#2775CA]"}`}>
             {hasActiveSubscription
               ? (isCanceledAtPeriodEnd ? `${planLabel} (Canceled)` : planLabel)
               : "Merchant Plan Controls"}
@@ -9399,8 +10096,6 @@ function DmRequestComposer({
   amount,
   note,
   duration,
-  billingType = "ONE_TIME",
-  interval = "monthly",
   status,
   loading,
   onToggle,
@@ -9408,15 +10103,11 @@ function DmRequestComposer({
   onAmountChange,
   onNoteChange,
   onDurationChange,
-  onBillingTypeChange,
-  onIntervalChange,
 }: {
   open: boolean;
   amount: string;
   note: string;
   duration: (typeof dmRequestDurationOptions)[number]["value"];
-  billingType?: "ONE_TIME" | "RECURRING";
-  interval?: "monthly" | "weekly" | "daily" | "yearly";
   status: string | null;
   loading: boolean;
   onToggle: () => void;
@@ -9424,8 +10115,6 @@ function DmRequestComposer({
   onAmountChange: (value: string) => void;
   onNoteChange: (value: string) => void;
   onDurationChange: (value: (typeof dmRequestDurationOptions)[number]["value"]) => void;
-  onBillingTypeChange?: (value: "ONE_TIME" | "RECURRING") => void;
-  onIntervalChange?: (value: "monthly" | "weekly" | "daily" | "yearly") => void;
 }) {
   return (
     <div className="space-y-3">
@@ -9441,29 +10130,8 @@ function DmRequestComposer({
             onSubmit={onSubmit}
             className="max-h-[min(55dvh,30rem)] overflow-y-auto overscroll-contain rounded-[28px] border border-black/10 bg-white/95 p-4 shadow-xl backdrop-blur-xl text-black"
           >
-            {/* Request Type Selector */}
-            <div className="mb-3 space-y-1.5">
-              <label className="text-[10px] font-black uppercase tracking-[0.14em] text-black/60">Request Type</label>
-              <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-black/[0.04] border border-black/10">
-                <button
-                  type="button"
-                  onClick={() => onBillingTypeChange && onBillingTypeChange("ONE_TIME")}
-                  className={`py-1.5 px-3 rounded-xl text-xs font-bold transition ${billingType === "ONE_TIME" ? "bg-white text-black shadow-sm" : "text-black/60 hover:text-black"}`}
-                >
-                  One-Time
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onBillingTypeChange && onBillingTypeChange("RECURRING")}
-                  className={`py-1.5 px-3 rounded-xl text-xs font-bold transition ${billingType === "RECURRING" ? "bg-[#2775CA] text-white shadow-sm" : "text-black/60 hover:text-black"}`}
-                >
-                  Recurring
-                </button>
-              </div>
-            </div>
-
             <div className="grid grid-cols-2 gap-3">
-              <Field label={billingType === "RECURRING" ? "Recurring USDC" : "Amount"}>
+              <Field label="Amount">
                 <input
                   value={amount}
                   onChange={(event) => onAmountChange(event.target.value)}
@@ -9473,39 +10141,24 @@ function DmRequestComposer({
                   required
                 />
               </Field>
-              {billingType === "RECURRING" ? (
-                <Field label="Frequency">
-                  <select
-                    value={interval}
-                    onChange={(event) => onIntervalChange && onIntervalChange(event.target.value as any)}
-                    className="subscript-input bg-white border border-black/15 text-[#111827]"
-                  >
-                    <option value="monthly">Monthly (30d)</option>
-                    <option value="weekly">Weekly (7d)</option>
-                    <option value="daily">Daily (24h)</option>
-                    <option value="yearly">Yearly (365d)</option>
-                  </select>
-                </Field>
-              ) : (
-                <Field label="Valid for">
-                  <select
-                    value={duration}
-                    onChange={(event) => onDurationChange(event.target.value as (typeof dmRequestDurationOptions)[number]["value"])}
-                    className="subscript-input bg-white border border-black/15 text-[#111827]"
-                  >
-                    {dmRequestDurationOptions.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
-                </Field>
-              )}
+              <Field label="Valid for">
+                <select
+                  value={duration}
+                  onChange={(event) => onDurationChange(event.target.value as (typeof dmRequestDurationOptions)[number]["value"])}
+                  className="subscript-input bg-white border border-black/15 text-[#111827]"
+                >
+                  {dmRequestDurationOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </Field>
             </div>
             <div className="mt-3">
               <Field label="Memo">
                 <textarea
                   value={note}
                   onChange={(event) => onNoteChange(event.target.value)}
-                  placeholder={billingType === "RECURRING" ? "What is this recurring payment for?" : "What is this request for?"}
+                  placeholder="What is this request for?"
                   rows={2}
                   className="subscript-input bg-white border border-black/15 text-[#111827] resize-none"
                 />
@@ -10135,7 +10788,7 @@ function MeteredVaultRow({
           <div className="min-w-0">
             <h4 className="truncate text-sm sm:text-base font-black text-[#111827] uppercase tracking-wider">{vault.merchantName}</h4>
             <div className="flex items-center gap-2 mt-0.5">
-              <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${blocked ? "bg-amber-500/15 text-amber-700 border border-amber-500/30" : disputed ? "bg-red-500/15 text-red-700 border border-red-500/30" : cancelled ? "bg-orange-500/15 text-orange-700 border border-orange-500/30" : awaitingSettlement ? "bg-sky-500/15 text-sky-700 border border-sky-500/30" : "bg-emerald-500/15 text-emerald-700 border border-emerald-500/30"}`}>
+              <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${blocked ? "bg-amber-500/15 text-amber-700 border border-amber-500/30" : disputed ? "bg-red-500/15 text-red-700 border border-red-500/30" : cancelled ? "bg-slate-500/15 text-slate-700 border border-slate-500/30" : awaitingSettlement ? "bg-sky-500/15 text-sky-700 border border-sky-500/30" : "bg-emerald-500/15 text-emerald-700 border border-emerald-500/30"}`}>
                 {blocked ? "Inactive" : disputed ? "Disputed" : cancelled ? "Paused" : awaitingSettlement ? "Settling" : "Active"}
               </span>
             </div>

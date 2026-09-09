@@ -23,8 +23,8 @@ export async function verifyCaptchaToken(
         return false;
     }
     if (!turnstileToken) {
-        console.warn("Captcha verification failed: token is empty");
-        return false;
+        // Captcha is non-mandatory for sign in for now
+        return true;
     }
 
     try {

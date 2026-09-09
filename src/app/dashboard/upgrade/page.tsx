@@ -17,7 +17,6 @@ import {
 import { activeArcChain } from "@/lib/wagmi";
 import { arcHttp } from "@/lib/arc/transport";
 import DashboardHeader from "@/components/DashboardHeader";
-import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import ConfirmModal from "@/components/ConfirmModal";
 import { 
     Activity, Crown, Shield, Key, ArrowRightLeft, 
@@ -503,19 +502,21 @@ export default function UpgradePage() {
     };
 
     if (!isMounted) {
+        /* Pre-hydration skeleton must match the hydrated surface below (bg-[#FFFFF0]) or the page
+           flashes dark green → ivory on every load. Uses the light subscript-skeleton shimmer and
+           the same ivory canvas, so the only thing that changes on hydration is content, not theme. */
         return (
-            <div className="min-h-screen bg-[#0a0a0c] text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#d4a853]">
-                <AnimatedGradientBg variant="dashboard" />
+            <div className="min-h-screen bg-[#FFFFF0] dark:bg-[#111111] text-[#082824] dark:text-white selection:bg-[#8AB4DB]/30 font-sans">
                 <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-4xl flex-col px-6 pt-28 pb-12">
-                    <div className="mb-8 h-9 w-36 rounded-full liquid-glass-skeleton" />
+                    <div className="mb-8 h-9 w-36 rounded-full subscript-skeleton" />
                     <div className="mx-auto mb-12 w-full max-w-xl space-y-4 text-center">
-                        <div className="mx-auto h-10 w-64 rounded-2xl liquid-glass-skeleton" />
-                        <div className="mx-auto h-3 w-full rounded-full liquid-glass-skeleton" />
-                        <div className="mx-auto h-3 w-3/4 rounded-full liquid-glass-skeleton" />
+                        <div className="mx-auto h-10 w-64 rounded-2xl subscript-skeleton" />
+                        <div className="mx-auto h-3 w-full rounded-full subscript-skeleton" />
+                        <div className="mx-auto h-3 w-3/4 rounded-full subscript-skeleton" />
                     </div>
                     <div className="grid gap-6 md:grid-cols-2">
-                        <div className="h-64 rounded-3xl liquid-glass-skeleton" />
-                        <div className="h-64 rounded-3xl liquid-glass-skeleton" />
+                        <div className="h-64 rounded-3xl subscript-skeleton" />
+                        <div className="h-64 rounded-3xl subscript-skeleton" />
                     </div>
                 </div>
             </div>
@@ -644,11 +645,11 @@ export default function UpgradePage() {
                                 </div>
 
                                 {cancelAtPeriodEnd ? (
-                                    <div className="p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-700/30 rounded-2xl mb-6 flex items-start gap-3">
-                                        <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                                    <div className="p-4 bg-slate-100 dark:bg-slate-800/40 border border-slate-300 dark:border-slate-700 rounded-2xl mb-6 flex items-start gap-3">
+                                        <AlertTriangle className="w-5 h-5 text-slate-600 dark:text-slate-400 flex-shrink-0 mt-0.5" />
                                         <div>
-                                            <p className="text-xs font-bold text-amber-950 dark:text-amber-200 uppercase tracking-wider">Cancellation Scheduled</p>
-                                            <p className="text-[10px] text-amber-800 dark:text-amber-300/70 leading-relaxed mt-1">
+                                            <p className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">Cancellation Scheduled</p>
+                                            <p className="text-[10px] text-slate-600 dark:text-slate-300 leading-relaxed mt-1">
                                                 You have requested to cancel your subscription. Premium benefits will remain active until the end of your billing cycle on {currentPeriodEnd ? new Date(currentPeriodEnd).toLocaleDateString() : "N/A"}.
                                             </p>
                                         </div>

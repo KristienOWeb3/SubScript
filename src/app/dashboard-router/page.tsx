@@ -19,7 +19,7 @@ export default function DashboardRouterPage() {
 
                 if (!res.ok || !data.loggedIn) {
                     setMessage("Redirecting to sign in...");
-                    window.location.href = getDashboardUrl("USER", "/login");
+                    window.location.href = getDashboardUrl("USER", "/signin");
                     return;
                 }
 
@@ -34,7 +34,7 @@ export default function DashboardRouterPage() {
             } catch {
                 if (!cancelled) {
                     setMessage("Redirecting to sign in...");
-                    window.location.href = getDashboardUrl("USER", "/login");
+                    window.location.href = getDashboardUrl("USER", "/signin");
                 }
             }
         };

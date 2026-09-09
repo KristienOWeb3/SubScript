@@ -2,9 +2,8 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Terminal, Menu, X as CloseIcon } from "@/components/icons";
+import { Menu, X as CloseIcon } from "@/components/icons";
 import { motion, AnimatePresence } from "framer-motion";
-import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 
 
 const overlayVariants = {
@@ -165,12 +164,12 @@ export default function Navbar() {
     }, []);
 
     const navLinks = [
-        { name: "Documentation", href: "/docs", className: "text-[#9ca3af] hover:text-white" },
-        { name: "Protocol", href: "/protocol", className: "text-[#9ca3af] hover:text-white" },
-        { name: "Compare", href: "/compare", className: "text-[#9ca3af] hover:text-white" },
-        { name: "Answers", href: "/answers", className: "text-[#9ca3af] hover:text-white" },
-        { name: "Support", href: "/support", className: "text-[#9ca3af] hover:text-white" },
-        { name: "Sign in", href: "/signin", className: "text-[#9ca3af] hover:text-white" },
+        { name: "Documentation", href: "/docs" },
+        { name: "Protocol", href: "/protocol" },
+        { name: "Compare", href: "/compare" },
+        { name: "Answers", href: "/answers" },
+        { name: "Support", href: "/support" },
+        { name: "Sign in", href: "/signin" },
     ];
 
     return (
@@ -179,20 +178,21 @@ export default function Navbar() {
             <header className="fixed top-5 left-0 right-0 z-40 px-4 sm:px-6 flex justify-center pointer-events-none">
                 <nav
                     aria-label="Main Navigation"
-                    className={`w-full max-w-5xl liquid-glass rounded-full px-6 py-3.5 flex items-center justify-between pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] ${scrolled ? "bg-black/60 backdrop-blur-xl" : ""}`}
+                    className={`w-full max-w-5xl rounded-full px-6 py-3.5 flex items-center justify-between pointer-events-auto transition-all duration-300 border ${scrolled ? "bg-[#FFFFF0]/95 border-black/10 shadow-[0_8px_28px_rgba(11,18,32,0.10)]" : "bg-[#FFFFF0]/80 border-black/[0.06] shadow-[0_6px_20px_rgba(11,18,32,0.06)]"} backdrop-blur-xl`}
                 >
-                    <LiquidGlassEffect />
                     {/* Logo - Icon + Text */}
                     <Link href="/" className="flex items-center gap-2.5 group" aria-label="SubScript Home">
-                        <Image
-                            src="/logo.png"
-                            alt="SubScript logo"
-                            width={32}
-                            height={32}
-                            priority
-                            className="w-8 h-8 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)] group-hover:scale-105 transition-transform"
-                        />
-                        <span className="text-base font-bold text-white tracking-tight group-hover:text-[#00d2b4] transition-colors">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2775CA] p-1.5 shadow-sm">
+                            <Image
+                                src="/logo-transparent.png"
+                                alt="SubScript logo"
+                                width={32}
+                                height={32}
+                                priority
+                                className="w-full h-full object-contain brightness-0 invert group-hover:scale-105 transition-transform"
+                            />
+                        </div>
+                        <span className="text-base font-black text-[#111827] tracking-tight">
                             SubScript
                         </span>
                     </Link>
@@ -203,7 +203,7 @@ export default function Navbar() {
                             <Link
                                 key={link.name}
                                 href={link.href}
-                                className={`text-xs font-semibold tracking-wide uppercase transition-all duration-200 ${pathname === link.href ? "text-[#00d2b4]" : "text-zinc-300 hover:text-white"}`}
+                                className={`text-xs font-semibold tracking-wide transition-all duration-200 ${pathname === link.href ? "text-[#2775CA]" : "text-black/60 hover:text-[#111827]"}`}
                             >
                                 {link.name}
                             </Link>
@@ -216,20 +216,20 @@ export default function Navbar() {
                             <button
                                 type="button"
                                 onClick={switchToArcTestnet}
-                                className="bg-red-500/15 border border-red-500/30 text-red-400 hover:bg-red-500/25 text-[10px] font-bold uppercase tracking-wider px-3.5 py-2 rounded-full transition-all duration-200"
+                                className="bg-red-500/10 border border-red-500/25 text-red-600 hover:bg-red-500/20 text-[10px] font-bold uppercase tracking-wider px-3.5 py-2 rounded-full transition-all duration-200"
                             >
                                 Switch to Arc Testnet
                             </button>
                         )}
                         <Link
                             href="/signin"
-                            className="text-sm font-semibold text-zinc-300 hover:text-white transition-colors"
+                            className="text-sm font-semibold text-black/70 hover:text-[#111827] transition-colors"
                         >
                             Sign in
                         </Link>
                         <Link
                             href="/signup"
-                            className="liquid-glass rounded-full px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/10 transition-all duration-200"
+                            className="rounded-full bg-[#2775CA] px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-[#1f62ab] transition-all duration-200 active:scale-95"
                         >
                             Create account
                         </Link>
@@ -241,21 +241,21 @@ export default function Navbar() {
                             <button
                                 type="button"
                                 onClick={switchToArcTestnet}
-                                className="bg-red-500/15 border border-red-500/30 text-red-400 text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-full transition-all duration-200 pointer-events-auto"
+                                className="bg-red-500/10 border border-red-500/25 text-red-600 text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-full transition-all duration-200 pointer-events-auto"
                             >
                                 Switch Chain
                             </button>
                         )}
                         <Link
                             href="/signup"
-                            className="bg-[#00d2b4] text-[#111111] text-xs font-bold px-3.5 py-1.5 rounded-full hover:brightness-110 shadow-[0_0_8px_rgba(0,210,180,0.25)] transition-all duration-200 min-h-[36px] inline-flex items-center"
+                            className="bg-[#2775CA] text-white text-xs font-bold px-3.5 py-1.5 rounded-full hover:bg-[#1f62ab] shadow-sm transition-all duration-200 min-h-[36px] inline-flex items-center"
                         >
                             Sign up
                         </Link>
                         <button
                             type="button"
                             onClick={() => setMobileMenuOpen(true)}
-                            className="p-2 text-zinc-200 hover:text-white transition-colors min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
+                            className="p-2 text-black/70 hover:text-[#111827] transition-colors min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
                             aria-label="Open Menu"
                             aria-expanded={mobileMenuOpen}
                             aria-controls="mobile-navigation"
@@ -272,24 +272,26 @@ export default function Navbar() {
                     <motion.div
                         id="mobile-navigation"
                         aria-label="Mobile Navigation"
-                        className="fixed inset-0 z-50 lg:hidden flex flex-col bg-black/95 backdrop-blur-2xl"
+                        className="fixed inset-0 z-50 lg:hidden flex flex-col bg-[#FFFFF0]"
                         variants={overlayVariants}
                         initial="hidden"
                         animate="visible"
                         exit="exit"
                     >
-                        <div className="flex items-center justify-between px-6 py-5 border-b border-white/10">
+                        <div className="flex items-center justify-between px-6 py-5 border-b border-black/10">
                             {/* Logo */}
                             <Link href="/" className="flex items-center gap-2.5" onClick={() => setMobileMenuOpen(false)} aria-label="SubScript Home">
-                                <Image
-                                    src="/logo.png"
-                                    alt="SubScript logo"
-                                    width={32}
-                                    height={32}
-                                    priority
-                                    className="w-8 h-8 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]"
-                                />
-                                <span className="text-xl font-bold text-white tracking-tight">
+                                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2775CA] p-1.5 shadow-sm">
+                                    <Image
+                                        src="/logo-transparent.png"
+                                        alt="SubScript logo"
+                                        width={32}
+                                        height={32}
+                                        priority
+                                        className="w-full h-full object-contain brightness-0 invert"
+                                    />
+                                </div>
+                                <span className="text-xl font-black text-[#111827] tracking-tight">
                                     SubScript
                                 </span>
                             </Link>
@@ -297,7 +299,7 @@ export default function Navbar() {
                             <button
                                 type="button"
                                 onClick={() => setMobileMenuOpen(false)}
-                                className="p-2 text-zinc-300 hover:text-white transition-colors min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
+                                className="p-2 text-black/60 hover:text-[#111827] transition-colors min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
                                 aria-label="Close Menu"
                             >
                                 <CloseIcon className="w-6 h-6" aria-hidden="true" />
@@ -321,7 +323,7 @@ export default function Navbar() {
                                         <Link
                                             href={link.href}
                                             onClick={() => setMobileMenuOpen(false)}
-                                            className={`block text-2xl font-semibold py-2 transition-colors ${pathname === link.href ? "text-[#00d2b4]" : "text-zinc-300 hover:text-white"}`}
+                                            className={`block text-2xl font-bold py-2 transition-colors ${pathname === link.href ? "text-[#2775CA]" : "text-[#111827] hover:text-[#2775CA]"}`}
                                         >
                                             {link.name}
                                         </Link>
@@ -329,12 +331,12 @@ export default function Navbar() {
                                 ))}
                                 <motion.div
                                     variants={itemVariants}
-                                    className="pt-4 border-t border-white/10"
+                                    className="pt-4 border-t border-black/10"
                                 >
                                     <Link
                                         href="/signup"
                                         onClick={() => setMobileMenuOpen(false)}
-                                        className="block text-2xl font-semibold text-[#00d2b4] py-2"
+                                        className="block text-2xl font-bold text-[#2775CA] py-2"
                                     >
                                         Create account
                                     </Link>

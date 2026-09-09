@@ -13,7 +13,6 @@ import {
 } from "@/components/icons";
 import DashboardHeader from "@/components/DashboardHeader";
 import Skeleton from "@/components/ui/Skeleton";
-import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import DashboardSkeleton from "@/components/DashboardSkeleton";
 import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
@@ -861,25 +860,23 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
 
     if (!isMounted) {
         return (
-            <div className="min-h-screen bg-transparent text-white border-t-4 border-[#00d2b4] relative z-10 p-6 md:p-10 space-y-6 animate-pulse max-w-6xl mx-auto">
+            <div className="min-h-screen bg-[#FFFFF0] dark:bg-[#17181a] text-[#082824] dark:text-white relative z-10 p-6 md:p-10 space-y-6 animate-pulse max-w-6xl mx-auto">
                 <div className="flex justify-between items-center">
-                    <div className="h-8 w-48 rounded-xl bg-white/10" />
-                    <div className="h-10 w-32 rounded-xl bg-white/10" />
+                    <div className="h-8 w-48 rounded-xl subscript-skeleton" />
+                    <div className="h-10 w-32 rounded-xl subscript-skeleton" />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="h-28 rounded-2xl bg-white/5 border border-white/5" />
-                    <div className="h-28 rounded-2xl bg-white/5 border border-white/5" />
-                    <div className="h-28 rounded-2xl bg-white/5 border border-white/5" />
+                    <div className="h-28 rounded-2xl border border-black/10 dark:border-white/10 subscript-skeleton" />
+                    <div className="h-28 rounded-2xl border border-black/10 dark:border-white/10 subscript-skeleton" />
+                    <div className="h-28 rounded-2xl border border-black/10 dark:border-white/10 subscript-skeleton" />
                 </div>
-                <div className="h-64 rounded-3xl bg-white/5 border border-white/5" />
+                <div className="h-64 rounded-3xl border border-black/10 dark:border-white/10 subscript-skeleton" />
             </div>
         );
     }
 
     return (
-        <div data-mounted={isMounted} className={embedded ? "text-white" : "min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4]"}>
-            {!embedded && <AnimatedGradientBg variant="dashboard" />}
-
+        <div data-mounted={isMounted} className={embedded ? "text-[#082824] dark:text-white" : "min-h-screen bg-[#FFFFF0] dark:bg-[#17181a] text-[#082824] dark:text-white"}>
             <div className="relative z-10">
                 {!embedded && (
                 <DashboardHeader
@@ -898,20 +895,20 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                 <main className={embedded ? "" : "max-w-7xl mx-auto px-6 pt-28 pb-12"}>
                     {/* Header Row */}
                     {!embedded && (
-                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10 pb-6 border-b border-white/5">
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10 pb-6 border-b border-black/10 dark:border-white/10">
                         <div className="flex items-center gap-3">
                             <Link
                                 href="/merchant"
-                                className="md:hidden p-2.5 text-white/60 hover:text-white bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 rounded-full transition-all"
+                                className="md:hidden p-2.5 text-[#082824] dark:text-white bg-[#FFFFF0] dark:bg-[#1f2023] hover:brightness-95 border border-black/10 dark:border-white/10 rounded-full transition-all shadow-sm"
                                 title="Back to Dashboard"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
                             </Link>
                             <div>
-                                <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2">
-                                    Merchant Control <span className="font-serif italic lowercase font-normal text-[#00d2b4]">center</span>
+                                <h1 className="text-3xl font-bold text-[#082824] dark:text-white tracking-tight mb-2">
+                                    Merchant Control <span className="text-[#8AB4DB]">center</span>
                                 </h1>
-                                <p className="text-xs text-white/50 font-sans">
+                                <p className="text-xs text-black/60 dark:text-white/60 font-sans">
                                     Manage and monitor your institutional payroll streams.
                                 </p>
                             </div>
@@ -936,12 +933,12 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                     
                                     const itemClasses = `w-full flex items-center gap-3.5 px-5 py-4 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left ${
                                         isSelected
-                                            ? "bg-[#00d2b4]/10 border-[#00d2b4]/30 text-white shadow-lg shadow-[#00d2b4]/5"
-                                            : "bg-white/[0.01] border-white/5 text-white/50 hover:text-white hover:bg-white/[0.03]"
+                                            ? "bg-[#D4E3E8] dark:bg-white/10 border-black/10 dark:border-white/10 text-[#082824] dark:text-white shadow-sm"
+                                            : "bg-[#FFFFF0] dark:bg-[#1f2023] border-black/10 dark:border-white/10 text-black/60 dark:text-white/60 hover:text-[#082824] dark:hover:text-white hover:brightness-95"
                                     }`;
-                                    
+
                                     const iconClasses = `w-4 h-4 ${
-                                        isSelected ? "text-[#00d2b4]" : "text-white/40"
+                                        isSelected ? "text-[#082824] dark:text-white" : "text-black/40 dark:text-white/40"
                                     }`;
 
                                     return (
@@ -953,7 +950,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                             <tab.icon className={iconClasses} />
                                             {tab.label}
                                             {tab.id === "premium" && isPremium && (
-                                                <span className="ml-auto text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-[#d4a853]/10 text-[#d4a853] border border-[#d4a853]/20">PRO</span>
+                                                <span className="ml-auto text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-[#D4E3E8] dark:bg-white/10 text-[#082824] dark:text-white border border-black/10 dark:border-white/10">PRO</span>
                                             )}
                                         </Link>
                                     );
@@ -966,7 +963,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                 <div className={embedded ? "hidden" : "lg:hidden mb-6"}>
                                     <Link
                                         href="/merchant"
-                                        className="inline-flex items-center gap-2 px-4 py-2.5 bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 rounded-xl text-xs font-bold uppercase tracking-wider text-white/60 hover:text-white transition-all font-sans"
+                                        className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#FFFFF0] dark:bg-[#1f2023] hover:brightness-95 border border-black/10 dark:border-white/10 rounded-xl text-xs font-bold uppercase tracking-wider text-black/60 dark:text-white/60 hover:text-[#082824] dark:hover:text-white transition-all font-sans shadow-sm"
                                     >
                                         <ArrowLeft className="w-4 h-4" />
                                         Back to Dashboard
@@ -975,18 +972,18 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                 
                                 {/* Session check: Verify wallet ownership */}
                                 {isConnected && address && !sessionWallet && !embeddedWallet ? (
-                                    <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
-                                        <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
-                                        <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
-                                        <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
+                                    <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-sm font-sans">
+                                        <Shield className="w-10 h-10 mx-auto text-[#082824] dark:text-white animate-pulse" />
+                                        <h2 className="text-lg font-bold text-[#082824] dark:text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
+                                        <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed max-w-xs mx-auto">
                                             To protect your payment configurations and links, please sign a secure message using your connected wallet.
                                         </p>
                                         <button
                                             onClick={handleBackendLogin}
                                             disabled={isLoggingIn}
-                                            className="w-full py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all font-sans"
+                                            className="w-full py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all font-sans"
                                         >
-                                            {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : <Shield className="w-4 h-4" />}
+                                            {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-[#082824]" /> : <Shield className="w-4 h-4" />}
                                             {isLoggingIn ? "Signing Message..." : "Verify Wallet Ownership"}
                                         </button>
                                     </div>
@@ -994,20 +991,20 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                     <div className="relative">
                                         {/* High fidelity Gold Premium Lock Overlay */}
                                         {!pageIsLoading && merchantTier === "FREE" && (
-                                            <div className="liquid-glass border border-[#d4a853]/20 rounded-3xl p-10 shadow-2xl bg-black/60 flex flex-col items-center justify-center text-center gap-6 min-h-[400px] relative overflow-hidden">
-                                                <div className="absolute top-0 right-0 w-64 h-64 bg-[#d4a853]/5 rounded-full blur-3xl -z-10" />
-                                                <div className="p-5 rounded-3xl bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853] animate-pulse">
+                                            <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-10 shadow-sm flex flex-col items-center justify-center text-center gap-6 min-h-[400px] relative overflow-hidden">
+                                                <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl -z-10" />
+                                                <div className="p-5 rounded-3xl bg-amber-500/10 dark:bg-amber-400/15 border border-amber-500/20 dark:border-amber-400/30 text-amber-700 dark:text-amber-300 animate-pulse">
                                                     <Crown className="w-12 h-12" />
                                                 </div>
                                                 <div className="space-y-3 max-w-md">
-                                                    <h2 className="text-xl font-extrabold text-white uppercase tracking-wider">Premium Pro Feature Locked</h2>
-                                                    <p className="text-xs text-white/60 leading-relaxed font-sans">
-                                                        Access to <span className="font-semibold text-white">Institutional Payroll</span> requires an active SubScript Premium subscription. Upgrade to unlock keys, private checkout generation, webhook event streaming, and batch payouts.
+                                                    <h2 className="text-xl font-extrabold text-[#082824] dark:text-white uppercase tracking-wider">Premium Pro Feature Locked</h2>
+                                                    <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed font-sans">
+                                                        Access to <span className="font-semibold text-[#082824] dark:text-white">Institutional Payroll</span> requires an active SubScript Premium subscription. Upgrade to unlock keys, private checkout generation, webhook event streaming, and batch payouts.
                                                     </p>
                                                 </div>
                                                 <Link
                                                     href="/merchant/upgrade"
-                                                    className="px-8 py-3 bg-[#d4a853] hover:bg-[#d4a853]/80 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-[0_0_20px_rgba(212,168,83,0.2)] font-sans"
+                                                    className="px-8 py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-sm font-sans"
                                                 >
                                                     <Crown className="w-4 h-4" />
                                                     Upgrade to Premium Pro
@@ -1021,11 +1018,11 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                             {/* Header Section */}
                                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 mb-8">
                                                 <div>
-                                                    <h2 className="text-2xl font-extrabold text-white uppercase tracking-tight flex items-center gap-3 font-sans">
-                                                        <Building2 size={24} className="text-[#00d2b4]" />
+                                                    <h2 className="text-2xl font-bold text-[#082824] dark:text-white uppercase tracking-tight flex items-center gap-3 font-sans">
+                                                        <Building2 size={24} className="text-[#082824] dark:text-white" />
                                                         Institutional Payroll
                                                     </h2>
-                                                    <p className="text-xs text-white/50 font-sans mt-1">
+                                                    <p className="text-xs text-black/60 dark:text-white/60 font-sans mt-1">
                                                         Automate recurring salary payments and batch payouts to your team.
                                                     </p>
                                                 </div>
@@ -1050,21 +1047,21 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                         transition={{ duration: 0.35 }}
                                                         className="overflow-hidden mb-6"
                                                     >
-                                                        <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 shadow-2xl relative overflow-hidden mb-6">
-                                                            <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-5 flex items-center gap-2 font-sans">
-                                                                <Plus size={16} className="text-[#00d2b4]" />
+                                                        <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 shadow-sm relative overflow-hidden mb-6">
+                                                            <h3 className="text-sm font-bold text-[#082824] dark:text-white uppercase tracking-wider mb-5 flex items-center gap-2 font-sans">
+                                                                <Plus size={16} className="text-[#082824] dark:text-white" />
                                                                 Create Payroll Campaign
                                                             </h3>
 
                                                             {/* Campaign Title */}
                                                             <div className="mb-4">
-                                                                <label className="text-xs font-bold uppercase tracking-wider text-white/50 mb-2 block font-sans">Campaign Title</label>
+                                                                <label className="text-xs font-bold uppercase tracking-wider text-black/60 dark:text-white/60 mb-2 block font-sans">Campaign Title</label>
                                                                 <input
                                                                     type="text"
                                                                     placeholder="e.g. Engineering Team - Monthly"
                                                                     value={formTitle}
                                                                     onChange={(e) => setFormTitle(e.target.value)}
-                                                                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#00d2b4] transition-colors font-sans"
+                                                                    className="w-full bg-white dark:bg-[#17181a] border border-black/15 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-[#082824] dark:text-white focus:outline-none focus:border-[#8AB4DB] transition-colors font-sans"
                                                                 />
                                                             </div>
 
@@ -1072,14 +1069,14 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                                                 {/* Frequency */}
                                                                 <div>
-                                                                    <label className="text-xs font-bold uppercase tracking-wider text-white/50 mb-2 block font-sans">Pay Frequency</label>
+                                                                    <label className="text-xs font-bold uppercase tracking-wider text-black/60 dark:text-white/60 mb-2 block font-sans">Pay Frequency</label>
                                                                     <select
                                                                         value={formFrequencyPreset}
                                                                         onChange={(e) => setFormFrequencyPreset(Number(e.target.value))}
-                                                                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#00d2b4] transition-colors appearance-none font-sans"
+                                                                        className="w-full bg-white dark:bg-[#17181a] border border-black/15 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-[#082824] dark:text-white focus:outline-none focus:border-[#8AB4DB] transition-colors appearance-none font-sans"
                                                                     >
                                                                         {FREQUENCY_OPTIONS.map((opt) => (
-                                                                            <option key={opt.value} value={opt.value} className="bg-black text-white">
+                                                                            <option key={opt.value} value={opt.value} className="bg-white dark:bg-[#17181a] text-[#082824] dark:text-white">
                                                                                 {opt.label}
                                                                             </option>
                                                                         ))}
@@ -1091,33 +1088,33 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                             value={formCustomDays}
                                                                             onChange={(e) => setFormCustomDays(e.target.value)}
                                                                             min={1}
-                                                                            className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#00d2b4] transition-colors mt-2 font-sans"
+                                                                            className="w-full bg-white dark:bg-[#17181a] border border-black/15 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-[#082824] dark:text-white focus:outline-none focus:border-[#8AB4DB] transition-colors mt-2 font-sans"
                                                                         />
                                                                     )}
                                                                 </div>
 
                                                                 {/* Shielded toggle */}
                                                                 <div>
-                                                                    <label className="text-xs font-bold uppercase tracking-wider text-white/50 mb-2 block font-sans">Privacy Mode</label>
+                                                                    <label className="text-xs font-bold uppercase tracking-wider text-black/60 dark:text-white/60 mb-2 block font-sans">Privacy Mode</label>
                                                                     <div
                                                                         className={`flex items-center gap-3 cursor-pointer px-4 py-3.5 rounded-xl border transition-all ${
                                                                             formShielded
-                                                                                ? "border-[#00d2b4]/30 bg-[#00d2b4]/10 text-white shadow-sm shadow-[#00d2b4]/5"
-                                                                                : "border-white/10 bg-white/[0.02] text-white/50 hover:bg-white/[0.04]"
+                                                                                ? "border-black/10 dark:border-white/10 bg-[#D4E3E8] dark:bg-white/10 text-[#082824] dark:text-white shadow-sm"
+                                                                                : "border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] text-black/60 dark:text-white/60 hover:brightness-95"
                                                                         }`}
                                                                         onClick={() => setFormShielded((prev) => !prev)}
                                                                     >
                                                                         {formShielded ? (
-                                                                            <Shield size={18} className="text-[#00d2b4]" />
+                                                                            <Shield size={18} className="text-[#082824] dark:text-white" />
                                                                         ) : (
-                                                                            <ShieldOff size={18} className="text-white/40" />
+                                                                            <ShieldOff size={18} className="text-black/40 dark:text-white/40" />
                                                                         )}
                                                                         <span className="text-xs font-bold uppercase tracking-wider font-sans">
                                                                             {formShielded ? "Confidential (Preview)" : "Standard (Public)"}
                                                                         </span>
                                                                     </div>
                                                                     {formShielded && (
-                                                                        <p className="text-[10px] text-white/40 leading-normal mt-2 font-sans">
+                                                                        <p className="text-[10px] text-black/50 dark:text-white/40 leading-normal mt-2 font-sans">
                                                                             Masks recipient and amount metadata in SubScript&apos;s batch event log. The underlying USDC transfers stay visible on Arc&apos;s public ledger &mdash; full on-chain privacy activates when Arc&apos;s Privacy Sector (APS) goes live.
                                                                         </p>
                                                                     )}
@@ -1127,13 +1124,13 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                             {/* Recipients rows */}
                                                             <div className="mb-6">
                                                                 <div className="flex justify-between items-center mb-3">
-                                                                    <label className="text-xs font-bold uppercase tracking-wider text-white/50 block font-sans">
+                                                                    <label className="text-xs font-bold uppercase tracking-wider text-black/60 dark:text-white/60 block font-sans">
                                                                         Recipients ({formRecipients.length})
                                                                     </label>
                                                                     <button
                                                                         type="button"
                                                                         onClick={addRecipientRow}
-                                                                        className="px-3 py-1.5 rounded-lg bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/20 text-[#00d2b4] text-[10px] font-bold uppercase tracking-wider transition-all"
+                                                                        className="px-3 py-1.5 rounded-lg bg-[#D4E3E8] hover:bg-[#c6d8de] dark:bg-white/10 dark:hover:bg-white/20 border border-black/10 dark:border-white/10 text-[#082824] dark:text-white text-[10px] font-bold uppercase tracking-wider transition-all"
                                                                     >
                                                                         <Plus size={12} className="inline mr-1" />
                                                                         Add Row
@@ -1142,8 +1139,8 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
 
                                                                 {/* Headers */}
                                                                 <div className="grid grid-cols-[minmax(0,1fr)_110px_36px] sm:grid-cols-[minmax(0,1fr)_160px_40px] gap-2 mb-1.5 px-1">
-                                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-white/40 font-sans">Wallet Address</span>
-                                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-white/40 font-sans">Salary (USDC)</span>
+                                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-black/40 dark:text-white/40 font-sans">Wallet Address</span>
+                                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-black/40 dark:text-white/40 font-sans">Salary (USDC)</span>
                                                                     <span />
                                                                 </div>
 
@@ -1162,7 +1159,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                                 placeholder="0x..."
                                                                                 value={recipient.employeeWallet}
                                                                                 onChange={(e) => updateRecipient(recipient.id, "employeeWallet", e.target.value)}
-                                                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-2 text-xs text-white focus:outline-none focus:border-[#00d2b4] transition-colors font-mono"
+                                                                                className="w-full bg-white dark:bg-[#17181a] border border-black/15 dark:border-white/10 rounded-xl px-4 py-2 text-xs text-[#082824] dark:text-white focus:outline-none focus:border-[#8AB4DB] transition-colors font-mono"
                                                                             />
                                                                             <input
                                                                                 type="number"
@@ -1171,7 +1168,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                                 onChange={(e) => updateRecipient(recipient.id, "salaryAmountUsdc", e.target.value)}
                                                                                 min={0}
                                                                                 step={0.01}
-                                                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-2 text-xs text-white focus:outline-none focus:border-[#00d2b4] transition-colors font-sans"
+                                                                                className="w-full bg-white dark:bg-[#17181a] border border-black/15 dark:border-white/10 rounded-xl px-4 py-2 text-xs text-[#082824] dark:text-white focus:outline-none focus:border-[#8AB4DB] transition-colors font-sans"
                                                                             />
                                                                             <button
                                                                                 type="button"
@@ -1186,25 +1183,25 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                 </AnimatePresence>
 
                                                                 {/* Total */}
-                                                                <div className="flex justify-end items-center gap-2 pr-12 pt-3 text-[10px] font-bold uppercase tracking-wider text-white/50">
-                                                                    <DollarSign size={12} className="text-[#00d2b4]" />
+                                                                <div className="flex justify-end items-center gap-2 pr-12 pt-3 text-[10px] font-bold uppercase tracking-wider text-black/50 dark:text-white/50">
+                                                                    <DollarSign size={12} className="text-[#8AB4DB]" />
                                                                     Total per cycle:
-                                                                    <span className="text-white font-extrabold text-sm ml-1">
+                                                                    <span className="text-[#082824] dark:text-white font-extrabold text-sm ml-1">
                                                                         {formTotalUsdc.toFixed(2)} USDC
                                                                     </span>
                                                                 </div>
                                                             </div>
 
                                                             {/* Actions Panel */}
-                                                            <div className="flex items-center gap-3 flex-wrap border-t border-white/5 pt-5 font-sans">
+                                                            <div className="flex items-center gap-3 flex-wrap border-t border-black/10 dark:border-white/10 pt-5 font-sans">
                                                                 <button
                                                                     type="button"
                                                                     onClick={handleSignPermit2}
                                                                     disabled={isSigning || !!permit2Sig}
                                                                     className={`px-4 py-2.5 rounded-xl border text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${
                                                                         permit2Sig
-                                                                            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 cursor-default"
-                                                                            : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10 disabled:opacity-50"
+                                                                            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400 cursor-default"
+                                                                            : "bg-[#FFFFF0] dark:bg-[#1f2023] border-black/10 dark:border-white/10 text-[#082824] dark:text-white/80 hover:brightness-95 dark:hover:bg-white/10 disabled:opacity-50"
                                                                     }`}
                                                                 >
                                                                     {isSigning ? (
@@ -1245,12 +1242,12 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                     {[1, 2, 3].map((n) => (
                                                         <div
                                                              key={`skel-${n}`}
-                                                            className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl relative overflow-hidden"
+                                                            className="rounded-3xl border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 shadow-sm relative overflow-hidden"
                                                         >
-                                                            <div className="h-6 w-48 bg-white/10 rounded-lg animate-pulse mb-4" />
+                                                            <div className="h-6 w-48 rounded-lg subscript-skeleton mb-4" />
                                                             <div className="space-y-2">
-                                                                <div className="h-4 w-full bg-white/5 rounded animate-pulse" />
-                                                                <div className="h-4 w-3/4 bg-white/5 rounded animate-pulse" />
+                                                                <div className="h-4 w-full rounded subscript-skeleton" />
+                                                                <div className="h-4 w-3/4 rounded subscript-skeleton" />
                                                             </div>
                                                         </div>
                                                     ))}
@@ -1259,15 +1256,15 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
 
                                             {/* Error display */}
                                             {!pageIsLoading && loadError && (
-                                                <div className="liquid-glass border border-red-500/10 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-5 shadow-2xl bg-black/40">
-                                                    <AlertTriangle size={36} className="text-red-400 mx-auto" />
+                                                <div className="rounded-3xl border border-red-500/20 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 sm:p-8 text-center max-w-md mx-auto space-y-5 shadow-sm">
+                                                    <AlertTriangle size={36} className="text-red-500 mx-auto" />
                                                     <div className="space-y-1">
-                                                        <h3 className="text-sm font-bold text-white uppercase tracking-wider">Failed to Load Campaigns</h3>
-                                                        <p className="text-xs text-white/50 font-sans">{loadError}</p>
+                                                        <h3 className="text-sm font-bold text-[#082824] dark:text-white uppercase tracking-wider">Failed to Load Campaigns</h3>
+                                                        <p className="text-xs text-black/60 dark:text-white/50 font-sans">{loadError}</p>
                                                     </div>
                                                     <button
                                                         onClick={fetchCampaigns}
-                                                        className="px-6 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all mx-auto block font-sans"
+                                                        className="px-6 py-2 bg-[#FFFFF0] dark:bg-[#1f2023] hover:brightness-95 dark:hover:bg-white/10 border border-black/10 dark:border-white/10 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all mx-auto block font-sans text-[#082824] dark:text-white"
                                                     >
                                                         Try Again
                                                     </button>
@@ -1314,17 +1311,17 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                 initial={{ opacity: 0, y: 15, filter: "blur(1.5px)" }}
                                                                 animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
                                                                 transition={{ delay: index * 0.05 }}
-                                                                className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl relative overflow-hidden mb-6"
+                                                                className="rounded-3xl border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 shadow-sm relative overflow-hidden mb-6"
                                                             >
                                                                 {/* Top title and status details */}
                                                                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-5">
                                                                     <div className="flex flex-wrap items-center gap-3">
-                                                                        <h3 className="text-base font-bold text-white tracking-wide font-sans">{campaign.title}</h3>
-                                                                        
+                                                                        <h3 className="text-base font-bold text-[#082824] dark:text-white tracking-wide font-sans">{campaign.title}</h3>
+
                                                                         <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
                                                                             campaign.status === "ACTIVE"
-                                                                                ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
-                                                                                : "bg-amber-500/10 border border-amber-500/20 text-amber-400"
+                                                                                ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                                                                                : "bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400"
                                                                         }`}>
                                                                             {campaign.status === "ACTIVE" ? (
                                                                                 <CheckCircle size={12} />
@@ -1337,7 +1334,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                         {campaign.isShielded && (
                                                                             <span
                                                                                 title="Metadata-masked in SubScript's batch event log. On-chain USDC transfers remain public until Arc's Privacy Sector (APS) is live."
-                                                                                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#00d2b4]/10 border border-[#00d2b4]/20 text-[#00d2b4]"
+                                                                                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#D4E3E8] dark:bg-white/10 border border-black/10 dark:border-white/10 text-[#082824] dark:text-white"
                                                                             >
                                                                                 <Shield size={12} />
                                                                                 Confidential (Preview)
@@ -1348,7 +1345,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                     {/* Action panel buttons */}
                                                                     <div className="flex gap-2 font-sans">
                                                                         <button
-                                                                            className="px-3 py-1.5 rounded-lg bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/20 text-[#00d2b4] text-[10px] font-bold uppercase tracking-wider transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                                                                            className="px-3 py-1.5 rounded-lg bg-[#D4E3E8] hover:brightness-95 dark:bg-white/10 dark:hover:bg-white/20 border border-black/10 dark:border-white/10 text-[#082824] dark:text-white text-[10px] font-bold uppercase tracking-wider transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                                                                             onClick={() => handleToggleStatus(campaign)}
                                                                             disabled={isToggling}
                                                                         >
@@ -1362,7 +1359,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                             {campaign.status === "ACTIVE" ? "Pause" : "Resume"}
                                                                         </button>
                                                                         <button
-                                                                            className="px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                                                                            className="px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-600 dark:text-red-400 text-[10px] font-bold uppercase tracking-wider transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                                                                             onClick={() => handleDelete(campaign.id)}
                                                                             disabled={isDeleting}
                                                                         >
@@ -1376,14 +1373,14 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                 </div>
 
                                                                 {/* Campaign cycle stats details */}
-                                                                <div className="flex flex-wrap gap-6 text-xs text-white/60 mb-4">
+                                                                <div className="flex flex-wrap gap-6 text-xs text-black/60 dark:text-white/60 mb-4">
                                                                     <div className="flex items-center gap-1.5">
-                                                                        <Clock size={14} className="text-white/30" />
+                                                                        <Clock size={14} className="text-black/40 dark:text-white/30" />
                                                                         {frequencyLabel(campaign.frequencyDays)}
                                                                     </div>
                                                                     <div className="flex items-center gap-1.5">
-                                                                        <Calendar size={14} className={isOverdue ? "text-red-400" : "text-white/30"} />
-                                                                        <span className={isOverdue ? "text-red-400 font-medium" : ""}>
+                                                                        <Calendar size={14} className={isOverdue ? "text-red-500" : "text-black/40 dark:text-white/30"} />
+                                                                        <span className={isOverdue ? "text-red-500 font-medium" : ""}>
                                                                             Next: {nextDate.toLocaleDateString("en-US", {
                                                                                 month: "short",
                                                                                 day: "numeric",
@@ -1393,15 +1390,15 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                         </span>
                                                                     </div>
                                                                     <div className="flex items-center gap-1.5">
-                                                                        <Users size={14} className="text-white/30" />
+                                                                        <Users size={14} className="text-black/40 dark:text-white/30" />
                                                                         {campaign.recipients.length} recipient{campaign.recipients.length !== 1 ? "s" : ""}
                                                                     </div>
                                                                     <div className="flex items-center gap-1.5">
-                                                                        <DollarSign size={14} className="text-white/30" />
-                                                                        <span className="text-white font-semibold">
+                                                                        <DollarSign size={14} className="text-black/40 dark:text-white/30" />
+                                                                        <span className="text-[#082824] dark:text-white font-semibold">
                                                                             {formatUsdc(totalMicro)} USDC
                                                                         </span>
-                                                                        <span className="text-white/30">/ cycle</span>
+                                                                        <span className="text-black/40 dark:text-white/30">/ cycle</span>
                                                                     </div>
                                                                 </div>
 
@@ -1422,12 +1419,12 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                     )}
 
                     {/* Footer wrapper */}
-                    <footer className={embedded ? "hidden" : "mt-16 pt-8 border-t border-white/5 flex flex-col sm:flex-row justify-between items-center text-[10px] text-white/40 gap-4"}>
+                    <footer className={embedded ? "hidden" : "mt-16 pt-8 border-t border-black/10 dark:border-white/10 flex flex-col sm:flex-row justify-between items-center text-[10px] text-black/40 dark:text-white/40 gap-4"}>
                         <span>© 2026 SubScript Protocol. All rights reserved.</span>
                         <div className="flex gap-4">
-                            <Link href="/terms" className="hover:text-white transition">Terms of Service</Link>
-                            <Link href="/privacy" className="hover:text-white transition">Privacy Policy</Link>
-                            <Link href="/compliance" className="hover:text-white transition">Compliance</Link>
+                            <Link href="/terms" className="hover:text-[#082824] dark:hover:text-white transition">Terms of Service</Link>
+                            <Link href="/privacy" className="hover:text-[#082824] dark:hover:text-white transition">Privacy Policy</Link>
+                            <Link href="/compliance" className="hover:text-[#082824] dark:hover:text-white transition">Compliance</Link>
                         </div>
                         <span>Built on Arc Network</span>
                     </footer>
@@ -1458,9 +1455,9 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
 
             {/* High-fidelity glassmorphic toast notification */}
             {toast.visible && (
-                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass border border-[#00d2b4]/30 bg-black/60 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-[0_8px_32px_0_rgba(0,210,180,0.25)] font-sans">
-                    <Zap className="w-5 h-5 text-[#00d2b4] fill-[#00d2b4]/25 shrink-0" />
-                    <span className="text-xs font-bold uppercase tracking-wider text-white">
+                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 border border-black/10 dark:border-white/10 bg-white dark:bg-[#1f2023] rounded-2xl px-6 py-4 flex items-center gap-3 shadow-lg font-sans">
+                    <Zap className="w-5 h-5 text-[#8AB4DB] fill-[#8AB4DB]/25 shrink-0" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#082824] dark:text-white">
                         {toast.message}
                     </span>
                 </div>
@@ -1491,7 +1488,7 @@ function RecipientList({ recipients }: { recipients: PayrollCampaign["recipients
         <div className="mt-4">
             <button
                 onClick={() => setExpanded((prev) => !prev)}
-                className="bg-transparent border-none text-white/50 hover:text-white text-xs cursor-pointer flex items-center gap-1.5 py-1 font-semibold uppercase tracking-wider transition-all"
+                className="bg-transparent border-none text-black/50 dark:text-white/50 hover:text-[#082824] dark:hover:text-white text-xs cursor-pointer flex items-center gap-1.5 py-1 font-semibold uppercase tracking-wider transition-all"
             >
                 <Users size={12} />
                 {expanded ? "Hide recipients" : "Show recipients"}
@@ -1506,13 +1503,13 @@ function RecipientList({ recipients }: { recipients: PayrollCampaign["recipients
                         transition={{ duration: 0.25 }}
                         className="overflow-hidden"
                     >
-                        <div className="mt-3 bg-white/[0.01] rounded-2xl border border-white/5 p-4 font-sans">
+                        <div className="mt-3 bg-black/[0.02] dark:bg-white/[0.03] rounded-2xl border border-black/10 dark:border-white/10 p-4 font-sans">
                             {/* Table header */}
-                            <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-2 pb-2 border-b border-white/5 mb-2">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-white/40 font-sans">
+                            <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-2 pb-2 border-b border-black/10 dark:border-white/10 mb-2">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-black/40 dark:text-white/40 font-sans">
                                     Wallet
                                 </span>
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-white/40 font-sans text-right">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-black/40 dark:text-white/40 font-sans text-right">
                                     Amount
                                 </span>
                             </div>
@@ -1523,10 +1520,10 @@ function RecipientList({ recipients }: { recipients: PayrollCampaign["recipients
                                     key={r.id}
                                     className="grid grid-cols-[minmax(0,1fr)_120px] gap-2 py-1.5 text-xs"
                                 >
-                                    <span className="text-white/60 font-mono truncate" title={r.employeeWallet}>
+                                    <span className="text-black/60 dark:text-white/60 font-mono truncate" title={r.employeeWallet}>
                                         {r.employeeAlias || (r.employeeWallet.startsWith("0x") && r.employeeWallet.length === 42 ? `${r.employeeWallet.slice(0, 6)}...${r.employeeWallet.slice(-4)}` : r.employeeWallet)}
                                     </span>
-                                    <span className="text-white font-medium text-right">
+                                    <span className="text-[#082824] dark:text-white font-medium text-right">
                                         {formatUsdc(r.salaryAmountUsdc)} USDC
                                     </span>
                                 </div>

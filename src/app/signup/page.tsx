@@ -155,7 +155,7 @@ function SignupContent() {
   const [captchaToken, setCaptchaToken] = useState("");
   const [turnstileLoaded, setTurnstileLoaded] = useState(false);
   const isTurnstileConfigured = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
-  const captchaRequired = isTurnstileConfigured && !captchaToken;
+  const captchaRequired = false; // Captcha is non-mandatory for sign in/up for now
 
   useEffect(() => {
     if (resendCooldown > 0) {
@@ -952,7 +952,7 @@ function SignupContent() {
             {/* Explicit Send OTP Button beneath email */}
             <button
               type="submit"
-              disabled={otpLoading || !email || (isTurnstileConfigured && !captchaToken)}
+              disabled={otpLoading || !email || captchaRequired}
               className="w-full py-2.5 bg-[#2775CA] hover:bg-[#1f62ab] disabled:opacity-50 text-white font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.99]"
             >
               {otpLoading ? (

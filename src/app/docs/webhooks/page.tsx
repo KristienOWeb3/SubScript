@@ -32,7 +32,7 @@ export default function WebhooksPage() {
       </Callout>
 
       <section className="space-y-4">
-        <h2 id="four-steps" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="four-steps" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           The four steps
         </h2>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
@@ -42,10 +42,10 @@ export default function WebhooksPage() {
             ["3", "Verify HMAC", "Sign timestamp + period + exact raw body with SHA-256."],
             ["4", "Claim event.id", "A UNIQUE insert makes retries safe under concurrency."],
           ].map(([number, title, text]) => (
-            <div key={number} className="rounded-2xl border border-white/5 bg-black/30 p-4">
-              <p className="text-[9px] font-bold uppercase tracking-widest text-[#00d2b4]">Step {number}</p>
-              <p className="mt-2 text-xs font-semibold text-white">{title}</p>
-              <p className="mt-2 text-[10px] leading-relaxed text-white/45">{text}</p>
+            <div key={number} className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm">
+              <p className="text-[9px] font-bold uppercase tracking-widest text-[#2775CA]">Step {number}</p>
+              <p className="mt-2 text-xs font-semibold text-[#111827]">{title}</p>
+              <p className="mt-2 text-[10px] leading-relaxed text-black/45">{text}</p>
             </div>
           ))}
         </div>
@@ -62,10 +62,10 @@ export default function WebhooksPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="handler" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="handler" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           A complete handler
         </h2>
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           Copy this rather than writing your own comparison — note{" "}
           <span className="font-mono">crypto.timingSafeEqual</span> instead of{" "}
           <span className="font-mono">===</span>, which prevents an attacker from discovering a valid signature one
@@ -81,7 +81,7 @@ export default function WebhooksPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="payload" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="payload" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           The event payload
         </h2>
         <Callout tone="teal">
@@ -95,7 +95,7 @@ export default function WebhooksPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="sponsored" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="sponsored" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Sponsored payments: credit the beneficiary, not the payer
         </h2>
         <Callout tone="plain" title="Sponsored plan fulfillment &amp; Ask a Friend DMs">
@@ -137,7 +137,7 @@ export default function WebhooksPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="cancellation" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="cancellation" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Cancellation is two events, not one
         </h2>
         <Callout tone="amber" title="Do not revoke access on cancel_scheduled">
@@ -175,7 +175,7 @@ export default function WebhooksPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="subscription-id-changes" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="subscription-id-changes" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Key entitlements on the customer, not the subscription id
         </h2>
         <Callout tone="amber" title="An upgrade or a resume mints a new subscription id">
@@ -219,7 +219,7 @@ export default function WebhooksPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="delivery" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="delivery" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Delivery behavior
         </h2>
         <Callout tone="plain">

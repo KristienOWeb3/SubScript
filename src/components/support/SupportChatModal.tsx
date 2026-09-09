@@ -215,20 +215,20 @@ export default function SupportChatModal({
                     initial={{ scale: 0.94, y: 16 }}
                     animate={{ scale: 1, y: 0 }}
                     exit={{ scale: 0.94, y: 16 }}
-                    className="flex flex-col h-[90vh] max-h-[720px] w-full max-w-2xl rounded-3xl border border-white/10 bg-[#121214] text-white shadow-2xl overflow-hidden"
+                    className="flex flex-col h-[90vh] max-h-[720px] w-full max-w-2xl rounded-3xl border border-black/10 bg-[#FFFFF0] text-[#111827] shadow-2xl overflow-hidden"
                 >
                     {/* Header */}
-                    <div className="flex items-center justify-between border-b border-white/10 bg-[#18181b] px-5 py-4 shrink-0">
+                    <div className="flex items-center justify-between border-b border-black/10 bg-[#FFFFF0] px-5 py-4 shrink-0">
                         <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#00d2b4]/10 text-[#00d2b4] border border-[#00d2b4]/20 shadow-sm">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#2775CA]/10 text-[#2775CA] border border-[#2775CA]/20 shadow-sm">
                                 <MessageSquare className="h-5 w-5" />
                             </div>
                             <div>
-                                <h3 className="text-sm font-black uppercase tracking-wider text-white flex items-center gap-2">
+                                <h3 className="text-sm font-black uppercase tracking-wider text-[#111827] flex items-center gap-2">
                                     SubScript Support
                                     <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
                                 </h3>
-                                <p className="text-[10px] text-white/50">
+                                <p className="text-[10px] text-black/45">
                                     {activeTicket ? `#${activeTicket.id.slice(0, 8)} · ${activeTicket.subject}` : "24/7 In-App Administrative Support"}
                                 </p>
                             </div>
@@ -243,7 +243,7 @@ export default function SupportChatModal({
                                         setIsCreating(false);
                                         fetchTickets();
                                     }}
-                                    className="px-3 py-1.5 rounded-xl border border-white/10 bg-white/5 text-[10px] font-bold text-white/80 hover:bg-white/10 transition"
+                                    className="px-3 py-1.5 rounded-xl border border-black/10 bg-black/5 text-[10px] font-bold text-black/70 hover:bg-black/10 transition"
                                 >
                                     All Tickets
                                 </button>
@@ -251,7 +251,7 @@ export default function SupportChatModal({
                             <button
                                 type="button"
                                 onClick={onClose}
-                                className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-white/70 hover:bg-white/10 hover:text-white transition"
+                                className="flex h-8 w-8 items-center justify-center rounded-full bg-black/5 text-black/60 hover:bg-black/10 hover:text-black transition"
                             >
                                 <X className="h-4 w-4" />
                             </button>
@@ -259,7 +259,7 @@ export default function SupportChatModal({
                     </div>
 
                     {/* Content Body */}
-                    <div className="flex-1 overflow-y-auto p-4 sm:p-5 flex flex-col justify-between min-h-0 bg-[#0d0d0e]">
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-5 flex flex-col justify-between min-h-0 bg-[#FFFFF0]">
                         {loading ? (
                             <div className="flex h-full flex-col justify-between" aria-busy="true" aria-live="polite">
                                 {/* Shaped like the thread it is about to become — an incoming bubble
@@ -268,7 +268,7 @@ export default function SupportChatModal({
                                     the user nothing about what was arriving and moved everything
                                     when it left. */}
                                 <span className="sr-only">Loading your support conversation</span>
-                                <div className="mb-3 h-[52px] shrink-0 animate-pulse rounded-2xl border border-white/5 bg-[#18181b]" />
+                                <div className="mb-3 h-[52px] shrink-0 animate-pulse rounded-2xl border border-black/10 bg-black/5" />
 
                                 <div className="flex-1 space-y-4 py-2">
                                     {[
@@ -282,11 +282,11 @@ export default function SupportChatModal({
                                             className={`flex animate-pulse items-end gap-2.5 ${row.outgoing ? "justify-end" : "justify-start"}`}
                                             style={{ animationDelay: `${index * 90}ms` }}
                                         >
-                                            {!row.outgoing && <div className="h-8 w-8 shrink-0 rounded-full bg-white/10" />}
+                                            {!row.outgoing && <div className="h-8 w-8 shrink-0 rounded-full bg-black/10" />}
                                             <div className={`space-y-1.5 ${row.width}`}>
-                                                <div className={`h-2 w-16 rounded bg-white/5 ${row.outgoing ? "ml-auto" : ""}`} />
+                                                <div className={`h-2 w-16 rounded bg-black/10 ${row.outgoing ? "ml-auto" : ""}`} />
                                                 <div
-                                                    className={`h-12 rounded-[20px] bg-[#1e1e22] ${row.outgoing ? "rounded-br-[4px] bg-white/[0.07]" : "rounded-bl-[4px]"}`}
+                                                    className={`h-12 rounded-[20px] bg-black/5 ${row.outgoing ? "rounded-br-[4px] bg-black/10" : "rounded-bl-[4px]"}`}
                                                 />
                                             </div>
                                         </div>
@@ -294,22 +294,22 @@ export default function SupportChatModal({
                                 </div>
 
                                 <div className="mt-2 flex shrink-0 animate-pulse items-center gap-2">
-                                    <div className="h-11 flex-1 rounded-2xl border border-white/10 bg-[#18181b]" />
-                                    <div className="h-11 w-11 shrink-0 rounded-2xl bg-white/10" />
+                                    <div className="h-11 flex-1 rounded-2xl border border-black/10 bg-black/5" />
+                                    <div className="h-11 w-11 shrink-0 rounded-2xl bg-black/10" />
                                 </div>
                             </div>
                         ) : isCreating ? (
                             /* Create Ticket View */
                             <div className="max-w-md mx-auto w-full space-y-4 my-auto">
                                 <div className="text-center space-y-1">
-                                    <h4 className="text-base font-extrabold text-white">Open Support Ticket</h4>
-                                    <p className="text-xs text-white/60">
+                                    <h4 className="text-base font-extrabold text-[#111827]">Open Support Ticket</h4>
+                                    <p className="text-xs text-black/60">
                                         Describe your issue and an admin will assist you directly in this chat.
                                     </p>
                                 </div>
 
                                 {error && (
-                                    <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400 flex items-center gap-2">
+                                    <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-700 flex items-center gap-2">
                                         <AlertCircle className="h-4 w-4 shrink-0" />
                                         <span>{error}</span>
                                     </div>
@@ -317,7 +317,7 @@ export default function SupportChatModal({
 
                                 <form onSubmit={handleCreateTicket} className="space-y-4">
                                     <div>
-                                        <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60 mb-1.5">
+                                        <label className="block text-[10px] font-bold uppercase tracking-wider text-black/60 mb-1.5">
                                             Subject / Issue Summary
                                         </label>
                                         <input
@@ -327,12 +327,12 @@ export default function SupportChatModal({
                                             placeholder="e.g. Question about payment settlement or commit"
                                             required
                                             maxLength={200}
-                                            className="w-full rounded-xl border border-white/10 bg-[#18181b] px-4 py-3 text-xs text-white placeholder-white/30 focus:border-[#00d2b4] focus:outline-none transition"
+                                            className="w-full rounded-xl border border-black/15 bg-white px-4 py-3 text-xs text-[#111827] placeholder-black/40 focus:border-[#2775CA] focus:outline-none transition"
                                         />
                                     </div>
 
                                     <div>
-                                        <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60 mb-1.5">
+                                        <label className="block text-[10px] font-bold uppercase tracking-wider text-black/60 mb-1.5">
                                             Detailed Message
                                         </label>
                                         <textarea
@@ -342,7 +342,7 @@ export default function SupportChatModal({
                                             required
                                             rows={4}
                                             maxLength={2000}
-                                            className="w-full rounded-xl border border-white/10 bg-[#18181b] px-4 py-3 text-xs text-white placeholder-white/30 focus:border-[#00d2b4] focus:outline-none transition resize-none"
+                                            className="w-full rounded-xl border border-black/15 bg-white px-4 py-3 text-xs text-[#111827] placeholder-black/40 focus:border-[#2775CA] focus:outline-none transition resize-none"
                                         />
                                     </div>
 
@@ -350,14 +350,14 @@ export default function SupportChatModal({
                                         <button
                                             type="button"
                                             onClick={() => setIsCreating(false)}
-                                            className="flex-1 py-3 rounded-xl border border-white/10 bg-white/5 text-xs font-bold text-white/70 hover:bg-white/10 transition uppercase tracking-wider"
+                                            className="flex-1 py-3 rounded-xl border border-black/10 bg-black/5 text-xs font-bold text-black/60 hover:bg-black/10 transition uppercase tracking-wider"
                                         >
                                             Cancel
                                         </button>
                                         <button
                                             type="submit"
                                             disabled={creatingLoading || !newSubject.trim() || !newInitialMsg.trim()}
-                                            className="flex-1 py-3 rounded-xl bg-[#00d2b4] text-[#082824] hover:bg-[#00d2b4]/90 disabled:opacity-50 text-xs font-black uppercase tracking-wider transition shadow-md flex items-center justify-center gap-2"
+                                            className="flex-1 py-3 rounded-xl bg-[#2775CA] text-white hover:bg-[#1f62ab] disabled:opacity-50 text-xs font-black uppercase tracking-wider transition shadow-md flex items-center justify-center gap-2"
                                         >
                                             {creatingLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                                             Submit Ticket
@@ -369,23 +369,23 @@ export default function SupportChatModal({
                             /* Live Chat Thread View */
                             <div className="flex flex-col h-full justify-between">
                                 {/* Ticket Info Banner */}
-                                <div className="mb-3 rounded-2xl border border-white/5 bg-[#18181b] p-3 text-xs flex items-center justify-between shrink-0">
+                                <div className="mb-3 rounded-2xl border border-black/10 bg-white p-3 text-xs flex items-center justify-between shrink-0">
                                     <div className="flex items-center gap-2">
                                         <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
                                             activeTicket.status === "OPEN"
-                                                ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                                                ? "bg-amber-500/20 text-amber-800 border border-amber-500/30"
                                                 : activeTicket.status === "CLAIMED"
-                                                ? "bg-sky-500/20 text-sky-300 border border-sky-500/30"
-                                                : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                                                ? "bg-sky-500/20 text-sky-800 border border-sky-500/30"
+                                                : "bg-emerald-500/20 text-emerald-800 border border-emerald-500/30"
                                         }`}>
                                             {/* Was `Claimed by Admin (${claimedByAdminAlias})`. Which admin picked
                                                 the ticket up is not the ticket owner's business, and the alias came
                                                 straight from the admin's own address alias. */}
                                             {activeTicket.status === "CLAIMED" ? "With Support" : activeTicket.status}
                                         </span>
-                                        <span className="text-white/60 truncate font-semibold">{activeTicket.subject}</span>
+                                        <span className="text-black/60 truncate font-semibold">{activeTicket.subject}</span>
                                     </div>
-                                    <span className="text-[10px] text-white/40">
+                                    <span className="text-[10px] text-black/45">
                                         {new Date(activeTicket.createdAt).toLocaleDateString()}
                                     </span>
                                 </div>
@@ -404,34 +404,34 @@ export default function SupportChatModal({
                                             >
                                                 {!isOutgoing && (
                                                     <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold shadow-sm ${
-                                                        isAdmin ? "bg-[#00d2b4] text-[#082824]" : "bg-white/10 text-white"
+                                                        isAdmin ? "bg-[#2775CA] text-white" : "bg-black/10 text-[#111827]"
                                                     }`}>
                                                         {isAdmin ? <Shield className="h-4 w-4" /> : <User className="h-4 w-4" />}
                                                     </div>
                                                 )}
 
                                                 <div className={`max-w-[82%] sm:max-w-[75%] flex flex-col gap-1 ${isOutgoing ? "items-end" : "items-start"}`}>
-                                                    <div className="flex items-center gap-1.5 px-1 text-[9px] font-bold text-white/40">
+                                                    <div className="flex items-center gap-1.5 px-1 text-[9px] font-bold text-black/45">
                                                         {/* Admin messages are labelled by role, never by identity — the
                                                             alias is masked server-side too, so this is belt and braces
                                                             rather than the only guard. */}
                                                         <span>{isAdmin ? "Support" : msg.senderAlias || `${msg.senderWallet.slice(0, 6)}...`}</span>
-                                                        {isAdmin && <span className="rounded bg-[#00d2b4]/20 px-1 py-0.2 text-[8px] font-bold text-[#00d2b4]">SUBSCRIPT</span>}
+                                                        {isAdmin && <span className="rounded bg-[#2775CA]/10 px-1 py-0.2 text-[8px] font-bold text-[#2775CA]">SUBSCRIPT</span>}
                                                     </div>
 
                                                     <div
-                                                        data-dm-bubble={isOutgoing ? "sent" : "dark"}
-                                                        data-dm-dark="true"
+                                                        data-dm-bubble={isOutgoing ? "sent" : undefined}
+                                                        data-dm-dark={isOutgoing ? "true" : undefined}
                                                         className={`px-4 py-3 shadow-md select-text break-words [word-break:break-word] text-xs leading-relaxed ${
                                                             isOutgoing
                                                                 ? "bg-gradient-to-br from-[#00b2ff] to-[#007aff] text-white rounded-[20px] rounded-br-[4px]"
-                                                                : "border border-white/10 bg-[#1e1e22] text-white rounded-[20px] rounded-bl-[4px]"
+                                                                : "border border-black/10 bg-white text-[#111827] rounded-[20px] rounded-bl-[4px]"
                                                         }`}
                                                     >
                                                         {msg.content}
                                                     </div>
 
-                                                    <span className="px-1 text-[8px] font-bold text-white/30">
+                                                    <span className="px-1 text-[8px] font-bold text-black/40">
                                                         {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
                                                     </span>
                                                 </div>
@@ -442,7 +442,7 @@ export default function SupportChatModal({
                                 </div>
 
                                 {error && (
-                                    <div className="mb-2 rounded-xl border border-red-500/30 bg-red-500/10 p-2.5 text-xs text-red-400 flex items-center gap-2">
+                                    <div className="mb-2 rounded-xl border border-red-500/30 bg-red-500/10 p-2.5 text-xs text-red-700 flex items-center gap-2">
                                         <AlertCircle className="h-4 w-4 shrink-0" />
                                         <span>{error}</span>
                                     </div>
@@ -454,7 +454,7 @@ export default function SupportChatModal({
                                     accepted it, and nobody was watching the thread any more. Both settled
                                     states now read as settled, and the server rejects writes to either. */}
                                 {activeTicket.status === "CLOSED" || activeTicket.status === "RESOLVED" ? (
-                                    <div className="shrink-0 rounded-2xl border border-white/10 bg-[#18181b] p-3 text-center text-xs text-white/50">
+                                    <div className="shrink-0 rounded-2xl border border-black/10 bg-white p-3 text-center text-xs text-black/45">
                                         {activeTicket.status === "CLOSED"
                                             ? "This ticket is closed. Open a new one if you still need help."
                                             : "Support marked this resolved. Open a new ticket if you still need help."}
@@ -467,12 +467,12 @@ export default function SupportChatModal({
                                             onChange={(e) => setInputMessage(e.target.value)}
                                             placeholder="Type your message to support rep..."
                                             disabled={sending}
-                                            className="flex-1 rounded-2xl border border-white/10 bg-[#18181b] px-4 py-3 text-xs text-white placeholder-white/30 focus:border-[#00d2b4] focus:outline-none transition disabled:opacity-50"
+                                            className="flex-1 rounded-2xl border border-black/15 bg-white px-4 py-3 text-xs text-[#111827] placeholder-black/40 focus:border-[#2775CA] focus:outline-none transition disabled:opacity-50"
                                         />
                                         <button
                                             type="submit"
                                             disabled={sending || !inputMessage.trim()}
-                                            className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#00d2b4] text-[#082824] hover:bg-[#00d2b4]/90 disabled:opacity-40 transition shadow-md shrink-0"
+                                            className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#2775CA] text-white hover:bg-[#1f62ab] disabled:opacity-40 transition shadow-md shrink-0"
                                             title="Send message"
                                         >
                                             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -483,12 +483,12 @@ export default function SupportChatModal({
                         ) : (
                             /* Ticket List / Welcome View */
                             <div className="flex flex-col items-center justify-center h-full space-y-6 max-w-md mx-auto text-center">
-                                <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-[#00d2b4]/10 text-[#00d2b4] border border-[#00d2b4]/20 shadow-lg">
+                                <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-[#2775CA]/10 text-[#2775CA] border border-[#2775CA]/20 shadow-lg">
                                     <MessageSquare className="h-8 w-8" />
                                 </div>
                                 <div className="space-y-1">
-                                    <h4 className="text-lg font-extrabold text-white">How can we help you today?</h4>
-                                    <p className="text-xs text-white/60">
+                                    <h4 className="text-lg font-extrabold text-[#111827]">How can we help you today?</h4>
+                                    <p className="text-xs text-black/60">
                                         Open an in-app ticket to message directly with platform admins and technical support.
                                     </p>
                                 </div>
@@ -497,14 +497,14 @@ export default function SupportChatModal({
                                     <button
                                         type="button"
                                         onClick={() => setIsCreating(true)}
-                                        className="w-full py-3.5 rounded-2xl bg-[#00d2b4] text-[#082824] hover:bg-[#00d2b4]/90 font-black text-xs uppercase tracking-wider transition shadow-md flex items-center justify-center gap-2"
+                                        className="w-full py-3.5 rounded-2xl bg-[#2775CA] text-white hover:bg-[#1f62ab] font-black text-xs uppercase tracking-wider transition shadow-md flex items-center justify-center gap-2"
                                     >
                                         <MessageSquare className="h-4 w-4" /> Open New Support Ticket
                                     </button>
 
                                     {tickets.length > 0 && (
                                         <div className="pt-4 space-y-2 text-left w-full">
-                                            <span className="text-[10px] font-black uppercase tracking-wider text-white/40 block px-1">
+                                            <span className="text-[10px] font-black uppercase tracking-wider text-black/45 block px-1">
                                                 Your Previous Tickets
                                             </span>
                                             <div className="max-h-48 overflow-y-auto space-y-1.5">
@@ -513,15 +513,15 @@ export default function SupportChatModal({
                                                         key={t.id}
                                                         type="button"
                                                         onClick={() => selectTicket(t.id)}
-                                                        className="w-full p-3 rounded-xl border border-white/10 bg-[#18181b] hover:bg-white/10 text-left transition flex items-center justify-between group"
+                                                        className="w-full p-3 rounded-xl border border-black/10 bg-white hover:bg-black/[0.04] text-left transition flex items-center justify-between group"
                                                     >
                                                         <div className="min-w-0 flex-1 pr-2">
-                                                            <p className="text-xs font-bold text-white truncate">{t.subject}</p>
-                                                            <p className="text-[10px] text-white/40 mt-0.5">
+                                                            <p className="text-xs font-bold text-[#111827] truncate">{t.subject}</p>
+                                                            <p className="text-[10px] text-black/45 mt-0.5">
                                                                 {t.status} · {new Date(t.lastMessageAt).toLocaleDateString()}
                                                             </p>
                                                         </div>
-                                                        <span className="text-[10px] font-bold text-[#00d2b4] group-hover:translate-x-0.5 transition">
+                                                        <span className="text-[10px] font-bold text-[#2775CA] group-hover:translate-x-0.5 transition">
                                                             View &rarr;
                                                         </span>
                                                     </button>

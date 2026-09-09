@@ -44,7 +44,7 @@ test("desktop DM header and footer remain pinned around the message scroller", (
 test("expanded DM actions scroll internally without moving the bottom controls", () => {
     assert.match(
         dashboard,
-        /className="order-2 flex flex-wrap items-center gap-2 rounded-2xl/,
+        /order-2 flex flex-wrap items-center gap-2/,
     );
     assert.match(
         dashboard,

@@ -53,19 +53,19 @@ export default function UpaPage() {
             Globe,
           ],
         ].map(([title, text, Icon]) => (
-          <div key={String(title)} className="rounded-2xl border border-white/5 bg-black/30 p-5">
-            {typeof Icon === "function" && <Icon className="mb-3 h-5 w-5 text-[#00d2b4]" />}
-            <h3 className="text-xs font-semibold text-white">{title as string}</h3>
-            <p className="mt-2 text-xs leading-relaxed text-white/55">{text as string}</p>
+          <div key={String(title)} className="rounded-2xl border border-black/10 bg-white/60 p-5 shadow-sm">
+            {typeof Icon === "function" && <Icon className="mb-3 h-5 w-5 text-[#2775CA]" />}
+            <h3 className="text-xs font-semibold text-[#111827]">{title as string}</h3>
+            <p className="mt-2 text-xs leading-relaxed text-black/60">{text as string}</p>
           </div>
         ))}
       </div>
 
       <section className="space-y-4">
-        <h2 id="scope" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="scope" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           What is live versus deployment-scoped
         </h2>
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           The UPA model describes more than the current deployment implements. Build against the primitives below;
           treat the rest as roadmap until your own environment proves otherwise.
         </p>

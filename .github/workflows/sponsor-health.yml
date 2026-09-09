@@ -28,8 +28,9 @@ name: Sponsor wallet health
 # that is a successful check with a finding, and it emails the admins instead.
 
 on:
-  schedule:
-    - cron: "7,22,37,52 * * * *"
+  # Standby: Automated cron triggers disabled to prevent pinging production Vercel endpoints during mainnet preparation.
+  # schedule:
+  #   - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
 
 concurrency:

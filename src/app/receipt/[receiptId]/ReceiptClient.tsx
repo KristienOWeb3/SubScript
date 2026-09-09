@@ -255,7 +255,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
         }
     };
 
-    const pageShell = "subscript-receipt min-h-screen bg-[#FFFFF0] text-black selection:bg-[#00d2b4]/20 selection:text-black font-sans px-4 py-8 sm:px-6 sm:py-12";
+    const pageShell = "subscript-receipt min-h-screen bg-[#FFFFF0] text-black selection:bg-[#2775CA]/20 selection:text-black font-sans px-4 py-8 sm:px-6 sm:py-12";
 
     const brandLockup = (
         <div className="text-center mb-8">
@@ -313,7 +313,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
 
                                 {!connectedAddress ? (
                                     <div className="grid gap-3">
-                                        <Link href={`/signin?next=${encodeURIComponent(`/receipt/${receiptId}`)}`} className="w-full rounded-2xl bg-[#00d2b4] px-4 py-3 text-sm font-bold text-black flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/85">Sign in with email or Google</Link>
+                                        <Link href={`/signin?next=${encodeURIComponent(`/receipt/${receiptId}`)}`} className="w-full rounded-2xl bg-[#2775CA] px-4 py-3 text-sm font-bold text-white flex items-center justify-center gap-2 transition hover:bg-[#1f62ab]">Sign in with email or Google</Link>
                                         {/* Hidden while external wallets are paused. The signature would
                                             be refused by /api/auth/verify-signature anyway. */}
                                         {externalWalletEnabled && (
@@ -329,7 +329,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                                 ) : (
                                     <button
                                         onClick={handleAuthenticate}
-                                        className="w-full rounded-2xl bg-[#00d2b4] px-4 py-3 text-sm font-bold text-black flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/85"
+                                        className="w-full rounded-2xl bg-[#2775CA] px-4 py-3 text-sm font-bold text-white flex items-center justify-center gap-2 transition hover:bg-[#1f62ab]"
                                     >
                                         Verify this wallet
                                         <Key className="h-4 w-4" />
@@ -348,7 +348,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                                 {connectedWalletDiffersFromSession ? (
                                     <button
                                         onClick={handleAuthenticate}
-                                        className="w-full rounded-2xl bg-[#00d2b4] px-4 py-3 text-sm font-bold text-black flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/85"
+                                        className="w-full rounded-2xl bg-[#2775CA] px-4 py-3 text-sm font-bold text-white flex items-center justify-center gap-2 transition hover:bg-[#1f62ab]"
                                     >
                                         Verify {formatAddress(connectedAddress || "")}
                                         <Key className="h-4 w-4" />
@@ -498,13 +498,13 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                         <span aria-live="polite" className="sr-only">{referenceCopied ? "Reference copied" : ""}</span>
                     </div>
 
-                    {!sessionWallet && <div className="receipt-screen-only mt-5 rounded-2xl border p-5 space-y-4" style={{ borderColor: "rgba(0,210,180,0.35)", backgroundColor: "rgba(0,210,180,0.08)" }}>
+                    {!sessionWallet && <div className="receipt-screen-only mt-5 rounded-2xl border p-5 space-y-4" style={{ borderColor: "rgba(0,127,112,0.35)", backgroundColor: "rgba(0,127,112,0.08)" }}>
                         <p className="text-sm leading-relaxed text-[#111827]">
                             Set up a SubScript account and this receipt sits with the rest of your payments, with limits you set.
                         </p>
                         <Link
                             href={claimHref}
-                            className="w-full rounded-2xl bg-[#00d2b4] px-4 py-3 text-sm font-bold text-black flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/85"
+                            className="w-full rounded-2xl bg-[#2775CA] px-4 py-3 text-sm font-bold text-white flex items-center justify-center gap-2 transition hover:bg-[#1f62ab]"
                         >
                             Continue with Google
                             <ExternalLink className="h-4 w-4" />
@@ -547,12 +547,12 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                                 onChange={(e) => setInviteAddress(e.target.value)}
                                 placeholder="0x1234…5678"
                                 aria-label="Wallet address to give access to"
-                                className="min-w-0 flex-1 rounded-2xl border border-black/15 bg-white px-4 py-3 font-mono text-sm text-[#111827] placeholder-black/35 transition focus:border-[#00d2b4] focus:outline-none"
+                                className="min-w-0 flex-1 rounded-2xl border border-black/15 bg-white px-4 py-3 font-mono text-sm text-[#111827] placeholder-black/35 transition focus:border-[#2775CA] focus:outline-none"
                             />
                             <button
                                 type="submit"
                                 disabled={inviting || !inviteAddress}
-                                className="shrink-0 rounded-2xl bg-[#00d2b4] px-5 py-3 text-sm font-bold text-black transition hover:bg-[#00d2b4]/85 disabled:cursor-not-allowed disabled:opacity-45"
+                                className="shrink-0 rounded-2xl bg-[#2775CA] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#1f62ab] disabled:cursor-not-allowed disabled:opacity-45"
                             >
                                 {inviting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Give access"}
                             </button>

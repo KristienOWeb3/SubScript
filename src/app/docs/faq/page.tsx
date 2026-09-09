@@ -111,14 +111,14 @@ export default function FaqPage() {
 
       {faqGroups.map((group) => (
         <section key={group.id} className="space-y-4">
-          <h2 id={group.id} className="scroll-mt-24 text-xl font-bold tracking-tight text-white">
+          <h2 id={group.id} className="scroll-mt-24 text-xl font-bold tracking-tight text-[#111827]">
             {group.heading}
           </h2>
           <div className="space-y-3">
             {group.items.map(([question, answer]) => (
-              <div key={question} className="rounded-2xl border border-white/5 bg-black/30 p-5">
-                <h3 className="text-xs font-semibold text-white">{question}</h3>
-                <p className="mt-2 text-xs leading-relaxed text-white/55">{answer}</p>
+              <div key={question} className="rounded-2xl border border-black/10 bg-white/60 shadow-sm p-5">
+                <h3 className="text-xs font-semibold text-[#111827]">{question}</h3>
+                <p className="mt-2 text-xs leading-relaxed text-black/60">{answer}</p>
               </div>
             ))}
           </div>

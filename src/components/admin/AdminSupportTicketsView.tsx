@@ -16,6 +16,7 @@ import {
     ChevronRight,
     Clock,
     X,
+    ArrowLeft,
 } from "@/components/icons";
 import { SkeletonRows, SkeletonCard } from "@/components/ui/skeletons";
 import type { SupportTicket, SupportTicketMessage, SupportTicketStatus } from "@/lib/support/tickets";
@@ -32,6 +33,7 @@ export function AdminSupportTicketsView({
     const [tickets, setTickets] = useState<SupportTicket[]>([]);
     const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
     const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
+    const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
     const [statusFilter, setStatusFilter] = useState<"ALL" | "OPEN" | "CLAIMED" | "RESOLVED">("ALL");
     const [searchQuery, setSearchQuery] = useState("");
     const [loading, setLoading] = useState(true);
@@ -204,13 +206,13 @@ export function AdminSupportTicketsView({
             </div>
 
             {/* Filter Tabs & Search */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
-                <div className="flex items-center gap-1.5">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     {(["ALL", "OPEN", "CLAIMED", "RESOLVED"] as const).map((status) => (
                         <button
                             key={status}
                             onClick={() => setStatusFilter(status)}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition uppercase tracking-wider ${
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition uppercase tracking-wider shrink-0 ${
                                 statusFilter === status
                                     ? "bg-[#2775ca] text-white shadow-sm"
                                     : "bg-slate-100 text-slate-600 hover:bg-slate-200"
@@ -221,7 +223,7 @@ export function AdminSupportTicketsView({
                     ))}
                 </div>
 
-                <div className="relative w-full sm:w-64">
+                <div className="relative w-full sm:w-64 shrink-0">
                     <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
                     <input
                         type="text"
@@ -236,7 +238,7 @@ export function AdminSupportTicketsView({
             {/* Main Split Console */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 min-h-[580px]">
                 {/* Left Ticket Queue List */}
-                <div className="lg:col-span-5 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm flex flex-col justify-between max-h-[640px] overflow-hidden">
+                <div className={`lg:col-span-5 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm flex flex-col justify-between max-h-[640px] overflow-hidden ${mobileDetailOpen ? "hidden lg:flex" : "flex"}`}>
                     <div className="overflow-y-auto space-y-2 pr-1 flex-1">
                         {loading ? (
                             <div className="p-2">
@@ -257,6 +259,7 @@ export function AdminSupportTicketsView({
                                         onClick={() => {
                                             setSelectedTicketId(t.id);
                                             loadTicketMessages(t.id);
+                                            setMobileDetailOpen(true);
                                         }}
                                         className={`w-full text-left p-3.5 rounded-xl border transition-all ${
                                             isSelected
@@ -299,30 +302,41 @@ export function AdminSupportTicketsView({
                 </div>
 
                 {/* Right Chat & Details Pane */}
-                <div className="lg:col-span-7 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col justify-between max-h-[640px] overflow-hidden">
+                <div className={`lg:col-span-7 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col justify-between max-h-[640px] overflow-hidden ${!mobileDetailOpen ? "hidden lg:flex" : "flex"}`}>
                     {selectedTicket ? (
                         <>
                             {/* Ticket Detail Header */}
-                            <div className="border-b border-slate-100 pb-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
-                                <div>
-                                    <div className="flex items-center gap-2">
-                                        <h3 className="font-black text-sm text-[#0f172a]">{selectedTicket.subject}</h3>
-                                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
-                                            selectedTicket.status === "OPEN"
-                                                ? "bg-amber-100 text-amber-800"
-                                                : selectedTicket.status === "CLAIMED"
-                                                ? "bg-sky-100 text-sky-800"
-                                                : "bg-emerald-100 text-emerald-800"
-                                        }`}>
-                                            {selectedTicket.status}
-                                        </span>
+                            <div className="border-b border-slate-100 pb-3 flex items-center justify-between gap-3 shrink-0">
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                    <button
+                                        type="button"
+                                        onClick={() => setMobileDetailOpen(false)}
+                                        className="lg:hidden flex h-8 w-8 aspect-square items-center justify-center rounded-full border border-slate-200 bg-slate-100 hover:bg-slate-200 text-slate-700 transition shrink-0 shadow-2xs"
+                                        aria-label="Back to ticket list"
+                                        title="Back to tickets"
+                                    >
+                                        <ArrowLeft className="h-4 w-4" />
+                                    </button>
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="font-black text-sm text-[#0f172a] truncate">{selectedTicket.subject}</h3>
+                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 ${
+                                                selectedTicket.status === "OPEN"
+                                                    ? "bg-amber-100 text-amber-800"
+                                                    : selectedTicket.status === "CLAIMED"
+                                                    ? "bg-sky-100 text-sky-800"
+                                                    : "bg-emerald-100 text-emerald-800"
+                                            }`}>
+                                                {selectedTicket.status}
+                                            </span>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+                                            User: <span className="font-mono font-semibold text-slate-700">{selectedTicket.creatorWallet}</span> ({selectedTicket.creatorRole})
+                                        </p>
                                     </div>
-                                    <p className="text-[11px] text-slate-500 mt-0.5">
-                                        User: <span className="font-mono font-semibold text-slate-700">{selectedTicket.creatorWallet}</span> ({selectedTicket.creatorRole})
-                                    </p>
                                 </div>
 
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 shrink-0">
                                     {selectedTicket.status !== "RESOLVED" ? (
                                         <button
                                             type="button"

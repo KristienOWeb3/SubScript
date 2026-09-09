@@ -1,6 +1,9 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import Image from "next/image";
+import { motion, AnimatePresence } from "framer-motion";
 import DashboardSidebar, {
   type DashboardSidebarItem,
 } from "@/components/dashboard/DashboardSidebar";
@@ -9,6 +12,7 @@ import {
   Bell,
   Building2,
   CheckCircle2,
+  ChevronDown,
   Copy,
   FileText,
   Loader2,
@@ -32,6 +36,8 @@ import {
   UserCheck,
   Eye,
   Trophy,
+  X,
+  Menu,
 } from "@/components/icons";
 import {
   SkeletonCard,
@@ -322,7 +328,7 @@ const TABS: Array<{ id: TabId; label: string; rootOnly?: boolean }> = [
 const MERCHANT_INVITE_ONLY_CONFIRMATION = "invite only";
 
 const CARD =
-  "rounded-xl border border-[#e2e8f0] bg-white p-6 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]";
+  "rounded-xl border border-[#e2e8f0] bg-white p-4 sm:p-6 text-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.06)]";
 const LABEL = "text-[10px] font-black uppercase tracking-wider text-[#64748b]";
 const INPUT =
   "w-full rounded-lg border border-[#cbd5e1] bg-white px-3.5 py-2 text-xs text-[#0f172a] placeholder:text-[#94a3b8] focus:border-[#2775ca] focus:outline-none focus:ring-2 focus:ring-[#2775ca]/15";
@@ -330,6 +336,7 @@ const INPUT =
 const SUPPORT_EMAIL = "support@subscriptonarc.com";
 export default function AdminDashboardPage() {
   const [tab, setTab] = useState<TabId>("overview");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -1154,25 +1161,103 @@ export default function AdminDashboardPage() {
   const activeTabLabel =
     TABS.find((item) => item.id === tab)?.label ?? "Overview";
 
-  const adminSidebarItems: DashboardSidebarItem[] = [
-    { id: "overview", label: "Overview", icon: Home },
-    { id: "analytics", label: "Analytics", icon: BarChart3 },
-    ...(viewerIsRoot ? [{ id: "revenue", label: "Revenue", icon: TrendingUp }] : []),
-    { id: "financials", label: "Financials & Ledger", icon: DollarSign },
-    { id: "referrals", label: "Referrals", icon: Trophy },
-    { id: "reconciliation", label: "Reconciliation", icon: RefreshCcw },
-    { id: "accounts", label: "Accounts & Identity", icon: Users },
-    { id: "tickets", label: "Support Tickets", icon: MessageSquare },
-    { id: "merchants", label: "Merchants", icon: Building2 },
-    { id: "merchant-access", label: "Merchant Access", icon: UserPlus },
-    { id: "kyc", label: "KYC Compliance", icon: ShieldCheck },
-    { id: "moderation", label: "Moderation & Bans", icon: ShieldAlert },
-    { id: "account-settings", label: "Account settings", icon: UserCheck },
-    { id: "system", label: "System & Health", icon: Sliders },
-    { id: "broadcast", label: "Broadcast", icon: Bell },
-    { id: "receipts", label: "Receipts", icon: ReceiptText },
-    { id: "admins", label: "Admin Access", icon: Shield },
+  const visibleTabs = TABS.filter((t) => !t.rootOnly || viewerIsRoot);
+
+  type AdminNavItem = {
+    id: TabId;
+    label: string;
+    icon: typeof Home;
+    rootOnly?: boolean;
+  };
+
+  const adminNavGroups: Array<{
+    id: string;
+    label: string;
+    icon: typeof Home;
+    items: AdminNavItem[];
+  }> = [
+    {
+      id: "overview",
+      label: "Overview",
+      icon: Home,
+      items: [{ id: "overview", label: "Overview", icon: Home }],
+    },
+    {
+      id: "analytics",
+      label: "Analytics",
+      icon: BarChart3,
+      items: [{ id: "analytics", label: "Analytics", icon: BarChart3 }],
+    },
+    {
+      id: "finance",
+      label: "Finance",
+      icon: DollarSign,
+      items: [
+        ...(viewerIsRoot ? [{ id: "revenue", label: "Revenue", icon: TrendingUp, rootOnly: true } as AdminNavItem] : []),
+        { id: "financials", label: "Financials & Ledger", icon: DollarSign },
+        { id: "reconciliation", label: "Reconciliation Queue", icon: RefreshCcw },
+        { id: "referrals", label: "Referrals", icon: Trophy },
+      ],
+    },
+    {
+      id: "accounts-group",
+      label: "Accounts",
+      icon: Users,
+      items: [
+        { id: "accounts", label: "Accounts & Identity", icon: Users },
+        { id: "merchants", label: "Merchants", icon: Building2 },
+        { id: "merchant-access", label: "Merchant Access", icon: UserPlus },
+        { id: "kyc", label: "KYC Compliance", icon: ShieldCheck },
+      ],
+    },
+    {
+      id: "trust-safety",
+      label: "Trust & safety",
+      icon: ShieldAlert,
+      items: [
+        { id: "moderation", label: "Moderation & Bans", icon: ShieldAlert },
+        { id: "tickets", label: "Support Tickets", icon: MessageSquare },
+      ],
+    },
+    {
+      id: "system-group",
+      label: "System",
+      icon: Sliders,
+      items: [
+        { id: "system", label: "System & Health", icon: Sliders },
+        { id: "broadcast", label: "Broadcast", icon: Bell },
+        { id: "receipts", label: "Receipts", icon: ReceiptText },
+        { id: "account-settings", label: "Account settings", icon: UserCheck },
+        { id: "admins", label: "Admin Access", icon: Shield },
+        { id: "audit-log", label: "Audit Log", icon: FileText },
+      ],
+    },
   ];
+
+  const adminSidebarItems: DashboardSidebarItem[] = adminNavGroups.map((group) => {
+    if (group.items.length === 1) {
+      const single = group.items[0];
+      return {
+        id: single.id,
+        label: single.label,
+        icon: single.icon,
+      };
+    }
+    return {
+      id: group.id,
+      label: group.label,
+      icon: group.icon,
+      children: group.items.map((sub) => ({
+        id: sub.id,
+        label: sub.label,
+        icon: sub.icon,
+      })),
+    };
+  });
+
+  const activeGroup =
+    adminNavGroups.find((g) => g.items.some((item) => item.id === tab)) ||
+    adminNavGroups[0];
 
   const adminSidebarFooterItems: DashboardSidebarItem[] = [];
 
@@ -1213,7 +1298,8 @@ export default function AdminDashboardPage() {
             avatarUrl: null,
             fallback: viewerAdminHandle.charAt(0).toUpperCase(),
             onClick: () => setTab("admins"),
-            title: "Arc Protocol Authority",
+            title: `${viewerIsRoot ? "Root authority" : "Delegated authority"} • Arc Mainnet`,
+            sublabel: `${viewerIsRoot ? "Root" : "Delegated"} • Arc`,
           }}
           accent="#2775ca"
           panelColor="#ffffff"
@@ -1227,82 +1313,250 @@ export default function AdminDashboardPage() {
             just grows instead of scrolling, and touch drags went nowhere. The user
             dashboard already owns its mobile scroller this way; this matches it. */}
         <div className="relative z-10 min-w-0 flex-1 h-[100dvh] md:mt-[14px] md:h-[calc(100vh-14px)] bg-white shadow-[-8px_0_24px_rgba(0,0,0,0.12)] md:rounded-tl-[32px] border-t border-l border-white/10 overflow-y-auto overscroll-y-contain admin-topography text-[#0f172a]">
+          {/* Slim sticky top bar replacing the tall blue hero banner */}
+          <header className="sticky top-0 z-30 flex h-12 sm:h-14 items-center justify-between border-b border-[#e2e8f0] bg-white/95 px-4 sm:px-8 backdrop-blur-md text-[#0f172a] shadow-xs">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <button
+                type="button"
+                onClick={() => setMobileNavOpen(true)}
+                className="md:hidden flex h-8 w-8 aspect-square items-center justify-center rounded-full border border-[#cbd5e1] bg-white hover:bg-[#f8fafc] active:bg-[#e2e8f0] text-[#0f172a] transition shrink-0 shadow-2xs"
+                aria-label="Open navigation sidebar"
+              >
+                <Menu className="h-4 w-4" />
+              </button>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="md:hidden text-sm font-black text-[#0f172a] truncate max-w-[190px]">
+                  {activeTabLabel}
+                </span>
+                <div className="hidden md:flex items-baseline gap-2.5">
+                  <h2 className="text-base font-black text-[#0f172a]">{activeTabLabel}</h2>
+                  <span className="hidden lg:inline text-xs text-[#64748b]">
+                    — Live administrative controls and auditable protocol operations.
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setInspectorOpen(true)}
+                title="Inspect Tx / Hash"
+                aria-label="Inspect Tx / Hash"
+                className="flex h-8 w-8 sm:h-8 sm:w-auto sm:px-2.5 items-center justify-center gap-1.5 rounded-full sm:rounded-lg border border-[#cbd5e1] bg-white hover:bg-[#f8fafc] text-xs font-bold text-[#0f172a] transition shadow-xs shrink-0 aspect-square sm:aspect-auto"
+              >
+                <Eye className="h-3.5 w-3.5 text-[#2775ca]" />
+                <span className="hidden sm:inline">Inspect</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRefreshCounter((c) => c + 1);
+                  if (tab === "admins") loadAdmins();
+                  else if (tab === "analytics" || tab === "broadcast") loadAnalytics();
+                  else if (tab === "system") loadFlags();
+                  else if (tab === "kyc") loadKyc();
+                  else if (tab === "merchant-access") {
+                    loadFlags();
+                    loadMerchantAccess();
+                  } else if (tab === "moderation") {
+                    loadData();
+                  } else loadData();
+                }}
+                disabled={loading || flagsLoading || analyticsLoading || kycLoading || maLoading || adminsLoading}
+                title="Refresh data"
+                aria-label="Refresh data"
+                className="flex h-8 w-8 sm:h-8 sm:w-auto sm:px-2.5 items-center justify-center gap-1.5 rounded-full sm:rounded-lg border border-[#cbd5e1] bg-white hover:bg-[#f8fafc] text-xs font-bold text-[#0f172a] transition shadow-xs disabled:opacity-50 shrink-0 aspect-square sm:aspect-auto"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 text-[#2775ca] ${loading || flagsLoading || analyticsLoading || kycLoading || maLoading || adminsLoading ? "animate-spin" : ""}`} />
+                <span className="hidden sm:inline">Refresh</span>
+              </button>
+            </div>
+          </header>
+
           {/* min-h-full, not min-h-screen: this sits inside a scroller with a definite
               h-[100dvh], so 100% resolves to exactly that. min-h-screen was 100vh — larger than
               the container on mobile — which forced a phantom scroll of the toolbar's height even
               on a tab with almost no content. Invisible, being white on white, but it is the same
               vh-inside-dvh mistake as the black bar above. */}
-          <main className="min-h-full pt-4 sm:pt-6 pb-16">
-            <div className="admin-workspace mx-auto max-w-6xl space-y-6 px-4 py-2 sm:px-8">
-              <section className="topo-admin-blue flex flex-col justify-between gap-5 rounded-2xl border border-white/20 px-5 py-5 text-white shadow-[0_12px_30px_rgba(39,117,202,0.18)] sm:flex-row sm:items-end sm:px-6">
-                <div>
-                  <span className="text-[10px] font-black uppercase tracking-[0.14em] text-white/75">
-                    Secure operations workspace
-                  </span>
-                  <h2 className="mt-1 text-xl font-black text-white">
-                    {activeTabLabel}
-                  </h2>
-                  <p className="mt-1 text-xs text-white/80">
-                    Live administrative controls and auditable protocol operations.
-                  </p>
+          <main className="min-h-full pt-3 sm:pt-6 pb-16">
+            <div className="admin-workspace mx-auto max-w-6xl space-y-4 sm:space-y-6 px-4 py-2 sm:px-8">
+              {/* Mobile 2-tier Navigation Pills */}
+              <div className="md:hidden space-y-2 pb-1">
+                {/* Tier 1: 6 Groups */}
+                <div className="flex gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {adminNavGroups.map((g) => {
+                    const isGroupActive = g.items.some((item) => item.id === tab);
+                    return (
+                      <button
+                        key={g.id}
+                        type="button"
+                        onClick={() => {
+                          if (!isGroupActive) {
+                            setTab(g.items[0].id);
+                          }
+                        }}
+                        className={`shrink-0 flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition shadow-xs ${
+                          isGroupActive
+                            ? "border border-[#2775ca] bg-[#2775ca] text-white"
+                            : "border border-[#e2e8f0] bg-white text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#0f172a]"
+                        }`}
+                      >
+                        <g.icon className={`h-3.5 w-3.5 ${isGroupActive ? "text-white" : "text-[#64748b]"}`} />
+                        <span>{g.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-                <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-wider">
-                  <span className="rounded-full border border-white/25 bg-white/10 px-3 py-1.5">
-                    Arc Mainnet
-                  </span>
-                  <span className="rounded-full border border-white/25 bg-white/10 px-3 py-1.5">
-                    {viewerIsRoot ? "Root authority" : "Delegated authority"}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setInspectorOpen(true)}
-                    className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/20 px-3 py-1.5 text-[10px] font-bold text-white transition hover:bg-white/30"
-                  >
-                    <Eye className="h-3 w-3" />
-                    Inspect Tx / Hash
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRefreshCounter((c) => c + 1);
-                      if (tab === "admins") loadAdmins();
-                      else if (tab === "analytics" || tab === "broadcast") loadAnalytics();
-                      else if (tab === "system") loadFlags();
-                      else if (tab === "kyc") loadKyc();
-                      else if (tab === "merchant-access") {
-                        loadFlags();
-                        loadMerchantAccess();
-                      } else if (tab === "moderation") {
-                        /* Bans ride along with the main dashboard payload, so the generic
-                           reload covers this tab now that holds moved to Account settings. */
-                        loadData();
-                      } else loadData();
-                    }}
-                    disabled={loading || flagsLoading || analyticsLoading || kycLoading || maLoading || adminsLoading}
-                    className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white transition hover:bg-white/20 disabled:opacity-50"
-                  >
-                    <RefreshCw className={`h-3 w-3 ${loading || flagsLoading || analyticsLoading || kycLoading || maLoading || adminsLoading ? "animate-spin" : ""}`} />
-                    Refresh
-                  </button>
-                </div>
-              </section>
 
-              <div className="md:hidden flex gap-2 overflow-x-auto rounded-xl border border-[#dbe3ec] bg-white p-2 shadow-sm">
-                {TABS.filter((t) => !t.rootOnly || viewerIsRoot).map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={`shrink-0 rounded-lg px-4 py-2 text-xs font-black uppercase tracking-wider transition ${
-                tab === t.id
-                  ? "border border-[#2775ca] bg-[#2775ca] text-white shadow-sm"
-                  : "border border-transparent bg-white text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#0f172a]"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+                {/* Tier 2: Sub-tabs of Active Group (if >1 item) */}
+                {activeGroup.items.length > 1 && (
+                  <div className="flex gap-1.5 overflow-x-auto pb-1 pl-1 border-l-2 border-[#2775ca]/30 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    {activeGroup.items.map((sub) => {
+                      const isSubActive = sub.id === tab;
+                      return (
+                        <button
+                          key={sub.id}
+                          type="button"
+                          onClick={() => setTab(sub.id)}
+                          className={`shrink-0 flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
+                            isSubActive
+                              ? "bg-[#2775ca]/10 text-[#2775ca] font-bold border border-[#2775ca]/30 shadow-xs"
+                              : "bg-white text-[#475569] border border-[#e2e8f0] hover:bg-[#f8fafc]"
+                          }`}
+                        >
+                          <sub.icon className={`h-3 w-3 ${isSubActive ? "text-[#2775ca]" : "text-[#64748b]"}`} />
+                          <span>{sub.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Mobile Navigation Sidebar (Landing Page feel: slide-over, dark glass, branding) */}
+              <AnimatePresence>
+                {mobileNavOpen && (
+                  <div className="fixed inset-0 z-50 md:hidden flex" role="dialog" aria-modal="true" aria-label="Admin Navigation Sidebar">
+                    {/* Backdrop */}
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      onClick={() => setMobileNavOpen(false)}
+                      className="fixed inset-0 bg-black/75 backdrop-blur-md"
+                      aria-hidden="true"
+                    />
+
+                    {/* Slide-over Drawer Panel */}
+                    <motion.aside
+                      initial={{ x: "-100%" }}
+                      animate={{ x: 0 }}
+                      exit={{ x: "-100%" }}
+                      transition={{ type: "spring", damping: 28, stiffness: 300 }}
+                      className="relative z-10 w-[84vw] max-w-[320px] h-full bg-[#0b0f19] border-r border-white/10 text-white shadow-2xl flex flex-col justify-between overflow-hidden"
+                    >
+                      {/* Header: Brand + Close button */}
+                      <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
+                        <Link
+                          href="/"
+                          onClick={() => setMobileNavOpen(false)}
+                          className="flex items-center gap-2.5 group"
+                          aria-label="SubScript Home"
+                        >
+                          <Image
+                            src="/logo.png"
+                            alt="SubScript logo"
+                            width={28}
+                            height={28}
+                            priority
+                            className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]"
+                          />
+                          <div>
+                            <span className="text-base font-bold text-white tracking-tight">
+                              SubScript
+                            </span>
+                            <span className="block text-[9px] font-black uppercase tracking-wider text-[#2775ca]">
+                              Admin Suite
+                            </span>
+                          </div>
+                        </Link>
+
+                        <button
+                          type="button"
+                          onClick={() => setMobileNavOpen(false)}
+                          className="flex h-8 w-8 aspect-square items-center justify-center rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition shrink-0"
+                          aria-label="Close navigation"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+
+                      {/* Admin Identity pill */}
+                      <div className="px-5 py-3 border-b border-white/5 bg-white/[0.02] shrink-0">
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex h-8 w-8 aspect-square items-center justify-center rounded-full bg-[#2775ca]/20 border border-[#2775ca]/40 text-[#2775ca] font-bold text-xs shrink-0">
+                            {viewerAdminHandle.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold text-white truncate">{viewerAdminHandle}</p>
+                            <p className="text-[10px] font-semibold text-slate-400">
+                              {viewerIsRoot ? "Root authority" : "Delegated authority"} • Arc
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Scrollable Navigation Groups */}
+                      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+                        {adminNavGroups.map((group) => (
+                          <div key={group.id} className="space-y-1">
+                            <div className="flex items-center gap-1.5 px-2 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                              <group.icon className="h-3 w-3 text-[#2775ca]" />
+                              <span>{group.label}</span>
+                            </div>
+                            <div className="space-y-0.5">
+                              {group.items.map((sub) => {
+                                const isSubActive = sub.id === tab;
+                                return (
+                                  <button
+                                    key={sub.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setTab(sub.id);
+                                      setMobileNavOpen(false);
+                                    }}
+                                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-medium transition ${
+                                      isSubActive
+                                        ? "bg-[#2775ca] text-white font-bold shadow-[0_2px_8px_rgba(39,117,202,0.4)]"
+                                        : "text-slate-300 hover:text-white hover:bg-white/[0.06]"
+                                    }`}
+                                  >
+                                    <sub.icon className={`h-4 w-4 shrink-0 ${isSubActive ? "text-white" : "text-slate-400"}`} />
+                                    <span className="truncate">{sub.label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Footer Action */}
+                      <div className="p-4 border-t border-white/10 bg-black/30 shrink-0">
+                        <Link
+                          href="/dashboard/user"
+                          onClick={() => setMobileNavOpen(false)}
+                          className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white text-xs font-bold transition shadow-xs"
+                        >
+                          <span>Return to User Dashboard</span>
+                        </Link>
+                      </div>
+                    </motion.aside>
+                  </div>
+                )}
+              </AnimatePresence>
 
         {error && (
           <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-xs font-medium text-red-300">

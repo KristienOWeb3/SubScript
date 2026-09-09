@@ -62,7 +62,7 @@ export default function PathsPage() {
       <Callout tone="plain" title="The short version">
         <p>
           If your app has user accounts and you want access to unlock on payment, you want the{" "}
-          <span className="font-semibold text-white/80">backend developer</span> path. Everything else is either a
+          <span className="font-semibold text-[#111827]">backend developer</span> path. Everything else is either a
           faster start (no-code), the same path written by an agent (vibecoder), or a lower-level entry point for
           teams building infrastructure (protocol).
         </p>
@@ -72,23 +72,23 @@ export default function PathsPage() {
         {paths.map((path) => {
           const Icon = path.icon;
           return (
-            <div key={path.title} className="flex flex-col rounded-3xl border border-white/5 bg-black/30 p-6">
-              <Icon className="mb-4 h-6 w-6 text-[#00d2b4]" />
-              <h3 className="text-sm font-semibold text-white">{path.title}</h3>
-              <p className="mt-3 text-xs leading-relaxed text-white/55">{path.text}</p>
-              <dl className="mt-4 space-y-2 border-t border-white/5 pt-4 text-xs leading-relaxed">
+            <div key={path.title} className="flex flex-col rounded-3xl border border-black/10 bg-white/60 p-6 shadow-sm">
+              <Icon className="mb-4 h-6 w-6 text-[#2775CA]" />
+              <h3 className="text-sm font-semibold text-[#111827]">{path.title}</h3>
+              <p className="mt-3 text-xs leading-relaxed text-black/60">{path.text}</p>
+              <dl className="mt-4 space-y-2 border-t border-black/10 pt-4 text-xs leading-relaxed">
                 <div>
-                  <dt className="font-semibold text-[#00d2b4]">Choose it when</dt>
-                  <dd className="mt-0.5 text-white/55">{path.fit}</dd>
+                  <dt className="font-semibold text-[#2775CA]">Choose it when</dt>
+                  <dd className="mt-0.5 text-black/60">{path.fit}</dd>
                 </div>
                 <div>
-                  <dt className="font-semibold text-white/70">Where it stops</dt>
-                  <dd className="mt-0.5 text-white/45">{path.ceiling}</dd>
+                  <dt className="font-semibold text-black/70">Where it stops</dt>
+                  <dd className="mt-0.5 text-black/45">{path.ceiling}</dd>
                 </div>
               </dl>
               <Link
                 href={path.href}
-                className="mt-4 inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[#00d2b4] hover:underline"
+                className="mt-4 inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[#2775CA] hover:underline"
               >
                 {path.hrefLabel} →
               </Link>

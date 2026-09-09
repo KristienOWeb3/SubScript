@@ -36,9 +36,14 @@ export default function PwaInstaller() {
 
         /* Register the SW (idempotent — registering an already-registered SW is a no-op). */
         if ("serviceWorker" in navigator) {
-            navigator.serviceWorker.register("/sw.js").catch((err) => {
-                console.error("Service worker registration failed:", err);
-            });
+            navigator.serviceWorker
+                .register("/sw.js")
+                .then((registration) => {
+                    registration.update().catch(() => {});
+                })
+                .catch((err) => {
+                    console.error("Service worker registration failed:", err);
+                });
         }
 
         const isStandalone =

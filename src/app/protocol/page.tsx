@@ -171,18 +171,18 @@ export const metadata: Metadata = {
 
 export default function ProtocolPage() {
   return (
-    <main className="min-h-screen bg-[#050608] text-white">
+    <main className="min-h-screen bg-[#FFFFF0] text-[#111827]">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
 
-      <section className="border-b border-white/10 px-6 py-20 sm:px-10 lg:px-16">
+      <section className="border-b border-black/10 px-6 py-20 sm:px-10 lg:px-16">
         <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
           <div>
             <Link
               href="/docs"
-              className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-cyan-300 transition hover:text-white"
+              className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-[#2775CA] transition hover:text-[#111827]"
             >
               <ArrowRight className="h-3.5 w-3.5 rotate-180" />
               Integration docs
@@ -190,7 +190,7 @@ export default function ProtocolPage() {
             <h1 className="mt-6 max-w-4xl text-4xl font-semibold tracking-tight sm:text-6xl">
               SubScript Protocol turns payment permission into programmable stablecoin commerce.
             </h1>
-            <p className="mt-6 max-w-3xl text-lg leading-8 text-white/72">
+            <p className="mt-6 max-w-3xl text-lg leading-8 text-black/70">
               The Unified Payment Authorization model gives one-time checkout,
               subscriptions, usage billing, invoices, sponsored payments, and
               AI-native transactions the same shape: create an intent,
@@ -199,24 +199,24 @@ export default function ProtocolPage() {
             </p>
           </div>
 
-          <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/[0.06] p-6">
+          <div className="rounded-lg border border-[#2775CA]/20 bg-[#2775CA]/[0.06] p-6">
             <div className="flex items-center gap-3">
-              <img src="/logo.png" alt="SubScript" className="h-10 w-10 object-contain drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]" />
+              <img src="/logo.png" alt="SubScript" className="h-10 w-10 object-contain drop-shadow-sm" />
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-200">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#2775CA]">
                   Protocol status
                 </p>
-                <p className="text-sm text-white/58">Launch-ready primitives plus scoped roadmap targets</p>
+                <p className="text-sm text-black/60">Launch-ready primitives plus scoped roadmap targets</p>
               </div>
             </div>
-            <div className="mt-6 grid gap-3 text-sm text-white/72">
+            <div className="mt-6 grid gap-3 text-sm text-black/70">
               {[
                 "Direct Arc USDC hosted checkout is the live payment rail.",
                 "CCTP checkout stays disabled until Arc-side memo settlement is bound in one verifiable flow.",
                 "Private-key export, fiat onramps, Paymaster, Chainlink Automation, ArcaneVM, and quantum-resilience claims are deployment-scoped.",
               ].map((item) => (
                 <div key={item} className="flex gap-3">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#2775CA]" />
                   <p>{item}</p>
                 </div>
               ))}
@@ -228,7 +228,7 @@ export default function ProtocolPage() {
       <section className="px-6 py-16 sm:px-10 lg:px-16">
         <div className="mx-auto max-w-6xl">
           <div className="max-w-3xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-cyan-300">
+            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#2775CA]">
               Live protocol surface
             </p>
             <h2 className="mt-4 text-3xl font-semibold tracking-tight">What the platform provides now</h2>
@@ -237,10 +237,10 @@ export default function ProtocolPage() {
             {liveCapabilities.map((item) => {
               const Icon = item.icon;
               return (
-                <article key={item.title} className="rounded-lg border border-white/10 bg-white/[0.035] p-5">
-                  <Icon className="h-6 w-6 text-cyan-300" />
+                <article key={item.title} className="rounded-lg border border-black/10 bg-white/60 p-5 shadow-sm">
+                  <Icon className="h-6 w-6 text-[#2775CA]" />
                   <h3 className="mt-4 text-base font-semibold">{item.title}</h3>
-                  <p className="mt-3 text-sm leading-7 text-white/66">{item.body}</p>
+                  <p className="mt-3 text-sm leading-7 text-black/70">{item.body}</p>
                 </article>
               );
             })}
@@ -248,14 +248,14 @@ export default function ProtocolPage() {
         </div>
       </section>
 
-      <section className="border-y border-white/10 bg-white/[0.02] px-6 py-16 sm:px-10 lg:px-16">
+      <section className="border-y border-black/10 bg-white/60 px-6 py-16 sm:px-10 lg:px-16">
         <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[0.8fr_1.2fr]">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-cyan-300">
+            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#2775CA]">
               Problems solved
             </p>
             <h2 className="mt-4 text-3xl font-semibold tracking-tight">Why UPA exists</h2>
-            <p className="mt-5 text-sm leading-7 text-white/66">
+            <p className="mt-5 text-sm leading-7 text-black/70">
               Legacy subscription systems are built around merchant-side pull
               billing, card network constraints, dollar-card friction, and
               private reconciliation records. SubScript moves the critical
@@ -264,10 +264,10 @@ export default function ProtocolPage() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {problemsSolved.map(([title, body]) => (
-              <article key={title} className="rounded-lg border border-white/10 bg-black/25 p-5">
-                <ShieldCheck className="h-5 w-5 text-cyan-300" />
+              <article key={title} className="rounded-lg border border-black/10 bg-white/60 p-5 shadow-sm">
+                <ShieldCheck className="h-5 w-5 text-[#2775CA]" />
                 <h3 className="mt-4 text-sm font-semibold">{title}</h3>
-                <p className="mt-2 text-sm leading-7 text-white/64">{body}</p>
+                <p className="mt-2 text-sm leading-7 text-black/70">{body}</p>
               </article>
             ))}
           </div>
@@ -277,13 +277,13 @@ export default function ProtocolPage() {
       <section className="px-6 py-16 sm:px-10 lg:px-16">
         <div className="mx-auto max-w-6xl">
           <div className="max-w-3xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-cyan-300">
+            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#2775CA]">
               Protocol targets
             </p>
             <h2 className="mt-4 text-3xl font-semibold tracking-tight">
               What should remain deployment-scoped
             </h2>
-            <p className="mt-5 text-sm leading-7 text-white/66">
+            <p className="mt-5 text-sm leading-7 text-black/70">
               These are part of the protocol direction from the feature brief,
               but they should not be described as fully live until production
               schema, contracts, automation, and external Arc/Circle deployment
@@ -295,14 +295,14 @@ export default function ProtocolPage() {
               <article key={item.title} className="rounded-lg border border-amber-300/20 bg-amber-300/[0.05] p-5">
                 <LockKeyhole className="h-5 w-5 text-amber-200" />
                 <h3 className="mt-4 text-base font-semibold">{item.title}</h3>
-                <p className="mt-3 text-sm leading-7 text-white/66">{item.body}</p>
+                <p className="mt-3 text-sm leading-7 text-black/70">{item.body}</p>
               </article>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="border-t border-white/10 px-6 py-16 sm:px-10 lg:px-16">
+      <section className="border-t border-black/10 px-6 py-16 sm:px-10 lg:px-16">
         <div className="mx-auto grid max-w-6xl gap-4 md:grid-cols-4">
           {[
             [Zap, "1% merchant fee target", "Pricing is designed around transparent merchant-paid processing."],
@@ -310,10 +310,10 @@ export default function ProtocolPage() {
             [FileText, "Invoice-like links", "Payment links and external references cover collection while first-class invoices mature."],
             [ShieldCheck, "Consumer control", "The model is designed to reduce unwanted recurring charges, card penalties, and opaque charge disputes."],
           ].map(([Icon, title, body]) => (
-            <article key={String(title)} className="rounded-lg border border-white/10 bg-white/[0.035] p-5">
-              <Icon className="h-5 w-5 text-cyan-300" />
+            <article key={String(title)} className="rounded-lg border border-black/10 bg-white/60 p-5 shadow-sm">
+              <Icon className="h-5 w-5 text-[#2775CA]" />
               <h3 className="mt-4 text-sm font-semibold">{title as string}</h3>
-              <p className="mt-2 text-sm leading-7 text-white/64">{body as string}</p>
+              <p className="mt-2 text-sm leading-7 text-black/70">{body as string}</p>
             </article>
           ))}
         </div>

@@ -130,8 +130,16 @@ export default function SendSingleModal({
         return () => document.removeEventListener("mousedown", onPointerDown);
     }, [networkMenuOpen]);
 
-    const numericAmount = Number(amount);
-    const amountIsValid = amount.trim() !== "" && Number.isFinite(numericAmount) && numericAmount > 0;
+    const trimmedAmount = amount.trim();
+    const isDecimalNumber = /^[0-9]+(\.[0-9]+)?$/.test(trimmedAmount);
+    const numericAmount = isDecimalNumber ? parseFloat(trimmedAmount) : 0;
+    const amountIsValid = isDecimalNumber && Number.isFinite(numericAmount) && numericAmount > 0;
+
+    /* Detect if the user accidentally entered or pasted a wallet address or .sub alias into the Amount field */
+    const looksLikeAddressInAmount =
+        trimmedAmount.startsWith("0x") ||
+        trimmedAmount.endsWith(".sub") ||
+        (trimmedAmount.length >= 30 && /[a-zA-Z]/.test(trimmedAmount));
 
     /* Both routes debit the same Arc balance: a direct transfer moves it, a withdrawal burns it. So
        anything above the Arc balance can only fail, and blocking here stops the user from firing an
@@ -155,6 +163,7 @@ export default function SendSingleModal({
         !resolved?.address ||
         selfSend ||
         !amountIsValid ||
+        looksLikeAddressInAmount ||
         exceedsBalance ||
         belowBridgeMinimum ||
         routeUnavailable ||
@@ -339,6 +348,11 @@ export default function SendSingleModal({
                                     <div className="relative flex items-center gap-2">
                                         <div className="relative flex-1">
                                             <input
+                                                id="send-single-recipient"
+                                                name="sendRecipient"
+                                                type="text"
+                                                autoComplete="off"
+                                                spellCheck={false}
                                                 ref={recipientInputRef}
                                                 value={recipient}
                                                 disabled={loading}
@@ -422,6 +436,11 @@ export default function SendSingleModal({
                                 <Field label="Amount (USDC)">
                                     <div className="relative flex items-center">
                                         <input
+                                            id="send-single-amount"
+                                            name="sendAmount"
+                                            type="text"
+                                            autoComplete="off"
+                                            spellCheck={false}
                                             value={amount}
                                             disabled={loading}
                                             onChange={(event) => onAmountChange(event.target.value)}
@@ -441,6 +460,26 @@ export default function SendSingleModal({
                                             Max
                                         </button>
                                     </div>
+                                    {looksLikeAddressInAmount && (
+                                        <div className="mt-2 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-3 text-[11px] leading-relaxed text-amber-900">
+                                            <p className="font-bold">This is the Amount field, not the address field.</p>
+                                            <p className="mt-0.5">
+                                                Please enter the numeric amount of USDC to send (e.g. 10.00). Put your destination wallet address in the <strong>{isArcRoute ? "Recipient wallet address" : `Recipient address on ${currentNetwork.name}`}</strong> field above.
+                                            </p>
+                                            {!recipient && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        onRecipientChange(trimmedAmount);
+                                                        onAmountChange("");
+                                                    }}
+                                                    className="mt-2 inline-flex items-center gap-1.5 rounded-xl bg-amber-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white shadow-sm transition hover:bg-amber-700"
+                                                >
+                                                    Move to Recipient Address
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
                                 </Field>
 
                                 {/* What the other side actually gets, once the fee comes off. */}

@@ -39,7 +39,7 @@ const comparisons = [
   {
     name: "SubScript vs local & dollar bank cards",
     answer:
-      "Local naira and dollar cards succeed only about 40–65% of the time and are subject to bank-imposed per-transaction and daily limits that can block a payment outright. SubScript settles in USDC on Arc with no bank-set card limit and no per-transaction cap. These payments are funded straight from a local bank transfer, at a flat 1% merchant fee with no hidden charges.",
+      "Local naira and dollar cards are often declined on cross-border charges and can hit bank-imposed per-transaction or daily limits that block a payment outright. SubScript settles in USDC on Arc, so payments aren't gated by card networks or those bank-set card limits, and they can be funded straight from a local bank transfer at a transparent flat 1% merchant fee.",
   },
 ];
 
@@ -98,20 +98,20 @@ export const metadata: Metadata = {
 
 export default function ComparePage() {
   return (
-    <main className="min-h-screen bg-[#050608] text-white">
+    <main className="min-h-screen bg-[#FFFFF0] text-[#111827]">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
-      <section className="border-b border-white/10 px-6 py-20 sm:px-10 lg:px-16">
+      <section className="border-b border-black/10 px-6 py-20 sm:px-10 lg:px-16">
         <div className="mx-auto max-w-5xl">
-          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-cyan-300">
+          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#2775CA]">
             Comparisons
           </p>
           <h1 className="mt-5 max-w-4xl text-4xl font-semibold tracking-tight sm:text-6xl">
             How SubScript compares to existing payment tools
           </h1>
-          <p className="mt-6 max-w-3xl text-lg leading-8 text-white/72">
+          <p className="mt-6 max-w-3xl text-lg leading-8 text-black/70">
             SubScript is not a card processor or a bare wallet transfer flow. It
             is a USDC-native checkout and subscription protocol with hosted
             payment links, signed merchant webhooks, metered prepaid balances,
@@ -121,21 +121,21 @@ export default function ComparePage() {
       </section>
 
       <section className="px-6 py-14 sm:px-10 lg:px-16">
-        <div className="mx-auto max-w-5xl overflow-hidden rounded-lg border border-white/10">
+        <div className="mx-auto max-w-5xl overflow-hidden rounded-lg border border-black/10 shadow-sm">
           <table className="w-full border-collapse text-left text-sm">
-            <thead className="bg-white/[0.06] text-white">
+            <thead className="bg-white/60 text-[#111827]">
               <tr>
                 <th className="p-4 font-semibold">Question</th>
                 <th className="p-4 font-semibold">Answer</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/10">
+            <tbody className="divide-y divide-black/10">
               {comparisons.map((item) => (
-                <tr key={item.name} className="bg-white/[0.02] align-top">
-                  <td className="w-1/3 p-4 font-semibold text-cyan-100">
+                <tr key={item.name} className="bg-white/60 align-top">
+                  <td className="w-1/3 p-4 font-semibold text-[#2775CA]">
                     {item.name}
                   </td>
-                  <td className="p-4 leading-7 text-white/72">{item.answer}</td>
+                  <td className="p-4 leading-7 text-black/70">{item.answer}</td>
                 </tr>
               ))}
             </tbody>
@@ -143,19 +143,19 @@ export default function ComparePage() {
         </div>
       </section>
 
-      <section className="border-t border-white/10 px-6 py-14 sm:px-10 lg:px-16">
+      <section className="border-t border-black/10 px-6 py-14 sm:px-10 lg:px-16">
         <div className="mx-auto grid max-w-5xl gap-4 md:grid-cols-2">
-          <article className="rounded-lg border border-white/10 bg-white/[0.04] p-6">
+          <article className="rounded-lg border border-black/10 bg-white/60 p-6 shadow-sm">
             <h2 className="text-xl font-semibold">When SubScript is a strong fit</h2>
-            <p className="mt-3 leading-7 text-white/72">
+            <p className="mt-3 leading-7 text-black/70">
               Use SubScript when your product needs stablecoin checkout,
               recurring USDC billing, webhook-driven fulfillment, no-code
               payment links, or usage-based prepaid balances on Arc Network.
             </p>
           </article>
-          <article className="rounded-lg border border-white/10 bg-white/[0.04] p-6">
+          <article className="rounded-lg border border-black/10 bg-white/60 p-6 shadow-sm">
             <h2 className="text-xl font-semibold">When another tool may fit</h2>
-            <p className="mt-3 leading-7 text-white/72">
+            <p className="mt-3 leading-7 text-black/70">
               Use a traditional processor when you only need card payments, tax
               remittance, and fiat bank settlement. Use bare wallet transfers
               only when you do not need structured checkout or fulfillment.

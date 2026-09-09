@@ -15,19 +15,19 @@ export default function CodeBlock({ code, language }: { code: string; language: 
   };
 
   return (
-    <div className="my-4 overflow-hidden rounded-2xl border border-white/10 bg-black/60 text-xs shadow-xl">
-      <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.03] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/45">
+    <div className="my-4 overflow-hidden rounded-2xl border border-[#0b1220]/10 bg-[#0d1526] text-xs shadow-[0_16px_40px_rgba(11,18,32,0.18)]">
+      <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.03] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
         <span>{language}</span>
         <button
           type="button"
           onClick={handleCopy}
-          className="flex items-center gap-1.5 rounded-lg bg-white/5 px-2 py-1 text-white/55 transition hover:bg-white/10 hover:text-white"
+          className="flex items-center gap-1.5 rounded-lg bg-white/5 px-2 py-1 text-slate-300 transition hover:bg-white/10 hover:text-white"
         >
-          {copied ? <Check className="h-3 w-3 text-[#00d2b4]" /> : <Copy className="h-3 w-3" />}
+          {copied ? <Check className="h-3 w-3 text-[#5aa2e8]" /> : <Copy className="h-3 w-3" />}
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <pre className="overflow-x-auto p-4 leading-relaxed text-white/85">
+      <pre className="overflow-x-auto p-4 leading-relaxed text-slate-200">
         <code>{code}</code>
       </pre>
     </div>

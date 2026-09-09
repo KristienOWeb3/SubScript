@@ -504,25 +504,25 @@ export default function AnalyticsDashboard({
             {/* Header section */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                    <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                        <BarChart3 className="w-4 h-4 text-[#00d2b4]" />
+                    <h2 className="text-sm font-bold text-[#082824] uppercase tracking-wider flex items-center gap-2">
+                        <BarChart3 className="w-4 h-4 text-[#2775CA]" />
                         Premium Analytics Dashboard
                     </h2>
-                    <p className="text-[10px] text-white/40 mt-1">
+                    <p className="text-[10px] text-black/40 mt-1">
                         Real-time revenue, subscriber logs, and payment performance details.
                     </p>
                 </div>
 
                 {/* Sub-tab navigation header */}
                 {isPremium && (
-                    <div className="flex gap-1.5 bg-white/[0.02] border border-white/5 p-1 rounded-xl shrink-0">
+                    <div className="flex gap-1.5 bg-black/[0.03] border border-black/10 p-1 rounded-xl shrink-0">
                         <button
                             type="button"
                             onClick={() => setActiveSubTab("metrics")}
                             className={`px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all duration-200 ${
                                 activeSubTab === "metrics"
-                                    ? "bg-white/10 text-white border border-white/5"
-                                    : "text-white/40 hover:text-white/80"
+                                    ? "bg-white text-[#082824] border border-black/10 shadow-sm"
+                                    : "text-black/40 hover:text-black/80"
                             }`}
                         >
                             Metrics & Logs
@@ -532,8 +532,8 @@ export default function AnalyticsDashboard({
                             onClick={() => setActiveSubTab("automations")}
                             className={`px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all duration-200 ${
                                 activeSubTab === "automations"
-                                    ? "bg-white/10 text-white border border-white/5"
-                                    : "text-white/40 hover:text-white/80"
+                                    ? "bg-white text-[#082824] border border-black/10 shadow-sm"
+                                    : "text-black/40 hover:text-black/80"
                             }`}
                         >
                             Automations
@@ -546,19 +546,19 @@ export default function AnalyticsDashboard({
             <div className="relative rounded-3xl overflow-hidden min-h-[580px]">
                 {/* Blur overlay when Tier 0 */}
                 {!isPremium && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8 bg-black/60 z-20 gap-5 backdrop-blur-[2px]">
-                        <div className="p-4 rounded-3xl bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853] animate-pulse">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8 bg-[#FFFFF0]/70 z-20 gap-5 backdrop-blur-[2px]">
+                        <div className="p-4 rounded-3xl bg-amber-500/10 border border-amber-500/20 text-amber-700 animate-pulse">
                             <Crown className="w-10 h-10" />
                         </div>
                         <div className="space-y-2 max-w-sm">
-                            <h3 className="text-lg font-bold text-white uppercase tracking-wider">Analytics Locked</h3>
-                            <p className="text-xs text-white/60 leading-relaxed font-sans">
+                            <h3 className="text-lg font-bold text-[#082824] uppercase tracking-wider">Analytics Locked</h3>
+                            <p className="text-xs text-black/60 leading-relaxed font-sans">
                                 Upgrade to Premium to see retention, revenue trends, and payment forecasts.
                             </p>
                         </div>
                         <button
                             onClick={() => setActiveTab("premium")}
-                            className="px-6 py-2.5 bg-[#d4a853] hover:bg-[#d4a853]/80 text-black rounded-2xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-[0_0_15px_rgba(212,168,83,0.2)]"
+                            className="px-6 py-2.5 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-2xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-sm"
                         >
                             <Crown className="w-3.5 h-3.5" />
                             Upgrade to Premium
@@ -573,57 +573,57 @@ export default function AnalyticsDashboard({
                             {/* Top Row: 2 columns, asymmetrical on desktop */}
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 {/* Top Left Card: spans 2 columns on desktop */}
-                                <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-xl relative overflow-hidden col-span-1 md:col-span-2 flex flex-col justify-between min-h-[240px]">
+                                <div className="bg-white border border-black/10 rounded-3xl p-8 shadow-sm relative overflow-hidden col-span-1 md:col-span-2 flex flex-col justify-between min-h-[240px]">
                                     <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
                                         <div className="space-y-1">
-                                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Projected Annual Revenue</p>
-                                            <p className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">${annualRunRate.toFixed(2)}</p>
+                                            <p className="text-[10px] text-black/40 uppercase font-bold tracking-wider">Projected Annual Revenue</p>
+                                            <p className="text-4xl sm:text-5xl font-extrabold text-[#082824] tracking-tight">${annualRunRate.toFixed(2)}</p>
                                         </div>
                                         <div className="text-left sm:text-right">
-                                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Monthly Recurring Revenue</p>
-                                            <p className="text-xl sm:text-2xl font-bold text-[#00d2b4] font-mono">${mrr.toFixed(2)}</p>
+                                            <p className="text-[10px] text-black/40 uppercase font-bold tracking-wider">Monthly Recurring Revenue</p>
+                                            <p className="text-xl sm:text-2xl font-bold text-[#2775CA] font-mono">${mrr.toFixed(2)}</p>
                                         </div>
                                     </div>
                                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mt-8">
-                                        <p className="text-[9px] text-white/30 max-w-md">
+                                        <p className="text-[9px] text-black/30 max-w-md">
                                             Projected yearly revenue from active subscribers · Ready to withdraw: ${vaultBalance.toFixed(2)}
                                         </p>
                                         <button
                                             onClick={() => setActiveTab("overview")}
-                                            className="px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-white rounded-2xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all"
+                                            className="px-5 py-2.5 bg-black/[0.04] hover:bg-black/[0.08] border border-black/10 hover:border-black/20 text-[#082824] rounded-2xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all"
                                         >
                                             View Full Report
-                                            <ArrowUpRight className="w-3.5 h-3.5 text-[#00d2b4]" />
+                                            <ArrowUpRight className="w-3.5 h-3.5 text-[#2775CA]" />
                                         </button>
                                     </div>
                                 </div>
 
                                 {/* Top Right Card: spans 1 column on desktop */}
-                                <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-xl relative overflow-hidden col-span-1 flex flex-col justify-between min-h-[240px]">
+                                <div className="bg-white border border-black/10 rounded-3xl p-8 shadow-sm relative overflow-hidden col-span-1 flex flex-col justify-between min-h-[240px]">
                                     <div className="flex justify-between items-start">
                                         <div className="space-y-4">
                                             <div>
-                                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Active Subscriptions</p>
-                                                <p className="text-3xl font-extrabold text-white tracking-tight">{activeSubscribers}</p>
+                                                <p className="text-[10px] text-black/40 uppercase font-bold tracking-wider mb-1">Active Subscriptions</p>
+                                                <p className="text-3xl font-extrabold text-[#082824] tracking-tight">{activeSubscribers}</p>
                                             </div>
                                             <div>
-                                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Churn Rate</p>
-                                                <p className="text-xl font-bold text-white/90">{stats.churn.toFixed(1)}%</p>
+                                                <p className="text-[10px] text-black/40 uppercase font-bold tracking-wider mb-1">Churn Rate</p>
+                                                <p className="text-xl font-bold text-black/90">{stats.churn.toFixed(1)}%</p>
                                             </div>
                                             <div>
-                                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Avg Revenue / Subscriber</p>
-                                                <p className="text-xl font-bold text-white/90">${arpu.toFixed(2)}<span className="text-[10px] text-white/40 font-normal">/mo</span></p>
+                                                <p className="text-[10px] text-black/40 uppercase font-bold tracking-wider mb-1">Avg Revenue / Subscriber</p>
+                                                <p className="text-xl font-bold text-black/90">${arpu.toFixed(2)}<span className="text-[10px] text-black/40 font-normal">/mo</span></p>
                                             </div>
                                         </div>
                                         <div className="flex items-center justify-center pt-2">
                                             <svg viewBox="0 0 100 100" className="w-24 h-24">
-                                                <circle cx="50" cy="50" r="40" stroke="rgba(255,255,255,0.03)" strokeWidth="8" fill="transparent" />
-                                                <circle cx="50" cy="50" r="40" stroke="#00d2b4" strokeWidth="8" fill="transparent" strokeDasharray="251.2" strokeDashoffset={strokeDashoffset} strokeLinecap="round" className="transform -rotate-90 origin-center" />
-                                                <text x="50" y="55" textAnchor="middle" fill="white" className="text-xs font-bold font-mono">{stats.retention.toFixed(1)}%</text>
+                                                <circle cx="50" cy="50" r="40" stroke="#D4E3E8" strokeWidth="8" fill="transparent" />
+                                                <circle cx="50" cy="50" r="40" stroke="#2775CA" strokeWidth="8" fill="transparent" strokeDasharray="251.2" strokeDashoffset={strokeDashoffset} strokeLinecap="round" className="transform -rotate-90 origin-center" />
+                                                <text x="50" y="55" textAnchor="middle" fill="#082824" className="text-xs font-bold font-mono">{stats.retention.toFixed(1)}%</text>
                                             </svg>
                                         </div>
                                     </div>
-                                    <p className="text-[9px] text-white/30 font-sans mt-4">
+                                    <p className="text-[9px] text-black/30 font-sans mt-4">
                                         Active subscribers across all memberships created
                                     </p>
                                 </div>
@@ -632,59 +632,59 @@ export default function AnalyticsDashboard({
                             {/* Bottom Row: 3 columns, symmetrical on desktop */}
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 {/* Bottom Left Card: Performance Chart */}
-                                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[320px]">
+                                <div className="bg-white border border-black/10 rounded-3xl p-6 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[320px]">
                                     <div>
-                                        <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Revenue by Subscriber</p>
-                                        <p className="text-xs text-white/60">Top active subscribers by monthly spend</p>
+                                        <p className="text-[10px] text-black/40 uppercase font-bold tracking-wider mb-1">Revenue by Subscriber</p>
+                                        <p className="text-xs text-black/60">Top active subscribers by monthly spend</p>
                                     </div>
                                     
                                     <div className="flex items-end justify-between h-40 pt-6 px-1">
                                         {revenueBars.map((bar, idx) => (
                                             <div key={idx} className="flex flex-col items-center gap-1.5 flex-1 group" title={bar.monthly > 0 ? `${bar.label} · $${bar.monthly.toFixed(2)}/mo` : ""}>
-                                                <span className="text-[8px] text-[#00d2b4]/80 font-mono font-bold h-3">
+                                                <span className="text-[8px] text-[#2775CA] font-mono font-bold h-3">
                                                     {bar.monthly > 0 ? `$${bar.monthly.toFixed(bar.monthly < 100 ? 2 : 0)}` : ""}
                                                 </span>
                                                 <div
-                                                    className="w-7 bg-[#00d2b4]/15 border border-[#00d2b4]/30 rounded-t-md transition-all duration-500 hover:bg-[#00d2b4]/40"
+                                                    className="w-7 bg-[#2775CA]/15 border border-[#2775CA]/30 rounded-t-md transition-all duration-500 hover:bg-[#2775CA]/40"
                                                     style={{ height: `${bar.height}%` }}
                                                 ></div>
-                                                <span className="text-[8px] text-white/40 font-mono truncate max-w-[44px]">
+                                                <span className="text-[8px] text-black/40 font-mono truncate max-w-[44px]">
                                                     {bar.label || `#${idx + 1}`}
                                                 </span>
                                             </div>
                                         ))}
                                     </div>
 
-                                    <p className="text-[9px] text-white/30 font-sans mt-4">
+                                    <p className="text-[9px] text-black/30 font-sans mt-4">
                                         Your highest-spending subscribers this month
                                     </p>
                                 </div>
 
                                 {/* Bottom Center Card: List View */}
-                                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[320px]">
+                                <div className="bg-white border border-black/10 rounded-3xl p-6 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[320px]">
                                     <div>
-                                        <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Active Subscribers</p>
-                                        <p className="text-xs text-white/60">Memberships currently renewing</p>
+                                        <p className="text-[10px] text-black/40 uppercase font-bold tracking-wider mb-1">Active Subscribers</p>
+                                        <p className="text-xs text-black/60">Memberships currently renewing</p>
                                     </div>
 
                                     <div className="space-y-3 my-4">
                                         {displayList.length === 0 ? (
-                                            <div className="flex flex-col items-center justify-center h-48 text-white/30 text-xs">
+                                            <div className="flex flex-col items-center justify-center h-48 text-black/30 text-xs">
                                                 No active subscribers
                                             </div>
                                         ) : (
                                             displayList.map((item, idx) => (
-                                                <div key={idx} className="flex justify-between items-center bg-white/[0.01] border border-white/5 rounded-2xl p-3">
+                                                <div key={idx} className="flex justify-between items-center bg-black/[0.02] border border-black/10 rounded-2xl p-3">
                                                     <div className="flex items-center gap-3">
-                                                        <div className="w-7 h-7 rounded-full bg-[#d4a853]/10 border border-[#d4a853]/20 flex items-center justify-center text-[9px] text-[#d4a853] font-bold">
+                                                        <div className="w-7 h-7 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-[9px] text-amber-700 font-bold">
                                                             T{item.tier}
                                                         </div>
                                                         <div>
-                                                            <p className="text-xs font-mono text-white/90">{item.address}</p>
-                                                            <p className="text-[8px] text-white/30">{item.timestamp}</p>
+                                                            <p className="text-xs font-mono text-black/90">{item.address}</p>
+                                                            <p className="text-[8px] text-black/30">{item.timestamp}</p>
                                                         </div>
                                                     </div>
-                                                    <span className="text-[8px] font-bold px-2 py-0.5 rounded-full bg-[#00d2b4]/10 text-[#00d2b4] border border-[#00d2b4]/20 uppercase">
+                                                    <span className="text-[8px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 uppercase">
                                                         Active
                                                     </span>
                                                 </div>
@@ -692,53 +692,53 @@ export default function AnalyticsDashboard({
                                         )}
                                     </div>
 
-                                    <p className="text-[9px] text-white/30 font-sans">
+                                    <p className="text-[9px] text-black/30 font-sans">
                                         Sorted by most recent payment
                                     </p>
                                 </div>
 
                                 {/* Bottom Right Card: Inactive Subscriptions */}
-                                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[320px]">
+                                <div className="bg-white border border-black/10 rounded-3xl p-6 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[320px]">
                                     <div>
-                                        <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Inactive Subscriptions</p>
-                                        <p className="text-xs text-white/60">Past due or cancelled accounts</p>
+                                        <p className="text-[10px] text-black/40 uppercase font-bold tracking-wider mb-1">Inactive Subscriptions</p>
+                                        <p className="text-xs text-black/60">Past due or cancelled accounts</p>
                                     </div>
 
                                     <div className="space-y-3 my-4 overflow-y-auto max-h-[280px]">
                                         {isInactiveLoading ? (
                                             <div className="space-y-2.5 animate-pulse">
                                                 {Array.from({ length: 3 }).map((_, i) => (
-                                                    <div key={i} className="flex justify-between items-center bg-white/[0.02] border border-white/5 rounded-2xl p-3">
+                                                    <div key={i} className="flex justify-between items-center bg-black/[0.02] border border-black/10 rounded-2xl p-3">
                                                         <div className="flex items-center gap-3">
-                                                            <div className="w-7 h-7 rounded-full bg-white/15" />
+                                                            <div className="w-7 h-7 rounded-full bg-black/10" />
                                                             <div className="space-y-1.5">
-                                                                <div className="h-3 w-28 rounded bg-white/15" />
-                                                                <div className="h-2 w-16 rounded bg-white/10" />
+                                                                <div className="h-3 w-28 rounded bg-black/10" />
+                                                                <div className="h-2 w-16 rounded bg-black/[0.06]" />
                                                             </div>
                                                         </div>
-                                                        <div className="h-4 w-12 rounded bg-white/10" />
+                                                        <div className="h-4 w-12 rounded bg-black/[0.06]" />
                                                     </div>
                                                 ))}
                                             </div>
                                         ) : inactiveList.length === 0 ? (
-                                            <div className="flex flex-col items-center justify-center h-36 text-white/30 text-xs">
+                                            <div className="flex flex-col items-center justify-center h-36 text-black/30 text-xs">
                                                 No inactive subscriptions
                                             </div>
                                         ) : (
                                             (() => {
                                                 return inactiveList.map((item) => (
-                                                    <div key={item.id} className="flex justify-between items-center bg-white/[0.01] border border-white/5 rounded-2xl p-3">
+                                                    <div key={item.id} className="flex justify-between items-center bg-black/[0.02] border border-black/10 rounded-2xl p-3">
                                                         <div className="flex items-center gap-3">
-                                                            <div className="w-7 h-7 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-[9px] text-red-400 font-bold font-mono">
+                                                            <div className="w-7 h-7 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-[9px] text-red-600 font-bold font-mono">
                                                                 ID{item.id}
                                                             </div>
                                                             <div>
-                                                                <p className="text-xs font-mono text-white/90">{item.address}</p>
-                                                                <p className="text-[8px] text-white/30">Due: {item.timestamp}</p>
+                                                                <p className="text-xs font-mono text-black/90">{item.address}</p>
+                                                                <p className="text-[8px] text-black/30">Due: {item.timestamp}</p>
                                                             </div>
                                                         </div>
                                                         <span className={`px-4 py-2 text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 ${
-                                                            item.retrying ? "text-amber-300" : "text-white/30"
+                                                            item.retrying ? "text-amber-600" : "text-black/30"
                                                         }`}>
                                                             {item.retrying && <RefreshCw className="w-3 h-3" />}
                                                             {item.statusLabel}
@@ -753,8 +753,8 @@ export default function AnalyticsDashboard({
                                         const totalPages = inactiveTotalPages;
                                         if (totalPages <= 1) return null;
                                         return (
-                                            <div className="flex items-center justify-between pt-3 mt-1 border-t border-white/5 font-sans mb-3">
-                                                <span className="text-[9px] text-white/40 uppercase font-bold tracking-wider">
+                                            <div className="flex items-center justify-between pt-3 mt-1 border-t border-black/10 font-sans mb-3">
+                                                <span className="text-[9px] text-black/40 uppercase font-bold tracking-wider">
                                                     Page {inactivePage + 1} of {totalPages}
                                                 </span>
                                                 <div className="flex gap-2">
@@ -762,7 +762,7 @@ export default function AnalyticsDashboard({
                                                         type="button"
                                                         disabled={inactivePage === 0}
                                                         onClick={() => setInactivePage((p) => Math.max(0, p - 1))}
-                                                        className="px-2.5 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-white rounded-xl text-[9px] font-bold uppercase tracking-wider transition-all"
+                                                        className="px-2.5 py-1.5 bg-black/[0.04] hover:bg-black/[0.08] disabled:opacity-30 border border-black/10 text-[#082824] rounded-xl text-[9px] font-bold uppercase tracking-wider transition-all"
                                                     >
                                                         Prev
                                                     </button>
@@ -770,7 +770,7 @@ export default function AnalyticsDashboard({
                                                         type="button"
                                                         disabled={inactivePage >= totalPages - 1}
                                                         onClick={() => setInactivePage((p) => Math.min(totalPages - 1, p + 1))}
-                                                        className="px-2.5 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-white rounded-xl text-[9px] font-bold uppercase tracking-wider transition-all"
+                                                        className="px-2.5 py-1.5 bg-black/[0.04] hover:bg-black/[0.08] disabled:opacity-30 border border-black/10 text-[#082824] rounded-xl text-[9px] font-bold uppercase tracking-wider transition-all"
                                                     >
                                                         Next
                                                     </button>
@@ -779,7 +779,7 @@ export default function AnalyticsDashboard({
                                         );
                                     })()}
 
-                                    <p className="text-[9px] text-white/30 font-sans">
+                                    <p className="text-[9px] text-black/30 font-sans">
                                         Retry collecting overdue payments
                                     </p>
                                 </div>
@@ -787,21 +787,21 @@ export default function AnalyticsDashboard({
                         </div>
                     ) : (
                         /* Automations Tab Content */
-                        <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-xl min-h-[480px] flex flex-col justify-between relative overflow-hidden">
+                        <div className="bg-white border border-black/10 rounded-3xl p-8 shadow-sm min-h-[480px] flex flex-col justify-between relative overflow-hidden">
                             {!isPremium && (
-                                <div className="absolute inset-0 bg-[#0a0a0c]/80 backdrop-blur-md z-20 flex flex-col items-center justify-center text-center p-6 gap-4 border border-white/5">
-                                    <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 text-yellow-300 rounded-2xl">
+                                <div className="absolute inset-0 bg-[#FFFFF0]/80 backdrop-blur-md z-20 flex flex-col items-center justify-center text-center p-6 gap-4 border border-black/10">
+                                    <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-700 rounded-2xl">
                                         <Lock className="w-6 h-6" />
                                     </div>
                                     <div className="space-y-2">
-                                        <h3 className="text-xs font-bold text-white uppercase tracking-wider">Premium Pro Feature</h3>
-                                        <p className="text-[10px] text-white/55 max-w-xs leading-relaxed">
+                                        <h3 className="text-xs font-bold text-[#082824] uppercase tracking-wider">Premium Pro Feature</h3>
+                                        <p className="text-[10px] text-black/55 max-w-xs leading-relaxed">
                                             Upgrade to Premium Pro to send exit surveys and learn why customers cancel.
                                         </p>
                                     </div>
                                     <Link
                                         href="/merchant/upgrade"
-                                        className="px-6 py-2.5 bg-yellow-300 hover:bg-yellow-200 text-black rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all shadow-lg shadow-yellow-500/15"
+                                        className="px-6 py-2.5 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all shadow-sm"
                                     >
                                         Upgrade Now
                                     </Link>
@@ -810,49 +810,49 @@ export default function AnalyticsDashboard({
 
                             {isLoadingTemplate ? (
                                 <div className="space-y-6 animate-pulse">
-                                    <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                                    <div className="flex items-center justify-between border-b border-black/10 pb-4">
                                         <div className="space-y-2">
-                                            <div className="h-5 w-72 rounded-lg bg-white/15" />
-                                            <div className="h-3 w-96 max-w-full rounded bg-white/10" />
+                                            <div className="h-5 w-72 rounded-lg bg-black/10" />
+                                            <div className="h-3 w-96 max-w-full rounded bg-black/[0.06]" />
                                         </div>
-                                        <div className="h-6 w-11 rounded-full bg-white/15" />
+                                        <div className="h-6 w-11 rounded-full bg-black/10" />
                                     </div>
                                     <div className="space-y-4">
                                         <div className="space-y-2">
                                             <div className="flex justify-between items-center">
-                                                <div className="h-3 w-20 rounded bg-white/10" />
+                                                <div className="h-3 w-20 rounded bg-black/[0.06]" />
                                                 <div className="flex gap-2">
-                                                    <div className="h-4 w-20 rounded bg-white/10" />
-                                                    <div className="h-4 w-24 rounded bg-white/10" />
+                                                    <div className="h-4 w-20 rounded bg-black/[0.06]" />
+                                                    <div className="h-4 w-24 rounded bg-black/[0.06]" />
                                                 </div>
                                             </div>
-                                            <div className="h-11 w-full rounded-xl bg-white/[0.06]" />
+                                            <div className="h-11 w-full rounded-xl bg-black/[0.04]" />
                                         </div>
                                         <div className="space-y-2">
                                             <div className="flex justify-between items-center">
-                                                <div className="h-3 w-36 rounded bg-white/10" />
+                                                <div className="h-3 w-36 rounded bg-black/[0.06]" />
                                                 <div className="flex gap-2">
-                                                    <div className="h-4 w-20 rounded bg-white/10" />
-                                                    <div className="h-4 w-24 rounded bg-white/10" />
+                                                    <div className="h-4 w-20 rounded bg-black/[0.06]" />
+                                                    <div className="h-4 w-24 rounded bg-black/[0.06]" />
                                                 </div>
                                             </div>
-                                            <div className="h-40 w-full rounded-xl bg-white/[0.06]" />
+                                            <div className="h-40 w-full rounded-xl bg-black/[0.04]" />
                                         </div>
                                     </div>
-                                    <div className="flex justify-between items-center pt-4 border-t border-white/5">
-                                        <div className="h-3 w-28 rounded bg-white/10" />
-                                        <div className="h-9 w-44 rounded-xl bg-white/20" />
+                                    <div className="flex justify-between items-center pt-4 border-t border-black/10">
+                                        <div className="h-3 w-28 rounded bg-black/[0.06]" />
+                                        <div className="h-9 w-44 rounded-xl bg-black/10" />
                                     </div>
                                 </div>
                             ) : (
                                 <form onSubmit={handleSaveTemplate} className="space-y-6">
-                                    <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                                    <div className="flex items-center justify-between border-b border-black/10 pb-4">
                                         <div>
-                                            <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                                                <Sparkles className="w-4 h-4 text-[#00d2b4]" />
+                                            <h3 className="text-base font-bold text-[#082824] uppercase tracking-wider flex items-center gap-2">
+                                                <Sparkles className="w-4 h-4 text-[#2775CA]" />
                                                 Cancellation Exit Survey
                                             </h3>
-                                            <p className="text-[10px] text-white/40 mt-1">
+                                            <p className="text-[10px] text-black/40 mt-1">
                                                 When someone cancels, automatically send a quick survey to find out what happened.
                                             </p>
                                         </div>
@@ -861,12 +861,12 @@ export default function AnalyticsDashboard({
                                             disabled={!isPremium}
                                             onClick={() => setIsActive(!isActive)}
                                             className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                                isActive ? "bg-[#00d2b4]" : "bg-white/10"
+                                                isActive ? "bg-[#2775CA]" : "bg-black/10"
                                             } ${!isPremium ? "opacity-50 cursor-not-allowed" : ""}`}
                                             aria-label="Toggle exit survey"
                                         >
                                             <span
-                                                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
+                                                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
                                                     isActive ? "translate-x-5" : "translate-x-0"
                                                 }`}
                                             />
@@ -876,14 +876,14 @@ export default function AnalyticsDashboard({
                                     <div className="space-y-4">
                                         <div className="space-y-1.5">
                                             <div className="flex justify-between items-center">
-                                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Subject Line</label>
+                                                <label className="text-black/50 font-bold uppercase text-[9px] tracking-wide">Subject Line</label>
                                                 <div className="flex items-center gap-1.5">
-                                                    <span className="text-[8px] text-white/30 uppercase font-mono">Variables:</span>
+                                                    <span className="text-[8px] text-black/30 uppercase font-mono">Variables:</span>
                                                     <button
                                                         type="button"
                                                         disabled={!isPremium}
                                                         onClick={() => insertVariableToSubject("customer_wallet")}
-                                                        className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[8px] text-[#00d2b4] hover:text-white transition-all font-mono border border-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        className="px-2 py-0.5 rounded bg-black/[0.04] hover:bg-black/[0.08] text-[8px] text-[#2775CA] hover:text-[#082824] transition-all font-mono border border-black/10 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
                                                         customer_wallet
                                                     </button>
@@ -891,7 +891,7 @@ export default function AnalyticsDashboard({
                                                         type="button"
                                                         disabled={!isPremium}
                                                         onClick={() => insertVariableToSubject("subscription_tier")}
-                                                        className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[8px] text-[#00d2b4] hover:text-white transition-all font-mono border border-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        className="px-2 py-0.5 rounded bg-black/[0.04] hover:bg-black/[0.08] text-[8px] text-[#2775CA] hover:text-[#082824] transition-all font-mono border border-black/10 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
                                                         subscription_tier
                                                     </button>
@@ -904,20 +904,20 @@ export default function AnalyticsDashboard({
                                                 placeholder="e.g. We'd love your feedback"
                                                 value={subjectLine}
                                                 onChange={(e) => setSubjectLine(e.target.value)}
-                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                                                className="w-full bg-white border border-black/10 rounded-xl px-4 py-3 text-[#082824] focus:outline-none focus:border-[#8AB4DB] transition-colors text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                                             />
                                         </div>
 
                                         <div className="space-y-1.5">
                                             <div className="flex justify-between items-center">
-                                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Email Content</label>
+                                                <label className="text-black/50 font-bold uppercase text-[9px] tracking-wide">Email Content</label>
                                                 <div className="flex items-center gap-1.5">
-                                                    <span className="text-[8px] text-white/30 uppercase font-mono">Variables:</span>
+                                                    <span className="text-[8px] text-black/30 uppercase font-mono">Variables:</span>
                                                     <button
                                                         type="button"
                                                         disabled={!isPremium}
                                                         onClick={() => insertVariableToBody("customer_wallet")}
-                                                        className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[8px] text-[#00d2b4] hover:text-white transition-all font-mono border border-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        className="px-2 py-0.5 rounded bg-black/[0.04] hover:bg-black/[0.08] text-[8px] text-[#2775CA] hover:text-[#082824] transition-all font-mono border border-black/10 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
                                                         customer_wallet
                                                     </button>
@@ -925,7 +925,7 @@ export default function AnalyticsDashboard({
                                                         type="button"
                                                         disabled={!isPremium}
                                                         onClick={() => insertVariableToBody("subscription_tier")}
-                                                        className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[8px] text-[#00d2b4] hover:text-white transition-all font-mono border border-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        className="px-2 py-0.5 rounded bg-black/[0.04] hover:bg-black/[0.08] text-[8px] text-[#2775CA] hover:text-[#082824] transition-all font-mono border border-black/10 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
                                                         subscription_tier
                                                     </button>
@@ -938,16 +938,16 @@ export default function AnalyticsDashboard({
                                                 placeholder="Enter exit survey message here..."
                                                 value={bodyContent}
                                                 onChange={(e) => setBodyContent(e.target.value)}
-                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors text-xs font-sans whitespace-pre-wrap leading-relaxed disabled:opacity-50 disabled:cursor-not-allowed"
+                                                className="w-full bg-white border border-black/10 rounded-xl px-4 py-3 text-[#082824] focus:outline-none focus:border-[#8AB4DB] transition-colors text-xs font-sans whitespace-pre-wrap leading-relaxed disabled:opacity-50 disabled:cursor-not-allowed"
                                             />
                                         </div>
                                     </div>
 
-                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pt-4 border-t border-white/5">
+                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pt-4 border-t border-black/10">
                                         <div className="min-h-5">
                                             {statusMessage && (
                                                 <p className={`text-[10px] font-bold tracking-wide ${
-                                                    statusMessage.type === "success" ? "text-emerald-400" : "text-red-400"
+                                                    statusMessage.type === "success" ? "text-emerald-600" : "text-red-600"
                                                 }`}>
                                                     {statusMessage.text}
                                                 </p>
@@ -956,7 +956,7 @@ export default function AnalyticsDashboard({
                                         <button
                                             type="submit"
                                             disabled={isSavingTemplate || !isPremium}
-                                            className="px-6 py-2.5 bg-[#00d2b4] text-[#111111] hover:brightness-110 disabled:opacity-50 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 transition-all shrink-0"
+                                            className="px-6 py-2.5 bg-[#2775CA] text-[#ffffff] hover:bg-[#1f62ab] disabled:opacity-50 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 transition-all shrink-0"
                                         >
                                             {isSavingTemplate ? (
                                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -970,72 +970,72 @@ export default function AnalyticsDashboard({
                             )}
 
                             {isPremium && surveyStats.total > 0 && (
-                                <div className="mt-8 border-t border-white/5 pt-6 space-y-5">
+                                <div className="mt-8 border-t border-black/10 pt-6 space-y-5">
                                     <div>
-                                        <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                                            <Sparkles className="w-4 h-4 text-[#00d2b4]" />
+                                        <h4 className="text-xs font-bold text-[#082824] uppercase tracking-wider flex items-center gap-2">
+                                            <Sparkles className="w-4 h-4 text-[#2775CA]" />
                                             Exit Survey Responses ({surveyStats.total})
                                         </h4>
-                                        <p className="text-[9px] text-white/40 mt-1 uppercase tracking-wider">
+                                        <p className="text-[9px] text-black/40 mt-1 uppercase tracking-wider">
                                             Real-time user feedback compiled from automated in-app churn chats.
                                         </p>
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         {/* Left Side: Progress Bars */}
-                                        <div className="space-y-3.5 bg-black/20 border border-white/5 rounded-2xl p-5">
+                                        <div className="space-y-3.5 bg-black/[0.02] border border-black/10 rounded-2xl p-5">
                                             <div className="space-y-2">
                                                 <div className="flex justify-between text-[10px]">
-                                                    <span className="text-white/60 font-bold uppercase tracking-wide">Too Expensive</span>
-                                                    <span className="text-[#00d2b4] font-black">{surveyStats.percentages.TOO_EXPENSIVE}% ({surveyStats.counts.TOO_EXPENSIVE})</span>
+                                                    <span className="text-black/60 font-bold uppercase tracking-wide">Too Expensive</span>
+                                                    <span className="text-[#2775CA] font-black">{surveyStats.percentages.TOO_EXPENSIVE}% ({surveyStats.counts.TOO_EXPENSIVE})</span>
                                                 </div>
-                                                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                                                    <div className="h-full bg-[#00d2b4] rounded-full transition-all duration-500" style={{ width: `${surveyStats.percentages.TOO_EXPENSIVE}%` }}></div>
+                                                <div className="h-2 w-full bg-[#D4E3E8] rounded-full overflow-hidden">
+                                                    <div className="h-full bg-[#2775CA] rounded-full transition-all duration-500" style={{ width: `${surveyStats.percentages.TOO_EXPENSIVE}%` }}></div>
                                                 </div>
                                             </div>
 
                                             <div className="space-y-2">
                                                 <div className="flex justify-between text-[10px]">
-                                                    <span className="text-white/60 font-bold uppercase tracking-wide">Lack of Features</span>
-                                                    <span className="text-[#00d2b4] font-black">{surveyStats.percentages.LACK_OF_FEATURES}% ({surveyStats.counts.LACK_OF_FEATURES})</span>
+                                                    <span className="text-black/60 font-bold uppercase tracking-wide">Lack of Features</span>
+                                                    <span className="text-[#2775CA] font-black">{surveyStats.percentages.LACK_OF_FEATURES}% ({surveyStats.counts.LACK_OF_FEATURES})</span>
                                                 </div>
-                                                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                                                    <div className="h-full bg-[#00d2b4] rounded-full transition-all duration-500" style={{ width: `${surveyStats.percentages.LACK_OF_FEATURES}%` }}></div>
-                                                </div>
-                                            </div>
-
-                                            <div className="space-y-2">
-                                                <div className="flex justify-between text-[10px]">
-                                                    <span className="text-white/60 font-bold uppercase tracking-wide">Technical Issues</span>
-                                                    <span className="text-[#00d2b4] font-black">{surveyStats.percentages.TECHNICAL_ISSUES}% ({surveyStats.counts.TECHNICAL_ISSUES})</span>
-                                                </div>
-                                                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                                                    <div className="h-full bg-[#00d2b4] rounded-full transition-all duration-500" style={{ width: `${surveyStats.percentages.TECHNICAL_ISSUES}%` }}></div>
+                                                <div className="h-2 w-full bg-[#D4E3E8] rounded-full overflow-hidden">
+                                                    <div className="h-full bg-[#2775CA] rounded-full transition-all duration-500" style={{ width: `${surveyStats.percentages.LACK_OF_FEATURES}%` }}></div>
                                                 </div>
                                             </div>
 
                                             <div className="space-y-2">
                                                 <div className="flex justify-between text-[10px]">
-                                                    <span className="text-white/60 font-bold uppercase tracking-wide">Other</span>
-                                                    <span className="text-[#00d2b4] font-black">{surveyStats.percentages.OTHER}% ({surveyStats.counts.OTHER})</span>
+                                                    <span className="text-black/60 font-bold uppercase tracking-wide">Technical Issues</span>
+                                                    <span className="text-[#2775CA] font-black">{surveyStats.percentages.TECHNICAL_ISSUES}% ({surveyStats.counts.TECHNICAL_ISSUES})</span>
                                                 </div>
-                                                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                                                    <div className="h-full bg-[#00d2b4] rounded-full transition-all duration-500" style={{ width: `${surveyStats.percentages.OTHER}%` }}></div>
+                                                <div className="h-2 w-full bg-[#D4E3E8] rounded-full overflow-hidden">
+                                                    <div className="h-full bg-[#2775CA] rounded-full transition-all duration-500" style={{ width: `${surveyStats.percentages.TECHNICAL_ISSUES}%` }}></div>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between text-[10px]">
+                                                    <span className="text-black/60 font-bold uppercase tracking-wide">Other</span>
+                                                    <span className="text-[#2775CA] font-black">{surveyStats.percentages.OTHER}% ({surveyStats.counts.OTHER})</span>
+                                                </div>
+                                                <div className="h-2 w-full bg-[#D4E3E8] rounded-full overflow-hidden">
+                                                    <div className="h-full bg-[#2775CA] rounded-full transition-all duration-500" style={{ width: `${surveyStats.percentages.OTHER}%` }}></div>
                                                 </div>
                                             </div>
                                         </div>
 
                                         {/* Right Side: Feed of Recent Responses */}
-                                        <div className="bg-black/20 border border-white/5 rounded-2xl p-5 flex flex-col justify-between overflow-hidden">
-                                            <span className="text-[9px] font-bold text-white/50 uppercase tracking-widest block mb-3 border-b border-white/5 pb-2">Recent Feedback Logs</span>
+                                        <div className="bg-black/[0.02] border border-black/10 rounded-2xl p-5 flex flex-col justify-between overflow-hidden">
+                                            <span className="text-[9px] font-bold text-black/50 uppercase tracking-widest block mb-3 border-b border-black/10 pb-2">Recent Feedback Logs</span>
                                             <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
                                                 {responses.slice(0, 5).map((resp: any) => (
-                                                    <div key={resp.id} className="flex justify-between items-center text-[10px] bg-white/[0.02] border border-white/5 rounded-xl p-2.5">
+                                                    <div key={resp.id} className="flex justify-between items-center text-[10px] bg-black/[0.02] border border-black/10 rounded-xl p-2.5">
                                                         <div>
-                                                            <p className="font-mono text-white/80 truncate max-w-[120px] sm:max-w-[180px]">{resp.receiver_address}</p>
-                                                            <p className="text-[8px] text-white/30">{new Date(resp.updated_at).toLocaleDateString()}</p>
+                                                            <p className="font-mono text-black/80 truncate max-w-[120px] sm:max-w-[180px]">{resp.receiver_address}</p>
+                                                            <p className="text-[8px] text-black/30">{new Date(resp.updated_at).toLocaleDateString()}</p>
                                                         </div>
-                                                        <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full bg-[#00d2b4]/10 text-[#00d2b4] border border-[#00d2b4]/15">
+                                                        <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full bg-[#2775CA]/10 text-[#2775CA] border border-[#2775CA]/20">
                                                             {resp.status.replace(/_/g, " ")}
                                                         </span>
                                                     </div>
@@ -1047,14 +1047,14 @@ export default function AnalyticsDashboard({
                             )}
 
                             {isPremium && (
-                                <div className="mt-8 border-t border-white/5 pt-6 space-y-5 text-left">
+                                <div className="mt-8 border-t border-black/10 pt-6 space-y-5 text-left">
                                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                         <div>
-                                            <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                                                <Shield className="w-4 h-4 text-[#00d2b4]" />
+                                            <h4 className="text-xs font-bold text-[#082824] uppercase tracking-wider flex items-center gap-2">
+                                                <Shield className="w-4 h-4 text-[#2775CA]" />
                                                 Customer Balances & Usage ({vaults.length})
                                             </h4>
-                                            <p className="text-[9px] text-white/40 mt-1 uppercase tracking-wider">
+                                            <p className="text-[9px] text-black/40 mt-1 uppercase tracking-wider">
                                                 Manage customer deposits, see current usage, and withdraw earnings.
                                             </p>
                                         </div>
@@ -1065,7 +1065,7 @@ export default function AnalyticsDashboard({
                                                 fetchVaults();
                                             }}
                                             disabled={isVaultOpsLoading || isVaultsLoading}
-                                            className="self-start px-3 py-1.5 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] disabled:opacity-50 text-[9px] font-bold uppercase tracking-wider text-white/70 flex items-center gap-1.5 transition"
+                                            className="self-start px-3 py-1.5 rounded-xl border border-black/10 bg-black/[0.03] hover:bg-black/[0.06] disabled:opacity-50 text-[9px] font-bold uppercase tracking-wider text-black/70 flex items-center gap-1.5 transition"
                                         >
                                             <RefreshCw className={`w-3 h-3 ${(isVaultOpsLoading || isVaultsLoading) ? "animate-spin" : ""}`} />
                                             Refresh
@@ -1073,16 +1073,16 @@ export default function AnalyticsDashboard({
                                     </div>
 
                                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                                        <form onSubmit={handleSaveCommitConfig} className="rounded-2xl border border-white/5 bg-black/20 p-5 space-y-4">
+                                        <form onSubmit={handleSaveCommitConfig} className="rounded-2xl border border-black/10 bg-black/[0.02] p-5 space-y-4">
                                             <div>
-                                                <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Minimum Deposit</p>
-                                                <p className="text-[9px] text-white/35 mt-1">
+                                                <p className="text-[10px] font-bold uppercase tracking-wider text-black/60">Minimum Deposit</p>
+                                                <p className="text-[9px] text-black/35 mt-1">
                                                     The minimum balance a customer must maintain to keep using the service.
                                                 </p>
                                             </div>
                                             <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
                                                 <label className="flex-1 space-y-1.5">
-                                                    <span className="text-[9px] font-bold uppercase tracking-wider text-white/40">USDC</span>
+                                                    <span className="text-[9px] font-bold uppercase tracking-wider text-black/40">USDC</span>
                                                     <input
                                                         type="number"
                                                         min="0"
@@ -1090,29 +1090,29 @@ export default function AnalyticsDashboard({
                                                         value={commitInput}
                                                         onChange={(e) => setCommitInput(e.target.value)}
                                                         disabled={isSavingCommit}
-                                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-[#00d2b4] transition text-sm font-mono disabled:opacity-50"
+                                                        className="w-full bg-white border border-black/10 rounded-xl px-3 py-2 text-[#082824] focus:outline-none focus:border-[#8AB4DB] transition text-sm font-mono disabled:opacity-50"
                                                         placeholder="0"
                                                     />
                                                 </label>
                                                 <button
                                                     type="submit"
                                                     disabled={isSavingCommit}
-                                                    className="px-5 py-2 bg-[#00d2b4] text-[#111111] hover:brightness-110 disabled:opacity-50 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                                                    className="px-5 py-2 bg-[#2775CA] text-[#ffffff] hover:bg-[#1f62ab] disabled:opacity-50 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
                                                 >
                                                     {isSavingCommit ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                                                     Save Setting
                                                 </button>
                                             </div>
-                                            <p className="text-[9px] text-white/35 uppercase tracking-wider">
-                                                Current requirement: <span className="font-mono text-[#ccff00]">${formatUsdcMicros(requiredCommit)} USDC</span>
+                                            <p className="text-[9px] text-black/35 uppercase tracking-wider">
+                                                Current requirement: <span className="font-mono text-[#2775CA]">${formatUsdcMicros(requiredCommit)} USDC</span>
                                             </p>
                                         </form>
 
-                                        <div className="rounded-2xl border border-white/5 bg-black/20 p-5 flex flex-col justify-between gap-4">
+                                        <div className="rounded-2xl border border-black/10 bg-black/[0.02] p-5 flex flex-col justify-between gap-4">
                                             <div>
-                                                <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Available to Withdraw</p>
-                                                <p className="text-3xl font-black text-white mt-2">${formatUsdcMicros(claimableAmount)}</p>
-                                                <p className="text-[9px] text-white/35 mt-1">
+                                                <p className="text-[10px] font-bold uppercase tracking-wider text-black/60">Available to Withdraw</p>
+                                                <p className="text-3xl font-black text-[#082824] mt-2">${formatUsdcMicros(claimableAmount)}</p>
+                                                <p className="text-[9px] text-black/35 mt-1">
                                                     Earnings become available to withdraw after each billing cycle.
                                                 </p>
                                             </div>
@@ -1120,32 +1120,32 @@ export default function AnalyticsDashboard({
                                                 type="button"
                                                 onClick={handleClaimVaultFunds}
                                                 disabled={isClaimingVault || isVaultOpsLoading || microsToNumber(claimableAmount) <= 0}
-                                                className="px-5 py-2 bg-white/[0.08] border border-white/10 hover:bg-white/[0.12] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                                                className="px-5 py-2 bg-black/[0.04] border border-black/10 hover:bg-black/[0.08] disabled:opacity-50 disabled:cursor-not-allowed text-[#082824] rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
                                             >
-                                                {isClaimingVault ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowUpRight className="w-3.5 h-3.5 text-[#00d2b4]" />}
+                                                {isClaimingVault ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowUpRight className="w-3.5 h-3.5 text-[#2775CA]" />}
                                                 Withdraw Earnings
                                             </button>
                                         </div>
 
-                                        <div className="rounded-2xl border border-white/5 bg-black/20 p-5 space-y-4">
+                                        <div className="rounded-2xl border border-black/10 bg-black/[0.02] p-5 space-y-4">
                                             <div>
-                                                <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">API Key for Testing</p>
-                                                <p className="text-[9px] text-white/35 mt-1">
+                                                <p className="text-[10px] font-bold uppercase tracking-wider text-black/60">API Key for Testing</p>
+                                                <p className="text-[9px] text-black/35 mt-1">
                                                     Paste your secret API key here to test sending usage charges.
                                                 </p>
                                             </div>
                                             <label className="block space-y-1.5">
-                                                <span className="text-[9px] font-bold uppercase tracking-wider text-white/40">Secret key</span>
+                                                <span className="text-[9px] font-bold uppercase tracking-wider text-black/40">Secret key</span>
                                                 <input
                                                     type="password"
                                                     value={usageSecretKey}
                                                     onChange={(e) => setUsageSecretKey(e.target.value)}
                                                     autoComplete="off"
-                                                    className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-[#00d2b4] transition text-xs font-mono"
+                                                    className="w-full bg-white border border-black/10 rounded-xl px-3 py-2 text-[#082824] focus:outline-none focus:border-[#8AB4DB] transition text-xs font-mono"
                                                     placeholder="sk_test_..."
                                                 />
                                             </label>
-                                            <p className="text-[9px] text-white/30">
+                                            <p className="text-[9px] text-black/30">
                                                 Keys are only shown once when created. This test field is not saved to the server.
                                             </p>
                                         </div>
@@ -1153,7 +1153,7 @@ export default function AnalyticsDashboard({
 
                                     {vaultOpsStatus && (
                                         <p className={`text-[10px] font-bold tracking-wide ${
-                                            vaultOpsStatus.type === "success" ? "text-emerald-400" : "text-red-400"
+                                            vaultOpsStatus.type === "success" ? "text-emerald-600" : "text-red-600"
                                         }`}>
                                             {vaultOpsStatus.text}
                                         </p>
@@ -1162,22 +1162,22 @@ export default function AnalyticsDashboard({
                                     {isVaultsLoading ? (
                                         <div className="space-y-3 animate-pulse">
                                             {Array.from({ length: 2 }).map((_, i) => (
-                                                <div key={i} className="rounded-2xl border border-white/5 bg-black/30 p-4 space-y-3">
+                                                <div key={i} className="rounded-2xl border border-black/10 bg-black/[0.02] p-4 space-y-3">
                                                     <div className="flex justify-between items-center">
-                                                        <div className="h-4 w-36 rounded bg-white/15" />
-                                                        <div className="h-4 w-16 rounded bg-white/10" />
+                                                        <div className="h-4 w-36 rounded bg-black/10" />
+                                                        <div className="h-4 w-16 rounded bg-black/[0.06]" />
                                                     </div>
-                                                    <div className="h-2 w-full rounded-full bg-white/10" />
+                                                    <div className="h-2 w-full rounded-full bg-black/[0.06]" />
                                                     <div className="flex justify-between">
-                                                        <div className="h-3 w-20 rounded bg-white/10" />
-                                                        <div className="h-3 w-24 rounded bg-white/15" />
+                                                        <div className="h-3 w-20 rounded bg-black/[0.06]" />
+                                                        <div className="h-3 w-24 rounded bg-black/10" />
                                                     </div>
                                                 </div>
                                             ))}
                                         </div>
                                     ) : vaults.length === 0 ? (
-                                        <div className="flex h-24 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center p-4">
-                                            <p className="text-xs text-white/45">No customer deposits yet. When customers deposit funds, they&apos;ll appear here.</p>
+                                        <div className="flex h-24 flex-col items-center justify-center rounded-2xl border border-dashed border-black/10 bg-black/[0.02] text-center p-4">
+                                            <p className="text-xs text-black/45">No customer deposits yet. When customers deposit funds, they&apos;ll appear here.</p>
                                         </div>
                                     ) : (
                                         <div className="space-y-4">
@@ -1267,20 +1267,20 @@ function CustomerVaultRow({
     const isActive = Boolean(vault.active);
 
     return (
-        <div className="flex flex-col gap-4 rounded-2xl border border-white/5 bg-black/20 hover:bg-black/35 hover:border-white/10 transition p-4">
+        <div className="flex flex-col gap-4 rounded-2xl border border-black/10 bg-black/[0.02] hover:bg-black/[0.04] hover:border-black/10 transition p-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                         {/* Email if the customer volunteered one at this merchant's checkout, else the
                             opaque deposit reference. The wallet address used to print here and again
                             underneath; neither is sent to the client any more. */}
-                        <p className="text-xs font-mono text-white/90 truncate max-w-xs">
+                        <p className="text-xs font-mono text-black/90 truncate max-w-xs">
                             {vault.payerEmail || vault.reference || "Deposit"}
                         </p>
                         <span className={`px-2 py-0.5 rounded-full border text-[8px] font-bold uppercase tracking-wider ${
                             isActive
-                                ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
-                                : "border-red-400/20 bg-red-400/10 text-red-300"
+                                ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-600"
+                                : "border-red-400/20 bg-red-400/10 text-red-600"
                         }`}>
                             {isActive ? "Active" : "Blocked"}
                         </span>
@@ -1295,21 +1295,21 @@ function CustomerVaultRow({
                             min="0"
                             value={chargeAmount}
                             onChange={(e) => setChargeAmount(e.target.value)}
-                            className="bg-black/40 border border-white/10 rounded-xl px-3 py-1.5 text-white focus:outline-none focus:border-[#00d2b4] transition text-xs w-24 text-center"
+                            className="bg-white border border-black/10 rounded-xl px-3 py-1.5 text-[#082824] focus:outline-none focus:border-[#8AB4DB] transition text-xs w-24 text-center"
                             placeholder="1.50"
                             required
                         />
                         <button
                             type="submit"
                             disabled={loading || !isActive}
-                            className="px-4 py-1.5 bg-[#00d2b4] text-[#111111] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all"
+                            className="px-4 py-1.5 bg-[#2775CA] text-[#ffffff] hover:bg-[#1f62ab] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all"
                         >
                             {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Bill Usage"}
                         </button>
                     </div>
                     {status && (
                         <span className={`max-w-xs text-left lg:text-right text-[9px] font-bold tracking-wide ${
-                            status.type === "success" ? "text-emerald-400" : "text-red-400"
+                            status.type === "success" ? "text-emerald-600" : "text-red-600"
                         }`}>
                             {status.text}
                         </span>
@@ -1318,25 +1318,25 @@ function CustomerVaultRow({
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                <div className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
-                    <p className="text-[8px] uppercase tracking-wider text-white/35 font-bold">Customer Balance</p>
-                    <p className="text-sm font-black text-[#ccff00] mt-1">${formatUsdcMicros(vault.balanceUsdc)}</p>
+                <div className="rounded-xl border border-black/10 bg-black/[0.02] p-3">
+                    <p className="text-[8px] uppercase tracking-wider text-black/35 font-bold">Customer Balance</p>
+                    <p className="text-sm font-black text-[#2775CA] mt-1">${formatUsdcMicros(vault.balanceUsdc)}</p>
                 </div>
-                <div className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
-                    <p className="text-[8px] uppercase tracking-wider text-white/35 font-bold">Required Deposit</p>
-                    <p className="text-sm font-black text-white mt-1">${formatUsdcMicros(vault.commitUsdc)}</p>
+                <div className="rounded-xl border border-black/10 bg-black/[0.02] p-3">
+                    <p className="text-[8px] uppercase tracking-wider text-black/35 font-bold">Required Deposit</p>
+                    <p className="text-sm font-black text-[#082824] mt-1">${formatUsdcMicros(vault.commitUsdc)}</p>
                 </div>
-                <div className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
-                    <p className="text-[8px] uppercase tracking-wider text-white/35 font-bold">Unbilled Usage</p>
-                    <p className="text-sm font-black text-[#00d2b4] mt-1">${formatUsdcMicros(vault.accruedUsageUsdc)}</p>
+                <div className="rounded-xl border border-black/10 bg-black/[0.02] p-3">
+                    <p className="text-[8px] uppercase tracking-wider text-black/35 font-bold">Unbilled Usage</p>
+                    <p className="text-sm font-black text-[#007f70] mt-1">${formatUsdcMicros(vault.accruedUsageUsdc)}</p>
                 </div>
-                <div className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
-                    <p className="text-[8px] uppercase tracking-wider text-white/35 font-bold">Overdue</p>
-                    <p className={`text-sm font-black mt-1 ${owedMicros > 0 ? "text-red-300" : "text-white"}`}>${formatUsdcMicros(vault.owedUsdc)}</p>
+                <div className="rounded-xl border border-black/10 bg-black/[0.02] p-3">
+                    <p className="text-[8px] uppercase tracking-wider text-black/35 font-bold">Overdue</p>
+                    <p className={`text-sm font-black mt-1 ${owedMicros > 0 ? "text-red-600" : "text-[#082824]"}`}>${formatUsdcMicros(vault.owedUsdc)}</p>
                 </div>
-                <div className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
-                    <p className="text-[8px] uppercase tracking-wider text-white/35 font-bold">Period Started</p>
-                    <p className="text-xs font-bold text-white/70 mt-1">{cycleStart}</p>
+                <div className="rounded-xl border border-black/10 bg-black/[0.02] p-3">
+                    <p className="text-[8px] uppercase tracking-wider text-black/35 font-bold">Period Started</p>
+                    <p className="text-xs font-bold text-black/70 mt-1">{cycleStart}</p>
                 </div>
             </div>
         </div>

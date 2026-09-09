@@ -47,12 +47,12 @@ export default function NoCodePage() {
 
       <Callout tone="teal" title="What a payment link does and does not do">
         <p>
-          <span className="font-semibold text-white/80">Does:</span> hosts a checkout your payer completes without
+          <span className="font-semibold text-[#111827]">Does:</span> hosts a checkout your payer completes without
           an account, records the payment, produces a receipt, and (once you configure an endpoint) sends you
           signed webhooks.
         </p>
         <p className="mt-2">
-          <span className="font-semibold text-white/80">Does not:</span> grant access to anything by itself.
+          <span className="font-semibold text-[#111827]">Does not:</span> grant access to anything by itself.
           Fulfillment — unlocking the product, updating your own database — is yours. Until you wire a webhook,
           treat payments as collected and access as something you grant from the dashboard or by hand.
         </p>
@@ -62,7 +62,7 @@ export default function NoCodePage() {
         <p>
           The moment you want access to unlock automatically, add the backend path: create intents from your
           server and listen for <span className="font-mono">payment.succeeded</span>. The{" "}
-          <Link href="/docs/quickstart" className="font-semibold text-[#00d2b4] hover:underline">
+          <Link href="/docs/quickstart" className="font-semibold text-[#2775CA] hover:underline">
             quickstart
           </Link>{" "}
           is that exact flow in five minutes.

@@ -20,7 +20,7 @@ export default function UsagePage() {
 
       <DocsLead>
         For metered products that do not fit fixed monthly plans, SubScript uses on-chain{" "}
-        <span className="font-bold text-white/90">commit vaults</span>. The platform fixes the commitment at 2
+        <span className="font-bold text-[#111827]">commit vaults</span>. The platform fixes the commitment at 2
         USDC; the customer escrows it once per cycle, and their service stays active while you report usage. Funds
         are guaranteed up to the committed balance: you are not chasing per-call card charges.
       </DocsLead>
@@ -31,9 +31,9 @@ export default function UsagePage() {
           ["Per-session access", "Charge per session, render, or job: gate each one on the vault status in a single request."],
           ["Pay-per-view items", "Settle small purchases for articles, clips, data exports, or premium actions without an all-access plan."],
         ].map(([title, text]) => (
-          <div key={title} className="rounded-2xl border border-white/5 bg-black/30 p-5">
-            <h3 className="text-xs font-semibold text-white">{title}</h3>
-            <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
+          <div key={title} className="rounded-2xl border border-black/10 bg-white/60 p-5 shadow-sm">
+            <h3 className="text-xs font-semibold text-[#111827]">{title}</h3>
+            <p className="mt-2 text-xs leading-relaxed text-black/60">{text}</p>
           </div>
         ))}
       </div>
@@ -53,41 +53,41 @@ export default function UsagePage() {
       </Callout>
 
       <section className="space-y-4">
-        <h2 id="order-of-operations" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="order-of-operations" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           How a developer integrates pay-per-session
         </h2>
-        <ol className="max-w-3xl list-decimal space-y-2 pl-5 text-xs leading-relaxed text-white/65">
+        <ol className="max-w-3xl list-decimal space-y-2 pl-5 text-xs leading-relaxed text-black/70">
           <li>
-            <span className="font-bold text-white/85">The commitment is platform-fixed.</span> Every customer
+            <span className="font-bold text-[#111827]">The commitment is platform-fixed.</span> Every customer
             escrows the standard <span className="font-mono">2 USDC</span> per cycle — it is not
             merchant-configurable (<span className="font-mono">GET /api/merchant/vault/commit-config</span> returns
             the policy), and your drawable settlement is capped at the same 2 USDC per customer per cycle.
           </li>
           <li>
-            <span className="font-bold text-white/85">Customer commits once per cycle.</span> They open{" "}
+            <span className="font-bold text-[#111827]">Customer commits once per cycle.</span> They open{" "}
             <span className="font-mono">/dashboard/user?tab=commit</span>, choose your merchant address, and escrow
             the standard 2 USDC from their SubScript wallet. The vault goes{" "}
-            <span className="font-bold text-emerald-300">active</span> for the 30-day cycle; settlement closes it,
+            <span className="font-bold text-[#2775CA]">active</span> for the 30-day cycle; settlement closes it,
             so the next cycle requires a fresh commitment.
           </li>
           <li>
-            <span className="font-bold text-white/85">Check readiness.</span> Call{" "}
+            <span className="font-bold text-[#111827]">Check readiness.</span> Call{" "}
             <span className="font-mono">GET /api/user/vault/status?userAddress=0x...</span> with your secret key
             before rendering a metered session. It returns <span className="font-mono">NO_VAULT</span>,{" "}
             <span className="font-mono">VAULT_INACTIVE</span>, or <span className="font-mono">VAULT_ACTIVE</span>,
             plus a dashboard URL to show the customer when they need to commit.
           </li>
           <li>
-            <span className="font-bold text-white/85">Report before you serve.</span> Call{" "}
+            <span className="font-bold text-[#111827]">Report before you serve.</span> Call{" "}
             <span className="font-mono">POST /api/user/vault/report-usage</span> with your secret key{" "}
-            <span className="font-bold text-white/85">before rendering each unit</span>, and serve only on a{" "}
+            <span className="font-bold text-[#111827]">before rendering each unit</span>, and serve only on a{" "}
             <span className="font-mono">200</span>. A <span className="font-mono">402</span> means do not serve:
             either the vault is inactive (<span className="font-mono">VAULT_INACTIVE</span>) or the charge would
             exceed the remaining escrow (<span className="font-mono">COMMIT_EXHAUSTED</span>). Reporting after you
             serve risks eating the last unit&apos;s cost yourself.
           </li>
           <li>
-            <span className="font-bold text-white/85">Get paid at cycle end.</span> SubScript&apos;s keeper draws
+            <span className="font-bold text-[#111827]">Get paid at cycle end.</span> SubScript&apos;s keeper draws
             the accrued total from escrow; you withdraw with <span className="font-mono">merchantClaim</span>. A
             report that would exceed escrow is rejected outright and the response&apos;s{" "}
             <span className="font-mono">remainingUsdc</span> shows what&apos;s left, so the customer can never be
@@ -98,20 +98,20 @@ export default function UsagePage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="denials" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="denials" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           The two denial cases
         </h2>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className="rounded-2xl border border-white/5 bg-black/30 p-5">
-            <p className="font-mono text-xs font-bold text-amber-300">VAULT_INACTIVE</p>
-            <p className="mt-2 text-xs leading-relaxed text-white/55">
+          <div className="rounded-2xl border border-black/10 bg-white/60 p-5 shadow-sm">
+            <p className="font-mono text-xs font-bold text-amber-700">VAULT_INACTIVE</p>
+            <p className="mt-2 text-xs leading-relaxed text-black/60">
               The customer owes a balance or has dropped below the commit you require. Send them back to the commit
               prompt — <span className="font-mono">status.onboarding?.dashboardUrl</span> is the destination.
             </p>
           </div>
-          <div className="rounded-2xl border border-white/5 bg-black/30 p-5">
-            <p className="font-mono text-xs font-bold text-amber-300">COMMIT_EXHAUSTED</p>
-            <p className="mt-2 text-xs leading-relaxed text-white/55">
+          <div className="rounded-2xl border border-black/10 bg-white/60 p-5 shadow-sm">
+            <p className="font-mono text-xs font-bold text-amber-700">COMMIT_EXHAUSTED</p>
+            <p className="mt-2 text-xs leading-relaxed text-black/60">
               This charge would exceed their remaining escrow. The entire request is rejected and{" "}
               <span className="font-mono">nothing accrues</span>, so a customer can never be charged past what they
               committed. <span className="font-mono">body.remainingUsdc</span> tells you what is left; retrying
@@ -130,10 +130,10 @@ export default function UsagePage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="settlement" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="settlement" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Getting paid
         </h2>
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           At the end of the 30-day cycle SubScript&apos;s keeper draws the accrued total from the customer&apos;s
           escrow. You withdraw it with <span className="font-mono">merchantClaim</span> — the Vault tab of the
           merchant dashboard, or <span className="font-mono">POST /api/merchant/vault/claim</span>. Accrued usage

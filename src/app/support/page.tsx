@@ -2,9 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, HelpCircle, MessageSquare } from "@/components/icons";
-import Navbar from "@/components/Navbar";
-import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+import { ArrowLeft, HelpCircle, MessageSquare, Shield } from "@/components/icons";
 import SupportChatModal from "@/components/support/SupportChatModal";
 
 const channels = [
@@ -75,113 +73,167 @@ export default function SupportPage() {
   const [supportChatOpen, setSupportChatOpen] = useState(false);
 
   return (
-    <main className="relative min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white">
-      <AnimatedGradientBg />
+    <main className="min-h-screen w-full bg-[#FFFFF0] text-[#111827] font-sans selection:bg-[#2775CA]/20 selection:text-black">
       <SupportChatModal open={supportChatOpen} onClose={() => setSupportChatOpen(false)} />
-      <div className="relative z-10">
-        <Navbar />
 
-        <div className="mx-auto max-w-4xl px-6 pb-24 pt-36 sm:px-8">
-          <Link href="/" className="mb-8 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-white/50 transition-colors hover:text-white">
+      {/* Top Header Navigation */}
+      <header className="sticky top-0 z-30 w-full border-b border-black/10 bg-[#FFFFF0]/90 backdrop-blur-md">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+          <Link href="/" className="inline-flex items-center gap-2.5 group">
+            <div className="w-8 h-8 rounded-lg bg-[#2775CA] flex items-center justify-center p-1.5 shadow-sm">
+              <img
+                src="/logo-transparent.png"
+                alt="SubScript Logo"
+                className="w-full h-full object-contain brightness-0 invert"
+              />
+            </div>
+            <span className="text-lg font-black tracking-tight text-[#111827]">
+              SubScript
+            </span>
+          </Link>
+
+          <div className="flex items-center gap-3">
+            <Link
+              href="/signin"
+              className="text-xs font-semibold text-black/70 hover:text-black transition-colors"
+            >
+              Sign In
+            </Link>
+            <Link
+              href="/signup"
+              className="px-3.5 py-2 text-xs font-bold text-white bg-[#2775CA] hover:bg-[#1f62ab] rounded-xl shadow-sm transition-all"
+            >
+              Get Started
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content Area */}
+      <div className="mx-auto max-w-4xl px-6 py-12 sm:px-8">
+        <div className="mb-10">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2775CA] hover:underline mb-4"
+          >
             <ArrowLeft className="h-3.5 w-3.5" />
             Back to Home
           </Link>
 
-          <div className="mb-12">
-            <span className="mb-3 block text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
-              Help Center
-            </span>
-            <h1 className="flex items-center gap-3 text-4xl font-extrabold uppercase leading-none tracking-tight text-white sm:text-5xl">
-              Support <span className="font-serif font-normal italic lowercase tracking-normal text-[#00d2b4]">&amp; contact</span>
-            </h1>
-            <p className="mt-4 max-w-2xl text-sm leading-relaxed text-white/60">
-              Real humans read every message. Include the email or wallet address on your account —
-              plus a receipt ID or transaction hash if it&apos;s about a payment — and we can usually
-              resolve things in one reply.
-            </p>
-            <div className="mt-6 flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setSupportChatOpen(true)}
-                className="inline-flex items-center gap-2 rounded-2xl bg-[#00d2b4] px-6 py-3.5 text-xs font-black uppercase tracking-wider text-[#082824] shadow-lg shadow-[#00d2b4]/20 transition hover:bg-[#00d2b4]/90"
-              >
-                <MessageSquare className="h-4 w-4" />
-                Start In-App Support Chat
-              </button>
-            </div>
-            <p className="mt-4 rounded-xl border border-[#00d2b4]/20 bg-[#00d2b4]/5 px-4 py-3 text-xs leading-relaxed text-[#00d2b4]">
+          <span className="block text-[11px] font-bold uppercase tracking-wider text-[#2775CA]">
+            Help Center
+          </span>
+          <h1 className="mt-1 text-3xl sm:text-4xl font-black tracking-tight text-[#111827]">
+            Support & Contact
+          </h1>
+          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-black/60">
+            Real humans read every message. Include the email or wallet address on your account —
+            plus a receipt ID or transaction hash if it&apos;s about a payment — and we can usually
+            resolve things in one reply.
+          </p>
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setSupportChatOpen(true)}
+              className="inline-flex items-center gap-2 rounded-xl bg-[#2775CA] px-5 py-3 text-xs font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-[#1f62ab] active:scale-[0.99]"
+            >
+              <MessageSquare className="h-4 w-4" />
+              Start In-App Support Chat
+            </button>
+          </div>
+          <div className="mt-6 rounded-2xl border border-[#2775CA]/20 bg-[#2775CA]/5 p-4 text-xs leading-relaxed text-[#1d599b] flex items-center gap-2">
+            <Shield className="w-4 h-4 shrink-0 text-[#2775CA]" />
+            <span>
               Public beta notice: SubScript currently runs on the Arc testnet. Beta payments settle in
               testnet USDC, which has no monetary value.
-            </p>
-          </div>
-
-          <div className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {channels.map((ch) => (
-              <section key={ch.title} className="liquid-glass flex flex-col gap-3 rounded-3xl border border-white/5 p-6">
-                <h2 className="text-sm font-bold uppercase tracking-wider text-white">{ch.title}</h2>
-                {ch.isChat ? (
-                  <button
-                    type="button"
-                    onClick={() => setSupportChatOpen(true)}
-                    className="inline-flex items-center gap-1 text-left font-mono text-xs font-bold text-[#00d2b4] hover:underline"
-                  >
-                    Open Live Ticket Chat &rarr;
-                  </button>
-                ) : "link" in ch && ch.link ? (
-                  <a href={ch.link.href} target="_blank" rel="noopener noreferrer" className="break-all font-mono text-xs font-bold text-[#00d2b4] hover:underline">
-                    {ch.link.label}
-                  </a>
-                ) : (
-                  <a href={`mailto:${ch.email}`} className="break-all font-mono text-xs font-bold text-[#00d2b4] hover:underline">
-                    {ch.email}
-                  </a>
-                )}
-                <p className="text-xs leading-relaxed text-white/60">{ch.body}</p>
-                <p className="mt-auto text-[10px] font-bold uppercase tracking-wider text-white/40">{ch.sla}</p>
-              </section>
-            ))}
-          </div>
-
-          <div className="liquid-glass space-y-8 rounded-[32px] border border-white/5 p-8 text-sm leading-relaxed text-white/70 md:p-10">
-            <div className="flex items-center gap-2">
-              <HelpCircle className="h-4 w-4 text-[#00d2b4]" />
-              <h2 className="text-base font-bold uppercase tracking-wider text-white">Common questions</h2>
-            </div>
-            {faqs.map((item) => (
-              <section key={item.q} className="space-y-2">
-                <h3 className="text-sm font-bold text-white">{item.q}</h3>
-                <p>{item.a}</p>
-              </section>
-            ))}
-
-            <section className="space-y-2 border-t border-white/5 pt-6">
-              <h3 className="text-sm font-bold text-white">Compliance & Developers</h3>
-              <p>
-                Explore our <Link href="/compliance" className="text-[#00d2b4] hover:underline">Compliance Center</Link> for AML/CFT policies, sanctions screening, and regulatory disclosures.
-                For technical integration, start with the <Link href="/docs" className="text-[#00d2b4] hover:underline">developer docs</Link> — quickstart,
-                API reference, webhook verification, and SDK usage. Product and protocol updates are posted on{" "}
-                <a href="https://x.com/SubScript_onarc" target="_blank" rel="noopener noreferrer" className="text-[#00d2b4] hover:underline">
-                  @SubScript_onarc
-                </a>.
-              </p>
-            </section>
+            </span>
           </div>
         </div>
 
-        <footer className="border-t border-white/5 bg-[#111111]/30 py-12">
-          <div className="mx-auto flex max-w-4xl flex-col items-center justify-between gap-4 px-6 text-[10px] text-white/40 sm:flex-row">
-            <span>© 2026 SubScript Protocol. All rights reserved.</span>
-            <div className="flex flex-wrap justify-center gap-4">
-              <Link href="/terms" className="transition hover:text-white">Terms of Service</Link>
-              <Link href="/privacy" className="transition hover:text-white">Privacy Policy</Link>
-              <Link href="/refunds" className="transition hover:text-white">Refund Policy</Link>
-              <Link href="/fulfillment" className="transition hover:text-white">Fulfillment Policy</Link>
-              <Link href="/compliance" className="transition hover:text-white">Compliance</Link>
-              <Link href="/support" className="text-[#00d2b4] transition hover:text-white">Support</Link>
+        <div className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {channels.map((ch) => (
+            <section
+              key={ch.title}
+              className="flex flex-col gap-3 rounded-2xl border border-black/10 bg-white/40 p-6 shadow-sm transition-shadow hover:shadow-md"
+            >
+              <h2 className="text-sm font-bold text-[#111827]">{ch.title}</h2>
+              {ch.isChat ? (
+                <button
+                  type="button"
+                  onClick={() => setSupportChatOpen(true)}
+                  className="inline-flex items-center gap-1 text-left font-mono text-xs font-bold text-[#2775CA] hover:underline"
+                >
+                  Open Live Ticket Chat &rarr;
+                </button>
+              ) : "link" in ch && ch.link ? (
+                <a href={ch.link.href} target="_blank" rel="noopener noreferrer" className="break-all font-mono text-xs font-bold text-[#2775CA] hover:underline">
+                  {ch.link.label}
+                </a>
+              ) : (
+                <a href={`mailto:${ch.email}`} className="break-all font-mono text-xs font-bold text-[#2775CA] hover:underline">
+                  {ch.email}
+                </a>
+              )}
+              <p className="text-xs leading-relaxed text-black/60">{ch.body}</p>
+              <p className="mt-auto text-[10px] font-bold uppercase tracking-wider text-black/40">{ch.sla}</p>
+            </section>
+          ))}
+        </div>
+
+        <div className="rounded-2xl border border-black/10 bg-white/40 p-6 sm:p-8 shadow-sm space-y-6">
+          <div className="flex items-center gap-2.5">
+            <div className="w-6 h-6 rounded-lg bg-[#2775CA]/10 flex items-center justify-center text-[#2775CA] shrink-0">
+              <HelpCircle className="w-3.5 h-3.5" />
             </div>
+            <h2 className="text-sm sm:text-base font-bold text-[#111827]">Common questions</h2>
           </div>
-        </footer>
+          {faqs.map((item) => (
+            <section key={item.q} className="space-y-1.5">
+              <h3 className="text-sm font-bold text-[#111827]">{item.q}</h3>
+              <p className="text-xs sm:text-sm text-black/75 leading-relaxed">{item.a}</p>
+            </section>
+          ))}
+
+          <section className="space-y-1.5 border-t border-black/10 pt-6">
+            <h3 className="text-sm font-bold text-[#111827]">Compliance & Developers</h3>
+            <p className="text-xs sm:text-sm text-black/75 leading-relaxed">
+              Explore our <Link href="/compliance" className="text-[#2775CA] hover:underline">Compliance Center</Link> for AML/CFT policies, sanctions screening, and regulatory disclosures.
+              For technical integration, start with the <Link href="/docs" className="text-[#2775CA] hover:underline">developer docs</Link> — quickstart,
+              API reference, webhook verification, and SDK usage. Product and protocol updates are posted on{" "}
+              <a href="https://x.com/SubScript_onarc" target="_blank" rel="noopener noreferrer" className="text-[#2775CA] hover:underline">
+                @SubScript_onarc
+              </a>.
+            </p>
+          </section>
+        </div>
       </div>
+
+      {/* Footer */}
+      <footer className="border-t border-black/10 bg-[#FFFFF0] py-10 mt-12">
+        <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 px-6 text-xs text-black/50 sm:flex-row">
+          <span>© 2026 SubScript Protocol. All rights reserved.</span>
+          <div className="flex flex-wrap justify-center gap-5">
+            <Link href="/terms" className="hover:text-black transition-colors">
+              Terms of Service
+            </Link>
+            <Link href="/privacy" className="hover:text-black transition-colors">
+              Privacy Policy
+            </Link>
+            <Link href="/refunds" className="hover:text-black transition-colors">
+              Refund Policy
+            </Link>
+            <Link href="/fulfillment" className="hover:text-black transition-colors">
+              Fulfillment Policy
+            </Link>
+            <Link href="/compliance" className="hover:text-black transition-colors">
+              Compliance
+            </Link>
+            <Link href="/support" className="font-medium text-[#2775CA] hover:underline">
+              Support
+            </Link>
+          </div>
+        </div>
+      </footer>
     </main>
   );
 }

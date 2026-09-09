@@ -46,11 +46,10 @@ export async function GET(request: Request) {
         const where = { recipientAddress, audience };
         const targetBroadcastAudience = audience === "USER" ? ["users", "both"] : ["merchants", "both"];
 
-        /* One round trip. Query specific account notifications AND global admin broadcasts so every
-           user and merchant gets broadcast announcements regardless of signup timing. */
-        const [notifications, unreadCount, broadcasts] = await Promise.all([
+        /* 1. Fetch existing account notifications for this user that are not dismissed */
+        const [notifications, unreadCount, broadcasts, allUserBroadcastRows] = await Promise.all([
             prisma.accountNotification.findMany({
-                where,
+                where: { ...where, source: { not: "DISMISSED" } },
                 orderBy: { createdAt: "desc" },
                 take: limit,
                 select: {
@@ -64,7 +63,7 @@ export async function GET(request: Request) {
                     broadcastId: true,
                 },
             }),
-            prisma.accountNotification.count({ where: { ...where, readAt: null } }),
+            prisma.accountNotification.count({ where: { ...where, readAt: null, source: { not: "DISMISSED" } } }),
             prisma.adminBroadcast.findMany({
                 where: { audience: { in: targetBroadcastAudience } },
                 orderBy: { createdAt: "desc" },
@@ -77,24 +76,68 @@ export async function GET(request: Request) {
                     createdAt: true,
                 },
             }).catch(() => []),
+            prisma.accountNotification.findMany({
+                where: { recipientAddress, audience, broadcastId: { not: null } },
+                select: { broadcastId: true },
+            }).catch(() => []),
         ]);
 
-        const trackedBroadcastIds = new Set(notifications.map((n) => n.broadcastId).filter(Boolean));
+        /* 2. Determine any new broadcast announcements that have never been written for this user */
+        const knownBroadcastIds = new Set(allUserBroadcastRows.map((n) => n.broadcastId).filter(Boolean));
+        const unrecordedBroadcasts = broadcasts.filter((b) => !knownBroadcastIds.has(b.id));
 
-        const broadcastItems = broadcasts
-            .filter((b) => !trackedBroadcastIds.has(b.id))
-            .map((b) => ({
-                id: `bc_${b.id}`,
-                title: b.title,
-                body: b.body,
-                url: b.url,
-                source: "ADMIN",
-                readAt: null as string | null,
-                createdAt: b.createdAt.toISOString(),
-            }));
+        if (unrecordedBroadcasts.length > 0) {
+            await prisma.accountNotification.createMany({
+                data: unrecordedBroadcasts.map((b) => ({
+                    recipientAddress,
+                    audience,
+                    title: b.title,
+                    body: b.body,
+                    url: b.url,
+                    source: "ADMIN",
+                    broadcastId: b.id,
+                    readAt: null,
+                    createdAt: b.createdAt,
+                })),
+                skipDuplicates: true,
+            });
 
-        const merged = [
-            ...notifications.map((n) => ({
+            // Re-fetch so the returned list and unread count include newly materialized broadcast records
+            const freshNotifications = await prisma.accountNotification.findMany({
+                where: { ...where, source: { not: "DISMISSED" } },
+                orderBy: { createdAt: "desc" },
+                take: limit,
+                select: {
+                    id: true,
+                    title: true,
+                    body: true,
+                    url: true,
+                    source: true,
+                    readAt: true,
+                    createdAt: true,
+                    broadcastId: true,
+                },
+            });
+            const freshUnread = await prisma.accountNotification.count({
+                where: { ...where, readAt: null, source: { not: "DISMISSED" } },
+            });
+
+            return jsonOk({
+                notifications: freshNotifications.map((n) => ({
+                    id: n.id,
+                    title: n.title,
+                    body: n.body,
+                    url: n.url,
+                    source: n.source,
+                    readAt: n.readAt ? n.readAt.toISOString() : null,
+                    createdAt: n.createdAt.toISOString(),
+                })),
+                unreadCount: freshUnread,
+            });
+        }
+
+        return jsonOk({
+            notifications: notifications.map((n) => ({
                 id: n.id,
                 title: n.title,
                 body: n.body,
@@ -103,12 +146,8 @@ export async function GET(request: Request) {
                 readAt: n.readAt ? n.readAt.toISOString() : null,
                 createdAt: n.createdAt.toISOString(),
             })),
-            ...broadcastItems,
-        ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-        const totalUnread = unreadCount + broadcastItems.length;
-
-        return jsonOk({ notifications: merged.slice(0, limit), unreadCount: totalUnread });
+            unreadCount,
+        });
     } catch (error: any) {
         console.error("[notifications] list failed:", error);
         return NextResponse.json({ error: "Unable to load notifications" }, { status: 503 });
@@ -144,13 +183,14 @@ export async function POST(request: Request) {
             where: {
                 ...scope,
                 readAt: null,
+                source: { not: "DISMISSED" },
                 ...(markAll ? {} : { id: { in: ids } }),
             },
             data: { readAt: new Date() },
         });
 
         const unreadCount = await prisma.accountNotification.count({
-            where: { ...scope, readAt: null },
+            where: { ...scope, readAt: null, source: { not: "DISMISSED" } },
         });
 
         return jsonOk({ success: true, unreadCount });
@@ -165,15 +205,61 @@ export async function DELETE(request: Request) {
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-        const id = new URL(request.url).searchParams.get("id");
+        const url = new URL(request.url);
+        const id = url.searchParams.get("id");
+        const allRead = url.searchParams.get("allRead") === "true";
+        const audience = parseAudience(url.searchParams.get("audience"));
+
+        const recipientAddress = wallet.toLowerCase();
+
+        // 1. Bulk delete/dismiss all read notifications for this audience on panel close
+        if (allRead) {
+            const scope = { recipientAddress, ...(audience ? { audience } : {}) };
+
+            // For broadcasts, mark as DISMISSED so they won't resurrect on the next GET
+            await prisma.accountNotification.updateMany({
+                where: {
+                    ...scope,
+                    broadcastId: { not: null },
+                    readAt: { not: null },
+                },
+                data: { source: "DISMISSED" },
+            });
+
+            // For non-broadcast rows that are read, delete them from the database
+            const { count } = await prisma.accountNotification.deleteMany({
+                where: {
+                    ...scope,
+                    broadcastId: null,
+                    readAt: { not: null },
+                },
+            });
+
+            return jsonOk({ success: true, deleted: count });
+        }
+
         if (!id) {
-            return NextResponse.json({ error: "Missing notification id" }, { status: 400 });
+            return NextResponse.json({ error: "Missing notification id or allRead=true" }, { status: 400 });
+        }
+
+        // 2. Single item dismissal
+        // If the item has a broadcastId, mark DISMISSED instead of plain delete so GET won't resurrect it
+        const target = await prisma.accountNotification.findFirst({
+            where: { id, recipientAddress },
+        });
+
+        if (target?.broadcastId) {
+            await prisma.accountNotification.updateMany({
+                where: { id, recipientAddress },
+                data: { source: "DISMISSED" },
+            });
+            return jsonOk({ success: true, deleted: 1 });
         }
 
         /* Scoped to the caller's own rows, so a guessed id deletes nothing. deleteMany rather than
            delete because a miss should be a no-op, not a 404 the client has to special-case. */
         const { count } = await prisma.accountNotification.deleteMany({
-            where: { id, recipientAddress: wallet.toLowerCase() },
+            where: { id, recipientAddress },
         });
 
         return jsonOk({ success: true, deleted: count });

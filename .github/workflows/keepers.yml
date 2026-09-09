@@ -18,21 +18,16 @@ name: Keepers
 #   - A failed step (401/5xx) turns the run red so you get a GitHub notification.
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"    # keeper/cctp        — relay CCTP mints once Circle signs the attestation.
-                             #   Deposits and withdrawals both quote "about five minutes", and the
-                             #   relay is the last leg, so this is the one keeper that needs a tighter
-                             #   cadence than the rest.
-    - cron: "*/15 * * * *"   # reconcile        — recover stuck premium-upgrade sessions
-                             # keeper/vault-topup — refill vaults under a user auto top-up mandate
-    - cron: "0 2 * * *"      # cron/billing      — premium recurring billing + downgrades
-    - cron: "0 5 * * *"      # internal/payroll  — run due payroll campaigns
-    - cron: "0 6 * * *"      # internal/billing  — premium downgrade sweep
-    - cron: "0 7 * * *"      # cron/kyc-expiry   — expire stale KYC verifications
-    - cron: "0 8 * * *"      # cron/gdpr-hard-delete — purge accounts pending deletion > 30 days (GDPR compliance)
-    - cron: "40 8 * * *"     # cron/payment-reminders — renewal / trial-ending / sponsored-access
-                             #   notices. Off the top of the hour on purpose: GitHub's scheduler is
-                             #   busiest at :00 and this job is not time-critical to the minute.
+  # Standby: Automated cron triggers disabled to prevent pinging production Vercel endpoints during mainnet preparation.
+  # schedule:
+  #   - cron: "*/5 * * * *"
+  #   - cron: "*/15 * * * *"
+  #   - cron: "0 2 * * *"
+  #   - cron: "0 5 * * *"
+  #   - cron: "0 6 * * *"
+  #   - cron: "0 7 * * *"
+  #   - cron: "0 8 * * *"
+  #   - cron: "40 8 * * *"
   workflow_dispatch:
     inputs:
       run_all:
