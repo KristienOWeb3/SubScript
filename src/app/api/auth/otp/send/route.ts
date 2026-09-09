@@ -86,12 +86,13 @@ export async function POST(request: Request) {
             }
         }
 
-        /* CAPTCHA is non-mandatory for sign in for now so login is never blocked.
-           Validate if present for diagnostics, but do not reject the request. */
+        /* CAPTCHA runs before any account-dependent response for every anonymous LOGIN-code
+           request. Otherwise an attacker can omit CAPTCHA and distinguish an existing email
+           (code sent) from an unknown email (CAPTCHA error). */
         if (!isEmailBindingRequest) {
-            const isValid = captchaToken ? await verifyCaptchaToken(captchaToken, requesterIp) : true;
+            const isValid = await verifyCaptchaToken(captchaToken, requesterIp);
             if (!isValid) {
-                console.warn("[auth/otp/send] Captcha verification failed, but captcha is non-mandatory for sign in for now.");
+                return NextResponse.json({ error: "Incorrect or expired CAPTCHA code. Please try again." }, { status: 400 });
             }
         }
 

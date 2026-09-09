@@ -11,7 +11,7 @@ test("localhost request bypasses standby mode for dashboard and landing page", a
     });
     const localRes = await proxy(localReq);
     const localText = await localRes.text();
-    assert(!localText.includes("SubScript will be back on mainnet"), "Localhost should not be blocked");
+    assert(!localText.includes("SubScript will return on mainnet"), "Localhost should not be blocked");
 
     // Root landing page on localhost
     const landingReq = new NextRequest("http://localhost:3000/", {
@@ -19,7 +19,7 @@ test("localhost request bypasses standby mode for dashboard and landing page", a
     });
     const landingRes = await proxy(landingReq);
     const landingText = await landingRes.text();
-    assert(!landingText.includes("SubScript will be back on mainnet"), "Localhost landing page should not be blocked");
+    assert(!landingText.includes("SubScript will return on mainnet"), "Localhost landing page should not be blocked");
 });
 
 test("localhost request with ?standby=1 renders standby preview with Sukar font", async () => {
@@ -29,7 +29,7 @@ test("localhost request with ?standby=1 renders standby preview with Sukar font"
     const previewRes = await proxy(previewReq);
     assert.equal(previewRes.status, 200);
     const previewText = await previewRes.text();
-    assert(previewText.includes("SubScript will be back on mainnet"));
+    assert(previewText.includes("SubScript will return on mainnet"));
     assert(previewText.includes("font-family: 'Sukar'"));
     assert(previewText.includes("background-color: #000000"));
 });
@@ -42,7 +42,7 @@ test("production page request returns 200 standby HTML with edge caching", async
     const prodRes = await proxy(prodReq);
     assert.equal(prodRes.status, 200);
     const prodText = await prodRes.text();
-    assert(prodText.includes("SubScript will be back on mainnet"));
+    assert(prodText.includes("SubScript will return on mainnet"));
     assert(prodText.includes("font-family: 'Sukar'"));
     assert.equal(prodRes.headers.get("Cache-Control"), "public, max-age=3600, s-maxage=86400");
 
@@ -53,7 +53,7 @@ test("production page request returns 200 standby HTML with edge caching", async
     const prodLandingRes = await proxy(prodLandingReq);
     assert.equal(prodLandingRes.status, 200);
     const prodLandingText = await prodLandingRes.text();
-    assert(prodLandingText.includes("SubScript will be back on mainnet"));
+    assert(prodLandingText.includes("SubScript will return on mainnet"));
     assert(prodLandingText.includes("font-family: 'Sukar'"));
 });
 
@@ -64,7 +64,7 @@ test("production API request returns 503 standby response without touching DB", 
     const prodApiRes = await proxy(prodApiReq);
     assert.equal(prodApiRes.status, 503);
     const prodApiJson = await prodApiRes.json();
-    assert.equal(prodApiJson.message, "SubScript will be back on mainnet");
+    assert.equal(prodApiJson.message, "SubScript will return on mainnet");
 });
 
 test("static font assets pass through untouched", async () => {

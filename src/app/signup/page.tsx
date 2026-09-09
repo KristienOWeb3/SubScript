@@ -155,7 +155,7 @@ function SignupContent() {
   const [captchaToken, setCaptchaToken] = useState("");
   const [turnstileLoaded, setTurnstileLoaded] = useState(false);
   const isTurnstileConfigured = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
-  const captchaRequired = false; // Captcha is non-mandatory for sign in/up for now
+  const captchaRequired = isTurnstileConfigured && !captchaToken;
 
   useEffect(() => {
     if (resendCooldown > 0) {

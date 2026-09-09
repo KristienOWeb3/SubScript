@@ -23,8 +23,7 @@ export async function verifyCaptchaToken(
         return false;
     }
     if (!turnstileToken) {
-        // Captcha is non-mandatory for sign in for now
-        return true;
+        return false;
     }
 
     try {

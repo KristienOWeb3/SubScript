@@ -97,7 +97,7 @@ export async function POST(request: Request) {
         if (!role && captchaToken) {
             const isValid = await verifyCaptchaToken(captchaToken, requesterIp);
             if (!isValid) {
-                console.warn("[auth/verify-signature] Captcha verification failed, but captcha is non-mandatory for sign in for now.");
+                return NextResponse.json({ error: "Incorrect or expired CAPTCHA code. Please try again." }, { status: 400 });
             }
         }
 

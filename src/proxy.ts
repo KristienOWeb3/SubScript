@@ -369,7 +369,7 @@ const STANDBY_HTML = `<!doctype html>
     </style>
 </head>
 <body>
-    <h1>SubScript will be back on mainnet</h1>
+    <h1>SubScript will return on mainnet</h1>
 </body>
 </html>`;
 
@@ -405,7 +405,7 @@ export default async function proxy(request: NextRequest) {
 
     /* Live Production Standby Gate:
        When running on live production (non-localhost), short-circuit all requests to display
-       "SubScript will be back on mainnet" on a black background with white text using Sukar font.
+       "SubScript will return on mainnet" on a black background with white text using Sukar font.
        All /api/* endpoints return 503 to halt database/keeper/RPC workloads on Vercel.
        Localhost remains completely unrestricted so local development and mainnet preparation continue smoothly. */
     const isStandbyPreview = request.nextUrl.searchParams.get("standby") === "1";
@@ -414,7 +414,7 @@ export default async function proxy(request: NextRequest) {
     if (shouldEnforceStandby) {
         if (isApiRoute) {
             return NextResponse.json(
-                { message: "SubScript will be back on mainnet" },
+                { message: "SubScript will return on mainnet" },
                 {
                     status: 503,
                     headers: {
