@@ -31,7 +31,7 @@ export default function ProtocolPage() {
         </p>
       </Callout>
 
-      <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+      <p className="max-w-3xl text-sm leading-relaxed text-black/70">
         Concretely: Checkout Intents, subscriptions, plan catalogs, metered commit vaults, signed webhooks,
         receipts, payment links, retries, and reconciliation are integration primitives you can build on now. Fiat
         onramps, dedicated invoice terms, sponsor records, merchant commitment windows, and fully decentralized
@@ -39,19 +39,19 @@ export default function ProtocolPage() {
         themselves should not be assumed live.
       </p>
 
-      <div className="rounded-3xl border border-cyan-300/20 bg-cyan-300/[0.06] p-6">
+      <div className="rounded-3xl border border-[#2775CA]/20 bg-[#2775CA]/[0.06] p-6 shadow-sm">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200">Protocol brief</p>
-            <h2 className="mt-3 text-2xl font-bold tracking-tight text-white">Read the full brief</h2>
-            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-white/70">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#2775CA]">Protocol brief</p>
+            <h2 className="mt-3 text-2xl font-bold tracking-tight text-[#111827]">Read the full brief</h2>
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-black/70">
               The brief covers the UPA framework, each live primitive and the problem it solves, and the explicit
               list of deployment-scoped targets with the conditions that would make them live.
             </p>
           </div>
           <Link
             href="/protocol"
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-cyan-300/25 bg-cyan-300/10 px-5 py-3 text-xs font-semibold uppercase tracking-wider text-cyan-100 transition hover:bg-cyan-300/15 hover:text-white"
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-[#2775CA]/20 bg-[#2775CA]/10 px-5 py-3 text-xs font-semibold uppercase tracking-wider text-[#2775CA] transition hover:bg-[#2775CA]/15 hover:text-[#1f62ab]"
           >
             Open brief
             <ArrowRight className="h-4 w-4" />

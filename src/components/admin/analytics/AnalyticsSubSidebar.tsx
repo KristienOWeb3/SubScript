@@ -36,7 +36,7 @@ export const ANALYTICS_SECTIONS: AnalyticsSidebarItem[] = [
   {
     id: "subscriptions",
     label: "Subscriptions & MRR",
-    description: "Customer plans, premium revenue, and churn",
+    description: "Customer plans, KYC access, and churn",
     icon: Layers,
   },
   {

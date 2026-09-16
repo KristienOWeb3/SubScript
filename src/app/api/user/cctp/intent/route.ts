@@ -3,11 +3,13 @@ import { getSessionWallet } from "@/lib/auth";
 import { pgQuery, pgMaybeOne } from "@/lib/serverPg";
 import {
   CCTP_CONFIG,
+  ARC_CCTP_ENABLED,
   ARC_TESTNET_CHAIN_ID,
   ARC_MAINNET_CHAIN_ID,
 } from "@/lib/contracts/constants";
 import { deriveDepositAddress } from "@/lib/cctp/depositAddresses";
 import { formatFeeBps } from "@/lib/cctp/feeEngine";
+import { CCTP_UNAVAILABLE_MESSAGE } from "@/lib/cctp/availability";
 
 export const maxDuration = 15;
 
@@ -22,6 +24,10 @@ export const maxDuration = 15;
  * Returns: { depositAddress, chainName, fee, feeBps, intentId }
  */
 export async function POST(req: NextRequest) {
+  if (!ARC_CCTP_ENABLED) {
+    return NextResponse.json({ error: CCTP_UNAVAILABLE_MESSAGE }, { status: 503 });
+  }
+
   try {
     const wallet = await getSessionWallet(req.headers);
     if (!wallet) {
@@ -31,6 +37,15 @@ export async function POST(req: NextRequest) {
       );
     }
     const userWallet = wallet.toLowerCase();
+
+    const { getAccountKycTier } = await import("@/lib/kyc/tier");
+    const tierInfo = await getAccountKycTier(userWallet);
+    if (tierInfo.tier < 1) {
+      return NextResponse.json(
+        { error: "Transactions require Tier 1 verification. Please link and verify your email to continue." },
+        { status: 403 },
+      );
+    }
 
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== "object") {

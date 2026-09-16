@@ -12,6 +12,7 @@ import { QRCode } from "react-qrcode-logo";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     SUBSCRIPT_ROUTER_ADDRESS, 
+    ARC_MAINNET_CHAIN_ID,
     USDC_NATIVE_GAS_ADDRESS,
     ARC_TESTNET_CHAIN_ID,
     CCTP_CONFIG,
@@ -719,13 +720,13 @@ export default function PublicPayClient({
         };
     }, [clearPendingVerification, clientIntentId, isPaymentSettled, linkData?.id, linkData?.max_uses, markSettled]);
 
-    const defaultArcChainId = isProd ? 5042001 : 5042002;
+    const defaultArcChainId = isProd ? ARC_MAINNET_CHAIN_ID : ARC_TESTNET_CHAIN_ID;
     const expectedChainId = linkData?.settlement_chain_id
         ? Number(linkData.settlement_chain_id)
         : linkData?.chain_id
             ? Number(linkData.chain_id)
             : defaultArcChainId;
-    const expectedChainName = expectedChainId === 5042001 ? "Arc Mainnet" : expectedChainId === 5042002 ? "Arc Testnet" : `Chain ${expectedChainId}`;
+    const expectedChainName = expectedChainId === ARC_MAINNET_CHAIN_ID ? "Arc Mainnet" : expectedChainId === ARC_TESTNET_CHAIN_ID ? "Arc Testnet" : `Chain ${expectedChainId}`;
 
     const { data: arcBalanceData } = useBalance({
         address: address,
@@ -784,8 +785,8 @@ export default function PublicPayClient({
     const requiredAmount = invoiceAmount;
     const hasSufficientArcBalance = arcBalanceData ? (arcUsdcBalance >= invoiceAmount) : true;
 
-    const cctpOriginChainId = expectedChainId === 5042001 ? 1 : 11155111;
-    const cctpOriginChainName = expectedChainId === 5042001 ? "Ethereum Mainnet" : "Ethereum Sepolia";
+    const cctpOriginChainId = expectedChainId === ARC_MAINNET_CHAIN_ID ? 1 : 11155111;
+    const cctpOriginChainName = expectedChainId === ARC_MAINNET_CHAIN_ID ? "Ethereum Mainnet" : "Ethereum Sepolia";
     /* Hard-disabled until Arc-side memo settlement is production-ready. */
     const cctpCheckoutEnabled = CCTP_CHECKOUT_ENABLED;
 

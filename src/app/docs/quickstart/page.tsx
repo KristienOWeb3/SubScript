@@ -48,16 +48,16 @@ export default function QuickstartPage() {
       />
 
       <section className="space-y-4">
-        <h2 id="first-request" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="first-request" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Step 1 — Create the intent
         </h2>
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           Paste this into a terminal with your own test key. It creates a real sandbox checkout you can open in a
           browser.
         </p>
         <CodeBlock code={quickstartCurl} language="bash" />
 
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           The response carries everything you need. Three fields matter enough to persist before you redirect
           anyone:
         </p>
@@ -84,10 +84,10 @@ export default function QuickstartPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="from-your-backend" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="from-your-backend" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Step 2 — The same call from your backend
         </h2>
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           The curl above becomes this. Note the error branch: SubScript returns a stable{" "}
           <span className="font-mono">code</span> for branching and a <span className="font-mono">request_id</span>{" "}
           that support can look up, so log both and never log the key itself.
@@ -96,10 +96,10 @@ export default function QuickstartPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="redirect" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="redirect" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Step 3 — Send the payer to checkout
         </h2>
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           Hosted checkout handles wallet connection, the USDC transfer, and settlement verification. Your frontend
           only needs the URL.
         </p>
@@ -116,14 +116,14 @@ export default function QuickstartPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="fulfill" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="fulfill" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Step 4 — Fulfill from the webhook
         </h2>
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           When the payment settles on Arc, SubScript sends a signed{" "}
           <span className="font-mono">payment.succeeded</span> event to your endpoint. Verify it, claim the event id
           so retries cannot double-fulfill, then unlock access. The{" "}
-          <Link href="/docs/webhooks" className="font-semibold text-[#00d2b4] hover:underline">
+          <Link href="/docs/webhooks" className="font-semibold text-[#2775CA] hover:underline">
             webhooks page
           </Link>{" "}
           has the full verification handler — copy it rather than writing your own HMAC comparison.
@@ -133,7 +133,7 @@ export default function QuickstartPage() {
           <p>
             You can create an intent, complete a sandbox checkout, and watch your own database flip one order to
             paid — exactly once, even if you replay the webhook by hand. That last part is the real test; the{" "}
-            <Link href="/docs/testing" className="font-semibold text-[#00d2b4] hover:underline">
+            <Link href="/docs/testing" className="font-semibold text-[#2775CA] hover:underline">
               sandbox acceptance checklist
             </Link>{" "}
             walks through proving it.

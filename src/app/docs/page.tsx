@@ -17,21 +17,21 @@ export default function DocsOverviewPage() {
 
   return (
     <article className="space-y-8">
-      <div className="inline-flex items-center gap-2 rounded-full border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#00d2b4]">
+      <div className="inline-flex items-center gap-2 rounded-full border border-[#2775CA]/20 bg-[#2775CA]/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#2775CA]">
         <BookOpen className="h-3 w-3" />
         Start here
       </div>
-      <h1 className="max-w-3xl text-4xl font-bold tracking-tight text-white sm:text-5xl">
+      <h1 className="max-w-3xl text-4xl font-bold tracking-tight text-[#111827] sm:text-5xl">
         From API key to verified USDC payment.
       </h1>
-      <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+      <p className="max-w-3xl text-sm leading-relaxed text-black/70">
         Create a Checkout Intent from your backend, redirect the payer to SubScript, and fulfill your order from a
         signed webhook. This guide starts with a working sandbox request, then explains every identifier, security
         boundary, and production decision.
       </p>
 
-      <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
-        <p className="font-bold text-white/85">What SubScript actually is</p>
+      <div className="rounded-2xl border border-black/10 bg-white/60 p-5 shadow-sm text-xs leading-relaxed text-black/70">
+        <p className="font-bold text-[#111827]">What SubScript actually is</p>
         <p className="mt-2">
           SubScript is a payments layer over USDC on Arc. Your backend describes a payment; SubScript hosts the
           checkout, watches the chain for settlement, and tells you what happened over a signed webhook. You never
@@ -48,14 +48,14 @@ export default function DocsOverviewPage() {
       <div className="flex flex-wrap gap-3">
         <Link
           href="/docs/quickstart"
-          className="inline-flex items-center gap-2 rounded-full bg-[#00d2b4] px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-[#04110f] transition hover:bg-[#42e7cd]"
+          className="inline-flex items-center gap-2 rounded-full bg-[#2775CA] px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-[#1f62ab]"
         >
           Start quickstart
           <ArrowRight className="h-4 w-4" />
         </Link>
         <Link
           href="/docs/developer"
-          className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-white/10"
+          className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/60 shadow-sm px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-[#111827] transition hover:bg-[#2775CA]/5"
         >
           API reference
           <Code className="h-4 w-4" />
@@ -68,18 +68,18 @@ export default function DocsOverviewPage() {
           ["OpenAPI + llms.txt", "Machine-readable specs for humans and agents"],
           ["Self-testable", "CLI trigger, local listener, and sandbox test clocks"],
         ].map(([label, text]) => (
-          <div key={label} className="liquid-glass rounded-2xl border border-white/5 bg-black/25 p-5">
-            <p className="text-2xl font-bold text-[#00d2b4]">{label}</p>
-            <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
+          <div key={label} className="rounded-2xl border border-black/10 bg-white/60 shadow-sm p-5">
+            <p className="text-2xl font-bold text-[#2775CA]">{label}</p>
+            <p className="mt-2 text-xs leading-relaxed text-black/60">{text}</p>
           </div>
         ))}
       </div>
 
       <section className="space-y-4">
-        <h2 id="endpoint-decision" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="endpoint-decision" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Pick the endpoint before you write the request
         </h2>
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           This is the single decision that causes the most rework, because the endpoints are not interchangeable and
           the wrong one produces a checkout that looks correct until renewal time. Classify the billing model first:
           does the customer pay <em>once</em>, or does the customer authorize a <em>repeating</em> charge?
@@ -118,10 +118,10 @@ export default function DocsOverviewPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="machine-readable" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="machine-readable" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Machine-readable surfaces
         </h2>
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           Every page in this guide has a plain-Markdown twin at the same path with{" "}
           <span className="font-mono">.md</span> appended — <span className="font-mono">/docs/webhooks.md</span>{" "}
           returns the webhooks page as text with no markup to strip. If you are pointing an agent at these docs, feed
@@ -138,17 +138,17 @@ export default function DocsOverviewPage() {
             <a
               key={href}
               href={href}
-              className="rounded-2xl border border-white/5 bg-black/30 p-4 text-xs transition hover:border-[#00d2b4]/35 hover:bg-[#00d2b4]/10"
+              className="rounded-2xl border border-black/10 bg-white/60 shadow-sm p-4 text-xs transition hover:border-[#2775CA]/40 hover:bg-[#2775CA]/10"
             >
-              <span className="block font-semibold text-white">{label}</span>
-              <span className="mt-1 block font-mono text-[#00d2b4]">{href}</span>
+              <span className="block font-semibold text-[#111827]">{label}</span>
+              <span className="mt-1 block font-mono text-[#2775CA]">{href}</span>
             </a>
           ))}
         </div>
       </section>
 
       <section className="space-y-4">
-        <h2 id="map" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="map" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Everything in this guide
         </h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -160,14 +160,14 @@ export default function DocsOverviewPage() {
                 <Link
                   key={section.slug}
                   href={sectionHref(section)}
-                  className="group rounded-2xl border border-white/5 bg-black/30 p-5 transition hover:border-[#00d2b4]/35 hover:bg-[#00d2b4]/5"
+                  className="group rounded-2xl border border-black/10 bg-white/60 shadow-sm p-5 transition hover:border-[#2775CA]/40 hover:bg-[#2775CA]/5"
                 >
                   <div className="flex items-center gap-2">
-                    <Icon className="h-4 w-4 text-[#00d2b4]" />
-                    <h3 className="text-sm font-semibold text-white">{section.title}</h3>
+                    <Icon className="h-4 w-4 text-[#2775CA]" />
+                    <h3 className="text-sm font-semibold text-[#111827]">{section.title}</h3>
                   </div>
-                  <p className="mt-2 text-xs leading-relaxed text-white/55">{section.summary}</p>
-                  <span className="mt-3 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[#00d2b4] opacity-0 transition group-hover:opacity-100">
+                  <p className="mt-2 text-xs leading-relaxed text-black/60">{section.summary}</p>
+                  <span className="mt-3 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[#2775CA] opacity-0 transition group-hover:opacity-100">
                     Read <Zap className="h-3 w-3" />
                   </span>
                 </Link>

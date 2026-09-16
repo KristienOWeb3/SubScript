@@ -50,7 +50,7 @@ import type { MerchantAnalyticsSummary, MerchantSubscriptionDetail } from "@/lib
 import { PayrollContent } from "@/app/dashboard/payroll/PayrollContent";
 
 import {
-    PREMIUM_PLAN_ID,
+
     SUBSCRIPT_ROUTER_ADDRESS,
     STANDARD_CONTRACT_ADDRESS,
     USDC_NATIVE_GAS_ADDRESS,
@@ -78,12 +78,12 @@ const tabs = [
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "checkout", label: "Checkout Setup", icon: Code2 },
     { id: "webhooks", label: "Webhooks", icon: Webhook },
-    { id: "premium", label: "Premium Pro", icon: Crown },
+    { id: "advanced", label: "Advanced", icon: Sliders },
     { id: "settings", label: "Profile & DNS", icon: User },
 ] as const;
 
 
-type TabId = "overview" | "premium" | "payment-links" | "plans" | "apikeys" | "checkout" | "webhooks" | "settings" | "payroll" | "offramp";
+type TabId = "overview" | "advanced" | "payment-links" | "plans" | "apikeys" | "checkout" | "webhooks" | "settings" | "payroll" | "offramp";
 
 type MerchantSubView =
     | "menu"
@@ -265,15 +265,6 @@ export default function DashboardPage() {
     const [linksPage, setLinksPage] = useState(0);
     const [webhooksPage, setWebhooksPage] = useState(0);
 
-    const [premiumSubId, setPremiumSubId] = useState<number | null>(null);
-    const [isCancellingPremium, setIsCancellingPremium] = useState(false);
-    const [cancelAtPeriodEnd, setCancelAtPeriodEnd] = useState(false);
-    const [currentPeriodEnd, setCurrentPeriodEnd] = useState<string | null>(null);
-    const [isResumingPremium, setIsResumingPremium] = useState(false);
-    const [dbSubscriptionStatus, setDbSubscriptionStatus] = useState<string | null>(null);
-    const [downgradeFailures, setDowngradeFailures] = useState<number>(0);
-
-
     const [embeddedWallet, setEmbeddedWallet] = useState<{ wallet: string; email: string } | null>(null);
     const [sessionWallet, setSessionWallet] = useState<string | null>(null);
     const [isAdmin, setIsAdmin] = useState(false);
@@ -311,13 +302,6 @@ export default function DashboardPage() {
             if (functionName === "cancelSubscription") {
                 action = "cancelSubscription";
                 serializedArgs = { subscriptionId: args[0].toString() };
-            } else if (functionName === "createSubscription") {
-                action = "createPremiumSubscription";
-                serializedArgs = {
-                    merchant: args[0],
-                    amount: args[1].toString(),
-                    period: args[2].toString(),
-                };
             } else if (functionName === "withdraw") {
                 action = "withdraw";
                 serializedArgs = {};
@@ -341,7 +325,7 @@ export default function DashboardPage() {
             }
 
             const headers: Record<string, string> = { "Content-Type": "application/json" };
-            const FINANCIAL_ACTIONS = new Set(["transferUsdc", "createPremiumSubscription", "withdraw"]);
+            const FINANCIAL_ACTIONS = new Set(["transferUsdc", "withdraw"]);
             if (FINANCIAL_ACTIONS.has(action)) {
                 if (!pendingRequestIdsRef.current[action]) {
                     pendingRequestIdsRef.current[action] = crypto.randomUUID();
@@ -375,10 +359,7 @@ export default function DashboardPage() {
             });
         }
     };
-
-
-    const [premiumStatus, setPremiumStatus] = useState<string | null>(null);
-    const [premiumError, setPremiumError] = useState<string | null>(null);
+    const [advancedError, setAdvancedError] = useState<string | null>(null);
     const [rerouteAddress, setRerouteAddress] = useState("");
     const [isRerouting, setIsRerouting] = useState(false);
     const [rerouteSuccess, setRerouteSuccess] = useState(false);
@@ -394,13 +375,6 @@ export default function DashboardPage() {
             const tabParam = urlParams.get("tab");
             if (tabParam && (tabs.some(t => t.id === tabParam) || tabParam === "offramp" || tabParam === "plans")) {
                 setActiveTab(tabParam as TabId);
-            }
-            if (urlParams.get("upgradeSuccess") === "true") {
-                setToastMessage("Premium Pro activated");
-                setShowToast(true);
-                setTimeout(() => setShowToast(false), 4000);
-                /* Clean up URL parameter to avoid showing the toast again on refresh */
-                window.history.replaceState({}, document.title, window.location.pathname);
             }
             const scrollParam = urlParams.get("scroll");
             if (scrollParam === "dns") {
@@ -490,7 +464,7 @@ export default function DashboardPage() {
     const [payoutDestination, setPayoutDestination] = useState<string | null>(null);
     const [walletBalance, setWalletBalance] = useState(0);
     const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
-    const [isPremium, setIsPremium] = useState(false);
+    const [isTier1, setIsTier1] = useState(false);
     const [supportChatOpen, setSupportChatOpen] = useState(false);
     const [promptFlowMode, setPromptFlowMode] = useState<"standard" | "private">("standard");
     const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
@@ -536,7 +510,7 @@ export default function DashboardPage() {
        reads. All of this used to share ONE try block, with the API fetches sequenced after a
        Promise.all of four Arc calls — and Arc's public RPC rate-limits per call while viem does not
        retry its 429s (see lib/arc/transport). A single collision rejected the Promise.all and threw
-       before setIsPremium ever ran, so isPremium stayed false and a paying merchant was shown the
+       before setIsTier1 ever ran, so isTier1 stayed false and a paying merchant was shown the
        upgrade lock over their own API keys, checkout and webhooks. The retrying transport makes that
        far less likely; independence makes it harmless. A chain hiccup may cost you a balance — it
        must never cost you your tier. */
@@ -548,13 +522,8 @@ export default function DashboardPage() {
                 const tierRes = await fetch(`/api/merchant/tier?address=${address}`);
                 if (!tierRes.ok) return;
                 const tierData = await tierRes.json();
-                setIsPremium(Number(tierData.tier) >= 1);
+                setIsTier1(Number(tierData.tier) >= 1);
                 setMerchantTier(Number(tierData.tier));
-                setPremiumSubId(tierData.subscriptionId ? Number(tierData.subscriptionId) : null);
-                setCancelAtPeriodEnd(!!tierData.cancelAtPeriodEnd);
-                setCurrentPeriodEnd(tierData.nextBillingDate || null);
-                setDbSubscriptionStatus(tierData.status || null);
-                setDowngradeFailures(tierData.downgradeFailures ? Number(tierData.downgradeFailures) : 0);
             } catch (error) {
                 console.error("Error loading merchant tier:", error);
             }
@@ -574,7 +543,7 @@ export default function DashboardPage() {
 
         const loadChainState = async () => {
             try {
-                /* merchantTiers was read here too and never used — the tier below is the DB's. It was
+                /* merchantTiers was read here too and never used — the KYC tier below is canonical. It was
                    a fourth call into the limiter for nothing. */
                 const [vaultRaw, payoutRaw, walletRaw] = await Promise.all([
                     publicClient.readContract({
@@ -654,6 +623,19 @@ export default function DashboardPage() {
     const { theme, setTheme, resolvedTheme } = useTheme();
     const [merchantSubView, setMerchantSubView] = useState<MerchantSubView>("menu");
     const [activeTab, setActiveTab] = useState<TabId>("overview");
+
+    /* Support navigating directly to tabs via ?tab=... query param */
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            const params = new URLSearchParams(window.location.search);
+            const tab = params.get("tab");
+            if (tab === "advanced" || tab === "premium") {
+                setActiveTab("advanced");
+            } else if (tab && ["overview", "payment-links", "payroll", "apikeys", "checkout", "webhooks", "settings"].includes(tab)) {
+                setActiveTab(tab as TabId);
+            }
+        }
+    }, []);
 
     /* A tab switch always starts at the top — otherwise a scroll depth carried over
        from a longer tab can sit past the end of a shorter one, showing only background. */
@@ -776,12 +758,12 @@ export default function DashboardPage() {
     }, []);
 
     useEffect(() => {
-        if (activeTab === "payment-links" && subTab === "commit" && isPremium && address) {
+        if (activeTab === "payment-links" && subTab === "commit" && address) {
             fetchVaults();
             fetchVaultOps();
             fetchVaultApiKeys();
         }
-    }, [activeTab, subTab, isPremium, address, fetchVaults, fetchVaultOps, fetchVaultApiKeys]);
+    }, [activeTab, subTab, address, fetchVaults, fetchVaultOps, fetchVaultApiKeys]);
 
     const handleClaimVaultFunds = async () => {
         setIsClaimingVault(true);
@@ -1954,7 +1936,7 @@ export default function DashboardPage() {
             isSubscribed = false;
             clearInterval(interval);
         };
-    }, [isConnected, address, isPremium, refreshTrigger, ledgerPage, ledgerCursor]);
+    }, [isConnected, address, isTier1, refreshTrigger, ledgerPage, ledgerCursor]);
 
     const handleCopy = (text: string, label: string) => {
         try {
@@ -1970,15 +1952,22 @@ export default function DashboardPage() {
         setTimeout(() => setCopiedText(null), 2000);
     };
 
-    const handleRollKeys = async () => {
+    const handleRollKeys = async (targetMode: "LIVE" | "TEST" = "LIVE") => {
         const hasActiveKey = apiKeys.some((key) => !key.revoked);
+        const isTargetTest = targetMode === "TEST";
         setConfirmModal({
             open: true,
-            title: hasActiveKey ? "Rotate API Key" : "Generate API Key",
-            description: hasActiveKey
-                ? "The current production key will stop working immediately. Existing integrations will fail until they are updated with the new key."
-                : "Your secret key will be shown once. Save it before leaving this page.",
-            confirmLabel: hasActiveKey ? "Rotate Key" : "Generate Key",
+            title: hasActiveKey
+                ? (isTargetTest ? "Rotate to Test API Key" : "Rotate Live API Key")
+                : (isTargetTest ? "Generate Test API Key" : "Generate Live API Key"),
+            description: isTargetTest
+                ? "This will issue a sandbox test API key (pk_test_ / sk_test_) for development and testing on Arc testnet. The secret key will be shown once."
+                : (hasActiveKey
+                    ? "The current API key will stop working immediately. Existing integrations will fail until they are updated with the new live key."
+                    : "Your live secret key will be shown once. Save it before leaving this page."),
+            confirmLabel: isTargetTest
+                ? (hasActiveKey ? "Rotate to Test Key" : "Generate Test Key")
+                : (hasActiveKey ? "Rotate Live Key" : "Generate Live Key"),
             variant: hasActiveKey ? "danger" : "default",
             onConfirm: async () => {
                 setConfirmModal(null);
@@ -1989,7 +1978,10 @@ export default function DashboardPage() {
                     const res = await fetch("/api/keys", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(webhookUrl ? { webhookUrl } : {}),
+                        body: JSON.stringify({
+                            ...(webhookUrl ? { webhookUrl } : {}),
+                            mode: targetMode,
+                        }),
                     });
                     const data = await res.json();
                     if (data.key) {
@@ -2005,9 +1997,10 @@ export default function DashboardPage() {
                         if (data.webhookWarning) {
                             setApiKeySetupStatus(`API key created, but webhook setup needs attention: ${data.webhookWarning}`);
                         } else {
+                            const isTestGenerated = data.key.mode === "TEST" || data.key.publishableKey?.startsWith("pk_test_");
                             setApiKeySetupStatus(data.webhookEndpoint
-                                ? "API key and webhook endpoint created."
-                                : "API key created. Register a webhook before going live.");
+                                ? (isTestGenerated ? "Sandbox test API key and webhook endpoint created." : "Live API key and webhook endpoint created.")
+                                : (isTestGenerated ? "Sandbox test API key created. Use Arc Testnet USDC to simulate payments." : "Live API key created. Register a webhook before going live."));
                         }
                     } else {
                         setApiKeySetupStatus(data.error || "Could not create API credentials.");
@@ -2169,103 +2162,13 @@ export default function DashboardPage() {
 
 
 
-    /* The premium checkout itself lives on /merchant/upgrade (src/app/dashboard/upgrade/page.tsx),
-       which handles both embedded (custody) and browser wallets and never re-runs a checkout after
-       a payment transaction was submitted. The dashboard only links there. */
-
-    const handleCancelPremium = async () => {
-        if (!isConnected || !activeMerchantAddress || !isPremium) {
-            setPremiumError("No active subscription metadata to cancel.");
-            return;
-        }
-
-        if (isCancellingPremium) {
-            return;
-        }
-
-        setConfirmModal({
-            open: true,
-            title: "Cancel Premium Pro",
-            description: "Your Premium Pro benefits will remain active until the end of the current billing period. You can resume before that date.",
-            confirmLabel: "Cancel Plan",
-            variant: "warning",
-            onConfirm: async () => {
-                setConfirmModal(null);
-                setIsCancellingPremium(true);
-                setPremiumStatus("Executing cancellation...");
-                setPremiumError(null);
-
-                try {
-                    /* Send the POST request to /api/premium/cancel */
-                    const cancelRes = await fetch("/api/premium/cancel", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" }
-                    });
-                    const cancelData = await cancelRes.json();
-                    if (!cancelRes.ok) {
-                        throw new Error(cancelData.error || "Failed to sync cancellation to database.");
-                    }
-
-                    const dateStr = cancelData.nextBillingDate ? new Date(cancelData.nextBillingDate).toLocaleDateString() : "the end of the current period";
-                    setPremiumStatus(`Premium Pro subscription has been cancelled. Active until ${dateStr}.`);
-                    setIsPremium(false);
-                    setCancelAtPeriodEnd(true);
-                    setMerchantTier(0);
-                    await refetchBalancesAndTier();
-                    setTimeout(() => setPremiumStatus(null), 8000);
-                } catch (err: any) {
-                    console.error("Cancellation failed:", err);
-                    setPremiumError(err.message || "Cancellation failed.");
-                } finally {
-                    setIsCancellingPremium(false);
-                }
-            },
-        });
-    };
-
-    const handleResumePremium = async () => {
-        if (!isConnected || !activeMerchantAddress || !isPremium || !cancelAtPeriodEnd) {
-            setPremiumError("No cancellation schedule to resume.");
-            return;
-        }
-
-        if (isResumingPremium) {
-            return;
-        }
-
-        setIsResumingPremium(true);
-        setPremiumStatus("Restoring premium subscription...");
-        setPremiumError(null);
-
-        try {
-            const resumeRes = await fetch("/api/premium/resume", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" }
-            });
-            const resumeData = await resumeRes.json();
-            if (!resumeRes.ok) {
-                throw new Error(resumeData.error || "Failed to resume subscription.");
-            }
-
-            setPremiumStatus("Premium Pro renewal has been restored. Your subscription will continue normally.");
-            await refetchBalancesAndTier();
-            setTimeout(() => setPremiumStatus(null), 6000);
-        } catch (err: any) {
-            console.error("Resume failed:", err);
-            setPremiumError(err.message || "Resume failed.");
-        } finally {
-            setIsResumingPremium(false);
-        }
-    };
-
-
     const handleReroute = async () => {
         if (!rerouteAddress || !rerouteAddress.startsWith("0x") || rerouteAddress.length !== 42) {
-            setPremiumError("Please enter a valid Ethereum address (0x...).");
+            setAdvancedError("Please enter a valid Ethereum address (0x...).");
             return;
         }
         setIsRerouting(true);
-        setPremiumError(null);
+        setAdvancedError(null);
         try {
             await executeContractWrite({
                 address: SUBSCRIPT_ROUTER_ADDRESS,
@@ -2278,7 +2181,7 @@ export default function DashboardPage() {
             refetchPayoutDest();
         } catch (err: any) {
             console.error("Reroute failed:", err);
-            setPremiumError(err.shortMessage || err.message || "Reroute transaction failed");
+            setAdvancedError(err.shortMessage || err.message || "Reroute transaction failed");
         } finally {
             setIsRerouting(false);
         }
@@ -2310,7 +2213,7 @@ export default function DashboardPage() {
     const handleSaveConfidentiality = async () => {
         if (!viewKey || !address) return;
         setIsSavingConfidentiality(true);
-        setPremiumError(null);
+        setAdvancedError(null);
         try {
             const viewKeyHash = ethers.keccak256(viewKey);
 
@@ -2392,7 +2295,7 @@ export default function DashboardPage() {
             await refetchBalancesAndTier();
         } catch (err: any) {
             console.error("Save confidentiality error:", err);
-            setPremiumError(err.message || "Failed to register View Key");
+            setAdvancedError(err.message || "Failed to register View Key");
         } finally {
             setIsSavingConfidentiality(false);
         }
@@ -2505,29 +2408,6 @@ Please complete the following implementation tasks:
 
     const primaryColorText = "text-[#082824]";
     const primaryColorBg = "bg-[#8AB4DB]";
-
-    const renderPremiumLock = (tabLabel: string) => {
-        return (
-            <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-10 flex flex-col items-center justify-center text-center gap-6 min-h-[400px] text-black dark:text-white">
-                <div className="p-5 rounded-full bg-amber-500/10 dark:bg-amber-400/15 text-amber-700 dark:text-amber-300 border border-amber-500/20 dark:border-amber-400/30">
-                    <Crown className="w-10 h-10" />
-                </div>
-                <div className="space-y-3 max-w-md">
-                    <h2 className="text-xl font-semibold text-black dark:text-white">Premium Pro Feature Locked</h2>
-                    <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed font-sans">
-                        Access to <span className="font-semibold text-black dark:text-white">{tabLabel}</span> requires an active SubScript Premium subscription. Upgrade to unlock keys, private checkout generation, and webhook event streaming.
-                    </p>
-                </div>
-                <button
-                    onClick={() => setActiveTab("premium")}
-                    className="px-8 py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-full text-xs font-semibold flex items-center gap-2 transition-all"
-                >
-                    <Crown className="w-4 h-4" />
-                    Upgrade to Premium Pro
-                </button>
-            </div>
-        );
-    };
 
     const renderPaymentLinksTab = () => {
         if (isConnected && address && !sessionWallet && !embeddedWallet) {
@@ -3759,50 +3639,30 @@ Please complete the following implementation tasks:
                         {renderBackHeader("KYC Verification & Tier", "Identity verification and platform trust badges.")}
 
                         <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 text-black space-y-6 shadow-sm">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                <div className={`p-4 rounded-2xl border ${userSettings.verified ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'} space-y-2`}>
-                                    <div className="flex items-center justify-between">
-                                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-black">KYC Tier</h4>
-                                        <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${userSettings.verified ? 'bg-emerald-500/20 text-emerald-800' : 'bg-amber-500/20 text-amber-800'}`}>
-                                            {userSettings.verified ? 'Verified' : 'Unverified'}
-                                        </span>
-                                    </div>
-                                    <ul className="space-y-1 text-[10px] text-black/70 leading-relaxed font-sans">
-                                        {userSettings.verified ? (
-                                            <>
-                                                <li className="flex items-center gap-1 text-emerald-700">✓ Verified badge on your public profile</li>
-                                                <li className="flex items-center gap-1 text-emerald-700">✓ Customers can commit without a risk warning</li>
-                                                <li className="flex items-center gap-1 text-emerald-700">✓ Ready for regulated rails as they launch</li>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <li className="flex items-center gap-1 text-black/60">• Public profile shows unverified</li>
-                                                <li className="flex items-center gap-1 text-black/60">• Customers see a warning before committing funds</li>
-                                                <li className="flex items-center gap-1 text-black/60">• Complete business verification below to upgrade</li>
-                                            </>
-                                        )}
-                                    </ul>
+                            <div className="p-4 rounded-2xl border border-[#2775CA]/25 bg-[#2775CA]/5 space-y-2">
+                                <div className="flex items-center justify-between gap-3">
+                                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-black">KYC Access Tier</h4>
+                                    <span className="rounded bg-[#2775CA]/10 px-2 py-1 text-[9px] font-bold text-[#2775CA]">
+                                        Tier {merchantTier}
+                                    </span>
                                 </div>
-
-                                <div className={`p-4 rounded-2xl border ${userSettings.tier === 'PREMIUM' ? 'border-[#8AB4DB]/40 bg-[#D4E3E8]' : 'border-black/10 bg-black/[0.02]'} space-y-2`}>
-                                    <div className="flex items-center justify-between">
-                                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-black">Plan Tier</h4>
-                                        <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${userSettings.tier === 'PREMIUM' ? 'bg-[#8AB4DB] text-[#082824]' : 'bg-black/10 text-black/70'}`}>
-                                            {userSettings.tier === 'PREMIUM' ? 'Premium' : 'Free'}
-                                        </span>
-                                    </div>
-                                    <ul className="space-y-1 text-[10px] text-black/70 leading-relaxed font-sans">
-                                        <li className="flex items-center gap-1 text-emerald-700">✓ Create unlimited payment links</li>
-                                        <li className={`flex items-center gap-1 ${userSettings.tier === 'PREMIUM' ? 'text-emerald-700' : 'text-red-500'}`}>
-                                            {userSettings.tier === 'PREMIUM' ? '✓' : '✗'} API Keys &amp; Webhook endpoints
-                                        </li>
-                                        <li className={`flex items-center gap-1 ${userSettings.tier === 'PREMIUM' ? 'text-emerald-700' : 'text-red-500'}`}>
-                                            {userSettings.tier === 'PREMIUM' ? '✓' : '✗'} Customer commitment vaults
-                                        </li>
-                                    </ul>
-                                </div>
+                                <ul className="space-y-1 text-[10px] text-black/70 leading-relaxed font-sans">
+                                    {merchantTier >= 1 ? (
+                                        <>
+                                            <li className="flex items-center gap-1 text-emerald-700">✓ Tier 1 transaction access is active</li>
+                                            <li className="flex items-center gap-1 text-emerald-700">✓ Email-backed or embedded MPC wallet verified</li>
+                                            <li className="flex items-center gap-1 text-emerald-700">
+                                                {merchantTier >= 2 ? "✓ Tier 2 enhanced identity verification complete" : "• Complete enhanced identity verification for Tier 2"}
+                                            </li>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <li className="flex items-center gap-1 text-amber-700">• Tier 0 accounts cannot make transactions</li>
+                                            <li className="flex items-center gap-1 text-amber-700">• Link and verify an email to activate Tier 1</li>
+                                        </>
+                                    )}
+                                </ul>
                             </div>
-
                             {/* Identity Verification (KYC/KYB) */}
                             <KycVerificationPanel />
                         </div>
@@ -4375,15 +4235,11 @@ Please complete the following implementation tasks:
             );
         }
 
-        // Developer tools (API keys, checkout, webhooks) remain accessible to standard and premium merchants alike.
+        // Developer tools use the same Tier 1 KYC boundary as every other merchant transaction surface.
 
 
 
         const renderCommitTab = () => {
-            if (!isPremium) {
-                return renderPremiumLock("Vault Commits Setup");
-            }
-
             return (
                 <div className="space-y-8 font-sans">
                     {/* Vault Config Form and Claim Settlement */}
@@ -4577,19 +4433,17 @@ Please complete the following implementation tasks:
                             >
                                 One-Time Links
                             </button>
-                            {isPremium && (
-                                <button
-                                    type="button"
-                                    onClick={() => setSubTab("commit")}
-                                    className={`rounded-full px-4 py-2 text-xs font-bold transition-all ${
-                                        subTab === "commit"
-                                            ? "bg-[#082824] text-white shadow-sm"
-                                            : "bg-black/5 text-black/60 hover:bg-black/10"
-                                    }`}
-                                >
-                                    Vault
-                                </button>
-                            )}
+                            <button
+                                type="button"
+                                onClick={() => setSubTab("commit")}
+                                className={`rounded-full px-4 py-2 text-xs font-bold transition-all ${
+                                    subTab === "commit"
+                                        ? "bg-[#082824] text-white shadow-sm"
+                                        : "bg-black/5 text-black/60 hover:bg-black/10"
+                                }`}
+                            >
+                                Vault
+                            </button>
                         </div>
                         <motion.div
                             key={subTab}
@@ -4633,14 +4487,14 @@ Please complete the following implementation tasks:
                     />
                 );
 
-            case "premium": {
+            case "advanced": {
                 if (isConnected && address && !sessionWallet && !embeddedWallet) {
                     return (
                         <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-sm text-black font-sans">
                             <Shield className="w-10 h-10 mx-auto text-[#082824]" />
                             <h2 className="text-lg font-semibold text-black">Verify Wallet Ownership</h2>
                             <p className="text-xs text-black/60 leading-relaxed max-w-xs mx-auto">
-                                To manage premium subscriptions and security configurations, please sign a secure message using your connected wallet.
+                                To manage advanced settings and security configurations, please sign a secure message using your connected wallet.
                             </p>
                             <button
                                 onClick={handleBackendLogin}
@@ -4656,427 +4510,250 @@ Please complete the following implementation tasks:
 
                 return (
                     <div className="space-y-8 text-black">
-                        {/* Tier Status Card */}
+                        {/* Advanced Settings Header Card */}
                         <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 sm:p-8 shadow-sm">
                             <div className="flex items-start gap-4">
-                                <div className="p-3 rounded-2xl bg-amber-500/10 dark:bg-amber-400/15 text-amber-700 dark:text-amber-300 border border-amber-500/20 dark:border-amber-400/30">
-                                    <Crown className="w-8 h-8" />
+                                <div className="p-3 rounded-2xl bg-[#082824]/5 dark:bg-white/10 text-[#082824] dark:text-white border border-black/10 dark:border-white/10">
+                                    <Sliders className="w-8 h-8" />
                                 </div>
                                 <div className="flex-1">
                                     <div className="flex items-center gap-3 mb-1">
                                         <h2 className="text-xl font-bold text-[#082824] dark:text-white tracking-tight">
-                                            {isPremium ? "Premium Active" : "Standard Tier"}
+                                            Advanced Settings
                                         </h2>
-                                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                                            isPremium 
-                                                ? "bg-amber-500/10 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300 border border-amber-500/20 dark:border-amber-400/30" 
-                                                : "bg-black/5 text-black/60 dark:bg-white/10 dark:text-white/60 border border-black/10 dark:border-white/10"
-                                        }`}>
-                                            Tier {merchantTier}
+                                        <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 border border-emerald-500/20 dark:border-emerald-500/30">
+                                            Enabled
                                         </span>
                                     </div>
-                                    <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed">
-                                        {isPremium 
-                                            ? "You have full access to payout rerouting, priority keeper execution, advanced analytics, and multi-wallet support." 
-                                            : "Upgrade to Premium Pro to unlock payout rerouting, priority execution, advanced analytics, and more."
-                                        }
+                                    <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed font-sans">
+                                        Manage cold-storage payout rerouting, Arc confidentiality &amp; governed view keys, and protocol keeper execution.
                                     </p>
                                 </div>
                             </div>
                         </div>
 
-                        {isPremium ? (
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
-                                <div className="md:col-span-2 space-y-6">
-                                    {/* PAST_DUE Warning Banner */}
-                                    {dbSubscriptionStatus === "PAST_DUE" && (
-                                        <div className="border border-amber-600/30 rounded-3xl p-6 shadow-sm space-y-4 bg-amber-50 text-amber-900">
-                                            <div className="flex items-center gap-3">
-                                                <div className="p-2 bg-amber-100 border border-amber-300 text-amber-800 rounded-xl">
-                                                    <AlertTriangle className="w-5 h-5" />
-                                                </div>
-                                                <div>
-                                                    <h3 className="text-sm font-bold uppercase tracking-wider">Premium Grace Period</h3>
-                                                    <p className="text-xs text-amber-700">Payment failed. Access temporarily preserved.</p>
-                                                </div>
+                        <div className="space-y-6">
+                            {/* Payout Rerouting Controls */}
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm space-y-6">
+                                <h3 className="text-sm font-semibold text-black flex items-center gap-2">
+                                    <ArrowRightLeft className="w-4 h-4 text-[#082824]" />
+                                    Fund Rerouting
+                                </h3>
+
+                                {/* Current Destination */}
+                                <div className="bg-[#D4E3E8]/40 border border-black/10 rounded-2xl p-5">
+                                    <p className="text-[10px] text-black/50 uppercase font-bold tracking-widest mb-2">Current Payout Destination</p>
+                                    {payoutDestination ? (
+                                        <div className="flex items-center gap-3">
+                                            <code className="text-sm font-mono text-[#082824] break-all font-semibold">{payoutDestination}</code>
+                                            <button
+                                                onClick={() => handleCopy(payoutDestination, "Payout Destination")}
+                                                className="p-1.5 text-black/40 hover:text-black rounded-lg hover:bg-black/5 transition-all flex-shrink-0"
+                                            >
+                                                {copiedText === "Payout Destination" ? <Check className="w-3.5 h-3.5 text-[#082824]" /> : <Copy className="w-3.5 h-3.5" />}
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-black/60">Default: funds route to your connected wallet ({address?.slice(0, 6)}...{address?.slice(-4)})</p>
+                                    )}
+                                </div>
+
+                                {/* Set New Destination */}
+                                <div>
+                                    <label className="text-[10px] text-black/60 font-semibold uppercase tracking-widest block mb-2">
+                                        New Destination Address
+                                    </label>
+                                    <div className="flex flex-col gap-3 sm:flex-row">
+                                        <input
+                                            type="text"
+                                            value={rerouteAddress}
+                                            onChange={(e) => setRerouteAddress(e.target.value)}
+                                            placeholder="0x... cold storage, multisig, or ledger address"
+                                            className="min-w-0 w-full flex-1 bg-white border border-black/15 rounded-xl px-4 py-3 text-xs font-mono text-black focus:outline-none focus:border-[#8AB4DB] transition-colors placeholder:text-black/30"
+                                        />
+                                        <button
+                                            onClick={handleReroute}
+                                            disabled={isRerouting || !rerouteAddress}
+                                            className="w-full sm:w-auto shrink-0 px-6 py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] font-semibold rounded-full text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                        >
+                                            {isRerouting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5" />}
+                                            Reroute
+                                        </button>
+                                    </div>
+                                    {rerouteSuccess && (
+                                        <p className="text-emerald-700 text-xs mt-3 font-semibold">Payout destination updated on-chain</p>
+                                    )}
+                                    {advancedError && (
+                                        <p className="text-red-600 text-xs mt-3 font-mono break-all">{advancedError}</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Arc Confidentiality & Governed Access settings card */}
+                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm space-y-6">
+                                <h3 className="text-sm font-semibold text-black flex items-center gap-2">
+                                    <Shield className="w-4 h-4 text-[#082824]" />
+                                    Arc Confidentiality
+                                </h3>
+
+                                {/* Operational switch for Shielded Batch Payouts */}
+                                <div className="flex items-center justify-between bg-[#D4E3E8]/40 border border-black/10 rounded-2xl p-5">
+                                    <div>
+                                        <h4 className="text-xs font-semibold text-black mb-1">Confidential Batch Payouts <span className="text-black/50">(Preview)</span></h4>
+                                        <p className="text-[10px] text-black/60 leading-normal max-w-md font-sans">
+                                            Masks recipient addresses and transfer amounts in SubScript&apos;s batch event log. Note: the underlying USDC transfers are still recorded on Arc&apos;s public ledger today &mdash; full on-chain shielding activates once Arc&apos;s Privacy Sector (APS) is live.
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            onClick={handleToggleShielded}
+                                            className={`w-11 h-6 rounded-full p-1 transition-all duration-300 ${
+                                                shieldedEnabled ? "bg-[#8AB4DB]" : "bg-black/20"
+                                            }`}
+                                        >
+                                            <div
+                                                className={`w-4 h-4 rounded-full bg-white transition-all duration-300 transform ${
+                                                    shieldedEnabled ? "translate-x-5" : "translate-x-0"
+                                                }`}
+                                            />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Governed Access panel containing a generation button for the View Key */}
+                                <div className="bg-[#D4E3E8]/40 border border-black/10 rounded-2xl p-5 space-y-4">
+                                    <div>
+                                        <h4 className="text-xs font-semibold text-black mb-1">Governed View Key</h4>
+                                        <p className="text-[10px] text-black/60 leading-normal font-sans">
+                                            Generate and register a View Key. Its hash is stored on-chain and gates retrieval of your batch payout history. The key itself never leaves your browser; only its hash is registered.
+                                        </p>
+                                    </div>
+
+                                    <div className="flex gap-3">
+                                        <div className="relative flex-1">
+                                            <input
+                                                type={showViewKey ? "text" : "password"}
+                                                value={viewKey}
+                                                readOnly
+                                                placeholder="Click generate to create a View Key"
+                                                className="w-full bg-white border border-black/15 rounded-xl pl-4 pr-10 py-3 text-xs font-mono text-black focus:outline-none placeholder:text-black/30"
+                                            />
+                                            {viewKey && (
+                                                <button
+                                                    onClick={() => setShowViewKey(!showViewKey)}
+                                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-black/40 hover:text-black transition-all"
+                                                >
+                                                    {showViewKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {viewKey ? (
+                                            <button
+                                                onClick={handleCopyViewKey}
+                                                className="px-4 bg-white border border-black/15 text-black rounded-xl hover:bg-black/5 transition-all flex items-center justify-center animate-none"
+                                            >
+                                                {copiedViewKey ? <Check className="w-4 h-4 text-[#082824]" /> : <Copy className="w-4 h-4" />}
+                                            </button>
+                                        ) : (
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={handleGenerateViewKey}
+                                                    className="px-5 py-3 border text-xs font-semibold rounded-full transition-all flex items-center gap-2 bg-[#8AB4DB] text-[#082824] hover:bg-[#7aa7d0] border-transparent"
+                                                >
+                                                    <Key className="w-3.5 h-3.5" />
+                                                    Generate
+                                                </button>
                                             </div>
-                                            <p className="text-xs text-amber-800 leading-relaxed font-sans">
-                                                Your Premium renewal payment could not be processed. Premium access remains active during the grace period. Please restore wallet balance or allowance to avoid interruption.
-                                            </p>
-                                            <div className="grid grid-cols-2 gap-4 bg-white/80 border border-amber-200 rounded-2xl p-4">
-                                                <div>
-                                                    <p className="text-[10px] text-amber-700 uppercase font-bold tracking-widest leading-none mb-1">Billing Status</p>
-                                                    <p className="text-xs font-semibold text-amber-900">Attempt {downgradeFailures} of 3</p>
-                                                </div>
-                                                <div>
-                                                    <p className="text-[10px] text-amber-700 uppercase font-bold tracking-widest leading-none mb-1">Grace Period</p>
-                                                    <p className="text-xs font-semibold text-amber-900">{3 - downgradeFailures} {3 - downgradeFailures === 1 ? "day" : "days"} remaining</p>
-                                                </div>
-                                            </div>
+                                        )}
+                                    </div>
+
+                                    {viewKey && !isViewKeyRegistered && (
+                                        <div className="flex items-center justify-between pt-2">
+                                            <span className="text-[10px] text-amber-800 font-semibold flex items-center gap-1">
+                                                <AlertTriangle className="w-3 h-3" /> Key generated but not registered on-chain
+                                            </span>
+                                            <button
+                                                onClick={handleSaveConfidentiality}
+                                                disabled={isSavingConfidentiality}
+                                                className="px-5 py-2.5 font-semibold rounded-full text-xs transition-all flex items-center gap-2 bg-[#8AB4DB] text-[#082824] hover:bg-[#7aa7d0]"
+                                            >
+                                                {isSavingConfidentiality ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                                Register Key
+                                            </button>
                                         </div>
                                     )}
 
-                                    {/* Payout Rerouting Controls */}
-                                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm space-y-6">
-                                        <h3 className="text-sm font-semibold text-black flex items-center gap-2">
-                                            <ArrowRightLeft className="w-4 h-4 text-[#082824]" />
-                                            Fund Rerouting
-                                        </h3>
-
-                                        {/* Current Destination */}
-                                        <div className="bg-[#D4E3E8]/40 border border-black/10 rounded-2xl p-5">
-                                            <p className="text-[10px] text-black/50 uppercase font-bold tracking-widest mb-2">Current Payout Destination</p>
-                                            {payoutDestination ? (
-                                                <div className="flex items-center gap-3">
-                                                    <code className="text-sm font-mono text-[#082824] break-all font-semibold">{payoutDestination}</code>
-                                                    <button
-                                                        onClick={() => handleCopy(payoutDestination, "Payout Destination")}
-                                                        className="p-1.5 text-black/40 hover:text-black rounded-lg hover:bg-black/5 transition-all flex-shrink-0"
-                                                    >
-                                                        {copiedText === "Payout Destination" ? <Check className="w-3.5 h-3.5 text-[#082824]" /> : <Copy className="w-3.5 h-3.5" />}
-                                                    </button>
-                                                </div>
-                                            ) : (
-                                                <p className="text-sm text-black/60">Default: funds route to your connected wallet ({address?.slice(0, 6)}...{address?.slice(-4)})</p>
-                                            )}
-                                        </div>
-
-                                        {/* Set New Destination */}
-                                        <div>
-                                            <label className="text-[10px] text-black/60 font-semibold uppercase tracking-widest block mb-2">
-                                                New Destination Address
-                                            </label>
-                                            <div className="flex flex-col gap-3 sm:flex-row">
-                                                <input
-                                                    type="text"
-                                                    value={rerouteAddress}
-                                                    onChange={(e) => setRerouteAddress(e.target.value)}
-                                                    placeholder="0x... cold storage, multisig, or ledger address"
-                                                    className="min-w-0 w-full flex-1 bg-white border border-black/15 rounded-xl px-4 py-3 text-xs font-mono text-black focus:outline-none focus:border-[#8AB4DB] transition-colors placeholder:text-black/30"
-                                                />
-                                                <button
-                                                    onClick={handleReroute}
-                                                    disabled={isRerouting || !rerouteAddress}
-                                                    className="w-full sm:w-auto shrink-0 px-6 py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] font-semibold rounded-full text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                                >
-                                                    {isRerouting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5" />}
-                                                    Reroute
-                                                </button>
-                                            </div>
-                                            {rerouteSuccess && (
-                                                <p className="text-emerald-700 text-xs mt-3 font-semibold">Payout destination updated on-chain</p>
-                                            )}
-                                            {premiumError && (
-                                                <p className="text-red-600 text-xs mt-3 font-mono break-all">{premiumError}</p>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Arc Confidentiality & Governed Access settings card */}
-                                    <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 shadow-sm space-y-6">
-                                        <h3 className="text-sm font-semibold text-black flex items-center gap-2">
-                                            <Shield className="w-4 h-4 text-[#082824]" />
-                                            Arc Confidentiality
-                                        </h3>
-
-                                        {/* Operational switch for Shielded Batch Payouts */}
-                                        <div className="flex items-center justify-between bg-[#D4E3E8]/40 border border-black/10 rounded-2xl p-5">
-                                            <div>
-                                                <h4 className="text-xs font-semibold text-black mb-1">Confidential Batch Payouts <span className="text-black/50">(Preview)</span></h4>
-                                                <p className="text-[10px] text-black/60 leading-normal max-w-md font-sans">
-                                                    Masks recipient addresses and transfer amounts in SubScript&apos;s batch event log. Note: the underlying USDC transfers are still recorded on Arc&apos;s public ledger today &mdash; full on-chain shielding activates once Arc&apos;s Privacy Sector (APS) is live.
-                                                </p>
-                                            </div>
-                                            <div className="flex items-center gap-3">
-                                                {!isPremium && <Lock className="w-3.5 h-3.5 text-black/40" />}
-                                                <button
-                                                    onClick={handleToggleShielded}
-                                                    disabled={!isPremium}
-                                                    className={`w-11 h-6 rounded-full p-1 transition-all duration-300 ${
-                                                        !isPremium ? "opacity-50 cursor-not-allowed bg-black/10" : (shieldedEnabled ? "bg-[#8AB4DB]" : "bg-black/20")
-                                                    }`}
-                                                >
-                                                    <div
-                                                        className={`w-4 h-4 rounded-full bg-white transition-all duration-300 transform ${
-                                                            shieldedEnabled && isPremium ? "translate-x-5" : "translate-x-0"
-                                                        }`}
-                                                    />
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        {/* Governed Access panel containing a generation button for the View Key */}
-                                        <div className="bg-[#D4E3E8]/40 border border-black/10 rounded-2xl p-5 space-y-4">
-                                            <div>
-                                                <h4 className="text-xs font-semibold text-black mb-1">Governed View Key</h4>
-                                                <p className="text-[10px] text-black/60 leading-normal font-sans">
-                                                    Generate and register a View Key. Its hash is stored on-chain and gates retrieval of your batch payout history. The key itself never leaves your browser; only its hash is registered.
-                                                </p>
-                                            </div>
-
-                                            <div className="flex gap-3">
-                                                <div className="relative flex-1">
-                                                    <input
-                                                        type={showViewKey ? "text" : "password"}
-                                                        value={viewKey}
-                                                        readOnly
-                                                        disabled={!isPremium}
-                                                        placeholder="Click generate to create a View Key"
-                                                        className={`w-full bg-white border border-black/15 rounded-xl pl-4 pr-10 py-3 text-xs font-mono text-black focus:outline-none placeholder:text-black/30 ${
-                                                            !isPremium ? "opacity-50 cursor-not-allowed" : ""
-                                                        }`}
-                                                    />
-                                                    {viewKey && (
-                                                        <button
-                                                            onClick={() => setShowViewKey(!showViewKey)}
-                                                            disabled={!isPremium}
-                                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-black/40 hover:text-black transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                                        >
-                                                            {showViewKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                                        </button>
-                                                    )}
-                                                </div>
-                                                
-                                                {viewKey ? (
-                                                    <button
-                                                        onClick={handleCopyViewKey}
-                                                        disabled={!isPremium}
-                                                        className="px-4 bg-white border border-black/15 text-black rounded-xl hover:bg-black/5 transition-all flex items-center justify-center animate-none disabled:opacity-50 disabled:cursor-not-allowed"
-                                                    >
-                                                        {copiedViewKey ? <Check className="w-4 h-4 text-[#082824]" /> : <Copy className="w-4 h-4" />}
-                                                    </button>
-                                                ) : (
-                                                    <div className="flex items-center gap-2">
-                                                        {!isPremium && <Lock className="w-3.5 h-3.5 text-black/40" />}
-                                                        <button
-                                                            onClick={handleGenerateViewKey}
-                                                            disabled={!isPremium}
-                                                            className={`px-5 py-3 border text-xs font-semibold rounded-full transition-all flex items-center gap-2 ${
-                                                                !isPremium 
-                                                                    ? "bg-black/5 border-black/10 text-black/40 cursor-not-allowed" 
-                                                                    : "bg-[#8AB4DB] text-[#082824] hover:bg-[#7aa7d0] border-transparent"
-                                                            }`}
-                                                        >
-                                                            <Key className="w-3.5 h-3.5" />
-                                                            Generate
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            {viewKey && !isViewKeyRegistered && (
-                                                <div className="flex items-center justify-between pt-2">
-                                                    <span className="text-[10px] text-amber-800 font-semibold flex items-center gap-1">
-                                                        <AlertTriangle className="w-3 h-3" /> Key generated but not registered on-chain
-                                                    </span>
-                                                    <button
-                                                        onClick={handleSaveConfidentiality}
-                                                        disabled={isSavingConfidentiality || !isPremium}
-                                                        className={`px-5 py-2.5 font-semibold rounded-full text-xs transition-all flex items-center gap-2 ${
-                                                            !isPremium 
-                                                                ? "bg-black/5 border border-black/10 text-black/40 cursor-not-allowed" 
-                                                                : "bg-[#8AB4DB] text-[#082824] hover:bg-[#7aa7d0]"
-                                                        }`}
-                                                    >
-                                                        {isSavingConfidentiality ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                                                        Register Key
-                                                    </button>
-                                                </div>
-                                            )}
-
-                                            {isViewKeyRegistered && (
-                                                <div className="flex items-center justify-between pt-2">
-                                                    <span className="text-[10px] text-emerald-800 font-semibold flex items-center gap-1">
-                                                        <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> View Key is active and registered
-                                                    </span>
-                                                    <button
-                                                        onClick={handleSaveConfidentiality}
-                                                        disabled={isSavingConfidentiality || !isPremium}
-                                                        className={`px-4 py-2 font-semibold rounded-full text-xs transition-all flex items-center gap-2 ${
-                                                            !isPremium 
-                                                                ? "bg-black/5 border border-black/10 text-black/40 cursor-not-allowed" 
-                                                                : "bg-white border border-black/15 hover:bg-black/5 text-black"
-                                                        }`}
-                                                    >
-                                                        {isSavingConfidentiality ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                                                        Update Settings
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Manual Keeper Execution Control */}
-                                    <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 shadow-sm space-y-6">
-                                        <h3 className="text-sm font-semibold text-[#082824] dark:text-white flex items-center gap-2">
-                                            <PlugZap className="w-4 h-4 text-[#082824] dark:text-emerald-400" />
-                                            Keeper Force Execution
-                                        </h3>
-                                        <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed font-sans">
-                                            Force the SubScript protocol keepers to check and execute any due subscription payments for your wallet immediately on-chain, bypassing the standard scheduler loop.
-                                        </p>
-                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-[#D4E3E8]/40 dark:bg-white/[0.04] border border-black/10 dark:border-white/10 rounded-2xl p-5">
-                                            <div>
-                                                <p className="text-[10px] text-black/50 dark:text-white/50 uppercase font-bold tracking-widest leading-none mb-1">Status</p>
-                                                <p className="text-xs font-semibold text-black/80 dark:text-white/80">Schedule: Idle (60s cycles)</p>
-                                            </div>
+                                    {isViewKeyRegistered && (
+                                        <div className="flex items-center justify-between pt-2">
+                                            <span className="text-[10px] text-emerald-800 font-semibold flex items-center gap-1">
+                                                <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> View Key is active and registered
+                                            </span>
                                             <button
-                                                onClick={handleTriggerKeeper}
-                                                disabled={isTriggeringKeeper}
-                                                className="px-6 py-3 bg-[#8AB4DB] text-[#082824] font-semibold rounded-full text-xs hover:bg-[#7aa7d0] transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                                onClick={handleSaveConfidentiality}
+                                                disabled={isSavingConfidentiality}
+                                                className="px-4 py-2 font-semibold rounded-full text-xs transition-all flex items-center gap-2 bg-white border border-black/15 hover:bg-black/5 text-black"
                                             >
-                                                {isTriggeringKeeper ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                                                Run Keepers
+                                                {isSavingConfidentiality ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                                                Update Settings
                                             </button>
                                         </div>
-                                        {keeperStatus && (
-                                            <p className="text-emerald-700 dark:text-emerald-400 text-xs font-semibold">{keeperStatus}</p>
-                                        )}
-                                        {keeperError && (
-                                            <p className="text-red-600 dark:text-red-400 text-xs font-mono break-all">{keeperError}</p>
-                                        )}
-                                    </div>
-
-                                    {/* Subscription Cancellation Control */}
-                                    <div className={`rounded-[34px] border p-6 shadow-sm space-y-6 ${
-                                        cancelAtPeriodEnd 
-                                            ? "border-amber-500/30 bg-amber-500/[0.05] dark:bg-amber-500/[0.08]" 
-                                            : "border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023]"
-                                    }`}>
-                                        <h3 className={`text-sm font-semibold flex items-center gap-2 ${
-                                            cancelAtPeriodEnd ? "text-amber-700 dark:text-amber-300" : "text-[#082824] dark:text-white"
-                                        }`}>
-                                            <ShieldAlert className={`w-4 h-4 ${cancelAtPeriodEnd ? "text-amber-600 dark:text-amber-400" : "text-black/60 dark:text-white/60"}`} />
-                                            {cancelAtPeriodEnd ? "Subscription Scheduled to End" : "Subscription Management"}
-                                        </h3>
-                                        <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed font-sans">
-                                            {cancelAtPeriodEnd 
-                                                ? `Your Premium subscription will remain active until ${currentPeriodEnd ? new Date(currentPeriodEnd).toLocaleDateString() : "the end of the current period"}. You can resume anytime before that date.`
-                                                : "Cancel your active SubScript Premium subscription. Your Premium benefits will remain active until the end of your current billing period."
-                                            }
-                                        </p>
-                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-black/[0.02] dark:bg-white/[0.04] border border-black/10 dark:border-white/10 rounded-2xl p-5">
-                                            <div>
-                                                <p className="text-[10px] text-black/50 dark:text-white/50 uppercase font-bold tracking-widest leading-none mb-1">Billing Status</p>
-                                                <p className="text-xs font-semibold text-[#082824] dark:text-white flex items-center gap-1.5">
-                                                    {!cancelAtPeriodEnd && <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block shrink-0" />}
-                                                    {cancelAtPeriodEnd ? "Pending Cancellation" : "Active (Renews monthly)"}
-                                                </p>
-                                            </div>
-                                            {cancelAtPeriodEnd ? (
-                                                <button
-                                                    onClick={handleResumePremium}
-                                                    disabled={isResumingPremium || !isPremium}
-                                                    className="px-6 py-3 bg-emerald-600 text-white font-semibold rounded-full text-xs hover:bg-emerald-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                                >
-                                                    {isResumingPremium ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                                                    Resume Premium
-                                                </button>
-                                            ) : (
-                                                <button
-                                                    onClick={handleCancelPremium}
-                                                    disabled={isCancellingPremium || !isPremium}
-                                                    className="px-5 py-2.5 border border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-300 hover:bg-red-500/15 rounded-full text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                                >
-                                                    {isCancellingPremium ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5" />}
-                                                    Cancel Premium Pro
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Premium Features Summary */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                        {[
-                                            { icon: ArrowRightLeft, title: "Fund Rerouting", desc: "Route subscription funds to cold storage, multisig, or custom wallets.", active: true },
-                                            { icon: Activity, title: "Priority Execution", desc: "Keeper bots prioritize your subscription renewals in the execution queue.", active: true },
-                                            { icon: Webhook, title: "Advanced Webhooks", desc: "Full webhook event stream with payload inspection and replay capability.", active: true },
-                                            { icon: Key, title: "Full API Access", desc: "Publishable and secret API keys for backend SDK integration.", active: true },
-                                        ].map((feature, idx) => (
-                                            <div key={idx} className="rounded-2xl border border-black/10 dark:border-white/10 bg-[#D4E3E8]/40 dark:bg-white/[0.04] p-5 flex items-start gap-3">
-                                                <div className="p-2 bg-amber-500/10 dark:bg-amber-400/15 border border-amber-500/20 dark:border-amber-400/30 text-amber-700 dark:text-amber-300 rounded-xl flex-shrink-0">
-                                                    <feature.icon className="w-4 h-4" />
-                                                </div>
-                                                <div>
-                                                    <p className="text-xs font-semibold text-black dark:text-white mb-0.5">{feature.title}</p>
-                                                    <p className="text-[10px] text-black/60 dark:text-white/60 leading-relaxed font-sans">{feature.desc}</p>
-                                                </div>
-                                                <span className="ml-auto text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 border border-emerald-500/20 dark:border-emerald-500/30 flex-shrink-0">Active</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="md:col-span-1 space-y-6">
-                                    {/* Billing Summary Card */}
-                                    <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 text-black dark:text-white space-y-4 shadow-sm">
-                                        <h4 className="text-[10px] text-black/50 dark:text-white/50 uppercase font-semibold tracking-widest text-center">Subscription Billing</h4>
-                                        <div className="space-y-3 font-mono text-[10px] text-black/70 dark:text-white/70">
-                                            <div className="flex justify-between border-b border-black/10 dark:border-white/10 pb-2">
-                                                <span>Tier:</span>
-                                                <span className="text-amber-700 dark:text-amber-300 font-bold">PREMIUM PRO</span>
-                                            </div>
-                                            <div className="flex justify-between border-b border-black/10 dark:border-white/10 pb-2">
-                                                <span>Price:</span>
-                                                <span>$10 / mo</span>
-                                            </div>
-                                            {currentPeriodEnd && (
-                                                <div className="flex justify-between border-b border-black/10 dark:border-white/10 pb-2">
-                                                    <span>{cancelAtPeriodEnd ? "Expires:" : "Next Renewal:"}</span>
-                                                    <span>{new Date(currentPeriodEnd).toLocaleDateString()}</span>
-                                                </div>
-                                            )}
-                                        </div>
-                                        <Link
-                                            href="/merchant/upgrade"
-                                            className="w-full py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] font-semibold rounded-full text-xs transition-all flex items-center justify-center gap-2 text-center"
-                                        >
-                                            Manage Subscription
-                                        </Link>
-                                    </div>
+                                    )}
                                 </div>
                             </div>
-                        ) : (
-                            /* Upgrade CTA for Standard tier */
-                            <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-black shadow-sm">
-                                <div className="max-w-lg mx-auto text-center space-y-6">
-                                    <div className="space-y-2">
-                                        <h3 className="text-lg font-semibold text-black">Upgrade to Premium Pro</h3>
-                                        <p className="text-xs text-black/60 leading-relaxed font-sans">
-                                            Unlock payout rerouting to cold storage and multisigs, priority keeper execution, real-time analytics, and full API/webhook access.
-                                        </p>
-                                    </div>
 
-                                    <div className="flex items-center justify-center gap-2">
-                                        <span className="text-3xl font-bold text-[#082824]">$10</span>
-                                        <span className="text-xs text-black/50">/ month</span>
+                            {/* Manual Keeper Execution Control */}
+                            <div className="rounded-[34px] border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-6 shadow-sm space-y-6">
+                                <h3 className="text-sm font-semibold text-[#082824] dark:text-white flex items-center gap-2">
+                                    <PlugZap className="w-4 h-4 text-[#082824] dark:text-emerald-400" />
+                                    Keeper Force Execution
+                                </h3>
+                                <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed font-sans">
+                                    Force the SubScript protocol keepers to check and execute any due subscription payments for your wallet immediately on-chain, bypassing the standard scheduler loop.
+                                </p>
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-[#D4E3E8]/40 dark:bg-white/[0.04] border border-black/10 dark:border-white/10 rounded-2xl p-5">
+                                    <div>
+                                        <p className="text-[10px] text-black/50 dark:text-white/50 uppercase font-bold tracking-widest leading-none mb-1">Status</p>
+                                        <p className="text-xs font-semibold text-black/80 dark:text-white/80">Schedule: Idle (60s cycles)</p>
                                     </div>
-
-                                    <Link
-                                        href="/merchant/upgrade"
-                                        className="px-8 py-3.5 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] font-semibold text-xs rounded-full transition-all flex items-center gap-2 mx-auto w-fit"
+                                    <button
+                                        onClick={handleTriggerKeeper}
+                                        disabled={isTriggeringKeeper}
+                                        className="px-6 py-3 bg-[#8AB4DB] text-[#082824] font-semibold rounded-full text-xs hover:bg-[#7aa7d0] transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                     >
-                                        <Crown className="w-4 h-4" /> View Upgrade Options
-                                    </Link>
-
-                                    {/* Features list */}
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left pt-4 border-t border-black/10">
-                                        {[
-                                            "Opt-In Privacy Controls",
-                                            "Priority keeper execution",
-                                            "Advanced analytics",
-                                            "Full API & webhook access",
-                                            "Multi-wallet support",
-                                            "Premium Pro merchant badge"
-                                        ].map((f, i) => (
-                                            <div key={i} className="flex items-center gap-2 text-xs text-black/70 font-sans">
-                                                <Check className="w-3.5 h-3.5 text-[#082824] flex-shrink-0" /> {f}
-                                            </div>
-                                        ))}
-                                    </div>
+                                        {isTriggeringKeeper ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                                        Run Keepers
+                                    </button>
                                 </div>
+                                {keeperStatus && (
+                                    <p className="text-emerald-700 dark:text-emerald-400 text-xs font-semibold">{keeperStatus}</p>
+                                )}
+                                {keeperError && (
+                                    <p className="text-red-600 dark:text-red-400 text-xs font-mono break-all">{keeperError}</p>
+                                )}
                             </div>
-                        )}
+
+                            {/* Advanced Features Overview */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                {[
+                                    { icon: ArrowRightLeft, title: "Fund Rerouting", desc: "Route subscription funds to cold storage, multisig, or custom wallets.", active: true },
+                                    { icon: Activity, title: "Priority Execution", desc: "Keeper bots prioritize your subscription renewals in the execution queue.", active: true },
+                                    { icon: Webhook, title: "Advanced Webhooks", desc: "Full webhook event stream with payload inspection and replay capability.", active: true },
+                                    { icon: Key, title: "Full API Access", desc: "Publishable and secret API keys for backend SDK integration.", active: true },
+                                ].map((feature, idx) => (
+                                    <div key={idx} className="rounded-2xl border border-black/10 dark:border-white/10 bg-[#D4E3E8]/40 dark:bg-white/[0.04] p-5 flex items-start gap-3">
+                                        <div className="p-2 bg-[#082824]/5 dark:bg-white/10 border border-black/10 dark:border-white/10 text-[#082824] dark:text-white rounded-xl flex-shrink-0">
+                                            <feature.icon className="w-4 h-4" />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-semibold text-black dark:text-white mb-0.5">{feature.title}</p>
+                                            <p className="text-[10px] text-black/60 dark:text-white/60 leading-relaxed font-sans">{feature.desc}</p>
+                                        </div>
+                                        <span className="ml-auto text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 border border-emerald-500/20 dark:border-emerald-500/30 flex-shrink-0">Active</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
 
                         {/* Quick Jump Developer Portal & Merchant Operations */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
@@ -5134,20 +4811,20 @@ Please complete the following implementation tasks:
                                             checked={userSettings?.emailEnabled !== false}
                                             onChange={() => handleToggleSetting("emailEnabled", userSettings?.emailEnabled !== false)}
                                             disabled={savingSettingsField === "emailEnabled"}
-                                            className="accent-[#082824] dark:accent-[#00d2b4] w-4 h-4 cursor-pointer"
+                                            className="accent-[#082824] dark:accent-[#2775CA] w-4 h-4 cursor-pointer"
                                         />
                                     </label>
                                     <label className="flex items-center justify-between p-2 rounded-xl bg-[#D4E3E8]/40 dark:bg-white/[0.04] border border-black/10 dark:border-white/10 cursor-pointer">
                                         <span>New Subscriptions</span>
-                                        <input type="checkbox" defaultChecked className="accent-[#082824] dark:accent-[#00d2b4] w-4 h-4" />
+                                        <input type="checkbox" defaultChecked className="accent-[#082824] dark:accent-[#2775CA] w-4 h-4" />
                                     </label>
                                     <label className="flex items-center justify-between p-2 rounded-xl bg-[#D4E3E8]/40 dark:bg-white/[0.04] border border-black/10 dark:border-white/10 cursor-pointer">
                                         <span>Successful Payments</span>
-                                        <input type="checkbox" defaultChecked className="accent-[#082824] dark:accent-[#00d2b4] w-4 h-4" />
+                                        <input type="checkbox" defaultChecked className="accent-[#082824] dark:accent-[#2775CA] w-4 h-4" />
                                     </label>
                                     <label className="flex items-center justify-between p-2 rounded-xl bg-[#D4E3E8]/40 dark:bg-white/[0.04] border border-black/10 dark:border-white/10 cursor-pointer">
                                         <span>Failed Renewals</span>
-                                        <input type="checkbox" defaultChecked className="accent-[#082824] dark:accent-[#00d2b4] w-4 h-4" />
+                                        <input type="checkbox" defaultChecked className="accent-[#082824] dark:accent-[#2775CA] w-4 h-4" />
                                     </label>
                                 </div>
                             </div>
@@ -5181,6 +4858,7 @@ Please complete the following implementation tasks:
                 const activePublishableKey = activeKey ? activeKey.publishableKey : "";
                 const activeSecretKey = activeKey ? activeKey.secretKeyPlain : "";
                 const activeSecretAvailable = Boolean(activeKey?.secretKeyAvailable && activeSecretKey);
+                const activeKeyMode = (activeKey?.mode || (activePublishableKey.startsWith("pk_live_") ? "LIVE" : "TEST")).toUpperCase();
 
                 return (
                     <div className="rounded-[34px] border border-black/10 bg-[#FFFFF0] p-6 sm:p-8 text-black space-y-8 shadow-sm font-sans">
@@ -5195,14 +4873,6 @@ Please complete the following implementation tasks:
                                     API credentials are secure and persisted in the database.
                                 </p>
                             </div>
-                            {sessionWallet && (
-                                <button
-                                    onClick={handleLogout}
-                                    className="px-4 py-2 border border-black/15 hover:bg-red-500/10 hover:text-red-600 hover:border-red-500/20 rounded-full text-xs font-bold font-sans transition-all shrink-0"
-                                >
-                                    Log Out Developer Portal
-                                </button>
-                            )}
                         </div>
 
                         {apiKeySetupStatus && (
@@ -5251,21 +4921,55 @@ Please complete the following implementation tasks:
                                         SubScript creates the endpoint with your API key so payment and subscription events are observable immediately.
                                     </p>
                                 </div>
-                                <button
-                                    onClick={handleRollKeys}
-                                    disabled={isRolling}
-                                    className="px-8 py-3.5 bg-[#000000] hover:bg-black/85 text-white rounded-full text-sm sm:text-base font-bold flex items-center gap-2 mx-auto transition-all shadow-sm disabled:opacity-50"
-                                >
-                                    {isRolling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
-                                    Generate API Keys
-                                </button>
+                                <div className="space-y-3 pt-2">
+                                    <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                                        <button
+                                            onClick={() => handleRollKeys("LIVE")}
+                                            disabled={isRolling}
+                                            className="w-full sm:w-auto px-8 py-3.5 bg-[#000000] hover:bg-black/85 text-white rounded-full text-sm sm:text-base font-bold flex items-center justify-center gap-2 transition-all shadow-sm disabled:opacity-50"
+                                        >
+                                            {isRolling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
+                                            Generate Live API Key
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRollKeys("TEST")}
+                                            disabled={isRolling}
+                                            className="w-full sm:w-auto px-6 py-3.5 border border-black/15 bg-white hover:bg-black/5 text-[#082824] rounded-full text-sm font-semibold flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                                        >
+                                            Generate test api key instead
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-black/50 text-center">
+                                        Need test tokens for sandbox testing? Claim testnet USDC at the{" "}
+                                        <a
+                                            href="https://faucet.circle.com/"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-[#2775CA] hover:underline font-semibold inline-flex items-center gap-0.5"
+                                        >
+                                            Circle Faucet <ExternalLink className="w-3 h-3 inline" />
+                                        </a>
+                                    </p>
+                                </div>
                             </div>
                         ) : (
                             <div className="space-y-6">
                                 {/* Publishable Key */}
                                 <div className="bg-[#D4E3E8]/50 border border-black/10 rounded-[28px] p-6 font-sans space-y-3">
                                     <div className="flex items-center justify-between">
-                                        <span className="text-xs sm:text-sm text-[#082824] font-bold uppercase tracking-wider font-mono">Publishable Key</span>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs sm:text-sm text-[#082824] font-bold uppercase tracking-wider font-mono">Publishable Key</span>
+                                            {activeKeyMode === "LIVE" ? (
+                                                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-800 border border-emerald-500/25">
+                                                    LIVE / Mainnet
+                                                </span>
+                                            ) : (
+                                                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-blue-500/15 text-blue-800 border border-blue-500/25">
+                                                    TEST / Sandbox
+                                                </span>
+                                            )}
+                                        </div>
                                         {copiedText === "Publishable Key" && (
                                             <span className="text-xs text-[#082824] font-bold">Copied!</span>
                                         )}
@@ -5288,6 +4992,15 @@ Please complete the following implementation tasks:
                                         <div className="flex items-center gap-2">
                                             <span className="text-xs sm:text-sm text-[#082824] font-bold uppercase tracking-wider font-mono">Secret Key</span>
                                             <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-yellow-500/20 text-yellow-800 dark:text-yellow-300 border border-yellow-500/30">Secret</span>
+                                            {activeKeyMode === "LIVE" ? (
+                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-800 border border-emerald-500/25">
+                                                    LIVE
+                                                </span>
+                                            ) : (
+                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-800 border border-blue-500/25">
+                                                    TEST
+                                                </span>
+                                            )}
                                         </div>
                                         <div className="flex items-center gap-4">
                                             {copiedText === "Secret Key" && (
@@ -5341,6 +5054,23 @@ Please complete the following implementation tasks:
                                     )}
                                 </div>
 
+                                {activeKeyMode === "TEST" && (
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4 text-xs sm:text-sm text-[#082824]">
+                                        <div className="flex items-center gap-2">
+                                            <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse shrink-0" />
+                                            <span>Active key is in <strong>TEST / Sandbox</strong> mode (Arc Testnet).</span>
+                                        </div>
+                                        <a
+                                            href="https://faucet.circle.com/"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1 font-bold text-blue-600 hover:text-blue-700 underline underline-offset-2 shrink-0"
+                                        >
+                                            Claim test tokens on Circle Faucet <ExternalLink className="w-3.5 h-3.5" />
+                                        </a>
+                                    </div>
+                                )}
+
                                 {/* Roll Keys */}
                                 <div className="pt-6 border-t border-black/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-sans">
                                     <div>
@@ -5350,17 +5080,27 @@ Please complete the following implementation tasks:
                                             {!activeSecretAvailable && " This is also how you get a readable secret if you no longer have the current one. The new key is revealed and copied once, here."}
                                         </p>
                                     </div>
-                                    <div className="flex items-center gap-4 shrink-0">
+                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
                                         {copiedText === "API Secret Key Rolled" && (
-                                            <span className="text-xs text-[#082824] font-bold">API Secret Key Rolled</span>
+                                            <span className="text-xs text-[#082824] font-bold self-center">API Secret Key Rolled</span>
                                         )}
                                         <button
-                                            onClick={handleRollKeys}
+                                            onClick={() => handleRollKeys("LIVE")}
                                             disabled={isRolling}
-                                            className={`px-6 py-2.5 border border-black/15 bg-white rounded-full text-xs sm:text-sm font-bold text-[#082824] hover:bg-black/5 transition-all flex items-center gap-2 shadow-sm ${isRolling ? "opacity-50" : ""}`}
+                                            className={`px-5 py-2.5 bg-[#000000] hover:bg-black/85 text-white rounded-full text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-sm ${isRolling ? "opacity-50" : ""}`}
+                                            title="Roll a new production live key"
                                         >
-                                            {isRolling ? <RefreshCw className="w-4 h-4 animate-spin text-black" /> : <RotateCw className="w-4 h-4 text-black" />}
-                                            Roll
+                                            {isRolling ? <RefreshCw className="w-4 h-4 animate-spin text-white" /> : <RotateCw className="w-4 h-4 text-white" />}
+                                            Roll Live Key
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRollKeys("TEST")}
+                                            disabled={isRolling}
+                                            className="px-4 py-2.5 border border-black/15 bg-white hover:bg-black/5 text-[#082824] rounded-full text-xs sm:text-sm font-semibold flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+                                            title="Generate a sandbox test key instead"
+                                        >
+                                            Generate test api key instead
                                         </button>
                                     </div>
                                 </div>
@@ -5993,7 +5733,6 @@ Please complete the following implementation tasks:
                     verified={Boolean(userSettings?.verified)}
                     isAdmin={isAdmin}
                     mobileEnabled={isConnected}
-                    isPremium={isPremium}
                     isLoading={Boolean(isLoading)}
                     onLogout={handleLogout}
                 />
@@ -6026,10 +5765,10 @@ Please complete the following implementation tasks:
                                     window.location.href = getDashboardUrl("USER", "/user");
                                 } else {
                                     await fetch("/api/auth/logout", { method: "POST" });
-                                    window.location.href = getDashboardUrl("USER", "/login");
+                                    window.location.href = getDashboardUrl("USER", "/signin");
                                 }
                             }}
-                            className="w-full py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black rounded-xl font-bold text-xs uppercase tracking-widest transition-all"
+                            className="w-full py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-xl font-bold text-xs uppercase tracking-widest transition-all"
                         >
                             {sessionAlert === "role_missing" && "Complete Account Setup"}
                             {sessionAlert === "wrong_role" && "Switch to User Dashboard"}
@@ -6060,11 +5799,11 @@ Please complete the following implementation tasks:
                     </div>
                     <div className="flex items-center gap-2.5 shrink-0">
                         <button
-                            onClick={() => setActiveTab("premium")}
-                            title="Premium"
+                            onClick={() => setActiveTab("advanced")}
+                            title="Advanced Settings"
                             className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FFFFF0] dark:bg-[#1f2023] text-[#082824] dark:text-white hover:brightness-95 transition shadow-sm border border-black/10 dark:border-white/10"
                         >
-                            <Crown className="h-4 w-4 text-amber-500 dark:text-amber-400" />
+                            <Sliders className="h-4 w-4 text-[#082824] dark:text-white" />
                         </button>
                         <div className="relative">
                             <NotificationBell audience="MERCHANT" accent="#082824" className="merchant-light-bell" />
@@ -6131,7 +5870,6 @@ Please complete the following implementation tasks:
                     setIsWithdrawOpen(false);
                 }}
                 isWithdrawing={isWithdrawing}
-                isPremium={isPremium}
             />
             <QrScannerModal
                 isOpen={isQrScannerOpen}
@@ -6210,7 +5948,7 @@ Please complete the following implementation tasks:
 
                         <div className="space-y-1">
                             <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center justify-center gap-2">
-                                <QrCode className="w-4 h-4 text-[#00d2b4]" />
+                                <QrCode className="w-4 h-4 text-[#8AB4DB]" />
                                 Payment Link QR Code
                             </h3>
                             <p className="text-[10px] text-white/40 font-mono uppercase tracking-wider truncate px-4">
@@ -6244,14 +5982,14 @@ Please complete the following implementation tasks:
                         <div className="space-y-2">
                             <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider text-left">Checkout URL</p>
                             <div className="bg-black/40 border border-white/5 rounded-xl p-3 flex items-center justify-between gap-3">
-                                <span className="text-[11px] font-mono text-white/70 truncate text-left flex-1">
+                                <span className="text-[11px] font-mono text-black/70 dark:text-white/70 truncate text-left flex-1">
                                     {activeQrCodeLink}
                                 </span>
                                 <button
                                     onClick={() => {
                                         navigator.clipboard.writeText(activeQrCodeLink);
                                     }}
-                                    className="p-1.5 text-[#00d2b4] hover:text-[#00d2b4]/80 rounded-lg hover:bg-[#00d2b4]/5 transition-all flex-shrink-0"
+                                    className="p-1.5 text-[#8AB4DB] hover:text-[#8AB4DB]/80 rounded-lg hover:bg-[#8AB4DB]/5 transition-all flex-shrink-0"
                                     title="Copy URL"
                                 >
                                     <Copy className="w-3.5 h-3.5" />
@@ -6276,7 +6014,7 @@ Please complete the following implementation tasks:
             {/* High-fidelity glassmorphic toast notification for settlement confirmation */}
                             {showToast && (
                                 <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass border border-emerald-500/30 bg-black/60 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-[0_8px_32px_0_rgba(0,210,180,0.2)]">
-                                    <Zap className="w-5 h-5 text-[#00d2b4] fill-[#00d2b4]/25 shrink-0" />
+                                    <Zap className="w-5 h-5 text-[#8AB4DB] fill-[#8AB4DB]/25 shrink-0" />
                                     <span className="text-xs font-bold uppercase tracking-wider text-white">
                                         {toastMessage}
                                     </span>
@@ -6315,7 +6053,7 @@ function MerchantPlanRow({
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                 <div className="min-w-0 w-full">
                     <p className="truncate text-sm font-black uppercase tracking-[0.08em] text-white">{plan.name}</p>
-                    <p className="mt-1 text-xs font-bold text-[#00d2b4]">
+                    <p className="mt-1 text-xs font-bold text-[#082824]">
                         {formatPlanAmount(plan.amountUsdc)} USDC / {formatPlanPeriod(plan.periodSeconds)}
                     </p>
                     <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.12em] text-white/30">
@@ -6331,7 +6069,7 @@ function MerchantPlanRow({
                     className={`inline-flex w-full shrink-0 items-center justify-center rounded-xl border px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition disabled:opacity-50 sm:w-auto ${
                         plan.active
                             ? "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-300 hover:bg-red-500/15"
-                            : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-[#00d2b4] hover:bg-emerald-500/15"
+                            : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/15"
                     }`}
                 >
                     {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : plan.active ? "Deactivate" : "Reactivate"}
@@ -6348,7 +6086,7 @@ function MerchantPlanRow({
                             href={plan.detailsUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[10px] font-bold text-[#00d2b4] transition hover:text-[#00d2b4]/80"
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-[#8AB4DB] transition hover:text-[#8AB4DB]/80"
                         >
                             View more ↗
                         </a>
@@ -6363,7 +6101,7 @@ function MerchantPlanRow({
                         <button
                             type="button"
                             onClick={handleCopy}
-                            className="flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-[#00d2b4] transition hover:bg-[#00d2b4]/20"
+                            className="flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-black/10 bg-[#D4E3E8] px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-[#082824] transition hover:bg-[#c6d8de]"
                             title={copied ? "Copied!" : "Copy subscribe link"}
                         >
                             {copied ? <Check className="h-3 w-3 shrink-0" /> : <Copy className="h-3 w-3 shrink-0" />}
@@ -6373,7 +6111,7 @@ function MerchantPlanRow({
                             <button
                                 type="button"
                                 onClick={() => onShowQr(subscribeUrl, `${plan.name} Plan Subscribe Link`)}
-                                className="flex shrink-0 items-center justify-center rounded-lg border border-[#00d2b4]/20 bg-[#00d2b4]/10 p-1.5 text-[#00d2b4] transition hover:bg-[#00d2b4]/20"
+                                className="flex shrink-0 items-center justify-center rounded-lg border border-black/10 bg-[#D4E3E8] p-1.5 text-[#082824] transition hover:bg-[#c6d8de]"
                                 title="Show QR Code"
                                 aria-label="Show QR Code"
                             >
@@ -6522,7 +6260,7 @@ function PlanPromotionPanel({
                             Edit
                         </button>
                         <button type="button" onClick={toggleActive} disabled={saving}
-                            className={`rounded-lg border px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition disabled:opacity-50 ${promotion.active ? "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-300 hover:bg-red-500/15" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-[#00d2b4] hover:bg-emerald-500/15"}`}>
+                            className={`rounded-lg border px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition disabled:opacity-50 ${promotion.active ? "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-300 hover:bg-red-500/15" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/15"}`}>
                             {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : promotion.active ? "Turn off" : "Turn on"}
                         </button>
                     </div>
@@ -6545,12 +6283,12 @@ function PlanPromotionPanel({
                         <div className="space-y-1">
                             <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Offer name</label>
                             <input type="text" value={promoName} onChange={(e) => setPromoName(e.target.value)} placeholder="Launch offer"
-                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                                className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-black focus:border-[#8AB4DB] focus:outline-none" />
                         </div>
                         <div className="space-y-1">
                             <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Offer type</label>
                             <select value={discountType} onChange={(e) => setDiscountType(e.target.value)}
-                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none">
+                                className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-black focus:border-[#8AB4DB] focus:outline-none">
                                 <option value="PERCENT">Percentage off</option>
                                 <option value="FIXED_PRICE">Fixed intro price</option>
                                 <option value="FREE_TRIAL">Free trial</option>
@@ -6560,41 +6298,41 @@ function PlanPromotionPanel({
                             <div className="space-y-1">
                                 <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Percent off (customer pays the rest)</label>
                                 <input type="number" min="1" max="100" step="1" value={percentOff} onChange={(e) => setPercentOff(e.target.value)}
-                                    className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                                    className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-black focus:border-[#8AB4DB] focus:outline-none" />
                             </div>
                         )}
                         {discountType === "FIXED_PRICE" && (
                             <div className="space-y-1">
                                 <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Intro price (USDC)</label>
                                 <input type="number" min="0" step="0.01" value={introPriceUsdc} onChange={(e) => setIntroPriceUsdc(e.target.value)}
-                                    className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                                    className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-black focus:border-[#8AB4DB] focus:outline-none" />
                             </div>
                         )}
                         <div className="space-y-1">
                             <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Discounted cycles</label>
                             <input type="number" min="1" max="36" value={introCycles} onChange={(e) => setIntroCycles(e.target.value)}
-                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                                className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-black focus:border-[#8AB4DB] focus:outline-none" />
                         </div>
                         <div className="space-y-1">
                             <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Offer ends (optional)</label>
                             <input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)}
-                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                                className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-black focus:border-[#8AB4DB] focus:outline-none" />
                         </div>
                         <div className="space-y-1">
                             <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Max redemptions (optional)</label>
                             <input type="number" min="1" value={maxRedemptions} onChange={(e) => setMaxRedemptions(e.target.value)} placeholder="Unlimited"
-                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                                className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-black focus:border-[#8AB4DB] focus:outline-none" />
                         </div>
                     </div>
                     <label className="flex items-center gap-2 text-[10px] text-white/60">
-                        <input type="checkbox" checked={newCustomersOnly} onChange={(e) => setNewCustomersOnly(e.target.checked)} className="accent-[#00d2b4]" />
+                        <input type="checkbox" checked={newCustomersOnly} onChange={(e) => setNewCustomersOnly(e.target.checked)} className="accent-[#2775CA]" />
                         New customers only (subscribers who never had a plan with you)
                     </label>
                     {previewIntroMicros !== null && previewIntroMicros < regularMicros && (
                         <p className="rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-[10px] text-white/60">
-                            Customers pay <span className="font-bold text-[#00d2b4]">{formatPlanAmount(previewIntroMicros.toString())} USDC</span>
+                            Customers pay <span className="font-bold text-[#082824]">{formatPlanAmount(previewIntroMicros.toString())} USDC</span>
                             {Number(introCycles) > 1 ? ` per ${cadence} for ${introCycles} cycles` : " today"}, then{" "}
-                            <span className="font-bold text-white/85">{formatPlanAmount(plan.amountUsdc)} USDC / {cadence}</span>. Both prices are
+                            <span className="font-bold text-[#082824] dark:text-white/85">{formatPlanAmount(plan.amountUsdc)} USDC / {cadence}</span>. Both prices are
                             disclosed and authorized at checkout; the switch to full price is enforced on-chain.
                         </p>
                     )}
@@ -6605,7 +6343,7 @@ function PlanPromotionPanel({
                             Cancel
                         </button>
                         <button type="submit" disabled={saving}
-                            className="rounded-lg bg-[#00d2b4] px-4 py-2 text-[9px] font-bold uppercase tracking-wider text-black transition hover:bg-[#00d2b4]/85 disabled:opacity-50">
+                            className="rounded-lg bg-[#8AB4DB] px-4 py-2 text-[9px] font-bold uppercase tracking-wider text-[#082824] transition hover:bg-[#7aa7d0] disabled:opacity-50">
                             {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : promotion ? "Save changes" : "Launch offer"}
                         </button>
                     </div>

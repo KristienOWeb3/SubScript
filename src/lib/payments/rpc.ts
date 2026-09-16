@@ -1,4 +1,5 @@
 import { ethers } from "ethers";
+import { ARC_MAINNET_CHAIN_ID, ARC_TESTNET_CHAIN_ID } from "@/lib/contracts/constants";
 
 const IS_ARC_MAINNET = process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet";
 const DEFAULT_ARC_RPC = IS_ARC_MAINNET
@@ -19,7 +20,7 @@ const ARC_TESTNET_PUBLIC_FALLBACKS = IS_ARC_MAINNET
    vs 4 for eth_blockNumber) and ethers sends it before anything else, retrying internally and
    indefinitely when it 429s. The endpoint failover below never got a chance: the provider could not
    finish starting up, so a reachable chain read as unreachable. */
-const ARC_CHAIN_ID = IS_ARC_MAINNET ? 5042001 : 5042002;
+const ARC_CHAIN_ID = IS_ARC_MAINNET ? ARC_MAINNET_CHAIN_ID : ARC_TESTNET_CHAIN_ID;
 
 const RPC_ENDPOINTS = Array.from(new Set([
     process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || DEFAULT_ARC_RPC,

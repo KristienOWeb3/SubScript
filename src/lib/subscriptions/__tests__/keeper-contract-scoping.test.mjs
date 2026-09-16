@@ -11,7 +11,6 @@ function source(path) {
    abandoned deployment must never be in scope. */
 const CHAIN_READING_KEEPERS = [
     "src/app/api/cron/customer-billing/route.ts",
-    "src/app/api/cron/billing/route.ts",
     "src/lib/subscriptions/driftHealer.ts",
 ];
 
@@ -111,7 +110,7 @@ test("the billing-claims id collision is recorded rather than silently left", ()
        contend for one claim row. That needs a migration on the table and its claim/release/complete
        RPCs, so it is out of scope here — but it must not be forgotten, and the exclusion in the
        walker above must stay justified by a written note. */
-    const billing = source("src/app/api/cron/billing/route.ts");
+    const billing = source("src/app/api/cron/customer-billing/route.ts");
     assert.match(billing, /KNOWN GAP: `subscription_billing_claims`/);
     assert.match(billing, /needs a migration/);
 });

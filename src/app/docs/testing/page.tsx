@@ -28,9 +28,9 @@ export default function TestingPage() {
         </p>
       </Callout>
 
-      <div className="overflow-x-auto rounded-2xl border border-white/5 bg-black/30">
+      <div className="overflow-x-auto rounded-2xl border border-black/10 bg-white/60 shadow-sm">
         <table className="w-full min-w-[680px] text-left text-xs">
-          <thead className="border-b border-white/5 bg-white/[0.03] text-[9px] uppercase tracking-widest text-white/40">
+          <thead className="border-b border-black/10 bg-black/[0.03] text-[9px] uppercase tracking-widest text-black/45">
             <tr>
               <th className="px-4 py-3">Mode</th>
               <th className="px-4 py-3">Credential</th>
@@ -38,9 +38,9 @@ export default function TestingPage() {
               <th className="px-4 py-3">Use it for</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/5 text-white/65">
+          <tbody className="divide-y divide-black/[0.06] text-black/70">
             <tr>
-              <td className="px-4 py-3 font-semibold text-[#00d2b4]">Arc Testnet</td>
+              <td className="px-4 py-3 font-semibold text-[#2775CA]">Arc Testnet</td>
               <td className="px-4 py-3 font-mono">sk_test_…</td>
               <td className="px-4 py-3">
                 Implies <span className="font-mono">sandbox: true</span> and settles valueless test USDC on Arc
@@ -49,7 +49,7 @@ export default function TestingPage() {
               <td className="px-4 py-3">Funded testnet integration, CI, and end-to-end settlement tests.</td>
             </tr>
             <tr>
-              <td className="px-4 py-3 font-semibold text-white">Live</td>
+              <td className="px-4 py-3 font-semibold text-[#111827]">Live</td>
               <td className="px-4 py-3 font-mono">sk_live_…</td>
               <td className="px-4 py-3">Requires a configured merchant payout wallet.</td>
               <td className="px-4 py-3">Real customer settlement after launch review.</td>
@@ -59,10 +59,10 @@ export default function TestingPage() {
       </div>
 
       <section className="space-y-4">
-        <h2 id="tools" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="tools" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Testing without waiting for real events
         </h2>
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           You do not need a public URL or a month of elapsed time to exercise your handler. The CLI signs events
           with your real secret, so a locally triggered event is byte-for-byte the shape production sends.
         </p>
@@ -72,13 +72,13 @@ export default function TestingPage() {
             ["Forward real test events", "npx @subscriptonarc/cli listen --forward-to http://localhost:3000/api/webhooks/subscript"],
             ["Simulate renewals", "POST /api/test/clocks, attach a subscription, then POST /api/test/clocks/:id/advance"],
           ].map(([title, command]) => (
-            <div key={title} className="rounded-2xl border border-white/5 bg-black/30 p-5">
-              <p className="text-xs font-semibold text-white">{title}</p>
-              <p className="mt-3 break-words font-mono text-[10px] leading-relaxed text-[#00d2b4]">{command}</p>
+            <div key={title} className="rounded-2xl border border-black/10 bg-white/60 p-5 shadow-sm">
+              <p className="text-xs font-semibold text-[#111827]">{title}</p>
+              <p className="mt-3 break-words font-mono text-[10px] leading-relaxed text-[#2775CA]">{command}</p>
             </div>
           ))}
         </div>
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           Test clocks are the only practical way to verify annual renewals, dunning behavior, and access expiry
           before real time passes. Attach a subscription to a clock, advance it, and assert your entitlement table
           moved the way you expect.
@@ -86,7 +86,7 @@ export default function TestingPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="checklists" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="checklists" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Checklists
         </h2>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -121,22 +121,22 @@ export default function TestingPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="diagnosis" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="diagnosis" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Fast diagnosis
         </h2>
         <Callout tone="plain">
           <dl className="mt-1 grid grid-cols-1 gap-4 sm:grid-cols-[180px_1fr]">
-            <dt className="font-mono text-[#00d2b4]">401 unauthorized</dt>
+            <dt className="font-mono text-[#2775CA]">401 unauthorized</dt>
             <dd>Confirm the Bearer header exists and the key is active. Do not print the key while debugging.</dd>
-            <dt className="font-mono text-[#00d2b4]">400 invalid_amount</dt>
+            <dt className="font-mono text-[#2775CA]">400 invalid_amount</dt>
             <dd>
               Send a positive integer string in micro-USDC; never send <span className="font-mono">15.00</span>.
             </dd>
-            <dt className="font-mono text-[#00d2b4]">409 idempotency conflict</dt>
+            <dt className="font-mono text-[#2775CA]">409 idempotency conflict</dt>
             <dd>The key belongs to another logical resource. Generate a new key for the new checkout.</dd>
-            <dt className="font-mono text-[#00d2b4]">merchant_payout_wallet_missing</dt>
+            <dt className="font-mono text-[#2775CA]">merchant_payout_wallet_missing</dt>
             <dd>Your live key is valid, but live checkout is blocked until payout setup is complete.</dd>
-            <dt className="font-mono text-[#00d2b4]">Webhook signature mismatch</dt>
+            <dt className="font-mono text-[#2775CA]">Webhook signature mismatch</dt>
             <dd>Verify against the raw body before JSON parsing and use the endpoint&apos;s exact secret.</dd>
           </dl>
         </Callout>

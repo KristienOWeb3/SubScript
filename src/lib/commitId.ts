@@ -307,6 +307,37 @@ export async function rotateSubUserCommitId(parentWalletAddress: string, subComm
     throw new Error("Could not allocate a new commit ID for this sub-user");
 }
 
+/**
+ * Rotates the user's primary/root Commit ID.
+ * If a user's Primary Commit ID was compromised or leaked, rotating it immediately issues
+ * a fresh Crockford base32 ID, invalidating the old ID while preserving all vault links,
+ * customer records, and ledger history keyed off the row's immutable UUID.
+ */
+export async function rotateRootCommitForWallet(walletAddress: string) {
+    const root = await getOrCreateCommitForWallet(walletAddress);
+
+    if (root.status === "REVOKED") {
+        throw new CommitAccessError("This account commit has been revoked and cannot be rotated", 409);
+    }
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+        try {
+            const rotated = await prisma.userCommit.update({
+                where: { id: root.id },
+                data: {
+                    commitId: generateCommitId(),
+                    commitIdRotatedAt: new Date(),
+                },
+            });
+            return { previousCommitId: root.commitId, commit: rotated };
+        } catch (error) {
+            if (!isUniqueViolation(error)) throw error;
+        }
+    }
+
+    throw new Error("Could not allocate a new primary commit ID");
+}
+
 /* Stop this account's own outbound money, authorized by the caller's own session.
  *
  * Pause already covered "a parent stops a delegate". This covers "a user stops themselves", which

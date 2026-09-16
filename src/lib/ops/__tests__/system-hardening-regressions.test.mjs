@@ -99,21 +99,14 @@ test("wallet-login nonces are server-issued and atomically single-use", async ()
 
 test("premium billing leases each on-chain sequence and repairs chain-finalized state", async () => {
     const billing = await source("src/app/api/cron/billing/route.ts");
-
-    assert.match(billing, /claim_subscription_billing/);
-    assert.match(billing, /BILLING_SEQUENCE_ALREADY_CLAIMED/);
-    assert.match(billing, /isSequenceExecuted\(subId, claimedSequenceId\)/);
-    assert.match(billing, /PAYMENT_EXECUTED_STATE_REPAIRED/);
-    assert.match(billing, /complete_subscription_billing/);
-    assert.match(billing, /renew_subscription_billing/);
-    assert.match(billing, /if \(!await renewBillingClaim\(\)\) continue/);
+    assert.match(billing, /status: 410/);
+    assert.match(billing, /KYC verification tiers/);
 });
 
 test("internal billing rejects an identical signed event replay", async () => {
     const route = await source("src/app/api/internal/billing/route.ts");
-    assert.match(route, /internal-billing:\$\{crypto\.createHash\("sha256"\)\.update\(rawBody\)/);
-    assert.match(route, /claimError\?\.code === "23505"/);
-    assert.match(route, /Event already processed/);
+    assert.match(route, /status: 410/);
+    assert.match(route, /KYC verification tiers/);
 });
 
 test("migration runner distinguishes fresh bootstrap and serializes deploys", async () => {
@@ -255,8 +248,8 @@ test("vault webhook producers dynamically derive environment and avoid hardcoded
     ]);
 
     assert.match(vaultDraw, /environment: \(row\.environment as "TEST" \| "LIVE"\) \|\| "TEST"/);
-    assert.match(withdraw, /const environment = SUBSCRIPT_VAULT_CHAIN_ID === 5042001 \? "LIVE" : "TEST";/);
-    assert.match(reclaim, /const environment = SUBSCRIPT_VAULT_CHAIN_ID === 5042001 \? "LIVE" : "TEST";/);
+    assert.match(withdraw, /const environment = SUBSCRIPT_VAULT_CHAIN_ID === ARC_MAINNET_CHAIN_ID \? "LIVE" : "TEST";/);
+    assert.match(reclaim, /const environment = SUBSCRIPT_VAULT_CHAIN_ID === ARC_MAINNET_CHAIN_ID \? "LIVE" : "TEST";/);
     assert.match(cancelService, /environment: \(vault\.environment as "TEST" \| "LIVE"\) \|\| environment/);
     assert.match(reportUsage, /const eventEnv = \(result\.vault\.environment as "TEST" \| "LIVE"\) \|\| "TEST"/);
 });

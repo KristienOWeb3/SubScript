@@ -142,9 +142,9 @@ test("resolveEnvironment accurately handles explicit, chainId, and livemode prop
     assert.equal(resolveEnvironment({ environment: "TEST" }), "TEST");
     assert.equal(resolveEnvironment({ livemode: true }), "LIVE");
     assert.equal(resolveEnvironment({ livemode: false }), "TEST");
-    assert.equal(resolveEnvironment({ chainId: 5042001 }), "LIVE");
+    assert.equal(resolveEnvironment({ chainId: 5042 }), "LIVE");
     assert.equal(resolveEnvironment({ chainId: 5042002 }), "TEST");
-    assert.equal(resolveEnvironment({ chain_id: 5042001 }), "LIVE");
+    assert.equal(resolveEnvironment({ chain_id: 5042 }), "LIVE");
     assert.equal(resolveEnvironment({ chain_id: 5042002 }), "TEST");
     assert.equal(resolveEnvironment({}), "TEST");
 });
@@ -164,7 +164,7 @@ test("subscriptionWebhookData generates environment and livemode metadata", () =
         subscriptionId: "456",
         status: "active",
         amountUsdcMicros: 25000000n,
-        chainId: 5042001,
+        chainId: 5042,
     });
     assert.equal(dataMainnet.environment, "LIVE");
     assert.equal(dataMainnet.livemode, true);
@@ -178,4 +178,17 @@ test("GET /api/merchant/overview rejects unauthorized and invalid requests", asy
     assert.equal(unauthRes.status, 401);
     const unauthBody = await unauthRes.json();
     assert.equal(unauthBody.error, "Unauthorized");
+});
+
+const merchantOverviewUi = fs.readFileSync(path.join(projectRoot, "src/components/dashboard/MerchantOverview.tsx"), "utf8");
+
+test("spendable card exposes one responsive Send action while settlement keeps Claim", () => {
+    const spendableStart = merchantOverviewUi.indexOf("{/* 2. Spendable Card */}");
+    const settlementStart = merchantOverviewUi.indexOf("{/* 3. Claimable Settlement Card */}");
+    assert.ok(spendableStart >= 0 && settlementStart > spendableStart);
+    const spendable = merchantOverviewUi.slice(spendableStart, settlementStart);
+    assert.match(spendable, />\s*Send\s*</);
+    assert.match(spendable, /inline-flex[\s\S]{0,220}px-6 py-2/);
+    assert.doesNotMatch(spendable, />\s*Withdraw\s*</);
+    assert.match(merchantOverviewUi.slice(settlementStart), />\s*Claim\s*</);
 });

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { fetchArcUsdcDeposits } from "@/lib/deposits/arcDeposits";
 import { pgQuery } from "@/lib/serverPg";
-import { CCTP_CONFIG } from "@/lib/contracts/constants";
+import { ARC_MAINNET_CHAIN_ID, ARC_TESTNET_CHAIN_ID, CCTP_CONFIG } from "@/lib/contracts/constants";
 import { processPendingCctpTransfers } from "@/lib/cctp/attestationWorker";
 import { sweepAndBridge } from "@/lib/cctp/autoBridge";
 
@@ -40,7 +40,11 @@ export async function GET(request: Request) {
             void processPendingCctpTransfers().catch(() => undefined);
         }
 
-        const isArcChain = (id: string | number) => id === "arc" || id === "5042002" || id === 5042002 || id === "5042001" || id === 5042001;
+        const isArcChain = (id: string | number) => id === "arc"
+            || id === ARC_TESTNET_CHAIN_ID
+            || id === String(ARC_TESTNET_CHAIN_ID)
+            || id === ARC_MAINNET_CHAIN_ID
+            || id === String(ARC_MAINNET_CHAIN_ID);
         const cctpItems = cctpTransfers.map((tx: any) => {
             const originName = isArcChain(tx.origin_chain_id) ? "Arc Network" : (CCTP_CONFIG[Number(tx.origin_chain_id)]?.name || `Chain ${tx.origin_chain_id}`);
             const destName = isArcChain(tx.destination_chain_id) ? "Arc Network" : (CCTP_CONFIG[Number(tx.destination_chain_id)]?.name || `Chain ${tx.destination_chain_id}`);

@@ -53,10 +53,10 @@ export async function GET(request: Request) {
         }
         const merchant = await prisma.merchant.findUnique({
             where: { walletAddress: wallet },
-            select: { tier: true }
+            select: { walletAddress: true }
         });
-        if (!merchant || merchant.tier !== "PREMIUM") {
-            return NextResponse.json({ error: "Forbidden: Vault configurations are only available for Premium merchants." }, { status: 403 });
+        if (!merchant) {
+            return NextResponse.json({ error: "Merchant account not found." }, { status: 404 });
         }
         return NextResponse.json({
             success: true,

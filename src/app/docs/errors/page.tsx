@@ -34,44 +34,44 @@ export default function ErrorsPage() {
       <CodeBlock code={errorEnvelopeCode} language="json" />
 
       <section className="space-y-4">
-        <h2 id="common-codes" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="common-codes" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Common codes
         </h2>
         <Callout tone="plain">
           <ul className="mt-1 space-y-1.5">
             <li>
-              <span className="font-mono text-[#00d2b4]">unauthorized</span>: missing/invalid{" "}
+              <span className="font-mono text-[#2775CA]">unauthorized</span>: missing/invalid{" "}
               <span className="font-mono">Authorization: Bearer sk_…</span> header. Keys live in Dashboard →
               Developers → API keys.
             </li>
             <li>
-              <span className="font-mono text-[#00d2b4]">invalid_json</span>: request body is not valid JSON.
+              <span className="font-mono text-[#2775CA]">invalid_json</span>: request body is not valid JSON.
             </li>
             <li>
-              <span className="font-mono text-[#00d2b4]">missing_title</span> /{" "}
-              <span className="font-mono text-[#00d2b4]">invalid_amount</span>: validation failures return{" "}
+              <span className="font-mono text-[#2775CA]">missing_title</span> /{" "}
+              <span className="font-mono text-[#2775CA]">invalid_amount</span>: validation failures return{" "}
               <span className="font-mono">400</span> with the field named in <span className="font-mono">message</span>.
             </li>
             <li>
-              <span className="font-mono text-[#00d2b4]">merchant_payout_wallet_missing</span>: live key with no
+              <span className="font-mono text-[#2775CA]">merchant_payout_wallet_missing</span>: live key with no
               payout wallet configured; <span className="font-mono">resolution_url</span> points at the settings
               page.
             </li>
             <li>
-              <span className="font-mono text-[#00d2b4]">quota_exceeded</span>: active-link tier limit reached (
+              <span className="font-mono text-[#2775CA]">quota_exceeded</span>: active-link tier limit reached (
               <span className="font-mono">403</span>).
             </li>
             <li>
-              <span className="font-mono text-[#00d2b4]">idempotency_key_conflict</span>: the key was already used
+              <span className="font-mono text-[#2775CA]">idempotency_key_conflict</span>: the key was already used
               for a different resource (<span className="font-mono">409</span>).
             </li>
             <li>
-              <span className="font-mono text-[#00d2b4]">internal_error</span>: a <span className="font-mono">500</span>{" "}
+              <span className="font-mono text-[#2775CA]">internal_error</span>: a <span className="font-mono">500</span>{" "}
               with no internals leaked; report the <span className="font-mono">request_id</span>.
             </li>
           </ul>
         </Callout>
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           Two of these deserve a policy decision before you ship.{" "}
           <span className="font-mono">idempotency_key_conflict</span> means your retry logic drifted — surface it
           loudly, not silently. And{" "}

@@ -3,6 +3,8 @@ import { pgQuery } from "@/lib/serverPg";
 import {
   ARC_MESSAGE_TRANSMITTER_ADDRESS,
   ARC_CCTP_DOMAIN_ID,
+  ARC_MAINNET_CHAIN_ID,
+  ARC_TESTNET_CHAIN_ID,
   CCTP_CONFIG,
 } from "@/lib/contracts/constants";
 import {
@@ -14,6 +16,7 @@ import { getArcRelayer, getChainRelayer } from "./relayer";
 import { notifyDepositArrived, notifyTransferStalled, notifyWithdrawalArrived } from "./notifications";
 import { formatMicros } from "./feeEngine";
 import { relayCctpMintToSolana } from "./solanaRelayer";
+import { assertArcCctpAvailable } from "./availability";
 
 /* A burn is irreversible, so the worker keeps trying for a long time before it gives up. At the
    five-minute keeper cadence this is roughly two days of retries, which comfortably covers Ethereum
@@ -116,6 +119,7 @@ async function markFailed(item: PendingTransferRow, reason: string): Promise<voi
  * conditional UPDATE, so two overlapping keeper ticks cannot relay the same burn twice.
  */
 export async function processPendingCctpTransfers(): Promise<CctpWorkerResult> {
+  assertArcCctpAvailable();
   const result: CctpWorkerResult = { processed: 0, completed: 0, waiting: 0, failed: 0 };
 
   let pending: PendingTransferRow[];
@@ -236,7 +240,9 @@ export async function processPendingCctpTransfers(): Promise<CctpWorkerResult> {
 
       const netUsdc = formatMicros(BigInt(item.net_amount_micros));
       if (item.direction === "inbound_deposit") {
-        const isOriginArc = item.origin_chain_id === "arc" || item.origin_chain_id === "5042002" || item.origin_chain_id === "5042001";
+        const isOriginArc = item.origin_chain_id === "arc"
+          || item.origin_chain_id === String(ARC_TESTNET_CHAIN_ID)
+          || item.origin_chain_id === String(ARC_MAINNET_CHAIN_ID);
         const originName = isOriginArc ? "Arc Network" : (CCTP_CONFIG[Number(item.origin_chain_id)]?.name || `Chain ${item.origin_chain_id}`);
         await notifyDepositArrived({
           recipientAddress: item.recipient_address,

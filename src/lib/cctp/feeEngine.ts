@@ -1,4 +1,4 @@
-import { CCTP_CONFIG, SOLANA_CCTP_CONFIG, CCTPChainInfo } from "@/lib/contracts/constants";
+import { ARC_CCTP_ENABLED, CCTP_CONFIG, SOLANA_CCTP_CONFIG, CCTPChainInfo } from "@/lib/contracts/constants";
 import { BridgeDirection, BridgeFeeCalculation, BridgeRouteOption } from "./types";
 import { isSolanaAddress } from "./circleBridge";
 
@@ -205,7 +205,8 @@ export function listBridgeRoutes(direction: BridgeDirection): BridgeRouteOption[
         feePercentage: formatFeeBps(info.feeBps),
         /* Circle CCTP cross-chain attestation and relay */
         estimatedTime: "About 15 minutes",
-        available: allowed !== false,
+        available: ARC_CCTP_ENABLED && allowed !== false,
+        unavailableReason: ARC_CCTP_ENABLED && allowed !== false ? undefined : "Coming soon",
         nativeTokenSymbol: info.nativeTokenSymbol,
       };
     })
@@ -222,8 +223,8 @@ export function listBridgeRoutes(direction: BridgeDirection): BridgeRouteOption[
     feeBps: SOLANA_CCTP_CONFIG.feeBps,
     feePercentage: formatFeeBps(SOLANA_CCTP_CONFIG.feeBps),
     estimatedTime: "About 15 minutes",
-    available: solanaAllowed !== false,
-    unavailableReason: solanaAllowed === false ? "Coming soon" : undefined,
+    available: ARC_CCTP_ENABLED && solanaAllowed !== false,
+    unavailableReason: ARC_CCTP_ENABLED && solanaAllowed !== false ? undefined : "Coming soon",
     nativeTokenSymbol: SOLANA_CCTP_CONFIG.nativeTokenSymbol,
   };
 

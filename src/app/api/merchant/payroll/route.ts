@@ -5,6 +5,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { revokePayrollAuthority } from "@/lib/payroll/authority";
 import { haltGuard } from "@/lib/accountHalt";
+import { getAccountKycTier } from "@/lib/kyc/tier";
 
 /* Ethereum address validation: 0x followed by 40 hex characters */
 const ETH_ADDRESS_REGEX = /^0x[0-9a-fA-F]{40}$/;
@@ -16,20 +17,10 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 const VALID_ACTIONS = ["PAUSE", "RESUME", "UPDATE_PERMIT"] as const;
 type CampaignAction = typeof VALID_ACTIONS[number];
 
-/* Helper function to check if the merchant is PREMIUM */
-async function verifyPremiumTier(normalizedUser: string): Promise<boolean> {
-    if (!supabaseAdmin) {
-        return false;
-    }
-    const { data, error } = await supabaseAdmin
-        .from("merchants")
-        .select("tier")
-        .eq("wallet_address", normalizedUser)
-        .maybeSingle();
-    if (error || !data) {
-        return false;
-    }
-    return data.tier === "PREMIUM";
+/* Helper function to check if the merchant is at least Tier 1 (email linked or MCP) */
+async function verifyTier1Status(normalizedUser: string): Promise<boolean> {
+    const tierInfo = await getAccountKycTier(normalizedUser);
+    return tierInfo.isTier1;
 }
 
 /**
@@ -49,9 +40,9 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Configuration Error: Database not available." }, { status: 500 });
         }
 
-        const isPremium = await verifyPremiumTier(normalizedUser);
-        if (!isPremium) {
-            return NextResponse.json({ error: "Forbidden: Institutional Payroll requires a PREMIUM tier subscription." }, { status: 403 });
+        const isTier1 = await verifyTier1Status(normalizedUser);
+        if (!isTier1) {
+            return NextResponse.json({ error: "Forbidden: Institutional Payroll requires Tier 1 verification (please link your email)." }, { status: 403 });
         }
 
         /* Fetch all campaigns belonging to this merchant */
@@ -183,9 +174,9 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Configuration Error: Database not available." }, { status: 500 });
         }
 
-        const isPremium = await verifyPremiumTier(normalizedUser);
-        if (!isPremium) {
-            return NextResponse.json({ error: "Forbidden: Institutional Payroll requires a PREMIUM tier subscription." }, { status: 403 });
+        const isTier1 = await verifyTier1Status(normalizedUser);
+        if (!isTier1) {
+            return NextResponse.json({ error: "Forbidden: Institutional Payroll requires Tier 1 verification (please link your email)." }, { status: 403 });
         }
 
         /* Creating a campaign schedules recurring batch payouts out of this organization's wallet, so
@@ -400,9 +391,9 @@ export async function PUT(request: Request) {
             return NextResponse.json({ error: "Configuration Error: Database not available." }, { status: 500 });
         }
 
-        const isPremium = await verifyPremiumTier(normalizedUser);
-        if (!isPremium) {
-            return NextResponse.json({ error: "Forbidden: Institutional Payroll requires a PREMIUM tier subscription." }, { status: 403 });
+        const isTier1 = await verifyTier1Status(normalizedUser);
+        if (!isTier1) {
+            return NextResponse.json({ error: "Forbidden: Institutional Payroll requires Tier 1 verification (please link your email)." }, { status: 403 });
         }
 
         const body = await request.json();
@@ -576,9 +567,9 @@ export async function DELETE(request: Request) {
             return NextResponse.json({ error: "Configuration Error: Database not available." }, { status: 500 });
         }
 
-        const isPremium = await verifyPremiumTier(normalizedUser);
-        if (!isPremium) {
-            return NextResponse.json({ error: "Forbidden: Institutional Payroll requires a PREMIUM tier subscription." }, { status: 403 });
+        const isTier1 = await verifyTier1Status(normalizedUser);
+        if (!isTier1) {
+            return NextResponse.json({ error: "Forbidden: Institutional Payroll requires Tier 1 verification (please link your email)." }, { status: 403 });
         }
 
         const { searchParams } = new URL(request.url);

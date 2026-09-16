@@ -4,7 +4,7 @@ import { ethers } from "ethers";
 
 import { isReceiptId, receiptUrl } from "@/lib/arc/memo";
 import { getSessionWallet } from "@/lib/auth";
-import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
+import { getAccountKycTier } from "@/lib/kyc/tier";
 import { CCTP_CONFIG, SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 import { consumeDistributedRateLimit } from "@/lib/distributedRateLimit";
 import {
@@ -118,8 +118,8 @@ export async function POST(request: Request) {
         if (sessionWallet.toLowerCase() !== normalizedPayer) {
             return NextResponse.json({ error: "The authenticated wallet does not match the payer." }, { status: 403 });
         }
-        const verifiedEmail = await getVerifiedAccountEmail(sessionWallet);
-        if (!verifiedEmail?.email) {
+        const tierInfo = await getAccountKycTier(sessionWallet);
+        if (!tierInfo.isTier1) {
             return NextResponse.json({ error: "Verify an email address with OTP before paying." }, { status: 403 });
         }
 

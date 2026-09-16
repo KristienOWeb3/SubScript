@@ -124,6 +124,20 @@ export async function GET(request: Request) {
         });
         const embeddedMap = new Map(embeddedWallets.map((w) => [w.walletAddress.toLowerCase(), w]));
 
+        // Batch fetch customer profiles for linked emails (external wallets)
+        const customers = await prisma.customer.findMany({
+            where: { walletAddress: { in: addresses } },
+            select: { walletAddress: true, email: true },
+        });
+        const customerMap = new Map(customers.map((c) => [c.walletAddress.toLowerCase(), c.email]));
+
+        // Batch fetch auth identities for linked email logins
+        const authIdentities = await prisma.authIdentity.findMany({
+            where: { walletAddress: { in: addresses }, disabledAt: null },
+            select: { walletAddress: true, currentEmail: true },
+        });
+        const authIdentityMap = new Map(authIdentities.map((a) => [a.walletAddress.toLowerCase(), a.currentEmail]));
+
         // Batch fetch aliases
         const aliases = await prisma.addressAlias.findMany({
             where: { address: { in: addresses } },
@@ -143,6 +157,9 @@ export async function GET(request: Request) {
             const emb = embeddedMap.get(addr);
             const alias = aliasMap.get(addr) || null;
             const merch = merchantMap.get(addr);
+            const custEmail = customerMap.get(addr);
+            const authEmail = authIdentityMap.get(addr);
+            const resolvedEmail = custEmail || emb?.email || authEmail || null;
 
             let custodyType = "External (Browser)";
             if (emb) {
@@ -157,7 +174,7 @@ export async function GET(request: Request) {
                 address: addr,
                 role: r.role,
                 alias,
-                email: emb?.email || null,
+                email: resolvedEmail,
                 custodyType,
                 merchantTier: merch?.tier || null,
                 merchantVerified: merch?.verified || false,

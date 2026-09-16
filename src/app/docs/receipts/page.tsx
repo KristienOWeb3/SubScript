@@ -32,18 +32,18 @@ export default function ReceiptsPage() {
       </Callout>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="rounded-2xl border border-white/5 bg-black/30 p-5">
-          <ReceiptText className="mb-3 h-5 w-5 text-[#00d2b4]" />
-          <h3 className="text-xs font-semibold text-white">Default visibility</h3>
-          <p className="mt-2 text-xs leading-relaxed text-white/55">
+        <div className="rounded-2xl border border-black/10 bg-white/60 shadow-sm p-5">
+          <ReceiptText className="mb-3 h-5 w-5 text-[#2775CA]" />
+          <h3 className="text-xs font-semibold text-[#111827]">Default visibility</h3>
+          <p className="mt-2 text-xs leading-relaxed text-black/60">
             Receipt data is intended for the payer, merchant, and SubScript by default. Future invite flows can
             selectively disclose a receipt to another viewer.
           </p>
         </div>
-        <div className="rounded-2xl border border-white/5 bg-black/30 p-5">
-          <ShieldCheck className="mb-3 h-5 w-5 text-[#00d2b4]" />
-          <h3 className="text-xs font-semibold text-white">Proof without confusion</h3>
-          <p className="mt-2 text-xs leading-relaxed text-white/55">
+        <div className="rounded-2xl border border-black/10 bg-white/60 shadow-sm p-5">
+          <ShieldCheck className="mb-3 h-5 w-5 text-[#2775CA]" />
+          <h3 className="text-xs font-semibold text-[#111827]">Proof without confusion</h3>
+          <p className="mt-2 text-xs leading-relaxed text-black/60">
             The receipt page hides raw transaction complexity while preserving auditability through Arc memo
             indexing.
           </p>
@@ -51,10 +51,10 @@ export default function ReceiptsPage() {
       </div>
 
       <section className="space-y-4">
-        <h2 id="receipt-token" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="receipt-token" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Working with receipt tokens
         </h2>
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           The <span className="font-mono">receiptToken</span> comes back when you create an intent and again in the
           webhook as <span className="font-mono">data.receipt_id</span>. Persist it beside your order: it is the
           value to surface in an order-history row, attach to a confirmation email, or hand to support when a
@@ -70,7 +70,7 @@ export default function ReceiptsPage() {
             <span className="font-mono">subscript_tx_hash</span>. Those are navigation hints travelling over a
             channel the browser controls — fine for rendering a thank-you page or linking straight to the receipt,
             never sufficient for granting access. Confirm through the{" "}
-            <Link href="/docs/webhooks" className="font-semibold text-[#00d2b4] hover:underline">
+            <Link href="/docs/webhooks" className="font-semibold text-[#2775CA] hover:underline">
               signed webhook
             </Link>{" "}
             or the intent status API.

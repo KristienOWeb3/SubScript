@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
     title: "Fulfillment Policy",
-    description: "How SubScript services are delivered: instant digital provisioning, on-chain activation timing for Premium, renewal receipts, merchant fulfillment via signed webhooks, and vault settlement.",
+    description: "How SubScript services are delivered: KYC-tier activation, transaction receipts, merchant fulfillment via signed webhooks, and vault settlement.",
     alternates: {
         canonical: "/fulfillment",
     },

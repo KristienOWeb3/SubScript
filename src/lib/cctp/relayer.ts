@@ -1,5 +1,5 @@
 import { ethers } from "ethers";
-import { CCTP_CONFIG, ARC_TESTNET_CHAIN_ID, ARC_MAINNET_CHAIN_ID } from "@/lib/contracts/constants";
+import { CCTP_CONFIG, ARC_TESTNET_CHAIN_ID, ARC_MAINNET_CHAIN_ID, isProd } from "@/lib/contracts/constants";
 
 /**
  * Single source of truth for which key relays CCTP mints and which RPC each chain uses.
@@ -33,7 +33,7 @@ export function getArcRpcUrl(): string {
   return (
     process.env.ARC_RPC_URL ||
     process.env.NEXT_PUBLIC_ARC_RPC_PRIMARY ||
-    "https://rpc.testnet.arc.network"
+    (isProd ? "https://rpc.mainnet.arc.io" : "https://rpc.testnet.arc.network")
   );
 }
 
@@ -57,7 +57,8 @@ export function getArcRelayer(): ethers.Wallet {
   if (!key) {
     throw new Error("No relayer key configured. Set RELAYER_PRIVATE_KEY (or SPONSOR_PRIVATE_KEY).");
   }
-  return new ethers.Wallet(key, new ethers.JsonRpcProvider(getArcRpcUrl(), undefined, { staticNetwork: true }));
+  const chainId = isProd ? ARC_MAINNET_CHAIN_ID : ARC_TESTNET_CHAIN_ID;
+  return new ethers.Wallet(key, new ethers.JsonRpcProvider(getArcRpcUrl(), chainId, { staticNetwork: true }));
 }
 
 export function getChainRelayer(chainId: number): ethers.Wallet {

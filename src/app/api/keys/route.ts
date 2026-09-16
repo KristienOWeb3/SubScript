@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { hashSecretKey, secretKeyHint } from "@/lib/apiKeys";
 import { validateWebhookUrl } from "@/lib/webhookUrls";
-import { requireEnterpriseAndPremium } from "@/lib/v1/merchantAuth";
+import { requireEnterpriseAndTier1 } from "@/lib/v1/merchantAuth";
 
 function getSupabase() {
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -14,18 +14,6 @@ function getSupabase() {
     }
     return createClient(supabaseUrl, supabaseServiceKey);
 }
-
-async function checkMerchantPremium(supabase: any, walletAddress: string): Promise<boolean> {
-    const { data: merchant, error } = await supabase
-        .from("merchants")
-        .select("tier")
-        .eq("wallet_address", walletAddress.toLowerCase())
-        .maybeSingle();
-    if (error || !merchant) return false;
-    return merchant.tier === "PREMIUM";
-}
-
-
 
 function redactSecretKey(secretKey: string | null | undefined): string {
     if (!secretKey) return "";
@@ -76,18 +64,23 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const premiumCheck = await requireEnterpriseAndPremium(wallet);
-        if (!premiumCheck.ok) {
-            return NextResponse.json({ error: premiumCheck.error }, { status: premiumCheck.status });
+        const body = await request.json().catch(() => ({}));
+        if (!body || typeof body !== "object" || Array.isArray(body)) {
+            return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+        }
+
+        const requestedMode = (body as any)?.mode ? String((body as any).mode).toUpperCase() : "LIVE";
+        const keyMode: "LIVE" | "TEST" = requestedMode === "TEST" ? "TEST" : "LIVE";
+        const prefix = keyMode.toLowerCase();
+
+        const tierCheck = await requireEnterpriseAndTier1(wallet, prefix as "test" | "live");
+        if (!tierCheck.ok) {
+            return NextResponse.json({ error: tierCheck.error }, { status: tierCheck.status });
         }
 
         const walletLower = wallet.toLowerCase();
         const supabase = getSupabase();
 
-        const body = await request.json().catch(() => ({}));
-        if (!body || typeof body !== "object" || Array.isArray(body)) {
-            return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-        }
         const requestedWebhookUrl = "webhookUrl" in body ? body.webhookUrl : undefined;
         if (requestedWebhookUrl !== undefined && typeof requestedWebhookUrl !== "string") {
             return NextResponse.json({ error: "webhookUrl must be a string" }, { status: 400 });
@@ -100,8 +93,8 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: validatedWebhook.error }, { status: 400 });
         }
 
-        const publishableKey = `pk_test_${crypto.randomBytes(24).toString("hex")}`;
-        const secretKeyPlain = `sk_test_${crypto.randomBytes(32).toString("hex")}`;
+        const publishableKey = `pk_${prefix}_${crypto.randomBytes(24).toString("hex")}`;
+        const secretKeyPlain = `sk_${prefix}_${crypto.randomBytes(32).toString("hex")}`;
 
         /* Atomic rotation: the replacement key is created FIRST and the old keys are revoked in
            the same database transaction. If the insert fails, nothing is revoked — a merchant
@@ -111,6 +104,7 @@ export async function POST(request: Request) {
             p_publishable_key: publishableKey,
             p_secret_key_hash: hashSecretKey(secretKeyPlain),
             p_secret_key_hint: secretKeyHint(secretKeyPlain),
+            p_mode: keyMode,
         });
 
         if (rotateError || !rotated?.id) {

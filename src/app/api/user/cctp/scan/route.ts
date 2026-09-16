@@ -2,10 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { scanCrossChainBalances } from "@/lib/cctp/crossChainScanner";
 import { sweepAndBridge } from "@/lib/cctp/autoBridge";
+import { ARC_CCTP_ENABLED } from "@/lib/contracts/constants";
+import { CCTP_UNAVAILABLE_MESSAGE } from "@/lib/cctp/availability";
 
 export const maxDuration = 30;
 
 export async function GET(req: NextRequest) {
+  if (!ARC_CCTP_ENABLED) {
+    return NextResponse.json({ error: CCTP_UNAVAILABLE_MESSAGE }, { status: 503 });
+  }
+
   try {
     const sessionWallet = await getSessionWallet(req.headers);
     const url = new URL(req.url);

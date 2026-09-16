@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { authenticateMerchant, requireEnterpriseAndPremium } from "@/lib/v1/merchantAuth";
+import { authenticateMerchant, requireEnterpriseAndTier1 } from "@/lib/v1/merchantAuth";
 import { apiError } from "@/lib/apiErrors";
 import { ALL_EVENT_TYPES, type EventType } from "@/lib/events/types";
 
@@ -18,9 +18,9 @@ export async function GET(request: Request) {
         if (!auth.ok) {
             return apiError({ status: auth.status, code: "unauthorized", message: auth.error });
         }
-        const premiumCheck = await requireEnterpriseAndPremium(auth.merchantAddress);
-        if (!premiumCheck.ok) {
-            return apiError({ status: premiumCheck.status, code: "forbidden", message: premiumCheck.error });
+        const tierCheck = await requireEnterpriseAndTier1(auth.merchantAddress);
+        if (!tierCheck.ok) {
+            return apiError({ status: tierCheck.status, code: "forbidden", message: tierCheck.error });
         }
         const walletAddress = auth.merchantAddress.toLowerCase();
         const environment = auth.mode === "live" ? "LIVE" : "TEST";

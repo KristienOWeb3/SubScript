@@ -84,6 +84,9 @@ function SignInContent() {
   const isTurnstileConfigured = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
   const captchaRequired = isTurnstileConfigured && !captchaToken;
 
+  const isCloudflareReady = !isTurnstileConfigured || Boolean(captchaToken);
+  const isAuthReady = platformFlagsLoaded && isCloudflareReady;
+
   const [resendCooldown, setResendCooldown] = useState(0);
 
   useEffect(() => {
@@ -450,10 +453,16 @@ function SignInContent() {
   }
 
   return (
-    <AuthSplitLayout activeTab={activeTab} onTabChange={handleTabChange}>
+    <AuthSplitLayout
+      activeTab={activeTab}
+      onTabChange={handleTabChange}
+      title={activeTab === "signin" ? "Welcome back" : "Create your account"}
+      subtitle={activeTab === "signin" ? "Sign in to your SubScript account." : "Get started with programmable USDC payments."}
+    >
       <div className="space-y-3.5">
         {/* Quick Social & Web3 Auth Row */}
         <MultiWalletAuthRow
+          loading={!isAuthReady}
           googleAvailable={googleAvailable}
           externalWalletEnabled={externalWalletEnabled}
           onGoogleSuccess={handleLoginSuccess}
@@ -468,14 +477,16 @@ function SignInContent() {
         />
 
         {/* Divider */}
-        <div className="relative py-1 flex items-center justify-center">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-black/10"></div>
+        {(!isAuthReady || googleAvailable || externalWalletEnabled) && (
+          <div className="relative py-1 flex items-center justify-center">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-black/10"></div>
+            </div>
+            <span className="relative px-2.5 bg-[#FFFFF0] text-[9px] font-bold text-black/40 uppercase tracking-widest font-mono">
+              or continue with email
+            </span>
           </div>
-          <span className="relative px-2.5 bg-[#FFFFF0] text-[9px] font-bold text-black/40 uppercase tracking-widest font-mono">
-            or continue with email
-          </span>
-        </div>
+        )}
 
         {/* Email OTP Flow */}
         {!otpSent ? (
@@ -506,7 +517,7 @@ function SignInContent() {
             {/* Explicit Send OTP Button beneath email */}
             <button
               type="submit"
-              disabled={otpLoading || !email || (isTurnstileConfigured && !captchaToken)}
+              disabled={otpLoading || !email || captchaRequired}
               className="w-full py-2.5 bg-[#2775CA] hover:bg-[#1f62ab] disabled:opacity-50 text-white font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.99]"
             >
               {otpLoading ? (

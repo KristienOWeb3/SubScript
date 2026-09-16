@@ -161,12 +161,15 @@ export default function NotificationBell({
         };
     }, [open, updatePosition]);
 
+    const hasMarkedReadRef = useRef(false);
+
     const markAllRead = async () => {
         const previous = items;
         const previousUnread = unread;
         const now = new Date().toISOString();
         setItems((current) => current.map((item) => ({ ...item, readAt: item.readAt ?? now })));
         setUnread(0);
+        hasMarkedReadRef.current = true;
         try {
             const res = await fetch("/api/notifications", {
                 method: "POST",
@@ -179,6 +182,7 @@ export default function NotificationBell({
         } catch {
             setItems(previous);
             setUnread(previousUnread);
+            hasMarkedReadRef.current = false;
         }
     };
 
@@ -220,20 +224,35 @@ export default function NotificationBell({
         }
     }, [open, items]);
 
-    /* On close, clear the ones that were seen. Deleting them while the panel is still open would make
-       rows vanish under the user's cursor. */
+    const wasOpenRef = useRef(false);
+
+    /* On close, clear transient notifications and delete all read notifications. */
     useEffect(() => {
-        if (open) return;
-        const seen = Array.from(viewedTransientRef.current);
-        if (seen.length === 0) return;
-        viewedTransientRef.current.clear();
-        for (const id of seen) {
-            void handleDismiss(id);
+        if (open) {
+            wasOpenRef.current = true;
+            return;
         }
-        /* handleDismiss is recreated every render and only reads state it also writes; adding it to
-           the dependency list would re-run this on each keystroke elsewhere in the dashboard. */
+        if (!wasOpenRef.current) return;
+        wasOpenRef.current = false;
+
+        const seen = Array.from(viewedTransientRef.current);
+        if (seen.length > 0) {
+            viewedTransientRef.current.clear();
+            for (const id of seen) {
+                void handleDismiss(id);
+            }
+        }
+
+        if (hasMarkedReadRef.current || items.some((item) => Boolean(item.readAt))) {
+            hasMarkedReadRef.current = false;
+            setItems((current) => current.filter((item) => !item.readAt));
+            setUnread(0);
+            void fetch(`/api/notifications?audience=${audience}&allRead=true`, { method: "DELETE" }).catch((err) => {
+                console.warn("Failed to delete read notifications on close:", err);
+            });
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open]);
+    }, [open, audience, items]);
 
     const skeletonContent = (
         <div className="p-4 space-y-3">

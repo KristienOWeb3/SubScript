@@ -8,6 +8,8 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { processPendingCctpTransfers } from "@/lib/cctp/attestationWorker";
 import { sweepAndBridge } from "@/lib/cctp/autoBridge";
+import { ARC_CCTP_ENABLED } from "@/lib/contracts/constants";
+import { CCTP_UNAVAILABLE_MESSAGE } from "@/lib/cctp/availability";
 
 export const maxDuration = 300;
 
@@ -36,6 +38,10 @@ async function handle(request: Request) {
   if (!isAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (!ARC_CCTP_ENABLED) {
+    return NextResponse.json({ error: CCTP_UNAVAILABLE_MESSAGE }, { status: 503 });
+  }
+
 
   try {
     /* Phase 1: relay any pending attestations (existing mints waiting on Circle). */

@@ -157,6 +157,9 @@ function SignupContent() {
   const isTurnstileConfigured = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
   const captchaRequired = isTurnstileConfigured && !captchaToken;
 
+  const isCloudflareReady = !isTurnstileConfigured || Boolean(captchaToken);
+  const isAuthReady = platformFlagsLoaded && isCloudflareReady;
+
   useEffect(() => {
     if (resendCooldown > 0) {
       const timer = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
@@ -518,7 +521,7 @@ function SignupContent() {
     if (!selectedRole) return;
     if (requiresEmailLinking && email.trim()) {
       if (!email.includes("@")) {
-        setRoleError("Please enter a valid email address to link with your account, or leave blank.");
+        setRoleError("Please enter a valid email address to link with your account.");
         return;
       }
     }
@@ -568,7 +571,7 @@ function SignupContent() {
 
     if (requiresEmailLinking && email.trim()) {
       if (!email.includes("@")) {
-        setRoleError("Please enter a valid email address to link with your account, or leave blank.");
+        setRoleError("Please enter a valid email address to link with your account.");
         return;
       }
     }
@@ -815,7 +818,7 @@ function SignupContent() {
           {requiresEmailLinking && (
             <div className="space-y-1 pt-1">
               <label className="block text-[11px] font-semibold text-[#111827]">
-                Link an Email for Receipts & Alerts <span className="text-black/40 font-normal">(Optional)</span>
+                Link an Email for Tier 1 <span className="text-black/40 font-normal">(Required before transactions)</span>
               </label>
               <input
                 type="email"
@@ -900,6 +903,7 @@ function SignupContent() {
 
         {/* Quick Social & Web3 Auth Row */}
         <MultiWalletAuthRow
+          loading={!isAuthReady}
           googleAvailable={googleAvailable}
           externalWalletEnabled={externalWalletEnabled}
           onGoogleSuccess={handleLoginSuccess}
@@ -914,14 +918,16 @@ function SignupContent() {
         />
 
         {/* Divider */}
-        <div className="relative py-1 flex items-center justify-center">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-black/10"></div>
+        {(!isAuthReady || googleAvailable || externalWalletEnabled) && (
+          <div className="relative py-1 flex items-center justify-center">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-black/10"></div>
+            </div>
+            <span className="relative px-2.5 bg-[#FFFFF0] text-[9px] font-bold text-black/40 uppercase tracking-widest font-mono">
+              or continue with email
+            </span>
           </div>
-          <span className="relative px-2.5 bg-[#FFFFF0] text-[9px] font-bold text-black/40 uppercase tracking-widest font-mono">
-            or continue with email
-          </span>
-        </div>
+        )}
 
         {/* Email OTP Flow */}
         {!otpSent ? (
@@ -952,7 +958,7 @@ function SignupContent() {
             {/* Explicit Send OTP Button beneath email */}
             <button
               type="submit"
-              disabled={otpLoading || !email || (isTurnstileConfigured && !captchaToken)}
+              disabled={otpLoading || !email || captchaRequired}
               className="w-full py-2.5 bg-[#2775CA] hover:bg-[#1f62ab] disabled:opacity-50 text-white font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.99]"
             >
               {otpLoading ? (

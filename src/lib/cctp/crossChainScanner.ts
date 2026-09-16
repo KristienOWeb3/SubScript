@@ -6,6 +6,7 @@ import { notifyDepositStarted } from "./notifications";
 import { pgQuery, pgMaybeOne } from "@/lib/serverPg";
 import { processPendingCctpTransfers } from "./attestationWorker";
 import { calculateBridgeFee, formatMicros } from "./feeEngine";
+import { assertArcCctpAvailable } from "./availability";
 
 export interface ChainBalanceResult {
   chainId: number;
@@ -31,6 +32,7 @@ export interface CrossChainScanResult {
  * Queries the USDC balance for a given address across all active CCTP chains in parallel.
  */
 export async function scanCrossChainBalances(walletAddress: string): Promise<CrossChainScanResult> {
+  assertArcCctpAvailable();
   const normalizedWallet = walletAddress.toLowerCase();
   const chainEntries = Object.entries(CCTP_CONFIG);
 
@@ -140,6 +142,7 @@ export async function detectAndNotifyInboundCctp(
   burnTxHash: string,
   grossAmountMicros: string
 ): Promise<void> {
+  assertArcCctpAvailable();
   const normalizedWallet = walletAddress.toLowerCase();
   const config = CCTP_CONFIG[originChainId];
   if (!config) return;
@@ -198,6 +201,7 @@ export interface DerivedScanResult {
  * at their derived deposit addresses across origin chains.
  */
 export async function scanDerivedDepositAddresses(): Promise<DerivedScanResult[]> {
+  assertArcCctpAvailable();
   const intents = await pgQuery<{
     user_wallet: string;
     derived_deposit_address: string;

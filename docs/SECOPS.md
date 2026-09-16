@@ -23,15 +23,22 @@ Both `SubScriptRouter` and `SubScriptVault` inherit OpenZeppelin `PausableUpgrad
 ### 2.1 SubScriptRouter Pause / Unpause
 *Pausing the Router halts `depositForMerchant`, merchant `withdraw`, `withdrawTo`, and `executeBatchPayout`.*
 
+> [!WARNING]
+> **EVM Selector Errata Remediation:** Canonical EVM `pause()` selector is `0x8456cb59`. Previous documentation errata listed `0x84b0196e` (which is ERC-5267 `eip712Domain()` and will fail/revert on pause). Canonical EVM `unpause()` selector is `0x3f4ba83a` (correcting legacy transposition typo `0x3f4b7b65`).
+
 #### Calldata Generation:
 ```bash
 # Pause SubScriptRouter
 cast calldata "pause()"
-# -> Output: 0x84b0196e
+# -> Output: 0x8456cb59
 
 # Unpause SubScriptRouter
 cast calldata "unpause()"
-# -> Output: 0x3f4b7b65
+# -> Output: 0x3f4ba83a
+
+# Or use the interactive SECOPS utility:
+node scripts/secops-calldata.mjs pause
+node scripts/secops-calldata.mjs unpause
 ```
 
 ### 2.2 SubScriptVault Pause / Unpause
@@ -41,11 +48,11 @@ cast calldata "unpause()"
 ```bash
 # Pause SubScriptVault
 cast calldata "pause()"
-# -> Output: 0x84b0196e
+# -> Output: 0x8456cb59
 
 # Unpause SubScriptVault
 cast calldata "unpause()"
-# -> Output: 0x3f4b7b65
+# -> Output: 0x3f4ba83a
 ```
 
 ### 2.3 Gnosis Safe Multi-Sig Execution Steps
@@ -53,7 +60,7 @@ cast calldata "unpause()"
 2. Click **New Transaction** → **Contract Interaction** (or Raw Transaction).
 3. In the **Target Address** field, paste the target UUPS Proxy address (`SubScriptRouter` or `SubScriptVault`).
 4. Set **ETH / USDC Value** to `0`.
-5. In the **Data (hex)** field, paste `0x84b0196e` (to pause) or `0x3f4b7b65` (to unpause).
+5. In the **Data (hex)** field, paste `0x8456cb59` (to pause) or `0x3f4ba83a` (to unpause).
 6. Sign the transaction using your hardware wallet.
 7. Collect threshold signatures from co-signers.
 8. Broadcast the transaction and verify status on Arcscan.
@@ -151,7 +158,7 @@ cast calldata "setMerchantTier(address,uint8)" <0xMERCHANT_ADDRESS> 1
 2. **Open Incident War Room:** Dedicated voice bridge (Google Meet) and encrypted Signal chat.
 3. **Execute Emergency Stops:**
    - **Step 1:** In SubScript Admin Console (`/admin`), toggle `withdrawals_enabled = false` and `sponsor_emergency_stop = true`.
-   - **Step 2:** If smart contract exploit is suspected, initiate emergency Safe multi-sig transaction to broadcast `pause()` (`0x84b0196e`) on `SubScriptRouter` and `SubScriptVault`.
+   - **Step 2:** If smart contract exploit is suspected, initiate emergency Safe multi-sig transaction to broadcast `pause()` (`0x8456cb59`) on `SubScriptRouter` and `SubScriptVault`.
    - **Step 3:** Enable edge maintenance mode via `maintenance_enabled = true`.
 4. **Isolate Root Cause:** Reproduce in local Foundry environment with a fork of Arc mainnet.
 5. **Develop & Audit Patch:** Develop smart contract or API patch, verify with full test suites, and obtain auditor sign-off.

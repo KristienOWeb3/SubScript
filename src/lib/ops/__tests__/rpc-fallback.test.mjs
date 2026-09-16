@@ -55,6 +55,9 @@ function loadRpcModule({ probe }) {
         if (specifier === "ethers") {
             return { ethers: { JsonRpcProvider: MockJsonRpcProvider } };
         }
+        if (specifier === "@/lib/contracts/constants") {
+            return { ARC_MAINNET_CHAIN_ID: 5042, ARC_TESTNET_CHAIN_ID: 5042002 };
+        }
         throw new Error(`Unexpected import: ${specifier}`);
     }, testModule, testModule.exports);
     return testModule.exports;
@@ -143,7 +146,7 @@ test("no Arc provider spends an eth_chainId on a chain we already know", () => {
         "every provider must be built by arcProvider()");
 
     /* The pinned id has to follow the deployment: it is what signs, so a wrong one fails every write. */
-    assert.match(rpcSource, /const ARC_CHAIN_ID = IS_ARC_MAINNET \? 5042001 : 5042002/);
+    assert.match(rpcSource, /const ARC_CHAIN_ID = IS_ARC_MAINNET \? ARC_MAINNET_CHAIN_ID : ARC_TESTNET_CHAIN_ID/);
 
     /* And the liveness probe must still touch the wire — with the network pinned, getNetwork()
        answers from memory and would hand back dead endpoints. */

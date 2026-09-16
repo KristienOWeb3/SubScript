@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 import { formatUnits } from "viem";
 import { prisma } from "@/lib/prisma";
 import { apiError } from "@/lib/apiErrors";
-import { authenticateMerchant, requireEnterpriseAndPremium } from "@/lib/v1/merchantAuth";
+import { authenticateMerchant, requireEnterpriseAndTier1 } from "@/lib/v1/merchantAuth";
 import { sanitizeInput } from "@/utils/security";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { buildSubscribeUrl } from "@/lib/checkoutUrl";
@@ -85,8 +85,8 @@ export async function GET(request: Request) {
     try {
         const auth = await authenticateMerchant(request);
         if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-        const premiumCheck = await requireEnterpriseAndPremium(auth.merchantAddress, auth.mode);
-        if (!premiumCheck.ok) return NextResponse.json({ error: premiumCheck.error }, { status: premiumCheck.status });
+        const tierCheck = await requireEnterpriseAndTier1(auth.merchantAddress, auth.mode);
+        if (!tierCheck.ok) return NextResponse.json({ error: tierCheck.error }, { status: tierCheck.status });
 
         const activeParam = new URL(request.url).searchParams.get("active");
         const plans = await prisma.merchantPlan.findMany({
@@ -114,8 +114,8 @@ export async function POST(request: Request) {
     try {
         const auth = await authenticateMerchant(request);
         if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-        const premiumCheck = await requireEnterpriseAndPremium(auth.merchantAddress, auth.mode);
-        if (!premiumCheck.ok) return NextResponse.json({ error: premiumCheck.error }, { status: premiumCheck.status });
+        const tierCheck = await requireEnterpriseAndTier1(auth.merchantAddress, auth.mode);
+        if (!tierCheck.ok) return NextResponse.json({ error: tierCheck.error }, { status: tierCheck.status });
         const merchantAddress = auth.merchantAddress;
         if (auth.mode === "test" && merchantAddress === DEMO_MERCHANT_ADDRESS.toLowerCase()) {
             return apiError({
@@ -220,8 +220,8 @@ export async function PATCH(request: Request) {
     try {
         const auth = await authenticateMerchant(request);
         if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-        const premiumCheck = await requireEnterpriseAndPremium(auth.merchantAddress);
-        if (!premiumCheck.ok) return NextResponse.json({ error: premiumCheck.error }, { status: premiumCheck.status });
+        const tierCheck = await requireEnterpriseAndTier1(auth.merchantAddress);
+        if (!tierCheck.ok) return NextResponse.json({ error: tierCheck.error }, { status: tierCheck.status });
         const merchantAddress = auth.merchantAddress;
         if (auth.mode === "test" && merchantAddress === DEMO_MERCHANT_ADDRESS.toLowerCase()) {
             return apiError({

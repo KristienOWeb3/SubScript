@@ -103,15 +103,8 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: true, message: "Duplicate transaction processed" });
         }
         if (result.outcome === "obsolete") {
-            console.warn("[Webhook Obsolete Identity] Ignoring CUSTOMER event for a canonical premium subscription.");
+            console.warn("[Webhook Obsolete Identity] Ignoring an event for the retired paid access plan.");
             return NextResponse.json({ success: true, message: "Obsolete subscription identity ignored" });
-        }
-
-        if (result.merchantInfo?.tier === "PREMIUM") {
-            console.log(`[Premium Rerouting Active] Payout mapping fetched for ${merchantAddress}:`, {
-                tier: result.merchantInfo.tier,
-                payoutDestination: result.merchantInfo.payout_destination || "Default connected address",
-            });
         }
 
         if (result.exitSurveySubId !== null) {

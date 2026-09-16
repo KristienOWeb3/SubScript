@@ -3,6 +3,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { pgMaybeOne } from "@/lib/serverPg";
 import { formatMicros } from "@/lib/cctp/feeEngine";
 import { processPendingCctpTransfers } from "@/lib/cctp/attestationWorker";
+import { ARC_CCTP_ENABLED } from "@/lib/contracts/constants";
 
 /**
  * Progress of one bridge transfer, for the caller's own wallet only.
@@ -50,7 +51,7 @@ export async function GET(
     }
 
     /* If still pending, trigger the keeper in background to advance the transfer */
-    if (record.status === "pending_attestation" || record.status === "minting") {
+    if (ARC_CCTP_ENABLED && (record.status === "pending_attestation" || record.status === "minting")) {
       void processPendingCctpTransfers().catch(() => undefined);
     }
 

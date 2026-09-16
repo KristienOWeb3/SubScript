@@ -281,6 +281,43 @@ body {
   animation: gentleFloat 5s ease-in-out infinite;
 }
 
+/* Marquee for the multi-chain logo strip on the landing page. Two identical groups sit side by
+   side and the track slides left by exactly one group's width (-50% of the doubled track), so the
+   loop is seamless. Hover pauses it so a name can be read; reduced-motion stops it outright. */
+@keyframes marqueeScroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.marquee-track {
+  animation: marqueeScroll 32s linear infinite;
+}
+
+/* The global `* { max-width: 100% }` guard (see @layer base) clamps the track to its container
+   width, which crushes all the logos into one overlapping column. The track is meant to be wider
+   than the viewport and scroll; its parent clips the overflow with overflow-hidden + a mask, so
+   exempting it here reintroduces no page-level horizontal scroll. */
+.marquee-track,
+.marquee-track > ul,
+.marquee-track li {
+  max-width: none;
+}
+
+.marquee-track:hover {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee-track {
+    animation: none;
+    transform: none;
+  }
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   display: none;
@@ -914,7 +951,7 @@ body {
 .user-dashboard-redesign [role="dialog"] [class~="bg-[#ccff00]" i],
 .user-dashboard-redesign [role="dialog"] [class~="bg-[#ccff00]" i] [class~="text-black"],
 .user-dashboard-redesign [role="dialog"] [class~="bg-[#ccff00]" i] [class~="text-[#111827]" i] {
-  color: #000000 !important;
+  color: #ffffff !important;
 }
 
 .user-dashboard-content [class*="border-white/"],

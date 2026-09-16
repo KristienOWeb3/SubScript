@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { sanitizeInput } from "@/utils/security";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
-import { checkMerchantPremium } from "@/lib/v1/merchantAuth";
+import { checkMerchantTier1 } from "@/lib/v1/merchantAuth";
 import type { EventType } from "@/lib/events/types";
 
 export async function POST(request: Request) {
@@ -40,10 +40,10 @@ export async function POST(request: Request) {
 
         const normalizedWallet = walletAddress.toLowerCase();
 
-        const isPremium = await checkMerchantPremium(normalizedWallet);
-        if (!isPremium) {
-            console.warn(`[dispatch] Skip dispatch: Merchant ${normalizedWallet} is not premium.`);
-            return NextResponse.json({ error: "Forbidden: Event dispatching requires an active premium tier." }, { status: 403 });
+        const isTier1 = await checkMerchantTier1(normalizedWallet);
+        if (!isTier1) {
+            console.warn(`[dispatch] Skip dispatch: Merchant ${normalizedWallet} does not have Tier 1 verification.`);
+            return NextResponse.json({ error: "Forbidden: Event dispatching requires Tier 1 KYC verification." }, { status: 403 });
         }
 
         /* Record the event and fan out to endpoints asynchronously.

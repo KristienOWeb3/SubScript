@@ -23,7 +23,6 @@ export async function verifyCaptchaToken(
         return false;
     }
     if (!turnstileToken) {
-        console.warn("Captcha verification failed: token is empty");
         return false;
     }
 

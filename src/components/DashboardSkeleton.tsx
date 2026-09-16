@@ -4,7 +4,7 @@ import React from "react";
 import Skeleton from "./ui/Skeleton";
 
 interface DashboardSkeletonProps {
-    activeTab: "overview" | "premium" | "apikeys" | "checkout" | "webhooks" | "payment-links" | "plans" | "settings" | "payroll" | "offramp" | "commit" | "vaults" | "one-time" | string;
+    activeTab: "overview" | "advanced" | "apikeys" | "checkout" | "webhooks" | "payment-links" | "plans" | "settings" | "payroll" | "offramp" | "commit" | "vaults" | "one-time" | string;
     isConnected?: boolean;
 }
 

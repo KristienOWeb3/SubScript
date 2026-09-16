@@ -13,6 +13,7 @@ import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { normalizeMicrouscAmount, parsePaymentLinkExpiry } from "@/lib/paymentLinks/validation";
 import { inspectPaymentIntentSemantics } from "@/lib/paymentIntentSemantics";
+import { getAccountKycTier } from "@/lib/kyc/tier";
 
 /* Validate an optional checkout return URL (https only, except localhost for dev). */
 function validateReturnUrl(label: string, value: unknown): { ok: true; value?: string } | { ok: false; error: string } {
@@ -138,14 +139,6 @@ export async function POST(request: Request) {
         const isTestMode = apiKeyMode === "test";
         if (sandbox !== undefined && sandbox !== isTestMode) {
             return apiError({ status: 400, code: "invalid_sandbox_mode", requestId, message: "Bad Request: sandbox mode is determined by the API key" });
-        }
-        if (isTestMode && ProtocolConfig.CHAIN_ID !== ARC_TESTNET_CHAIN_ID) {
-            return apiError({
-                status: 409,
-                code: "test_mode_requires_testnet",
-                requestId,
-                message: "Test API keys can settle Arc testnet USDC only. Use the testnet deployment or a live key for the configured network.",
-            });
         }
         const isSandboxRequest = isTestMode;
         const isSimulationOnly = isTestMode && merchantAddress === DEMO_MERCHANT_ADDRESS.toLowerCase();
@@ -287,7 +280,7 @@ export async function POST(request: Request) {
         if (!isSandboxRequest && !isConfiguredPayoutDestination(merchant?.payoutDestination)) {
             return merchantPayoutWalletMissingResponse();
         }
-        const tier = merchant?.tier || "FREE";
+        const tierInfo = await getAccountKycTier(merchantAddress);
 
         const activeCount = await prisma.paymentLink.count({
             where: {
@@ -300,9 +293,9 @@ export async function POST(request: Request) {
             }
         });
 
-        const limit = tier === "PREMIUM" ? ProtocolConfig.MAX_PAYMENT_LINKS_TIER1 : ProtocolConfig.MAX_PAYMENT_LINKS_TIER0;
+        const limit = tierInfo.isTier1 ? ProtocolConfig.MAX_PAYMENT_LINKS_TIER1 : ProtocolConfig.MAX_PAYMENT_LINKS_TIER0;
         if (activeCount >= limit) {
-            return apiError({ status: 403, code: "quota_exceeded", requestId, message: `Quota Exceeded: Active link limit of ${limit} reached for your tier. Deactivate old links or upgrade in the dashboard.` });
+            return apiError({ status: 403, code: "quota_exceeded", requestId, message: `Quota Exceeded: Active link limit of ${limit} reached for your tier. Deactivate old links or complete Tier 1 email verification.` });
         }
 
         // 6. Insert new PaymentLink

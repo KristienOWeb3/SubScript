@@ -94,7 +94,7 @@ const SWITCHES: Array<{
   },
   {
     field: "checkoutEnabled",
-    title: "Premium checkout",
+    title: "Retired paid-tier checkout",
     onLabel: "Allowed",
     offLabel: "Blocked",
   },

@@ -32,7 +32,7 @@ export default function DeveloperPage() {
         A Checkout Intent is a single, one-time payment session: an amount, a description, and the identifiers you
         need to reconcile it. It never renews and never appears in DM plan controls — if you need recurring
         billing, you want{" "}
-        <Link href="/docs/subscriptions" className="font-semibold text-[#00d2b4] hover:underline">
+        <Link href="/docs/subscriptions" className="font-semibold text-[#2775CA] hover:underline">
           subscriptions
         </Link>{" "}
         instead.
@@ -45,7 +45,7 @@ export default function DeveloperPage() {
       </div>
 
       <section className="space-y-4">
-        <h2 id="fields" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="fields" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Request fields
         </h2>
         <ApiTable
@@ -83,7 +83,7 @@ export default function DeveloperPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="example" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="example" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Creating and redirecting
         </h2>
         <CodeBlock code={checkoutIntentCode} language="javascript" />
@@ -91,7 +91,7 @@ export default function DeveloperPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="polling" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="polling" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Status polling
         </h2>
         <Callout tone="plain">
@@ -117,7 +117,7 @@ export default function DeveloperPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="status-codes" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="status-codes" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Status codes and what to do about them
         </h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -127,18 +127,18 @@ export default function DeveloperPage() {
             ["4xx", "Fix request", "Use code for branching and message for display."],
             ["5xx", "Retry safely", "Reuse the same idempotency key and log request_id."],
           ].map(([status, title, text]) => (
-            <div key={status} className="rounded-xl border border-white/5 bg-black/30 p-4">
-              <p className="font-mono text-sm font-bold text-[#00d2b4]">{status}</p>
-              <p className="mt-2 text-xs font-semibold text-white">{title}</p>
-              <p className="mt-1 text-[10px] leading-relaxed text-white/45">{text}</p>
+            <div key={status} className="rounded-xl border border-black/10 bg-white/60 p-4 shadow-sm">
+              <p className="font-mono text-sm font-bold text-[#2775CA]">{status}</p>
+              <p className="mt-2 text-xs font-semibold text-[#111827]">{title}</p>
+              <p className="mt-1 text-[10px] leading-relaxed text-black/45">{text}</p>
             </div>
           ))}
         </div>
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           The <span className="font-mono">200</span> case is the one people miss. A replay is a success, not a
           duplicate — it means your retry worked exactly as intended and you are holding the original intent.
           Treat 200 and 201 identically in your code. Full error semantics are on the{" "}
-          <Link href="/docs/errors" className="font-semibold text-[#00d2b4] hover:underline">
+          <Link href="/docs/errors" className="font-semibold text-[#2775CA] hover:underline">
             errors page
           </Link>
           .

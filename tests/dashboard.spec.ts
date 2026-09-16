@@ -63,6 +63,31 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       create: { walletAddress: testWallet, tier: "PREMIUM" }
     });
 
+    // Seed/Upsert verified email & KYC approval for Tier 1 / Tier 2 live credential operations
+    const uniqueEmail = `test-merchant-${testWallet.slice(2, 10)}@example.com`;
+    await prisma.$executeRaw`
+      insert into user_embedded_wallets (id, wallet_address, email, email_verified_at, provider)
+      values (gen_random_uuid(), ${testWallet}, ${uniqueEmail}, now(), 'circle_google')
+      on conflict (wallet_address) do update set email = excluded.email, email_verified_at = excluded.email_verified_at
+    `.catch(() => null);
+
+    await prisma.kycVerification.upsert({
+      where: { walletAddress: testWallet },
+      update: { status: "APPROVED", kind: "BUSINESS", accountRole: "ENTERPRISE" },
+      create: {
+        walletAddress: testWallet,
+        accountRole: "ENTERPRISE",
+        kind: "BUSINESS",
+        countryCode: "US",
+        provider: "SYNAPS",
+        status: "APPROVED",
+        consentVersion: "v1",
+        consentedAt: new Date(),
+        submittedAt: new Date(),
+        decidedAt: new Date(),
+      },
+    });
+
     // Seed/Upsert an active API Key
     const existingKey = await prisma.apiKey.findUnique({ where: { publishableKey: "pk_test_mock_key_for_e2e_testing" } });
     if (!existingKey) {
@@ -226,11 +251,11 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       await expect(page.getByRole("heading", { name: "API Credentials", exact: true })).toBeVisible({ timeout: 20000 });
       
       // .click() auto-waits for visibility/actionability; .first() keeps it strict-mode safe.
-      await page.locator('button').filter({ hasText: /^Roll$/ }).first().click();
+      await page.locator('button').filter({ hasText: /^Roll Live Key$/ }).first().click();
       
-      const confirmation = page.getByRole("alertdialog", { name: "Rotate API Key" });
+      const confirmation = page.getByRole("alertdialog", { name: /Rotate.*API Key/i });
       await expect(confirmation).toBeVisible({ timeout: 15000 });
-      await confirmation.getByRole("button", { name: "Rotate Key", exact: true }).click();
+      await confirmation.getByRole("button", { name: /Rotate.*Key/i }).click();
       await expect(page.locator("text=API Secret Key Rolled")).toBeVisible({ timeout: 15000 });
     });
 

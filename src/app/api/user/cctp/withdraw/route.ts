@@ -19,11 +19,13 @@ import {
 import { getArcRpcUrl } from "@/lib/cctp/relayer";
 import {
   ARC_CCTP_DOMAIN_ID,
+  ARC_CCTP_ENABLED,
   ARC_TOKEN_MESSENGER_ADDRESS,
   BRIDGE_FEE_TREASURY_ADDRESS,
   USDC_NATIVE_GAS_ADDRESS,
   SOLANA_CCTP_CONFIG,
 } from "@/lib/contracts/constants";
+import { CCTP_UNAVAILABLE_MESSAGE } from "@/lib/cctp/availability";
 
 export const maxDuration = 180;
 
@@ -40,12 +42,25 @@ export const maxDuration = 180;
  * order would bridge the money and lose the fee with nothing to reconcile against.
  */
 export async function POST(req: NextRequest) {
+  if (!ARC_CCTP_ENABLED) {
+    return NextResponse.json({ error: CCTP_UNAVAILABLE_MESSAGE }, { status: 503 });
+  }
+
   let transferId: string | null = null;
 
   try {
     const wallet = await getSessionWallet(req.headers);
     if (!wallet) {
       return NextResponse.json({ error: "Please connect your wallet and try again." }, { status: 401 });
+    }
+
+    const { getAccountKycTier } = await import("@/lib/kyc/tier");
+    const tierInfo = await getAccountKycTier(wallet);
+    if (tierInfo.tier < 1) {
+      return NextResponse.json(
+        { error: "Transactions require Tier 1 verification. Please link and verify your email to continue." },
+        { status: 403 },
+      );
     }
 
     const body = await req.json().catch(() => null);

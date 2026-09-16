@@ -1,270 +1,94 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
-import Image from "next/image";
+import { useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, Menu, X } from "@/components/icons";
-import AnimatedGradientBg from "@/components/AnimatedGradientBg";
-import LiquidGlassEffect from "@/components/LiquidGlassEffect";
+import { ArrowLeft } from "@/components/icons";
 import { getDashboardUrl } from "@/utils/navigation";
 import { docsSections, sectionHref } from "./sections";
 
-/* Motion matched to the marketing navbar (src/components/Navbar.tsx) so the docs menu feels
-   like the same product: the panel slides down on an expo curve rather than fading flat, and
-   the links cascade in on a spring once it has landed. Keep these in step with Navbar.tsx —
-   two overlays with different physics read as two different sites. */
-const overlayVariants = {
-  hidden: { y: "-100%" },
-  visible: {
-    y: 0,
-    transition: {
-      type: "tween",
-      ease: [0.16, 1, 0.3, 1], // easeOutExpo
-      duration: 0.45,
-    },
-  },
-  exit: {
-    y: "-100%",
-    transition: {
-      type: "tween",
-      ease: [0.7, 0, 0.84, 0], // easeInExpo
-      duration: 0.35,
-    },
-  },
-};
-
-const staggerContainerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.05,
-      /* Held until the panel has substantially arrived, so links animate into a settled
-         surface instead of racing the slide. Slightly tighter than the navbar's 0.2s because
-         the docs menu carries more rows. */
-      delayChildren: 0.18,
-    },
-  },
-  exit: {
-    opacity: 0,
-    transition: {
-      staggerChildren: 0.03,
-      staggerDirection: -1,
-    },
-  },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 15 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: {
-      type: "spring",
-      stiffness: 450,
-      damping: 32,
-    },
-  },
-  exit: { opacity: 0, y: 10 },
-};
-
-/* Chrome shared by every docs route. The active item now comes from the URL rather than an
-   IntersectionObserver over one long page, so nav state is correct on first paint (and on a
-   cold load of a deep link) instead of settling after scroll. */
+/* Chrome shared by every docs route. The persistent left sidebar was removed in favour of a
+   horizontal top tab bar (a scrollable pill row of every section) — the active pill is derived
+   from the URL, so nav state is correct on first paint and on a cold deep-link load. The /docs
+   overview page carries the full grouped index for browsing; this bar is for quick switching. */
 export default function DocsShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const activeHref = pathname.replace(/\/+$/, "") || "/docs";
 
-  /* Close the overlay on navigation: the route change is what dismisses it, so a tapped link
-     never leaves the menu covering the page it just opened. */
+  /* Keep the active pill in view when the route changes — important on mobile, where the bar
+     scrolls horizontally and the current page could otherwise sit off-screen. `block: "nearest"`
+     avoids nudging the vertical scroll position of the page. */
   useEffect(() => {
-    setMobileMenuOpen(false);
-  }, [pathname]);
+    const el = document.querySelector<HTMLElement>("[data-docs-tab-active]");
+    el?.scrollIntoView({ inline: "center", block: "nearest" });
+  }, [activeHref]);
 
   return (
-    <div className="relative min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white md:h-screen md:overflow-hidden">
-      <AnimatedGradientBg />
-
-      <div className="relative z-10 md:h-full">
-        {/* Floating Header Bar */}
-        <div className="fixed top-5 left-0 right-0 z-40 px-4 sm:px-6 flex justify-center pointer-events-none">
-          <nav className="w-full max-w-7xl liquid-glass rounded-full px-6 py-3.5 flex items-center justify-between pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/40 backdrop-blur-lg border border-white/10">
-            <LiquidGlassEffect />
-
-            <div className="flex items-center gap-4">
-              <Link href="/" className="flex items-center gap-2.5 group">
-                <Image
-                  src="/logo.png"
-                  alt="SubScript Logo"
-                  width={32}
-                  height={32}
-                  className="w-8 h-8 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)] group-hover:scale-105 transition-transform"
-                  priority
-                />
-                <span className="text-base font-bold text-white tracking-tight group-hover:text-[#00d2b4] transition-colors">
-                  SubScript <span className="font-serif font-normal italic lowercase text-[#00d2b4]">docs</span>
-                </span>
-              </Link>
-              <span className="hidden h-4 w-px bg-white/10 md:block" />
-              <span className="hidden text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40 md:block">
-                Integration Guide
-              </span>
+    <div className="min-h-screen w-full bg-[#FFFFF0] text-[#111827] font-sans selection:bg-[#2775CA]/20 selection:text-black">
+      <header className="sticky top-0 z-40 w-full border-b border-black/10 bg-[#FFFFF0]/90 backdrop-blur-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+          <Link href="/" className="inline-flex items-center gap-2.5 group">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2775CA] p-1.5 shadow-sm">
+              <img
+                src="/logo-transparent.png"
+                alt="SubScript Logo"
+                className="h-full w-full object-contain brightness-0 invert"
+              />
             </div>
+            <span className="text-lg font-black tracking-tight text-[#111827]">
+              SubScript <span className="font-bold text-black/40">docs</span>
+            </span>
+          </Link>
 
-            <div className="hidden md:flex items-center gap-4">
-              <Link
-                href={getDashboardUrl("ENTERPRISE", "/merchant")}
-                className="liquid-glass rounded-full px-4 py-2 text-xs font-semibold text-white hover:bg-white/10 transition-all duration-200 flex items-center gap-1.5"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Dashboard
-              </Link>
-              <Link
-                href="/signup"
-                className="bg-[#00d2b4] text-[#111111] text-xs font-semibold px-4 py-2 rounded-full hover:brightness-110 shadow-[0_0_8px_rgba(0,210,180,0.25)] transition-all duration-200"
-              >
-                Sign up
-              </Link>
-            </div>
-
-            <div className="md:hidden flex items-center gap-3">
-              <Link
-                href="/signup"
-                className="bg-[#00d2b4] text-[#111111] text-xs font-semibold px-3.5 py-1.5 rounded-full hover:brightness-110 shadow-[0_0_8px_rgba(0,210,180,0.25)] transition-all duration-200"
-              >
-                Sign up
-              </Link>
-              <button
-                type="button"
-                onClick={() => setMobileMenuOpen(true)}
-                className="p-1.5 text-white/70 hover:text-white transition-colors"
-                aria-label="Open Navigation Menu"
-              >
-                <Menu className="w-5 h-5" />
-              </button>
-            </div>
-          </nav>
-        </div>
-
-        {/* Mobile Fullscreen Menu */}
-        <AnimatePresence>
-          {mobileMenuOpen && (
-            <motion.div
-              className="fixed inset-0 z-50 md:hidden flex flex-col bg-black/95 backdrop-blur-xl"
-              variants={overlayVariants}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
+          <div className="flex items-center gap-3">
+            <Link
+              href={getDashboardUrl("ENTERPRISE", "/merchant")}
+              className="hidden items-center gap-1.5 text-xs font-semibold text-black/70 transition-colors hover:text-black sm:inline-flex"
             >
-              <div className="flex items-center justify-between px-6 py-5 border-b border-white/5">
-                <Link href="/" className="flex items-center gap-2.5" onClick={() => setMobileMenuOpen(false)}>
-                  <Image
-                    src="/logo.png"
-                    alt="SubScript Logo"
-                    width={32}
-                    height={32}
-                    className="w-8 h-8 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]"
-                  />
-                  <span className="text-xl font-bold text-white tracking-tight">
-                    SubScript <span className="font-serif font-normal italic lowercase text-[#00d2b4]">docs</span>
-                  </span>
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="p-2 text-[#9ca3af] hover:text-white transition-colors"
-                  aria-label="Close Menu"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-
-              <motion.div
-                className="flex-1 flex flex-col min-h-0 max-h-[calc(100vh-4rem)]"
-                variants={staggerContainerVariants}
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-              >
-                <div className="flex-1 px-6 py-6 flex flex-col gap-2 overflow-y-auto overscroll-contain">
-                  {docsSections.map((section, index) => {
-                    const Icon = section.icon;
-                    const isNewGroup = index === 0 || docsSections[index - 1].group !== section.group;
-                    const href = sectionHref(section);
-                    const active = activeHref === href;
-                    return (
-                      <motion.div key={section.slug || "overview"} variants={itemVariants}>
-                        {isNewGroup && (
-                          <p className={`mb-1.5 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-[#00d2b4] ${index === 0 ? "mt-0" : "mt-4"}`}>
-                            {section.group}
-                          </p>
-                        )}
-                        <Link
-                          href={href}
-                          className={`flex w-full items-center justify-between rounded-xl px-4 py-3 text-left transition-all duration-200 ${
-                            active
-                              ? "bg-[#00d2b4]/15 border border-[#00d2b4]/30 text-[#00d2b4] font-semibold"
-                              : "bg-white/[0.03] border border-white/5 text-white/70 hover:bg-white/10 hover:text-white"
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <Icon className={`h-4 w-4 ${active ? "text-[#00d2b4]" : "text-white/40"}`} />
-                            <span className="text-sm tracking-wide">{section.title}</span>
-                          </div>
-                          {active && <span className="h-1.5 w-1.5 rounded-full bg-[#00d2b4] shadow-[0_0_6px_#00d2b4]" />}
-                        </Link>
-                      </motion.div>
-                    );
-                  })}
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <div className="mx-auto grid max-w-7xl grid-cols-1 gap-8 px-6 pb-20 pt-24 md:h-full md:grid-cols-4 md:grid-rows-[minmax(0,1fr)] md:pb-0 md:pt-20">
-          <aside className="col-span-1 hidden min-h-0 self-stretch overflow-y-auto overscroll-contain pb-8 pr-2 md:block">
-            <div className="liquid-glass rounded-2xl border border-white/5 bg-black/40 p-5 backdrop-blur-md">
-              <p className="mb-3 border-b border-white/5 pb-3 text-[9px] font-semibold uppercase tracking-widest text-white/30">
-                Documentation map
-              </p>
-              <nav className="flex flex-col gap-1">
-                {docsSections.map((section, index) => {
-                  const Icon = section.icon;
-                  const href = sectionHref(section);
-                  const active = activeHref === href;
-                  return (
-                    <div key={section.slug || "overview"}>
-                      {(index === 0 || docsSections[index - 1].group !== section.group) && (
-                        <p className={`mb-1 px-3 text-[9px] font-semibold uppercase tracking-[0.18em] text-white/25 ${index === 0 ? "mt-0" : "mt-4"}`}>
-                          {section.group}
-                        </p>
-                      )}
-                      <Link
-                        href={href}
-                        aria-current={active ? "page" : undefined}
-                        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-bold uppercase tracking-wider transition ${
-                          active ? "border border-[#00d2b4]/20 bg-[#00d2b4]/10 text-[#00d2b4]" : "text-white/50 hover:bg-white/[0.03] hover:text-white"
-                        }`}
-                      >
-                        <Icon className="h-4 w-4" />
-                        {section.title}
-                      </Link>
-                    </div>
-                  );
-                })}
-              </nav>
-            </div>
-          </aside>
-
-          <main className="col-span-1 min-h-0 md:col-span-3 md:overflow-y-auto md:overscroll-contain md:pb-20 md:pr-3">
-            {children}
-          </main>
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Dashboard
+            </Link>
+            <Link
+              href="/signup"
+              className="rounded-xl bg-[#2775CA] px-3.5 py-2 text-xs font-bold text-white shadow-sm transition-all hover:bg-[#1f62ab]"
+            >
+              Sign up
+            </Link>
+          </div>
         </div>
-      </div>
+
+        {/* Top tab bar — replaces the old sidebar. Horizontally scrollable pill row. */}
+        <nav aria-label="Documentation sections" className="border-t border-black/[0.06]">
+          <div className="mx-auto max-w-6xl overflow-x-auto px-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="flex w-max items-center gap-1 py-2">
+              {docsSections.map((section) => {
+                const Icon = section.icon;
+                const href = sectionHref(section);
+                const active = activeHref === href;
+                return (
+                  <Link
+                    key={section.slug || "overview"}
+                    href={href}
+                    aria-current={active ? "page" : undefined}
+                    {...(active ? { "data-docs-tab-active": "" } : {})}
+                    className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+                      active
+                        ? "bg-[#2775CA] text-white shadow-sm"
+                        : "text-black/60 hover:bg-black/[0.04] hover:text-[#111827]"
+                    }`}
+                  >
+                    <Icon className={`h-3.5 w-3.5 ${active ? "text-white" : "text-black/40"}`} />
+                    {section.title}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </nav>
+      </header>
+
+      {/* Content — full width, centered, no sidebar. */}
+      <main className="mx-auto max-w-4xl px-6 py-10 sm:px-8">{children}</main>
     </div>
   );
 }

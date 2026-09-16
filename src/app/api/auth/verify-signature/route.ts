@@ -94,7 +94,7 @@ export async function POST(request: Request) {
         const normalizedAddress = address.toLowerCase();
         const role = await resolveAccountRoleWithBackfill(normalizedAddress);
 
-        if (!role && captchaToken) {
+        if (!role) {
             const isValid = await verifyCaptchaToken(captchaToken, requesterIp);
             if (!isValid) {
                 return NextResponse.json({ error: "Incorrect or expired CAPTCHA code. Please try again." }, { status: 400 });

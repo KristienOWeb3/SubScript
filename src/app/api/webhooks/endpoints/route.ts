@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { validateWebhookUrl } from "@/lib/webhookUrls";
-import { requireEnterpriseAndPremium, authenticateMerchant } from "@/lib/v1/merchantAuth";
+import { requireEnterpriseAndTier1, authenticateMerchant } from "@/lib/v1/merchantAuth";
 import { encryptWebhookSecret } from "@/lib/webhooks";
 import { validateEnabledEvents } from "@/lib/events/enabledEvents";
 
@@ -159,9 +159,9 @@ export async function POST(request: Request) {
         }
         const wallet = auth.merchantAddress;
 
-        const premiumCheck = await requireEnterpriseAndPremium(wallet);
-        if (!premiumCheck.ok) {
-            return NextResponse.json({ error: premiumCheck.error }, { status: premiumCheck.status });
+        const tierCheck = await requireEnterpriseAndTier1(wallet);
+        if (!tierCheck.ok) {
+            return NextResponse.json({ error: tierCheck.error }, { status: tierCheck.status });
         }
 
         // Per-merchant endpoint cap (Finding 38)

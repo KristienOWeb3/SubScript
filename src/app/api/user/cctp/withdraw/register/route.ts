@@ -8,10 +8,12 @@ import { notifyWithdrawalStarted } from "@/lib/cctp/notifications";
 import { getArcRpcUrl } from "@/lib/cctp/relayer";
 import {
   ARC_CCTP_DOMAIN_ID,
+  ARC_CCTP_ENABLED,
   BRIDGE_FEE_TREASURY_ADDRESS,
   USDC_NATIVE_GAS_ADDRESS,
 } from "@/lib/contracts/constants";
 import { isSolanaAddress } from "@/lib/cctp/circleBridge";
+import { CCTP_UNAVAILABLE_MESSAGE } from "@/lib/cctp/availability";
 
 export const maxDuration = 60;
 
@@ -27,6 +29,10 @@ const TRANSFER_TOPIC = ethers.id("Transfer(address,address,uint256)");
  * against Arc before the row is written, so the ledger can only ever record a fee that was paid.
  */
 export async function POST(req: NextRequest) {
+  if (!ARC_CCTP_ENABLED) {
+    return NextResponse.json({ error: CCTP_UNAVAILABLE_MESSAGE }, { status: 503 });
+  }
+
   try {
     const wallet = await getSessionWallet(req.headers);
     if (!wallet) {

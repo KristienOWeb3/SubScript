@@ -19,10 +19,10 @@ const sections = [
     ],
   },
   {
-    title: "3. Public Beta and Testnet Program",
+    title: "3. Mainnet Network and Asset Risk Disclosure",
     body: [
-      "SubScript currently operates in public beta on the Arc testnet (Chain ID 5042002). All transactions, account balances, metered escrow commitments, recurring subscription deductions, and receipts settle strictly in Arc testnet USDC. Arc testnet USDC is a non-monetary synthetic test asset with zero economic value, cannot be redeemed for fiat or mainnet assets, and confers no legal claim or equity against SubScript or Circle.",
-      "During this beta lifecycle, protocol administrators may redeploy, pause, upgrade, or migrate smart contracts; reset off-chain database records and transaction caches; and wipe account histories as required for mainnet cutover (Chain ID 5042001). Testnet receipts, authorizations, and balances must not be relied upon as proof of financial standing or real payment.",
+      "SubScript operates on Arc Mainnet (Chain ID 5042). Transactions, account balances, metered escrow commitments, recurring subscription deductions, and receipts can settle in USDC with real economic value. You are responsible for verifying the network, recipient, amount, and transaction details before approving a transaction.",
+      "Transactions submitted to a blockchain may be irreversible. Protocol administrators may pause, upgrade, or migrate smart contracts only as permitted by the applicable contract controls and published policies; testnet balances, receipts, and authorizations remain non-production records and must not be relied upon as proof of financial standing or real payment.",
     ],
   },
   {
@@ -39,7 +39,7 @@ const sections = [
     body: [
       "SubScript is strictly a software and transaction routing protocol. For all purchases, subscriptions, digital goods, SaaS access, or services purchased through SubScript-hosted checkout pages or payment links, THE MERCHANT IS THE SOLE SELLER AND EXCLUSIVE MERCHANT OF RECORD (MoR).",
       "SubScript is not a party to the underlying commercial contract between the merchant and the consumer. The merchant is solely and exclusively responsible for: (a) the description, quality, legality, fitness, and delivery of goods and services; (b) publishing clear pricing, billing cadence, and refund policies; (c) collecting, calculating, remitting, and reporting all applicable value-added taxes (VAT), goods and services taxes (GST), and sales taxes; and (d) handling customer support, billing complaints, and chargeback disputes.",
-      "SubScript is the Merchant of Record only for SubScript's direct offerings, specifically the SubScript Premium merchant subscription plan. For SubScript Premium, SubScript's direct Refund Policy and Fulfillment Policy govern.",
+      "SubScript does not sell paid account-access tiers. Tier 0, Tier 1, and Tier 2 are KYC verification states, not products or subscriptions. SubScript is the seller of record only for any separately identified direct service that explicitly names SubScript as seller at checkout.",
     ],
   },
   {
@@ -229,7 +229,7 @@ export default function TermsOfService() {
               <span>Public Beta & Regulatory Safe Harbor Notice</span>
             </div>
             <p>
-              SubScript is currently running in public beta on the Arc testnet (Chain ID 5042002). All transactions settle in testnet USDC, which has zero monetary value. SubScript is an open non-custodial software routing protocol, not a bank, money transmitter, or custodian. Production terms govern upon mainnet deployment (Chain ID 5042001).
+              SubScript operates on Arc Mainnet (Chain ID 5042). Transactions can settle in USDC with real economic value. SubScript is an open non-custodial software routing protocol, not a bank, money transmitter, or custodian.
             </p>
           </div>
         </div>

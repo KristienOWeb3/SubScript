@@ -266,18 +266,18 @@ test("the DM thread's plan bar resumes rather than resubscribes", () => {
         "utf8",
     );
 
-    /* The prop exists and is supplied at EVERY plan-bar call site — mobile footer and desktop.
-       Counted per <MerchantPlanManager> block rather than across the file, because the
-       Subscriptions-tab card (SubscriptionRow) legitimately passes the same handler. */
+    /* The prop exists and is supplied at EVERY plan-bar call site — mobile and desktop
+       via SubscriptionDetailView — and wired through to MerchantPlanManager. */
     assert.match(dashboard, /onResume\?: \(subscription: Subscription\) => void/);
-    const managerCallSites = dashboard
-        .split("<MerchantPlanManager")
+    const detailCallSites = dashboard
+        .split("<SubscriptionDetailView")
         .slice(1)
         .map((block) => block.slice(0, block.indexOf("/>")));
-    assert.equal(managerCallSites.length, 2, "expected two MerchantPlanManager call sites");
-    for (const [index, block] of managerCallSites.entries()) {
-        assert.match(block, /onResume=\{handleResumeSubscription\}/, `call site ${index} must pass onResume`);
+    assert.equal(detailCallSites.length, 2, "expected two SubscriptionDetailView call sites");
+    for (const [index, block] of detailCallSites.entries()) {
+        assert.match(block, /onResumeSubscription=\{handleResumeSubscription\}/, `call site ${index} must pass onResumeSubscription`);
     }
+    assert.match(dashboard, /<MerchantPlanManager[\s\S]*?onResume=\{onResumeSubscription\}/);
 
     /* The canceled branch calls onResume with the SUBSCRIPTION, not a subscribe handler with a plan.
        activePlan is matched by exact amount+period against the merchant's published plans, so an

@@ -8,11 +8,10 @@ import { requireAccountRole, getAccountRole } from "@/lib/accounts/roles";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { sanitizeInput } from "@/utils/security";
 import { commitFromEmbedded, syncVaultMirror } from "@/lib/vault/onchain";
-import { SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
+import { ARC_MAINNET_CHAIN_ID, SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
 import { deterministicIdempotencyKey } from "@/lib/custody";
 import { isSponsoredGasError, requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { prisma } from "@/lib/prisma";
-import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { haltGuard } from "@/lib/accountHalt";
@@ -38,10 +37,11 @@ export async function POST(request: Request) {
            spend platform gas budget on a commit that policy will reject. */
         const held = await haltGuard(wallet);
         if (held) return held;
-        const verifiedEmail = await getVerifiedAccountEmail(wallet);
-        if (!verifiedEmail?.email) {
+        const { getAccountKycTier } = await import("@/lib/kyc/tier");
+        const tierInfo = await getAccountKycTier(wallet);
+        if (tierInfo.tier < 1) {
             return NextResponse.json(
-                { error: "Verify an email address with OTP before committing funds." },
+                { error: "Transactions require Tier 1 verification. Please link and verify your email to continue." },
                 { status: 403 },
             );
         }
@@ -230,7 +230,7 @@ export async function POST(request: Request) {
                 data: { status: "MIRRORED" },
             }).catch(() => { /* SUBMITTED remains resumable; the GET resolver reports it */ });
         }
-        const commitEnvironment = SUBSCRIPT_VAULT_CHAIN_ID === 5042001 ? "LIVE" : "TEST";
+        const commitEnvironment = SUBSCRIPT_VAULT_CHAIN_ID === ARC_MAINNET_CHAIN_ID ? "LIVE" : "TEST";
         await prisma.meteredVault.updateMany({
             where: {
                 userAddress: wallet.toLowerCase(),

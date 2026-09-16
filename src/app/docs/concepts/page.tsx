@@ -19,7 +19,7 @@ export default function ConceptsPage() {
         </DocsLead>
       </DocsHeader>
 
-      <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+      <p className="max-w-3xl text-sm leading-relaxed text-black/70">
         There are four ids in play, and they belong to three different systems: one is yours, two are SubScript&apos;s,
         and one belongs to the delivery layer. Confusing them is what produces the classic failures — a webhook you
         cannot match to an order, a retry that charges twice, a support ticket with no way to find the payment.
@@ -52,25 +52,25 @@ export default function ConceptsPage() {
             "Belongs to the delivery, not the payment: one payment can produce several deliveries of the same event.",
           ],
         ].map(([name, title, text, extra]) => (
-          <div key={name} className="rounded-2xl border border-white/5 bg-black/30 p-5">
-            <p className="font-mono text-xs font-bold text-[#00d2b4]">{name}</p>
-            <h3 className="mt-3 text-sm font-semibold text-white">{title}</h3>
-            <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
-            <p className="mt-2 border-t border-white/5 pt-2 text-xs leading-relaxed text-white/45">{extra}</p>
+          <div key={name} className="rounded-2xl border border-black/10 bg-white/60 p-5 shadow-sm">
+            <p className="font-mono text-xs font-bold text-[#2775CA]">{name}</p>
+            <h3 className="mt-3 text-sm font-semibold text-[#111827]">{title}</h3>
+            <p className="mt-2 text-xs leading-relaxed text-black/60">{text}</p>
+            <p className="mt-2 border-t border-black/10 pt-2 text-xs leading-relaxed text-black/45">{extra}</p>
           </div>
         ))}
       </div>
 
       <section className="space-y-4">
-        <h2 id="lifecycle" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="lifecycle" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           The lifecycle
         </h2>
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           Every one-time payment moves through the same five steps. Your code participates in exactly two of them —
           step 1 and step 5 — and the three in between are SubScript&apos;s job.
         </p>
 
-        <div className="overflow-x-auto rounded-2xl border border-white/5 bg-black/30 p-5">
+        <div className="overflow-x-auto rounded-2xl border border-black/10 bg-white/60 p-5 shadow-sm">
           <div className="flex min-w-[680px] items-center justify-between gap-3 text-center">
             {[
               ["1", "Create intent", "PENDING"],
@@ -80,12 +80,12 @@ export default function ConceptsPage() {
               ["5", "Fulfill once", "Your database"],
             ].map(([number, title, detail], index) => (
               <div key={title} className="flex flex-1 items-center gap-3">
-                <div className="min-w-0 flex-1 rounded-xl border border-white/5 bg-white/[0.03] p-3">
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-[#00d2b4]">Step {number}</p>
-                  <p className="mt-1 text-xs font-semibold text-white">{title}</p>
-                  <p className="mt-1 text-[10px] text-white/40">{detail}</p>
+                <div className="min-w-0 flex-1 rounded-xl border border-black/10 bg-white/60 p-3 shadow-sm">
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-[#2775CA]">Step {number}</p>
+                  <p className="mt-1 text-xs font-semibold text-[#111827]">{title}</p>
+                  <p className="mt-1 text-[10px] text-black/45">{detail}</p>
                 </div>
-                {index < 4 && <ArrowRight className="h-4 w-4 shrink-0 text-white/25" />}
+                {index < 4 && <ArrowRight className="h-4 w-4 shrink-0 text-black/45" />}
               </div>
             ))}
           </div>
@@ -94,24 +94,24 @@ export default function ConceptsPage() {
         <Callout tone="plain" title="Where each step can fail">
           <ul className="mt-1 list-disc space-y-1.5 pl-5">
             <li>
-              <span className="font-semibold text-white/80">Step 1</span> — a 4xx means your request was wrong; fix
+              <span className="font-semibold text-[#111827]">Step 1</span> — a 4xx means your request was wrong; fix
               and retry. A 5xx is safe to retry with the <em>same</em> idempotency key.
             </li>
             <li>
-              <span className="font-semibold text-white/80">Step 2</span> — the payer may simply never arrive. The
+              <span className="font-semibold text-[#111827]">Step 2</span> — the payer may simply never arrive. The
               intent stays <span className="font-mono">PENDING</span>; alert on aged pending intents rather than
               assuming failure.
             </li>
             <li>
-              <span className="font-semibold text-white/80">Step 3</span> — settlement is on-chain and can lag the
+              <span className="font-semibold text-[#111827]">Step 3</span> — settlement is on-chain and can lag the
               browser. This is precisely why the success redirect is not proof.
             </li>
             <li>
-              <span className="font-semibold text-white/80">Step 4</span> — deliveries retry. Expect the same event
+              <span className="font-semibold text-[#111827]">Step 4</span> — deliveries retry. Expect the same event
               more than once and design for it.
             </li>
             <li>
-              <span className="font-semibold text-white/80">Step 5</span> — the only step where double-execution
+              <span className="font-semibold text-[#111827]">Step 5</span> — the only step where double-execution
               costs you money or trust. Claim <span className="font-mono">event.id</span> before doing the work.
             </li>
           </ul>
@@ -119,22 +119,22 @@ export default function ConceptsPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 id="money-units" className="scroll-mt-24 text-2xl font-bold tracking-tight text-white">
+        <h2 id="money-units" className="scroll-mt-24 text-2xl font-bold tracking-tight text-[#111827]">
           Money units
         </h2>
         <Callout tone="cyan">
-          <span className="font-bold text-cyan-100">Money units:</span>{" "}
+          <span className="font-bold text-[#2775CA]">Money units:</span>{" "}
           <span className="font-mono">amountUsdcMicros</span> is always a positive integer string in six-decimal
           micro-USDC. <span className="font-mono">&quot;15000000&quot;</span> means 15 USDC;{" "}
           <span className="font-mono">&quot;1&quot;</span> means 0.000001 USDC. Never send floats.
         </Callout>
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           The reason is exactness. <span className="font-mono">0.1 + 0.2</span> is not{" "}
           <span className="font-mono">0.3</span> in IEEE-754 floating point, and a payments system that rounds is a
           payments system that eventually disputes. Integers in the smallest unit remove the question entirely — the
           same reason card processors bill in cents.
         </p>
-        <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+        <p className="max-w-3xl text-sm leading-relaxed text-black/70">
           Practically: multiply by 1,000,000 and send a string.{" "}
           <span className="font-mono">15 USDC → &quot;15000000&quot;</span>. If you are converting from a decimal
           price in your own database, do it with an integer-safe helper rather than{" "}

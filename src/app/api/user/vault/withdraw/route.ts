@@ -11,7 +11,7 @@ import { withdrawFromEmbedded, syncVaultMirror } from "@/lib/vault/onchain";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
-import { SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
+import { ARC_MAINNET_CHAIN_ID, SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
 import crypto from "crypto";
 
 export const maxDuration = 120;
@@ -25,6 +25,15 @@ export async function POST(request: Request) {
         const roleCheck = await requireAccountRole(wallet, "USER");
         if (!roleCheck.ok) {
             return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
+        }
+
+        const { getAccountKycTier } = await import("@/lib/kyc/tier");
+        const tierInfo = await getAccountKycTier(wallet);
+        if (tierInfo.tier < 1) {
+            return NextResponse.json(
+                { error: "Transactions require Tier 1 verification. Please link and verify your email to continue." },
+                { status: 403 },
+            );
         }
 
         /* Admin withdrawal hold, checked before anything is parsed, reserved, or signed. This
@@ -56,7 +65,7 @@ export async function POST(request: Request) {
         const txHash = await withdrawFromEmbedded(wallet, merchantAddress, amount);
         const v = await syncVaultMirror(wallet, merchantAddress);
 
-        const environment = SUBSCRIPT_VAULT_CHAIN_ID === 5042001 ? "LIVE" : "TEST";
+        const environment = SUBSCRIPT_VAULT_CHAIN_ID === ARC_MAINNET_CHAIN_ID ? "LIVE" : "TEST";
         await recordMerchantEvent({
             merchantAddress: merchantAddress.toLowerCase(),
             environment,

@@ -19,7 +19,7 @@ import { isReceiptId } from "@/lib/arc/memo";
 import { deterministicIdempotencyKey } from "@/lib/custody";
 import { isPeerRequestLink } from "@/lib/paymentLinks/classification";
 import { payMerchantLinkFromEmbedded, payPeerLinkFromEmbedded } from "@/lib/paymentLinks/embeddedPay";
-import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
+import { getAccountKycTier } from "@/lib/kyc/tier";
 import { enqueuePaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { haltGuard } from "@/lib/accountHalt";
@@ -42,8 +42,8 @@ export async function POST(request: Request, { params }: RouteContext) {
                     : "Unable to verify your account. Please try again.",
             }, { status: role === "ENTERPRISE" ? 403 : 500 });
         }
-        const verifiedEmail = await getVerifiedAccountEmail(wallet);
-        if (!verifiedEmail?.email) {
+        const tierInfo = await getAccountKycTier(wallet);
+        if (!tierInfo.isTier1) {
             return NextResponse.json({ error: "Verify an email address with OTP before paying." }, { status: 403 });
         }
 

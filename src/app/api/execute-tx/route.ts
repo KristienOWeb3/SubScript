@@ -6,12 +6,10 @@ import { getSessionWallet } from "@/lib/auth";
 import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
 import {
     CONFIDENTIAL_CONTRACT_ADDRESS,
-    PREMIUM_PAYMENT_RECIPIENT_ADDRESS,
     STANDARD_CONTRACT_ADDRESS,
     SUBSCRIPT_ROUTER_ADDRESS,
     USDC_NATIVE_GAS_ADDRESS
 } from "@/lib/contracts/constants";
-import { PREMIUM_PRICE } from "@/lib/payments/constants";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { assertProviderRateLimit, ProviderRateLimitError } from "@/lib/providerRateLimit";
 import { createDmAndNotify } from "@/lib/dms/notifications";
@@ -28,13 +26,12 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 /* Ceiling on sponsored USDC sends per wallet per hour. SubScript pays the gas for each one, so this
    bounds our exposure by transaction count — the thing that actually costs us — while leaving the
    amount uncapped, since the funds belong to the merchant. Comfortably above any real payout
-   cadence, and it covers the Premium payment that shares this action. */
+   cadence without granting an unbounded sponsored-transaction budget. */
 const SPONSORED_TRANSFERS_PER_HOUR = 10;
 const USER_SPONSORED_ACTIONS = new Set(["approveUsdc", "transferUsdc"]);
 const MERCHANT_SPONSORED_ACTIONS = new Set([
     "approveUsdc",
     "transferUsdc",
-    "createPremiumSubscription",
     "withdraw",
     "cancelSubscription",
     "configurePayoutDestination",
@@ -196,24 +193,13 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Forbidden: Merchant account action is not allowlisted for sponsorship." }, { status: 403 });
         }
 
-        /* Enforce Backend Tier Checks */
-        const premiumActions = ["configurePayoutDestination"];
-        if (premiumActions.includes(action)) {
-            const merchantToCheck = wallet;
-            const { data: merchantData, error: merchantErr } = await supabase
-                .from("merchants")
-                .select("tier")
-                .eq("wallet_address", merchantToCheck.toLowerCase())
-                .maybeSingle();
-
-            if (merchantErr) {
-                console.error(`[execute-tx] Failed to query merchant: ${merchantErr.message}`);
-            }
-            const dbMerchantTier = merchantData ? merchantData.tier : "FREE";
-            if (dbMerchantTier === "FREE") {
-                console.warn(`[execute-tx] Forbidden: Action ${action} requires active premium tier for merchant ${merchantToCheck}. requestId: ${requestId}`);
-                return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
-            }
+        /* Enforce Mandatory Tier 1 KYC Check: every user or merchant must be at least Tier 1 before making transactions */
+        const { getAccountKycTier } = await import("@/lib/kyc/tier");
+        const callerTier = await getAccountKycTier(wallet);
+        if (callerTier.tier < 1) {
+            return NextResponse.json({
+                error: "Transactions require Tier 1 verification. Please link and verify your email to continue."
+            }, { status: 403 });
         }
 
         /* Circuit Breaker Check — fail CLOSED for withdrawals. Only the withdraw path consults this
@@ -338,18 +324,8 @@ export async function POST(request: Request) {
                 }
                 const normalizedTo = to.toLowerCase();
 
-                /* This action used to accept PREMIUM_PAYMENT_RECIPIENT_ADDRESS and nothing else,
-                   because it was written for one job: paying SubScript for Premium with sponsored
-                   gas. The dashboard's Send dialog routes through here too, so every merchant send
-                   to a real destination was refused with "Transfer only to SubScript premium payout
-                   account" — the feature only ever worked for external wallets, which skip this
-                   route and pay their own gas.
-                   The recipient allow-list is gone, but the reason it existed is not: SubScript pays
-                   the gas for every call here, so the cost scales with the NUMBER of transfers, not
-                   their value. An unbounded sponsored send is a drain on the sponsor wallet, and a
-                   dry sponsor breaks every sponsored action, not just sends. So the bound moved from
-                   "who you may pay" to "how often we will pay for it", which is the quantity that
-                   actually costs us. Value is deliberately uncapped: it is the merchant's money. */
+                /* Validate the caller-supplied EVM destination; authentication, custody,
+                   ownership, and amount validation are enforced above. */
                 if (normalizedTo === ZERO_ADDRESS) {
                     return NextResponse.json({ error: "Recipient cannot be the zero address." }, { status: 400 });
                 }
@@ -387,23 +363,6 @@ export async function POST(request: Request) {
                 contractAbi = ERC20_ABI;
                 functionName = "transfer";
                 finalArgs = [to, transferAmount];
-                break;
-            }
-            case "createPremiumSubscription": {
-                const PREMIUM_PERIOD_SECONDS = 2592000;
-                const { merchant } = args;
-                if (!merchant || typeof merchant !== "string") {
-                    return NextResponse.json({ error: "Invalid premium subscription recipient" }, { status: 400 });
-                }
-                if (merchant.toLowerCase() !== PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
-                    return NextResponse.json({ error: "Unauthorized subscription recipient. Sponsored subscriptions can only target the SubScript premium account." }, { status: 400 });
-                }
-
-                contractAddress = STANDARD_CONTRACT_ADDRESS;
-                contractAbi = SUBSCRIPT_ABI;
-                functionName = "createSubscription";
-                finalArgs = [merchant, BigInt(PREMIUM_PRICE), BigInt(PREMIUM_PERIOD_SECONDS)];
-                durableIdempotencyKey = deterministicIdempotencyKey(`premium-sub:${wallet.toLowerCase()}:${requestId}`);
                 break;
             }
             case "withdraw": {
@@ -455,19 +414,6 @@ export async function POST(request: Request) {
                     return NextResponse.json({ error: "Invalid view key hash. Expected bytes32 hex." }, { status: 400 });
                 }
 
-                const { data: merchantData, error: merchantErr } = await supabase
-                    .from("merchants")
-                    .select("tier")
-                    .eq("wallet_address", wallet.toLowerCase())
-                    .maybeSingle();
-
-                if (merchantErr) {
-                    console.error(`[execute-tx] Failed to query merchant for view key registration: ${merchantErr.message}`);
-                }
-                if (!merchantData || merchantData.tier === "FREE") {
-                    return NextResponse.json({ error: "Forbidden: Premium merchant tier required to register a view key." }, { status: 403 });
-                }
-
                 contractAddress = CONFIDENTIAL_CONTRACT_ADDRESS;
                 contractAbi = CONFIDENTIAL_ABI;
                 functionName = "registerViewKey";
@@ -478,19 +424,6 @@ export async function POST(request: Request) {
                 const { commitment } = args;
                 if (!commitment || typeof commitment !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(commitment)) {
                     return NextResponse.json({ error: "Invalid commitment. Expected bytes32 hex." }, { status: 400 });
-                }
-
-                const { data: merchantDataC, error: merchantErrC } = await supabase
-                    .from("merchants")
-                    .select("tier")
-                    .eq("wallet_address", wallet.toLowerCase())
-                    .maybeSingle();
-
-                if (merchantErrC) {
-                    console.error(`[execute-tx] Failed to query merchant for view key commit: ${merchantErrC.message}`);
-                }
-                if (!merchantDataC || merchantDataC.tier === "FREE") {
-                    return NextResponse.json({ error: "Forbidden: Premium merchant tier required for view key registration." }, { status: 403 });
                 }
 
                 contractAddress = CONFIDENTIAL_CONTRACT_ADDRESS;
@@ -506,21 +439,6 @@ export async function POST(request: Request) {
                 }
                 if (!salt || typeof salt !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(salt)) {
                     return NextResponse.json({ error: "Invalid salt. Expected bytes32 hex." }, { status: 400 });
-                }
-
-                /* Gate reveal on premium too. Commit can be made directly on-chain (outside this
-                   sponsored endpoint), so a FREE merchant could otherwise complete the premium-only
-                   view-key registration at SubScript's expense through this reveal alone. */
-                const { data: merchantDataR, error: merchantErrR } = await supabase
-                    .from("merchants")
-                    .select("tier")
-                    .eq("wallet_address", wallet.toLowerCase())
-                    .maybeSingle();
-                if (merchantErrR) {
-                    console.error(`[execute-tx] Failed to query merchant for view key reveal: ${merchantErrR.message}`);
-                }
-                if (!merchantDataR || merchantDataR.tier === "FREE") {
-                    return NextResponse.json({ error: "Forbidden: Premium merchant tier required for view key registration." }, { status: 403 });
                 }
 
                 contractAddress = CONFIDENTIAL_CONTRACT_ADDRESS;
@@ -572,16 +490,6 @@ export async function POST(request: Request) {
                         merchantAddress: String(args.to),
                         amountUsdc: args.amount,
                         title: "USDC Transfer",
-                        isShielded: body.isShielded || false,
-                    });
-                    boundReceiptId = bound.receiptId;
-                } else if (action === "createPremiumSubscription" && args.merchant) {
-                    const bound = await bindTxToReceipt(supabase, {
-                        txHash,
-                        payerAddress: wallet,
-                        merchantAddress: String(args.merchant),
-                        amountUsdc: PREMIUM_PRICE,
-                        title: "Premium Pro Merchant Subscription",
                         isShielded: body.isShielded || false,
                     });
                     boundReceiptId = bound.receiptId;

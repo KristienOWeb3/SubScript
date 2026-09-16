@@ -165,7 +165,7 @@ test("both renewal keepers pass a durable settlement ref, not just a hash", () =
     );
     assert.match(
         source("app/api/cron/billing/route.ts"),
-        /settlementRef: `premium-renewal:\$\{[^}]+\}:\$\{[^}]+\}`/,
+        /status: 410/,
     );
 });
 
@@ -173,7 +173,6 @@ test("every settlement path goes through the one entry point", () => {
     const wired = [
         "lib/payments/paymentLinkVerificationWorker.ts",
         "app/api/cron/customer-billing/route.ts",
-        "app/api/cron/billing/route.ts",
         "app/api/keeper/vault-draw/route.ts",
         "app/api/keeper/vault-topup/route.ts",
         "app/api/merchant/vault/claim/route.ts",

@@ -26,9 +26,9 @@ function loadRegistry(env) {
             return {
                 isProd,
                 ARC_TESTNET_CHAIN_ID: 5042002,
-                ARC_MAINNET_CHAIN_ID: 5042001,
+                ARC_MAINNET_CHAIN_ID: 5042,
                 ARC_TESTNET: { id: 5042002, blockExplorers: { default: { url: "https://testnet.arcscan.app" } } },
-                ARC_MAINNET: { id: 5042001, blockExplorers: { default: { url: "https://arcscan.app" } } },
+                ARC_MAINNET: { id: 5042, blockExplorers: { default: { url: "https://explorer.arc.io" } } },
             };
         }
         throw new Error(`Unexpected import: ${specifier}`);
@@ -42,7 +42,7 @@ const FULL_MAINNET_ENV = {
     NEXT_PUBLIC_STANDARD_CONTRACT_ADDRESS: "0x" + "22".repeat(20),
     NEXT_PUBLIC_CONFIDENTIAL_CONTRACT_ADDRESS: "0x" + "33".repeat(20),
     NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS: "0x" + "44".repeat(20),
-    NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID: "5042001",
+    NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID: "5042",
     NEXT_PUBLIC_PREMIUM_PAYMENT_RECIPIENT_ADDRESS: "0x" + "55".repeat(20),
     NEXT_PUBLIC_ARC_MEMO_CONTRACT_ADDRESS: "0x" + "88".repeat(20),
     NEXT_PUBLIC_ARC_MESSAGE_TRANSMITTER_ADDRESS: "0x" + "99".repeat(20),
@@ -79,6 +79,11 @@ test("mainnet mode with malformed values fails closed", () => {
         ["NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID", "5042002"],
         ["CIRCLE_ARC_BLOCKCHAIN", "ARC-TESTNET"],
         ["NEXT_PUBLIC_ARC_RPC_PRIMARY", "http://insecure.example"],
+        ["NEXT_PUBLIC_ARC_RPC_PRIMARY", "https://rpc.testnet.arc.network"],
+        ["NEXT_PUBLIC_SUBSCRIPT_ROUTER_ADDRESS", "0x6946B7746c2968B195BD15319D25F67E587CAe3C"],
+        ["NEXT_PUBLIC_STANDARD_CONTRACT_ADDRESS", "0x59Df2224E7f9Dced25f3AAee9fff939f92f5F4D2"],
+        ["NEXT_PUBLIC_CONFIDENTIAL_CONTRACT_ADDRESS", "0x59Df2224E7f9Dced25f3AAee9fff939f92f5F4D2"],
+        ["NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS", "0x853581e119dDED32DB886a4533A11789cF60bBFc"],
     ]) {
         const registry = loadRegistry({ ...FULL_MAINNET_ENV, [key]: bad });
         const validation = registry.validateMainnetConfiguration();
@@ -90,7 +95,7 @@ test("mainnet mode with malformed values fails closed", () => {
 
 test("a fully configured mainnet passes validation", () => {
     const registry = loadRegistry(FULL_MAINNET_ENV);
-    assert.equal(registry.ACTIVE_ARC_CHAIN_ID, 5042001);
+    assert.equal(registry.ACTIVE_ARC_CHAIN_ID, 5042);
     const validation = registry.validateMainnetConfiguration();
     assert.equal(validation.ok, true);
     assert.equal(validation.missing.length, 0);
@@ -102,7 +107,6 @@ test("financial routes call the fail-closed gate", () => {
         "src/app/api/intent/route.ts",
         "src/app/api/payment-links/route.ts",
         "src/app/api/payment-links/verify/route.ts",
-        "src/app/api/premium/checkout/route.ts",
         "src/app/api/user/vault/commit/route.ts",
         "src/app/api/user/subscription/subscribe/route.ts",
     ]) {
@@ -110,12 +114,20 @@ test("financial routes call the fail-closed gate", () => {
     }
 });
 
-test("premium checkout and verification follow the ACTIVE configured chain", () => {
-    assert.match(source("src/app/api/premium/checkout/route.ts"), /p_chain_id: ProtocolConfig\.CHAIN_ID/);
-    assert.match(source("src/lib/payments/verifyTransaction.ts"), /BigInt\(tx\.chainId\) !== BigInt\(ProtocolConfig\.CHAIN_ID\)/);
-    assert.match(source("src/lib/payments/processPremiumUpgrade.ts"), /network\.chainId !== BigInt\(ProtocolConfig\.CHAIN_ID\)/);
-    assert.match(source("src/lib/payments/activateSubscription.ts"), /chain_id: ProtocolConfig\.CHAIN_ID/);
-    /* Test-mode resources stay pinned to Arc testnet. */
+test("retired paid-tier endpoints cannot create or resume access", () => {
+    for (const path of [
+        "src/app/api/premium/checkout/route.ts",
+        "src/app/api/premium/upgrade/route.ts",
+        "src/app/api/premium/resume/route.ts",
+        "src/app/api/premium/reconcile/route.ts",
+        "src/app/api/cron/billing/route.ts",
+        "src/app/api/internal/billing/route.ts",
+    ]) {
+        const route = source(path);
+        assert.match(route, /status: 410/, `${path} is retired`);
+        assert.match(route, /paid merchant tiers have been retired/);
+    }
+    /* Test-mode resources stay pinned to Arc testnet and remain isolated from live settlement. */
     assert.match(source("src/app/api/v1/subscriptions/route.ts"), /isTestMode \? ARC_TESTNET_CHAIN_ID : ProtocolConfig\.CHAIN_ID/);
     assert.match(source("src/app/api/payment-links/route.ts"), /isTestMode \? ARC_TESTNET_CHAIN_ID : ProtocolConfig\.CHAIN_ID/);
 });
@@ -126,9 +138,43 @@ test("the misleading arcTestnet name is a deprecated alias of activeArcChain", (
     assert.match(wagmi, /@deprecated[\s\S]{0,120}export const arcTestnet = activeArcChain;/);
     /* Browser wallet switching uses the active chain configuration. */
     assert.match(source("src/app/dashboard/page.tsx"), /switchChainAsync\(\{ chainId: activeArcChain\.id \}\)/);
-    assert.match(source("src/app/dashboard/upgrade/page.tsx"), /switchChainAsync\(\{ chainId: activeArcChain\.id \}\)/);
     /* Vault chain follows the active chain unless explicitly overridden. */
     assert.match(source("src/lib/contracts/constants.ts"), /isProd \? ARC_MAINNET_CHAIN_ID : ARC_TESTNET_CHAIN_ID/);
     /* CLI/MCP config advertises the active chain. */
     assert.match(source("src/app/api/cli/config/route.ts"), /chainId: ACTIVE_ARC_CHAIN_ID/);
+});
+
+test("testnet USDC and testnet networks are strictly blocked from mainnet interactions", () => {
+    /* 1. Mainnet constants configuration: testnet CCTP USDC contracts cannot be loaded in prod */
+    const constantsSource = source("src/lib/contracts/constants.ts");
+    assert.match(constantsSource, /export const ARC_CCTP_ENABLED = !isProd;/);
+    assert.match(constantsSource, /export const CCTP_CONFIG: Record<number, CCTPChainInfo> = isProd/);
+
+    /* 2. Mainnet validation rejects testnet RPC URLs and testnet contract addresses */
+    const testnetRpcEnv = { ...FULL_MAINNET_ENV, NEXT_PUBLIC_ARC_RPC_PRIMARY: "https://rpc.testnet.arc.network" };
+    const testnetRpcReg = loadRegistry(testnetRpcEnv);
+    assert.equal(testnetRpcReg.validateMainnetConfiguration().ok, false);
+    assert.ok(testnetRpcReg.validateMainnetConfiguration().malformed.includes("NEXT_PUBLIC_ARC_RPC_PRIMARY"));
+    assert.throws(() => testnetRpcReg.assertFinancialNetworkReady());
+
+    /* 3. Testnet vault chain ID (5042002) is strictly rejected in mainnet mode */
+    const testnetChainEnv = { ...FULL_MAINNET_ENV, NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID: "5042002" };
+    const testnetChainReg = loadRegistry(testnetChainEnv);
+    assert.equal(testnetChainReg.validateMainnetConfiguration().ok, false);
+    assert.ok(testnetChainReg.validateMainnetConfiguration().malformed.includes("NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID"));
+    assert.throws(() => testnetChainReg.assertFinancialNetworkReady());
+
+    /* 4. Circle Arc testnet blockchain identifier is rejected in mainnet mode */
+    const testnetCircleEnv = { ...FULL_MAINNET_ENV, CIRCLE_ARC_BLOCKCHAIN: "ARC-TESTNET" };
+    const testnetCircleReg = loadRegistry(testnetCircleEnv);
+    assert.equal(testnetCircleReg.validateMainnetConfiguration().ok, false);
+    assert.ok(testnetCircleReg.validateMainnetConfiguration().malformed.includes("CIRCLE_ARC_BLOCKCHAIN"));
+    assert.throws(() => testnetCircleReg.assertFinancialNetworkReady());
+
+    /* 5. Testnet standard & vault contracts are rejected in mainnet mode */
+    const testnetRouterEnv = { ...FULL_MAINNET_ENV, NEXT_PUBLIC_SUBSCRIPT_ROUTER_ADDRESS: "0x6946B7746c2968B195BD15319D25F67E587CAe3C" };
+    const testnetRouterReg = loadRegistry(testnetRouterEnv);
+    assert.equal(testnetRouterReg.validateMainnetConfiguration().ok, false);
+    assert.ok(testnetRouterReg.validateMainnetConfiguration().malformed.includes("NEXT_PUBLIC_SUBSCRIPT_ROUTER_ADDRESS"));
+    assert.throws(() => testnetRouterReg.assertFinancialNetworkReady());
 });

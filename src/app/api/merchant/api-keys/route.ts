@@ -3,6 +3,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { hashSecretKey, secretKeyHint } from "@/lib/apiKeys";
+import { getAccountKycTier } from "@/lib/kyc/tier";
 
 function getSupabase() {
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -18,14 +19,9 @@ function redactSecretKey(secretKey: string | null | undefined): string {
     return `${secretKey.slice(0, 8)}...${secretKey.slice(-4)}`;
 }
 
-async function checkMerchantPremium(supabase: any, walletAddress: string): Promise<boolean> {
-    const { data: merchant, error } = await supabase
-        .from("merchants")
-        .select("tier")
-        .eq("wallet_address", walletAddress.toLowerCase())
-        .maybeSingle();
-    if (error || !merchant) return false;
-    return merchant.tier === "PREMIUM";
+async function checkMerchantTier1(walletAddress: string): Promise<boolean> {
+    const tierInfo = await getAccountKycTier(walletAddress);
+    return tierInfo.tier >= 1;
 }
 
 export async function GET(request: Request) {
@@ -35,12 +31,12 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const supabase = getSupabase();
-        const isPremium = await checkMerchantPremium(supabase, wallet);
-        if (!isPremium) {
-            return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
+        const isTier1 = await checkMerchantTier1(wallet);
+        if (!isTier1) {
+            return NextResponse.json({ error: "Forbidden: API keys require Tier 1 verification (link a verified email)." }, { status: 403 });
         }
 
+        const supabase = getSupabase();
         const { data: keys, error } = await supabase
             .from("api_keys")
             .select("*")
@@ -57,6 +53,7 @@ export async function GET(request: Request) {
             id: k.id,
             walletAddress: k.wallet_address,
             publishableKey: k.publishable_key,
+            mode: k.mode,
             /* Prefer the stored hint; fall back to redacting any legacy plaintext not yet migrated. */
             secretKeyPlain: k.secret_key_hint || redactSecretKey(k.secret_key_plain),
             secretKeyAvailable: false,
@@ -78,24 +75,29 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const supabase = getSupabase();
-        const isPremium = await checkMerchantPremium(supabase, wallet);
-        if (!isPremium) {
-            return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
+        const isTier1 = await checkMerchantTier1(wallet);
+        if (!isTier1) {
+            return NextResponse.json({ error: "Forbidden: API keys require Tier 1 verification (link a verified email)." }, { status: 403 });
         }
 
-        const publishableKey = `pk_test_${crypto.randomBytes(24).toString("hex")}`;
-        const secretKeyPlain = `sk_test_${crypto.randomBytes(32).toString("hex")}`;
+        const body = await request.json().catch(() => ({}));
+        const requestedMode = body?.mode ? String(body.mode).toUpperCase() : "LIVE";
+        const keyMode: "LIVE" | "TEST" = requestedMode === "TEST" ? "TEST" : "LIVE";
+        const prefix = keyMode.toLowerCase();
+
+        const publishableKey = `pk_${prefix}_${crypto.randomBytes(24).toString("hex")}`;
+        const secretKeyPlain = `sk_${prefix}_${crypto.randomBytes(32).toString("hex")}`;
+        const supabase = getSupabase();
         const { data: newKey, error } = await supabase
             .from("api_keys")
             .insert({
                 wallet_address: wallet.toLowerCase(),
                 publishable_key: publishableKey,
                 /* Persist only the hash + display hint. The cleartext key is returned once below
-                   and never stored at rest. Only TEST keys can be issued on this deployment. */
+                   and never stored at rest. */
                 secret_key_hash: hashSecretKey(secretKeyPlain),
                 secret_key_hint: secretKeyHint(secretKeyPlain),
-                mode: "TEST",
+                mode: keyMode,
                 revoked: false,
             })
             .select()
@@ -110,6 +112,7 @@ export async function POST(request: Request) {
             id: newKey.id,
             walletAddress: newKey.wallet_address,
             publishableKey: newKey.publishable_key,
+            mode: newKey.mode,
             /* One-time reveal of the full secret. After this response it cannot be retrieved again. */
             secretKeyPlain,
             secretKeyAvailable: true,
@@ -131,19 +134,19 @@ export async function DELETE(request: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const supabase = getSupabase();
-        const isPremium = await checkMerchantPremium(supabase, wallet);
-        if (!isPremium) {
-            return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
+        const isTier1 = await checkMerchantTier1(wallet);
+        if (!isTier1) {
+            return NextResponse.json({ error: "Forbidden: API keys require Tier 1 verification (link a verified email)." }, { status: 403 });
         }
 
+        const supabase = getSupabase();
         const { searchParams } = new URL(request.url);
         const id = searchParams.get("id");
 
         if (!id) {
             return NextResponse.json({ error: "Missing key ID" }, { status: 400 });
         }
-        
+
         const { data: keyCheck, error: checkError } = await supabase
             .from("api_keys")
             .select("wallet_address")

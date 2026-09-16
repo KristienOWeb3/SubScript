@@ -1,0 +1,50 @@
+{
+  "network": "arcMainnet",
+  "chainId": 5042,
+  "timestamp": "2026-09-16T08:55:40.844Z",
+  "dryRun": false,
+  "deployer": "0x59e6970Eac4c9A44247adf975c462d17c94135ee",
+  "parameters": {
+    "paymentToken": "0x3600000000000000000000000000000000000000",
+    "treasury": "0x59e6970Eac4c9A44247adf975c462d17c94135ee",
+    "owner": "0x59e6970Eac4c9A44247adf975c462d17c94135ee",
+    "keeper": "0x7581F166797d875F3A0F062348447Ef975F8b99f",
+    "stableFXRouter": "0xe2E5F173576B513d994073CCbDaCBE027d43DFe6"
+  },
+  "contracts": {
+    "SubScriptRouter": {
+      "implementation": "0xD0c699768d0e92657D5E5b96CEC3546197b2Fa9c",
+      "proxy": "0x48188a5729f8B1260cF525aD04f79fE19749f4D4",
+      "implTx": "0x9c8555ea32a8cf20e1930f2684a24cf6379671ad12fc2b1e22054e6fb2bb79d7",
+      "proxyTx": "0x2cca695e37ffe0af6064b4afb2fc1c910314dfe64019dcd3dc7312a976ea019a"
+    },
+    "SubScriptPSA": {
+      "address": "0xdb69519b777dA81E59dCa75B9095E832A639B1eF",
+      "deploymentTx": "0xddd1ddde787c50a0da03b5733a7706383b0471ee94b979ea40d6faec5c7d2369"
+    },
+    "SubScriptVault": {
+      "implementation": "0xBe5254CEa07c3f3f0827A70e070C1629732945f9",
+      "proxy": "0xB38Dd5af7d134454F911b4be024c0ccaaE3cA4D3",
+      "implTx": "0xdfd3160fbb0276f9eaf4d66cf5c6ccbae875e72ab5dc6cae94c5e62e7285cb4d",
+      "proxyTx": "0x57df2b812d52ad60b9f3323f8b7e11a6759cae386da298e3b29edafcbb657a4f",
+      "initializeV2Tx": "0xd17c636ac193652579823bc36f92c80056d68b7e6bc9887525b712ceb01cd1bf",
+      "setAuthorizedDrawerTx": "0x37bed21d013bd124371e558b3843c5c950dd92df2c8418825f8fe9cab3d906a4",
+      "transferOwnershipTx": null
+    },
+    "SubScriptConfidential": {
+      "address": "0x866186BE217b1bdA1aCF9755cB22D4E4793a9B37",
+      "deploymentTx": "0x15b5b31d90d55f5a68f801ed4d5e4a2fd90582d021731c633fbd3f6e60c21617"
+    }
+  },
+  "env": {
+    "NEXT_PUBLIC_SUBSCRIPT_ROUTER_ADDRESS": "0x48188a5729f8B1260cF525aD04f79fE19749f4D4",
+    "NEXT_PUBLIC_STANDARD_CONTRACT_ADDRESS": "0xdb69519b777dA81E59dCa75B9095E832A639B1eF",
+    "NEXT_PUBLIC_CONFIDENTIAL_CONTRACT_ADDRESS": "0x866186BE217b1bdA1aCF9755cB22D4E4793a9B37",
+    "NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS": "0xB38Dd5af7d134454F911b4be024c0ccaaE3cA4D3",
+    "NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID": 5042,
+    "SUBSCRIPT_ROUTER_ADDRESS": "0x48188a5729f8B1260cF525aD04f79fE19749f4D4",
+    "STANDARD_CONTRACT_ADDRESS": "0xdb69519b777dA81E59dCa75B9095E832A639B1eF",
+    "CONFIDENTIAL_CONTRACT_ADDRESS": "0x866186BE217b1bdA1aCF9755cB22D4E4793a9B37",
+    "SUBSCRIPT_VAULT_ADDRESS": "0xB38Dd5af7d134454F911b4be024c0ccaaE3cA4D3"
+  }
+}

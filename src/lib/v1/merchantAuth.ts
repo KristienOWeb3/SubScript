@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getSessionWallet } from "@/lib/auth";
-import { hashSecretKey } from "@/lib/apiKeys";
+import { hashSecretKey, isLiveModeEnabled } from "@/lib/apiKeys";
 import { getSecretKeyMode } from "@/lib/apiErrors";
 import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
 
@@ -26,9 +26,7 @@ export async function authenticateMerchant(request: Request): Promise<MerchantAu
     if (mode !== "test" && mode !== "live") {
         return { ok: false, status: 401, error: "Unauthorized: Invalid secret API key format" };
     }
-    if (mode === "live") {
-        /* This deployment is testnet-only: live credentials are refused before any lookup
-           (and cannot exist — the database rejects LIVE-mode key insertion). */
+    if (mode === "live" && !isLiveModeEnabled()) {
         return { ok: false, status: 401, error: "Unauthorized: sk_live_ keys are not enabled on this deployment" };
     }
     const keyRecord = await prisma.apiKey.findFirst({
@@ -37,33 +35,32 @@ export async function authenticateMerchant(request: Request): Promise<MerchantAu
     if (!keyRecord) {
         return { ok: false, status: 401, error: "Unauthorized: Active secret key not found" };
     }
-    if (keyRecord.mode !== "TEST") {
+    const expectedMode = mode === "live" ? "LIVE" : "TEST";
+    if (keyRecord.mode !== expectedMode) {
         return { ok: false, status: 403, error: "Forbidden: this API key's mode cannot settle on this deployment" };
     }
     // Check current entitlement for API key access
-    const merchantTier = await prisma.merchant.findUnique({
-        where: { walletAddress: keyRecord.walletAddress.toLowerCase() },
-        select: { tier: true },
-    });
-    if (mode !== "test" && (!merchantTier || merchantTier.tier !== "PREMIUM")) {
-        return { ok: false, status: 403, error: "API key access requires an active Premium subscription." };
+    if (mode !== "test") {
+        const { getAccountKycTier } = await import("@/lib/kyc/tier");
+        const tierInfo = await getAccountKycTier(keyRecord.walletAddress.toLowerCase());
+        if (tierInfo.tier < 1) {
+            return { ok: false, status: 403, error: "API key access requires Tier 1 verification (link a verified email)." };
+        }
     }
     return { ok: true, merchantAddress: keyRecord.walletAddress.toLowerCase(), mode };
 }
 
-export async function checkMerchantPremium(walletAddress: string): Promise<boolean> {
-    const merchant = await prisma.merchant.findUnique({
-        where: { walletAddress: walletAddress.toLowerCase() },
-        select: { tier: true },
-    });
-    return merchant?.tier === "PREMIUM";
+export async function checkMerchantTier1(walletAddress: string): Promise<boolean> {
+    const { getAccountKycTier } = await import("@/lib/kyc/tier");
+    const tierInfo = await getAccountKycTier(walletAddress);
+    return tierInfo.tier >= 1;
 }
 
 /**
  * Enforces role and entitlement validation. In test mode or session evaluation,
  * testnet merchants are permitted to test recurring checkouts and DM plans.
  */
-export async function requireEnterpriseAndPremium(
+export async function requireEnterpriseAndTier1(
     merchantAddress: string,
     mode?: "test" | "live" | "session"
 ): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
@@ -75,9 +72,9 @@ export async function requireEnterpriseAndPremium(
             update: {},
         }).catch(() => null);
     }
-    const isPremium = await checkMerchantPremium(merchantAddress);
-    if (!isPremium && mode !== "test" && mode !== "session") {
-        return { ok: false, status: 403, error: "Forbidden: This action requires an active premium tier." };
+    const isTier1 = await checkMerchantTier1(merchantAddress);
+    if (!isTier1 && mode !== "test") {
+        return { ok: false, status: 403, error: "Forbidden: This action requires Tier 1 verification (link a verified email)." };
     }
     return { ok: true };
 }

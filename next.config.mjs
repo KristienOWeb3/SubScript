@@ -38,6 +38,16 @@ const nextConfig = {
   async headers() {
     return [
       {
+        source: "/sw.js",
+        headers: [
+          ...securityHeaders,
+          {
+            key: "Cache-Control",
+            value: "no-cache, no-store, must-revalidate",
+          },
+        ],
+      },
+      {
         source: "/:path*",
         headers: securityHeaders,
       },
