@@ -146,6 +146,9 @@ async function main() {
         sandbox: true,
       },
     });
+    if (r.status === 403 && r.json.code === "quota_exceeded") {
+      return SKIP("smoke API key has reached its active-link quota; archive old smoke links or rotate the key");
+    }
     assert(r.ok && r.json.success, `status ${r.status}: ${JSON.stringify(r.json)}`);
     const i = r.json.intent || {};
     assert(i.id && i.checkoutUrl && i.receiptToken, "missing id/checkoutUrl/receiptToken");
@@ -172,13 +175,30 @@ async function main() {
     assert(r.json.intent?.status === "PENDING", `expected PENDING, got ${r.json.intent?.status}`);
   });
 
+  await check("archive one-time intent after verification", async () => {
+    if (!reachable) return SKIP(`app not reachable at ${baseUrl}`);
+    if (!intentId) return SKIP("no intent created");
+    const r = await api("DELETE", `/api/payment-links/${encodeURIComponent(intentId)}`, {
+      headers: authHeaders(),
+    });
+    assert(r.ok && r.json.success, `status ${r.status}: ${JSON.stringify(r.json)}`);
+  });
+
   let subId = null;
   await check("create subscription (sandbox)", async () => {
     if (!reachable) return SKIP(`app not reachable at ${baseUrl}`);
     if (!secretKey) return SKIP("set SUBSCRIPT_SECRET_KEY (sk_test_…) to exercise the API");
     const r = await api("POST", "/api/v1/subscriptions", {
       headers: authHeaders(),
-      body: { amountUsdcMicros: "5000000", interval: "monthly", idempotencyKey: `smoke-sub-${Date.now()}`, sandbox: true },
+      body: {
+        amountUsdcMicros: "5000000",
+        interval: "monthly",
+        idempotencyKey: `smoke-sub-${Date.now()}`,
+        sandbox: true,
+        /* The smoke validates subscription checkout lifecycle, not catalog publication. Keeping
+           this private avoids filling the merchant's 20-plan catalog across deployments. */
+        publishToDm: false,
+      },
     });
     assert(r.ok && r.json.success, `status ${r.status}: ${JSON.stringify(r.json)}`);
     const s = r.json.subscription || {};
