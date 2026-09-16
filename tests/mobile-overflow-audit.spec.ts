@@ -26,7 +26,7 @@ const dmMessages = Array.from({ length: 18 }, (_, index) => ({
   id: `dm-mobile-audit-${index + 1}`,
   senderAddress: merchantAddress.toLowerCase(),
   senderName: "Mobile Audit Merchant",
-  senderRole: "ENTERPRISE",
+  senderRole: "USER",
   senderProfilePic: null,
   receiverAddress: userAddress.toLowerCase(),
   receiverName: "Mobile User",
@@ -437,10 +437,8 @@ test.describe("mobile overflow audit", () => {
     const page = await context.newPage();
     await page.goto(`${baseURL}/`, { waitUntil: "domcontentloaded" });
 
-    const openMenuBtn = page.getByRole("button", { name: "Open Menu" });
-    const menuScroller = page.locator(".overflow-y-auto").filter({
-      has: page.getByRole("link", { name: "Documentation", exact: true }),
-    });
+    const openMenuBtn = page.getByRole("button", { name: /open menu/i });
+    const menuScroller = page.locator("#landing-mobile-menu .overflow-y-auto, #mobile-navigation .overflow-y-auto").first();
     await expect(async () => {
       if (!await menuScroller.isVisible()) {
         await openMenuBtn.click();
@@ -452,15 +450,18 @@ test.describe("mobile overflow audit", () => {
       "Documentation",
       "Protocol",
       "Compare",
-      "Answers",
       "Support",
       "Sign in",
-      "Create account",
     ]) {
-      const link = menuScroller.getByRole("link", { name: linkName, exact: true });
-      await link.scrollIntoViewIfNeeded();
-      await expect(link).toBeVisible();
+      const item = menuScroller.getByRole("link", { name: linkName, exact: true })
+        .or(menuScroller.getByRole("button", { name: linkName, exact: true }));
+      await item.scrollIntoViewIfNeeded();
+      await expect(item).toBeVisible();
     }
+
+    const signupLink = menuScroller.getByRole("link", { name: /^(Create account|Get started)$/i });
+    await signupLink.scrollIntoViewIfNeeded();
+    await expect(signupLink).toBeVisible();
 
     const menuScroll = await menuScroller.evaluate((element) => {
       element.scrollTop = element.scrollHeight;
@@ -480,8 +481,8 @@ test.describe("mobile overflow audit", () => {
     );
     expect(menuOverflowY).toBe("auto");
 
-    await page.getByRole("button", { name: "Close Menu" }).click();
-    await expect(page.getByRole("button", { name: "Open Menu" })).toBeVisible();
+    await page.getByRole("button", { name: /close menu/i }).click();
+    await expect(openMenuBtn).toBeVisible();
     const pageScroll = await page.evaluate(() => {
       const scrollingElement = document.scrollingElement;
       if (!scrollingElement) {

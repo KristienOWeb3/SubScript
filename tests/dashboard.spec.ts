@@ -226,11 +226,11 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       await expect(page.getByRole("heading", { name: "API Credentials", exact: true })).toBeVisible({ timeout: 20000 });
       
       // .click() auto-waits for visibility/actionability; .first() keeps it strict-mode safe.
-      await page.locator('button').filter({ hasText: /^Roll$/ }).first().click();
+      await page.locator('button').filter({ hasText: /^Roll Live Key$/ }).first().click();
       
-      const confirmation = page.getByRole("alertdialog", { name: "Rotate API Key" });
+      const confirmation = page.getByRole("alertdialog", { name: /Rotate.*API Key/i });
       await expect(confirmation).toBeVisible({ timeout: 15000 });
-      await confirmation.getByRole("button", { name: "Rotate Key", exact: true }).click();
+      await confirmation.getByRole("button", { name: /Rotate.*Key/i }).click();
       await expect(page.locator("text=API Secret Key Rolled")).toBeVisible({ timeout: 15000 });
     });
 
