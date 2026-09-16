@@ -77,7 +77,7 @@ export async function GET(request: Request) {
     try {
         const auth = await authenticateMerchant(request);
         if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-        const tierCheck = await requireEnterpriseAndTier1(auth.merchantAddress);
+        const tierCheck = await requireEnterpriseAndTier1(auth.merchantAddress, auth.mode);
         if (!tierCheck.ok) return NextResponse.json({ error: tierCheck.error }, { status: tierCheck.status });
         const merchantWallet = auth.merchantAddress;
 
@@ -521,7 +521,7 @@ export async function DELETE(request: Request) {
     try {
         const auth = await authenticateMerchant(request);
         if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-        const tierCheck = await requireEnterpriseAndTier1(auth.merchantAddress);
+        const tierCheck = await requireEnterpriseAndTier1(auth.merchantAddress, auth.mode);
         if (!tierCheck.ok) return NextResponse.json({ error: tierCheck.error }, { status: tierCheck.status });
         const merchantAddress = auth.merchantAddress;
 
