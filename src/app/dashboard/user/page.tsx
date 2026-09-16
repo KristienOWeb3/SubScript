@@ -3344,11 +3344,11 @@ export default function UserDashboard() {
     }
     loadingPeerRef.current = peer;
 
-    let isCancelled = false;
+    let isCurrent = true;
     setIsOpenedDmLoading(true);
 
     const loadThreadData = async () => {
-      const minDelay = new Promise((resolve) => setTimeout(resolve, 350));
+      const minDelay = new Promise((resolve) => setTimeout(resolve, 200));
       const thread = dmThreads.find((t) => t.peerAddress.toLowerCase() === peer);
       const isEnterprise =
         thread?.peerRole === "ENTERPRISE" ||
@@ -3361,7 +3361,7 @@ export default function UserDashboard() {
       }
 
       await Promise.allSettled(tasks);
-      if (!isCancelled) {
+      if (isCurrent && loadingPeerRef.current === peer) {
         setIsOpenedDmLoading(false);
       }
     };
@@ -3369,9 +3369,12 @@ export default function UserDashboard() {
     void loadThreadData();
 
     return () => {
-      isCancelled = true;
+      if (selectedDmPeer?.toLowerCase() !== peer) {
+        isCurrent = false;
+        loadingPeerRef.current = null;
+      }
     };
-  }, [selectedDmPeer, activeTab, dmThreads, subscriptions, plansMerchantAddress]);
+  }, [selectedDmPeer, activeTab]);
 
   if (loading) {
     return (
@@ -8359,7 +8362,10 @@ function ChatHeader({
 }) {
   return (
     <div className="fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
-      <header className="w-full max-w-md liquid-glass rounded-full px-4 py-2.5 pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/40 backdrop-blur-xl border border-white/10">
+      <header
+        data-testid="mobile-chat-header"
+        className="w-full max-w-md liquid-glass rounded-full px-4 py-2.5 pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/40 backdrop-blur-xl border border-white/10"
+      >
         <div className="flex items-center justify-between w-full gap-2">
           <div className="flex items-center gap-2 min-w-0">
             {/* Back button */}

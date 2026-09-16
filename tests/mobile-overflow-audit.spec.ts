@@ -682,7 +682,7 @@ test.describe("mobile overflow audit", () => {
     await expect(peerButton).toBeVisible({ timeout: 60_000 });
     await peerButton.click();
 
-    const header = page.getByRole("banner").filter({ hasText: "Mobile Audit Merchant" });
+    const header = page.getByTestId("mobile-chat-header");
     const footer = page.getByTestId("mobile-dm-action-footer");
     const messages = page.getByTestId("mobile-dm-message-scroller");
 

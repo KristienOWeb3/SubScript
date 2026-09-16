@@ -64,27 +64,20 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
     });
 
     // Seed/Upsert verified email & KYC approval for Tier 1 / Tier 2 live credential operations
-    await prisma.userEmbeddedWallet.upsert({
-      where: { walletAddress: testWallet },
-      update: {
-        email: "test-merchant@example.com",
-        emailVerifiedAt: new Date(),
-      },
-      create: {
-        walletAddress: testWallet,
-        email: "test-merchant@example.com",
-        emailVerifiedAt: new Date(),
-        provider: "circle_google",
-      },
-    }).catch(() => null);
+    const uniqueEmail = `test-merchant-${testWallet.slice(2, 10)}@example.com`;
+    await prisma.$executeRaw`
+      insert into user_embedded_wallets (id, wallet_address, email, email_verified_at, provider)
+      values (gen_random_uuid(), ${testWallet}, ${uniqueEmail}, now(), 'circle_google')
+      on conflict (wallet_address) do update set email = excluded.email, email_verified_at = excluded.email_verified_at
+    `.catch(() => null);
 
     await prisma.kycVerification.upsert({
       where: { walletAddress: testWallet },
-      update: { status: "APPROVED" },
+      update: { status: "APPROVED", kind: "BUSINESS", accountRole: "ENTERPRISE" },
       create: {
         walletAddress: testWallet,
         accountRole: "ENTERPRISE",
-        kind: "MERCHANT",
+        kind: "BUSINESS",
         countryCode: "US",
         provider: "SYNAPS",
         status: "APPROVED",
@@ -93,7 +86,7 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
         submittedAt: new Date(),
         decidedAt: new Date(),
       },
-    }).catch(() => null);
+    });
 
     // Seed/Upsert an active API Key
     const existingKey = await prisma.apiKey.findUnique({ where: { publishableKey: "pk_test_mock_key_for_e2e_testing" } });
