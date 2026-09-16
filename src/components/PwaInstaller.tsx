@@ -12,30 +12,25 @@ type BeforeInstallPromptEvent = Event & {
 };
 
 const DISMISS_KEY = "subscript_pwa_install_dismissed";
+const PROMPTED_KEY = "subscript_pwa_install_prompted";
 
-/* Dashboard surfaces: /user (user dashboard), /merchant, /dashboard*, /dashboard-router. */
-function isDashboardPath(pathname: string | null): boolean {
+/* Only the primary overview/dashboard pages trigger the install prompt. */
+function isOverviewDashboardPath(pathname: string | null): boolean {
     if (!pathname) return false;
-    return (
-        pathname === "/user" || pathname.startsWith("/user/") ||
-        pathname === "/merchant" || pathname.startsWith("/merchant/") ||
-        pathname.startsWith("/dashboard")
-    );
+    return pathname === "/dashboard" || pathname === "/dashboard/user";
 }
 
 export default function PwaInstaller() {
     const pathname = usePathname();
-    const onDashboard = isDashboardPath(pathname);
+    const isOverview = isOverviewDashboardPath(pathname);
     const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
     const [visible, setVisible] = useState(false);
 
     useEffect(() => {
         if (typeof window === "undefined") return;
-        /* Only the dashboard is installable — skip the SW + prompt on the marketing site. */
-        if (!onDashboard) return;
 
-        /* Register the SW (idempotent — registering an already-registered SW is a no-op). */
-        if ("serviceWorker" in navigator) {
+        /* Register the SW for push notifications / offline support on dashboard surfaces */
+        if ("serviceWorker" in navigator && (pathname?.startsWith("/dashboard") || pathname?.startsWith("/user"))) {
             navigator.serviceWorker
                 .register("/sw.js")
                 .then((registration) => {
@@ -46,19 +41,34 @@ export default function PwaInstaller() {
                 });
         }
 
+        /* The install prompt only pops up once and strictly on the overview/dashboard page */
+        if (!isOverview) return;
+
         const isStandalone =
             window.matchMedia?.("(display-mode: standalone)").matches ||
             (window.navigator as any).standalone === true;
-        if (isStandalone || sessionStorage.getItem(DISMISS_KEY) === "1") return;
+
+        try {
+            if (isStandalone || localStorage.getItem(DISMISS_KEY) === "1" || localStorage.getItem(PROMPTED_KEY) === "1") {
+                return;
+            }
+        } catch {
+            /* ignore localStorage access errors */
+        }
 
         const onBeforeInstall = (event: Event) => {
             event.preventDefault(); // stash it so we can trigger the prompt from our own button
             setDeferredPrompt(event as BeforeInstallPromptEvent);
             setVisible(true);
+            try { localStorage.setItem(PROMPTED_KEY, "1"); } catch { /* ignore */ }
         };
         const onInstalled = () => {
             setVisible(false);
             setDeferredPrompt(null);
+            try {
+                localStorage.setItem(DISMISS_KEY, "1");
+                localStorage.setItem(PROMPTED_KEY, "1");
+            } catch { /* ignore */ }
         };
 
         window.addEventListener("beforeinstallprompt", onBeforeInstall);
@@ -67,9 +77,9 @@ export default function PwaInstaller() {
             window.removeEventListener("beforeinstallprompt", onBeforeInstall);
             window.removeEventListener("appinstalled", onInstalled);
         };
-    }, [onDashboard]);
+    }, [isOverview, pathname]);
 
-    if (!onDashboard || !visible || !deferredPrompt) return null;
+    if (!isOverview || !visible || !deferredPrompt) return null;
 
     const install = async () => {
         try {
@@ -80,12 +90,19 @@ export default function PwaInstaller() {
         } finally {
             setVisible(false);
             setDeferredPrompt(null);
+            try {
+                localStorage.setItem(DISMISS_KEY, "1");
+                localStorage.setItem(PROMPTED_KEY, "1");
+            } catch { /* ignore */ }
         }
     };
 
     const dismiss = () => {
         setVisible(false);
-        try { sessionStorage.setItem(DISMISS_KEY, "1"); } catch { /* ignore */ }
+        try {
+            localStorage.setItem(DISMISS_KEY, "1");
+            localStorage.setItem(PROMPTED_KEY, "1");
+        } catch { /* ignore */ }
     };
 
     return (

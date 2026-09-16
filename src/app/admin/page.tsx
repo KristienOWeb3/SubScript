@@ -140,7 +140,6 @@ type Analytics = {
   };
   subscriptions: {
     activeCustomer: number;
-    activePremium: number;
     activeTotal: number;
     cancellingAtPeriodEnd: number;
     byStatus: Record<string, number>;
@@ -1381,60 +1380,7 @@ export default function AdminDashboardPage() {
               vh-inside-dvh mistake as the black bar above. */}
           <main className="min-h-full pt-3 sm:pt-6 pb-16">
             <div className="admin-workspace mx-auto max-w-6xl space-y-4 sm:space-y-6 px-4 py-2 sm:px-8">
-              {/* Mobile 2-tier Navigation Pills */}
-              <div className="md:hidden space-y-2 pb-1">
-                {/* Tier 1: 6 Groups */}
-                <div className="flex gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                  {adminNavGroups.map((g) => {
-                    const isGroupActive = g.items.some((item) => item.id === tab);
-                    return (
-                      <button
-                        key={g.id}
-                        type="button"
-                        onClick={() => {
-                          if (!isGroupActive) {
-                            setTab(g.items[0].id);
-                          }
-                        }}
-                        className={`shrink-0 flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition shadow-xs ${
-                          isGroupActive
-                            ? "border border-[#2775ca] bg-[#2775ca] text-white"
-                            : "border border-[#e2e8f0] bg-white text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#0f172a]"
-                        }`}
-                      >
-                        <g.icon className={`h-3.5 w-3.5 ${isGroupActive ? "text-white" : "text-[#64748b]"}`} />
-                        <span>{g.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Tier 2: Sub-tabs of Active Group (if >1 item) */}
-                {activeGroup.items.length > 1 && (
-                  <div className="flex gap-1.5 overflow-x-auto pb-1 pl-1 border-l-2 border-[#2775ca]/30 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                    {activeGroup.items.map((sub) => {
-                      const isSubActive = sub.id === tab;
-                      return (
-                        <button
-                          key={sub.id}
-                          type="button"
-                          onClick={() => setTab(sub.id)}
-                          className={`shrink-0 flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
-                            isSubActive
-                              ? "bg-[#2775ca]/10 text-[#2775ca] font-bold border border-[#2775ca]/30 shadow-xs"
-                              : "bg-white text-[#475569] border border-[#e2e8f0] hover:bg-[#f8fafc]"
-                          }`}
-                        >
-                          <sub.icon className={`h-3 w-3 ${isSubActive ? "text-[#2775ca]" : "text-[#64748b]"}`} />
-                          <span>{sub.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Mobile Navigation Sidebar (Landing Page feel: slide-over, dark glass, branding) */}
+              {/* Mobile Navigation Sidebar Drawer (Matches desktop: #353935, topo-admin-header, #FFFFF0 active items) */}
               <AnimatePresence>
                 {mobileNavOpen && (
                   <div className="fixed inset-0 z-50 md:hidden flex" role="dialog" aria-modal="true" aria-label="Admin Navigation Sidebar">
@@ -1455,65 +1401,48 @@ export default function AdminDashboardPage() {
                       animate={{ x: 0 }}
                       exit={{ x: "-100%" }}
                       transition={{ type: "spring", damping: 28, stiffness: 300 }}
-                      className="relative z-10 w-[84vw] max-w-[320px] h-full bg-[#0b0f19] border-r border-white/10 text-white shadow-2xl flex flex-col justify-between overflow-hidden"
+                      className="relative z-10 w-[84vw] max-w-[320px] h-full bg-[#353935] topo-admin-header border-r border-white/10 text-white shadow-2xl flex flex-col justify-between overflow-hidden"
                     >
-                      {/* Header: Brand + Close button */}
-                      <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
-                        <Link
-                          href="/"
-                          onClick={() => setMobileNavOpen(false)}
-                          className="flex items-center gap-2.5 group"
-                          aria-label="SubScript Home"
+                      {/* Header: Identity pill + Close button */}
+                      <div className="flex items-center justify-between px-4 py-3.5 border-b border-white/10 shrink-0 bg-[#353935]/80 backdrop-blur-xs">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTab("admins");
+                            setMobileNavOpen(false);
+                          }}
+                          className="inline-flex max-w-[220px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] text-white p-1 px-2 py-1 text-left shadow-sm transition hover:border-white/25 hover:bg-white/[0.14]"
+                          title={`${viewerIsRoot ? "Root authority" : "Delegated authority"} • Arc Mainnet`}
                         >
-                          <Image
-                            src="/logo.png"
-                            alt="SubScript logo"
-                            width={28}
-                            height={28}
-                            priority
-                            className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]"
-                          />
-                          <div>
-                            <span className="text-base font-bold text-white tracking-tight">
-                              SubScript
+                          <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/20 text-white text-[11px] font-bold">
+                            {viewerAdminHandle.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex flex-col min-w-0">
+                            <span className="truncate font-mono text-[11px] font-bold text-white leading-tight">
+                              {viewerAdminHandle}
                             </span>
-                            <span className="block text-[9px] font-black uppercase tracking-wider text-[#2775ca]">
-                              Admin Suite
+                            <span className="truncate font-mono text-[9px] font-bold text-white/60 leading-tight">
+                              {viewerIsRoot ? "Root" : "Delegated"} • Arc Mainnet
                             </span>
                           </div>
-                        </Link>
+                        </button>
 
                         <button
                           type="button"
                           onClick={() => setMobileNavOpen(false)}
-                          className="flex h-8 w-8 aspect-square items-center justify-center rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition shrink-0"
+                          className="flex h-8 w-8 aspect-square items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/70 hover:text-white hover:bg-white/10 hover:border-white/20 transition shrink-0"
                           aria-label="Close navigation"
                         >
                           <X className="h-4 w-4" />
                         </button>
                       </div>
 
-                      {/* Admin Identity pill */}
-                      <div className="px-5 py-3 border-b border-white/5 bg-white/[0.02] shrink-0">
-                        <div className="flex items-center gap-2.5">
-                          <div className="flex h-8 w-8 aspect-square items-center justify-center rounded-full bg-[#2775ca]/20 border border-[#2775ca]/40 text-[#2775ca] font-bold text-xs shrink-0">
-                            {viewerAdminHandle.charAt(0).toUpperCase()}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-bold text-white truncate">{viewerAdminHandle}</p>
-                            <p className="text-[10px] font-semibold text-slate-400">
-                              {viewerIsRoot ? "Root authority" : "Delegated authority"} • Arc
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
                       {/* Scrollable Navigation Groups */}
-                      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+                      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                         {adminNavGroups.map((group) => (
                           <div key={group.id} className="space-y-1">
-                            <div className="flex items-center gap-1.5 px-2 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                              <group.icon className="h-3 w-3 text-[#2775ca]" />
+                            <div className="flex items-center gap-1.5 px-2 pt-1 text-[10px] font-black uppercase tracking-wider text-white/50">
+                              <group.icon className="h-3.5 w-3.5 text-white/60" />
                               <span>{group.label}</span>
                             </div>
                             <div className="space-y-0.5">
@@ -1527,13 +1456,13 @@ export default function AdminDashboardPage() {
                                       setTab(sub.id);
                                       setMobileNavOpen(false);
                                     }}
-                                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-medium transition ${
+                                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-[6px] text-left text-xs font-semibold transition-all ${
                                       isSubActive
-                                        ? "bg-[#2775ca] text-white font-bold shadow-[0_2px_8px_rgba(39,117,202,0.4)]"
-                                        : "text-slate-300 hover:text-white hover:bg-white/[0.06]"
+                                        ? "bg-[#FFFFF0] text-[#353935] font-bold shadow-sm"
+                                        : "text-white/80 hover:bg-white/[0.08] hover:text-white"
                                     }`}
                                   >
-                                    <sub.icon className={`h-4 w-4 shrink-0 ${isSubActive ? "text-white" : "text-slate-400"}`} />
+                                    <sub.icon className={`h-4 w-4 shrink-0 ${isSubActive ? "text-[#353935]" : "text-white/70"}`} />
                                     <span className="truncate">{sub.label}</span>
                                   </button>
                                 );
@@ -1544,14 +1473,17 @@ export default function AdminDashboardPage() {
                       </div>
 
                       {/* Footer Action */}
-                      <div className="p-4 border-t border-white/10 bg-black/30 shrink-0">
+                      <div className="p-3.5 border-t border-white/10 bg-black/20 shrink-0 flex items-center justify-between">
                         <Link
                           href="/dashboard/user"
                           onClick={() => setMobileNavOpen(false)}
-                          className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white text-xs font-bold transition shadow-xs"
+                          className="flex items-center gap-1.5 text-xs font-bold text-white/80 hover:text-white transition"
                         >
-                          <span>Return to User Dashboard</span>
+                          <span>← User Dashboard</span>
                         </Link>
+                        <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                          Mainnet
+                        </span>
                       </div>
                     </motion.aside>
                   </div>
@@ -2871,8 +2803,8 @@ export default function AdminDashboardPage() {
 
         {tab === "system" && (
           <div className="space-y-6">
-            <AdminSystemHealthCard key={refreshCounter} />
-            <AdminRelayerBalancesCard key={refreshCounter} />
+            <AdminSystemHealthCard key={`health-${refreshCounter}`} />
+            <AdminRelayerBalancesCard key={`relayer-${refreshCounter}`} />
             {!flags || flagsLoading ? (
               <>
                 <SkeletonToggleRows

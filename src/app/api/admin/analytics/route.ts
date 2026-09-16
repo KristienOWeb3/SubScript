@@ -65,7 +65,6 @@ export async function GET(request: Request) {
             kycByStatus,
             subsByStatus,
             activeCustomerSubs,
-            activePremiumSubs,
             cancelAtPeriodEnd,
             revocationPending,
             downgradeFailures,
@@ -120,7 +119,6 @@ export async function GET(request: Request) {
             () => prisma.kycVerification.groupBy({ by: ["status"], _count: { _all: true }, orderBy: { status: "asc" } }),
             () => prisma.subscription.groupBy({ by: ["status"], _count: { _all: true }, orderBy: { status: "asc" } }),
             () => prisma.subscription.count({ where: { kind: "CUSTOMER", status: "ACTIVE" } }),
-            () => prisma.subscription.count({ where: { kind: "PREMIUM", status: "ACTIVE" } }),
             () => prisma.subscription.count({ where: { status: "ACTIVE", cancelAtPeriodEnd: true } }),
             () => prisma.subscription.count({ where: { revocationPending: true } }),
             () => prisma.subscription.count({ where: { downgradeFailures: { gt: 0 } } }),
@@ -325,7 +323,7 @@ export async function GET(request: Request) {
         });
 
         /* Estimate MRR */
-        const activeTotal = activeCustomerSubs + activePremiumSubs;
+        const activeTotal = activeCustomerSubs;
         const totalDecidedKyc = (kycCounts.APPROVED || 0) + (kycCounts.REJECTED || 0) + (kycCounts.EXPIRED || 0) + (kycCounts.REVOKED || 0);
         const kycApprovalRate = totalDecidedKyc > 0 ? Math.round(((kycCounts.APPROVED || 0) / totalDecidedKyc) * 100) : 0;
         const churnRate = activeTotal > 0 ? ((cancelAtPeriodEnd / activeTotal) * 100).toFixed(1) : "0.0";
@@ -352,7 +350,6 @@ export async function GET(request: Request) {
             },
             subscriptions: {
                 activeCustomer: activeCustomerSubs,
-                activePremium: activePremiumSubs,
                 activeTotal,
                 cancellingAtPeriodEnd: cancelAtPeriodEnd,
                 churnRatePercent: churnRate,

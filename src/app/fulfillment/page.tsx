@@ -15,7 +15,7 @@ const sections = [
     title: "2. Instant Account Provisioning & Activation Timeline",
     body: [
       "User & Merchant Accounts: Account workspaces and API credentials activate immediately upon successful wallet connection or email OTP authentication.",
-      "SubScript Premium Merchant Tier: Direct upgrades to SubScript Premium activate automatically upon on-chain transaction confirmation on the Arc Network—typically within 2 to 10 seconds of block inclusion. If an on-chain payment confirms but your dashboard tier does not update within 30 minutes, contact compliance@subscriptonarc.com with your transaction hash for instant automated reconciliation.",
+      "KYC Access Tiers: External wallets reach Tier 1 immediately after verified-email linking. Embedded MPC wallets begin at Tier 1 because their wallet is created from a verified email. Tier 2 activates after enhanced KYC approval.",
     ],
   },
   {
@@ -46,7 +46,7 @@ const sections = [
     title: "6. Platform Availability & SLA Benchmarks",
     body: [
       "Service Target: On Arc Mainnet, SubScript targets 99.9% uptime for smart contract routing, checkout hosting, and developer API endpoints.",
-      "Testnet Beta Notice: During the current Arc testnet beta, contracts may be upgraded, redeployed, or reset as part of mainnet hardening. Scheduled maintenance is broadcast via the developer portal.",
+      "Mainnet Change Control: Production contract changes follow the published mainnet runbook and are announced through the developer portal. Sandbox contracts may be reset without affecting mainnet settlement.",
       "Force Majeure & Blockchain Dependency: SubScript is not liable for fulfillment delays caused by Arc Network consensus pauses, major RPC provider outages, or Circle CCTP attestation service maintenance.",
     ],
   },
@@ -118,11 +118,11 @@ export default function FulfillmentPolicy() {
           <div className="mt-4 rounded-2xl border border-[#2775CA]/20 bg-[#2775CA]/5 p-4 text-xs leading-relaxed text-[#1d599b] space-y-2">
             <div className="flex items-center gap-2 font-bold text-sm text-[#2775CA]">
               <Shield className="w-4 h-4" />
-              <span>Public beta notice</span>
+              <span>Arc Mainnet notice</span>
             </div>
             <p>
-              SubScript currently runs on the Arc testnet. Beta payments settle in testnet USDC, which
-              has no monetary value.
+              SubScript production runs on Arc Mainnet (Chain ID 5042) using native USDC. Sandbox
+              test assets are isolated and cannot settle a mainnet payment.
             </p>
           </div>
         </div>

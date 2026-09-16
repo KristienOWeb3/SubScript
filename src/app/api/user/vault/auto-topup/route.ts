@@ -18,11 +18,11 @@ import { requireAccountRole } from "@/lib/accounts/roles";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { sanitizeInput } from "@/utils/security";
 import { ensureUsdcAllowance, setUsdcAllowance } from "@/lib/vault/onchain";
-import { SUBSCRIPT_VAULT_ADDRESS, SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
+import { ARC_MAINNET_CHAIN_ID, SUBSCRIPT_VAULT_ADDRESS, SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
 import { getWalletCustody } from "@/lib/custody";
 import { isSponsoredGasError, requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { prisma } from "@/lib/prisma";
-import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
+import { getAccountKycTier } from "@/lib/kyc/tier";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import { validateMandate, nextMonthlyWindow, isRunningLow } from "@/lib/vault/autoTopUp";
 import { haltGuard } from "@/lib/accountHalt";
@@ -30,7 +30,7 @@ import { haltGuard } from "@/lib/accountHalt";
 export const maxDuration = 120;
 
 function vaultEnvironment() {
-    return SUBSCRIPT_VAULT_CHAIN_ID === 5042001 ? "LIVE" : "TEST";
+    return SUBSCRIPT_VAULT_CHAIN_ID === ARC_MAINNET_CHAIN_ID ? "LIVE" : "TEST";
 }
 
 /** Resolve a merchant alias or address the same way the commit route does, so a mandate and a
@@ -70,8 +70,8 @@ export async function POST(request: Request) {
 
         /* Same bar as committing funds: a mandate authorizes an unbounded number of future
            commits, so it must not be grantable from a session with no verified contact address. */
-        const verifiedEmail = await getVerifiedAccountEmail(wallet);
-        if (!verifiedEmail?.email) {
+        const tierInfo = await getAccountKycTier(wallet);
+        if (!tierInfo.isTier1) {
             return NextResponse.json(
                 { error: "Verify an email address with OTP before enabling auto top-up." },
                 { status: 403 },

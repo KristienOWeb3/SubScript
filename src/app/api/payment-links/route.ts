@@ -12,6 +12,7 @@ import { ARC_TESTNET_CHAIN_ID, DEMO_MERCHANT_ADDRESS } from "@/lib/contracts/con
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import { validateBeneficiaryAddress } from "@/lib/paymentLinks/beneficiary";
 import { normalizeMicrouscAmount, parsePaymentLinkExpiry } from "@/lib/paymentLinks/validation";
+import { getAccountKycTier } from "@/lib/kyc/tier";
 
 async function authenticateRequest(request: Request): Promise<{
     wallet: string | null;
@@ -173,12 +174,6 @@ export async function POST(request: Request) {
         const isTestMode = auth.apiKeyMode === "test";
         if (sandbox !== undefined && sandbox !== isTestMode) {
             return NextResponse.json({ error: "Bad Request: sandbox mode is determined by the API key" }, { status: 400 });
-        }
-        if (isTestMode && ProtocolConfig.CHAIN_ID !== ARC_TESTNET_CHAIN_ID) {
-            return NextResponse.json({
-                error: "Test API keys can settle Arc testnet USDC only. Use the testnet deployment or a live key for the configured network.",
-                code: "test_mode_requires_testnet",
-            }, { status: 409 });
         }
         const isSandboxRequest = isTestMode;
         const isSimulationOnly = isTestMode && merchantAddress.toLowerCase() === DEMO_MERCHANT_ADDRESS.toLowerCase();
@@ -431,13 +426,13 @@ export async function POST(request: Request) {
             return merchantPayoutWalletMissingResponse();
         }
 
-        const tier = merchantRes.data ? merchantRes.data.tier : "FREE";
+        const tierInfo = await getAccountKycTier(merchantAddress);
         const activeCount = countRes.count || 0;
-        const limit = tier === "PREMIUM" ? ProtocolConfig.MAX_PAYMENT_LINKS_TIER1 : ProtocolConfig.MAX_PAYMENT_LINKS_TIER0;
+        const limit = tierInfo.isTier1 ? ProtocolConfig.MAX_PAYMENT_LINKS_TIER1 : ProtocolConfig.MAX_PAYMENT_LINKS_TIER0;
 
         if (activeCount >= limit) {
             return NextResponse.json({
-                error: `Quota Exceeded: Active link limit of ${limit} reached for your merchant tier.`
+                error: `Quota Exceeded: Active link limit of ${limit} reached for your KYC tier.`
             }, { status: 403 });
         }
 
@@ -481,7 +476,7 @@ export async function POST(request: Request) {
 
         if (insertError) {
             if (/payment link quota exceeded/i.test(insertError.message)) {
-                return NextResponse.json({ error: `Quota Exceeded: Active link limit of ${limit} reached for your merchant tier.` }, { status: 403 });
+                return NextResponse.json({ error: `Quota Exceeded: Active link limit of ${limit} reached for your KYC tier.` }, { status: 403 });
             }
             console.error("Error inserting payment link:", insertError.message);
             return NextResponse.json({ error: insertError.message }, { status: 500 });

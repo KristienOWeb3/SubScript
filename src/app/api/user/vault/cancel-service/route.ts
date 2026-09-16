@@ -23,7 +23,7 @@ import { prisma } from "@/lib/prisma";
 import { withPgClient } from "@/lib/serverPg";
 import { insertPgDm, pushDmNotification } from "@/lib/dms/notifications";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
-import { SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
+import { ARC_MAINNET_CHAIN_ID, SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
 
 export async function POST(request: Request) {
     try {
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
 
         const user = wallet.toLowerCase();
         const merchant = merchantAddress.toLowerCase();
-        const environment = SUBSCRIPT_VAULT_CHAIN_ID === 5042001 ? "LIVE" : "TEST";
+        const environment = SUBSCRIPT_VAULT_CHAIN_ID === ARC_MAINNET_CHAIN_ID ? "LIVE" : "TEST";
 
         const vault = await prisma.meteredVault.findUnique({
             where: {

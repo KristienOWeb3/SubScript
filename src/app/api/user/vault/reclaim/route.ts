@@ -11,7 +11,7 @@ import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
-import { SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
+import { ARC_MAINNET_CHAIN_ID, SUBSCRIPT_VAULT_CHAIN_ID } from "@/lib/contracts/constants";
 import crypto from "crypto";
 
 export const maxDuration = 120;
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
         const txHash = await reclaimAbandonedFromEmbedded(wallet, merchantAddress);
         const v = await syncVaultMirror(wallet, merchantAddress);
 
-        const environment = SUBSCRIPT_VAULT_CHAIN_ID === 5042001 ? "LIVE" : "TEST";
+        const environment = SUBSCRIPT_VAULT_CHAIN_ID === ARC_MAINNET_CHAIN_ID ? "LIVE" : "TEST";
         await recordMerchantEvent({
             merchantAddress: merchantAddress.toLowerCase(),
             environment,

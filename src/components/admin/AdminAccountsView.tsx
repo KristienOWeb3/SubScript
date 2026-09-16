@@ -399,13 +399,14 @@ export function AdminAccountsView() {
                       {acc.address.slice(0, 10)}...{acc.address.slice(-6)}
                     </td>
                     <td className="px-6 py-3 text-[#0f172a]">
-                      {acc.alias ? (
-                        <span className="font-semibold text-[#2775ca]">@{acc.alias}</span>
-                      ) : acc.email ? (
-                        <span className="text-[#64748b]">{acc.email}</span>
-                      ) : (
-                        <span className="text-gray-400">—</span>
+                      {acc.alias && (
+                        <span className="font-semibold text-[#2775ca] block">@{acc.alias}</span>
                       )}
+                      {acc.email ? (
+                        <span className={`text-xs block ${acc.alias ? "text-[#64748b]" : "font-medium text-[#0f172a]"}`}>{acc.email}</span>
+                      ) : !acc.alias ? (
+                        <span className="text-gray-400">—</span>
+                      ) : null}
                     </td>
                     <td className="px-6 py-3">
                       <span
@@ -503,7 +504,7 @@ export function AdminAccountsView() {
             ) : accountDetail ? (
               <div className="space-y-5 text-xs">
                 {/* Identity & Custody Summary Card */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
                   <div>
                     <span className="text-[10px] font-bold uppercase text-slate-500">Custody Model</span>
                     <p className="font-semibold text-slate-900 mt-0.5">{accountDetail.custodyType}</p>
@@ -511,6 +512,12 @@ export function AdminAccountsView() {
                   <div>
                     <span className="text-[10px] font-bold uppercase text-slate-500">Registered Alias</span>
                     <p className="font-semibold text-[#2775ca] mt-0.5">{accountDetail.alias ? `@${accountDetail.alias}` : "None"}</p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase text-slate-500">Contact Email</span>
+                    <p className="font-semibold text-slate-900 mt-0.5 truncate" title={accountDetail.customer?.email || accountDetail.embeddedWallet?.email || accountDetail.authIdentities?.[0]?.currentEmail || "None"}>
+                      {accountDetail.customer?.email || accountDetail.embeddedWallet?.email || accountDetail.authIdentities?.[0]?.currentEmail || "None"}
+                    </p>
                   </div>
                   <div>
                     <span className="text-[10px] font-bold uppercase text-slate-500">KYC Status</span>

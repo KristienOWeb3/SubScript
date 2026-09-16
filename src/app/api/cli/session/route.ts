@@ -133,7 +133,7 @@ export async function POST(request: Request) {
     /* Enforce tier requirements */
     if (normalizedMode === "privacy-routed" && tier === "FREE") {
       return NextResponse.json(
-        { error: "Privacy-routed mode requires Premium Pro merchant tier" },
+        { error: "Privacy-routed mode requires Tier 1 KYC verification" },
         { status: 403 }
       );
     }

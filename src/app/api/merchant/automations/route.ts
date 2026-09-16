@@ -72,15 +72,15 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Configuration Error: Database not available." }, { status: 500 });
         }
 
-        /* Verify merchant tier is PREMIUM */
+        /* Verify merchant exists */
         const { data: merchant, error: merchantError } = await supabaseAdmin
             .from("merchants")
-            .select("tier")
+            .select("wallet_address")
             .eq("wallet_address", normalizedUser)
             .maybeSingle();
 
-        if (merchantError || !merchant || merchant.tier !== "PREMIUM") {
-            return NextResponse.json({ error: "Forbidden: Premium Pro tier required for Automated Churn Recovery" }, { status: 403 });
+        if (merchantError) {
+            return NextResponse.json({ error: "Failed to verify merchant account" }, { status: 500 });
         }
 
         const body = await request.json();

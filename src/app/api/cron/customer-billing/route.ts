@@ -1,6 +1,6 @@
 /* Customer-subscription renewal keeper.
  *
- * Premium subs (merchant -> SubScript) are billed by `cron/billing`. This route bills the OTHER
+ * Retired paid-plan subscriptions are never billed. This route bills customer-to-merchant
  * kind: CUSTOMER subs (customer -> merchant gym-style plans) created via the embedded-wallet
  * routes and mirrored into `subscriptions` (kind = "CUSTOMER"). It is the server-side keeper for
  * when on-chain Chainlink Automation is not registered.
@@ -24,13 +24,17 @@
  *     `subscription.payment_failed` for a subscription that was never in trouble. The writes need
  *     the same scope: `.eq("subscription_id", subId)` alone updates every generation's copy of that
  *     id, and ids ARE duplicated in practice.
+ *
+ * KNOWN GAP: `subscription_billing_claims` is still keyed on subscription_id alone, so two
+ * generations sharing an id contend for one claim row. That needs a migration on the table and its
+ * claim/release/complete RPCs.
  */
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import { STANDARD_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS, PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
+import { STANDARD_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { projectRunway } from "@/lib/subscriptions/allowanceRunway";
@@ -614,13 +618,6 @@ export async function POST(request: Request) {
                             throw new Error(`Failed to persist zombie revocation state: ${zombieStateError.message}`);
                         }
 
-                        // Suspend premium-only credentials on downgrade
-                        await prisma.webhookEndpoint.updateMany({
-                            where: { walletAddress: sub.merchant_address, active: true },
-                            data: { active: false, status: "SUSPENDED_DOWNGRADE" },
-                        });
-                        // Note: API keys use 'revoked' field - we don't hard-revoke, we'll check tier at auth time
-
                         await createBillingDm({
                             supabase,
                             senderAddress: merchantAddress,
@@ -929,20 +926,6 @@ export async function POST(request: Request) {
                         .eq("subscription_id", subId);
                     if (cancelStateError) {
                         throw new Error(`Failed to persist period-end cancellation: ${cancelStateError.message}`);
-                    }
-
-                    // Suspend premium-only credentials on downgrade
-                    await prisma.webhookEndpoint.updateMany({
-                        where: { walletAddress: sub.merchant_address, active: true },
-                        data: { active: false, status: "SUSPENDED_DOWNGRADE" },
-                    });
-                    // Note: API keys use 'revoked' field - we don't hard-revoke, we'll check tier at auth time
-
-                    if (sub.merchant_address.toLowerCase() === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
-                        await prisma.merchant.update({
-                            where: { walletAddress: subscriber.toLowerCase() },
-                            data: { tier: "FREE" },
-                        }).catch((err: any) => console.error("[customer-billing] tier downgrade failed:", err));
                     }
 
                     await dispatchDurableSubscriptionWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({

@@ -29,6 +29,7 @@ interface MultiWalletAuthRowProps {
   siweLoading?: boolean;
   connectingConnectorId?: string | null;
   disabled?: boolean;
+  loading?: boolean;
 }
 
 export function MultiWalletAuthRow({
@@ -43,6 +44,7 @@ export function MultiWalletAuthRow({
   siweLoading = false,
   connectingConnectorId = null,
   disabled = false,
+  loading = false,
 }: MultiWalletAuthRowProps) {
   // Check which wallets are actually detected in the user's browser
   const detectedConnectors = useMemo(() => {
@@ -85,6 +87,23 @@ export function MultiWalletAuthRow({
     return <WalletIcon name={c.name} id={c.id} iconUrl={c.icon} className="w-5 h-5 transition-transform group-hover:scale-110" />;
   };
 
+  if (loading) {
+    return (
+      <div
+        className="flex items-center justify-center gap-2 sm:gap-2.5 py-0.5"
+        role="status"
+        aria-label="Loading authentication options"
+      >
+        <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-black/[0.06] border border-black/10 animate-pulse" />
+        <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-black/[0.06] border border-black/10 animate-pulse" />
+      </div>
+    );
+  }
+
+  if (!googleAvailable && !externalWalletEnabled) {
+    return null;
+  }
+
   return (
     <div className="flex items-center justify-center gap-2 sm:gap-2.5 flex-wrap">
       {/* Google Sign-in */}
@@ -106,7 +125,7 @@ export function MultiWalletAuthRow({
               }
               disabled={disabled || isBusy}
               title="MetaMask (No wallet detected)"
-              className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed group relative"
+              className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed group relative"
             >
               <MetaMaskIcon className="w-5 h-5 transition-transform group-hover:scale-110" />
             </button>
@@ -123,7 +142,7 @@ export function MultiWalletAuthRow({
                   onClick={() => onSelectConnector(connector)}
                   disabled={disabled || isBusy}
                   title={`Connect ${connector.name}`}
-                  className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed group relative"
+                  className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl border border-black/10 bg-[#FFFFF0] hover:bg-black/[0.04] hover:border-black/25 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed group relative"
                 >
                   {isCurrentConnecting ? (
                     isMetaMask ? (

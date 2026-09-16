@@ -1,5 +1,5 @@
 export const ARC_TESTNET_CHAIN_ID = 5042002 as const;
-export const ARC_MAINNET_CHAIN_ID = 5042001 as const;
+export const ARC_MAINNET_CHAIN_ID = 5042 as const;
 
 export const MERCHANT_ADDRESS = "0x725D56151CeaC9eAd625241D13b8307B22EDDb10" as const;
 export const SUBSCRIPT_PROTOCOL_FEE_BPS = 100 as const;
@@ -9,7 +9,9 @@ export const SUBSCRIPT_PROTOCOL_FEE_BPS = 100 as const;
    this address additionally gets an aggressive rate limit. */
 export const DEMO_MERCHANT_ADDRESS = "0xdeb0000000000000000000000000000000000001" as const;
 
-export const isProd = process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet";
+export const isProd =
+  (process.env.NEXT_PUBLIC_ENVIRONMENT || process.env.ENVIRONMENT || "").trim().toLowerCase() === "mainnet" ||
+  (process.env.NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID || "").trim() === "5042";
 
 /* Network-critical addresses are env-overridable so the mainnet cutover is a config change, not a
    code edit. Defaults below are the current Arc *testnet* deployment; set the NEXT_PUBLIC_* vars to
@@ -75,13 +77,13 @@ export const ARC_MAINNET = {
   },
   rpcUrls: {
     default: {
-      http: ["https://rpc.mainnet.arc.network"],
+      http: ["https://rpc.mainnet.arc.io", "https://rpc.mainnet.arc.network"],
     },
   },
   blockExplorers: {
     default: {
       name: "Arc Explorer",
-      url: "https://arcscan.app",
+      url: "https://explorer.arc.io",
     },
   },
 } as const;
@@ -300,7 +302,11 @@ export const SOLANA_CCTP_CONFIG = {
     (isProd ? "https://api.mainnet-beta.solana.com" : "https://api.devnet.solana.com"),
 } as const;
 
-/* Arc CCTP Domain ID: 26 for Arc Testnet / Arc Mainnet */
+/* Circle currently publishes domain 26 for Arc Testnet only. Keep every production CCTP entry
+   point disabled until Circle publishes and we verify Arc Mainnet domain and contract details. */
+export const ARC_CCTP_ENABLED = !isProd;
+
+/* Arc Testnet CCTP domain ID. Do not use this value for Arc Mainnet. */
 export const ARC_CCTP_DOMAIN_ID = 26 as const;
 
 /* Arc's own TokenMessengerV2, used for outbound burns when withdrawing off Arc. Env-overridable for

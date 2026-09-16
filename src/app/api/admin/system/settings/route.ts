@@ -53,7 +53,7 @@ export async function GET(request: Request) {
                 withdrawalsEnabled:
                     "Blocks every withdrawal path — vault withdraw and reclaim, merchant claims, wallet sends, and execute-tx. Fails closed.",
                 hostedPaymentsEnabled: "Blocks hosted checkout payment links and the /pay flow.",
-                checkoutEnabled: "Blocks premium checkout.",
+                checkoutEnabled: "Controls the retired paid-tier checkout endpoint.",
                 reconciliationEnabled: "Pauses the payment reconciliation worker.",
                 sponsorEmergencyStop:
                     "Stops sponsored gas platform-wide. SPONSOR_EMERGENCY_STOP in the environment also forces this on.",

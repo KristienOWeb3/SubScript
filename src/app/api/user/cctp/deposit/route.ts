@@ -6,7 +6,8 @@ import { calculateBridgeFee, formatMicros, resolveBridgeChain } from "@/lib/cctp
 import { notifyDepositStarted } from "@/lib/cctp/notifications";
 import { processPendingCctpTransfers } from "@/lib/cctp/attestationWorker";
 import { resolveRpcUrl } from "@/lib/cctp/relayer";
-import { ARC_CCTP_DOMAIN_ID, BRIDGE_FEE_TREASURY_ADDRESS } from "@/lib/contracts/constants";
+import { ARC_CCTP_DOMAIN_ID, ARC_CCTP_ENABLED, BRIDGE_FEE_TREASURY_ADDRESS } from "@/lib/contracts/constants";
+import { CCTP_UNAVAILABLE_MESSAGE } from "@/lib/cctp/availability";
 
 export const maxDuration = 60;
 
@@ -23,6 +24,10 @@ const TRANSFER_TOPIC = ethers.id("Transfer(address,address,uint256)");
  * relays what Circle attested, and the attested message carries its own amount and recipient.
  */
 export async function POST(req: NextRequest) {
+  if (!ARC_CCTP_ENABLED) {
+    return NextResponse.json({ error: CCTP_UNAVAILABLE_MESSAGE }, { status: 503 });
+  }
+
   try {
     const wallet = await getSessionWallet(req.headers);
     if (!wallet) {

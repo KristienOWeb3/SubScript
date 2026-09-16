@@ -27,7 +27,7 @@ const spec = {
                 type: "apiKey",
                 in: "cookie",
                 name: "subscript_session_token",
-                description: "Signed merchant dashboard session. Webhook management endpoints also require an active Premium tier.",
+                description: "Signed merchant dashboard session. Webhook management endpoints also require an Tier 1 KYC verification.",
             },
         },
         schemas: {
@@ -420,7 +420,7 @@ const spec = {
             get: {
                 summary: "List active merchant API keys",
                 description:
-                    "Dashboard-session endpoint for Premium merchants. Secret keys are never retrievable after their one-time creation response.",
+                    "Dashboard-session endpoint for Tier 1 verified merchants. Secret keys are never retrievable after their one-time creation response.",
                 security: [{ dashboardSession: [] }],
                 responses: {
                     "200": {
@@ -440,7 +440,7 @@ const spec = {
                         },
                     },
                     "401": { description: "Signed-in merchant session required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
-                    "403": { description: "Active Premium tier required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "403": { description: "Tier 1 KYC verification required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                 },
             },
             post: {
@@ -487,7 +487,7 @@ const spec = {
                     },
                     "400": { description: "Invalid or unsafe webhook URL", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                     "401": { description: "Signed-in merchant session required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
-                    "403": { description: "Active Premium tier required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "403": { description: "Tier 1 KYC verification required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                 },
             },
             delete: {
@@ -499,7 +499,7 @@ const spec = {
                 responses: {
                     "200": { description: "Revoked" },
                     "401": { description: "Signed-in merchant session required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
-                    "403": { description: "Key is not owned by this merchant, or Premium is inactive", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "403": { description: "Key is not owned by this merchant, or Tier 1 verification is inactive", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                     "404": { description: "Key not found", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                 },
             },
@@ -826,7 +826,7 @@ const spec = {
             get: {
                 summary: "List webhook endpoints and delivery health",
                 description:
-                    "Dashboard-session endpoint for Premium merchants. Shows which merchant wallet owns each endpoint, whether it is active, its environment scope (TEST/LIVE), and its latest delivery result. Endpoints support secret rotation with grace-period overlap.",
+                    "Dashboard-session endpoint for Tier 1 verified merchants. Shows which merchant wallet owns each endpoint, whether it is active, its environment scope (TEST/LIVE), and its latest delivery result. Endpoints support secret rotation with grace-period overlap.",
                 security: [{ dashboardSession: [] }],
                 responses: {
                     "200": {
@@ -860,7 +860,7 @@ const spec = {
                         },
                     },
                     "401": { description: "Signed-in merchant session required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
-                    "403": { description: "Active Premium tier required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "403": { description: "Tier 1 KYC verification required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                 },
             },
             post: {
@@ -898,7 +898,7 @@ const spec = {
                     },
                     "400": { description: "Invalid or unsafe endpoint URL", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                     "401": { description: "Signed-in merchant session required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
-                    "403": { description: "Active Premium tier required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "403": { description: "Tier 1 KYC verification required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                 },
             },
             delete: {
@@ -910,7 +910,7 @@ const spec = {
                 responses: {
                     "200": { description: "Deleted" },
                     "401": { description: "Signed-in merchant session required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
-                    "403": { description: "Endpoint is not owned by this merchant, or Premium is inactive", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "403": { description: "Endpoint is not owned by this merchant, or Tier 1 verification is inactive", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                     "404": { description: "Endpoint not found", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                 },
             },
@@ -949,7 +949,7 @@ const spec = {
                         },
                     },
                     "401": { description: "Signed-in merchant session required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
-                    "403": { description: "Active Premium tier required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "403": { description: "Tier 1 KYC verification required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                 },
             },
         },
@@ -1006,7 +1006,7 @@ const spec = {
                     },
                     "400": { description: "Invalid body, event id, endpoint id, or conflicting replay selectors", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                     "401": { description: "Signed-in merchant session required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
-                    "403": { description: "Active Premium tier required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "403": { description: "Tier 1 KYC verification required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                     "404": { description: "Event or owned endpoint not found", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                     "409": { description: "The selected webhook endpoint is inactive", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                 },
@@ -1077,7 +1077,7 @@ const spec = {
                     },
                     "400": { description: "Invalid event type or endpoint id", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                     "401": { description: "Signed-in merchant session required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
-                    "403": { description: "Active Premium tier required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "403": { description: "Tier 1 KYC verification required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                     "404": { description: "Active owned endpoint not found", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                 },
             },

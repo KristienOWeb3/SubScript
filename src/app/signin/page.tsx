@@ -81,8 +81,18 @@ function SignInContent() {
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [captchaToken, setCaptchaToken] = useState("");
   const [turnstileLoaded, setTurnstileLoaded] = useState(false);
+  const [turnstileTimedOut, setTurnstileTimedOut] = useState(false);
   const isTurnstileConfigured = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
   const captchaRequired = isTurnstileConfigured && !captchaToken;
+
+  useEffect(() => {
+    if (!isTurnstileConfigured) return;
+    const timer = setTimeout(() => setTurnstileTimedOut(true), 4000);
+    return () => clearTimeout(timer);
+  }, [isTurnstileConfigured]);
+
+  const isCloudflareReady = !isTurnstileConfigured || Boolean(captchaToken) || turnstileTimedOut;
+  const isAuthReady = platformFlagsLoaded && isCloudflareReady;
 
   const [resendCooldown, setResendCooldown] = useState(0);
 
@@ -450,10 +460,16 @@ function SignInContent() {
   }
 
   return (
-    <AuthSplitLayout activeTab={activeTab} onTabChange={handleTabChange}>
+    <AuthSplitLayout
+      activeTab={activeTab}
+      onTabChange={handleTabChange}
+      title={activeTab === "signin" ? "Welcome back" : "Create your account"}
+      subtitle={activeTab === "signin" ? "Sign in to your SubScript account." : "Get started with programmable USDC payments."}
+    >
       <div className="space-y-3.5">
         {/* Quick Social & Web3 Auth Row */}
         <MultiWalletAuthRow
+          loading={!isAuthReady}
           googleAvailable={googleAvailable}
           externalWalletEnabled={externalWalletEnabled}
           onGoogleSuccess={handleLoginSuccess}
@@ -468,14 +484,16 @@ function SignInContent() {
         />
 
         {/* Divider */}
-        <div className="relative py-1 flex items-center justify-center">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-black/10"></div>
+        {(!isAuthReady || googleAvailable || externalWalletEnabled) && (
+          <div className="relative py-1 flex items-center justify-center">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-black/10"></div>
+            </div>
+            <span className="relative px-2.5 bg-[#FFFFF0] text-[9px] font-bold text-black/40 uppercase tracking-widest font-mono">
+              or continue with email
+            </span>
           </div>
-          <span className="relative px-2.5 bg-[#FFFFF0] text-[9px] font-bold text-black/40 uppercase tracking-widest font-mono">
-            or continue with email
-          </span>
-        </div>
+        )}
 
         {/* Email OTP Flow */}
         {!otpSent ? (

@@ -74,6 +74,9 @@ async function main() {
   let treasury = process.env.TREASURY_ADDRESS;
   let keeper = process.env.KEEPER_ADDRESS || process.env.KEEPER_DRAWER_ADDRESS || "";
   let stableFXRouter = process.env.STABLEFX_ROUTER_ADDRESS;
+  if (network === "arcMainnet" && (!stableFXRouter || stableFXRouter.toLowerCase() === "0xd0c699768d0e92657d5e5b96cec3546197b2fa9c")) {
+    stableFXRouter = "0xe2E5F173576B513d994073CCbDaCBE027d43DFe6";
+  }
 
   // On local networks, default unset parameters to deployer for seamless localhost testing
   if (network === "localhost" || network === "hardhat") {

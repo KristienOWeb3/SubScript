@@ -16,7 +16,6 @@ import {
   AlertTriangle,
   TrendingUp,
   ShieldCheck,
-  Building2,
 } from "@/components/icons";
 
 interface SubscriptionsViewProps {
@@ -55,7 +54,7 @@ export function SubscriptionsView({ analytics }: SubscriptionsViewProps) {
     secondaryValue: t.newUsers ?? 0,
   }));
 
-  const activeTotal = subs?.activeTotal || (subs?.activeCustomer || 0) + (subs?.activePremium || 0);
+  const activeTotal = subs?.activeTotal || subs?.activeCustomer || 0;
 
   return (
     <div className="space-y-6">
@@ -76,10 +75,10 @@ export function SubscriptionsView({ analytics }: SubscriptionsViewProps) {
         />
 
         <StatCardWithSparkline
-          label="Merchant Premium Plans"
-          value={subs?.activePremium ?? 0}
-          badgeText="SubScript SaaS ARR"
-          icon={Building2}
+          label="Tier 2 Approved"
+          value={analytics?.kyc?.approved ?? 0}
+          badgeText="Enhanced KYC"
+          icon={ShieldCheck}
         />
 
         <StatCardWithSparkline
@@ -111,7 +110,7 @@ export function SubscriptionsView({ analytics }: SubscriptionsViewProps) {
               Revenue Stream Separation
             </h3>
             <p className="text-xs text-[#64748b] mt-0.5">
-              Distinguishing consumer plan volume from protocol software fees
+              Customer plan activity and KYC access verification
             </p>
 
             <div className="space-y-4 mt-5">
@@ -138,24 +137,24 @@ export function SubscriptionsView({ analytics }: SubscriptionsViewProps) {
                 </div>
               </div>
 
-              {/* Premium SaaS Stream */}
+              {/* Enhanced KYC access */}
               <div className="rounded-xl border border-[#f1f5f9] bg-[#f8fafc] p-4">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-bold text-[#0f172a]">
-                    Merchant → SubScript Premium
+                    Tier 2 Enhanced KYC
                   </span>
                   <span className="font-mono text-xs font-black text-[#2775ca]">
-                    {subs?.activePremium ?? 0} active
+                    {analytics?.kyc?.approved ?? 0} approved
                   </span>
                 </div>
                 <p className="text-[11px] text-[#64748b]">
-                  Merchant enterprise subscriptions billed by the automated protocol cron.
+                  Accounts approved for enhanced identity verification.
                 </p>
                 <div className="w-full bg-[#e2e8f0] h-2 rounded-full mt-2.5 overflow-hidden">
                   <div
                     className="bg-[#2775ca] h-full rounded-full transition-all"
                     style={{
-                      width: `${activeTotal > 0 ? ((subs?.activePremium || 0) / activeTotal) * 100 : 0}%`,
+                      width: `${analytics?.kyc?.approvalRate || 0}%`,
                     }}
                   />
                 </div>
@@ -164,7 +163,7 @@ export function SubscriptionsView({ analytics }: SubscriptionsViewProps) {
           </div>
 
           <div className="border-t border-[#f1f5f9] pt-3 text-[11px] text-[#64748b]">
-            <span>Cron Renewal Cadence: every 60 seconds</span>
+            <span>Access tiers are derived from verified identity state, never paid subscriptions.</span>
           </div>
         </div>
       </div>

@@ -370,11 +370,12 @@ export default function MerchantOverview({
 
                     <div className="mt-5 pt-2">
                         <button
-                            onClick={onWithdraw}
+                            onClick={onSend}
                             disabled={walletBalance <= 0}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#8AB4DB] hover:bg-[#7aa7d0] dark:bg-white/10 dark:text-white dark:hover:bg-white/20 border border-black/10 dark:border-white/15 px-6 py-2 text-xs font-bold text-[#082824] transition disabled:opacity-40 shadow-sm"
+                            className="inline-flex items-center justify-center gap-1.5 rounded-full border border-black/10 bg-white px-6 py-2 text-xs font-bold text-[#082824] shadow-sm transition hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
                         >
-                            Withdraw
+                            <Send className="h-3.5 w-3.5 shrink-0" />
+                            Send
                         </button>
                     </div>
                 </OverviewCard>
@@ -458,7 +459,7 @@ export default function MerchantOverview({
                         <p className="text-[11px] font-semibold text-[#082824]/75">
                             {activeRows.length} active renewing subscriber{activeRows.length === 1 ? "" : "s"}
                         </p>
-                        <span className="sr-only">Send Receive Withdraw</span>
+                        <span className="sr-only">Send and receive activity</span>
                     </div>
                 </OverviewCard>
             </div>

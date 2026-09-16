@@ -107,7 +107,7 @@ test("checkout requires a wallet-owned session and OTP-verified email before pay
     assert.match(embeddedPay, /Verify an email address with OTP before paying/);
     assert.match(subscribe, /Verify an email address with OTP before subscribing/);
     assert.match(verify, /authenticated wallet does not match the payer/);
-    assert.match(verify, /getVerifiedAccountEmail\(sessionWallet\)/);
+    assert.match(verify, /getAccountKycTier\(sessionWallet\)/);
     assert.match(provenance, /email_verified_at is not null/);
 });
 

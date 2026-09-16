@@ -8,7 +8,7 @@ import { getWalletCustody, isCustodialWallet } from "@/lib/auth/walletCustody";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
-import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS, STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
+import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS as RETIRED_PLAN_RECIPIENT_ADDRESS, STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import {
@@ -31,7 +31,7 @@ import { deterministicIdempotencyKey, getWalletCustody as getCustodyForAllowance
 import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
 import { createSubscriptionStartedDm } from "@/lib/dms/system";
 import { withPgClient } from "@/lib/serverPg";
-import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
+import { getAccountKycTier } from "@/lib/kyc/tier";
 import { readSubscriptionCheckoutMeta, subscriptionCheckoutPeriod } from "@/lib/subscriptionCheckout";
 import { checkoutExpiresAt, isCheckoutExpired } from "@/lib/subscriptions/apiSubscriptionView";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
@@ -88,8 +88,8 @@ export async function POST(request: Request) {
            requireSponsoredGas so a held account burns no gas budget. */
         const held = await haltGuard(wallet);
         if (held) return held;
-        const verifiedEmail = await getVerifiedAccountEmail(wallet);
-        if (!verifiedEmail?.email) {
+        const tierInfo = await getAccountKycTier(wallet);
+        if (!tierInfo.isTier1) {
             return NextResponse.json({ error: "Verify an email address with OTP before subscribing." }, { status: 403 });
         }
         const body = sanitizeInput(await request.json().catch(() => null)) || {};
@@ -207,6 +207,11 @@ export async function POST(request: Request) {
         const canonicalPlanId = merchantPlan?.id || linkedPlan?.id || null;
         const externalReference = sourceCheckout?.externalReference?.trim() || null;
         const merchant = plan.merchantAddress.toLowerCase();
+        if (merchant === RETIRED_PLAN_RECIPIENT_ADDRESS.toLowerCase()) {
+            return NextResponse.json({
+                error: "Gone: paid merchant tiers are retired; KYC status cannot be purchased.",
+            }, { status: 410 });
+        }
         const lockKey = `customer-subscription:${subscriber}:${merchant}`;
         const subscriptionReconciliationContext = {
             checkoutSessionId: checkoutSessionId || null,
@@ -452,12 +457,6 @@ export async function POST(request: Request) {
                 amountUsdc: plan.amountUsdc,
                 periodSeconds: plan.periodSeconds,
             }).catch((err: unknown) => console.error("[subscription/subscribe] recovered DM creation failed:", err));
-            if (merchant === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
-                await prisma.merchant.update({
-                    where: { walletAddress: subscriber },
-                    data: { tier: "PREMIUM" },
-                }).catch((err: unknown) => console.error("[subscription/subscribe] tier upgrade failed:", err));
-            }
             await markSubscriptionOfferAccepted(checkoutSessionId, subscriber);
             return NextResponse.json({ success: true, txHash: checkout!.verifiedTxHash, subscriptionId: recoveredId, planName: plan.name });
         }
@@ -598,12 +597,6 @@ export async function POST(request: Request) {
                     amountUsdc: plan.amountUsdc,
                     periodSeconds: plan.periodSeconds,
                 }).catch((err: unknown) => console.error("[subscription/subscribe] reconciled DM creation failed:", err));
-                if (merchant === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
-                    await prisma.merchant.update({
-                        where: { walletAddress: subscriber },
-                        data: { tier: "PREMIUM" },
-                    }).catch((err: unknown) => console.error("[subscription/subscribe] tier upgrade failed:", err));
-                }
                 await markSubscriptionOfferAccepted(checkoutSessionId, subscriber);
                 await dispatchDurableSubscriptionWebhook(merchant, "subscription.activated", subscriptionWebhookData({
                     subscriptionId: onChainActiveId,
@@ -820,13 +813,6 @@ export async function POST(request: Request) {
                 }
                 : null,
         }).catch((err: unknown) => console.error("[subscription/subscribe] DM creation failed:", err));
-
-        if (merchant === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
-            await prisma.merchant.update({
-                where: { walletAddress: subscriber },
-                data: { tier: "PREMIUM" },
-            }).catch((err: unknown) => console.error("[subscription/subscribe] tier upgrade failed:", err));
-        }
 
         if (checkoutSessionId) {
             try {

@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   AlertCircle,
   ArrowRightLeft,
-  Crown,
   DollarSign,
   Landmark,
   Lock,
@@ -44,7 +43,6 @@ type RevenueData = {
       transfers: number;
     }>;
   };
-  premium: { activeSubscriptions: number; monthlyPriceUsdc: string; projectedMonthlyUsdc: string };
 };
 
 const WINDOW_LABELS: Array<{ key: WindowKey; label: string }> = [
@@ -56,7 +54,7 @@ const WINDOW_LABELS: Array<{ key: WindowKey; label: string }> = [
 
 const SOURCE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   merchant_fees: Percent,
-  premium_plans: Crown,
+  retired_access_plan_receipts: Lock,
   bridge_fees: ArrowRightLeft,
   bank_rails: Landmark,
 };
@@ -336,30 +334,6 @@ export function AdminRevenueView() {
             </table>
           </div>
         )}
-      </div>
-
-      {/* Premium is recurring, so committed monthly income is worth showing next to what we've billed. */}
-      <div className={CARD}>
-        <h3 className="mb-4 text-sm font-bold">Premium subscriptions</h3>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-4">
-            <p className="text-[10px] font-black uppercase tracking-wider text-[#64748b]">Merchants on Premium</p>
-            <p className="mt-1 font-mono text-lg font-bold">{data.premium.activeSubscriptions.toLocaleString()}</p>
-          </div>
-          <div className="rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-4">
-            <p className="text-[10px] font-black uppercase tracking-wider text-[#64748b]">Price per month</p>
-            <p className="mt-1 font-mono text-lg font-bold">
-              {data.premium.monthlyPriceUsdc} <span className="text-[10px] font-sans text-[#64748b]">USDC</span>
-            </p>
-          </div>
-          <div className="rounded-xl border border-[#dbeafe] bg-[#eff6ff] p-4">
-            <p className="text-[10px] font-black uppercase tracking-wider text-[#1d4ed8]">Committed monthly</p>
-            <p className="mt-1 font-mono text-lg font-bold text-[#1e40af]">
-              {data.premium.projectedMonthlyUsdc} <span className="text-[10px] font-sans">USDC</span>
-            </p>
-            <p className="mt-0.5 text-[10px] text-[#60a5fa]">Not yet billed</p>
-          </div>
-        </div>
       </div>
 
       <p className="text-[11px] text-[#94a3b8]">

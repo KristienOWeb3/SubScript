@@ -9,14 +9,14 @@ const sections = [
     body: [
       "This policy governs all refund requests, billing dispute escalations, and subscription cancellations across the SubScript protocol.",
       "Third-Party Merchant Purchases: When you purchase a subscription, digital good, or service from a merchant through SubScript-hosted checkout pages, THE MERCHANT IS THE SOLE SELLER AND MERCHANT OF RECORD (MoR). Their individual terms of sale govern product eligibility, satisfaction guarantees, and refunds. SubScript provides non-custodial transaction routing, cryptographic receipt generation, and merchant webhook notification.",
-      "Direct SubScript Offerings: When you purchase SubScript's direct software offerings (specifically the SubScript Premium merchant subscription plan), SubScript is the seller of record, and Section 5 applies directly.",
+      "KYC Access Tiers: SubScript does not sell paid account-access tiers. Tier 0, Tier 1, and Tier 2 are verification states, not products or subscriptions.",
     ],
   },
   {
-    title: "2. Public Beta & Testnet Program Disclaimer",
+    title: "2. Mainnet Settlement & Test-Mode Separation",
     body: [
-      "SubScript currently operates in public beta on the Arc testnet (Chain ID 5042002). Every transaction executed during the beta settles in Arc testnet USDC, which is a synthetic test asset with zero cash, fiat, or market value.",
-      "Monetary refunds cannot and will not be issued for testnet transactions because no real economic funds ever move. If an accounting anomaly, unintended balance debit, or double-billing occurs during beta testing, report it immediately to compliance@subscriptonarc.com. We treat all testnet billing discrepancies as launch-blocking priority issues and will manually reconcile your account state, balances, and tier access.",
+      "SubScript settles production transactions on Arc Mainnet (Chain ID 5042) using native USDC. Mainnet transactions transfer assets with real economic value and are final once confirmed.",
+      "Test API keys and sandbox records are isolated from mainnet settlement. Arc testnet USDC and testnet contract addresses are never accepted as proof of a production payment. Report any settlement discrepancy to compliance@subscriptonarc.com.",
     ],
   },
   {
@@ -36,11 +36,11 @@ const sections = [
     ],
   },
   {
-    title: "5. Refunds for SubScript Premium (SubScript as Seller)",
+    title: "5. KYC Tiers & Protocol Billing Errors",
     body: [
-      "SubScript Premium merchant tiers are billed on a recurring period-by-period basis. Upon voluntary cancellation, your Premium tier features remain active until the conclusion of the prepaid period; recurring billing terminates immediately.",
-      "We do not offer prorated cash refunds for partial or unused periods resulting from voluntary cancellation, except where required by mandatory local consumer protection statutes.",
-      "Guaranteed Refund of Protocol Billing Errors: If you experience a protocol-level billing error—such as an automated debit occurring after verified cancellation, a duplicate charge for the same cycle, or a charge exceeding the published tier rate—contact compliance@subscriptonarc.com within thirty (30) days of the transaction. Verified errors will be refunded in USDC to the paying wallet within 5 business days.",
+      "KYC tiers are identity and compliance states. SubScript does not charge a recurring fee to move from Tier 0 to Tier 1 or Tier 2, and access is never activated through a paid tier subscription.",
+      "Any protocol or processing fee is disclosed before the transaction and is separate from KYC status. Merchant subscription refunds remain governed by the merchant policy and applicable law.",
+      "Guaranteed Correction of Protocol Billing Errors: If you experience an automated debit after verified cancellation, a duplicate charge for the same cycle, or another protocol-level billing error, contact compliance@subscriptonarc.com within thirty (30) days. Verified errors will be corrected or refunded in USDC to the paying wallet within 5 business days.",
     ],
   },
   {
@@ -142,11 +142,11 @@ export default function RefundPolicy() {
           <div className="mt-4 rounded-2xl border border-[#2775CA]/20 bg-[#2775CA]/5 p-4 text-xs leading-relaxed text-[#1d599b] space-y-2">
             <div className="flex items-center gap-2 font-bold text-sm text-[#2775CA]">
               <Shield className="w-4 h-4" />
-              <span>Public beta notice</span>
+              <span>Arc Mainnet notice</span>
             </div>
             <p>
-              SubScript currently runs on the Arc testnet. Beta payments settle in testnet USDC, which
-              has no monetary value — see Section 2.
+              SubScript production runs on Arc Mainnet (Chain ID 5042) using native USDC. Test-mode
+              assets are isolated from mainnet settlement — see Section 2.
             </p>
           </div>
         </div>

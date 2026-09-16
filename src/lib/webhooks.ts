@@ -4,7 +4,7 @@ import { validateWebhookUrl } from "@/lib/webhookUrls";
 import { arcReconciliation } from "@/lib/arc/reconciliation";
 import { paymentIdentityMetadata } from "@/lib/paymentLinks/beneficiary";
 import { activeArcChain } from "@/lib/wagmi";
-import { ARC_TESTNET_CHAIN_ID } from "@/lib/contracts/constants";
+import { ARC_MAINNET_CHAIN_ID, ARC_TESTNET_CHAIN_ID } from "@/lib/contracts/constants";
 
 const agentPool = new Map<string, any>();
 
@@ -25,7 +25,7 @@ function formatUsdc(value: bigint | string | number) {
 export function deriveEventEnvironment(chainId?: number | null): { environment: "TEST" | "LIVE"; livemode: boolean } {
     const effectiveChainId = chainId || activeArcChain.id;
     const isLive = effectiveChainId !== ARC_TESTNET_CHAIN_ID
-        && (effectiveChainId === 5042001 || process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet");
+        && (effectiveChainId === ARC_MAINNET_CHAIN_ID || process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet");
     return { environment: isLive ? "LIVE" : "TEST", livemode: isLive };
 }
 

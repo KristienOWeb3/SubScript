@@ -36,11 +36,11 @@ import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 /* ------------------------------------------------------------------ */
 
 const PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3" as const;
-const USDC_ADDRESS = "0x3600000000000000000000000000000000000000" as const;
+const USDC_ADDRESS = USDC_NATIVE_GAS_ADDRESS;
 
 const tabs = [
     { id: "overview", label: "Overview", icon: Activity },
-    { id: "premium", label: "Premium", icon: Crown },
+    { id: "advanced", label: "Advanced", icon: Sliders },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "payment-links", label: "Payments and Subscriptions", icon: Sliders },
     { id: "payroll", label: "Payroll", icon: Building2, href: "/merchant/payroll" },
@@ -50,7 +50,7 @@ const tabs = [
     { id: "settings", label: "Profile & DNS", icon: User },
 ] as const;
 
-type TabId = "overview" | "premium" | "analytics" | "payment-links" | "payroll" | "apikeys" | "checkout" | "webhooks" | "settings";
+type TabId = "overview" | "advanced" | "analytics" | "payment-links" | "payroll" | "apikeys" | "checkout" | "webhooks" | "settings";
 
 const publicClient = createPublicClient({
     chain: activeArcChain,
@@ -80,10 +80,10 @@ const PERMIT2_TYPES = {
     ],
 } as const;
 
-/* Permit2 EIP-712 domain on Arc Testnet */
+/* Permit2 signatures must bind to the active Arc chain; a testnet signature is invalid on mainnet. */
 const PERMIT2_DOMAIN = {
     name: "Permit2",
-    chainId: 5042002,
+    chainId: activeArcChain.id,
     verifyingContract: PERMIT2_ADDRESS,
 } as const;
 
@@ -185,8 +185,6 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
     const [campaigns, setCampaigns] = useState<PayrollCampaign[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
-    const [merchantTier, setMerchantTier] = useState<string | null>(null);
-    const [isLoadingTier, setIsLoadingTier] = useState(true);
     /* ----- Session & Embedded Wallet States ----- */
     const [embeddedWallet, setEmbeddedWallet] = useState<{ wallet: string; email: string } | null>(null);
     const [sessionWallet, setSessionWallet] = useState<string | null>(null);
@@ -204,7 +202,6 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
     const [vaultBalance, setVaultBalance] = useState(0);
     const [payoutDestination, setPayoutDestination] = useState<string | null>(null);
     const [walletBalance, setWalletBalance] = useState(0);
-    const [isPremium, setIsPremium] = useState(false);
     const [promptFlowMode, setPromptFlowMode] = useState<"standard" | "private">("standard");
     const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
     const [isDepositOpen, setIsDepositOpen] = useState(false);
@@ -219,7 +216,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
        would land at the first address. */
     const withdrawRequestIdsRef = useRef<Record<string, string>>({});
 
-    const pageIsLoading = isLoading || isLoadingTier || isAuthLoading;
+    const pageIsLoading = isLoading || isAuthLoading;
 
     /* ----- toast ----- */
     const [toast, setToast] = useState<ToastState>({ visible: false, message: "", type: "info" });
@@ -372,20 +369,8 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
             setPayoutDestination(payoutRaw && payoutRaw !== "0x0000000000000000000000000000000000000000" ? payoutRaw : null);
             setWalletBalance(parseFloat(formatUnits(walletRaw as bigint, 6)));
 
-            const tierRes = await fetch(`/api/merchant/tier?address=${address}`);
-            if (tierRes.ok) {
-                const tierData = await tierRes.json();
-                const hasPremium = Number(tierData.tier) >= 1;
-                setIsPremium(hasPremium);
-                setMerchantTier(hasPremium ? "PREMIUM" : "FREE");
-            } else {
-                setMerchantTier("FREE");
-                setIsPremium(false);
-            }
         } catch (error) {
             console.error("Error reading contract data in background:", error);
-        } finally {
-            setIsLoadingTier(false);
         }
     }, [address]);
 
@@ -883,7 +868,6 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                     embeddedWallet={embeddedWallet}
                     onDisconnect={handleLogout}
                     onDepositSuccess={handleDepositSuccess}
-                    isPremium={isPremium}
                     promptFlowMode={promptFlowMode}
                     onDeposit={() => setIsDepositOpen(true)}
                     activeTab="payroll"
@@ -949,9 +933,6 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                         >
                                             <tab.icon className={iconClasses} />
                                             {tab.label}
-                                            {tab.id === "premium" && isPremium && (
-                                                <span className="ml-auto text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-[#D4E3E8] dark:bg-white/10 text-[#082824] dark:text-white border border-black/10 dark:border-white/10">PRO</span>
-                                            )}
                                         </Link>
                                     );
                                 })}
@@ -989,31 +970,8 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                     </div>
                                 ) : (
                                     <div className="relative">
-                                        {/* High fidelity Gold Premium Lock Overlay */}
-                                        {!pageIsLoading && merchantTier === "FREE" && (
-                                            <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-[#1f2023] p-10 shadow-sm flex flex-col items-center justify-center text-center gap-6 min-h-[400px] relative overflow-hidden">
-                                                <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl -z-10" />
-                                                <div className="p-5 rounded-3xl bg-amber-500/10 dark:bg-amber-400/15 border border-amber-500/20 dark:border-amber-400/30 text-amber-700 dark:text-amber-300 animate-pulse">
-                                                    <Crown className="w-12 h-12" />
-                                                </div>
-                                                <div className="space-y-3 max-w-md">
-                                                    <h2 className="text-xl font-extrabold text-[#082824] dark:text-white uppercase tracking-wider">Premium Pro Feature Locked</h2>
-                                                    <p className="text-xs text-black/60 dark:text-white/60 leading-relaxed font-sans">
-                                                        Access to <span className="font-semibold text-[#082824] dark:text-white">Institutional Payroll</span> requires an active SubScript Premium subscription. Upgrade to unlock keys, private checkout generation, webhook event streaming, and batch payouts.
-                                                    </p>
-                                                </div>
-                                                <Link
-                                                    href="/merchant/upgrade"
-                                                    className="px-8 py-3 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-sm font-sans"
-                                                >
-                                                    <Crown className="w-4 h-4" />
-                                                    Upgrade to Premium Pro
-                                                </Link>
-                                            </div>
-                                        )}
-
-                                        {/* Main Payroll Content Container (hidden or blurred if locked) */}
-                                        <div className={merchantTier === "FREE" && !pageIsLoading ? "opacity-20 pointer-events-none filter blur-sm transition-all" : "transition-all"}>
+                                        {/* Main Payroll Content Container */}
+                                        <div className="transition-all">
                                             
                                             {/* Header Section */}
                                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 mb-8">
@@ -1443,7 +1401,6 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                     setIsWithdrawOpen(false);
                 }}
                 isWithdrawing={isWithdrawing}
-                isPremium={isPremium}
             />
             <DepositModal
                 isOpen={isDepositOpen}

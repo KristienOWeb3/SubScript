@@ -1,5 +1,5 @@
 import { withPgClient } from "@/lib/serverPg";
-import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
+import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS as RETIRED_PLAN_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 import { ALL_EVENT_TYPES, type EventType } from "@/lib/events/types";
 
 type WebhookData = Record<string, unknown>;
@@ -133,6 +133,10 @@ export async function processInboundSubscriptionWebhook(input: {
     txHash: string;
     merchantAddress: string;
 }): Promise<InboundWebhookResult> {
+    /* Paid access plans are retired. Delayed or replayed plan events cannot recreate one. */
+    if (input.merchantAddress === RETIRED_PLAN_RECIPIENT_ADDRESS.toLowerCase()) {
+        return { outcome: "obsolete" };
+    }
     return withPgClient(async (client) => {
         await client.query("begin");
         try {
@@ -179,9 +183,7 @@ export async function processInboundSubscriptionWebhook(input: {
                 );
                 const existing = (existingResult.rows[0] as ExistingSubscription | undefined) ?? null;
                 const incomingSubscriber = nullableString(input.data.subscriber)?.toLowerCase() ?? null;
-                const incomingKind = input.merchantAddress === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()
-                    ? "PREMIUM"
-                    : "CUSTOMER";
+                const incomingKind: string = "CUSTOMER";
 
                 if (existing?.kind === "PREMIUM" && incomingKind !== "PREMIUM") {
                     await client.query("commit");

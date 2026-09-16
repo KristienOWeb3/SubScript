@@ -43,9 +43,9 @@ test("merchant overview renders the wireframe sections and actions", () => {
         "Transactions Overview",
         "Plans Ranking",
         "Active Subscriptions",
+        "Deposit",
         "Send",
-        "Receive",
-        "Withdraw",
+        "Claim",
     ]) assert.match(html, new RegExp(label));
     /* The merchant must not see who is behind a subscription. */
     assert.doesNotMatch(html, /customer\.sub/);

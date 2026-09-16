@@ -125,7 +125,7 @@ export async function POST(request: Request) {
             try {
                 const orgAddress = campaign.organizationAddress.toLowerCase();
 
-                /* The organization's own hold on outbound money, checked before the premium lookup so
+                /* The organization's own hold on outbound money, checked before the KYC-tier lookup so
                    a held org costs nothing. This is the batch-payout case: one Permit2 signature the
                    keeper draws a whole payroll against, all of it leaving the org's wallet.
 
@@ -143,52 +143,11 @@ export async function POST(request: Request) {
                     continue;
                 }
 
-                /* Verify organization's premium status in database */
+                /* Verify organization exists */
                 const merchant = await prisma.merchant.findUnique({
                     where: { walletAddress: orgAddress }
                 });
 
-                /* merchants.tier is the canonical text column ("FREE" | "PREMIUM") since migration
-                   20260611; the legacy numeric "1" value was migrated to "PREMIUM" in 20260619. */
-                const isPremium = merchant?.tier === "PREMIUM";
-
-                if (!isPremium) {
-                    /* Organization is not premium, skip execution and pause the campaign */
-                    const revocationTxHash = await revokePayrollAuthority(orgAddress, campaign.id);
-                    await prisma.payrollCampaign.update({
-                        where: { id: campaign.id },
-                        data: {
-                            status: "PAUSED",
-                            permit2Signature: null,
-                            permit2Nonce: null,
-                            permit2Deadline: null,
-                            permit2Expiration: null,
-                            lastExecutionStatus: "AUTHORITY_REVOKED",
-                            lastExecutionTxHash: revocationTxHash,
-                        }
-                    });
-
-                    /* Write audit event */
-                    await prisma.auditEvent.create({
-                        data: {
-                            actor: "KEEPER_CRON",
-                            action: "PAYROLL_CAMPAIGN_PAUSED_NON_PREMIUM",
-                            resourceType: "PAYROLL_CAMPAIGN",
-                            resourceId: campaign.id,
-                            metadata: {
-                                error: "Organization does not hold premium tier",
-                                organization: orgAddress
-                            }
-                        }
-                    });
-
-                    executionResults.push({
-                        campaignId: campaign.id,
-                        status: "FAILED",
-                        reason: "Organization does not hold premium tier. Campaign paused."
-                    });
-                    continue;
-                }
 
                 if (campaign.recipients.length === 0) {
                     executionResults.push({

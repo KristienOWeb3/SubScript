@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { recordMerchantEvent } from "@/lib/events/recordMerchantEvent";
 import type { EventType } from "@/lib/events/types";
 import { activeArcChain } from "@/lib/wagmi";
-import { ARC_TESTNET_CHAIN_ID } from "@/lib/contracts/constants";
+import { ARC_MAINNET_CHAIN_ID, ARC_TESTNET_CHAIN_ID } from "@/lib/contracts/constants";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { deliverWebhookOutboxEvent } from "@/lib/webhookOutbox";
 
@@ -14,8 +14,8 @@ export function resolveEnvironment(data: Record<string, unknown>): "TEST" | "LIV
         return data.livemode ? "LIVE" : "TEST";
     }
     const chainId = Number(data.chainId || data.chain_id || 0);
-    if (chainId === 5042002) return "TEST";
-    if (chainId === 5042001) return "LIVE";
+    if (chainId === ARC_TESTNET_CHAIN_ID) return "TEST";
+    if (chainId === ARC_MAINNET_CHAIN_ID) return "LIVE";
     if (chainId > 0) return chainId === ARC_TESTNET_CHAIN_ID ? "TEST" : "LIVE";
     const isMainnet = activeArcChain.id !== ARC_TESTNET_CHAIN_ID && process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet";
     return isMainnet ? "LIVE" : "TEST";

@@ -12,7 +12,7 @@
 
 import { NextResponse } from "next/server";
 import { apiError } from "@/lib/apiErrors";
-import { authenticateMerchant, requireEnterpriseAndPremium } from "@/lib/v1/merchantAuth";
+import { authenticateMerchant, requireEnterpriseAndTier1 } from "@/lib/v1/merchantAuth";
 import { resolveApiSubscription } from "@/lib/subscriptions/apiSubscriptionResolve";
 import { DELETE as deleteSubscription } from "../route";
 
@@ -23,9 +23,9 @@ export async function GET(
     try {
         const auth = await authenticateMerchant(request);
         if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-        const premiumCheck = await requireEnterpriseAndPremium(auth.merchantAddress);
-        if (!premiumCheck.ok) {
-            return NextResponse.json({ error: premiumCheck.error }, { status: premiumCheck.status });
+        const tierCheck = await requireEnterpriseAndTier1(auth.merchantAddress);
+        if (!tierCheck.ok) {
+            return NextResponse.json({ error: tierCheck.error }, { status: tierCheck.status });
         }
 
         const { id } = await params;

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Wallet, Copy, Check, LogOut, Eye, EyeOff, User, Globe } from "@/components/icons";
+import { Wallet, Copy, Check, LogOut, Eye, EyeOff, User, Globe, Shield, AlertCircle } from "@/components/icons";
 import NotificationBell from "@/components/dashboard/NotificationBell";
 
 interface UserDashboardHeaderProps {
@@ -11,6 +11,7 @@ interface UserDashboardHeaderProps {
     profilePic: string | null;
     walletBalance: number;
     activeTab: string;
+    tier?: number;
     onTabChange: (tab: any) => void;
     onLogout: () => void;
 }
@@ -21,6 +22,7 @@ export default function UserDashboardHeader({
     profilePic,
     walletBalance,
     activeTab,
+    tier = 1,
     onTabChange,
     onLogout,
 }: UserDashboardHeaderProps) {
@@ -67,6 +69,17 @@ export default function UserDashboardHeader({
                         {userWallet ? (
                             <div className="flex items-center gap-1 min-w-0">
                                 <NotificationBell audience="USER" accent="#ccff00" />
+                                {/* KYC Tier Badge */}
+                                <div
+                                    className={`flex items-center gap-1 px-2 py-0.5 rounded-full border text-[9px] font-bold uppercase tracking-wider ${
+                                        tier >= 1
+                                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                            : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                    }`}
+                                    title={tier >= 1 ? "Tier 1: Verified" : "Tier 0: Basic (Link email to unlock transactions)"}
+                                >
+                                    <span>{tier >= 1 ? "Tier 1" : "Tier 0"}</span>
+                                </div>
                                 {/* Address/Domain pill */}
                                 <button
                                     onClick={() => onTabChange("dns")}
@@ -129,6 +142,19 @@ export default function UserDashboardHeader({
                                             <Copy className="w-3 h-3 text-white/30 group-hover:text-white/50 transition-colors" />
                                         )}
                                     </button>
+
+                                    {/* KYC Tier Badge */}
+                                    <div
+                                        className={`hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full border text-[10px] font-bold uppercase tracking-wider ${
+                                            tier >= 1
+                                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                                : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                        }`}
+                                        title={tier >= 1 ? "Tier 1: Verified (Email linked / MCP)" : "Tier 0: Basic (Link email to unlock transactions)"}
+                                    >
+                                        {tier >= 1 ? <Shield className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+                                        <span>{tier >= 1 ? "Tier 1: Verified" : "Tier 0: Basic"}</span>
+                                    </div>
 
                                     {/* Balance */}
                                     <div className="hidden sm:block text-right px-2 sm:px-3">

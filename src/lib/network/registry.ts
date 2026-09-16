@@ -69,6 +69,15 @@ const ADDRESS_ENV = new Set([
     "TREASURY_ADDRESS",
 ]);
 
+/* Defaults in constants.ts are Arc-testnet deployments. A syntactically valid testnet address
+   must still fail the mainnet gate. Native USDC is intentionally absent: Arc exposes the same
+   0x3600... interface on both networks, so chain/RPC binding provides that separation. */
+const TESTNET_ONLY_ADDRESS_ENV: Readonly<Record<string, string>> = {
+    NEXT_PUBLIC_SUBSCRIPT_ROUTER_ADDRESS: "0x6946B7746c2968B195BD15319D25F67E587CAe3C",
+    NEXT_PUBLIC_STANDARD_CONTRACT_ADDRESS: "0x59Df2224E7f9Dced25f3AAee9fff939f92f5F4D2",
+    NEXT_PUBLIC_CONFIDENTIAL_CONTRACT_ADDRESS: "0x59Df2224E7f9Dced25f3AAee9fff939f92f5F4D2",
+    NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS: "0x853581e119dDED32DB886a4533A11789cF60bBFc",
+};
 export interface MainnetValidation {
     ok: boolean;
     missing: string[];
@@ -92,13 +101,17 @@ export function validateMainnetConfiguration(): MainnetValidation {
         if (ADDRESS_ENV.has(name) && !/^0x[a-fA-F0-9]{40}$/.test(value)) {
             malformed.push(name);
         }
+        const testnetOnlyAddress = TESTNET_ONLY_ADDRESS_ENV[name];
+        if (testnetOnlyAddress && value.toLowerCase() === testnetOnlyAddress.toLowerCase()) {
+            malformed.push(name);
+        }
         if (name === "NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID" && Number(value) !== ARC_MAINNET_CHAIN_ID) {
             malformed.push(name);
         }
         if (name === "CIRCLE_ARC_BLOCKCHAIN" && value.toUpperCase() !== "ARC") {
             malformed.push(name);
         }
-        if (name === "NEXT_PUBLIC_ARC_RPC_PRIMARY" && !/^https:\/\//.test(value)) {
+        if (name === "NEXT_PUBLIC_ARC_RPC_PRIMARY" && (!/^https:\/\//.test(value) || /testnet/i.test(value))) {
             malformed.push(name);
         }
     }

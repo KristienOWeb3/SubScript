@@ -482,12 +482,6 @@ export async function POST(request: Request) {
                 { status: 401 },
             );
         }
-        if (BigInt(ProtocolConfig.CHAIN_ID) !== BigInt(ARC_TESTNET_CHAIN_ID)) {
-            return NextResponse.json(
-                { error: "Usage reporting is unavailable: this deployment is not configured for Arc testnet settlement." },
-                { status: 503 },
-            );
-        }
 
         const apiKeyRecord = await prisma.apiKey.findFirst({
             where: { secretKeyHash: hashSecretKey(secretKey) }
@@ -500,14 +494,6 @@ export async function POST(request: Request) {
         }
 
         const merchantAddress = apiKeyRecord.walletAddress.toLowerCase();
-
-        const merchant = await prisma.merchant.findUnique({
-            where: { walletAddress: merchantAddress },
-            select: { tier: true }
-        });
-        if (!merchant || merchant.tier !== "PREMIUM") {
-            return NextResponse.json({ error: "Forbidden: API keys and usage reporting require a Premium merchant plan." }, { status: 403 });
-        }
 
         const body = await request.json().catch(() => null);
         if (!body || typeof body !== "object") {

@@ -224,18 +224,19 @@ function PopupContent() {
 
 
 
+    const isSignIn = getAuthIntent() === "signin";
     const title = step === "challenge"
         ? "Security Verification"
         : step === "complete"
-            ? "Welcome to SubScript"
+            ? (isSignIn ? "Welcome back" : "Welcome to SubScript")
             : step === "error"
                 ? "Sign In Notice"
-                : "Signing in with Google";
+                : (isSignIn ? "Signing in with Google" : "Signing up with Google");
 
     const message = step === "challenge"
         ? "Please complete the verification step to finish setting up your account."
         : step === "complete"
-            ? "Google account verified. Redirecting you to your dashboard..."
+            ? (isSignIn ? "Google account verified. Redirecting you to your dashboard..." : "Account created. Redirecting you to your dashboard...")
             : "Connecting your Google account and verifying your details...";
 
     return (

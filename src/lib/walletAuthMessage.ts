@@ -1,6 +1,6 @@
 /* The ACTIVE Arc chain per NEXT_PUBLIC_ENVIRONMENT — kept dependency-free because this
    message format is shared verbatim by client and server signature verification. */
-const ACTIVE_ARC_CHAIN_ID = process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet" ? 5_042_001 : 5_042_002;
+const ACTIVE_ARC_CHAIN_ID = process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet" ? 5042 : 5_042_002;
 
 export function buildWalletAuthMessage(args: {
     address: string;

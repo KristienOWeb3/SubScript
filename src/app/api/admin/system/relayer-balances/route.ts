@@ -91,7 +91,7 @@ export async function GET(request: Request) {
     readNative({
       chainKey: "arc",
       rpc: getArcRpcUrl(),
-      chainName: isProd ? "Arc" : "Arc Testnet",
+      chainName: isProd ? "Arc Mainnet" : "Arc Testnet",
       symbol: "USDC",
     }),
   ];

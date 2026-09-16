@@ -42,7 +42,7 @@ export function AdminRelayerBalancesCard() {
       }
       setBalances(Array.isArray(data?.balances) ? data.balances : []);
       setRelayerAddress(data?.relayerAddress || "");
-      setSolanaRelayerAddress(data?.solanaRelayerAddress || "");
+      setSolanaRelayerAddress(data?.solanaRelayerAddress || "GSJ729WXUt7bWGo92ZrfJu5yB6XJYkoG21NFGZM7HPLg");
       setEnvironment(data?.environment || "");
       setLastChecked(new Date().toLocaleTimeString());
       setError(null);
@@ -103,7 +103,11 @@ export function AdminRelayerBalancesCard() {
           <div>
             <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a] flex items-center gap-2">
               Relayer gas by chain
-              {environment === "testnet" && (
+              {environment === "mainnet" ? (
+                <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-700">
+                  Mainnet
+                </span>
+              ) : (
                 <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-700">
                   Testing
                 </span>

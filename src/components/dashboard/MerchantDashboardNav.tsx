@@ -45,7 +45,6 @@ export default function MerchantDashboardNav({
     verified,
     isAdmin,
     mobileEnabled,
-    isPremium,
     isLoading = false,
     onLogout,
 }: {
@@ -57,7 +56,6 @@ export default function MerchantDashboardNav({
     verified?: boolean;
     isAdmin?: boolean;
     mobileEnabled?: boolean;
-    isPremium?: boolean;
     isLoading?: boolean;
     onLogout?: () => void;
 }) {
@@ -132,26 +130,19 @@ export default function MerchantDashboardNav({
                 )}
 
                 <div className={`flex min-h-full flex-col ${isLoading ? "invisible" : ""}`}>
-                    {/* Header: Title + Premium Diamond */}
+                    {/* Header: Title + Advanced Settings Button */}
                     <div className="flex items-center justify-between">
                         <span className="text-[20px] font-extrabold tracking-tight text-white">
                             MERCHANT
                         </span>
                         <div className="relative">
-                            {isPremium && (
-                                <span className="absolute -inset-1 rounded-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 opacity-80 blur-sm animate-pulse pointer-events-none" />
-                            )}
                             <button
-                                onClick={() => onSelect("premium")}
-                                className={`relative flex h-8 w-8 items-center justify-center rounded-full bg-[#D4E3E8] text-[#082824] transition hover:brightness-95 shadow-sm ${
-                                    isPremium
-                                        ? "ring-2 ring-amber-400/90 shadow-[0_0_16px_rgba(245,158,11,0.6)]"
-                                        : ""
-                                }`}
-                                aria-label="Open Premium"
-                                title={isPremium ? "Premium Pro Active" : "Open Premium"}
+                                onClick={() => onSelect("advanced")}
+                                className="relative flex h-8 w-8 items-center justify-center rounded-full bg-[#D4E3E8] text-[#082824] transition hover:brightness-95 shadow-sm"
+                                aria-label="Open Advanced Settings"
+                                title="Advanced Settings"
                             >
-                                <Crown className="h-4 w-4" />
+                                <Sliders className="h-4 w-4" />
                             </button>
                         </div>
                     </div>
@@ -214,12 +205,12 @@ export default function MerchantDashboardNav({
                                 </button>
                                 <button
                                     onClick={() => {
-                                        onSelect("premium");
+                                        onSelect("advanced");
                                         setAccountMenuOpen(false);
                                     }}
                                     className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-white/90 hover:bg-white/10 transition"
                                 >
-                                    <Crown className="h-4 w-4 text-amber-400" /> Premium Pro Plan
+                                    <Sliders className="h-4 w-4 text-white/70" /> Advanced Settings
                                 </button>
                                 <Link
                                     href="/support"
@@ -362,14 +353,22 @@ export default function MerchantDashboardNav({
                         </div>
                     </nav>
 
-                    {/* Bottom: Settings & Help Center */}
+                    {/* Bottom: Advanced, Settings & Help Center */}
                     <div className="mt-auto space-y-1.5 pt-6">
+                        <button
+                            onClick={() => onSelect("advanced")}
+                            className={rowClass(activeId === "advanced")}
+                            title="Advanced"
+                        >
+                            <Sliders className="h-4 w-4 shrink-0" />
+                            <span>Advanced</span>
+                        </button>
                         <button
                             onClick={() => onSelect("settings")}
                             className={rowClass(activeId === "settings")}
                             title="Settings"
                         >
-                            <Sliders className="h-4 w-4 shrink-0" />
+                            <User className="h-4 w-4 shrink-0" />
                             <span>Settings</span>
                         </button>
                         <Link
@@ -473,12 +472,12 @@ export default function MerchantDashboardNav({
                             </button>
                             <button
                                 onClick={() => {
-                                    onSelect("premium");
+                                    onSelect("advanced");
                                     setMoreOpen(false);
                                 }}
-                                className={childClass(activeId === "premium")}
+                                className={childClass(activeId === "advanced")}
                             >
-                                <Crown className="h-4 w-4" /> Premium
+                                <Sliders className="h-4 w-4" /> Advanced
                             </button>
                             <button
                                 onClick={() => {
@@ -487,7 +486,7 @@ export default function MerchantDashboardNav({
                                 }}
                                 className={childClass(activeId === "settings")}
                             >
-                                <Sliders className="h-4 w-4" /> Settings
+                                <User className="h-4 w-4" /> Settings
                             </button>
                             <Link
                                 href="/support"

@@ -101,7 +101,7 @@ const structuredData = {
             operatingSystem: "Web",
             url: appUrl,
             description: siteDescription,
-            softwareVersion: "Public Beta (Arc Testnet)",
+            softwareVersion: "Arc Mainnet",
             offers: {
                 "@type": "Offer",
                 price: "0",

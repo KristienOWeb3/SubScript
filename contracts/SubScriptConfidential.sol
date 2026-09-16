@@ -201,7 +201,7 @@ contract SubScriptConfidential is SubScriptPSA, Ownable {
            precompile shields protocol-level state, not the submitted calldata. */
         if (isShielded) {
             require(
-                block.chainid == 5042001 || block.chainid == 5042002 || block.chainid == 31337,
+                block.chainid == 5042 || block.chainid == 5042001 || block.chainid == 5042002 || block.chainid == 31337,
                 "Confidential shielding precompile is only available on Arc network or local Hardhat"
             );
             address precompile = address(0x0000000000000000000000000000000000000088);

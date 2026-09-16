@@ -22,12 +22,12 @@ describe("CCTP Deposit Backend Edge Cases & Flaw Fixes", () => {
   });
 
   it("verifies Arc native deposits have 0% fee", () => {
-    const isArc = (chainId) => chainId === ARC_TESTNET_CHAIN_ID || chainId === ARC_MAINNET_CHAIN_ID;
+    const isArc = (chainId) => chainId === ARC_TESTNET_CHAIN_ID || chainId === ARC_MAINNET_CHAIN_ID || chainId === 5042;
     assert.equal(isArc(5042002), true);
-    assert.equal(isArc(5042001), true);
+    assert.equal(isArc(5042), true);
     assert.equal(isArc(84532), false);
 
-    const feeBpsArc = isArc(5042002) ? 0 : 50;
+    const feeBpsArc = isArc(5042) ? 0 : 50;
     assert.equal(feeBpsArc, 0);
     assert.equal(formatFeeBps(feeBpsArc), "0%");
   });

@@ -332,11 +332,11 @@ export default function VaultShareManager({
                 )}
             </div>
 
-            {/* Primary Commit ID Pill with 1-Tap Copy */}
+            {/* Merchant Commit ID Pill with 1-Tap Copy */}
             <div className="flex items-center justify-between gap-2 rounded-2xl border border-black/10 dark:border-white/10 bg-[#FFFFF0] dark:bg-black/30 px-3.5 py-2 text-black dark:text-white shadow-sm">
                 <div className="flex items-center gap-2 min-w-0">
                     <span className="text-[10px] font-black uppercase tracking-wider text-black/60 dark:text-white/60 shrink-0">
-                        Primary Commit ID:
+                        Merchant Commit ID:
                     </span>
                     {copiedId === data?.rootCommitId && (
                         <span className="rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[8px] font-bold text-emerald-600 dark:text-emerald-400 shrink-0">
@@ -357,8 +357,8 @@ export default function VaultShareManager({
                             type="button"
                             onClick={() => copyId(data.rootCommitId)}
                             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-black/15 dark:border-white/15 bg-white dark:bg-white/10 text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/15 transition shadow-sm"
-                            title="Copy Primary Commit ID"
-                            aria-label="Copy Primary Commit ID"
+                            title="Copy Merchant Commit ID"
+                            aria-label="Copy Merchant Commit ID"
                         >
                             {copiedId === data.rootCommitId ? (
                                 <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />

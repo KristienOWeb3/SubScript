@@ -7,6 +7,7 @@ import { getWalletCustody, type WalletCustody } from "@/lib/custody";
 import {
     SUBSCRIPT_VAULT_ADDRESS,
     SUBSCRIPT_VAULT_CHAIN_ID,
+    ARC_MAINNET_CHAIN_ID,
     USDC_NATIVE_GAS_ADDRESS,
 } from "@/lib/contracts/constants";
 
@@ -83,7 +84,7 @@ export async function syncVaultMirror(user: string, merchant: string): Promise<V
     const normalizedUser = user.toLowerCase();
     const normalizedMerchant = merchant.toLowerCase();
     const v = await readVault(normalizedUser, normalizedMerchant);
-    const environment = SUBSCRIPT_VAULT_CHAIN_ID === 5042001 ? "LIVE" : "TEST";
+    const environment = SUBSCRIPT_VAULT_CHAIN_ID === ARC_MAINNET_CHAIN_ID ? "LIVE" : "TEST";
 
     const cycleStart = v.cycleStart > BigInt(0) ? new Date(Number(v.cycleStart) * 1000) : null;
     const lockedUntil = v.lockedUntil > BigInt(0) ? new Date(Number(v.lockedUntil) * 1000) : null;

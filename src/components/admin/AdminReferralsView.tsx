@@ -38,6 +38,7 @@ import {
   Maximize2,
   Minimize2,
 } from "lucide-react";
+import { explorerAddressUrl } from "@/lib/network/registry";
 import { SkeletonStatGrid, SkeletonTable, SkeletonCard } from "@/components/ui/skeletons";
 
 type Timeframe = "all" | "30d" | "7d" | "24h";
@@ -697,7 +698,7 @@ export function AdminReferralsView() {
                                   )}
                                 </button>
                                 <a
-                                  href={`https://explorer.arc.network/address/${item.referrerAddress}`}
+                                  href={explorerAddressUrl(item.referrerAddress)}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   title="View on Arc Explorer"

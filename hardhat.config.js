@@ -36,8 +36,8 @@ module.exports = {
 
     /* Arc Mainnet */
     arcMainnet: {
-      url: process.env.RPC_URL || "https://rpc.mainnet.arc.network",
-      chainId: 5042001,
+      url: process.env.ARC_MAINNET_RPC_URL || process.env.NEXT_PUBLIC_ARC_RPC_PRIMARY || "https://rpc.mainnet.arc.io",
+      chainId: 5042,
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
     },
   },

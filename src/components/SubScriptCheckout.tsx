@@ -19,11 +19,14 @@ import { arcHttp } from "@/lib/arc/transport";
 import { 
   ARC_CCTP_DOMAIN_ID,
   ARC_TESTNET_CHAIN_ID,
+  ARC_MAINNET_CHAIN_ID,
   ARC_MESSAGE_TRANSMITTER_ADDRESS,
   SUBSCRIPT_ROUTER_ADDRESS,
   STANDARD_CONTRACT_ADDRESS, 
   USDC_NATIVE_GAS_ADDRESS,
-  CCTP_CONFIG
+  CCTP_CONFIG,
+  CCTP_IRIS_BASE_URL,
+  isProd
 } from "@/lib/contracts/constants";
 import { STANDARD_SUBSCRIPT_ABI, SUBSCRIPT_ROUTER_ABI, USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import { Loader2, CheckCircle, AlertCircle, ShoppingBag } from "@/components/icons";
@@ -231,7 +234,7 @@ export default function SubScriptCheckout({
       while (attempts < 60) {
         attempts++;
         try {
-          const res = await fetch(`https://iris-api-sandbox.circle.com/attestations/${messageHash}`);
+          const res = await fetch(`${CCTP_IRIS_BASE_URL}/attestations/${messageHash}`);
           const data = await res.json();
           if (data.status === "complete") {
             const rawHex = data.attestation;
@@ -248,9 +251,10 @@ export default function SubScriptCheckout({
         throw new Error("Timeout waiting for Circle attestation signature.");
       }
 
-      // Step 5: Switch back to the validated Arc Testnet destination
-      setStatusMessage("Switching network back to Arc Testnet...");
-      await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+      // Step 5: Switch back to the validated Arc destination
+      const targetArcChainId = isProd ? ARC_MAINNET_CHAIN_ID : ARC_TESTNET_CHAIN_ID;
+      setStatusMessage(`Switching network back to Arc (${isProd ? "Mainnet" : "Testnet"})...`);
+      await switchChainAsync({ chainId: targetArcChainId });
 
       // Step 6: Mint USDC on Arc
       setStatusMessage("Minting USDC on Arc Network...");
@@ -331,7 +335,7 @@ export default function SubScriptCheckout({
     }
 
     if (mode === "private") {
-      setErrorMessage("Premium routing mode is currently unavailable.");
+      setErrorMessage("Privacy routing mode is currently unavailable.");
       setLoadingState("error");
       return;
     }

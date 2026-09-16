@@ -109,7 +109,7 @@ const protocolTargets = [
   },
   {
     title: "ArcaneVM Privacy",
-    body: "Privacy Premium surfaces exist with a 10 USDC/month baseline target. ArcaneVM confidentiality and governed visibility should remain deployment-scoped until verified against the live Arc environment.",
+    body: "Privacy controls are available to Tier 1 merchants. ArcaneVM confidentiality and governed visibility remain deployment-scoped until verified against the live Arc environment.",
   },
 ];
 

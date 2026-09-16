@@ -68,20 +68,11 @@ export async function POST(request: Request) {
         const body = await request.json();
         const { shieldedPayoutsEnabled, viewKeyHash } = body;
 
-        /* Verify that the merchant's tier equals PREMIUM */
-        const { data: merchantData, error: tierError } = await supabaseAdmin
-            .from("merchants")
-            .select("tier")
-            .eq("wallet_address", normalizedUser)
-            .maybeSingle();
-
-        if (tierError) {
-            console.error("Database query for tier failed:", tierError);
-            return NextResponse.json({ error: "Database error verifying tier" }, { status: 500 });
-        }
-
-        if (!merchantData || merchantData.tier === "FREE") {
-            return NextResponse.json({ error: "Forbidden: Premium Pro merchant tier required to modify ArcaneVM shielded settings" }, { status: 403 });
+        /* Verify that the merchant is at least Tier 1 (KYC verified) */
+        const { getAccountKycTier } = await import("@/lib/kyc/tier");
+        const tierInfo = await getAccountKycTier(normalizedUser);
+        if (tierInfo.tier < 1) {
+            return NextResponse.json({ error: "Forbidden: Tier 1 verification required to modify ArcaneVM shielded settings (link a verified email)." }, { status: 403 });
         }
 
         if (shieldedPayoutsEnabled === undefined && viewKeyHash === undefined) {

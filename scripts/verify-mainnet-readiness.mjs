@@ -6,7 +6,7 @@
  * File: scripts/verify-mainnet-readiness.mjs
  * ==============================================================================
  *
- * Validates pre-flight conditions before cutover to Arc Mainnet (Chain ID 5042001):
+ * Validates pre-flight conditions before cutover to Arc Mainnet (Chain ID 5042):
  *   1. Mainnet Environment Configuration (12 fail-closed variables from registry.ts)
  *   2. Smart Contract Artifacts (ABI & Bytecode existence in artifacts/contracts/)
  *   3. Database Migrations & Prisma Client integrity
@@ -70,8 +70,7 @@ const REQUIRED_CONTRACTS = [
 
 // Sensitive file patterns that must never be staged in Git
 const SENSITIVE_STAGED_PATTERNS = [
-    /^\.env(?:\.local|\.production|\.development)?$/i,
-    /(?:^|\/)\.env/i,
+    /(?:^|\/)\.env(?!\.example)(?:$|\.local|\.production|\.development|\.staging|\.test)/i,
     /\b(?:id_rsa|id_ed25519)\b/i,
     /\.(?:pem|key|pfx|p12)$/i,
     /secret/i,
@@ -109,17 +108,17 @@ function checkMainnetEnvironment() {
         if (isMockEnv) {
             // Apply mock mainnet variables for simulation
             effectiveEnv.NEXT_PUBLIC_ENVIRONMENT = "mainnet";
-            effectiveEnv.NEXT_PUBLIC_SUBSCRIPT_ROUTER_ADDRESS = "0x6946B7746c2968B195BD15319D25F67E587CAe3C";
-            effectiveEnv.NEXT_PUBLIC_STANDARD_CONTRACT_ADDRESS = "0x59Df2224E7f9Dced25f3AAee9fff939f92f5F4D2";
-            effectiveEnv.NEXT_PUBLIC_CONFIDENTIAL_CONTRACT_ADDRESS = "0x59Df2224E7f9Dced25f3AAee9fff939f92f5F4D2";
-            effectiveEnv.NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS = "0x853581e119dDED32DB886a4533A11789cF60bBFc";
-            effectiveEnv.NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID = "5042001";
-            effectiveEnv.NEXT_PUBLIC_PREMIUM_PAYMENT_RECIPIENT_ADDRESS = "0x725D56151CeaC9eAd625241D13b8307B22EDDb10";
+            effectiveEnv.NEXT_PUBLIC_SUBSCRIPT_ROUTER_ADDRESS = "0x48188a5729f8B1260cF525aD04f79fE19749f4D4";
+            effectiveEnv.NEXT_PUBLIC_STANDARD_CONTRACT_ADDRESS = "0xdb69519b777dA81E59dCa75B9095E832A639B1eF";
+            effectiveEnv.NEXT_PUBLIC_CONFIDENTIAL_CONTRACT_ADDRESS = "0x866186BE217b1bdA1aCF9755cB22D4E4793a9B37";
+            effectiveEnv.NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS = "0xB38Dd5af7d134454F911b4be024c0ccaaE3cA4D3";
+            effectiveEnv.NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID = "5042";
+            effectiveEnv.NEXT_PUBLIC_PREMIUM_PAYMENT_RECIPIENT_ADDRESS = "0x59e6970Eac4c9A44247adf975c462d17c94135ee";
             effectiveEnv.NEXT_PUBLIC_ARC_MEMO_CONTRACT_ADDRESS = "0x5294E9927c3306DcBaDb03fe70b92e01cCede505";
-            effectiveEnv.NEXT_PUBLIC_ARC_MESSAGE_TRANSMITTER_ADDRESS = "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275";
+            effectiveEnv.NEXT_PUBLIC_ARC_MESSAGE_TRANSMITTER_ADDRESS = "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64";
             effectiveEnv.NEXT_PUBLIC_USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
-            effectiveEnv.NEXT_PUBLIC_ARC_RPC_PRIMARY = "https://rpc.mainnet.arc.network";
-            effectiveEnv.TREASURY_ADDRESS = "0x725D56151CeaC9eAd625241D13b8307B22EDDb10";
+            effectiveEnv.NEXT_PUBLIC_ARC_RPC_PRIMARY = "https://rpc.mainnet.arc.io";
+            effectiveEnv.TREASURY_ADDRESS = "0x59e6970Eac4c9A44247adf975c462d17c94135ee";
             effectiveEnv.CIRCLE_ARC_BLOCKCHAIN = "ARC";
         } else {
             // Force mainnet evaluation mode so validateMainnetConfiguration does not skip
@@ -140,9 +139,9 @@ function checkMainnetEnvironment() {
         wrapper(
             (specifier) => ({
                 isProd: true,
-                ARC_MAINNET_CHAIN_ID: 5042001,
+                ARC_MAINNET_CHAIN_ID: 5042,
                 ARC_TESTNET_CHAIN_ID: 5042002,
-                ARC_MAINNET: { id: 5042001, blockExplorers: { default: { url: "https://arcscan.app" } } },
+                ARC_MAINNET: { id: 5042, blockExplorers: { default: { url: "https://explorer.arc.io" } } },
                 ARC_TESTNET: { id: 5042002, blockExplorers: { default: { url: "https://testnet.arcscan.app" } } },
             }),
             testModule,
@@ -454,7 +453,7 @@ function renderResults(results) {
             JSON.stringify(
                 {
                     timestamp: new Date().toISOString(),
-                    network: "Arc Mainnet (5042001)",
+                    network: "Arc Mainnet (5042)",
                     overallReady,
                     readinessScore: Math.round((totalScore / maxScore) * 100),
                     summary: { passed: passedCount, warnings: warnCount, failed: failedCount, total: maxScore },
@@ -477,7 +476,7 @@ function renderResults(results) {
     console.log("");
     console.log(`${c.bold}${c.cyan}╔══════════════════════════════════════════════════════════════════════════════════════════════════════╗${c.reset}`);
     console.log(`${c.bold}${c.cyan}║                         SUBSCRIPT PROTOCOL — MAINNET PRE-FLIGHT READINESS CLI                        ║${c.reset}`);
-    console.log(`${c.bold}${c.cyan}║                         Target Network: Arc Mainnet (Chain ID: 5042001)                              ║${c.reset}`);
+    console.log(`${c.bold}${c.cyan}║                         Target Network: Arc Mainnet (Chain ID: 5042)                                 ║${c.reset}`);
     console.log(`${c.bold}${c.cyan}╚══════════════════════════════════════════════════════════════════════════════════════════════════════╝${c.reset}`);
     console.log("");
 

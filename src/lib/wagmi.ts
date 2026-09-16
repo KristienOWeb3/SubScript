@@ -14,16 +14,19 @@ import {
     polygonAmoy,
 } from "viem/chains";
 import { arcHttp } from "@/lib/arc/transport";
+import { ARC_MAINNET_CHAIN_ID, ARC_TESTNET_CHAIN_ID } from "@/lib/contracts/constants";
 
 /* Arc network is selected by NEXT_PUBLIC_ENVIRONMENT ("mainnet" => Arc mainnet, anything else =>
    testnet), so the client targets the same chain the cutover env vars point the contracts at.
    Defaults to testnet, so current behaviour is unchanged until NEXT_PUBLIC_ENVIRONMENT=mainnet. */
 const isArcMainnet = process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet";
-const arcChainId = isArcMainnet ? 5042001 : 5042002;
+const arcChainId = isArcMainnet
+    ? (Number(process.env.NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID) || ARC_MAINNET_CHAIN_ID)
+    : ARC_TESTNET_CHAIN_ID;
 const arcRpcUrl =
     process.env.NEXT_PUBLIC_ARC_RPC_PRIMARY ||
     process.env.NEXT_PUBLIC_ARC_RPC_URL ||
-    (isArcMainnet ? "https://rpc.mainnet.arc.network" : "https://rpc.testnet.arc.network");
+    (isArcMainnet ? "https://rpc.mainnet.arc.io" : "https://rpc.testnet.arc.network");
 
 /* The ACTIVE Arc chain (mainnet or testnet) per NEXT_PUBLIC_ENVIRONMENT above. */
 export const activeArcChain = defineChain({
@@ -46,7 +49,7 @@ export const activeArcChain = defineChain({
     blockExplorers: {
         default: {
             name: "Arc Explorer",
-            url: isArcMainnet ? "https://arcscan.app" : "https://testnet.arcscan.app",
+            url: isArcMainnet ? "https://explorer.arc.io" : "https://testnet.arcscan.app",
         },
     },
 });
@@ -78,9 +81,9 @@ export const config = createConfig({
     ],
     connectors: [injected({ shimDisconnect: true })],
     transports: {
-        /* Both Arc chain ids map to the active RPC; only the selected one (arcChainId) is used. */
-        5042002: arcTransport,
-        5042001: arcTransport,
+        /* Both supported Arc networks map to the active RPC; only arcChainId is used. */
+        [ARC_TESTNET_CHAIN_ID]: arcTransport,
+        [ARC_MAINNET_CHAIN_ID]: arcTransport,
         1: fallback([
             http("https://cloudflare-eth.com"),
             http("https://ethereum-rpc.publicnode.com"),

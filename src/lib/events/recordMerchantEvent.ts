@@ -57,7 +57,9 @@ export interface RecordMerchantEventResult {
     envelope: EventEnvelope;
 }
 
-const DEFAULT_CHAIN_ID = 5042002;
+import { ARC_MAINNET_CHAIN_ID, ARC_TESTNET_CHAIN_ID, isProd } from "@/lib/contracts/constants";
+
+const DEFAULT_CHAIN_ID = isProd ? ARC_MAINNET_CHAIN_ID : ARC_TESTNET_CHAIN_ID;
 
 /**
  * Record a canonical merchant event and fan out to active endpoints.

@@ -6,7 +6,7 @@ import {
 } from "@/lib/contracts/constants";
 import { prisma } from "@/lib/prisma";
 import { apiError } from "@/lib/apiErrors";
-import { authenticateMerchant, requireEnterpriseAndPremium } from "@/lib/v1/merchantAuth";
+import { authenticateMerchant, requireEnterpriseAndTier1 } from "@/lib/v1/merchantAuth";
 import { buildSubscribeUrl } from "@/lib/checkoutUrl";
 import { generateReceiptId } from "@/lib/arc/memo";
 import { sanitizeInput } from "@/utils/security";
@@ -77,8 +77,8 @@ export async function GET(request: Request) {
     try {
         const auth = await authenticateMerchant(request);
         if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-        const premiumCheck = await requireEnterpriseAndPremium(auth.merchantAddress);
-        if (!premiumCheck.ok) return NextResponse.json({ error: premiumCheck.error }, { status: premiumCheck.status });
+        const tierCheck = await requireEnterpriseAndTier1(auth.merchantAddress);
+        if (!tierCheck.ok) return NextResponse.json({ error: tierCheck.error }, { status: tierCheck.status });
         const merchantWallet = auth.merchantAddress;
 
         const { searchParams } = new URL(request.url);
@@ -183,8 +183,8 @@ export async function POST(request: Request) {
     try {
         const auth = await authenticateMerchant(request);
         if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-        const premiumCheck = await requireEnterpriseAndPremium(auth.merchantAddress, auth.mode);
-        if (!premiumCheck.ok) return NextResponse.json({ error: premiumCheck.error }, { status: premiumCheck.status });
+        const tierCheck = await requireEnterpriseAndTier1(auth.merchantAddress, auth.mode);
+        if (!tierCheck.ok) return NextResponse.json({ error: tierCheck.error }, { status: tierCheck.status });
 
         const merchantAddress = auth.merchantAddress;
 
@@ -521,8 +521,8 @@ export async function DELETE(request: Request) {
     try {
         const auth = await authenticateMerchant(request);
         if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-        const premiumCheck = await requireEnterpriseAndPremium(auth.merchantAddress);
-        if (!premiumCheck.ok) return NextResponse.json({ error: premiumCheck.error }, { status: premiumCheck.status });
+        const tierCheck = await requireEnterpriseAndTier1(auth.merchantAddress);
+        if (!tierCheck.ok) return NextResponse.json({ error: tierCheck.error }, { status: tierCheck.status });
         const merchantAddress = auth.merchantAddress;
 
         const { searchParams } = new URL(request.url);

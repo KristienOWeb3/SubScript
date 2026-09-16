@@ -52,7 +52,7 @@ test("enabling a mandate is gated exactly like moving money", () => {
 
     assert.match(route, /getSessionWallet\(request\.headers\)/);
     assert.match(route, /requireAccountRole\(wallet, "USER"\)/);
-    assert.match(route, /getVerifiedAccountEmail\(wallet\)/);
+    assert.match(route, /getAccountKycTier\(wallet\)/);
     assert.match(route, /assertFinancialNetworkReady\(\)/);
     assert.match(route, /UNVERIFIED_MERCHANT/);
     /* Signs an approve, so an ambiguous response must be retryable without a second allowance. */

@@ -49,7 +49,7 @@ export default function UpaPage() {
           ],
           [
             "Protocol coverage",
-            "Current platform surfaces include Checkout Intents, payment links, metered vaults, signed webhooks, receipts, DNS-style aliases, premium privacy flows, retries, reconciliation, and keeper-triggered renewals.",
+            "Current platform surfaces include Checkout Intents, payment links, metered vaults, signed webhooks, receipts, DNS-style aliases, privacy-aware payment flows, retries, reconciliation, and keeper-triggered renewals.",
             Globe,
           ],
         ].map(([title, text, Icon]) => (

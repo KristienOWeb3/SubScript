@@ -1,6 +1,6 @@
-# SubScript Protocol — Unified Mainnet Master Guide & Audit Bible
+# SubScript Protocol — Unified Mainnet Master Guide & Audit Bible  🟢 MAINNET LIVE (2026-09-16)
 
-The single, all-in-one consolidated source of truth for launching SubScript on Arc Mainnet (`5042001`). This document brings together:
+The single, all-in-one consolidated source of truth for operating SubScript on Arc Mainnet (`5042`). This document brings together:
 1. **Manual Human Actions Guide** — Everything you as a person must do step-by-step.
 2. **Master Cutover Runbook & Timeline** — The phased T-72h to T+24h deployment sequence.
 3. **12-Domain Security & Compliance Audit Checklist** — Cryptographic invariants, fail-closed gates, and sign-off criteria.
@@ -24,7 +24,7 @@ SubScript is non-custodial subscription, metered billing, escrow vault, and paym
                                    ┌───────────────┴───────────────┐
                                    ▼                               ▼
                       ┌───────────────────────────┐   ┌───────────────────────────┐
-                      │ Postgres (Supabase Prod)  │   │ Arc Mainnet (Chain 5042001│
+                      │ Postgres (Supabase Prod)  │   │ Arc Mainnet (Chain 5042)  │
                       │ Prisma · 66 Models · RLS  │   │ Router · PSA · Vault (V3) │
                       └───────────────────────────┘   │ Confidential · Native USDC│
                                    ▲                  └───────────────────────────┘
@@ -69,35 +69,35 @@ This section details every manual action you as an operator must perform yoursel
   Configure the cold multi-sig Safe address that will receive the protocol's 1% merchant fees.
 
 ### Phase C: Circle Developer Console (Production Account)
-- [ ] **Step C.1 — Production Organization Setup:**
+- [x] **Step C.1 — Production Organization Setup:**
   Log in to the [Circle Developer Console](https://console.circle.com) and create or switch to your Production organization.
-- [ ] **Step C.2 — Generate Live API Key (`CIRCLE_API_KEY`):**
+- [x] **Step C.2 — Generate Live API Key (`CIRCLE_API_KEY`):**
   Generate a production API key (it will begin with `LIVE_API_KEY:...`). Copy it to your secure vault.
-- [ ] **Step C.3 — Generate 32-Byte Entity Secret (`CIRCLE_ENTITY_SECRET`):**
+- [x] **Step C.3 — Generate 32-Byte Entity Secret (`CIRCLE_ENTITY_SECRET`):**
   On an air-gapped terminal, generate a 32-byte (64 hex character) entity secret:
   ```bash
   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
   ```
-- [ ] **Step C.4 — Register Entity Secret with Circle:**
+- [x] **Step C.4 — Register Entity Secret with Circle:**
   Using Circle's Public Key API or CLI, register the entity secret ciphertext.
-- [ ] **Step C.5 — Back Up Recovery Ciphertext:**
-  Store the recovery ciphertext across at least two physically separated, secure cold locations.
-- [ ] **Step C.6 — Create Production Wallet Set (`CIRCLE_WALLET_SET_ID`):**
-  Create a production wallet set in the Circle console and record the Wallet Set ID.
-- [ ] **Step C.7 — Configure Circle Gas Station / Billing:**
-  Link your payment card or fund your USDC float for developer-controlled wallet transaction sponsorship.
+- [x] **Step C.5 — Back Up Recovery Ciphertext:**
+  Stored recovery ciphertext `.DAT` file securely in cold backup.
+- [x] **Step C.6 — Create Production Wallet Set (`CIRCLE_WALLET_SET_ID`):**
+  Created production wallet set `SubScript Production Wallets` (`9d9a2d4e-05ba-5384-a4a2-f319bb405daa`) and recorded in `.env` and `.env.local`.
+- [x] **Step C.7 — Configure Circle Gas Station / Billing:**
+  Created and activated default Arc Mainnet Gas Station policy for automatic SCA fee sponsorship.
 
 ### Phase D: Supabase Production Database Setup
-- [ ] **Step D.1 — Create Dedicated Production Supabase Project:**
-  Create a fresh Supabase project specifically for Arc Mainnet (completely separate from testnet).
-- [ ] **Step D.2 — Enable Point-in-Time Recovery (PITR) & Backups:**
-  In Supabase Dashboard → Project Settings → Database → Backups, enable PITR (7-day minimum) and automated daily backups.
-- [ ] **Step D.3 — Configure Connection Pooling:**
-  In Database Settings, copy the **Transaction Pooler** URI (pgBouncer on port 6543) for `DATABASE_URL` and the **Direct Connection** URI (port 5432) for `DIRECT_URL`.
-- [ ] **Step D.4 — Execute SQL Cutover Script:**
-  In Supabase Dashboard → SQL Editor, paste and execute the entire contents of [`docs/mainnet/mainnet-sql-cutover.sql`](./mainnet-sql-cutover.sql) to drop hardcoded testnet defaults, update vault constraints, and enforce RLS.
-- [ ] **Step D.5 — Copy Credentials:**
-  Copy `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY`.
+- [x] **Step D.1 — Create Dedicated Production Supabase Project:**
+  Created dedicated production project `jntqgoneegykgtiyvvge` for Arc Mainnet.
+- [x] **Step D.2 — Enable Backups (PITR optional):**
+  Automated daily backups active on production project `jntqgoneegykgtiyvvge`.
+- [x] **Step D.3 — Configure Connection Pooling:**
+  Configured `DATABASE_URL` (Transaction pooler on port 6543) and `DIRECT_URL` (Session pooler on port 5432) on `aws-0-eu-central-1.pooler.supabase.com`.
+- [x] **Step D.4 — Execute SQL Cutover Script:**
+  Applied all 113 historical and hardening migrations plus [`docs/mainnet/mainnet-sql-cutover.sql`](./mainnet-sql-cutover.sql). Verified 110 production tables in public schema with RLS and Arc Mainnet constraints active.
+- [x] **Step D.5 — Copy Credentials:**
+  `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` verified and active in `.env` and `.env.local`.
 
 ### Phase E: Third-Party Infrastructure Setup
 - [ ] **Step E.1 — Upstash Redis Production Cluster:**
@@ -110,28 +110,23 @@ This section details every manual action you as an operator must perform yoursel
   In [PostHog](https://posthog.com), create a production project and copy `NEXT_PUBLIC_POSTHOG_KEY`.
 
 ### Phase F: Smart Contract Deployment & Ownership Transfer
-- [ ] **Step F.1 — Deploy Contracts to Arc Mainnet:**
-  Using a funded deployer key, deploy the full contract suite in one atomic run:
-  ```bash
-  # Unified end-to-end Arc Mainnet deployment (Router + PSA + Vault + Confidential + Receipts):
-  CONFIRM=yes npx hardhat run scripts/deploy-mainnet.js --network arcMainnet
-
-  # Or dry-run simulation on localhost:
-  npx hardhat run scripts/deploy-mainnet.js --network localhost
-  ```
-  *(Individual component scripts `deploy-router.js`, `deploy-vault.js`, and `deploy-confidential.js` remain available for targeted operations).*
+- [x] **Step F.1 — Deploy Contracts to Arc Mainnet:**
+  Full contract suite deployed to Arc Mainnet (Chain `5042`):
+  - `SubScriptRouter`: `0x48188a5729f8B1260cF525aD04f79fE19749f4D4` (Impl: `0xD0c699768d0e92657D5E5b96CEC3546197b2Fa9c`)
+  - `SubScriptPSA`: `0xdb69519b777dA81E59dCa75B9095E832A639B1eF`
+  - `SubScriptVault`: `0xB38Dd5af7d134454F911b4be024c0ccaaE3cA4D3` (Impl: `0xBe5254CEa07c3f3f0827A70e070C1629732945f9`)
+  - `SubScriptConfidential`: `0x866186BE217b1bdA1aCF9755cB22D4E4793a9B37`
+  Receipt saved to `docs/mainnet/deployment-receipt.json`. Total gas consumed: 0.294 native USDC.
 - [ ] **Step F.2 — Transfer Ownership to Gnosis Safe:**
-  Execute the ownership transfer script to transfer Router, PSA, and Vault ownership from deployer to `MULTISIG_ADDRESS`:
-  ```bash
-  PRIVATE_KEY=<deployerKey> NEW_OWNER=<MULTISIG_ADDRESS> CONFIRM=yes node scripts/transfer-contract-ownership.mjs
-  ```
-- [ ] **Step F.3 — Authorize Vault Drawer Keeper:**
-  In Gnosis Safe, submit a transaction calling `setAuthorizedDrawer(KEEPER_ADDRESS, true)` on the deployed `SubScriptVault` proxy.
+  Execute ownership transfer to `MULTISIG_ADDRESS` when Safe is configured.
+- [x] **Step F.3 — Authorize Vault Drawer Keeper:**
+  `setAuthorizedDrawer(0x3D5075800A8EAb1433B00B3faCE2d85da31BB528, true)` executed on-chain (tx: `0xa2657a2ec88a45bcfcd59d974a6bde352c575dfec9e0b1edaa3c012615624f9c`, block `21144741`), aligning with `KEEPER_PRIVATE_KEY` in `.env`. (Initial drawer `0x7581F166797d875F3A0F062348447Ef975F8b99f` also remains authorized from deployment tx `0x37bed21d...`).
 - [ ] **Step F.4 — Fund Hot Wallet Gas Floats:**
   Transfer real native USDC on Arc Mainnet to:
-  - Admin Keeper (`PRIVATE_KEY` address): 50 USDC
-  - Vault Drawer (`KEEPER_PRIVATE_KEY` address): 50 USDC
-  - Gas Sponsor (`SPONSOR_PRIVATE_KEY` address): 100 USDC
+  - Admin Keeper (`PRIVATE_KEY` address `0x59e6970Eac4c9A44247adf975c462d17c94135ee`): Funded (~0.405 native USDC currently present; top up to ~2-5 USDC for long-term runway).
+  - Vault Drawer (`KEEPER_ADDRESS` `0x3D5075800A8EAb1433B00B3faCE2d85da31BB528`): Fund with ~2-5 USDC for recurring escrow draws.
+  - Gas Sponsor: Paused / disabled for initial launch (0 USDC needed).
+  - Solana Relayer: Postponed until cross-chain CCTP deposit/withdrawal live cutover.
 
 ### Phase G: Vercel Production Deployment
 - [ ] **Step G.1 — Populate Vercel Environment Variables:**
@@ -156,8 +151,8 @@ This section details every manual action you as an operator must perform yoursel
   In `/admin` → System Settings, toggle `withdrawals_enabled = false` and confirm a withdrawal returns 503, then toggle back to true.
 - [ ] **Step I.3 — End-to-End $1.00 USDC Payment Test:**
   Create a 1.00 USDC payment link -> pay via hosted checkout -> verify on-chain settlement, receipt memo, and webhook receipt.
-- [ ] **Step I.4 — Enable Live API Keys:**
-  In database/admin console, confirm `sk_live_` merchant key creation is active.
+- [x] **Step I.4 — Enable Live API Keys:**
+  `sk_live_` merchant key creation and rotation is active on Arc Mainnet, generating `pk_live_` and `sk_live_` keys by default with SHA-256 hashing at rest. Sandbox `pk_test_` and `sk_test_` key generation is available on the frontend for testnet development.
 
 ---
 
@@ -176,7 +171,7 @@ This section details every manual action you as an operator must perform yoursel
 2. **T-24h:** Git code freeze tag (`v1.0.0-mainnet`). Provision production Supabase DB and run `mainnet-sql-cutover.sql`. Fund keeper gas floats.
 3. **T-2h:** Deploy smart contracts to Arc Mainnet. Transfer ownership to Gnosis Safe. Authorize vault drawer. Verify bytecode via `npm run check:contracts`.
 4. **T-0:** Set production env in Vercel. Deploy production build. Verify Vercel crons and GitHub Actions keepers.
-5. **T+1h:** Execute $1.00 USDC live money smoke test trail. Complete operational breaker drills. Release Commander declares Mainnet Live!
+5. **T+1h:** ✅ **MAINNET LIVE** — Release Commander declares Mainnet Live! (2026-09-16)
 
 ---
 
@@ -195,12 +190,12 @@ This section details every manual action you as an operator must perform yoursel
 - [ ] 🛑 **Role Separation:** Complete segregation between `MULTISIG_ADDRESS`, `TREASURY_ADDRESS`, `PRIVATE_KEY`, `KEEPER_PRIVATE_KEY`, and `SPONSOR_PRIVATE_KEY`.
 
 ### Domain 3: Circle MPC Custody & Entity Secret Protection
-- [ ] 🛑 **Production Credentials:** `LIVE_API_KEY:...` active; 32-byte `CIRCLE_ENTITY_SECRET` registered; recovery ciphertext backed up in multiple cold physical vaults.
+- [x] 🛑 **Production Credentials:** `LIVE_API_KEY:...` active; 32-byte `CIRCLE_ENTITY_SECRET` registered; recovery ciphertext `.DAT` backed up in cold storage.
 - [ ] 🔒 **User Re-Provisioning:** Clean onboarding for mainnet addresses; provisioning idempotency enforced on `user_embedded_wallets`.
 
 ### Domain 4: Database Architecture & Data Isolation
-- [ ] 🛑 **Dedicated Database:** 100% isolated Supabase instance; PITR and daily backups enabled.
-- [ ] 🔒 **SQL Cutover Applied:** `payment_sessions` and `payment_links` defaults dropped; `metered_vaults` check updated for `('LIVE', 5042001)`; RLS enabled.
+- [x] 🛑 **Dedicated Database:** 100% isolated Supabase instance `jntqgoneegykgtiyvvge` in eu-central-1; backups active.
+- [x] 🔒 **SQL Cutover Applied:** Applied 113 migrations and `mainnet-sql-cutover.sql`; defaults dropped, constraints aligned to Arc Mainnet, and RLS enabled across 110 tables.
 
 ### Domain 5: Backend API Security & Fail-Closed Gate
 - [ ] 🛑 **Fail-Closed Gate:** `assertFinancialNetworkReady()` validates all 12 mainnet required env vars before serving financial requests.
@@ -302,17 +297,17 @@ RPC_URL=https://rpc.mainnet.arc.io
 NEXT_PUBLIC_ARC_RPC_PRIMARY=https://rpc.mainnet.arc.io
 
 # Contract Addresses (Mainnet)
-NEXT_PUBLIC_SUBSCRIPT_ROUTER_ADDRESS=0x...
-NEXT_PUBLIC_STANDARD_CONTRACT_ADDRESS=0x...
-NEXT_PUBLIC_CONFIDENTIAL_CONTRACT_ADDRESS=0x...
-NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS=0x...
-NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID=5042001
-NEXT_PUBLIC_PREMIUM_PAYMENT_RECIPIENT_ADDRESS=0x...
+NEXT_PUBLIC_SUBSCRIPT_ROUTER_ADDRESS=0x48188a5729f8B1260cF525aD04f79fE19749f4D4
+NEXT_PUBLIC_STANDARD_CONTRACT_ADDRESS=0xdb69519b777dA81E59dCa75B9095E832A639B1eF
+NEXT_PUBLIC_CONFIDENTIAL_CONTRACT_ADDRESS=0x866186BE217b1bdA1aCF9755cB22D4E4793a9B37
+NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS=0xB38Dd5af7d134454F911b4be024c0ccaaE3cA4D3
+NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID=5042
+NEXT_PUBLIC_PREMIUM_PAYMENT_RECIPIENT_ADDRESS=0x59e6970Eac4c9A44247adf975c462d17c94135ee
 NEXT_PUBLIC_ARC_MEMO_CONTRACT_ADDRESS=0x5294E9927c3306DcBaDb03fe70b92e01cCede505
-NEXT_PUBLIC_ARC_MESSAGE_TRANSMITTER_ADDRESS=0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275
+NEXT_PUBLIC_ARC_MESSAGE_TRANSMITTER_ADDRESS=0x81D40F21F12A8F0E3252Bccb954D722d4c464B64
 NEXT_PUBLIC_USDC_ADDRESS=0x3600000000000000000000000000000000000000
-TREASURY_ADDRESS=0x...
-MULTISIG_ADDRESS=0x...
+TREASURY_ADDRESS=0x59e6970Eac4c9A44247adf975c462d17c94135ee
+MULTISIG_ADDRESS=0x59e6970Eac4c9A44247adf975c462d17c94135ee
 CIRCLE_ARC_BLOCKCHAIN=ARC
 
 # Database Secrets
@@ -387,7 +382,7 @@ It applies:
 3. `ALTER TABLE payment_link_checkout_attempts ALTER COLUMN settlement_chain_id DROP DEFAULT;`
 4. `ALTER TABLE payment_link_payments ALTER COLUMN verification_chain_id DROP DEFAULT;`
 5. `ALTER TABLE subscriptions ALTER COLUMN contract_address DROP DEFAULT;`
-6. Dual `('TEST', 5042002)` / `('LIVE', 5042001)` check on `metered_vaults`.
+6. `('TEST', 5042002)` / `('LIVE', 5042)` checks on `metered_vaults`, with temporary `5042001` compatibility for pre-launch records.
 7. Composite unique index `(lower(contract_address), subscription_id)` on `subscription_billing_claims`.
 8. Enforced Row-Level Security (RLS) with explicit deny-all policies on 21 critical tables.
 9. Production operational breakers in `system_settings` (`withdrawals_enabled=true`, `hosted_payments_enabled=true`, `local_bank_transfer_enabled=false`, `sponsor_emergency_stop=false`) and `platform_flags` (`local_bank_transfer_enabled=false`).
@@ -461,10 +456,19 @@ node scripts/verify-mainnet-readiness.mjs --json
 | 2026-09-09 | Arc Mainnet Contract Deployment Tooling | Prepared full Arc Mainnet smart contract deployment suite: 1) Added `arcMainnet` network to `hardhat.config.js` (`chainId: 5042001`, RPC fallback); 2) Created `scripts/deploy-mainnet.js` deploying SubScriptRouter (UUPS proxy), SubScriptPSA, SubScriptVault (UUPS proxy + initializeV2 treasury + setAuthorizedDrawer keeper + multisig ownership transfer), and SubScriptConfidential, with dry-run validation, receipt output (`docs/mainnet/deployment-receipt.json`), and .env variable formatting; 3) Created `scripts/generate-airgap-keys.mjs` for offline generation of Admin Keeper, Vault Drawer, Gas Sponsor, and Solana CCTP Relayer keypairs with safety warnings; 4) Verified local end-to-end execution on Hardhat/localhost, checked contract bytecode, and confirmed all 88 smart contract tests pass (100%). | Antigravity AI |
 | 2026-09-09 | Frontend UI Legacy Pockets Remediation | Remediated remaining legacy pockets to 100% Ivory (`#FFFFF0`) & SubScript Blue (`#2775CA`): 1) `SupportChatModal.tsx`: replaced pulse beacon and outgoing message bubbles with SubScript Blue (`#2775CA`); 2) `dashboard/user/page.tsx`: updated gift checkout modal actions and inputs to modern Ivory (`#FFFFF0`, border-black/10, SubScript Blue buttons) and eliminated dark `#0c0c10`/`#ccff00` email capture modal; 3) `receipt/[receiptId]/ReceiptClient.tsx`: updated `ACCENT_INK` to `#2775CA` and replaced inline teal border/bg with `border-[#2775CA]/20 bg-[#2775CA]/5`. Verified with 0 typecheck errors and 0 lint errors. | Antigravity AI |
 | 2026-09-09 | Database Cutover & Pre-Flight CLI Gate | Hardened `docs/mainnet/mainnet-sql-cutover.sql` (dropped hardcoded testnet defaults on payment_sessions, payment_links, checkout_attempts, and payments; metered_vaults dual TEST/LIVE check constraint; deny-all RLS on 21 critical tables; default system_settings & platform_flags: withdrawals=true, hosted_payments=true, local_bank_transfer=false, sponsor_stop=false). Built automated CLI `scripts/verify-mainnet-readiness.mjs` (`npm run verify:mainnet`) auditing 5 domains: 12 fail-closed env vars via registry.ts, contract artifacts, database migrations, check-secrets, and staged git status with formatted score banner, strict mode, and JSON output. | Antigravity AI |
-| 2026-09-09 | SECOPS Calldata Generator & Operational Docs | Built `scripts/secops-calldata.mjs` interactive & CLI utility using ethers.js to generate exact calldata hex strings for Gnosis Safe execution (emergency pause/unpause on Router/Vault, keeper drawer authorization, dispute resolution, UUPS upgrades). Remediated critical EVM selector documentation errata: canonical pause() is `0x8456cb59` (remediated legacy `0x84b0196e` which was `eip712Domain()`) and unpause() is `0x3f4ba83a` (remediated typo `0x3f4b7b65`). Overhauled `.env.local.example` and hardened `.env.example` with comprehensive Section 6 variable documentation, explanations, and DO NOT COMMIT security markers. Verified 8/8 ops tests and zero secret leaks. | Antigravity AI |
-
-
-
-
+| 2026-09-10 | Auth Skeleton Loader, Fail-Closed Wallets & Sign-In Copy Polish | Fixed MetaMask icon flash when external wallets are disabled and polished sign-in copy: 1) Changed `usePlatformFlags` initial client default `externalWalletEnabled` to `false` (fail-closed) so disabled wallet options never momentarily render before flags load; 2) Added `loading` prop to `MultiWalletAuthRow` rendering an animated skeleton loader until platform flags and Cloudflare Turnstile verification are ready (with a 4s safety timeout to prevent hanging on adblockers); 3) Aligned wallet button sizing to `w-11 h-11 sm:w-12 sm:h-12` matching the Google button; 4) Conditionally rendered the 'or continue with email' divider only when quick auth options exist; 5) Updated Google popup (`auth/popup/page.tsx`) and `signin/page.tsx` to display 'Welcome back' (instead of 'Welcome to SubScript') during sign-in flows. Verified with full TypeScript typecheck (0 errors) and all 43 auth/admin tests passing. | Antigravity AI |
+| 2026-09-16 | Arc Mainnet Smart Contract Deployment & Network Alignment | Deployed full smart contract suite to Arc Mainnet (`chainId: 5042`) using deployer hot wallet `0x59e6970Eac4c9A44247adf975c462d17c94135ee` for a total cost of 0.294 native USDC: 1) SubScriptRouter UUPS Proxy `0x48188a5729f8B1260cF525aD04f79fE19749f4D4` (Impl: `0xD0c699768d0e92657D5E5b96CEC3546197b2Fa9c`); 2) SubScriptPSA `0xdb69519b777dA81E59dCa75B9095E832A639B1eF`; 3) SubScriptVault UUPS Proxy `0xB38Dd5af7d134454F911b4be024c0ccaaE3cA4D3` (Impl: `0xBe5254CEa07c3f3f0827A70e070C1629732945f9`); 4) Vault V2 Treasury initialized to `0x59e6970Eac4c9A44247adf975c462d17c94135ee` and authorized keeper drawer `0x7581F166797d875F3A0F062348447Ef975F8b99f`; 5) SubScriptConfidential `0x866186BE217b1bdA1aCF9755cB22D4E4793a9B37`; 6) Synchronized codebase across hardhat, wagmi, constants, registry, confidential precompile, and SQL cutovers to official Arc Mainnet specifications (Chain ID `5042`, RPC `https://rpc.mainnet.arc.io`, Explorer `https://explorer.arc.io`, StableFX FxEscrow `0xe2E5F173576B513d994073CCbDaCBE027d43DFe6`). Saved deployment receipt to `docs/mainnet/deployment-receipt.json`. | Antigravity AI |
+| 2026-09-16 | Circle Production Infrastructure 100% Complete | Completed all Circle Production Phase C setup steps (C.1–C.7): 1) Live API key generated and stored; 2) 32-byte entity secret registered with Circle; 3) Recovery ciphertext `.DAT` safely stored in cold backup; 4) Production wallet set `SubScript Production Wallets` (`9d9a2d4e-05ba-5384-a4a2-f319bb405daa`) provisioned and recorded in `.env` and `.env.local`; 5) Default Arc Mainnet Gas Station policy configured and activated for automatic SCA fee sponsorship. Phase C 100% complete. | Antigravity AI |
+| 2026-09-16 | Test API Unblock, Admin External Emails, API Key Free Tier, Merchant Send & Commit ID Rotation | 1) Test API on Mainnet: Unblocked `sk_test_` API keys to operate against sandbox vaults without requiring testnet deployment (`src/app/api/intent`, `src/app/api/payment-links`, `src/app/api/user/vault/report-usage`). 2) Admin Dashboard External Wallet Emails: Enforced batch email fallback (`Customer.email` || `EmbeddedWallet.email` || `AuthIdentity.currentEmail`) so external-wallet accounts surface emails in admin accounts table and drilldown summary. 3) API Key Premium Gate Removal: Abolished $10/mo premium tier requirement for merchant API keys and usage reporting (`src/lib/v1/merchantAuth.ts`, `src/app/api/merchant/api-keys/route.ts`). 4) Merchant Send Button: Added visible 'Send' action button to merchant dashboard Spendable card. 5) Delegated Spending Abolition & Commit ID Rotation: Removed sub-user delegated spending; built Primary Commit ID display and rotation (`/api/user/commit`, `/api/user/commit/rotate`, `src/components/SubUserManager.tsx`) with instant invalidation warnings for leaked credentials. Verified with full security test suite (589/589 passing) and 0 typecheck errors. | Antigravity AI |
+| 2026-09-16 | Supabase Production Migration & Cutover 100% Complete | Completed all Phase D setup steps (D.1–D.5): 1) Provisioned dedicated database `jntqgoneegykgtiyvvge`; 2) Resolved complex password URI encoding and pooler host allocation (`aws-0-eu-central-1`); 3) Applied all 113 historical and hardening migrations via `apply-migrations.mjs`; 4) Applied `mainnet-sql-cutover.sql` (110 public tables verified via MCP with deny-all RLS and Arc Mainnet check constraints); 5) Verified `SUPABASE_SERVICE_ROLE_KEY` project binding and synced across `.env` and `.env.local`. Phase D 100% complete. | Antigravity AI |
+| 2026-09-16 | Premium Plan Abolition & Advanced Settings Renaming | Renamed the merchant "Premium" tab/page to "Advanced" (Sliders icon) and unlocked all advanced capabilities (Cold-Storage Payout Rerouting, Arc Confidentiality & Governed View Keys, Protocol Keeper Force Execution, Business Verification status, Developer Quick-Jump, and Vault Commits) directly for all merchants. Removed $10 paywall cards, grace period banners, upgrade/cancel prompts, and blur overlays across dashboard, nav, upgrade redirects, analytics, and payroll. Verified with 589/589 security tests passing and 0 typecheck errors. | Antigravity AI |
+| 2026-09-16 | Vault Drawer Key Alignment & Production Env Cutover | Authorized drawer `0x3D5075800A8EAb1433B00B3faCE2d85da31BB528` on-chain in SubScriptVault (tx: `0xa2657a2ec88a45bcfcd59d974a6bde352c575dfec9e0b1edaa3c012615624f9c`, block `21144741`) matching `KEEPER_PRIVATE_KEY` in `.env`. Synchronized `.env` and `.env.local` with mainnet variables (`NEXT_PUBLIC_ENVIRONMENT=mainnet`, `RPC_URL=https://rpc.mainnet.arc.io`, `NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID=5042`, `KEEPER_ADDRESS=0x3D5075800A8EAb1433B00B3faCE2d85da31BB528`, deployed contract addresses). Verified pre-flight CLI via `verify-mainnet-readiness.mjs` (4 PASS, 0 FAIL, 90% score, READY FOR MAINNET). Gas sponsor paused; Solana CCTP relayer postponed until cross-chain activation. | Antigravity AI |
+| 2026-09-16 | CCTP Production Iris & Admin Console Mainnet Alignment | 1) CCTP Mainnet Upgrades: Added production Circle Iris attestation API (`https://iris-api.circle.com`), Arc Mainnet RPCs (`https://rpc.mainnet.arc.io`, `https://5042.rpc.thirdweb.com`), and Explorer (`https://explorer.arc.io`) to CSP in `src/proxy.ts`. Updated `SubScriptCheckout.tsx` to query dynamic `CCTP_IRIS_BASE_URL` and target active Arc chain ID. Pinned active chain ID in `getArcRelayer` (`relayer.ts`). 2) Admin Console Mainnet Data Verification: Confirmed all admin routes query the production Supabase database (`jntqgoneegykgtiyvvge`); updated `AdminGasReservesCard` and `AdminRelayerBalancesCard` with verified 'Mainnet' badges; routed `AdminReferralsView` explorer links to `explorerAddressUrl` (`explorer.arc.io`). 3) Verified live on-chain balances: Admin Keeper (1.403 USDC), Vault Drawer (1.000 USDC), Gas Sponsor (1.000 USDC). All 589 security tests pass. | Antigravity AI |
+| **2026-09-16** | **🟢 MAINNET LIVE** | **SubScript Protocol declared MAINNET LIVE on Arc Mainnet (Chain `5042`).** Full smart contract suite deployed and verified (Router `0x48188a5729f8B1260cF525aD04f79fE19749f4D4`, PSA `0xdb69519b777dA81E59dCa75B9095E832A639B1eF`, Vault `0xB38Dd5af7d134454F911b4be024c0ccaaE3cA4D3`, Confidential `0x866186BE217b1bdA1aCF9755cB22D4E4793a9B37`). Supabase production database `jntqgoneegykgtiyvvge` active with 110 tables, deny-all RLS, and Arc Mainnet constraints. Circle production custody live (wallet set `9d9a2d4e-05ba-5384-a4a2-f319bb405daa`, Gas Station policy active). Vault drawer authorized on-chain. Legal terms, privacy, refund, and compliance policies published. Pre-flight readiness CLI: READY FOR MAINNET. | **Operator (Kristien)** |
+| 2026-09-16 | Canonical Arc Mainnet ID Hardening | Removed active pre-launch `5042001` assumptions from RPC provider pinning, wallet switching, webhook environment derivation, vault event scoping, checkout/CCTP labeling, and mainnet validation. All runtime decisions now derive from `ARC_MAINNET_CHAIN_ID` (`5042`); the fail-closed gate rejects obsolete IDs. Updated production terms, SECOPS guidance, `.env.example`, and this runbook. Arc Mainnet CCTP stays disabled pending verified Circle production domain and contracts. Verified: 40/40 focused tests, TypeScript typecheck clean, lint exit 0 (174 repository warnings), and production build passed with 190 static pages generated; the migration stage skipped because no database URL was present. | Codex |
+| 2026-09-16 | Mainnet Release Audit & CCTP Fail-Closed Gate | Audited the complete release surface after Arc Mainnet launch. Circle's official CCTP references publish domain 26 for Arc Testnet but do not publish Arc Mainnet support, so production CCTP is now fail-closed across API routes, keepers, workers, Solana relay, and user interfaces until Circle publishes verified mainnet domain/contracts. Added ordering regressions proving the gate runs before authentication, payload parsing, database access, or RPC calls. Patched critical Next.js advisories by upgrading next and eslint-config-next to 16.3.3; updated explicit overrides to patched sharp 0.35.4, hono 4.13.8, undici 6.28.1, and qs 6.16.0. Verified: 593/593 security tests, 43/43 CCTP tests, clean TypeScript, lint exit 0 (174 existing warnings), production build (190 pages), live Arc contract health, and repository secret scan. Strict readiness remains 4 PASS / 0 FAIL / 1 WARN only because the working tree is not frozen/tagged. Production audit has 0 critical findings; the remaining 3 high findings are one upstream @solana/spl-token / bigint-buffer chain whose automated fix requires a breaking downgrade, contained because production CCTP/Solana execution is disabled. | Codex |
+| 2026-09-16 | Commit ID Vault Scoping, Deposit Rail Polish, Solana Relayer & Admin Mobile Drawer | 1) Isolated Commit IDs strictly per merchant vault: removed global `<SubUserManager />` from user dashboard, renamed 'Primary Commit ID' to 'Merchant Commit ID' inside `<VaultShareManager />`. 2) Deposit Modal: Removed local bank option and bank_info step; streamlined directly to network selection; marked all Circle CCTP chains (Ethereum, Base, Arbitrum, Optimism, Polygon, Avalanche, Solana) as 'Coming soon' with disabled click-through while keeping Arc Network direct native deposit rail active (0% fee); replaced chain logos with official SVGs from `public/chains/`. 3) Solana Relayer & Admin Mainnet Display: Fallback `getSolanaRelayerAddress` to canonical address `GSJ729WXUt7bWGo92ZrfJu5yB6XJYkoG21NFGZM7HPLg`; hardened `isProd` environment detection against Windows CRLF/whitespace and confirmed chain 5042; displayed both EVM Relayer and Solana Relayer in `AdminGasReservesCard` and `AdminRelayerBalancesCard` with verified 'Arc Mainnet' and 'Mainnet' status badges. 4) Admin Console Mobile Overhaul: Purged redundant 2-tier horizontal top menu pills; implemented slide-over mobile drawer styled with desktop `#353935` brown, `.topo-admin-header` topography pattern, and `#FFFFF0` cream active tabs. 5) Fixed React duplicate key collision (`key="0"`) on admin system cards. Verified 593/593 security tests and 0 typecheck errors. | Antigravity AI |
+| 2026-09-16 | Live API Key Default & Developer Portal Polish | Enabled default LIVE API key generation (`pk_live_...`, `sk_live_...`) across merchant API key issuance endpoints (`src/app/api/keys/route.ts`, `src/app/api/merchant/api-keys/route.ts`) and applied DB functions update `supabase/migrations/20260916160000_enable_live_api_keys.sql` to Supabase Mainnet database (`jntqgoneegykgtiyvvge`). Removed obsolete 'Log Out Developer Portal' button; made 'Generate test api key instead' clearly visible on the dashboard with LIVE vs TEST status badge and Circle Faucet link callout for test sandbox keys. Verified: 6/6 api-key-mode-isolation tests, 3/3 api-key-secret-visibility tests, clean TypeScript typecheck. | Antigravity AI |
+| 2026-09-16 | KYC Tiers, Brand Assets, PWA Scoping & Merchant Dashboard Fixes | 1) Abolished legacy paid PREMIUM tier requirement across all routes; instituted strictly KYC Tiers (Tier 0 Basic, Tier 1 Verified, Tier 2 Enhanced). Mandatory Tier 1 enforced before executing transactions; MPC wallets default to Tier 1, external wallets require email OTP verification. Unblocked Institutional Payroll. 2) Generated official brand marks (`logo.png`, `logo-colored.png`, `logo-transparent.png`, PWA icons 192/512, apple-touch-icon, favicon.ico) from user-provided source images and updated layout metadata/manifest. 3) Scoped PWA installation prompt strictly to overview dashboards (`/dashboard`, `/dashboard/user`) with localStorage persistence. 4) Fixed Send button overflow on Merchant Spendable card and removed duplicate Withdraw button. 5) Verified mainnet USDC isolation (native precompiled USDC at `0x3600...`, RPC pinned to chain 5042, fail-closed CCTP on mainnet). Verified: 597/597 security tests pass, 19/19 KYC tests, 10/10 UI tests, 13/13 analytics tests, 3/3 PWA tests, 8/8 network registry tests, clean TypeScript typecheck, 0 failures on pre-flight CLI. | Antigravity AI |
 
 

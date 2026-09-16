@@ -1,13 +1,13 @@
-/* Premium Analytics and Automations Dashboard Component */
+/* Tier 1 analytics and automations dashboard component. */
 
 import { useMemo, useState, useEffect } from "react";
-import { Crown, BarChart3, ArrowUpRight, RefreshCw, Loader2, Sparkles, Save, Lock, Shield } from "@/components/icons";
+import { BarChart3, ArrowUpRight, RefreshCw, Loader2, Sparkles, Save, Lock, Shield } from "@/components/icons";
 import Link from "next/link";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 import type { MerchantAnalyticsSummary, MerchantSubscriptionDetail } from "@/lib/analytics/merchantSubscriptions";
 
 interface AnalyticsDashboardProps {
-    isPremium: boolean;
+    hasTier1Access: boolean;
     setActiveTab: (tab: any) => void;
     walletBalance: number;
     vaultBalance: number;
@@ -57,7 +57,7 @@ function shortenHash(value: string | undefined) {
 }
 
 export default function AnalyticsDashboard({
-    isPremium,
+    hasTier1Access,
     setActiveTab,
     walletBalance,
     vaultBalance,
@@ -69,8 +69,8 @@ export default function AnalyticsDashboard({
     /* Compute metrics based on active subscriptions in ledger */
     const [retryingId, setRetryingId] = useState<string | null>(null);
     const [activeSubTab, setActiveSubTab] = useState<"metrics" | "automations">("metrics");
-    /* Mobile thumb-swipe between Metrics & Automations (Premium only — the tabs only exist then). */
-    const subTabSwipe = useSwipeTabs(["metrics", "automations"] as const, activeSubTab, setActiveSubTab, { enabled: isPremium });
+    /* Mobile thumb-swipe between Metrics & Automations (Tier 1 only — the tabs only exist then). */
+    const subTabSwipe = useSwipeTabs(["metrics", "automations"] as const, activeSubTab, setActiveSubTab, { enabled: hasTier1Access });
     const [inactivePage, setInactivePage] = useState(0);
     const [inactiveList, setInactiveList] = useState<Array<{
         id: string;
@@ -157,7 +157,7 @@ export default function AnalyticsDashboard({
 
     /* Fetch template settings on mount/tab change */
     useEffect(() => {
-        if (activeSubTab === "automations" && isPremium && merchantAddress) {
+        if (activeSubTab === "automations" && hasTier1Access && merchantAddress) {
             const fetchTemplate = async () => {
                 setIsLoadingTemplate(true);
                 try {
@@ -199,7 +199,7 @@ export default function AnalyticsDashboard({
             fetchVaultOps();
             fetchApiKeys();
         }
-    }, [activeSubTab, isPremium, merchantAddress]);
+    }, [activeSubTab, hasTier1Access, merchantAddress]);
 
     const handleSaveCommitConfig = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -436,7 +436,7 @@ export default function AnalyticsDashboard({
        Only the genuinely auto-retrying ones get the "Auto-retrying" treatment — a PAST_DUE sub
        is parked, not retrying, so it is labelled "Past due" instead. */
     useEffect(() => {
-        if (!merchantAddress || !isPremium) {
+        if (!merchantAddress || !hasTier1Access) {
             setInactiveList([]);
             setInactiveTotalPages(1);
             setInactivePage(0);
@@ -497,7 +497,7 @@ export default function AnalyticsDashboard({
                 if (!cancelled) setIsInactiveLoading(false);
             });
         return () => { cancelled = true; };
-    }, [inactiveCursor, inactivePage, isPremium, merchantAddress]);
+    }, [inactiveCursor, inactivePage, hasTier1Access, merchantAddress]);
 
     return (
         <div className="space-y-6 relative max-w-[1400px] mx-auto">
@@ -506,7 +506,7 @@ export default function AnalyticsDashboard({
                 <div>
                     <h2 className="text-sm font-bold text-[#082824] uppercase tracking-wider flex items-center gap-2">
                         <BarChart3 className="w-4 h-4 text-[#2775CA]" />
-                        Premium Analytics Dashboard
+                        Analytics Dashboard
                     </h2>
                     <p className="text-[10px] text-black/40 mt-1">
                         Real-time revenue, subscriber logs, and payment performance details.
@@ -514,7 +514,7 @@ export default function AnalyticsDashboard({
                 </div>
 
                 {/* Sub-tab navigation header */}
-                {isPremium && (
+                {hasTier1Access && (
                     <div className="flex gap-1.5 bg-black/[0.03] border border-black/10 p-1 rounded-xl shrink-0">
                         <button
                             type="button"
@@ -542,32 +542,10 @@ export default function AnalyticsDashboard({
                 )}
             </div>
 
-            {/* Container wrapper for blur and overlay control */}
+            {/* Container wrapper */}
             <div className="relative rounded-3xl overflow-hidden min-h-[580px]">
-                {/* Blur overlay when Tier 0 */}
-                {!isPremium && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8 bg-[#FFFFF0]/70 z-20 gap-5 backdrop-blur-[2px]">
-                        <div className="p-4 rounded-3xl bg-amber-500/10 border border-amber-500/20 text-amber-700 animate-pulse">
-                            <Crown className="w-10 h-10" />
-                        </div>
-                        <div className="space-y-2 max-w-sm">
-                            <h3 className="text-lg font-bold text-[#082824] uppercase tracking-wider">Analytics Locked</h3>
-                            <p className="text-xs text-black/60 leading-relaxed font-sans">
-                                Upgrade to Premium to see retention, revenue trends, and payment forecasts.
-                            </p>
-                        </div>
-                        <button
-                            onClick={() => setActiveTab("premium")}
-                            className="px-6 py-2.5 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-2xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-sm"
-                        >
-                            <Crown className="w-3.5 h-3.5" />
-                            Upgrade to Premium
-                        </button>
-                    </div>
-                )}
-
                 {/* Dashboard layout */}
-                <div className={`transition-all duration-300 ${isPremium ? "" : "filter blur-[6px] pointer-events-none select-none"}`} {...subTabSwipe}>
+                <div className="transition-all duration-300" {...subTabSwipe}>
                     {activeSubTab === "metrics" ? (
                         <div className="space-y-6">
                             {/* Top Row: 2 columns, asymmetrical on desktop */}
@@ -788,26 +766,6 @@ export default function AnalyticsDashboard({
                     ) : (
                         /* Automations Tab Content */
                         <div className="bg-white border border-black/10 rounded-3xl p-8 shadow-sm min-h-[480px] flex flex-col justify-between relative overflow-hidden">
-                            {!isPremium && (
-                                <div className="absolute inset-0 bg-[#FFFFF0]/80 backdrop-blur-md z-20 flex flex-col items-center justify-center text-center p-6 gap-4 border border-black/10">
-                                    <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-700 rounded-2xl">
-                                        <Lock className="w-6 h-6" />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <h3 className="text-xs font-bold text-[#082824] uppercase tracking-wider">Premium Pro Feature</h3>
-                                        <p className="text-[10px] text-black/55 max-w-xs leading-relaxed">
-                                            Upgrade to Premium Pro to send exit surveys and learn why customers cancel.
-                                        </p>
-                                    </div>
-                                    <Link
-                                        href="/merchant/upgrade"
-                                        className="px-6 py-2.5 bg-[#8AB4DB] hover:bg-[#7aa7d0] text-[#082824] rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all shadow-sm"
-                                    >
-                                        Upgrade Now
-                                    </Link>
-                                </div>
-                            )}
-
                             {isLoadingTemplate ? (
                                 <div className="space-y-6 animate-pulse">
                                     <div className="flex items-center justify-between border-b border-black/10 pb-4">
@@ -858,11 +816,11 @@ export default function AnalyticsDashboard({
                                         </div>
                                         <button
                                             type="button"
-                                            disabled={!isPremium}
+                                            disabled={!hasTier1Access}
                                             onClick={() => setIsActive(!isActive)}
                                             className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
                                                 isActive ? "bg-[#2775CA]" : "bg-black/10"
-                                            } ${!isPremium ? "opacity-50 cursor-not-allowed" : ""}`}
+                                            } ${!hasTier1Access ? "opacity-50 cursor-not-allowed" : ""}`}
                                             aria-label="Toggle exit survey"
                                         >
                                             <span
@@ -881,7 +839,7 @@ export default function AnalyticsDashboard({
                                                     <span className="text-[8px] text-black/30 uppercase font-mono">Variables:</span>
                                                     <button
                                                         type="button"
-                                                        disabled={!isPremium}
+                                                        disabled={!hasTier1Access}
                                                         onClick={() => insertVariableToSubject("customer_wallet")}
                                                         className="px-2 py-0.5 rounded bg-black/[0.04] hover:bg-black/[0.08] text-[8px] text-[#2775CA] hover:text-[#082824] transition-all font-mono border border-black/10 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
@@ -889,7 +847,7 @@ export default function AnalyticsDashboard({
                                                     </button>
                                                     <button
                                                         type="button"
-                                                        disabled={!isPremium}
+                                                        disabled={!hasTier1Access}
                                                         onClick={() => insertVariableToSubject("subscription_tier")}
                                                         className="px-2 py-0.5 rounded bg-black/[0.04] hover:bg-black/[0.08] text-[8px] text-[#2775CA] hover:text-[#082824] transition-all font-mono border border-black/10 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
@@ -900,7 +858,7 @@ export default function AnalyticsDashboard({
                                             <input
                                                 type="text"
                                                 required
-                                                disabled={!isPremium}
+                                                disabled={!hasTier1Access}
                                                 placeholder="e.g. We'd love your feedback"
                                                 value={subjectLine}
                                                 onChange={(e) => setSubjectLine(e.target.value)}
@@ -915,7 +873,7 @@ export default function AnalyticsDashboard({
                                                     <span className="text-[8px] text-black/30 uppercase font-mono">Variables:</span>
                                                     <button
                                                         type="button"
-                                                        disabled={!isPremium}
+                                                        disabled={!hasTier1Access}
                                                         onClick={() => insertVariableToBody("customer_wallet")}
                                                         className="px-2 py-0.5 rounded bg-black/[0.04] hover:bg-black/[0.08] text-[8px] text-[#2775CA] hover:text-[#082824] transition-all font-mono border border-black/10 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
@@ -923,7 +881,7 @@ export default function AnalyticsDashboard({
                                                     </button>
                                                     <button
                                                         type="button"
-                                                        disabled={!isPremium}
+                                                        disabled={!hasTier1Access}
                                                         onClick={() => insertVariableToBody("subscription_tier")}
                                                         className="px-2 py-0.5 rounded bg-black/[0.04] hover:bg-black/[0.08] text-[8px] text-[#2775CA] hover:text-[#082824] transition-all font-mono border border-black/10 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
@@ -934,7 +892,7 @@ export default function AnalyticsDashboard({
                                             <textarea
                                                 required
                                                 rows={8}
-                                                disabled={!isPremium}
+                                                disabled={!hasTier1Access}
                                                 placeholder="Enter exit survey message here..."
                                                 value={bodyContent}
                                                 onChange={(e) => setBodyContent(e.target.value)}
@@ -955,7 +913,7 @@ export default function AnalyticsDashboard({
                                         </div>
                                         <button
                                             type="submit"
-                                            disabled={isSavingTemplate || !isPremium}
+                                            disabled={isSavingTemplate || !hasTier1Access}
                                             className="px-6 py-2.5 bg-[#2775CA] text-[#ffffff] hover:bg-[#1f62ab] disabled:opacity-50 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 transition-all shrink-0"
                                         >
                                             {isSavingTemplate ? (
@@ -969,7 +927,7 @@ export default function AnalyticsDashboard({
                                 </form>
                             )}
 
-                            {isPremium && surveyStats.total > 0 && (
+                            {hasTier1Access && surveyStats.total > 0 && (
                                 <div className="mt-8 border-t border-black/10 pt-6 space-y-5">
                                     <div>
                                         <h4 className="text-xs font-bold text-[#082824] uppercase tracking-wider flex items-center gap-2">
@@ -1046,7 +1004,7 @@ export default function AnalyticsDashboard({
                                 </div>
                             )}
 
-                            {isPremium && (
+                            {hasTier1Access && (
                                 <div className="mt-8 border-t border-black/10 pt-6 space-y-5 text-left">
                                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                         <div>

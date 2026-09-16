@@ -3,7 +3,7 @@
  * SubScript Protocol — Gnosis Safe SECOPS Calldata Generator
  *
  * Operational utility to generate exact, cryptographically verified calldata hex strings
- * for Gnosis Safe multi-sig execution on Arc Mainnet (Chain ID 5042001).
+ * for Gnosis Safe multi-sig execution on Arc Mainnet (Chain ID 5042).
  *
  * Supported Actions:
  *   1. Emergency pause()               -> Target Router or Vault (selector: 0x8456cb59)
@@ -241,7 +241,7 @@ function parseBoolean(val) {
 
 function printHeader() {
   console.log("================================================================================");
-  console.log(" SubScript Protocol — Gnosis Safe SECOPS Calldata Generator (Arc Mainnet 5042001)");
+  console.log(" SubScript Protocol — Gnosis Safe SECOPS Calldata Generator (Arc Mainnet 5042)");
   console.log("================================================================================");
 }
 
@@ -272,7 +272,7 @@ function printRecipeOutput(title, recipe) {
   }
 
   console.log(" Gnosis Safe Execution Steps:");
-  console.log("   1. Open Gnosis Safe on Arc Mainnet (Chain ID 5042001).");
+  console.log("   1. Open Gnosis Safe on Arc Mainnet (Chain ID 5042).");
   console.log("   2. Click 'New Transaction' -> 'Transaction Builder' (or 'Contract Interaction').");
   console.log(`   3. Enter Target Address (above proxy address).`);
   console.log(`   4. Set ETH/USDC Value to 0.`);

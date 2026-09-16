@@ -32,7 +32,6 @@ interface DashboardHeaderProps {
     embeddedWallet?: { wallet: string; email: string } | null;
     onDisconnect?: () => void;
     onDepositSuccess?: () => void;
-    isPremium?: boolean;
     promptFlowMode?: "standard" | "private";
     onDeposit?: () => void;
     merchantAlias?: string | null;
@@ -49,7 +48,6 @@ export default function DashboardHeader({
     embeddedWallet,
     onDisconnect,
     onDepositSuccess,
-    isPremium = false,
     promptFlowMode = "standard",
     onDeposit,
     merchantAlias: propMerchantAlias,

@@ -3,25 +3,10 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, Copy, Loader2, Shield, User, X } from "@/components/icons";
-import type { UserCommit } from "@/types";
+import { Check, Copy, Loader2, Shield, RefreshCw, X, AlertTriangle, Key } from "@/components/icons";
 
-/* USDC is 6-decimal micros everywhere server-side, and the wire format is a decimal string so
-   BigInt survives JSON. Parsing here rather than with Number() keeps large caps exact — a cap of
-   10,000,000,000 USDC is 1e16 micros, past Number.MAX_SAFE_INTEGER. */
 const MICROS_PER_USDC = 1_000_000n;
 
-function formatUsdc(micros: string | null): string {
-    if (micros === null) return "Uncapped";
-    const value = BigInt(micros);
-    const whole = value / MICROS_PER_USDC;
-    const fraction = (value % MICROS_PER_USDC).toString().padStart(6, "0").replace(/0+$/, "");
-    return fraction ? `${whole}.${fraction}` : whole.toString();
-}
-
-/* Accepts what a human types ("25", "25.5", "0.000001") and refuses what would silently lose
-   money (more than 6 decimals, negatives, junk). Returns micros as a string for the wire, or an
-   error message — never a partially-parsed value. */
 export function parseUsdcToMicros(input: string): { micros: string } | { error: string } {
     const trimmed = input.trim();
     if (!trimmed) return { error: "Enter an amount" };
@@ -34,59 +19,19 @@ export function parseUsdcToMicros(input: string): { micros: string } | { error: 
     return { micros: micros.toString() };
 }
 
-function utilizationPercent(commit: UserCommit): number | null {
-    if (commit.spendLimitUsdc === null) return null;
-    const limit = BigInt(commit.spendLimitUsdc);
-    if (limit === 0n) return 100;
-    const spent = BigInt(commit.spentUsdc);
-    /* Integer math scaled by 100 before dividing, so a 1e16-micro cap doesn't lose precision on
-       the way through a float. */
-    return Number((spent * 100n) / limit);
-}
-
-const STATUS_STYLES: Record<string, string> = {
-    ACTIVE: "border-[#ccff00]/30 bg-[#ccff00]/10 text-[#ccff00]",
-    PAUSED: "border-amber-400/30 bg-amber-400/10 text-amber-300",
-    /* Only ever seen on a root commit (the account holder's own hold), so a sub-user row will not
-       carry it. Styled anyway so an unexpected value renders as a real badge rather than falling
-       through to the neutral default. */
-    HALTED: "border-amber-400/30 bg-amber-400/10 text-amber-300",
-    REVOKED: "border-red-400/30 bg-red-400/10 text-red-300",
-};
-
-type Busy = { commitId: string; action: string } | null;
-
 export default function SubUserManager({ balanceVisible = true }: { balanceVisible?: boolean } = {}) {
     const [mounted, setMounted] = useState(false);
     const [commitId, setCommitId] = useState<string | null>(null);
-    const [copiedCommitId, setCopiedCommitId] = useState(false);
-    const [subUsers, setSubUsers] = useState<UserCommit[]>([]);
+    const [status, setStatus] = useState<string>("ACTIVE");
+    const [rotatedAt, setRotatedAt] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [busy, setBusy] = useState<Busy>(null);
+    const [copied, setCopied] = useState(false);
 
-    const [createOpen, setCreateOpen] = useState(false);
-    const [newName, setNewName] = useState("");
-    const [newLimit, setNewLimit] = useState("");
-    const [creating, setCreating] = useState(false);
-    const [createError, setCreateError] = useState<string | null>(null);
-    const [lastInvite, setLastInvite] = useState<string | null>(null);
-    /* The result of a rotation. `wasClaimed` decides whether the panel tells the user to pass the new
-       ID on, and `delegateNotified` whether we already did. */
-    const [rotated, setRotated] = useState<{
-        commitId: string;
-        wasClaimed: boolean;
-        delegateNotified: boolean;
-    } | null>(null);
-
-    const [editing, setEditing] = useState<UserCommit | null>(null);
-    const [editLimit, setEditLimit] = useState("");
-    const [editError, setEditError] = useState<string | null>(null);
-    const [savingLimit, setSavingLimit] = useState(false);
-
-    /* Amounts collapse to dots when the commit tab's Eye toggle is off, matching the masking
-       convention used across the dashboard. */
-    const money = (value: string | null) => (balanceVisible ? formatUsdc(value) : "••••");
+    // Rotation modal & state
+    const [confirmOpen, setConfirmOpen] = useState(false);
+    const [rotating, setRotating] = useState(false);
+    const [rotateSuccess, setRotateSuccess] = useState<string | null>(null);
 
     useEffect(() => {
         setMounted(true);
@@ -94,14 +39,15 @@ export default function SubUserManager({ balanceVisible = true }: { balanceVisib
 
     const load = useCallback(async () => {
         try {
-            const res = await fetch("/api/user/commit/sub-users");
+            const res = await fetch("/api/user/commit");
             const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.error || "Could not load sub-users");
+            if (!res.ok) throw new Error(data.error || "Could not load Commit ID");
             setCommitId(data.commitId ?? null);
-            setSubUsers(data.subUsers ?? []);
+            setStatus(data.status ?? "ACTIVE");
+            setRotatedAt(data.commitIdRotatedAt ?? null);
             setError(null);
         } catch (err: unknown) {
-            setError(err instanceof Error ? err.message : "Could not load sub-users");
+            setError(err instanceof Error ? err.message : "Could not load Commit ID");
         } finally {
             setLoading(false);
         }
@@ -111,621 +57,207 @@ export default function SubUserManager({ balanceVisible = true }: { balanceVisib
         void load();
     }, [load]);
 
-    /* Pause/resume/revoke all reduce to one status write, so they share a handler. The list is
-       refetched rather than patched locally: the server owns the status/timestamp coherence rules
-       and a local guess could disagree with the CHECK constraints. */
-    const [subUserConfirm, setSubUserConfirm] = useState<{
-        title: string;
-        message: string;
-        confirmText: string;
-        onConfirm: () => void;
-    } | null>(null);
-
-    const executeMutateStatus = async (target: UserCommit, action: "pause" | "resume" | "revoke") => {
-        setBusy({ commitId: target.commitId, action });
+    const handleRotate = async () => {
+        setRotating(true);
         setError(null);
         try {
-            const path = action === "revoke"
-                ? "/api/user/commit/sub-users/revoke"
-                : "/api/user/commit/sub-users/pause";
-            const res = await fetch(path, {
-                method: action === "resume" ? "DELETE" : "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ commitId: target.commitId }),
-            });
+            const res = await fetch("/api/user/commit/rotate", { method: "POST" });
             const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.error || `Could not ${action} this sub-user`);
-            await load();
+            if (!res.ok) throw new Error(data.error || "Failed to rotate Commit ID");
+            setCommitId(data.commitId);
+            setRotatedAt(data.commitIdRotatedAt);
+            setRotateSuccess(`New Primary Commit ID issued: ${data.commitId}. Previous ID is permanently deactivated.`);
+            setConfirmOpen(false);
         } catch (err: unknown) {
-            setError(err instanceof Error ? err.message : `Could not ${action} this sub-user`);
+            setError(err instanceof Error ? err.message : "Failed to rotate Commit ID");
         } finally {
-            setBusy(null);
-            setSubUserConfirm(null);
+            setRotating(false);
         }
     };
 
-    const mutateStatus = (target: UserCommit, action: "pause" | "resume" | "revoke") => {
-        if (action === "revoke") {
-            setSubUserConfirm({
-                title: "Revoke Sub-user",
-                message: `Revoke ${target.displayName || "this sub-user"}? This is permanent — their spend history is kept, but you cannot reactivate them.`,
-                confirmText: "Revoke",
-                onConfirm: () => executeMutateStatus(target, action),
-            });
-            return;
-        }
-        void executeMutateStatus(target, action);
+    const handleCopy = () => {
+        if (!commitId) return;
+        void navigator.clipboard.writeText(commitId);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
     };
 
-    /* Issue a fresh Commit ID for one sub-user. Same cap, same spend history, new credential — the
-       answer to a leaked ID, where revoking would also throw away the ledger. */
-    const executeRotate = async (target: UserCommit) => {
-        setBusy({ commitId: target.commitId, action: "rotate" });
-        setError(null);
-        try {
-            const res = await fetch("/api/user/commit/sub-users/rotate", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ commitId: target.commitId }),
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.error || "Could not issue a new ID");
-            setRotated({
-                commitId: data.commitId,
-                wasClaimed: Boolean(target.walletAddress),
-                delegateNotified: Boolean(data.delegateNotified),
-            });
-            setLastInvite(null);
-            await load();
-        } catch (err: unknown) {
-            setError(err instanceof Error ? err.message : "Could not issue a new ID");
-        } finally {
-            setBusy(null);
-            setSubUserConfirm(null);
-        }
-    };
-
-    /* Same operation, two very different consequences, so the confirmation says which one this is.
-       An unclaimed invite has never been handed to anyone: rotating it just regenerates the invite.
-       A claimed one is a live person, and the new ID breaks whatever they pasted into a merchant's
-       platform the moment this returns. walletAddress is the only thing that tells the two apart. */
-    const rotate = (target: UserCommit) => {
-        const claimed = Boolean(target.walletAddress);
-        const who = target.displayName || "this sub-user";
-        setSubUserConfirm({
-            title: claimed ? "Replace their commit ID" : "Regenerate this invite",
-            message: claimed
-                ? `${who} is using this ID right now. A new one stops the old one working straight away, `
-                    + "so anywhere they've pasted it will start refusing them until they update it. Their cap and "
-                    + "spend history stay exactly as they are. Do this if the ID has leaked."
-                : `Nobody has claimed this invite yet, so no one loses access. ${who} gets a new code and the old `
-                    + "one stops working. Do this if you sent the old code somewhere you shouldn't have.",
-            confirmText: claimed ? "Replace ID" : "Regenerate",
-            onConfirm: () => void executeRotate(target),
-        });
-    };
-
-    const executeCreateSubUser = async (spendLimitUsdc: string | null) => {
-        setCreating(true);
-        try {
-            const res = await fetch("/api/user/commit/sub-users", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ displayName: newName.trim() || null, spendLimitUsdc }),
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.error || "Could not create sub-user");
-            setLastInvite(data.subUser?.commitId ?? null);
-            setNewName("");
-            setNewLimit("");
-            setCreateOpen(false);
-            await load();
-        } catch (err: unknown) {
-            setCreateError(err instanceof Error ? err.message : "Could not create sub-user");
-        } finally {
-            setCreating(false);
-            setSubUserConfirm(null);
-        }
-    };
-
-    const createSubUser = async (event: React.FormEvent) => {
-        event.preventDefault();
-        setCreateError(null);
-
-        let spendLimitUsdc: string | null = null;
-        if (newLimit.trim()) {
-            const parsed = parseUsdcToMicros(newLimit);
-            if ("error" in parsed) {
-                setCreateError(parsed.error);
-                return;
-            }
-            spendLimitUsdc = parsed.micros;
-            await executeCreateSubUser(spendLimitUsdc);
-        } else {
-            setSubUserConfirm({
-                title: "Create Uncapped Sub-user",
-                message: "Leave this sub-user uncapped? They will be able to spend your full wallet balance.",
-                confirmText: "Create Uncapped",
-                onConfirm: () => executeCreateSubUser(null),
-            });
-        }
-    };
-
-    const executeSaveLimit = async (spendLimitUsdc: string | null) => {
-        if (!editing) return;
-        setSavingLimit(true);
-        try {
-            const res = await fetch("/api/user/commit/sub-users", {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ commitId: editing.commitId, spendLimitUsdc }),
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.error || "Could not update the cap");
-            setEditing(null);
-            await load();
-        } catch (err: unknown) {
-            setEditError(err instanceof Error ? err.message : "Could not update the cap");
-        } finally {
-            setSavingLimit(false);
-            setSubUserConfirm(null);
-        }
-    };
-
-    const saveLimit = async (event: React.FormEvent) => {
-        event.preventDefault();
-        if (!editing) return;
-        setEditError(null);
-
-        let spendLimitUsdc: string | null = null;
-        if (editLimit.trim()) {
-            const parsed = parseUsdcToMicros(editLimit);
-            if ("error" in parsed) {
-                setEditError(parsed.error);
-                return;
-            }
-            spendLimitUsdc = parsed.micros;
-            await executeSaveLimit(spendLimitUsdc);
-        } else {
-            setSubUserConfirm({
-                title: "Remove Sub-user Cap",
-                message: "Remove this sub-user's cap? They will be able to spend your full wallet balance.",
-                confirmText: "Remove Cap",
-                onConfirm: () => executeSaveLimit(null),
-            });
-        }
-    };
-
-    const openEditor = (target: UserCommit) => {
-        setEditing(target);
-        setEditLimit(target.spendLimitUsdc === null ? "" : formatUsdc(target.spendLimitUsdc));
-        setEditError(null);
-    };
+    const formattedRotatedDate = rotatedAt
+        ? new Intl.DateTimeFormat("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+          }).format(new Date(rotatedAt))
+        : null;
 
     return (
-        <section className="liquid-glass rounded-3xl border border-black/10 dark:border-white/5 bg-white/70 dark:bg-black/40 p-5 shadow-sm dark:shadow-2xl backdrop-blur-xl sm:p-8 text-black dark:text-white">
+        <section className="liquid-glass rounded-3xl border border-black/10 dark:border-white/5 bg-white/70 dark:bg-black/40 p-5 shadow-sm dark:shadow-2xl backdrop-blur-xl sm:p-8 text-black dark:text-white font-sans">
             <div className="mb-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                    <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-black/75 dark:text-white/70">Delegated Spending</h2>
-                    <p className="mt-1 text-[9px] text-black/50 dark:text-white/40">
-                        Let someone spend from your wallet, up to a cap you set. Pause or revoke at any time.
+                    <div className="flex items-center gap-2">
+                        <Key className="h-4 w-4 text-[#2775CA] dark:text-[#8AB4DB]" />
+                        <h2 className="text-xs font-black uppercase tracking-[0.18em] text-black/85 dark:text-white/80">
+                            Primary Commit ID
+                        </h2>
+                        <span
+                            className={`rounded-full px-2 py-0.5 text-[8.5px] font-extrabold uppercase tracking-wider ${
+                                status === "ACTIVE"
+                                    ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-500/20"
+                                    : "bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-500/20"
+                            }`}
+                        >
+                            {status}
+                        </span>
+                    </div>
+                    <p className="mt-1 text-xs text-black/60 dark:text-white/50 max-w-xl leading-relaxed">
+                        Your Primary Commit ID is a secure identifier used to link merchant vaults and recurring services
+                        to your account without exposing your wallet private keys or public address.
                     </p>
-                    {commitId && (
-                        <div className="mt-2 flex items-center gap-2">
-                            <span className="font-mono text-[9px] text-black/50 dark:text-white/50">Your Commit ID:</span>
-                            <code className="font-mono text-[10px] font-bold text-[#2775CA] dark:text-[#ccff00]">
-                                {commitId.length > 20 ? `${commitId.slice(0, 10)}...${commitId.slice(-8)}` : commitId}
-                            </code>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    navigator.clipboard.writeText(commitId);
-                                    setCopiedCommitId(true);
-                                    setTimeout(() => setCopiedCommitId(false), 2000);
-                                }}
-                                className="flex h-5 w-5 items-center justify-center rounded border border-black/15 dark:border-white/10 bg-black/5 dark:bg-white/5 text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white hover:bg-black/10 dark:hover:bg-white/10 transition"
-                                title="Copy Commit ID"
-                                aria-label="Copy Commit ID"
-                            >
-                                {copiedCommitId ? <Check className="h-3 w-3 text-emerald-600 dark:text-[#ccff00]" /> : <Copy className="h-3 w-3" />}
-                            </button>
-                        </div>
-                    )}
                 </div>
+
                 <button
                     type="button"
-                    onClick={() => { setCreateOpen(true); setCreateError(null); }}
-                    className="self-start rounded-xl border border-[#ccff00]/30 bg-[#ccff00]/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#ccff00] transition hover:bg-[#ccff00]/20 sm:self-auto"
+                    onClick={() => setConfirmOpen(true)}
+                    disabled={loading || rotating}
+                    className="self-start sm:self-auto inline-flex items-center gap-1.5 rounded-full border border-black/15 dark:border-white/15 bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/15 px-4 py-2 text-xs font-bold text-black dark:text-white transition disabled:opacity-40 shadow-sm"
                 >
-                    + Add sub-user
+                    <RefreshCw className={`h-3.5 w-3.5 ${rotating ? "animate-spin" : ""}`} />
+                    Rotate Commit ID
                 </button>
             </div>
 
             {error && (
-                <p className="mb-4 rounded-2xl border border-red-400/20 bg-red-400/5 p-3 text-[11px] text-red-300">{error}</p>
-            )}
-
-            {lastInvite && (
-                <div className="mb-4 rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/5 p-3">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-[#ccff00]">Invite code created</p>
-                    <p className="mt-1 text-[11px] text-white/60">
-                        Share this with the person you&apos;re delegating to. They claim it from their own account —
-                        you can&apos;t attach their wallet for them.
-                    </p>
-                    <div className="mt-2 flex items-center gap-2">
-                        <code className="flex-1 truncate rounded-lg border border-white/10 bg-black/40 px-2 py-1.5 font-mono text-[11px] text-white">{lastInvite}</code>
-                        <button
-                            type="button"
-                            onClick={() => { void navigator.clipboard.writeText(lastInvite).catch(() => {}); }}
-                            className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5 text-[9px] font-black uppercase tracking-wider text-white/70 transition hover:text-white"
-                        >
-                            Copy
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setLastInvite(null)}
-                            className="rounded-lg p-1.5 text-white/40 transition hover:text-white"
-                            aria-label="Dismiss invite code"
-                        >
-                            <X className="h-3.5 w-3.5" />
-                        </button>
-                    </div>
+                <div className="mb-4 rounded-2xl border border-red-400/20 bg-red-400/10 p-3.5 text-xs text-red-600 dark:text-red-300 flex items-center justify-between">
+                    <span>{error}</span>
+                    <button type="button" onClick={() => setError(null)} className="text-red-500 hover:text-red-700">
+                        <X className="h-4 w-4" />
+                    </button>
                 </div>
             )}
 
-            {rotated && (
-                <div className="mb-4 rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/5 p-3">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-[#ccff00]">New commit ID</p>
-                    <p className="mt-1 text-[11px] text-white/60">
-                        {rotated.wasClaimed
-                            ? "The old ID stopped working just now. Send them this one so they can get going again."
-                            : "The old code is dead. Share this one instead."}
-                    </p>
-                    {/* No email or DM goes out for a re-credentialed delegate yet, so the panel says so
-                        rather than letting the user assume we handled it.
-                        TODO(docs/email-audit.md): wire the missing notification and drop this line. */}
-                    {rotated.wasClaimed && (
-                        <p className="mt-1 text-[10px] text-amber-300/80">
-                            {rotated.delegateNotified
-                                ? "We put a notice in their dashboard. They won't get an email, so tell them too if it's urgent."
-                                : "We couldn't reach them, so you'll need to pass this on yourself."}
-                        </p>
-                    )}
-                    <div className="mt-2 flex items-center gap-2">
-                        <code className="flex-1 truncate rounded-lg border border-white/10 bg-black/40 px-2 py-1.5 font-mono text-[11px] text-white">{rotated.commitId}</code>
-                        <button
-                            type="button"
-                            onClick={() => { void navigator.clipboard.writeText(rotated.commitId).catch(() => {}); }}
-                            className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5 text-[9px] font-black uppercase tracking-wider text-white/70 transition hover:text-white"
-                        >
-                            Copy
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setRotated(null)}
-                            className="rounded-lg p-1.5 text-white/40 transition hover:text-white"
-                            aria-label="Dismiss new commit ID"
-                        >
-                            <X className="h-3.5 w-3.5" />
-                        </button>
+            {rotateSuccess && (
+                <div className="mb-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-xs text-emerald-700 dark:text-emerald-300 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <Check className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                        <span>{rotateSuccess}</span>
                     </div>
+                    <button type="button" onClick={() => setRotateSuccess(null)} className="text-emerald-600 hover:text-emerald-800">
+                        <X className="h-4 w-4" />
+                    </button>
                 </div>
             )}
 
             {loading ? (
-                <div className="space-y-3 animate-pulse">
-                    {Array.from({ length: 2 }).map((_, i) => (
-                        <div key={i} className="rounded-2xl border border-white/5 bg-white/[0.02] p-4 space-y-3">
-                            <div className="flex justify-between items-center">
-                                <div className="h-4 w-32 rounded bg-white/15" />
-                                <div className="h-4 w-16 rounded bg-white/10" />
-                            </div>
-                            <div className="h-2 w-full rounded-full bg-white/10" />
-                        </div>
-                    ))}
+                <div className="h-24 w-full rounded-2xl border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.02] animate-pulse flex items-center justify-center">
+                    <Loader2 className="h-5 w-5 animate-spin text-black/40 dark:text-white/40" />
                 </div>
-            ) : subUsers.length === 0 ? (
-                <div className="flex h-36 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 p-4 text-center">
-                    <Shield className="mb-2 h-6 w-6 text-white/20" />
-                    <p className="text-xs text-white/45">No sub-users yet.</p>
-                    <p className="mt-1 text-[10px] text-white/30">Add one to let someone spend against a capped allowance.</p>
+            ) : commitId ? (
+                <div className="space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] p-4">
+                        <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#2775CA]/10 dark:bg-[#8AB4DB]/15 text-[#2775CA] dark:text-[#8AB4DB]">
+                                <Shield className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-black/50 dark:text-white/50 font-mono">
+                                    Current Commit Credential
+                                </span>
+                                <div className="mt-0.5 font-mono text-sm sm:text-base font-extrabold text-[#082824] dark:text-white select-all">
+                                    {balanceVisible ? commitId : "•••••••••••••••"}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end sm:self-auto">
+                            <button
+                                type="button"
+                                onClick={handleCopy}
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-black/15 dark:border-white/15 bg-white dark:bg-white/10 px-3.5 py-2 text-xs font-bold text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/20 transition shadow-sm"
+                            >
+                                {copied ? (
+                                    <>
+                                        <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                                        <span>Copied</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Copy className="h-3.5 w-3.5" />
+                                        <span>Copy ID</span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-black/50 dark:text-white/45 font-mono">
+                        <span>
+                            {formattedRotatedDate ? `Last rotated: ${formattedRotatedDate}` : "Default identifier (never rotated)"}
+                        </span>
+                        <span className="text-black/40 dark:text-white/40">
+                            Crockford base32 • 10-char entropy
+                        </span>
+                    </div>
                 </div>
             ) : (
-                <ul className="space-y-3">
-                    {subUsers.map((subUser) => {
-                        const pct = utilizationPercent(subUser);
-                        const isRevoked = subUser.status === "REVOKED";
-                        const rowBusy = busy?.commitId === subUser.commitId;
-                        return (
-                            <li
-                                key={subUser.commitId}
-                                className={`rounded-2xl border border-white/5 bg-white/[0.02] p-4 ${isRevoked ? "opacity-60" : ""}`}
-                            >
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <User className="h-3.5 w-3.5 shrink-0 text-white/40" />
-                                            <p className="truncate text-sm font-bold text-white">{subUser.displayName}</p>
-                                            <span className={`rounded-full border px-2 py-0.5 text-[8px] font-black uppercase tracking-wider ${STATUS_STYLES[subUser.status] ?? "border-white/10 text-white/50"}`}>
-                                                {subUser.status}
-                                            </span>
-                                        </div>
-                                        <p className="mt-1 font-mono text-[9px] text-white/30">{subUser.commitId}</p>
-                                        {!subUser.walletAddress && (
-                                            <p className="mt-1 text-[9px] text-amber-300/70">Invite not claimed yet</p>
-                                        )}
-                                    </div>
-
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        {!isRevoked && (
-                                            <>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => openEditor(subUser)}
-                                                    disabled={rowBusy}
-                                                    className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-white/70 transition hover:text-white disabled:opacity-50"
-                                                >
-                                                    Edit cap
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => void mutateStatus(subUser, subUser.status === "PAUSED" ? "resume" : "pause")}
-                                                    disabled={rowBusy}
-                                                    className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-white/70 transition hover:text-white disabled:opacity-50"
-                                                >
-                                                    {rowBusy && (busy?.action === "pause" || busy?.action === "resume")
-                                                        ? "..."
-                                                        : subUser.status === "PAUSED" ? "Resume" : "Pause"}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => rotate(subUser)}
-                                                    disabled={rowBusy}
-                                                    className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-white/70 transition hover:text-white disabled:opacity-50"
-                                                    title={subUser.walletAddress
-                                                        ? "Issue a new ID. Keeps their cap and history, and the old ID stops working now."
-                                                        : "Issue a new invite code. The old one stops working."}
-                                                >
-                                                    {rowBusy && busy?.action === "rotate" ? "..." : "New ID"}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => void mutateStatus(subUser, "revoke")}
-                                                    disabled={rowBusy}
-                                                    className="rounded-xl border border-red-400/20 bg-red-400/5 px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-red-300 transition hover:bg-red-400/10 disabled:opacity-50"
-                                                >
-                                                    {rowBusy && busy?.action === "revoke" ? "..." : "Revoke"}
-                                                </button>
-                                            </>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="mt-3">
-                                    <div className="flex items-baseline justify-between text-[10px]">
-                                        <span className="text-white/45">
-                                            Spent <span className="font-mono text-white/80">{money(subUser.spentUsdc)}</span>
-                                            {subUser.spendLimitUsdc !== null && (
-                                                <> of <span className="font-mono text-white/80">{money(subUser.spendLimitUsdc)}</span> USDC</>
-                                            )}
-                                        </span>
-                                        {subUser.remainingUsdc !== null ? (
-                                            <span className="font-mono text-[#ccff00]/80">{money(subUser.remainingUsdc)} left</span>
-                                        ) : (
-                                            <span className="text-[9px] font-black uppercase tracking-wider text-amber-300/70">Uncapped</span>
-                                        )}
-                                    </div>
-                                    {pct !== null && (
-                                        <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/10">
-                                            <div
-                                                className={`h-full rounded-full transition-all ${pct >= 100 ? "bg-red-400" : pct >= 80 ? "bg-amber-400" : "bg-[#ccff00]"}`}
-                                                style={{ width: `${Math.min(100, pct)}%` }}
-                                            />
-                                        </div>
-                                    )}
-                                </div>
-                            </li>
-                        );
-                    })}
-                </ul>
+                <div className="rounded-2xl border border-dashed border-black/15 dark:border-white/15 p-6 text-center text-xs text-black/50 dark:text-white/50">
+                    No Commit ID allocated yet. Refresh to generate one.
+                </div>
             )}
 
-            {mounted && createPortal(
-                <>
-                    <AnimatePresence>
-                        {createOpen && (
-                            <>
-                                <motion.div
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    onClick={() => !creating && setCreateOpen(false)}
-                                    className="fixed inset-0 bg-black/65 backdrop-blur-sm z-[100]"
-                                />
-                                <motion.div
-                                    initial={{ opacity: 0, scale: 0.96, y: 16 }}
-                                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                                    exit={{ opacity: 0, scale: 0.96, y: 16 }}
-                                    transition={{ type: "spring", stiffness: 450, damping: 32 }}
-                                    className="fixed inset-0 z-[101] flex items-center justify-center p-3 sm:p-4 font-sans pointer-events-none"
-                                >
-                                    <motion.form
-                                        role="dialog"
-                                        aria-modal="true"
-                                        onSubmit={createSubUser}
-                                        onClick={(event) => event.stopPropagation()}
-                                        className="pointer-events-auto w-full max-w-md space-y-4 rounded-3xl border border-white/10 bg-[#0a0a0a] p-6 shadow-2xl"
-                                    >
-                                        <div className="flex items-center justify-between">
-                                            <h3 className="text-sm font-black uppercase tracking-wider text-white">Add sub-user</h3>
-                                            <button
-                                                type="button"
-                                                onClick={() => setCreateOpen(false)}
-                                                className="rounded-lg p-1 text-white/40 transition hover:text-white"
-                                                aria-label="Close"
-                                            >
-                                                <X className="h-4 w-4" />
-                                            </button>
-                                        </div>
+            {/* Confirmation Modal */}
+            {mounted && confirmOpen && createPortal(
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+                    <div className="relative w-full max-w-md rounded-3xl border border-black/10 dark:border-white/15 bg-[#FFFFF0] dark:bg-[#1a1b1e] p-6 shadow-2xl text-black dark:text-white space-y-4">
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-2.5">
+                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                                    <AlertTriangle className="h-5 w-5" />
+                                </div>
+                                <h3 className="text-base font-bold text-[#082824] dark:text-white">
+                                    Rotate Primary Commit ID?
+                                </h3>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => !rotating && setConfirmOpen(false)}
+                                className="p-1 rounded-lg text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
 
-                                        <label className="block space-y-2">
-                                            <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">Label (optional)</span>
-                                            <input
-                                                value={newName}
-                                                onChange={(event) => setNewName(event.target.value)}
-                                                maxLength={128}
-                                                placeholder="e.g. Design contractor"
-                                                className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder-white/25 outline-none focus:border-[#ccff00]/40"
-                                            />
-                                        </label>
+                        <div className="space-y-2 text-xs text-black/70 dark:text-white/70 leading-relaxed font-sans">
+                            <p>
+                                If your current Commit ID was compromised or leaked, rotating it will <strong>immediately invalidate</strong> the previous identifier and generate a fresh one.
+                            </p>
+                            <p className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-amber-800 dark:text-amber-300">
+                                <strong>Important:</strong> Any third-party applications, automated vaults, or integrations using your current ID will stop resolving immediately and must be updated.
+                            </p>
+                        </div>
 
-                                        <label className="block space-y-2">
-                                            <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">Spend cap (USDC)</span>
-                                            <input
-                                                value={newLimit}
-                                                onChange={(event) => setNewLimit(event.target.value)}
-                                                inputMode="decimal"
-                                                placeholder="Leave blank for uncapped"
-                                                className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm text-white placeholder-white/25 outline-none focus:border-[#ccff00]/40"
-                                            />
-                                            <span className="block text-[9px] text-white/35">
-                                                Total they may ever spend from your wallet, not a per-transfer limit.
-                                            </span>
-                                        </label>
-
-                                        {createError && <p className="text-[11px] text-red-300">{createError}</p>}
-
-                                        <button
-                                            type="submit"
-                                            disabled={creating}
-                                            className="w-full rounded-xl border border-[#ccff00]/30 bg-[#ccff00]/10 py-2.5 text-[11px] font-black uppercase tracking-wider text-[#ccff00] transition hover:bg-[#ccff00]/20 disabled:opacity-50"
-                                        >
-                                            {creating ? "Creating..." : "Create invite"}
-                                        </button>
-                                    </motion.form>
-                                </motion.div>
-                            </>
-                        )}
-                    </AnimatePresence>
-
-                    <AnimatePresence>
-                        {editing && (
-                            <>
-                                <motion.div
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    onClick={() => !savingLimit && setEditing(null)}
-                                    className="fixed inset-0 bg-black/65 backdrop-blur-sm z-[100]"
-                                />
-                                <motion.div
-                                    initial={{ opacity: 0, scale: 0.96, y: 16 }}
-                                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                                    exit={{ opacity: 0, scale: 0.96, y: 16 }}
-                                    transition={{ type: "spring", stiffness: 450, damping: 32 }}
-                                    className="fixed inset-0 z-[101] flex items-center justify-center p-3 sm:p-4 font-sans pointer-events-none"
-                                >
-                                    <motion.form
-                                        role="dialog"
-                                        aria-modal="true"
-                                        onSubmit={saveLimit}
-                                        onClick={(event) => event.stopPropagation()}
-                                        className="pointer-events-auto w-full max-w-md space-y-4 rounded-3xl border border-white/10 bg-[#0a0a0a] p-6 shadow-2xl"
-                                    >
-                                        <div className="flex items-center justify-between">
-                                            <h3 className="text-sm font-black uppercase tracking-wider text-white">Edit cap</h3>
-                                            <button
-                                                type="button"
-                                                onClick={() => setEditing(null)}
-                                                className="rounded-lg p-1 text-white/40 transition hover:text-white"
-                                                aria-label="Close"
-                                            >
-                                                <X className="h-4 w-4" />
-                                            </button>
-                                        </div>
-
-                                        <p className="text-[11px] text-white/50">
-                                            {editing.displayName} has spent{" "}
-                                            <span className="font-mono text-white/80">{money(editing.spentUsdc)}</span> USDC so far.
-                                        </p>
-
-                                        <label className="block space-y-2">
-                                            <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">Spend cap (USDC)</span>
-                                            <input
-                                                value={editLimit}
-                                                onChange={(event) => setEditLimit(event.target.value)}
-                                                inputMode="decimal"
-                                                placeholder="Leave blank for uncapped"
-                                                className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm text-white placeholder-white/25 outline-none focus:border-[#ccff00]/40"
-                                            />
-                                            <span className="block text-[9px] text-white/35">
-                                                Can&apos;t go below what they&apos;ve already spent — pause them instead to stop spending now.
-                                            </span>
-                                        </label>
-
-                                        {editError && <p className="text-[11px] text-red-300">{editError}</p>}
-
-                                        <button
-                                            type="submit"
-                                            disabled={savingLimit}
-                                            className="w-full rounded-xl border border-[#ccff00]/30 bg-[#ccff00]/10 py-2.5 text-[11px] font-black uppercase tracking-wider text-[#ccff00] transition hover:bg-[#ccff00]/20 disabled:opacity-50"
-                                        >
-                                            {savingLimit ? "Saving..." : "Save cap"}
-                                        </button>
-                                    </motion.form>
-                                </motion.div>
-                            </>
-                        )}
-                    </AnimatePresence>
-
-                    {/* Custom SubScript Confirmation Modal */}
-                    <AnimatePresence>
-                        {subUserConfirm && (
-                            <>
-                                <motion.div
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    onClick={() => setSubUserConfirm(null)}
-                                    className="fixed inset-0 bg-black/65 backdrop-blur-sm z-[100]"
-                                />
-                                <motion.div
-                                    initial={{ opacity: 0, scale: 0.96, y: 16 }}
-                                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                                    exit={{ opacity: 0, scale: 0.96, y: 16 }}
-                                    transition={{ type: "spring", stiffness: 450, damping: 32 }}
-                                    className="fixed inset-0 z-[101] flex items-center justify-center p-3 sm:p-4 font-sans pointer-events-none"
-                                >
-                                    <div
-                                        role="dialog"
-                                        aria-modal="true"
-                                        className="pointer-events-auto w-full max-w-sm rounded-3xl border border-white/10 bg-[#121212] p-6 shadow-2xl space-y-4"
-                                        onClick={(e) => e.stopPropagation()}
-                                    >
-                                        <h3 className="text-base font-bold text-white uppercase tracking-wider">{subUserConfirm.title}</h3>
-                                        <p className="text-xs text-white/60 leading-relaxed">{subUserConfirm.message}</p>
-                                        <div className="flex justify-end gap-2 pt-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => setSubUserConfirm(null)}
-                                                className="px-4 py-2 text-xs font-bold text-white/50 hover:text-white transition"
-                                            >
-                                                Cancel
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={subUserConfirm.onConfirm}
-                                                className="px-4 py-2 rounded-xl bg-[#ccff00] text-black text-xs font-bold uppercase tracking-wider transition hover:opacity-90"
-                                            >
-                                                {subUserConfirm.confirmText}
-                                            </button>
-                                        </div>
-                                    </div>
-                                </motion.div>
-                            </>
-                        )}
-                    </AnimatePresence>
-                </>,
+                        <div className="flex items-center justify-end gap-2.5 pt-2">
+                            <button
+                                type="button"
+                                onClick={() => setConfirmOpen(false)}
+                                disabled={rotating}
+                                className="rounded-full border border-black/15 dark:border-white/15 px-4 py-2 text-xs font-bold text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/10 transition disabled:opacity-40"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleRotate}
+                                disabled={rotating}
+                                className="inline-flex items-center gap-2 rounded-full bg-red-600 hover:bg-red-700 text-white px-5 py-2 text-xs font-bold transition disabled:opacity-50 shadow-sm"
+                            >
+                                {rotating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                                Confirm &amp; Rotate
+                            </button>
+                        </div>
+                    </div>
+                </div>,
                 document.body
             )}
         </section>

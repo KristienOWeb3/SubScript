@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { reconcile } from "@/lib/payments/reconciliationWorker";
 import { processPaymentLinkVerificationJobs } from "@/lib/payments/paymentLinkVerificationWorker";
 import { healSubscriptionDrift } from "@/lib/subscriptions/driftHealer";
 import { deliverPendingWebhookOutboxEvents } from "@/lib/webhookOutbox";
@@ -71,7 +70,9 @@ export async function POST(request: Request) {
             paymentLinkVerification = { error: verificationError?.message || "payment-link verification worker failed" };
         }
 
-        const result = await reconcile(supabase, 300);
+        /* Paid-tier payment-session reconciliation is retired. The remaining workers recover
+           customer checkout, webhook, and subscription state only. */
+        const result = { success: true, processedCount: 0, results: [] as unknown[] };
 
         /* Heal on-chain ↔ DB subscription drift (permissionless executes, explorer cancels,
            authorizations left live behind a DB cancel). Best-effort: a drift failure must not
@@ -126,7 +127,7 @@ export async function POST(request: Request) {
         );
 
     } catch (error: any) {
-        console.error("Premium reconciliation error:", error);
+        console.error("Payment reconciliation error:", error);
         return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
     }
 }

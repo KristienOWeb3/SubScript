@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 import { getSessionWallet } from "@/lib/auth";
-import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
+import { getAccountKycTier } from "@/lib/kyc/tier";
 import { isValidPaymentLinkId } from "@/lib/paymentLinks/validation";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -21,14 +21,14 @@ function isAttemptId(value: unknown): value is string {
 async function authenticatedPayer(request: Request) {
     const wallet = await getSessionWallet(request.headers);
     if (!wallet) return null;
-    const verified = await getVerifiedAccountEmail(wallet);
-    return verified?.email ? wallet.toLowerCase() : null;
+    const tierInfo = await getAccountKycTier(wallet);
+    return tierInfo.isTier1 ? wallet.toLowerCase() : null;
 }
 
 export async function POST(request: Request, { params }: RouteContext) {
     const payer = await authenticatedPayer(request);
     if (!payer) {
-        return NextResponse.json({ error: "Sign in and verify your email before paying." }, { status: 401 });
+        return NextResponse.json({ error: "Sign in with a Tier 1 account before paying." }, { status: 401 });
     }
     const { id } = await params;
     if (!isValidPaymentLinkId(id)) {

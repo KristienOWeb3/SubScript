@@ -253,7 +253,7 @@ renewals and overdraft-style penalties structurally impossible rather than merel
 - **Merchant certainty** — intent IDs, webhook events, retry-aware billing state, payment links, and
   audit-friendly Arc receipt records instead of raw wallet guesswork.
 - **Protocol coverage** — Checkout Intents, payment links, metered vaults, signed webhooks, receipts,
-  DNS-style aliases, premium privacy flows, retries, reconciliation, keeper-triggered renewals.
+  DNS-style aliases, privacy-aware payment flows, retries, reconciliation, keeper-triggered renewals.
 
 ## Deployment-scoped
 
@@ -655,7 +655,7 @@ Endpoints are environment-scoped (\`TEST\` or \`LIVE\`) so sandbox and productio
 Secret rotation supports a grace-period overlap — the previous signing secret stays valid until it
 expires.
 
-**Delivery health APIs.** Signed-in Premium merchants can inspect \`GET /api/webhooks/endpoints\` and
+**Delivery health APIs.** Signed-in Tier 1 merchants can inspect \`GET /api/webhooks/endpoints\` and
 \`GET /api/webhooks/events\` (cursor pagination, \`?type=\` / \`?environment=\` filters), resend with
 \`POST /api/webhooks/events/replay\`, or send a signed sample through \`POST /api/webhooks/test\`.
 Test event types are \`test\`, \`payment.succeeded\`, and \`subscription.created\`. Send

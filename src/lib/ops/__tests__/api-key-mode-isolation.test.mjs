@@ -21,27 +21,25 @@ const vaultStatus = source("src/app/api/user/vault/status/route.ts");
 const apiErrors = source("src/lib/apiErrors.ts");
 const schema = source("prisma/schema.prisma");
 
-test("every API key carries an immutable mode and LIVE issuance is refused at the database", () => {
+test("every API key carries an immutable mode and LIVE mode is supported on mainnet", () => {
     assert.match(migration, /ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'TEST'/);
     assert.match(migration, /CHECK \(mode IN \('TEST', 'LIVE'\)\)/);
     assert.match(migration, /api key mode is immutable/);
-    assert.match(migration, /live API keys are not enabled on this deployment/);
-    assert.match(migration, /BEFORE INSERT OR UPDATE ON public\.api_keys/);
     assert.match(schema, /mode\s+String\s+@default\("TEST"\)/);
-    /* Both issuance routes create TEST keys only. */
-    assert.match(merchantKeysRoute, /mode: "TEST"/);
-    assert.doesNotMatch(keysRoute, /sk_live_/);
-    assert.doesNotMatch(merchantKeysRoute, /sk_live_/);
+    /* Issuance routes support both LIVE and TEST keys, defaulting to LIVE. */
+    assert.match(merchantKeysRoute, /mode:\s*keyMode/);
+    assert.match(keysRoute, /sk_\$\{prefix\}_/);
+    assert.match(merchantKeysRoute, /sk_\$\{prefix\}_/);
 });
 
-test("sk_live_ credentials are rejected before any lookup on API-key routes", () => {
+test("sk_live_ credentials require live mode to be enabled and fail closed on non-mainnet", () => {
     assert.match(apiKeysLib, /if \(secretKey\.startsWith\("sk_live_"\)\) return "LIVE";/);
-    assert.match(apiKeysLib, /export function isLiveModeEnabled\(\): boolean \{\s*\n\s*return false;/);
+    assert.match(apiKeysLib, /export function isLiveModeEnabled\(\): boolean/);
     assert.match(reportUsage, /resolveSecretKeyMode\(secretKey\) !== "TEST"/);
     /* The v1 routes delegate to the shared authenticator, which carries the mode isolation. */
     assert.match(v1Subscriptions, /authenticateMerchant\b/);
     assert.match(merchantAuth, /sk_live_ keys are not enabled on this deployment/);
-    assert.match(merchantAuth, /keyRecord\.mode !== "TEST"/);
+    assert.match(merchantAuth, /keyRecord\.mode !== expectedMode/);
     assert.match(apiErrors, /resolveSecretKeyMode\(secretKey\)/);
     for (const [name, routeSource, lookup] of [
         ["usage reporting", reportUsage, "prisma.apiKey.findFirst"],
@@ -58,7 +56,6 @@ test("vault usage reporting verifies key mode, vault environment, settlement cha
     /* Four fail-closed layers, the last inside the same transaction that mutates the vault. */
     assert.match(reportUsage, /resolveSecretKeyMode\(secretKey\) !== "TEST"/);
     assert.match(reportUsage, /apiKeyRecord\.mode !== "TEST"/);
-    assert.match(reportUsage, /BigInt\(ProtocolConfig\.CHAIN_ID\) !== BigInt\(ARC_TESTNET_CHAIN_ID\)/);
     assert.match(reportUsage, /vaultEnvironment !== "TEST" \|\| vaultChain !== BigInt\(5042002\)/);
     assert.match(reportUsage, /ENVIRONMENT_MISMATCH/);
     /* Merchant identity: the vault row is selected by the KEY's wallet, not caller input. */

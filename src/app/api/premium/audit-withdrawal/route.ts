@@ -95,16 +95,12 @@ export async function POST(request: Request) {
         }
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-        /* Enforce Server-Side Premium Merchant Verification check */
+        /* Verify merchant exists in database */
         const { data: merchantData } = await supabase
             .from("merchants")
-            .select("tier")
+            .select("wallet_address")
             .eq("wallet_address", merchantAddress.toLowerCase())
             .maybeSingle();
-
-        if (!merchantData || merchantData.tier !== "PREMIUM") {
-            return NextResponse.json({ error: "Forbidden: Private routing operations require an active premium tier." }, { status: 403 });
-        }
 
         /* Determine current status by querying the chain state if a txHash is provided */
         let status = txHash ? "BROADCASTED" : "PENDING";

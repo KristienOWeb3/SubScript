@@ -262,7 +262,7 @@ export default function WebhooksPage() {
 
         <Callout tone="plain" title="Dashboard delivery health APIs">
           <p>
-            Signed-in Premium merchants can inspect <span className="font-mono">GET /api/webhooks/endpoints</span>{" "}
+            Signed-in Tier 1 merchants can inspect <span className="font-mono">GET /api/webhooks/endpoints</span>{" "}
             and <span className="font-mono">GET /api/webhooks/events</span> (with cursor pagination and{" "}
             <span className="font-mono">?type=</span> / <span className="font-mono">?environment=</span> filters),
             resend a selected event with <span className="font-mono">POST /api/webhooks/events/replay</span>, or

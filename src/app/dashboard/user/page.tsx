@@ -19,6 +19,7 @@ import { MAX_BATCH_RECIPIENTS } from "@/lib/payments/batchLimits";
 import { arcHttp } from "@/lib/arc/transport";
 import {
   ARC_CCTP_DOMAIN_ID,
+  ARC_CCTP_ENABLED,
   ARC_TOKEN_MESSENGER_ADDRESS,
   BRIDGE_FEE_TREASURY_ADDRESS,
   CCTP_CONFIG,
@@ -50,7 +51,6 @@ import DmRequestsModal from "@/components/dashboard/DmRequestsModal";
 import DmInviteManagerModal from "@/components/dashboard/DmInviteManagerModal";
 import BlockedUsersModal from "@/components/dashboard/BlockedUsersModal";
 import VaultShareManager from "@/components/VaultShareManager";
-import SubUserManager from "@/components/SubUserManager";
 import AccountHoldModal from "@/components/dashboard/AccountHoldModal";
 import { getDashboardUrl } from "@/utils/navigation";
 import { compressAvatarImage } from "@/utils/imageCompression";
@@ -1002,7 +1002,7 @@ export default function UserDashboard() {
       const [res, depositsRes, scanRes] = await Promise.all([
         fetch("/api/user/settings"),
         fetch("/api/user/deposits").catch(() => null),
-        fetch("/api/user/cctp/scan").catch(() => null),
+        ARC_CCTP_ENABLED ? fetch("/api/user/cctp/scan").catch(() => null) : Promise.resolve(null),
       ]);
       const data = await res.json();
       const depData = depositsRes ? await depositsRes.json().catch(() => ({})) : {};
@@ -1210,7 +1210,7 @@ export default function UserDashboard() {
      hardcoded here and drifted from the bridge config. */
   const depositOriginChains = useMemo(
     () =>
-      Object.entries(CCTP_CONFIG)
+      (ARC_CCTP_ENABLED ? Object.entries(CCTP_CONFIG) : [])
         .filter(([, info]) => info.allowDeposits !== false)
         .map(([chainId, info]) => ({ chainId: Number(chainId), info }))
         /* Cheapest fee first, so Ethereum's 1% tier is not the default pick. */
@@ -2723,6 +2723,10 @@ export default function UserDashboard() {
     amountMicros: bigint;
   }) => {
     const fee = calculateBridgeFee(params.amountMicros, params.destinationChainId, "outbound_withdrawal");
+    if (!ARC_CCTP_ENABLED) {
+      throw new Error("Cross-chain transfers are not available on Arc Mainnet yet.");
+    }
+
 
     if (chainId !== activeArcChain.id) {
       await switchChainAsync({ chainId: activeArcChain.id });
@@ -4029,6 +4033,7 @@ export default function UserDashboard() {
                   registeredDomain={registeredDomain}
                   profilePic={profilePic}
                   userWallet={userWallet}
+                  isTier1={Boolean(userEmail) || isEmbeddedWalletSession}
                   onDns={() => setActiveTab("dns")}
                   onLogout={handleLogout}
                 />
@@ -4524,10 +4529,6 @@ export default function UserDashboard() {
                     </>
                   )}
                 </section>
-
-                <div className="pt-2">
-                  <SubUserManager balanceVisible={balanceVisible} />
-                </div>
               </section>
             )}
 
@@ -7519,6 +7520,7 @@ export default function UserDashboard() {
         isOpen={receiveOpen}
         onClose={() => setReceiveOpen(false)}
         isEmbeddedWallet={isEmbeddedWalletSession}
+        isTier1={Boolean(userEmail) || isEmbeddedWalletSession}
         depositAddress={userWallet || ""}
         onSuccess={() => {
           refetchUsdc().catch(console.error);
@@ -8029,7 +8031,7 @@ export default function UserDashboard() {
 
       {/* Blocking email capture — an email is required for receipts and notifications.
           Shown for accounts that don't have one yet (e.g. wallet-onboarded payers). */}
-      {!loading && userWallet && !userEmail && (
+      {!loading && userWallet && !userEmail && !isEmbeddedWalletSession && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-5 backdrop-blur-md">
           <form
             onSubmit={emailPromptStep === "email" ? handleSendEmailCode : handleVerifyEmailCode}
@@ -8039,13 +8041,17 @@ export default function UserDashboard() {
               <Mail className="h-5 w-5" />
             </div>
             <div>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#2775CA]/10 text-[#2775CA] border border-[#2775CA]/20 text-[10px] font-bold uppercase tracking-wider mb-2">
+                <Shield className="h-3 w-3" />
+                <span>Tier 1 KYC Verification</span>
+              </div>
               <h2 className="text-sm font-black uppercase tracking-[0.14em] text-[#111827]">
-                {emailPromptStep === "email" ? "Add your email" : "Verify your email"}
+                {emailPromptStep === "email" ? "Link Email for Tier 1" : "Verify Email Code"}
               </h2>
               <p className="mt-2 text-xs leading-relaxed text-black/60">
                 {emailPromptStep === "email"
-                  ? "We need an email to send you payment receipts, requests, and account notifications. This is required to continue."
-                  : `Enter the 6-digit code we sent to ${emailPromptValue.trim()}.`}
+                  ? "SubScript requires all accounts to be at Tier 1 before making transactions. Link your email to complete Tier 1 verification."
+                  : `Enter the 6-digit code we sent to ${emailPromptValue.trim()} to activate Tier 1.`}
               </p>
             </div>
             {emailPromptStep === "email" ? (
@@ -8264,12 +8270,14 @@ function HomeHeader({
   registeredDomain,
   profilePic,
   userWallet,
+  isTier1 = false,
   onDns,
   onLogout,
 }: {
   registeredDomain: string | null;
   profilePic: string | null;
   userWallet: string | null;
+  isTier1?: boolean;
   onDns: () => void;
   onLogout: () => void;
 }) {
@@ -8295,6 +8303,18 @@ function HomeHeader({
           </button>
           {/* Actions (Right) */}
           <div className="flex items-center gap-1.5 ml-auto">
+            {/* KYC Tier Badge */}
+            <div
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-wider ${
+                isTier1
+                  ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
+                  : "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30"
+              }`}
+              title={isTier1 ? "Tier 1: Verified (Email Linked / MCP)" : "Tier 0: Basic (Link email to unlock transactions)"}
+            >
+              <Shield className="w-2.5 h-2.5" />
+              <span>{isTier1 ? "Tier 1" : "Tier 0"}</span>
+            </div>
             {/* Mobile placement: the bell sits in the header bar. Same component the desktop title
                 renders, so the unread count and read state cannot diverge between form factors. */}
             <NotificationBell audience="USER" accent="#ccff00" />

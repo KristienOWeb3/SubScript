@@ -13,7 +13,6 @@ interface WithdrawModalProps {
     payoutDestination: string | null;
     onConfirmWithdraw: (targetAddress: string) => Promise<void>;
     isWithdrawing: boolean;
-    isPremium?: boolean;
 }
 
 export default function WithdrawModal({

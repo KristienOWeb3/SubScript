@@ -25,12 +25,11 @@ test("premium checkout and identity transitions are atomic and canonical", async
         source("src/app/api/premium/resume/route.ts"),
         source("supabase/migrations/20260715001000_harden_premium_subscription_lifecycle.sql"),
     ]);
-    assert.match(checkout, /get_or_create_premium_payment_session/);
+    assert.match(checkout, /status: 410/);
     assert.match(migration, /payment_sessions_one_live_premium_checkout/);
-    for (const lifecycleRoute of [cancel, resume]) {
-        assert.match(lifecycleRoute, /\.eq\("kind", "PREMIUM"\)/);
-        assert.match(lifecycleRoute, /\.eq\("merchant_address", normalizedUser\)/);
-    }
+    assert.match(cancel, /\.eq\("kind", "PREMIUM"\)/);
+    assert.match(cancel, /\.eq\("merchant_address", normalizedUser\)/);
+    assert.match(resume, /status: 410/);
     assert.match(migration, /subscriber = normalized_merchant/);
     assert.match(migration, /kind = 'PREMIUM'/);
 });
@@ -85,17 +84,10 @@ test("billing derives entitlement from chain and persists renewal finality befor
         source("src/app/api/cron/customer-billing/route.ts"),
         source("supabase/migrations/20260715001000_harden_premium_subscription_lifecycle.sql"),
     ]);
-    assert.match(internalBilling, /router\.merchantTiers\(subscriber\)/);
-    assert.match(internalBilling, /Tier reconciled but claim completion failed/);
-    for (const billing of [premiumBilling, customerBilling]) {
-        /* Both RPCs must be present. Note: textual order is NOT a proxy for runtime finality here —
-           they live in separate branches/functions, so an index comparison would be misleading. */
-        const record = billing.indexOf("record_subscription_billing_chain_confirmation");
-        const complete = billing.indexOf("complete_subscription_billing");
-        assert.ok(record >= 0 && complete >= 0);
-        assert.match(billing, /dedupeKey: `(?:premium|customer)-renewal:/);
-        assert.match(billing, /dispatchDurableSubscriptionWebhook/);
-    }
+    assert.match(internalBilling, /status: 410/);
+    assert.match(premiumBilling, /status: 410/);
+    assert.match(customerBilling, /dedupeKey: `customer-renewal:/);
+    assert.match(customerBilling, /dispatchDurableSubscriptionWebhook/);
     assert.match(migration, /status = 'CHAIN_CONFIRMED'/);
     assert.match(migration, /AND tx_hash IS NULL/);
 });

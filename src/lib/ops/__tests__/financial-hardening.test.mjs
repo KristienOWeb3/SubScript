@@ -128,13 +128,8 @@ test("deterministic transaction verification failures are quarantined", () => {
 
 test("merchant premium upgrade supports embedded email wallet sessions", () => {
     const page = source("src/app/dashboard/upgrade/page.tsx");
-
-    assert.match(page, /fetch\("\/api\/auth\/session"\)/);
-    assert.match(page, /data\.isEmbedded/);
-    assert.match(page, /action\s*=\s*"approveUsdc"/);
-    assert.match(page, /action\s*=\s*"createPremiumSubscription"/);
-    assert.match(page, /fetch\("\/api\/execute-tx"/);
-    assert.doesNotMatch(page, /if\s*\(!isConnected\s*\)\s*\{[\s\S]{0,200}return;[\s\S]{0,200}\}\s*setCheckoutError\("Please connect your merchant wallet first\."\)/);
+    assert.match(page, /Paid plans are retired/);
+    assert.match(page, /Advanced Settings/);
 });
 
 test("premium verification trusts SubscriptionCreated subscriber over custody tx sender", () => {
@@ -202,28 +197,9 @@ test("failed on-chain cancellation is never persisted as canceled", () => {
 });
 
 test("premium downgrades never record CANCELED while the on-chain authorization is chargeable", () => {
-    /* Only the subscriber can cancelSubscription on-chain, so an external wallet's PSA
-       authorization cannot be revoked server-side — and executePayment is permissionless.
-       The downgrade cron must therefore keep the row ACTIVE + cancel_at_period_end (which
-       billing skips) until the sub is inactive on-chain or its USDC allowance provably
-       cannot fund a charge, re-advising the user without stacking duplicate DMs. */
     const route = source("src/app/api/cron/billing/route.ts");
-    const downgradeBlock = route.slice(
-        route.indexOf("Process Graceful Downgrades"),
-        route.indexOf("Query active/failed/past_due subscriptions"),
-    );
-
-    assert.match(downgradeBlock, /usdcContract\.allowance\(onChainSubscriber, STANDARD_CONTRACT_ADDRESS\)/);
-    assert.match(downgradeBlock, /onChainAmount > BigInt\(0\) && allowance >= onChainAmount/);
-    assert.match(downgradeBlock, /Fail closed: if the allowance cannot be read/);
-    assert.match(downgradeBlock, /AWAITING_EXTERNAL_REVOCATION/);
-    assert.ok(
-        downgradeBlock.indexOf("AWAITING_EXTERNAL_REVOCATION") < downgradeBlock.indexOf('status: "CANCELED"'),
-        "the awaiting-revocation gate must run before the CANCELED transition",
-    );
-    /* DM dedup: the retry loop re-enters every run and must not stack advisories. */
-    assert.match(downgradeBlock, /\.eq\("title", "Action needed: revoke subscription authorization"\)/);
-    assert.match(downgradeBlock, /\.eq\("status", "PENDING"\)/);
+    assert.match(route, /status: 410/);
+    assert.match(route, /paid merchant tiers have been retired/);
 });
 
 test("contract health honors production address overrides", () => {
@@ -289,11 +265,9 @@ test("custody money-moving calls carry attempt-scoped deterministic idempotency 
     assert.doesNotMatch(dashboard, /subscribeRequestKey/);
     assert.match(subscribeClient, /subscribeRequestKey\.current \|\|= crypto\.randomUUID\(\)/);
 
-    /* Premium upgrade and payroll withdrawal post to /api/execute-tx, whose durable keys are seeded
-       only by the request id, so both pages have to send one and hold it across retries. */
-    const upgrade = source("src/app/dashboard/upgrade/page.tsx");
+    /* Payroll withdrawal posts to /api/execute-tx, whose durable keys are seeded
+       only by the request id, so it has to send one and hold it across retries. */
     const payroll = source("src/app/dashboard/payroll/PayrollContent.tsx");
-    assert.match(upgrade, /x-request-id/);
     assert.match(payroll, /x-request-id/);
 
     /* Withdrawals key that id by destination. The server key is withdraw:<wallet>:<requestId> with no
@@ -369,17 +343,11 @@ test("post-auth redirects reject browser-normalized backslashes", () => {
 
 test("stale webhook and billing workers cannot finalize a replacement claim", () => {
     const outbox = source("src/lib/webhookOutbox.ts");
-    const billing = source("src/app/api/cron/billing/route.ts");
     const migration = source("supabase/migrations/20260711193707_bind_worker_claim_ownership.sql");
 
     assert.match(outbox, /processing_claim_id:\s*claimId/);
     assert.match(outbox, /\.lt\("updated_at",\s*staleCutoff\)/);
     assert.match(outbox, /\.eq\("status",\s*"PROCESSING"\)[\s\S]{0,160}\.eq\("processing_claim_id",\s*claimId\)/);
-    assert.match(billing, /p_claim_id:\s*requestedClaimId/);
-    assert.match(billing, /complete_subscription_billing[\s\S]{0,180}p_claim_id:\s*billingClaimId/);
-    assert.match(billing, /release_subscription_billing[\s\S]{0,180}p_claim_id:\s*billingClaimId/);
-    assert.match(billing, /renew_subscription_billing/);
-    assert.match(billing, /if \(!await renewBillingClaim\(\)\) continue/);
     assert.match(migration, /claim_id = p_claim_id[\s\S]{0,120}status = 'PROCESSING'/);
     assert.match(migration, /processing_claim_id UUID/);
     assert.match(migration, /REVOKE ALL ON FUNCTION public\.claim_subscription_billing/);

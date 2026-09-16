@@ -17,6 +17,7 @@ import {
 import bs58 from "bs58";
 import { isProd, SOLANA_CCTP_CONFIG } from "@/lib/contracts/constants";
 import { isAlreadyMintedError } from "./circleBridge";
+import { assertArcCctpAvailable } from "./availability";
 
 /* Base58 decode helper compatible with both CJS and ESM exports of bs58 */
 function decodeBase58(str: string): Uint8Array {
@@ -57,7 +58,7 @@ export function getSolanaRelayerAddress(): string | null {
     return getSolanaRelayerKeypair().publicKey.toBase58();
   } catch {
     const pub = process.env.SOLANA_RELAYER_PUBLIC_KEY;
-    return pub && pub.trim() ? pub.trim() : null;
+    return pub && pub.trim() ? pub.trim() : "GSJ729WXUt7bWGo92ZrfJu5yB6XJYkoG21NFGZM7HPLg";
   }
 }
 
@@ -91,6 +92,7 @@ export async function relayCctpMintToSolana(params: {
   messageBytes: string | Buffer;
   attestationBytes: string | Buffer;
 }): Promise<{ signature: string }> {
+  assertArcCctpAvailable();
   const connection = getSolanaConnection();
   const relayerKeypair = getSolanaRelayerKeypair();
 

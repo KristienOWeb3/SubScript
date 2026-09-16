@@ -29,6 +29,7 @@ interface AdminGasReservesCardProps {
 export function AdminGasReservesCard({ sponsor, className = "" }: AdminGasReservesCardProps) {
   const [balances, setBalances] = useState<ChainBalance[]>([]);
   const [relayerAddress, setRelayerAddress] = useState<string>("");
+  const [solanaRelayerAddress, setSolanaRelayerAddress] = useState<string>("");
   const [environment, setEnvironment] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -44,6 +45,7 @@ export function AdminGasReservesCard({ sponsor, className = "" }: AdminGasReserv
       }
       setBalances(Array.isArray(data?.balances) ? data.balances : []);
       setRelayerAddress(data?.relayerAddress || "");
+      setSolanaRelayerAddress(data?.solanaRelayerAddress || "GSJ729WXUt7bWGo92ZrfJu5yB6XJYkoG21NFGZM7HPLg");
       setEnvironment(data?.environment || "");
       setLastChecked(new Date().toLocaleTimeString());
       setError(null);
@@ -106,7 +108,11 @@ export function AdminGasReservesCard({ sponsor, className = "" }: AdminGasReserv
             <div>
               <h3 className="text-sm font-black uppercase tracking-wider text-[#0f172a] flex items-center gap-2">
                 Gas sponsor & CCTP native reserves
-                {environment === "testnet" && (
+                {environment === "mainnet" ? (
+                  <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-700">
+                    Mainnet
+                  </span>
+                ) : (
                   <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-700">
                     Testing
                   </span>
@@ -237,15 +243,30 @@ export function AdminGasReservesCard({ sponsor, className = "" }: AdminGasReserv
         )}
       </div>
 
-      {relayerAddress && (
-        <div className="mt-3.5 pt-3 border-t border-[#f1f5f9] flex items-center justify-between text-[11px] text-[#64748b]">
-          <span className="flex items-center gap-1 font-medium">
-            <ShieldCheck className="h-3.5 w-3.5 text-[#2775ca]" />
-            Relayer Wallet
-          </span>
-          <code className="font-mono text-[10px] text-[#0f172a] truncate max-w-[200px] sm:max-w-xs">
-            {relayerAddress}
-          </code>
+      {(relayerAddress || solanaRelayerAddress) && (
+        <div className="mt-3.5 pt-3 border-t border-[#f1f5f9] grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-[#64748b]">
+          {relayerAddress && (
+            <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-[#f8fafc] border border-[#f1f5f9]">
+              <span className="flex items-center gap-1 font-medium shrink-0">
+                <ShieldCheck className="h-3.5 w-3.5 text-[#2775ca]" />
+                EVM Relayer
+              </span>
+              <code className="font-mono text-[10px] text-[#0f172a] truncate max-w-[170px]" title={relayerAddress}>
+                {relayerAddress}
+              </code>
+            </div>
+          )}
+          {solanaRelayerAddress && (
+            <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-[#f8fafc] border border-[#f1f5f9]">
+              <span className="flex items-center gap-1 font-medium shrink-0">
+                <ShieldCheck className="h-3.5 w-3.5 text-purple-600" />
+                Solana Relayer
+              </span>
+              <code className="font-mono text-[10px] text-[#0f172a] truncate max-w-[170px]" title={solanaRelayerAddress}>
+                {solanaRelayerAddress}
+              </code>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -44,7 +44,7 @@ const answerFacts = [
   {
     question: "Is SubScript live in production?",
     answer:
-      "SubScript is in public beta on the Arc testnet. All beta payments settle in Arc testnet USDC, a test asset with no monetary value, while the protocol is hardened for the mainnet cutover. Integrations built against the beta API carry over to mainnet with a configuration change.",
+      "SubScript is live on Arc Mainnet (Chain ID 5042), where production payments settle in native USDC. Test API keys remain isolated to Arc Testnet and test assets are never accepted as mainnet settlement.",
   },
   {
     question: "Which protocol claims are deployment-scoped?",

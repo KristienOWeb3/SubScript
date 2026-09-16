@@ -2,7 +2,7 @@
 -- SubScript Protocol: Production Database Mainnet Cutover Migration
 -- File: docs/mainnet/mainnet-sql-cutover.sql
 -- Target Database: Dedicated Production Supabase / PostgreSQL Instance
--- Network: Arc Mainnet (Chain ID: 5042001)
+-- Network: Arc Mainnet (Chain ID: 5042)
 -- ==============================================================================
 -- IMPORTANT EXECUTION INSTRUCTIONS:
 -- 1. Execute this script ONLY against the fresh, isolated Production Supabase instance.
@@ -76,7 +76,7 @@ END $$;
 
 -- ------------------------------------------------------------------------------
 -- 2. UPDATE METERED VAULTS ENVIRONMENT & CHAIN CHECK CONSTRAINT
--- Adds the ('LIVE', 5042001) arm to allow live metered vaults on Arc mainnet.
+-- Allows Arc Mainnet 5042 while retaining pre-launch 5042001 compatibility for existing records.
 -- ------------------------------------------------------------------------------
 
 DO $$
@@ -99,9 +99,9 @@ BEGIN
         ALTER TABLE metered_vaults ADD CONSTRAINT metered_vaults_environment_chain_check 
             CHECK (
                 (environment = 'TEST' AND settlement_chain_id = 5042002) OR
-                (environment = 'LIVE' AND settlement_chain_id = 5042001)
+                (environment = 'LIVE' AND settlement_chain_id IN (5042, 5042001))
             );
-        RAISE NOTICE 'Applied comprehensive metered_vaults_environment_chain_check for TEST (5042002) and LIVE (5042001)';
+        RAISE NOTICE 'Applied comprehensive metered_vaults_environment_chain_check for TEST (5042002) and LIVE (5042, 5042001)';
     END IF;
 END $$;
 

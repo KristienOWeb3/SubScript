@@ -3,8 +3,7 @@ import { requireRootAdmin } from "@/lib/admin/guard";
 import { prisma } from "@/lib/prisma";
 import { pgQuery } from "@/lib/serverPg";
 import {
-    PREMIUM_PAYMENT_RECIPIENT_ADDRESS,
-    PREMIUM_PLAN_PRICE_USDC,
+    PREMIUM_PAYMENT_RECIPIENT_ADDRESS as RETIRED_PLAN_RECIPIENT_ADDRESS,
     SUBSCRIPT_PROTOCOL_FEE_BPS,
     CCTP_CONFIG,
 } from "@/lib/contracts/constants";
@@ -21,9 +20,9 @@ import { formatFeeBps } from "@/lib/cctp/feeEngine";
  * Every figure below is money we actually took, never a projection:
  *
  *   Merchant transaction fees — 1% of settled subscription and payment-link volume. Derived from
- *     confirmed receipts, excluding receipts addressed to the premium recipient (those are premium
- *     income at 100%, so counting 1% of them too would double count).
- *   Merchant premium plans — the full amount of confirmed premium payments. We are the merchant here.
+ *     confirmed receipts, excluding receipts addressed to the retired paid-plan recipient (historical
+ *     receipts are accounted separately so the protocol fee is not double counted).
+ *   Retired access-plan receipts — historical receipts only; the paid plan no longer accepts charges.
  *   Cross-chain bridge fees — the recorded fee on each CCTP transfer whose fee transfer actually
  *     landed. Read from fee_tx_hash rather than status: the fee is collected before the burn, so a
  *     transfer still waiting on Circle has already paid us.
@@ -66,7 +65,7 @@ export async function GET(request: Request) {
             h24: new Date(now.getTime() - 24 * 60 * 60 * 1000),
         };
 
-        const premiumRecipient = PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase();
+        const premiumRecipient = RETIRED_PLAN_RECIPIENT_ADDRESS.toLowerCase();
 
         /* Merchant volume that earns us the protocol fee: confirmed receipts that are not premium
            payments to ourselves. */
@@ -76,7 +75,7 @@ export async function GET(request: Request) {
             ...(from ? { confirmedAt: { gte: from } } : {}),
         });
 
-        /* Merchants paying us for Premium. We are the merchant on these, so the whole amount is ours. */
+        /* Historical premium plans. Preserved for accounting; new paid plans are disabled. */
         const premiumWhere = (from?: Date) => ({
             status: "CONFIRMED",
             merchantAddress: premiumRecipient,
@@ -88,11 +87,10 @@ export async function GET(request: Request) {
             merchant30d,
             merchant7d,
             merchant24h,
-            premiumTotal,
-            premium30d,
-            premium7d,
-            premium24h,
-            activePremiumCount,
+            retiredPlanTotal,
+            retiredPlan30d,
+            retiredPlan7d,
+            retiredPlan24h,
             bridgeRows,
             bridgeByChain,
         ] = await Promise.all([
@@ -104,7 +102,6 @@ export async function GET(request: Request) {
             prisma.receipt.aggregate({ where: premiumWhere(since.d30), _sum: { amountUsdc: true }, _count: { _all: true } }),
             prisma.receipt.aggregate({ where: premiumWhere(since.d7), _sum: { amountUsdc: true }, _count: { _all: true } }),
             prisma.receipt.aggregate({ where: premiumWhere(since.h24), _sum: { amountUsdc: true }, _count: { _all: true } }),
-            prisma.subscription.count({ where: { kind: "PREMIUM", status: "ACTIVE" } }),
 
             /* One pass over the bridge ledger for every window and both directions. The bucket column
                is not called "window" because that is a reserved word in Postgres. */
@@ -165,10 +162,10 @@ export async function GET(request: Request) {
             h24: toBigInt(merchant24h._sum.amountUsdc),
         };
         const premiumRevenue: Record<Window, bigint> = {
-            total: toBigInt(premiumTotal._sum.amountUsdc),
-            d30: toBigInt(premium30d._sum.amountUsdc),
-            d7: toBigInt(premium7d._sum.amountUsdc),
-            h24: toBigInt(premium24h._sum.amountUsdc),
+            total: toBigInt(retiredPlanTotal._sum.amountUsdc),
+            d30: toBigInt(retiredPlan30d._sum.amountUsdc),
+            d7: toBigInt(retiredPlan7d._sum.amountUsdc),
+            h24: toBigInt(retiredPlan24h._sum.amountUsdc),
         };
 
         const bridgeFee: Record<Window, bigint> = { total: 0n, d30: 0n, d7: 0n, h24: 0n };
@@ -221,13 +218,13 @@ export async function GET(request: Request) {
             },
             {
                 id: "premium_plans",
-                label: "Merchant premium plans",
-                description: `Merchants subscribing to Premium at ${PREMIUM_PLAN_PRICE_USDC} USDC a month. We keep all of it.`,
+                label: "Merchant premium plans (Retired)",
+                description: "Historical paid-plan receipts retained for accounting. New charges are disabled.",
                 rate: "100%",
-                live: true,
+                live: false,
                 revenue: asWindowMap(premiumRevenue),
                 volume: asWindowMap(premiumRevenue),
-                count: premiumTotal._count._all,
+                count: retiredPlanTotal._count._all,
             },
             {
                 id: "bridge_fees",
@@ -287,13 +284,7 @@ export async function GET(request: Request) {
                 })),
                 byChain: bridgeChains,
             },
-            premium: {
-                activeSubscriptions: activePremiumCount,
-                monthlyPriceUsdc: PREMIUM_PLAN_PRICE_USDC,
-                /* Committed monthly income at today's subscriber count, kept separate from the
-                   collected figures above because it has not been billed yet. */
-                projectedMonthlyUsdc: formatUsdc(BigInt(activePremiumCount) * BigInt(PREMIUM_PLAN_PRICE_USDC) * MICRO_USDC),
-            },
+
         });
     } catch (error: any) {
         console.error("[api/admin/revenue] error:", error?.message);

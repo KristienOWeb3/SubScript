@@ -57,8 +57,8 @@ test("test keys settle on Arc testnet and only the shared demo key is simulation
         assert.match(route, /const isSimulationOnly = isTestMode && .*DEMO_MERCHANT_ADDRESS/);
         assert.match(route, /const settlementChainId = isTestMode \? ARC_TESTNET_CHAIN_ID : ProtocolConfig\.CHAIN_ID/);
     }
-    assert.match(intent, /test_mode_requires_testnet/);
-    assert.match(paymentLinks, /test_mode_requires_testnet/);
+    assert.doesNotMatch(intent, /test_mode_requires_testnet/);
+    assert.doesNotMatch(paymentLinks, /test_mode_requires_testnet/);
 
     const subscriptions = source(SUBSCRIPTIONS_API);
     assert.match(subscriptions, /const isTestMode = auth\.mode === "test"/);

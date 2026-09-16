@@ -52,8 +52,8 @@ const faqs = [
     a: "The merchant is the seller of record — contact them first; your SubScript receipt and its on-chain transaction are your proof of payment. If a merchant repeatedly fails to deliver after verified payments, report them to compliance@subscriptonarc.com — that violates our Terms of Service.",
   },
   {
-    q: "My Premium upgrade paid on-chain but didn't activate.",
-    a: "Activation is automatic and usually takes seconds. If it hasn't applied within one hour of on-chain confirmation, email support with the transaction hash and we'll reconcile it.",
+    q: "Why is my account still Tier 0?",
+    a: "External wallets reach Tier 1 after completing the verified-email link. Embedded MPC wallets are Tier 1 by default because they are created from a verified email. If your verified email is not reflected, contact support.",
   },
   {
     q: "The dashboard is asking me to back up a private key. Is that real?",
@@ -65,7 +65,7 @@ const faqs = [
   },
   {
     q: "Is this real money?",
-    a: "Not during the beta. SubScript currently runs on the Arc testnet, so all payments settle in testnet USDC, which has no monetary value. Balances and history may be reset before mainnet.",
+    a: "Yes for LIVE payments. SubScript production runs on Arc Mainnet (Chain ID 5042) and settles native USDC with real economic value. TEST and demo modes remain isolated and cannot prove or settle a mainnet payment.",
   },
 ];
 
@@ -144,8 +144,8 @@ export default function SupportPage() {
           <div className="mt-6 rounded-2xl border border-[#2775CA]/20 bg-[#2775CA]/5 p-4 text-xs leading-relaxed text-[#1d599b] flex items-center gap-2">
             <Shield className="w-4 h-4 shrink-0 text-[#2775CA]" />
             <span>
-              Public beta notice: SubScript currently runs on the Arc testnet. Beta payments settle in
-              testnet USDC, which has no monetary value.
+              Arc Mainnet notice: LIVE payments settle native USDC with real economic value. TEST and demo
+              assets remain isolated from mainnet settlement.
             </span>
           </div>
         </div>

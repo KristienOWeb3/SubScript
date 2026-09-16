@@ -19,6 +19,7 @@ import { getChainRelayer, resolveRpcUrl } from "./relayer";
 import { calculateBridgeFee, formatMicros, getMinBridgeAmount } from "./feeEngine";
 import { notifyDepositStarted, notifyDepositArrived, notifyAdminsLowGas } from "./notifications";
 import { processPendingCctpTransfers } from "./attestationWorker";
+import { assertArcCctpAvailable } from "./availability";
 
 const isProd = process.env.NEXT_PUBLIC_APP_ENV === "production" || process.env.NODE_ENV === "production";
 const targetArcChainId = isProd ? ARC_MAINNET_CHAIN_ID : ARC_TESTNET_CHAIN_ID;
@@ -91,6 +92,7 @@ interface ActiveIntent {
  * Main entry point. Scans all active deposit intents and bridges any detected USDC.
  */
 export async function sweepAndBridge(): Promise<SweepResult> {
+  assertArcCctpAvailable();
   const result: SweepResult = { scanned: 0, bridged: 0, skipped: 0, errors: 0 };
 
   let intents: ActiveIntent[];
