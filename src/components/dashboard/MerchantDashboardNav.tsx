@@ -395,7 +395,7 @@ export default function MerchantDashboardNav({
             {/* Mobile Bottom Navigation */}
             {mobileEnabled && (
                 <nav
-                    className="merchant-bottom-nav fixed bottom-3 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-lg -translate-x-1/2 items-center justify-around rounded-full bg-[#353935] px-2 py-2 shadow-[0_10px_40px_rgba(8,40,36,0.25)] border border-white/10 md:hidden"
+                    className="merchant-bottom-nav fixed bottom-3 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-lg -translate-x-1/2 items-center justify-around rounded-full bg-[#353935] px-2 py-2.5 min-h-[53px] shadow-[0_10px_40px_rgba(8,40,36,0.25)] border border-white/10 md:hidden"
                     aria-label="Merchant mobile navigation"
                 >
                     {[

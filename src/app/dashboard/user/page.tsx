@@ -1445,9 +1445,11 @@ export default function UserDashboard() {
     const params = new URLSearchParams(window.location.search);
     const requestedTab = params.get("tab");
     const intent = params.get("intent");
+    const subview = params.get("subview");
     if (requestedTab === "inbox") setActiveTab("inbox");
     if (requestedTab === "commit") setActiveTab("commit");
     if (intent) setFocusIntentId(intent);
+    if (subview === "people" || subview === "subscriptions") setPaymentsSubView(subview);
   }, []);
 
   useEffect(() => {

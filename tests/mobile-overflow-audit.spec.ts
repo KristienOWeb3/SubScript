@@ -670,8 +670,13 @@ test.describe("mobile overflow audit", () => {
       "user",
     );
     const page = await context.newPage();
-    await page.goto(`${baseURL}/dashboard/user?tab=inbox`, { waitUntil: "domcontentloaded" });
+    await page.goto(`${baseURL}/dashboard/user?tab=inbox&subview=people`, { waitUntil: "domcontentloaded" });
     await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+
+    const peopleTab = page.getByRole("button", { name: /People/i });
+    if (await peopleTab.isVisible()) {
+      await peopleTab.click();
+    }
 
     const peerButton = page.getByText("Mobile Audit Merchant", { exact: true }).first();
     await expect(peerButton).toBeVisible({ timeout: 60_000 });

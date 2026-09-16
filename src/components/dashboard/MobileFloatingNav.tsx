@@ -27,9 +27,9 @@ const SCROLL_DOWN_DELTA_THRESHOLD = 14; // Requires 14px of intentional down-scr
 const SCROLL_UP_DELTA_THRESHOLD = 8;   // Requires 8px of intentional up-scroll to expand
 const TOP_DEADZONE_PX = 16;            // Keep locked expanded at the very top of page
 
-// Sleek compact dimensions (+5% height increase from 48px to 50px)
-const CAPSULE_HEIGHT = 50;
-const CAPSULE_RETRACTED_SIZE = 50;
+// Sleek compact dimensions (+5% height increase from 50px to 52.5px)
+const CAPSULE_HEIGHT = 52.5;
+const CAPSULE_RETRACTED_SIZE = 52.5;
 
 export default function MobileFloatingNav<T extends string = string>({
   tabs,

@@ -154,17 +154,10 @@ function SignupContent() {
 
   const [captchaToken, setCaptchaToken] = useState("");
   const [turnstileLoaded, setTurnstileLoaded] = useState(false);
-  const [turnstileTimedOut, setTurnstileTimedOut] = useState(false);
   const isTurnstileConfigured = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
   const captchaRequired = isTurnstileConfigured && !captchaToken;
 
-  useEffect(() => {
-    if (!isTurnstileConfigured) return;
-    const timer = setTimeout(() => setTurnstileTimedOut(true), 4000);
-    return () => clearTimeout(timer);
-  }, [isTurnstileConfigured]);
-
-  const isCloudflareReady = !isTurnstileConfigured || Boolean(captchaToken) || turnstileTimedOut;
+  const isCloudflareReady = !isTurnstileConfigured || Boolean(captchaToken);
   const isAuthReady = platformFlagsLoaded && isCloudflareReady;
 
   useEffect(() => {
