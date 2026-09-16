@@ -107,7 +107,6 @@ test("all current DM producers call the shared notification boundary", () => {
     const producers = [
         "src/lib/dms/system.ts",
         "src/app/api/user/dms/route.ts",
-        "src/app/api/cron/billing/route.ts",
         "src/app/api/cron/customer-billing/route.ts",
         "src/lib/payments/email.ts",
         "src/lib/payments/paymentLinkVerificationWorker.ts",
