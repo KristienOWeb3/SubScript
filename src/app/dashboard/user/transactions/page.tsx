@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { 
@@ -902,7 +903,7 @@ export default function UserTransactionsPage() {
                           <div className="flex items-center gap-3">
                             <div className="h-9 w-9 shrink-0 rounded-xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 flex items-center justify-center overflow-hidden">
                               {tx.pic ? (
-                                <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
+                                <Image src={tx.pic} alt={tx.name} width={36} height={36} unoptimized className="h-full w-full object-cover" />
                               ) : tx.kind === "recurring" ? (
                                 <Shield className="h-4 w-4 text-[#2775CA]" />
                               ) : tx.kind === "withdrawals" ? (
@@ -989,7 +990,7 @@ export default function UserTransactionsPage() {
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div className="h-8 w-8 shrink-0 rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 flex items-center justify-center overflow-hidden">
                           {tx.pic ? (
-                            <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
+                            <Image src={tx.pic} alt={tx.name} width={32} height={32} unoptimized className="h-full w-full object-cover" />
                           ) : tx.kind === "recurring" ? (
                             <Shield className="h-4 w-4 text-[#2775CA]" />
                           ) : tx.kind === "withdrawals" ? (

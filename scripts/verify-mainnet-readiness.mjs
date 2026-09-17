@@ -73,8 +73,8 @@ const SENSITIVE_STAGED_PATTERNS = [
     /(?:^|\/)\.env(?!\.example)(?:$|\.local|\.production|\.development|\.staging|\.test)/i,
     /\b(?:id_rsa|id_ed25519)\b/i,
     /\.(?:pem|key|pfx|p12)$/i,
-    /secret/i,
-    /airgap/i,
+    /(?:^|\/)(?!check-secrets\.mjs)[^/]*secret/i,
+    /(?:^|\/)(?!generate-airgap-keys\.mjs)[^/]*airgap/i,
 ];
 
 /**

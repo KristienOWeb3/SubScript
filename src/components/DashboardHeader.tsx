@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import NotificationBell from "@/components/dashboard/NotificationBell";
 import { Wallet, Copy, Check, LogOut, Eye, EyeOff, User } from "@/components/icons";
 import { useAccount, useConnect, useDisconnect, useSwitchChain, type Connector } from "wagmi";
@@ -229,9 +230,11 @@ export default function DashboardHeader({
                         {/* Logo (Left - Always visible on mobile) */}
                         <div className="flex items-center flex-shrink-0">
                             <Link href="/" className="flex items-center">
-                                <img 
+                                <Image 
                                     src="/logo.png" 
                                     alt="SubScript Logo" 
+                                    width={28}
+                                    height={28}
                                     className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]" 
                                 />
                             </Link>
@@ -289,7 +292,7 @@ export default function DashboardHeader({
                                     className="w-7 h-7 rounded-full border border-white/10 overflow-hidden bg-gradient-to-tr from-[#00d2b4]/20 to-purple-500/20 flex items-center justify-center text-[#00d2b4] shrink-0 shadow-[0_0_8px_rgba(0,210,180,0.15)] hover:scale-105 active:scale-95 transition-all focus:outline-none"
                                 >
                                     {profilePic ? (
-                                        <img src={profilePic} alt="PFP" className="w-full h-full object-cover" />
+                                        <Image src={profilePic} alt="PFP" width={28} height={28} unoptimized className="w-full h-full object-cover" />
                                     ) : (
                                         <User className="w-3.5 h-3.5 text-[#00d2b4]" />
                                     )}
@@ -312,9 +315,11 @@ export default function DashboardHeader({
                     <div className="hidden sm:flex items-center justify-between w-full">
                         {/* Logo */}
                         <Link href="/" className="flex items-center gap-2.5 group flex-shrink-0">
-                            <img 
+                            <Image 
                                 src="/logo.png" 
                                 alt="SubScript Logo" 
+                                width={32}
+                                height={32}
                                 className="w-7 h-7 sm:w-8 sm:h-8 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)] group-hover:scale-105 transition-transform" 
                             />
                         </Link>
@@ -400,7 +405,7 @@ export default function DashboardHeader({
                                         className="w-8 h-8 rounded-full border border-white/10 overflow-hidden bg-gradient-to-tr from-[#00d2b4]/20 to-purple-500/20 flex items-center justify-center text-[#00d2b4] shrink-0 ml-1 shadow-[0_0_10px_rgba(0,210,180,0.15)] hover:scale-105 active:scale-95 transition-all focus:outline-none"
                                     >
                                         {profilePic ? (
-                                            <img src={profilePic} alt="PFP" className="w-full h-full object-cover" />
+                                            <Image src={profilePic} alt="PFP" width={32} height={32} unoptimized className="w-full h-full object-cover" />
                                         ) : (
                                             <User className="w-4 h-4 text-[#00d2b4]" />
                                         )}

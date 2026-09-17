@@ -6,10 +6,11 @@
    on the campaign. */
 import { NextResponse } from "next/server";
 import { ethers } from "ethers";
-import { getSessionWallet } from "@/lib/auth";
+import { getVerifiedSessionToken } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { haltGuard } from "@/lib/accountHalt";
 import { getWalletCustody } from "@/lib/custody";
+import { authorizeFinancialStepUp } from "@/lib/auth/stepUp";
 import { getRpcProviderForWrite } from "@/lib/payments/rpc";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 import {
@@ -33,10 +34,11 @@ const PERMIT2_ALLOWANCE_ABI = [
 
 export async function POST(request: Request) {
     try {
-        const wallet = await getSessionWallet(request.headers);
-        if (!wallet) {
+        const session = await getVerifiedSessionToken(request.headers);
+        if (!session) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
+        const wallet = session.wallet.toLowerCase();
         const roleCheck = await requireAccountRole(wallet, "ENTERPRISE");
         if (!roleCheck.ok) {
             return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
@@ -49,16 +51,41 @@ export async function POST(request: Request) {
         if (held) return held;
 
         const body = await request.json().catch(() => null);
-        const totalAmountText = typeof body?.totalAmountUsdc === "string"
-            ? body.totalAmountUsdc
-            : "";
+        const recipients = body?.recipients;
         const frequencyDays = body?.frequencyDays;
-        if (!/^\d+$/.test(totalAmountText) || BigInt(totalAmountText) <= BigInt(0)) {
-            return NextResponse.json({ error: "A positive exact payroll total is required." }, { status: 400 });
+        if (!Array.isArray(recipients) || recipients.length === 0 || recipients.length > 500) {
+            return NextResponse.json({ error: "Between 1 and 500 canonical payroll recipients are required." }, { status: 400 });
+        }
+
+        /* The Permit2 amount is derived from the exact same canonical recipient items the campaign
+           endpoint stores. A client-supplied aggregate is only a consistency assertion: it never
+           decides how much authority the server signs. */
+        let totalAmount = BigInt(0);
+        for (let index = 0; index < recipients.length; index += 1) {
+            const employeeWallet = recipients[index]?.employeeWallet;
+            if (typeof employeeWallet !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(employeeWallet)) {
+                return NextResponse.json({ error: `Invalid employeeWallet at index ${index}.` }, { status: 400 });
+            }
+            const salary = recipients[index]?.salaryAmountUsdc;
+            if (
+                (typeof salary !== "string" && typeof salary !== "number")
+                || (typeof salary === "number" && !Number.isSafeInteger(salary))
+                || !/^\d+$/.test(String(salary))
+            ) {
+                return NextResponse.json({ error: `Invalid salaryAmountUsdc at index ${index}.` }, { status: 400 });
+            }
+            const amount = BigInt(String(salary));
+            if (amount <= BigInt(0)) {
+                return NextResponse.json({ error: `salaryAmountUsdc at index ${index} must be positive.` }, { status: 400 });
+            }
+            totalAmount += amount;
+        }
+        if (typeof body?.totalAmountUsdc === "string" && body.totalAmountUsdc !== totalAmount.toString()) {
+            return NextResponse.json({ error: "Payroll total does not match the canonical recipient items." }, { status: 400 });
         }
         /* Reject amounts exceeding the Permit2 uint160 ceiling up front. buildPermitSingle rejects
            them later, but only after this route may already have written an ERC20 approval. */
-        if (BigInt(totalAmountText) > PERMIT2_MAX_AMOUNT) {
+        if (totalAmount > PERMIT2_MAX_AMOUNT) {
             return NextResponse.json({ error: "Payroll total exceeds the maximum authorizable amount." }, { status: 400 });
         }
         let window: ReturnType<typeof payrollPermitWindow>;
@@ -67,7 +94,16 @@ export async function POST(request: Request) {
         } catch (windowError: any) {
             return NextResponse.json({ error: windowError.message }, { status: 400 });
         }
-        const totalAmount = BigInt(totalAmountText);
+
+        const stepUp = await authorizeFinancialStepUp({
+            headers: request.headers,
+            wallet,
+            session,
+            binding: { action: "payrollPermit", amount: totalAmount.toString() },
+        });
+        if (!stepUp.ok) {
+            return NextResponse.json({ error: stepUp.error }, { status: stepUp.status });
+        }
 
         const keeperKey = process.env.PRIVATE_KEY;
         if (!keeperKey) {
@@ -75,9 +111,12 @@ export async function POST(request: Request) {
         }
         const keeperAddress = new ethers.Wallet(keeperKey).address;
 
-        const merchant = wallet.toLowerCase();
+        const merchant = wallet;
         /* Throws "no server-held key" for external wallets — which can't be merchants anymore. */
         const custody = await getWalletCustody(merchant);
+        if (custody.address.toLowerCase() !== merchant) {
+            return NextResponse.json({ error: "Merchant custody does not match the authenticated session." }, { status: 403 });
+        }
         const { provider } = await getRpcProviderForWrite();
         const chainId = Number((await provider.getNetwork()).chainId);
 

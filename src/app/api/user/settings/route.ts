@@ -6,6 +6,7 @@ import { uploadProfilePicture } from "@/lib/storage";
 import { pgMaybeOne } from "@/lib/serverPg";
 import { isSafeProfilePicValue, safeProfilePicOrNull } from "@/lib/profilePicSafety";
 import { getActiveWithdrawalHold } from "@/lib/admin/withdrawalHolds";
+import { getAccountSpendingStatus } from "@/lib/spendingLimits";
 
 
 const unsupportedUserSettings = new Set([
@@ -48,15 +49,16 @@ export async function GET(request: Request) {
         const embeddedWalletRecord = await pgMaybeOne<{
             email: string | null;
             provider: string | null;
-            encrypted_private_key: string | null;
             backup_completed_at: Date | null;
         }>(
-            `select email, provider, encrypted_private_key, backup_completed_at
+            `select email, provider, backup_completed_at
                from user_embedded_wallets
               where wallet_address = $1
               limit 1`,
             [normalizedUser]
         ).catch(() => null);
+
+        const spendingStatus = await getAccountSpendingStatus(normalizedUser).catch(() => null);
 
         let settings: any = {};
 
@@ -99,12 +101,14 @@ export async function GET(request: Request) {
                     churnSurveyQuestion: merchant.churnSurveyQuestion,
                     payoutDestination: merchant.payoutDestination,
                     availableBalanceUsdc: merchant.availableBalanceUsdc.toString(),
-                    walletBackup: embeddedWalletRecord ? {
+                    walletSecurity: embeddedWalletRecord ? {
                         email: embeddedWalletRecord.email,
-                        provider: embeddedWalletRecord.provider,
-                        available: Boolean(embeddedWalletRecord.encrypted_private_key),
-                        completedAt: embeddedWalletRecord.backup_completed_at || null,
-                    } : null,
+                        provider: embeddedWalletRecord.provider || "Circle MPC",
+                    } : {
+                        email: null,
+                        provider: "external",
+                    },
+                    spendingLimits: spendingStatus,
                 };
             }
         } else {
@@ -139,15 +143,17 @@ export async function GET(request: Request) {
                     expiryWarningEnabled: customer.expiryWarningEnabled,
                     securityShieldEnabled: customer.securityShieldEnabled,
                     securityMultiSigEnabled: customer.securityMultiSigEnabled,
-                    spendingLimitDaily: customer.spendingLimitDaily ? customer.spendingLimitDaily.toString() : null,
-                    spendingLimitWeekly: customer.spendingLimitWeekly ? customer.spendingLimitWeekly.toString() : null,
-                    spendingLimitMonthly: customer.spendingLimitMonthly ? customer.spendingLimitMonthly.toString() : null,
-                    walletBackup: embeddedWalletRecord ? {
+                    spendingLimitDaily: spendingStatus?.limits.dailyUsdc || "0",
+                    spendingLimitWeekly: spendingStatus?.limits.weeklyUsdc || "0",
+                    spendingLimitMonthly: spendingStatus?.limits.monthlyUsdc || "0",
+                    spendingLimits: spendingStatus,
+                    walletSecurity: embeddedWalletRecord ? {
                         email: embeddedWalletRecord.email,
-                        provider: embeddedWalletRecord.provider,
-                        available: Boolean(embeddedWalletRecord.encrypted_private_key),
-                        completedAt: embeddedWalletRecord.backup_completed_at || null,
-                    } : null,
+                        provider: embeddedWalletRecord.provider || "Circle MPC",
+                    } : {
+                        email: null,
+                        provider: "external",
+                    },
                 };
             }
         }
@@ -282,6 +288,13 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Exit-survey question is too long (max 280 characters)." }, { status: 400 });
         }
 
+        if (spendingLimitDaily !== undefined || spendingLimitWeekly !== undefined || spendingLimitMonthly !== undefined) {
+            return NextResponse.json(
+                { error: "Spending limits are governed exclusively by your KYC verification tier and cannot be manually modified." },
+                { status: 400 }
+            );
+        }
+
         let finalProfilePic = profilePic;
         if (typeof profilePic === "string" && profilePic.startsWith("data:image/")) {
             const MAX_PROFILE_PIC_BYTES = 2 * 1024 * 1024;
@@ -346,16 +359,6 @@ export async function POST(request: Request) {
             if (securityShieldEnabled !== undefined) updateData.securityShieldEnabled = false;
             if (securityMultiSigEnabled !== undefined) updateData.securityMultiSigEnabled = false;
 
-            if (spendingLimitDaily !== undefined) {
-                updateData.spendingLimitDaily = spendingLimitDaily ? BigInt(spendingLimitDaily) : null;
-            }
-            if (spendingLimitWeekly !== undefined) {
-                updateData.spendingLimitWeekly = spendingLimitWeekly ? BigInt(spendingLimitWeekly) : null;
-            }
-            if (spendingLimitMonthly !== undefined) {
-                updateData.spendingLimitMonthly = spendingLimitMonthly ? BigInt(spendingLimitMonthly) : null;
-            }
-
             await prisma.customer.upsert({
                 where: { walletAddress: normalizedUser },
                 update: updateData,
@@ -368,9 +371,6 @@ export async function POST(request: Request) {
                     expiryWarningEnabled: expiryWarningEnabled !== undefined ? !!expiryWarningEnabled : true,
                     securityShieldEnabled: false,
                     securityMultiSigEnabled: false,
-                    spendingLimitDaily: spendingLimitDaily ? BigInt(spendingLimitDaily) : null,
-                    spendingLimitWeekly: spendingLimitWeekly ? BigInt(spendingLimitWeekly) : null,
-                    spendingLimitMonthly: spendingLimitMonthly ? BigInt(spendingLimitMonthly) : null,
                 },
             });
         }

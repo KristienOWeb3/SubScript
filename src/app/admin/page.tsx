@@ -1421,7 +1421,7 @@ export default function AdminDashboardPage() {
                             <span className="truncate font-mono text-[11px] font-bold text-white leading-tight">
                               {viewerAdminHandle}
                             </span>
-                            <span className="truncate font-mono text-[9px] font-bold text-white/60 leading-tight">
+                            <span className="truncate font-mono text-[9px] font-bold text-white/80 leading-tight">
                               {viewerIsRoot ? "Root" : "Delegated"} • Arc Mainnet
                             </span>
                           </div>
@@ -1430,7 +1430,7 @@ export default function AdminDashboardPage() {
                         <button
                           type="button"
                           onClick={() => setMobileNavOpen(false)}
-                          className="flex h-8 w-8 aspect-square items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/70 hover:text-white hover:bg-white/10 hover:border-white/20 transition shrink-0"
+                          className="flex h-8 w-8 aspect-square items-center justify-center rounded-full border border-white/20 bg-white/[0.08] text-white/90 hover:text-white hover:bg-white/15 hover:border-white/30 transition shrink-0"
                           aria-label="Close navigation"
                         >
                           <X className="h-4 w-4" />
@@ -1441,8 +1441,8 @@ export default function AdminDashboardPage() {
                       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                         {adminNavGroups.map((group) => (
                           <div key={group.id} className="space-y-1">
-                            <div className="flex items-center gap-1.5 px-2 pt-1 text-[10px] font-black uppercase tracking-wider text-white/50">
-                              <group.icon className="h-3.5 w-3.5 text-white/60" />
+                            <div className="flex items-center gap-1.5 px-2 pt-1 text-[10px] font-black uppercase tracking-wider text-white/80">
+                              <group.icon className="h-3.5 w-3.5 text-white/80" />
                               <span>{group.label}</span>
                             </div>
                             <div className="space-y-0.5">
@@ -1459,10 +1459,10 @@ export default function AdminDashboardPage() {
                                     className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-[6px] text-left text-xs font-semibold transition-all ${
                                       isSubActive
                                         ? "bg-[#FFFFF0] text-[#353935] font-bold shadow-sm"
-                                        : "text-white/80 hover:bg-white/[0.08] hover:text-white"
+                                        : "text-white/95 hover:bg-white/[0.12] hover:text-white"
                                     }`}
                                   >
-                                    <sub.icon className={`h-4 w-4 shrink-0 ${isSubActive ? "text-[#353935]" : "text-white/70"}`} />
+                                    <sub.icon className={`h-4 w-4 shrink-0 ${isSubActive ? "text-[#353935]" : "text-white/90"}`} />
                                     <span className="truncate">{sub.label}</span>
                                   </button>
                                 );
@@ -1477,7 +1477,7 @@ export default function AdminDashboardPage() {
                         <Link
                           href="/dashboard/user"
                           onClick={() => setMobileNavOpen(false)}
-                          className="flex items-center gap-1.5 text-xs font-bold text-white/80 hover:text-white transition"
+                          className="flex items-center gap-1.5 text-xs font-bold text-white/95 hover:text-white transition"
                         >
                           <span>← User Dashboard</span>
                         </Link>

@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 
 interface ChainLogoProps {
   chain?: string | number | null;
@@ -20,7 +21,7 @@ export function ChainLogo({ chain, className = "h-5 w-5", size = 20 }: ChainLogo
     identifier === "0"
   ) {
     return (
-      <img
+      <Image
         src="/chains/ethereum.svg"
         alt="Ethereum"
         width={size}
@@ -39,7 +40,7 @@ export function ChainLogo({ chain, className = "h-5 w-5", size = 20 }: ChainLogo
     identifier === "6"
   ) {
     return (
-      <img
+      <Image
         src="/chains/base.svg"
         alt="Base"
         width={size}
@@ -59,7 +60,7 @@ export function ChainLogo({ chain, className = "h-5 w-5", size = 20 }: ChainLogo
     identifier === "3"
   ) {
     return (
-      <img
+      <Image
         src="/chains/arbitrum.svg"
         alt="Arbitrum"
         width={size}
@@ -81,7 +82,7 @@ export function ChainLogo({ chain, className = "h-5 w-5", size = 20 }: ChainLogo
     identifier === "2"
   ) {
     return (
-      <img
+      <Image
         src="/chains/optimism.svg"
         alt="Optimism"
         width={size}
@@ -103,7 +104,7 @@ export function ChainLogo({ chain, className = "h-5 w-5", size = 20 }: ChainLogo
     identifier === "7"
   ) {
     return (
-      <img
+      <Image
         src="/chains/polygon.svg"
         alt="Polygon"
         width={size}
@@ -123,7 +124,7 @@ export function ChainLogo({ chain, className = "h-5 w-5", size = 20 }: ChainLogo
     identifier.includes("fuji")
   ) {
     return (
-      <img
+      <Image
         src="/chains/avalanche.svg"
         alt="Avalanche"
         width={size}
@@ -137,7 +138,7 @@ export function ChainLogo({ chain, className = "h-5 w-5", size = 20 }: ChainLogo
   // Solana
   if (identifier.includes("sol") || identifier === "5") {
     return (
-      <img
+      <Image
         src="/chains/solana.svg"
         alt="Solana"
         width={size}
@@ -151,7 +152,7 @@ export function ChainLogo({ chain, className = "h-5 w-5", size = 20 }: ChainLogo
   // USDC
   if (identifier === "usdc") {
     return (
-      <img
+      <Image
         src="/chains/usdc.svg"
         alt="USDC"
         width={size}
@@ -164,7 +165,7 @@ export function ChainLogo({ chain, className = "h-5 w-5", size = 20 }: ChainLogo
 
   // Arc Network (Primary / Default)
   return (
-    <img
+    <Image
       src="/chains/arc.svg"
       alt="Arc Network"
       width={size}

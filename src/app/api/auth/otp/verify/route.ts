@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { provisionEmbeddedWallet } from "@/lib/custody/provision";
 import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
 import { sanitizeInput } from "@/utils/security";
-import { checkProviderRateLimit } from "@/lib/providerRateLimit";
 import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
 import { withPgClient } from "@/lib/serverPg";
+import { consumeDistributedRateLimit } from "@/lib/distributedRateLimit";
 import crypto from "crypto";
 import { 
     isConnectionError, 
@@ -15,7 +15,11 @@ import {
 } from "@/lib/offlineDb";
 import { setSessionCookie } from "@/lib/authCookies";
 import { ensureDefaultAliasFromEmail } from "@/lib/auth/defaultAlias";
-import { createSessionToken } from "@/lib/auth";
+import { createSessionToken, getVerifiedSessionToken } from "@/lib/auth";
+import {
+    createFinancialStepUpToken,
+    normalizeFinancialStepUpBinding,
+} from "@/lib/auth/stepUp";
 
 function hashOtp(email: string, code: string) {
     const secret = process.env.OTP_SECRET || process.env.JWT_SECRET;
@@ -46,7 +50,7 @@ export async function POST(request: Request) {
         }
 
         const sanitizedBody = sanitizeInput(body);
-        const { email, code, rememberMe, challengeId } = sanitizedBody;
+        const { email, code, rememberMe, challengeId, purpose, stepUp } = sanitizedBody;
 
         if (
             typeof email !== "string" ||
@@ -60,6 +64,21 @@ export async function POST(request: Request) {
         const emailVal = email.toLowerCase();
         const codeTrimmed = code.trim();
         const rememberMeBool = Boolean(rememberMe);
+        const isFinancialStepUpRequest = purpose === "financial_step_up";
+        const stepUpBinding = isFinancialStepUpRequest
+            ? normalizeFinancialStepUpBinding(stepUp)
+            : null;
+        if (isFinancialStepUpRequest && !stepUpBinding) {
+            return NextResponse.json({ error: "A valid financial authorization binding is required." }, { status: 400 });
+        }
+
+        const activeSession = isFinancialStepUpRequest
+            ? await getVerifiedSessionToken(request.headers)
+            : null;
+        if (isFinancialStepUpRequest && !activeSession) {
+            return NextResponse.json({ error: "Sign in before completing financial verification." }, { status: 401 });
+        }
+        const otpWallet = activeSession?.wallet.toLowerCase() ?? null;
 
         const emailLower = emailVal;
         const rememberMeVal = rememberMeBool;
@@ -69,7 +88,18 @@ export async function POST(request: Request) {
             : rawChallengeId;
 
         const requesterIp = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
-        const ipLimit = checkProviderRateLimit({ provider: "otp-verify-ip", key: requesterIp, limit: 20, windowMs: 10 * 60 * 1000 });
+        let ipLimit;
+        try {
+            ipLimit = await consumeDistributedRateLimit({
+                scope: "otp-verify-ip",
+                key: requesterIp,
+                limit: 20,
+                windowSeconds: 10 * 60,
+            });
+        } catch (error) {
+            console.error("OTP verify IP rate-limit error:", error);
+            return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
+        }
         if (!ipLimit.ok) {
             return NextResponse.json(
                 { error: "Too many verification attempts. Please wait before trying again." },
@@ -77,7 +107,18 @@ export async function POST(request: Request) {
             );
         }
 
-        const emailLimit = checkProviderRateLimit({ provider: "otp-verify-email", key: emailVal, limit: 10, windowMs: 10 * 60 * 1000 });
+        let emailLimit;
+        try {
+            emailLimit = await consumeDistributedRateLimit({
+                scope: "otp-verify-email",
+                key: emailVal,
+                limit: 10,
+                windowSeconds: 10 * 60,
+            });
+        } catch (error) {
+            console.error("OTP verify email rate-limit error:", error);
+            return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
+        }
         if (!emailLimit.ok) {
             return NextResponse.json(
                 { error: "Too many verification attempts. Please wait before trying again." },
@@ -97,12 +138,12 @@ export async function POST(request: Request) {
                        lock is held, so parallel guesses cannot outrun the five-attempt budget. */
                     const result = challengeIdVal
                         ? await client.query(
-                            "select code, expires_at, failed_attempts from otp_codes where email = $1 and challenge_id = $2 and purpose = 'LOGIN' limit 1 for update",
-                            [emailVal, challengeIdVal]
+                            "select code, expires_at, failed_attempts from otp_codes where email = $1 and challenge_id = $2 and purpose = 'LOGIN' and wallet_address is not distinct from $3 limit 1 for update",
+                            [emailVal, challengeIdVal, otpWallet]
                           )
                         : await client.query(
-                            "select code, expires_at, failed_attempts from otp_codes where email = $1 and purpose = 'LOGIN' limit 1 for update",
-                            [emailVal]
+                            "select code, expires_at, failed_attempts from otp_codes where email = $1 and purpose = 'LOGIN' and wallet_address is not distinct from $2 limit 1 for update",
+                            [emailVal, otpWallet]
                           );
                     const locked = result.rows[0] || null;
                     if (!locked) {
@@ -115,13 +156,13 @@ export async function POST(request: Request) {
                     if (expired || spent) {
                         if (challengeIdVal) {
                             await client.query(
-                                "delete from otp_codes where email = $1 and challenge_id = $2 and purpose = 'LOGIN'",
-                                [emailVal, challengeIdVal]
+                                "delete from otp_codes where email = $1 and challenge_id = $2 and purpose = 'LOGIN' and wallet_address is not distinct from $3",
+                                [emailVal, challengeIdVal, otpWallet]
                             );
                         } else {
                             await client.query(
-                                "delete from otp_codes where email = $1 and purpose = 'LOGIN'",
-                                [emailVal]
+                                "delete from otp_codes where email = $1 and purpose = 'LOGIN' and wallet_address is not distinct from $2",
+                                [emailVal, otpWallet]
                             );
                         }
                         await client.query("COMMIT");
@@ -133,25 +174,25 @@ export async function POST(request: Request) {
                         if (nextAttempts >= MAX_OTP_FAILED_ATTEMPTS) {
                             if (challengeIdVal) {
                                 await client.query(
-                                    "delete from otp_codes where email = $1 and challenge_id = $2 and purpose = 'LOGIN'",
-                                    [emailVal, challengeIdVal]
+                                    "delete from otp_codes where email = $1 and challenge_id = $2 and purpose = 'LOGIN' and wallet_address is not distinct from $3",
+                                    [emailVal, challengeIdVal, otpWallet]
                                 );
                             } else {
                                 await client.query(
-                                    "delete from otp_codes where email = $1 and purpose = 'LOGIN'",
-                                    [emailVal]
+                                    "delete from otp_codes where email = $1 and purpose = 'LOGIN' and wallet_address is not distinct from $2",
+                                    [emailVal, otpWallet]
                                 );
                             }
                         } else {
                             if (challengeIdVal) {
                                 await client.query(
-                                    "update otp_codes set failed_attempts = $2 where email = $1 and challenge_id = $3 and purpose = 'LOGIN'",
-                                    [emailVal, nextAttempts, challengeIdVal]
+                                    "update otp_codes set failed_attempts = $2 where email = $1 and challenge_id = $3 and purpose = 'LOGIN' and wallet_address is not distinct from $4",
+                                    [emailVal, nextAttempts, challengeIdVal, otpWallet]
                                 );
                             } else {
                                 await client.query(
-                                    "update otp_codes set failed_attempts = $2 where email = $1 and purpose = 'LOGIN'",
-                                    [emailVal, nextAttempts]
+                                    "update otp_codes set failed_attempts = $2 where email = $1 and purpose = 'LOGIN' and wallet_address is not distinct from $3",
+                                    [emailVal, nextAttempts, otpWallet]
                                 );
                             }
                         }
@@ -161,13 +202,13 @@ export async function POST(request: Request) {
 
                     if (challengeIdVal) {
                         await client.query(
-                            "delete from otp_codes where email = $1 and challenge_id = $2 and purpose = 'LOGIN'",
-                            [emailVal, challengeIdVal]
+                            "delete from otp_codes where email = $1 and challenge_id = $2 and purpose = 'LOGIN' and wallet_address is not distinct from $3",
+                            [emailVal, challengeIdVal, otpWallet]
                         );
                     } else {
                         await client.query(
-                            "delete from otp_codes where email = $1 and purpose = 'LOGIN'",
-                            [emailVal]
+                            "delete from otp_codes where email = $1 and purpose = 'LOGIN' and wallet_address is not distinct from $2",
+                            [emailVal, otpWallet]
                         );
                     }
                     await client.query("COMMIT");
@@ -201,6 +242,20 @@ export async function POST(request: Request) {
 
         if (!verified) {
             return NextResponse.json({ error: "Invalid or expired verification code." }, { status: 400 });
+        }
+
+        if (isFinancialStepUpRequest && activeSession && stepUpBinding) {
+            const emailBinding = await withPgClient((client) => findAccountEmailBinding(client, emailVal));
+            if (!emailBinding || emailBinding.walletAddress.toLowerCase() !== activeSession.wallet.toLowerCase()) {
+                return NextResponse.json({ error: "This email is not linked to the signed-in account." }, { status: 403 });
+            }
+            const stepUpToken = await createFinancialStepUpToken(activeSession, stepUpBinding);
+            return NextResponse.json({
+                success: true,
+                stepUpToken,
+                expiresInSeconds: 5 * 60,
+                binding: stepUpBinding,
+            });
         }
 
         let walletAddress = "";

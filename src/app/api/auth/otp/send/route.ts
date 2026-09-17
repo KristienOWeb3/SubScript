@@ -7,9 +7,10 @@ import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/ac
 import { withPgClient } from "@/lib/serverPg";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
+import { normalizeFinancialStepUpBinding } from "@/lib/auth/stepUp";
 
 import { verifyCaptchaToken } from "@/lib/captcha";
-import { checkProviderRateLimit } from "@/lib/providerRateLimit";
+import { consumeDistributedRateLimit } from "@/lib/distributedRateLimit";
 
 const OTP_TTL_MS = 10 * 60 * 1000;
 const GENERIC_OTP_MESSAGE = "If this email can sign in, a verification code has been sent.";
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
         }
 
         const sanitizedBody = sanitizeInput(body);
-        const { email, captchaToken, purpose, authFlow } = sanitizedBody;
+        const { email, captchaToken, purpose, authFlow, stepUp } = sanitizedBody;
 
         if (!email || typeof email !== "string" || !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
             return NextResponse.json({ error: "Invalid email address format" }, { status: 400 });
@@ -48,16 +49,22 @@ export async function POST(request: Request) {
 
         const emailLower = email.toLowerCase();
         const isEmailBindingRequest = purpose === "bind_wallet_email";
+        const isFinancialStepUpRequest = purpose === "financial_step_up";
         const isSignInRequest = authFlow === "signin";
         let bindingWallet: string | null = null;
-        if (isEmailBindingRequest) {
+        if (isFinancialStepUpRequest && !normalizeFinancialStepUpBinding(stepUp)) {
+            return NextResponse.json({ error: "A valid financial authorization binding is required." }, { status: 400 });
+        }
+        if (isEmailBindingRequest || isFinancialStepUpRequest) {
             const sessionWallet = await getSessionWallet(request.headers);
             if (!sessionWallet) {
-                return NextResponse.json({ error: "Sign in with this wallet before verifying an email." }, { status: 401 });
+                return NextResponse.json({ error: "Sign in before requesting this verification code." }, { status: 401 });
             }
-            const roleCheck = await requireAccountRole(sessionWallet, "USER");
-            if (!roleCheck.ok) {
-                return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
+            if (isEmailBindingRequest) {
+                const roleCheck = await requireAccountRole(sessionWallet, "USER");
+                if (!roleCheck.ok) {
+                    return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
+                }
             }
             bindingWallet = sessionWallet.toLowerCase();
         }
@@ -66,7 +73,18 @@ export async function POST(request: Request) {
            later fails CAPTCHA or hits the wallet-only 409 doesn't burn the 3-per-window email quota
            without ever delivering a code. */
         const requesterIp = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
-        const ipLimit = checkProviderRateLimit({ provider: "otp-send-ip", key: requesterIp, limit: 10, windowMs: 10 * 60 * 1000 });
+        let ipLimit;
+        try {
+            ipLimit = await consumeDistributedRateLimit({
+                scope: "otp-send-ip",
+                key: requesterIp,
+                limit: 10,
+                windowSeconds: 10 * 60,
+            });
+        } catch (error) {
+            console.error("OTP send IP rate-limit error:", error);
+            return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
+        }
         if (!ipLimit.ok) {
             return NextResponse.json(
                 { error: "Too many verification-code requests. Please wait before trying again." },
@@ -79,6 +97,12 @@ export async function POST(request: Request) {
         try {
             const emailBinding = await withPgClient((client) => findAccountEmailBinding(client, emailLower));
             emailLoginAllowed = Boolean(emailBinding) && !isWalletOnlyEmailBinding(emailBinding);
+            if (
+                isFinancialStepUpRequest
+                && (!emailBinding || emailBinding.walletAddress.toLowerCase() !== bindingWallet)
+            ) {
+                return NextResponse.json({ error: "Use the verified email linked to this account." }, { status: 403 });
+            }
         } catch (err: any) {
             console.error("OTP send email binding query error:", err);
             if (!isConnectionError(err) || !allowOfflineAuth()) {
@@ -90,15 +114,28 @@ export async function POST(request: Request) {
            request. Otherwise an attacker can omit CAPTCHA and distinguish an existing email
            (code sent) from an unknown email (CAPTCHA error). */
         if (!isEmailBindingRequest) {
-            const isValid = await verifyCaptchaToken(captchaToken, requesterIp);
-            if (!isValid) {
-                return NextResponse.json({ error: "Incorrect or expired CAPTCHA code. Please try again." }, { status: 400 });
+            if (!isFinancialStepUpRequest) {
+                const isValid = await verifyCaptchaToken(captchaToken, requesterIp);
+                if (!isValid) {
+                    return NextResponse.json({ error: "Incorrect or expired CAPTCHA code. Please try again." }, { status: 400 });
+                }
             }
         }
 
         /* Charge the per-email quota only now that all validation/CAPTCHA/wallet-only gates have
            passed and we're about to actually issue a code. */
-        const emailLimit = checkProviderRateLimit({ provider: "otp-send-email", key: emailLower, limit: 3, windowMs: 10 * 60 * 1000 });
+        let emailLimit;
+        try {
+            emailLimit = await consumeDistributedRateLimit({
+                scope: "otp-send-email",
+                key: emailLower,
+                limit: 3,
+                windowSeconds: 10 * 60,
+            });
+        } catch (error) {
+            console.error("OTP send email rate-limit error:", error);
+            return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
+        }
         if (!emailLimit.ok) {
             return NextResponse.json(
                 { error: "Too many verification-code requests. Please wait before trying again." },
@@ -160,6 +197,9 @@ export async function POST(request: Request) {
                                 ]
                             );
                         } catch (_retryErr) {
+                            /* A financial step-up code must remain bound to the live wallet.
+                               The legacy-column fallback cannot represent that guarantee. */
+                            if (isFinancialStepUpRequest) throw _retryErr;
                             return await client.query(
                                 `insert into otp_codes (email, code, expires_at)
                                  values ($1, $2, $3)

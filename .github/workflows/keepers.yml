@@ -19,7 +19,9 @@ name: Keepers
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    # CCTP disabled for mainnet v1 — Circle has not published Arc Mainnet CCTP domain/contracts.
+    # The */5 cron for cctp-relay is removed until CCTP v2 launches. The job remains for manual smoke.
+    # - cron: "*/5 * * * *"
     - cron: "*/15 * * * *"
     - cron: "0 2 * * *"
     - cron: "0 5 * * *"
@@ -40,10 +42,10 @@ concurrency:
 
 jobs:
   cctp-relay:
-    # Every five minutes. The worker claims each row with a conditional UPDATE before it spends gas,
-    # so an overlapping run cannot relay the same burn twice; that makes it safe to schedule this
-    # tightly even though the `keepers` concurrency group queues runs rather than cancelling them.
-    if: github.event_name == 'schedule' && github.event.schedule == '*/5 * * * *'
+    # CCTP disabled for mainnet v1. This job only runs on manual dispatch now.
+    # When Circle publishes Arc Mainnet CCTP contracts, uncomment the */5 cron above
+    # and restore the schedule condition below.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: keeper/cctp

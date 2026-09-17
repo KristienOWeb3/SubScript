@@ -156,10 +156,10 @@ BEGIN
             ALTER TABLE subscription_billing_claims DROP CONSTRAINT subscription_billing_claims_subscription_id_key;
         END IF;
 
-        -- Create composite index
-        CREATE UNIQUE INDEX IF NOT EXISTS subscription_billing_claims_contract_sub_idx 
-            ON subscription_billing_claims (lower(contract_address), subscription_id);
-        RAISE NOTICE 'Created composite unique index on subscription_billing_claims (contract_address, subscription_id)';
+        -- Create composite index covering contract_address, subscription_id, and sequence_id
+        CREATE UNIQUE INDEX IF NOT EXISTS subscription_billing_claims_contract_sub_seq_idx 
+            ON subscription_billing_claims (lower(contract_address), subscription_id, sequence_id);
+        RAISE NOTICE 'Created composite unique index on subscription_billing_claims (contract_address, subscription_id, sequence_id)';
     END IF;
 END $$;
 

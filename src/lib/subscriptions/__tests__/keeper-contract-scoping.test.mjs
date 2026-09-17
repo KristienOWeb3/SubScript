@@ -21,8 +21,7 @@ const SCOPE = '.eq("contract_address", activeSubscriptionContract())';
  * is not immediately preceded by the contract scope.
  *
  * Written as a walk rather than a regex because the answer depends on which table the chain started
- * from: `subscription_billing_claims` also filters on subscription_id and is deliberately excluded
- * (it has no contract_address column yet — see the KNOWN GAP note in cron/billing).
+ * from: `subscription_billing_claims` is composite-scoped by contract_address and sequence_id.
  */
 function unscopedSubscriptionIdFilters(text) {
     const lines = text.split("\n").map((line) => line.trim().replace(/;$/, ""));
@@ -105,14 +104,15 @@ test("each keeper imports the one sanctioned source for the active contract addr
     }
 });
 
-test("the billing-claims id collision is recorded rather than silently left", () => {
-    /* subscription_billing_claims is keyed on subscription_id alone, so two generations sharing an id
-       contend for one claim row. That needs a migration on the table and its claim/release/complete
-       RPCs, so it is out of scope here — but it must not be forgotten, and the exclusion in the
-       walker above must stay justified by a written note. */
+test("the billing-claims table and RPCs enforce composite contract scoping", () => {
+    /* subscription_billing_claims is composite-keyed on (contract_address, subscription_id, sequence_id)
+       to prevent cross-contract generation claim collisions. All RPCs require p_contract_address. */
     const billing = source("src/app/api/cron/customer-billing/route.ts");
-    assert.match(billing, /KNOWN GAP: `subscription_billing_claims`/);
-    assert.match(billing, /needs a migration/);
+    assert.match(billing, /Composite scoping: `subscription_billing_claims`/);
+    assert.match(billing, /p_contract_address:\s*activeSubscriptionContract\(\)/);
+    const migration = source("supabase/migrations/20260917120000_composite_subscription_billing_claims.sql");
+    assert.match(migration, /PRIMARY KEY \(contract_address, subscription_id, sequence_id\)/);
+    assert.match(migration, /p_contract_address TEXT/);
 });
 
 test("an external-wallet cancellation reaches the merchant before the 409", () => {

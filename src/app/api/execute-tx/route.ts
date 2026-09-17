@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getAddress, isAddress } from "ethers";
 import crypto from "crypto";
 import { getWalletCustody, deterministicIdempotencyKey, cancelSubscriptionIdempotencyKey } from "@/lib/custody";
 import { getSessionWallet } from "@/lib/auth";
@@ -16,6 +17,7 @@ import { createDmAndNotify } from "@/lib/dms/notifications";
 import { assertWithdrawalAllowed, WithdrawalHeldError } from "@/lib/admin/withdrawalHolds";
 import { assertAccountNotHalted, AccountHaltError } from "@/lib/accountHalt";
 import { bindTxToReceipt } from "@/lib/receipts/binding";
+import { authorizeFinancialStepUp } from "@/lib/auth/stepUp";
 
 /* Custody execution waits for on-chain confirmation (required for Circle SCA wallets,
    whose tx hash only exists once confirmed), so give the route enough headroom. */
@@ -319,10 +321,10 @@ export async function POST(request: Request) {
             }
             case "transferUsdc": {
                 const { to, amount } = args;
-                if (!to || typeof to !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(to)) {
+                if (!to || typeof to !== "string" || !isAddress(to)) {
                     return NextResponse.json({ error: "Invalid recipient address" }, { status: 400 });
                 }
-                const normalizedTo = to.toLowerCase();
+                const normalizedTo = getAddress(to).toLowerCase();
 
                 /* Validate the caller-supplied EVM destination; authentication, custody,
                    ownership, and amount validation are enforced above. */
@@ -362,7 +364,7 @@ export async function POST(request: Request) {
                 contractAddress = USDC_NATIVE_GAS_ADDRESS;
                 contractAbi = ERC20_ABI;
                 functionName = "transfer";
-                finalArgs = [to, transferAmount];
+                finalArgs = [getAddress(to), transferAmount];
                 break;
             }
             case "withdraw": {
@@ -372,9 +374,38 @@ export async function POST(request: Request) {
                 if (withdrawTarget === undefined || withdrawTarget === null || withdrawTarget === "") {
                     functionName = "withdraw";
                     finalArgs = [];
-                } else if (typeof withdrawTarget === "string" && /^0x[0-9a-fA-F]{40}$/.test(withdrawTarget)) {
+                } else if (typeof withdrawTarget === "string" && isAddress(withdrawTarget)) {
+                    const normalizedTarget = getAddress(withdrawTarget).toLowerCase();
+                    if (normalizedTarget === ZERO_ADDRESS) {
+                        return NextResponse.json({ error: "Withdrawal recipient cannot be the zero address." }, { status: 400 });
+                    }
+
+                    const { data: merchant, error: merchantError } = await supabase
+                        .from("merchants")
+                        .select("payout_destination")
+                        .eq("wallet_address", wallet.toLowerCase())
+                        .maybeSingle();
+                    if (merchantError) {
+                        console.error(`[execute-tx] Failed to verify payout destination: ${merchantError.message}`);
+                        return NextResponse.json({ error: "Unable to verify withdrawal recipient" }, { status: 503 });
+                    }
+                    const registeredPayout = typeof merchant?.payout_destination === "string" && isAddress(merchant.payout_destination)
+                        ? getAddress(merchant.payout_destination).toLowerCase()
+                        : null;
+                    const isPreauthorizedDestination = normalizedTarget === wallet.toLowerCase()
+                        || normalizedTarget === registeredPayout;
+                    if (!isPreauthorizedDestination) {
+                        const stepUp = await authorizeFinancialStepUp({
+                            headers: request.headers,
+                            wallet,
+                            binding: { action: "withdrawTo", recipient: normalizedTarget },
+                        });
+                        if (!stepUp.ok) {
+                            return NextResponse.json({ error: stepUp.error }, { status: stepUp.status });
+                        }
+                    }
                     functionName = "withdrawTo";
-                    finalArgs = [withdrawTarget];
+                    finalArgs = [getAddress(withdrawTarget)];
                 } else {
                     return NextResponse.json({ error: "Invalid withdrawal recipient address" }, { status: 400 });
                 }
@@ -398,14 +429,27 @@ export async function POST(request: Request) {
             }
             case "configurePayoutDestination": {
                 const { payoutAddress } = args;
-                if (!payoutAddress || typeof payoutAddress !== "string" || !payoutAddress.startsWith("0x") || payoutAddress.length !== 42) {
+                if (!payoutAddress || typeof payoutAddress !== "string" || !isAddress(payoutAddress)) {
                     return NextResponse.json({ error: "Invalid payout address. Address must be a valid 0x hex format." }, { status: 400 });
+                }
+                const normalizedPayout = getAddress(payoutAddress).toLowerCase();
+                if (normalizedPayout === ZERO_ADDRESS) {
+                    return NextResponse.json({ error: "Payout address cannot be the zero address." }, { status: 400 });
+                }
+
+                const stepUp = await authorizeFinancialStepUp({
+                    headers: request.headers,
+                    wallet,
+                    binding: { action: "configurePayoutDestination", recipient: normalizedPayout },
+                });
+                if (!stepUp.ok) {
+                    return NextResponse.json({ error: stepUp.error }, { status: stepUp.status });
                 }
 
                 contractAddress = SUBSCRIPT_ROUTER_ADDRESS;
                 contractAbi = SUBSCRIPT_ABI;
                 functionName = "configurePayoutDestination";
-                finalArgs = [payoutAddress];
+                finalArgs = [getAddress(payoutAddress)];
                 break;
             }
             case "registerViewKey": {

@@ -3,8 +3,8 @@
  * One place answers "which network is this deployment settling on" for hosted checkout,
  * premium checkout/verification, subscriptions, the vault, browser wallet switching,
  * embedded Circle wallet provisioning, RPC providers, explorer links, CLI/MCP config,
- * receipts and reconciliation. NEXT_PUBLIC_ENVIRONMENT selects the network; testnet is
- * the default and the only supported mode today.
+ * receipts and reconciliation. NEXT_PUBLIC_ENVIRONMENT selects the network
+ * (either "testnet" or "mainnet").
  *
  * Mainnet is FAIL-CLOSED: when NEXT_PUBLIC_ENVIRONMENT=mainnet, every network-critical
  * value must be explicitly configured. Financial routes must call

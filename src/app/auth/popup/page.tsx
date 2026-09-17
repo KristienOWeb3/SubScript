@@ -65,8 +65,9 @@ function clearCircleSession() {
 }
 
 function getAuthIntent() {
+    if (typeof window === "undefined") return "signin";
     const storedIntent = window.localStorage.getItem("subscript_circle_auth_intent");
-    return storedIntent === "signin" ? "signin" : "signup";
+    return storedIntent === "signup" ? "signup" : "signin";
 }
 
 function clearCircleLoginState() {
@@ -139,6 +140,7 @@ function GoogleColorSpinner({ className = "w-10 h-10" }: { className?: string })
 function PopupContent() {
     const [step, setStep] = useState<"loading" | "challenge" | "complete" | "error">("loading");
     const [error, setError] = useState("");
+    const [authIntent, setAuthIntent] = useState<"signin" | "signup">(() => getAuthIntent());
 
     useEffect(() => {
         let cancelled = false;
@@ -169,8 +171,8 @@ function PopupContent() {
                 throw new Error(completed.error || "Could not save your wallet.");
             }
 
-            const intent = getAuthIntent();
-            window.localStorage.removeItem("subscript_circle_auth_intent");
+            const intent = completed.isNewUser === true ? "signup" : (getAuthIntent() === "signup" ? "signup" : "signin");
+            setAuthIntent(intent);
             setStep("complete");
 
             const destination = completed.role
@@ -178,6 +180,10 @@ function PopupContent() {
                 : (intent === "signin"
                     ? getDashboardUrl("USER", "/dashboard")
                     : `/signup?email=${encodeURIComponent(completed.email || "")}`);
+
+            try {
+                window.localStorage.removeItem("subscript_circle_auth_intent");
+            } catch {}
 
             if (window.opener && !window.opener.closed) {
                 try {
@@ -227,7 +233,7 @@ function PopupContent() {
 
 
 
-    const isSignIn = getAuthIntent() === "signin";
+    const isSignIn = authIntent === "signin";
     const title = step === "challenge"
         ? "Security Verification"
         : step === "complete"

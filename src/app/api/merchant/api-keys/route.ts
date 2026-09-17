@@ -39,7 +39,7 @@ export async function GET(request: Request) {
         const supabase = getSupabase();
         const { data: keys, error } = await supabase
             .from("api_keys")
-            .select("*")
+            .select("id, wallet_address, publishable_key, mode, secret_key_hint, created_at, revoked")
             .eq("wallet_address", wallet.toLowerCase())
             .eq("revoked", false)
             .order("created_at", { ascending: false });
@@ -54,8 +54,8 @@ export async function GET(request: Request) {
             walletAddress: k.wallet_address,
             publishableKey: k.publishable_key,
             mode: k.mode,
-            /* Prefer the stored hint; fall back to redacting any legacy plaintext not yet migrated. */
-            secretKeyPlain: k.secret_key_hint || redactSecretKey(k.secret_key_plain),
+            /* Prefer the stored hint; never expose hash or plaintext */
+            secretKeyPlain: k.secret_key_hint || "",
             secretKeyAvailable: false,
             createdAt: k.created_at,
             revoked: k.revoked,
@@ -165,7 +165,7 @@ export async function DELETE(request: Request) {
             .from("api_keys")
             .update({ revoked: true })
             .eq("id", id)
-            .select()
+            .select("id, wallet_address, publishable_key, mode, secret_key_hint, created_at, revoked")
             .single();
 
         if (updateError) {
@@ -177,7 +177,8 @@ export async function DELETE(request: Request) {
             id: updatedKey.id,
             walletAddress: updatedKey.wallet_address,
             publishableKey: updatedKey.publishable_key,
-            secretKeyPlain: updatedKey.secret_key_hint || redactSecretKey(updatedKey.secret_key_plain),
+            mode: updatedKey.mode,
+            secretKeyPlain: updatedKey.secret_key_hint || "",
             secretKeyAvailable: false,
             createdAt: updatedKey.created_at,
             revoked: updatedKey.revoked,

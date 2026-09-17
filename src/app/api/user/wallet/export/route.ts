@@ -103,62 +103,8 @@ async function verifyExportOtp(email: string, code: string): Promise<{ ok: true 
 }
 
 export async function POST(request: Request) {
-    try {
-        const wallet = await getSessionWallet(request.headers);
-        if (!wallet) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-
-        const body = sanitizeInput(await request.json().catch(() => ({}))) || {};
-        const otpCode = typeof body.otpCode === "string" ? body.otpCode : "";
-
-        const normalizedWallet = wallet.toLowerCase();
-        const record = await pgMaybeOne<EmbeddedWalletExportRecord>(
-            `select email, provider, encrypted_private_key
-               from user_embedded_wallets
-              where wallet_address = $1
-              limit 1`,
-            [normalizedWallet]
-        );
-
-        if (!record) {
-            return NextResponse.json({
-                error: "This account is using an external wallet. Export the key from your wallet app instead.",
-            }, { status: 404 });
-        }
-
-        if (record.encrypted_private_key) {
-            if (!record.email) {
-                return NextResponse.json({ error: "No email address associated with this wallet." }, { status: 400 });
-            }
-            const otpCheck = await verifyExportOtp(record.email, otpCode);
-            if (!otpCheck.ok) {
-                return otpCheck.response;
-            }
-
-            const encryptionSecret = process.env.WALLET_ENCRYPTION_KEY;
-            if (!encryptionSecret) {
-                return NextResponse.json({ error: "System Configuration Error: WALLET_ENCRYPTION_KEY missing" }, { status: 500 });
-            }
-
-            try {
-                const decryptedKey = decryptPrivateKey(record.encrypted_private_key, encryptionSecret);
-                return NextResponse.json({
-                    success: true,
-                    privateKey: decryptedKey,
-                }, { status: 200 });
-            } catch (err: any) {
-                console.error("Failed to decrypt legacy key during export:", err);
-                return NextResponse.json({ error: "Failed to decrypt private key." }, { status: 500 });
-            }
-        }
-
-        return NextResponse.json({
-            error: "This embedded wallet is secured with multi-party computation and its private key cannot be exported.",
-            provider: record.provider || null,
-        }, { status: 409 });
-    } catch (error: any) {
-        console.error("Wallet export failed:", error);
-        return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
-    }
+    return NextResponse.json({
+        error: "Private key viewing and export is disabled. Embedded accounts are secured via multi-party computation and raw private keys are never exposed.",
+        code: "PRIVATE_KEY_EXPORT_DISABLED",
+    }, { status: 403 });
 }

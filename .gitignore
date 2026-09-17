@@ -78,6 +78,7 @@ photo_*.jpg
 .claudeignore
 .kilo/
 lighthouse-report.json
+.eslint-warnings.json
 scripts/run-lh-direct.mjs
 scripts/audit-fast.mjs
 scripts/run-lighthouse.mjs

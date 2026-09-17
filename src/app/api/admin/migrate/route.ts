@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
 import { runLegacyWalletMigration } from "@/lib/ops/migrateWallets";
+import { isProd } from "@/lib/contracts/constants";
 
 export async function POST(request: Request) {
+    if (isProd) {
+        return NextResponse.json(
+            { error: "Gone: Legacy wallet migration route has been retired in production. Run migration scripts via operator CLI with direct database access." },
+            { status: 410 }
+        );
+    }
+
     try {
         const authHeader = request.headers.get("Authorization");
         const expectedSecret = process.env.KEEPER_SECRET;

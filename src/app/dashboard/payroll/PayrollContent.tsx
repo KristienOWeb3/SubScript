@@ -535,12 +535,21 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
         if (!address) return;
         setIsSigning(true);
         try {
-            /* Compute total payroll in micro-USDC */
-            let totalMicro = BigInt(0);
-            for (const r of formRecipients) {
-                const parsed = parseUsdcToMicro(r.salaryAmountUsdc);
-                if (parsed) totalMicro += parsed;
-            }
+            /* Use the same canonical recipient set that campaign creation stores. The permit API
+               independently recomputes this total and refuses any aggregate mismatch. */
+            const canonicalRecipients = formRecipients.flatMap((recipient) => {
+                const salaryAmountUsdc = parseUsdcToMicro(recipient.salaryAmountUsdc);
+                return recipient.employeeWallet.trim() && salaryAmountUsdc !== null
+                    ? [{
+                        employeeWallet: recipient.employeeWallet.trim(),
+                        salaryAmountUsdc: salaryAmountUsdc.toString(),
+                    }]
+                    : [];
+            });
+            const totalMicro = canonicalRecipients.reduce(
+                (total, recipient) => total + BigInt(recipient.salaryAmountUsdc),
+                BigInt(0),
+            );
 
             if (totalMicro === BigInt(0)) {
                 showToastMessage("Add at least one recipient with a salary amount", "error");
@@ -561,6 +570,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                     body: JSON.stringify({
                         totalAmountUsdc: totalMicro.toString(),
                         frequencyDays,
+                        recipients: canonicalRecipients,
                     }),
                 });
                 const data = await res.json();
@@ -711,6 +721,10 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                     body: JSON.stringify({
                         totalAmountUsdc: campaign.totalPayrollUsdc,
                         frequencyDays: campaign.frequencyDays,
+                        recipients: campaign.recipients.map((recipient) => ({
+                            employeeWallet: recipient.employeeWallet,
+                            salaryAmountUsdc: String(recipient.salaryAmountUsdc),
+                        })),
                     }),
                 });
                 const permit = await permitRes.json().catch(() => ({}));

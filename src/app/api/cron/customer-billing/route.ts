@@ -25,9 +25,9 @@
  *     the same scope: `.eq("subscription_id", subId)` alone updates every generation's copy of that
  *     id, and ids ARE duplicated in practice.
  *
- * KNOWN GAP: `subscription_billing_claims` is still keyed on subscription_id alone, so two
- * generations sharing an id contend for one claim row. That needs a migration on the table and its
- * claim/release/complete RPCs.
+ * - Composite scoping: `subscription_billing_claims` is keyed on
+ *   (contract_address, subscription_id, sequence_id) via composite primary key,
+ *   so two contract generations sharing an id never contend for billing claims.
  */
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -254,6 +254,7 @@ export async function POST(request: Request) {
             const releaseBillingClaim = async () => {
                 if (claimedSequenceId === null || billingClaimId === null) return false;
                 const { data, error } = await supabase.rpc("release_subscription_billing", {
+                    p_contract_address: activeSubscriptionContract(),
                     p_subscription_id: subId,
                     p_sequence_id: claimedSequenceId,
                     p_claim_id: billingClaimId,
@@ -264,6 +265,7 @@ export async function POST(request: Request) {
             const completeBillingClaim = async (txHash: string | null) => {
                 if (claimedSequenceId === null || billingClaimId === null) return false;
                 const { data, error } = await supabase.rpc("complete_subscription_billing", {
+                    p_contract_address: activeSubscriptionContract(),
                     p_subscription_id: subId,
                     p_sequence_id: claimedSequenceId,
                     p_claim_id: billingClaimId,
@@ -394,6 +396,7 @@ export async function POST(request: Request) {
                 ).toISOString();
                 const requestedClaimId = crypto.randomUUID();
                 const { data: claimed, error: claimError } = await supabase.rpc("claim_subscription_billing", {
+                    p_contract_address: activeSubscriptionContract(),
                     p_subscription_id: subId,
                     p_sequence_id: sequenceId,
                     p_claim_id: requestedClaimId,
@@ -666,6 +669,7 @@ export async function POST(request: Request) {
                     throw new Error("Payment execution transaction reverted");
                 }
                 const { data: recorded, error: recordError } = await supabase.rpc("record_subscription_billing_chain_confirmation", {
+                    p_contract_address: activeSubscriptionContract(),
                     p_subscription_id: subId,
                     p_sequence_id: sequenceId,
                     p_claim_id: requestedClaimId,
