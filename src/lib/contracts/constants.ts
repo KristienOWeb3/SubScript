@@ -28,6 +28,10 @@ const envAddress = (value: string | undefined, testnetDefault: string, varName: 
   return testnetDefault as `0x${string}`;
 };
 
+const optionalEnvAddress = (value: string | undefined, fallback: string): `0x${string}` =>
+  (value && isValidEvmAddress(value) ? value.trim() : fallback) as `0x${string}`;
+
+
 export const SUBSCRIPT_ROUTER_ADDRESS = envAddress(
   process.env.NEXT_PUBLIC_SUBSCRIPT_ROUTER_ADDRESS,
   "0x6946B7746c2968B195BD15319D25F67E587CAe3C",
@@ -350,19 +354,17 @@ export const ARC_CCTP_DOMAIN_ID = 26 as const;
 /* Arc's own TokenMessengerV2, used for outbound burns when withdrawing off Arc. Env-overridable for
    the same reason as the other Arc addresses: the mainnet cutover should be config, not a code
    edit. Defaults to the deterministic V2 address for the active environment. */
-export const ARC_TOKEN_MESSENGER_ADDRESS = envAddress(
+export const ARC_TOKEN_MESSENGER_ADDRESS = optionalEnvAddress(
   process.env.NEXT_PUBLIC_ARC_TOKEN_MESSENGER_ADDRESS || process.env.ARC_TOKEN_MESSENGER_ADDRESS,
   CCTP_V2_TOKEN_MESSENGER,
-  "NEXT_PUBLIC_ARC_TOKEN_MESSENGER_ADDRESS",
 );
 
 /* Where the protocol bridge fee lands. The fee is a plain USDC transfer taken before the burn, so
    this is an ordinary address and the same one works on every EVM chain. Falls back to the merchant
    treasury so a missing env var can never send fees to the zero address. */
-export const BRIDGE_FEE_TREASURY_ADDRESS = envAddress(
+export const BRIDGE_FEE_TREASURY_ADDRESS = optionalEnvAddress(
   process.env.NEXT_PUBLIC_BRIDGE_FEE_TREASURY_ADDRESS || process.env.BRIDGE_FEE_TREASURY_ADDRESS,
   MERCHANT_ADDRESS,
-  "NEXT_PUBLIC_BRIDGE_FEE_TREASURY_ADDRESS",
 );
 
 /* Circle's attestation service. Sandbox and production are separate deployments with separate
