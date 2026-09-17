@@ -19,3 +19,12 @@ test("wallet sends enforce sponsorship before every irreversible transfer", () =
     assert.ok(loopAt !== -1 && loopAt < sponsorAt && sponsorAt < transferAt);
     assert.match(route, /requestKey: `wallet-send:\$\{normalizedSender\}:\$\{requestId\}:\$\{item\.receiver\}:\$\{item\.amountMicros\.toString\(\)\}`/);
 });
+
+test("wallet send route maps CirclePaymasterPolicyError to CIRCLE_PAYMASTER_POLICY_REQUIRED with 503", () => {
+    const route = source("src/app/api/user/wallet/send/route.ts");
+    assert.match(route, /CirclePaymasterPolicyError/);
+    assert.match(route, /code: isPaymasterError \? "CIRCLE_PAYMASTER_POLICY_REQUIRED"/);
+    assert.match(route, /isPaymasterError \? 503 : 400/);
+    assert.match(route, /if \(error instanceof CirclePaymasterPolicyError\)/);
+});
+

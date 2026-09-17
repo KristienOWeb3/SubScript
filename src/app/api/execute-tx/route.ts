@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAddress, isAddress } from "ethers";
 import crypto from "crypto";
-import { getWalletCustody, deterministicIdempotencyKey, cancelSubscriptionIdempotencyKey } from "@/lib/custody";
+import {
+    getWalletCustody,
+    deterministicIdempotencyKey,
+    cancelSubscriptionIdempotencyKey,
+    CirclePaymasterPolicyError,
+} from "@/lib/custody";
 import { getSessionWallet } from "@/lib/auth";
 import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
 import {
@@ -560,6 +565,14 @@ export async function POST(request: Request) {
         } catch (err: any) {
             console.error("EVM execution error:", err);
             
+            if (err instanceof CirclePaymasterPolicyError || err?.code === "CIRCLE_PAYMASTER_POLICY_REQUIRED") {
+                return NextResponse.json({
+                    error: err.message,
+                    code: "CIRCLE_PAYMASTER_POLICY_REQUIRED",
+                    requestId,
+                }, { status: 503 });
+            }
+
             const revertReason = err?.reason || err?.info?.error?.message || err?.message || "Transaction execution failed";
 
             if (action === "withdraw") {

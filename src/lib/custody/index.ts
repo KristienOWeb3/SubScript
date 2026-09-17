@@ -124,7 +124,7 @@ export class CirclePaymasterPolicyError extends Error {
 
     constructor() {
         super(
-            "Arc transactions are temporarily unavailable because mainnet gas sponsorship is not configured. No funds were moved. Please try again after service is restored.",
+            "Arc transactions are temporarily unavailable because mainnet gas sponsorship (Circle Gas Station policy) is not configured in Circle Console. No funds were moved. Please try again after service is restored.",
         );
     }
 }
@@ -182,6 +182,11 @@ class CircleCustody implements WalletCustody {
                 break;
             } catch (error: unknown) {
                 if (isCirclePaymasterPolicyError(error)) {
+                    console.error(
+                        "[CircleCustody] Error 155509: Mainnet Gas Station paymaster policy is required for Circle SCA transactions. " +
+                        "Configure and activate a Gas Station policy for Arc in Circle Developer Console (https://console.circle.com). " +
+                        "Details:", circleErrorMessage(error)
+                    );
                     throw new CirclePaymasterPolicyError();
                 }
                 const retryDelay = CIRCLE_FIRST_TX_QUEUE_RETRY_DELAYS_MS[attempt];

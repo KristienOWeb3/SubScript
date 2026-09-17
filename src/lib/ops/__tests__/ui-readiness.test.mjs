@@ -51,10 +51,10 @@ test("the user mobile bottom nav and its skeleton keep the five-percent height i
     const nav = source("src/components/dashboard/MobileFloatingNav.tsx");
     const dashboard = source("src/app/dashboard/user/page.tsx");
 
-    assert.match(nav, /const CAPSULE_HEIGHT = 52\.5/);
-    assert.match(nav, /const CAPSULE_RETRACTED_SIZE = 52\.5/);
-    assert.match(dashboard, /h-\[52\.5px\]/);
-    assert.match(dashboard, /w-\[52\.5px\]/);
+    assert.match(nav, /const CAPSULE_HEIGHT = 55\.125/);
+    assert.match(nav, /const CAPSULE_RETRACTED_SIZE = 55\.125/);
+    assert.match(dashboard, /h-\[55\.125px\]/);
+    assert.match(dashboard, /w-\[55\.125px\]/);
 });
 
 test("the mobile dashboard skeleton mirrors profile, tier, and notification controls", () => {

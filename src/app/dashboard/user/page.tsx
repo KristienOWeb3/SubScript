@@ -3442,12 +3442,12 @@ export default function UserDashboard() {
 
         {/* Mobile Bottom Bar Skeleton */}
         <div className="fixed bottom-4 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-2 md:hidden">
-          <div className="flex h-[52.5px] flex-1 items-center justify-around rounded-full border border-black/15 bg-[#2775CA]/20 px-3 backdrop-blur-2xl">
+          <div className="flex h-[55.125px] flex-1 items-center justify-around rounded-full border border-black/15 bg-[#2775CA]/20 px-3 backdrop-blur-2xl">
             {[1, 2, 3, 4].map((i) => (
               <div key={i} className="h-6 w-6 subscript-skeleton rounded-full" />
             ))}
           </div>
-          <div className="h-[52.5px] w-[52.5px] shrink-0 rounded-full subscript-skeleton" />
+          <div className="h-[55.125px] w-[55.125px] shrink-0 rounded-full subscript-skeleton" />
         </div>
       </div>
     );
