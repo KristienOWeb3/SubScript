@@ -204,18 +204,12 @@ export async function POST(request: Request) {
            can observe whether a code was delivered. */
         if (process.env.NODE_ENV === "production" && !isEmailBindingRequest) {
             after(async () => {
-                if (isSignInRequest && !emailLoginAllowed) return;
                 try {
                     await sendAuthenticationCodeEmail(emailLower, code);
                 } catch (error) {
                     console.error("Deferred OTP issue failed:", error instanceof Error ? error.message : error);
                 }
             });
-            return NextResponse.json({ success: true, message: GENERIC_OTP_MESSAGE, email: emailLower, challengeId: formattedChallengeId });
-        }
-
-        /* Non-production keeps the synchronous path so local sandboxes can expose devOtpCode. */
-        if (isSignInRequest && !emailLoginAllowed) {
             return NextResponse.json({ success: true, message: GENERIC_OTP_MESSAGE, email: emailLower, challengeId: formattedChallengeId });
         }
 

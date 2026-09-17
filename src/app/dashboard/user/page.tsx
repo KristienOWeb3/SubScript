@@ -1389,12 +1389,7 @@ export default function UserDashboard() {
         return;
       }
 
-      if (!data.role) {
-        redirectTo(getDashboardUrl("USER", "/signup"), "Please complete your account setup to access your dashboard.");
-        return;
-      }
-
-      if (data.role !== "USER") {
+      if (data.role && data.role !== "USER") {
         console.warn("Unauthorized role for user dashboard, redirecting to merchant dashboard");
         redirectTo(getDashboardUrl("ENTERPRISE", "/merchant"), "Redirecting to merchant dashboard...");
         return;

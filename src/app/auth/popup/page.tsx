@@ -169,12 +169,15 @@ function PopupContent() {
                 throw new Error(completed.error || "Could not save your wallet.");
             }
 
+            const intent = getAuthIntent();
             window.localStorage.removeItem("subscript_circle_auth_intent");
             setStep("complete");
 
             const destination = completed.role
                 ? getDashboardUrl(completed.role as any, "/dashboard")
-                : `/signup?email=${encodeURIComponent(completed.email || "")}`;
+                : (intent === "signin"
+                    ? getDashboardUrl("USER", "/dashboard")
+                    : `/signup?email=${encodeURIComponent(completed.email || "")}`);
 
             if (window.opener && !window.opener.closed) {
                 try {

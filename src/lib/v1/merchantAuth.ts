@@ -65,13 +65,11 @@ export async function requireEnterpriseAndTier1(
     mode?: "test" | "live" | "session"
 ): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
     const role = await resolveAccountRoleWithBackfill(merchantAddress);
-    if (!role || role !== "ENTERPRISE") {
-        await prisma.merchant.upsert({
-            where: { walletAddress: merchantAddress.toLowerCase() },
-            create: { walletAddress: merchantAddress.toLowerCase(), tier: "FREE" },
-            update: {},
-        }).catch(() => null);
-    }
+    await prisma.merchant.upsert({
+        where: { walletAddress: merchantAddress.toLowerCase() },
+        create: { walletAddress: merchantAddress.toLowerCase(), tier: role === "ENTERPRISE" ? "ENTERPRISE" : "FREE" },
+        update: {},
+    }).catch(() => null);
     const isTier1 = await checkMerchantTier1(merchantAddress);
     if (!isTier1 && mode !== "test") {
         return { ok: false, status: 403, error: "Forbidden: This action requires Tier 1 verification (link a verified email)." };
