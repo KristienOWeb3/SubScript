@@ -51,9 +51,9 @@ jobs:
           BASE: ${{ secrets.KEEPER_BASE_URL }}
           SECRET: ${{ secrets.KEEPER_SECRET }}
         run: |
-          HTTP_CODE=$(curl -s -o /tmp/resp.txt -w "%{http_code}" --retry 3 --retry-delay 5 --max-time 300 -X GET \
+          HTTP_CODE=$(curl -s -o /tmp/resp.txt -w "%{http_code}" --retry 3 --retry-all-errors --retry-delay 5 --max-time 300 --http1.1 -X GET \
             "${BASE:-https://www.subscriptonarc.com}/api/keeper/cctp" \
-            -H "Authorization: Bearer ${SECRET}")
+            -H "Authorization: Bearer ${SECRET}" || true)
           cat /tmp/resp.txt
           echo
           if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "503" ]; then
@@ -83,9 +83,9 @@ jobs:
           BASE: ${{ secrets.KEEPER_BASE_URL }}
           SECRET: ${{ secrets.KEEPER_SECRET }}
         run: |
-          HTTP_CODE=$(curl -s -o /tmp/resp.txt -w "%{http_code}" --retry 3 --retry-delay 5 --max-time 300 -X GET \
+          HTTP_CODE=$(curl -s -o /tmp/resp.txt -w "%{http_code}" --retry 3 --retry-all-errors --retry-delay 5 --max-time 300 --http1.1 -X GET \
             "${BASE:-https://www.subscriptonarc.com}/api/cron/billing" \
-            -H "Authorization: Bearer ${SECRET}")
+            -H "Authorization: Bearer ${SECRET}" || true)
           cat /tmp/resp.txt
           echo
           if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "410" ]; then
@@ -102,7 +102,7 @@ jobs:
           BASE: ${{ secrets.KEEPER_BASE_URL }}
           SECRET: ${{ secrets.KEEPER_SECRET }}
         run: |
-          curl -fsS --retry 3 --retry-delay 5 --max-time 300 -X GET \
+          curl -fsS --retry 3 --retry-all-errors --retry-delay 5 --max-time 300 --http1.1 -X GET \
             "${BASE:-https://www.subscriptonarc.com}/api/internal/payroll" \
             -H "Authorization: Bearer ${SECRET}"
 
@@ -116,9 +116,9 @@ jobs:
           BASE: ${{ secrets.KEEPER_BASE_URL }}
           SECRET: ${{ secrets.KEEPER_SECRET }}
         run: |
-          HTTP_CODE=$(curl -s -o /tmp/resp.txt -w "%{http_code}" --retry 3 --retry-delay 5 --max-time 120 -X GET \
+          HTTP_CODE=$(curl -s -o /tmp/resp.txt -w "%{http_code}" --retry 3 --retry-all-errors --retry-delay 5 --max-time 120 --http1.1 -X GET \
             "${BASE:-https://www.subscriptonarc.com}/api/internal/billing" \
-            -H "Authorization: Bearer ${SECRET}")
+            -H "Authorization: Bearer ${SECRET}" || true)
           cat /tmp/resp.txt
           echo
           if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "410" ]; then
@@ -207,8 +207,8 @@ jobs:
             /api/keeper/vault-topup \
             /api/keeper/cctp; do
             echo "→ GET ${path}"
-            code=$(curl -s -o /tmp/resp.txt -w "%{http_code}" --retry 2 --retry-delay 5 --max-time 300 -X GET \
-              "${BASE}${path}" -H "Authorization: Bearer ${SECRET}")
+            code=$(curl -s -o /tmp/resp.txt -w "%{http_code}" --retry 3 --retry-all-errors --retry-delay 5 --max-time 300 --http1.1 -X GET \
+              "${BASE}${path}" -H "Authorization: Bearer ${SECRET}" || true)
             cat /tmp/resp.txt
             echo
             if [ "$code" = "200" ]; then
