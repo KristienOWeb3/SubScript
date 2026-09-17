@@ -70,6 +70,7 @@ async function withRetry(fn, retries = 5, delay = 1000) {
 }
 
 async function main() {
+    const isMainnet = process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet";
     const rpc = process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network";
     // Setting staticNetwork avoids an extra eth_chainId request on startup that can trigger rate limits
     const provider = new ethers.JsonRpcProvider(rpc, undefined, { staticNetwork: true });
