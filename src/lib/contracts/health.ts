@@ -62,21 +62,19 @@ export const EXPECTED_CONTRACTS: ContractSpec[] = [
         functions: ["registerViewKey(bytes32)"],
     },
     {
-        /* NOTE: this list tracks the DEPLOYED testnet implementation, which still carries the
-           legacy merchant levers (drawUsage / setRequiredCommit / requiredCommit). The V3
-           source in contracts/SubScriptVault.sol removes them; when the proxy is upgraded,
-           replace those selectors with STANDARD_COMMIT()/raiseDispute()/resolveDispute(). */
+        /* V3 fixes the commitment amount at the protocol level. Keep this aligned with
+           the vault reads and writes in src/lib/vault/onchain.ts. */
         name: "SubScriptVault",
         address: SUBSCRIPT_VAULT_ADDRESS,
         functions: [
             "commit(address,uint256)",
             "withdrawSurplus(address,uint256)",
-            "drawUsage(address,uint256)",
+            "STANDARD_COMMIT()",
+            "reclaimAbandonedEscrow(address)",
             "drawUsageFor(address,address,uint256)",
             "merchantClaim()",
-            "setRequiredCommit(uint256)",
             "getVault(address,address)",
-            "requiredCommit(address)",
+            "disputeHold(address,address)",
             "merchantClaimable(address)",
         ],
     },
